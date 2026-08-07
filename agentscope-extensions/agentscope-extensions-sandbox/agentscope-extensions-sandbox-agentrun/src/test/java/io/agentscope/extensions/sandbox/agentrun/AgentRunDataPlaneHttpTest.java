@@ -63,7 +63,8 @@ class AgentRunDataPlaneHttpTest {
 
         AgentRunDataPlaneHttp http = new AgentRunDataPlaneHttp(opt);
 
-        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\":\"sb-1\"}"));
+        mockServer.enqueue(
+                new MockResponse().setResponseCode(200).setBody("{\"data\":{\"id\":\"sb-1\"}}"));
         JsonNode created = http.createSandbox("sb-1");
         assertNotNull(created);
         assertEquals("sb-1", created.get("id").asText());
@@ -76,7 +77,9 @@ class AgentRunDataPlaneHttpTest {
         assertTrue(createReq.getBody().readUtf8().contains("\"sandboxId\":\"sb-1\""));
 
         mockServer.enqueue(
-                new MockResponse().setResponseCode(200).setBody("{\"status\":\"READY\"}"));
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"data\":{\"status\":\"READY\"}}"));
         JsonNode fetched = http.getSandbox("sb-1");
         assertNotNull(fetched);
         assertEquals("READY", fetched.get("status").asText());
@@ -91,5 +94,34 @@ class AgentRunDataPlaneHttpTest {
         assertNotNull(deleteReq);
         assertEquals("DELETE", deleteReq.getMethod());
         assertEquals("/sandboxes/sb-1", deleteReq.getPath());
+    }
+
+    @Test
+    void acceptsResponsesWithoutDataEnvelope() throws Exception {
+        String baseUrl = mockServer.url("/").toString();
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+
+        AgentRunSandboxClientOptions opt =
+                new AgentRunSandboxClientOptions()
+                        .setApiKey("test-key")
+                        .setTemplateName("agentscope-default")
+                        .setMcpServerUrl("https://example.com/mcp")
+                        .setDataPlaneBaseUrl(baseUrl)
+                        .setHttpClient(new OkHttpClient());
+
+        AgentRunDataPlaneHttp http = new AgentRunDataPlaneHttp(opt);
+
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\":\"sb-2\"}"));
+        JsonNode created = http.createSandbox("sb-2");
+        assertNotNull(created);
+        assertEquals("sb-2", created.get("id").asText());
+
+        mockServer.enqueue(
+                new MockResponse().setResponseCode(200).setBody("{\"status\":\"RUNNING\"}"));
+        JsonNode fetched = http.getSandbox("sb-2");
+        assertNotNull(fetched);
+        assertEquals("RUNNING", fetched.get("status").asText());
     }
 }
