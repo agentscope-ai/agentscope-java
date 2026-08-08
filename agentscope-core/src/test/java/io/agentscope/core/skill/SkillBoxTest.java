@@ -188,6 +188,82 @@ class SkillBoxTest {
         }
 
         @Test
+        @DisplayName("Should bind ALL agent tools when multiple are registered on one skill")
+        void testMultipleAgentToolsAllBoundToSkillGroup() {
+            AgentTool first = createTestTool("multi_tool_first");
+            AgentTool second = createTestTool("multi_tool_second");
+            AgentSkill skill =
+                    new AgentSkill(
+                            "Multi Tool Skill", "Skill with two agent tools", "# Multi", null);
+
+            // Two consecutive agentTool() calls: the second used to overwrite the first, so only
+            // "second" ended up bound into the gated group.
+            skillBox.registration().skill(skill).agentTool(first).agentTool(second).apply();
+
+            String groupName = skill.getSkillId() + "_skill_tools";
+            assertNotNull(toolkit.getToolGroup(groupName), "skill tool group should exist");
+            assertTrue(
+                    toolkit.getToolGroup(groupName).getTools().contains("multi_tool_first"),
+                    "first tool must also be bound into the skill group (regression: was"
+                            + " overwritten)");
+            assertTrue(
+                    toolkit.getToolGroup(groupName).getTools().contains("multi_tool_second"),
+                    "second tool must be bound into the skill group");
+            assertFalse(
+                    toolkit.getToolGroup(groupName).isActive(),
+                    "skill tool group must start inactive (gated until skill is loaded)");
+
+            assertNotNull(toolkit.getTool("multi_tool_first"));
+            assertNotNull(toolkit.getTool("multi_tool_second"));
+        }
+
+        @Test
+        @DisplayName("Should ignore a null agent tool instead of failing the registration")
+        void testNullAgentToolIsIgnored() {
+            AgentTool real = createTestTool("null_guard_tool");
+            AgentSkill skill =
+                    new AgentSkill("Null Guard Skill", "Skill with a null tool", "# Null", null);
+
+            // A null must not be appended to the tool list — otherwise apply() would hand null to
+            // Toolkit.registration().agentTool(null) and fail the whole skill registration.
+            assertDoesNotThrow(
+                    () ->
+                            skillBox.registration()
+                                    .skill(skill)
+                                    .agentTool(null)
+                                    .agentTool(real)
+                                    .apply());
+
+            String groupName = skill.getSkillId() + "_skill_tools";
+            assertNotNull(toolkit.getToolGroup(groupName), "skill tool group should exist");
+            assertTrue(
+                    toolkit.getToolGroup(groupName).getTools().contains("null_guard_tool"),
+                    "the non-null tool must still be bound");
+        }
+
+        @Test
+        @DisplayName("Should reject mixing two registration kinds on one skill registration")
+        void testMixingRegistrationKindsIsRejected() {
+            AgentTool agentTool = createTestTool("mixed_agent_tool");
+            AgentSkill skill = new AgentSkill("Mixed Skill", "Skill mixing kinds", "# Mixed", null);
+
+            // Registering each agent tool separately bypasses Toolkit.ToolRegistration's
+            // exactly-one check, so SkillRegistration enforces the invariant itself.
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () ->
+                                    skillBox.registration()
+                                            .skill(skill)
+                                            .agentTool(agentTool)
+                                            .tool(new Object())
+                                            .apply());
+            assertTrue(
+                    error.getMessage().contains("agentTool") && error.getMessage().contains("tool"),
+                    "error should name the combined kinds, got: " + error.getMessage());
+        }
+
+        @Test
         @DisplayName("Should successfully register when only mcp client is provided")
         void testSuccessfullyRegisterWhenOnlyMcpClientProvided() {
             McpClientWrapper mcpClient = mock(McpClientWrapper.class);
