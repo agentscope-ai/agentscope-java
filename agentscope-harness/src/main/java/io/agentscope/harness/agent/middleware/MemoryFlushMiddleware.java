@@ -28,10 +28,14 @@ import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Duration;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -39,10 +43,21 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Middleware that triggers memory flush and message offload at the end of each agent call.
  *
- * <p>Runs in {@link #onAgent}'s {@code doOnComplete} so long-term memories are extracted and
- * persisted after every call, even when conversation compaction was not triggered during that
- * call. When {@link CompactionMiddleware} is active, it handles flush/offload for the messages
- * it summarizes; this middleware covers the remaining tail of messages that were kept verbatim.
+ * <p>Runs in a genuinely detached, fire-and-forget fashion: the flush {@code Mono} is subscribed
+ * independently of the returned {@code Flux} (via {@code doOnComplete}) rather than being
+ * concatenated onto it, so callers that wait for the response to complete (e.g.
+ * {@code blockLast()}, {@code takeLast(1)}) are not delayed by flush work. Long-term memories are
+ * extracted and persisted after every call, even when conversation compaction was not triggered
+ * during that call. When {@link CompactionMiddleware} is active, it handles flush/offload for the
+ * messages it summarizes; this middleware covers the remaining tail of messages that were kept
+ * verbatim.
+ *
+ * <p>Detached flushes are bounded ({@link #MAX_PENDING_FLUSHES}): when the memory model is slow
+ * and the backlog is full, new flushes are skipped and logged rather than accumulating without
+ * bound. Skipping is safe because a flush always extracts from the full conversation context —
+ * the next successful flush covers the same messages. Callers that rely on "response completed ==
+ * memory persisted" durability can pass {@code asyncFlush=false} (via {@link
+ * MemoryConfig#asyncFlush()}) to chain the flush back onto the response stream.
  *
  * <p>Flush is gated by a {@link MemoryConfig.FlushTrigger}:
  * <ul>
@@ -66,7 +81,7 @@ import reactor.core.scheduler.Schedulers;
  *       the whole agent instance (prevents concurrent flush races on shared memory files).</li>
  * </ul>
  */
-public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
+public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushMiddleware.class);
 
@@ -76,6 +91,30 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final MemoryConfig.FlushTrigger flushTrigger;
     private final IsolationScope isolationScope;
     private final PeriodicGate periodicGate;
+    private final boolean asyncFlush;
+
+    /** Upper bound on the flush LLM call, preventing a hung model from tying up a worker thread. */
+    static final Duration FLUSH_TIMEOUT = Duration.ofMinutes(5);
+
+    /** Upper bound {@link #close()} waits for outstanding fire-and-forget flushes to drain. */
+    static final Duration CLOSE_AWAIT_TIMEOUT = Duration.ofSeconds(5);
+
+    /**
+     * Upper bound on concurrently pending detached flushes. When the memory model is slow and
+     * this many flushes are still in flight, new ones are skipped and logged rather than
+     * accumulating without bound. Skipping is safe: a flush always extracts from the full
+     * conversation context, so the next successful flush covers the same messages.
+     */
+    static final int MAX_PENDING_FLUSHES = 4;
+
+    /**
+     * Tracks the {@link Disposable} of every fire-and-forget flush subscription that has been
+     * scheduled but not yet finished, so {@link #close()} can wait for them instead of leaving
+     * them racing against teardown of the workspace resources they read/write.
+     */
+    private final Set<Disposable> pending = ConcurrentHashMap.newKeySet();
+
+    private volatile boolean closed = false;
 
     public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this(
@@ -123,6 +162,32 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope,
             PeriodicGate periodicGate) {
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                isolationScope,
+                periodicGate,
+                true);
+    }
+
+    /**
+     * Full constructor.
+     *
+     * @param asyncFlush whether the flush runs detached from the response stream (default {@code
+     *     true}). {@code false} restores completion-order persistence — the response waits for
+     *     the per-call flush, for callers relying on "response completed == memory persisted"
+     *     durability semantics.
+     */
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate,
+            boolean asyncFlush) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt =
@@ -131,6 +196,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
+        this.asyncFlush = asyncFlush;
     }
 
     @Override
@@ -140,28 +206,127 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input)
-                .concatWith(
-                        Mono.defer(() -> doFlush(agent, rc))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn("Memory flush failed: {}", e.getMessage());
-                                            return Mono.empty();
-                                        })
-                                .then(Mono.<AgentEvent>empty()));
+        Flux<AgentEvent> source = next.apply(input);
+        if (asyncFlush) {
+            return source.doOnComplete(() -> scheduleFlush(agent, rc));
+        }
+        return source.concatWith(Mono.defer(() -> syncFlush(agent, rc)).then(Mono.empty()));
     }
 
-    private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
+    /**
+     * Synchronous-mode flush chained onto the response stream via {@code concatWith}: the
+     * response's completion is delayed until the flush finishes, so callers waiting for the
+     * response observe persisted memory. Bounded by {@link #FLUSH_TIMEOUT} and error-swallowing
+     * so a slow or failing memory model can delay, but never fail, the completed response.
+     */
+    private Mono<Void> syncFlush(Agent agent, RuntimeContext rc) {
+        try {
+            FlushRequest request = captureFlushRequest(agent, rc);
+            if (request == null) {
+                return Mono.empty();
+            }
+            return doFlush(request)
+                    .timeout(FLUSH_TIMEOUT)
+                    .onErrorResume(
+                            e -> {
+                                log.warn("Synchronous memory flush failed", e);
+                                return Mono.empty();
+                            });
+        } catch (Exception e) {
+            log.warn("Failed to run synchronous memory flush", e);
+            return Mono.empty();
+        }
+    }
+
+    /**
+     * Fires the fire-and-forget flush {@code Mono} on {@code boundedElastic}, tracking its
+     * {@link Disposable} in {@link #pending} until it terminates so {@link #close()} can wait for
+     * it. No-ops once {@link #close()} has been called, so a call that races with shutdown
+     * doesn't spawn new untracked work.
+     *
+     * <p>The whole method body (snapshot capture of the RuntimeContext shallow copy plus the
+     * message copy, operator assembly, and subscribe) is wrapped in try/catch so that no
+     * exception can escape into the {@code doOnComplete} callback and turn an already-completed
+     * Flux into an error.
+     *
+     * <p>The {@code closed} flag and {@code pending} add are guarded by
+     * {@code synchronized(pending)}. The {@code pending} set (a ConcurrentHashMap key set) is
+     * reused as the mutex object to avoid allocating a separate lock; its own concurrency
+     * features are not relied upon for the closed-check/add atomicity.
+     */
+    private void scheduleFlush(Agent agent, RuntimeContext rc) {
+        Disposable[] holder = new Disposable[1];
+        // The whole body is wrapped in try/catch so that no exception (from capture, operator
+        // assembly, or subscribe) can escape into the doOnComplete callback and turn an
+        // already-completed Flux into an error.
+        try {
+            FlushRequest request = captureFlushRequest(agent, rc);
+            if (request == null) {
+                return;
+            }
+            // Subscribe and register inside one critical section: if the subscription were
+            // started outside the lock, a fast-completing flush could run doFinally (which
+            // removes the Disposable) before the scheduling thread executed pending.add,
+            // permanently leaking a terminated Disposable into pending and stalling close()'s
+            // drain until its timeout. doFinally reads holder[0] and removes under the same
+            // lock, so the add-before-remove ordering is also guaranteed to be VISIBLE (the
+            // holder write happens inside the lock, before its release; the read happens after
+            // acquiring it). subscribeOn(boundedElastic) ensures no callback ever runs on this
+            // thread, so the lock cannot self-deadlock.
+            synchronized (pending) {
+                if (closed) {
+                    return;
+                }
+                // Bound the detached backlog: with a slow memory model, skipping is safe because
+                // the next successful flush extracts from the full conversation context.
+                if (pending.size() >= MAX_PENDING_FLUSHES) {
+                    log.warn(
+                            "Memory flush backlog limit ({}) reached; skipping flush for this"
+                                    + " call",
+                            MAX_PENDING_FLUSHES);
+                    return;
+                }
+                Disposable d =
+                        Mono.defer(() -> doFlush(request))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .timeout(FLUSH_TIMEOUT)
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn("Memory flush failed", e);
+                                            return Mono.empty();
+                                        })
+                                .doFinally(
+                                        sig -> {
+                                            synchronized (pending) {
+                                                if (holder[0] != null) {
+                                                    pending.remove(holder[0]);
+                                                }
+                                            }
+                                        })
+                                .subscribe();
+                holder[0] = d;
+                pending.add(d);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to schedule memory flush", e);
+        }
+    }
+
+    private FlushRequest captureFlushRequest(Agent agent, RuntimeContext rc) {
         AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null) {
-            return Mono.empty();
+            return null;
         }
         List<Msg> messages = state.getContext();
         if (messages.isEmpty()) {
-            return Mono.empty();
+            return null;
         }
+        return new FlushRequest(RuntimeContext.builder().from(rc).build(), List.copyOf(messages));
+    }
 
+    private Mono<Void> doFlush(FlushRequest request) {
+        RuntimeContext rc = request.runtimeContext();
+        List<Msg> messages = request.messages();
         MemoryFlushManager flushManager =
                 new MemoryFlushManager(workspaceManager, model, flushPrompt);
 
@@ -174,16 +339,54 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                             .doOnSuccess(v -> log.debug("Memory flush completed"))
                             .onErrorResume(
                                     e -> {
-                                        log.warn("Memory flush failed: {}", e.getMessage());
+                                        log.warn("Memory flush failed", e);
                                         return Mono.empty();
                                     });
         } else {
             log.debug("Memory flush skipped (trigger={})", flushTrigger);
             flushMono = Mono.empty();
         }
-
-        // Message offload is owned by TranscriptMiddleware (independent of memory flush).
         return flushMono;
+    }
+
+    /**
+     * Waits (bounded by {@link #CLOSE_AWAIT_TIMEOUT}) for outstanding fire-and-forget flushes to
+     * finish, then disposes anything still outstanding. Intended to be called from {@code
+     * HarnessAgent#close()} so short-lived callers (tests using JUnit {@code @TempDir}, CLI runs,
+     * etc.) don't tear down the workspace while a detached flush write is still in flight.
+     *
+     * <p>The {@code closed} flag and {@code pending} add are guarded by {@code synchronized(pending)}
+     * so that a flush scheduled concurrently with close() is either fully tracked (and drained) or
+     * disposed immediately, but never lost.
+     */
+    @Override
+    public void close() {
+        synchronized (pending) {
+            closed = true;
+        }
+        long deadline = System.nanoTime() + CLOSE_AWAIT_TIMEOUT.toNanos();
+        while (!pending.isEmpty() && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        for (Disposable d : pending) {
+            d.dispose();
+        }
+        pending.clear();
+    }
+
+    private record FlushRequest(RuntimeContext runtimeContext, List<Msg> messages) {}
+
+    /**
+     * Returns whether any fire-and-forget flush is currently in flight. Package-private, intended
+     * for tests that need to poll for quiescence instead of relying on a fixed sleep.
+     */
+    boolean hasPendingFlushes() {
+        return !pending.isEmpty();
     }
 
     /**

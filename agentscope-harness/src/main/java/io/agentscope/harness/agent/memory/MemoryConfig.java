@@ -147,6 +147,7 @@ public final class MemoryConfig {
     private final int dailyFileRetentionDays;
     private final int sessionRetentionDays;
     private final FlushTrigger flushTrigger;
+    private final boolean asyncFlush;
 
     private MemoryConfig(Builder b) {
         this.model = b.model;
@@ -157,6 +158,7 @@ public final class MemoryConfig {
         this.dailyFileRetentionDays = b.dailyFileRetentionDays;
         this.sessionRetentionDays = b.sessionRetentionDays;
         this.flushTrigger = b.flushTrigger;
+        this.asyncFlush = b.asyncFlush;
     }
 
     /**
@@ -206,6 +208,21 @@ public final class MemoryConfig {
         return flushTrigger;
     }
 
+    /**
+     * Whether memory flush and maintenance run detached from the agent response (default {@code
+     * true}, the pre-RC4 behavior restored by the latency fix). Set to {@code false} to make the
+     * response stream wait for the per-call memory persistence to finish — for callers that rely
+     * on "response completed == memory persisted" durability semantics.
+     *
+     * <p>Detached flushes are bounded: at most {@code 4} runs may be in flight per middleware
+     * instance; beyond that, new runs are skipped and logged. Because a flush always extracts
+     * from the full conversation context, a skipped run loses nothing permanently — the next
+     * successful flush covers the same messages.
+     */
+    public boolean asyncFlush() {
+        return asyncFlush;
+    }
+
     /** Returns a config equivalent to the harness's historical defaults. */
     public static MemoryConfig defaults() {
         return new Builder().build();
@@ -225,6 +242,7 @@ public final class MemoryConfig {
         private int dailyFileRetentionDays = DEFAULT_DAILY_FILE_RETENTION_DAYS;
         private int sessionRetentionDays = DEFAULT_SESSION_RETENTION_DAYS;
         private FlushTrigger flushTrigger = FlushTrigger.always();
+        private boolean asyncFlush = true;
 
         /**
          * Sets a dedicated model for memory operations (flush + consolidation),
@@ -328,6 +346,17 @@ public final class MemoryConfig {
                 throw new IllegalArgumentException("flushTrigger must not be null");
             }
             this.flushTrigger = flushTrigger;
+            return this;
+        }
+
+        /**
+         * Sets whether memory flush and maintenance run detached from the agent response.
+         * Defaults to {@code true}. Pass {@code false} to restore completion-order persistence
+         * (the response stream waits for the per-call memory work), for callers that rely on
+         * "response completed == memory persisted" durability semantics.
+         */
+        public Builder asyncFlush(boolean asyncFlush) {
+            this.asyncFlush = asyncFlush;
             return this;
         }
 

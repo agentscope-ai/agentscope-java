@@ -193,6 +193,22 @@ HarnessAgent.builder()
 
 `model(String)` resolves via `ModelRegistry.resolve()`; you can also pass a `Model` instance. When not set, falls back to the agent's primary model.
 
+### Example 7: make the response wait for memory persistence
+
+By default, per-call flush and maintenance run **detached** from the agent response: the response stream completes as soon as the underlying agent call finishes, and the memory work (an LLM round-trip plus file writes) continues in the background. A slow memory model therefore never delays what the user is waiting for.
+
+Detached work is bounded: at most 4 flushes may be in flight per agent; beyond that, new flushes are skipped and logged. Skipping is safe — each flush extracts from the full conversation context, so the next successful flush covers the same messages.
+
+If your caller relies on "response completed == memory persisted" (e.g. you read the memory file immediately after the response), restore completion-order persistence:
+
+```java
+.memory(MemoryConfig.builder()
+    .asyncFlush(false)
+    .build())
+```
+
+The response then waits for the per-call memory work (bounded by a 5-minute timeout; failures are logged and never fail the completed response).
+
 ### `MemoryConfig` field reference
 
 | Field | Default | Purpose |
@@ -205,6 +221,7 @@ HarnessAgent.builder()
 | `dailyFileRetentionDays` | `90` | Days before a daily log moves to `memory/archive/` |
 | `sessionRetentionDays` | `180` | Days before a `*.log.jsonl` is pruned |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
+| `asyncFlush` | `true` | Detached (`true`, default) vs completion-order (`false`) memory persistence |
 
 ## Large tool-result offloading
 

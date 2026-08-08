@@ -193,6 +193,22 @@ HarnessAgent.builder()
 
 `model(String)` 走 `ModelRegistry.resolve()`，也可以传 `Model` 实例。不设则 fallback 到 agent 主模型。
 
+### 例 7：让响应等待记忆持久化完成
+
+默认情况下，per-call flush 和维护以**脱离响应流**的方式运行：响应流在底层 agent 调用结束的瞬间就完成，记忆工作（一次 LLM 往返 + 文件写入）在后台继续。记忆模型再慢，也不会拖住用户正在等的那个响应。
+
+后台工作有上限保护：每个 agent 最多允许 4 个 flush 同时在途，超出的 flush 会被跳过并记日志。跳过是安全的——每次 flush 都从**完整对话上下文**提取，下一个成功的 flush 会覆盖同样的消息。
+
+如果你的调用方依赖"响应完成 == 记忆已落盘"（例如响应一返回就读记忆文件），可以恢复完成顺序持久化：
+
+```java
+.memory(MemoryConfig.builder()
+    .asyncFlush(false)
+    .build())
+```
+
+此时响应会等待本轮记忆工作完成（有 5 分钟超时上限；失败只记日志，不会把已完成的响应变成失败）。
+
 ### `MemoryConfig` 字段速查
 
 | 字段 | 默认 | 作用 |
@@ -205,6 +221,7 @@ HarnessAgent.builder()
 | `dailyFileRetentionDays` | `90` | 多少天后把日流水账归档到 `memory/archive/` |
 | `sessionRetentionDays` | `180` | 多少天后清掉 `*.log.jsonl` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
+| `asyncFlush` | `true` | 记忆持久化脱离响应流（`true`，默认）还是完成顺序（`false`） |
 
 ## 大工具结果卸载
 
