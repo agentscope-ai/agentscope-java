@@ -49,6 +49,8 @@ An [`AgentStateStore`](../../integration/session/index.md) persists an **`AgentS
 
 At the end of each `call()`, the framework writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. **Provided the state store is distributed (e.g. Redis), agent instances on different processes — even different physical machines — see identical state.**
 
+If a downstream subscriber cancels `streamEvents()` after the call scope has been established — for example, when an SSE client disconnects — the framework starts one best-effort checkpoint of that call's live `AgentState`. The per-session gate admits the next call for the same `(userId, sessionId)` only after this checkpoint succeeds or fails, preventing a stale reload or an older delayed save from overwriting newer state. Other sessions remain independent. A storage failure is logged but does not prevent lifecycle cleanup; without an `AgentStateStore`, cancellation persistence is a no-op.
+
 ### The auto-persistence and recovery flow
 
 ```
@@ -75,7 +77,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 
 This wiring lives in `ReActAgent` itself; `HarnessAgent` inherits it for free. The agent instance holds no fixed session — each call reads / writes the slot named by its `RuntimeContext` (falling back to the builder-time `defaultSessionId`).
 
-> Mid-`call()` state changes happen against the in-memory `AgentState`. **The state store is written once per call (and on shutdown), not on every message** — so the throughput pressure on your store stays low.
+> Mid-`call()` state changes happen against the in-memory `AgentState`. **The state store is written once on normal completion or downstream cancellation (and on shutdown), not on every message** — so the throughput pressure on your store stays low.
 
 ### Built-in and extension implementations
 
