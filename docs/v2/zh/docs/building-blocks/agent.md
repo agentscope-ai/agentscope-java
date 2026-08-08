@@ -134,11 +134,31 @@ ReActAgent agent =
 `ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](../harness/architecture.md) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
 :::
 
+### Agent 身份
+
+使用 `.agentId(...)` 将 Agent 映射到稳定的平台、目录或配置 ID。`getAgentId()` 返回这个逻辑身份，`getId()` 返回当前 Java 对象不可变的随机 UUID。多个存活实例可以共享同一个逻辑 `agentId`，但它们的 `id` 始终不同。
+
+`name` 是用于消息和日志的可读展示名称，不要求唯一，也可以因展示需要而改变。`agentId` 是用于注册、路由和遥测的稳定系统身份；需要稳定身份时，调用方不应根据 `name` 推导 `agentId`。
+
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .agentId("support-agent-001")
+                .name("客服助手")
+                .model("dashscope:qwen-plus")
+                .build();
+
+String agentId = agent.getAgentId(); // support-agent-001
+```
+
+省略 `agentId`，或传入 null、空字符串、纯空白字符串时，`agentId` 会回退为 `id`，保持原有自动生成 UUID 的行为。逻辑 ID 会用于遥测聚合，因此调用方应确保它稳定、不包含秘密，并在要求唯一性的注册表中自行保证唯一。Harness 现有资源路径选择保持不变。内部生命周期缓存使用 `id`，避免共享逻辑 ID 的多个存活实例意外共用状态。
+
 ### 参数说明
 
 | 参数 | 类型 | 默认值 | 描述 |
 |------|------|--------|------|
-| `name` | `String` | 必填 | 智能体标识符，用于消息和日志 |
+| `name` | `String` | 必填 | 用于消息和日志的可读展示名称 |
+| `agentId` | `String` | 随机 `id` | 稳定的逻辑 Agent 身份 |
 | `sysPrompt` | `String` | 必填 | 智能体的基础系统提示词 |
 | `model` | `Model` | 必填 | 用于推理的大语言模型（继承自 `ChatModelBase`） |
 | `toolkit` | `Toolkit` | `new Toolkit()` | 管理工具、MCP 客户端、技能和工具组 |

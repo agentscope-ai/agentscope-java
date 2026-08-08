@@ -190,6 +190,26 @@ class GracefulShutdownTest {
         }
 
         @Test
+        @DisplayName("State savers are isolated by runtime instance ID")
+        void stateSaversAreIsolatedForSharedLogicalAgentId() {
+            TestableAgent first = new TestableAgent("shared-agent", "first");
+            TestableAgent second = new TestableAgent("shared-agent", "second");
+            AtomicReference<AgentState> firstSaved = new AtomicReference<>();
+            AtomicReference<AgentState> secondSaved = new AtomicReference<>();
+            manager.bindStateSaver(first, firstSaved::set);
+            manager.bindStateSaver(second, secondSaved::set);
+
+            String firstRequest = manager.registerRequest(first);
+            String secondRequest = manager.registerRequest(second);
+            manager.saveOnInterruptObserved(firstRequest);
+            manager.saveOnInterruptObserved(secondRequest);
+
+            assertNotEquals(first.getId(), second.getId());
+            assertSame(first.getAgentState(), firstSaved.get());
+            assertSame(second.getAgentState(), secondSaved.get());
+        }
+
+        @Test
         @DisplayName("unregisterRequest is idempotent")
         void unregisterIdempotent() {
             TestableAgent agent = createTestAgent("agent-1");
@@ -677,6 +697,13 @@ class GracefulShutdownTest {
             this.shouldFail = shouldFail;
             this.shouldBeSlow = shouldBeSlow;
             this.agentState = hasState ? AgentState.builder().build() : null;
+        }
+
+        TestableAgent(String agentId, String name) {
+            super(agentId, name, null, List.of());
+            this.shouldFail = false;
+            this.shouldBeSlow = false;
+            this.agentState = AgentState.builder().build();
         }
 
         public boolean isInterruptFlagSet() {
