@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A (Agent-to-Agent)" href="a2a.html">
+    <meta property="article:modified_time" content="2026-08-08T16:21:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A (Agent-to-Agent)" href="a2a.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/integration/protocol/agui.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1020,7 +1020,7 @@
 <span class="n">Flux</span><span class="o">&lt;</span><span class="n">AguiEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">events</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">run</span><span class="p">(</span><span class="n">runAgentInput</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>The front end provides <code class="docutils literal notranslate"><span class="pre">RunAgentInput</span></code>, including <code class="docutils literal notranslate"><span class="pre">threadId</span></code>, <code class="docutils literal notranslate"><span class="pre">runId</span></code>, <code class="docutils literal notranslate"><span class="pre">messages</span></code>, <code class="docutils literal notranslate"><span class="pre">tools</span></code>, <code class="docutils literal notranslate"><span class="pre">state</span></code>等. The adapter converts AG-UI messages to AgentScope <code class="docutils literal notranslate"><span class="pre">Msg</span></code> objects, invokes v2 <code class="docutils literal notranslate"><span class="pre">streamEvents(...)</span></code>, and converts each <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> to AG-UI events.</p>
+<p>The front end provides <code class="docutils literal notranslate"><span class="pre">RunAgentInput</span></code>, including <code class="docutils literal notranslate"><span class="pre">threadId</span></code>, <code class="docutils literal notranslate"><span class="pre">runId</span></code>, <code class="docutils literal notranslate"><span class="pre">messages</span></code>, <code class="docutils literal notranslate"><span class="pre">tools</span></code>, <code class="docutils literal notranslate"><span class="pre">state</span></code>, and related fields. The adapter converts AG-UI messages to AgentScope <code class="docutils literal notranslate"><span class="pre">Msg</span></code> objects, invokes v2 <code class="docutils literal notranslate"><span class="pre">streamEvents(...)</span></code>, and converts each <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> to AG-UI events.</p>
 </section>
 <section id="event-mapping">
 <h2>Event Mapping<a class="headerlink" href="#event-mapping" title="Link to this heading">¶</a></h2>
@@ -1281,18 +1281,39 @@
 </section>
 <section id="hitl-interrupts">
 <h2>HITL Interrupts<a class="headerlink" href="#hitl-interrupts" title="Link to this heading">¶</a></h2>
-<p>When the model requests a tool and suspension is needed for user approval or external execution, the AG-UI adapter converts the suspended result into a <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> interrupt outcome:</p>
+<p>When a run pauses for a tool decision, the AG-UI adapter emits the official interrupt outcome on <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>. AgentScope Java has two built-in tool-call interrupt paths:</p>
+<ul class="simple">
+<li><p><strong>Tool suspension / external execution</strong>: a suspended <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code> becomes a <code class="docutils literal notranslate"><span class="pre">tool_call</span></code> interrupt and resumes as a <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code>.</p></li>
+<li><p><strong>Permission confirmation</strong>: <code class="docutils literal notranslate"><span class="pre">RequireUserConfirmEvent</span></code> becomes a <code class="docutils literal notranslate"><span class="pre">tool_call</span></code> interrupt with AgentScope metadata and resumes as a <code class="docutils literal notranslate"><span class="pre">ConfirmResult</span></code>.</p></li>
+</ul>
+<p>Both use the official AG-UI <code class="docutils literal notranslate"><span class="pre">reason:</span> <span class="pre">&quot;tool_call&quot;</span></code> because the interrupt is bound to a specific <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>. Do not use <code class="docutils literal notranslate"><span class="pre">reason:</span> <span class="pre">&quot;confirmation&quot;</span></code> for these tool-bound approvals.</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RUN_FINISHED&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;interrupt&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;interrupts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1:call-1&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tool_call&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Need approval before running this tool&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;responseSchema&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;boolean&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">&quot;editedArgs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">              </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Full replacement of the tool args. Not merged.&quot;</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">          </span><span class="p">},</span>
+<span class="w">          </span><span class="nt">&quot;required&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;approved&quot;</span><span class="p">]</span>
+<span class="w">        </span><span class="p">},</span>
 <span class="w">        </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;toolName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request_approval&quot;</span>
+<span class="w">          </span><span class="nt">&quot;agentscope.interruptKind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;permission_confirm&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;toolName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request_approval&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;toolInput&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/tmp/report.txt&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">          </span><span class="nt">&quot;toolContent&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;{\&quot;path\&quot;:\&quot;/tmp/report.txt\&quot;}&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;replyId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1&quot;</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">]</span>
@@ -1310,7 +1331,10 @@
 <span class="w">      </span><span class="nt">&quot;interruptId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1:call-1&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resolved&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;payload&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">        </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;editedArgs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/tmp/reviewed-report.txt&quot;</span>
+<span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
@@ -1318,8 +1342,8 @@
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">status</span></code> supports the official <code class="docutils literal notranslate"><span class="pre">resolved</span></code> and <code class="docutils literal notranslate"><span class="pre">cancelled</span></code> values. For the common approval case where a user rejects a tool request, prefer <code class="docutils literal notranslate"><span class="pre">resolved</span></code> and express the business decision in <code class="docutils literal notranslate"><span class="pre">payload</span></code>, for example <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;approved&quot;:</span> <span class="pre">false</span> <span class="pre">}</span></code>; use <code class="docutils literal notranslate"><span class="pre">cancelled</span></code> when the interrupt itself is cancelled.</p>
-<p>AgentScope Java bridges tool-call <code class="docutils literal notranslate"><span class="pre">resume[]</span></code> entries to the <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code> messages required by core so the suspended tool call can continue. Through the Spring <code class="docutils literal notranslate"><span class="pre">AguiRequestProcessor</span></code> entry point, the processor records the latest <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED.outcome.interrupts[]</span></code> and resolves the real <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code> by <code class="docutils literal notranslate"><span class="pre">interruptId</span></code>.</p>
-<p>The built-in resume path currently covers tool-call interrupts generated by the AG-UI adapter. Custom interrupts with different semantics usually need a custom <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> / <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> or request-processing layer to interpret their <code class="docutils literal notranslate"><span class="pre">payload</span></code>.</p>
+<p>For permission confirmations, <code class="docutils literal notranslate"><span class="pre">payload.approved</span></code> must be the boolean <code class="docutils literal notranslate"><span class="pre">true</span></code> to approve the tool. Any missing, non-boolean, or <code class="docutils literal notranslate"><span class="pre">false</span></code> value is treated as denial. <code class="docutils literal notranslate"><span class="pre">payload.editedArgs</span></code>, when present, must be a JSON object and is a <strong>full replacement</strong> of the original tool arguments, not a partial merge. AgentScope Java rebuilds both the <code class="docutils literal notranslate"><span class="pre">ToolUseBlock.input</span></code> and raw JSON <code class="docutils literal notranslate"><span class="pre">ToolUseBlock.content</span></code> from <code class="docutils literal notranslate"><span class="pre">editedArgs</span></code>, so the approved tool executes the edited arguments.</p>
+<p>The front end does not need to echo <code class="docutils literal notranslate"><span class="pre">metadata</span></code> in <code class="docutils literal notranslate"><span class="pre">resume[]</span></code>; it only sends <code class="docutils literal notranslate"><span class="pre">interruptId</span></code>, <code class="docutils literal notranslate"><span class="pre">status</span></code>, and <code class="docutils literal notranslate"><span class="pre">payload</span></code>. Through the Spring <code class="docutils literal notranslate"><span class="pre">AguiRequestProcessor</span></code> entry point, AgentScope Java records the latest <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED.outcome.interrupts[]</span></code> server-side, validates that the next <code class="docutils literal notranslate"><span class="pre">resume[]</span></code> covers all open interrupts, and passes the originating interrupts into the adapter for conversion.</p>
 </section>
 <section id="example-project">
 <h2>Example Project<a class="headerlink" href="#example-project" title="Link to this heading">¶</a></h2>
@@ -1386,7 +1410,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-08-08</div>
           </div>
           <div class="right-details">
             <div class="icons">

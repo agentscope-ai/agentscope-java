@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A（Agent-to-Agent）" href="a2a.html">
+    <meta property="article:modified_time" content="2026-08-08T16:21:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A（Agent-to-Agent）" href="a2a.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/protocol/agui.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1281,18 +1281,39 @@
 </section>
 <section id="hitl-interrupt">
 <h2>HITL Interrupt<a class="headerlink" href="#hitl-interrupt" title="Link to this heading">¶</a></h2>
-<p>当模型请求工具但需要用户审批或外部执行挂起时，AG-UI adapter 会把挂起结果转换为 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 的 interrupt outcome：</p>
+<p>当一次 run 因工具决策暂停时，AG-UI adapter 会在 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 上输出官方 interrupt outcome。AgentScope Java 内置了两类 tool-call interrupt 路径：</p>
+<ul class="simple">
+<li><p><strong>工具挂起 / 外部执行</strong>：挂起的 <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code> 会转换成 <code class="docutils literal notranslate"><span class="pre">tool_call</span></code> interrupt，恢复时桥接回 <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code>。</p></li>
+<li><p><strong>权限确认</strong>：<code class="docutils literal notranslate"><span class="pre">RequireUserConfirmEvent</span></code> 会转换成带 AgentScope metadata 的 <code class="docutils literal notranslate"><span class="pre">tool_call</span></code> interrupt，恢复时桥接为 <code class="docutils literal notranslate"><span class="pre">ConfirmResult</span></code>。</p></li>
+</ul>
+<p>这两类场景都使用官方 AG-UI <code class="docutils literal notranslate"><span class="pre">reason:</span> <span class="pre">&quot;tool_call&quot;</span></code>，因为 interrupt 绑定到具体 <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>。不要把这类工具审批写成 <code class="docutils literal notranslate"><span class="pre">reason:</span> <span class="pre">&quot;confirmation&quot;</span></code>。</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RUN_FINISHED&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;interrupt&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;interrupts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1:call-1&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tool_call&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Need approval before running this tool&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;responseSchema&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;boolean&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">&quot;editedArgs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">              </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Full replacement of the tool args. Not merged.&quot;</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">          </span><span class="p">},</span>
+<span class="w">          </span><span class="nt">&quot;required&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;approved&quot;</span><span class="p">]</span>
+<span class="w">        </span><span class="p">},</span>
 <span class="w">        </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;toolName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request_approval&quot;</span>
+<span class="w">          </span><span class="nt">&quot;agentscope.interruptKind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;permission_confirm&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;toolName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request_approval&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;toolInput&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/tmp/report.txt&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">          </span><span class="nt">&quot;toolContent&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;{\&quot;path\&quot;:\&quot;/tmp/report.txt\&quot;}&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;replyId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1&quot;</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">]</span>
@@ -1310,7 +1331,10 @@
 <span class="w">      </span><span class="nt">&quot;interruptId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1:call-1&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resolved&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;payload&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">        </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;editedArgs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/tmp/reviewed-report.txt&quot;</span>
+<span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
@@ -1318,8 +1342,8 @@
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">status</span></code> 支持官方的 <code class="docutils literal notranslate"><span class="pre">resolved</span></code> 和 <code class="docutils literal notranslate"><span class="pre">cancelled</span></code>。对于用户拒绝某个工具请求的常见审批场景，建议仍使用 <code class="docutils literal notranslate"><span class="pre">resolved</span></code>，并在 <code class="docutils literal notranslate"><span class="pre">payload</span></code> 中表达业务决策，例如 <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;approved&quot;:</span> <span class="pre">false</span> <span class="pre">}</span></code>；<code class="docutils literal notranslate"><span class="pre">cancelled</span></code> 更适合表示该 interrupt 本身被取消。</p>
-<p>AgentScope Java 会把 tool-call interrupt 的 <code class="docutils literal notranslate"><span class="pre">resume[]</span></code> 桥接为 core 需要的 <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code>，从而恢复上一次挂起的工具调用。通过 Spring <code class="docutils literal notranslate"><span class="pre">AguiRequestProcessor</span></code> 入口时，processor 会记录最近一次 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED.outcome.interrupts[]</span></code>，并按 <code class="docutils literal notranslate"><span class="pre">interruptId</span></code> 解析真实 <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>。</p>
-<p>当前内置恢复只覆盖 AG-UI adapter 生成的 tool-call interrupt。自定义 interrupt 如果不是 tool-call 语义，通常需要自定义 <code class="docutils literal notranslate"><span class="pre">AgentEventConverter</span></code> / <code class="docutils literal notranslate"><span class="pre">AguiEventEnricher</span></code> 或请求处理层来解释 <code class="docutils literal notranslate"><span class="pre">payload</span></code>。</p>
+<p>对于权限确认，只有 <code class="docutils literal notranslate"><span class="pre">payload.approved</span></code> 是布尔值 <code class="docutils literal notranslate"><span class="pre">true</span></code> 时才会批准工具；缺失、非布尔值或 <code class="docutils literal notranslate"><span class="pre">false</span></code> 都会视为拒绝。<code class="docutils literal notranslate"><span class="pre">payload.editedArgs</span></code> 如果存在，必须是 JSON object，并且是对原始工具参数的<strong>完整替换</strong>，不是局部 merge。AgentScope Java 会根据 <code class="docutils literal notranslate"><span class="pre">editedArgs</span></code> 同时重建 <code class="docutils literal notranslate"><span class="pre">ToolUseBlock.input</span></code> 和原始 JSON <code class="docutils literal notranslate"><span class="pre">ToolUseBlock.content</span></code>，因此被批准的工具会使用修改后的参数执行。</p>
+<p>前端不需要在 <code class="docutils literal notranslate"><span class="pre">resume[]</span></code> 中回传 <code class="docutils literal notranslate"><span class="pre">metadata</span></code>；只需要发送 <code class="docutils literal notranslate"><span class="pre">interruptId</span></code>、<code class="docutils literal notranslate"><span class="pre">status</span></code> 和 <code class="docutils literal notranslate"><span class="pre">payload</span></code>。通过 Spring <code class="docutils literal notranslate"><span class="pre">AguiRequestProcessor</span></code> 入口时，AgentScope Java 会在服务端记录最近一次 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED.outcome.interrupts[]</span></code>，校验下一次 <code class="docutils literal notranslate"><span class="pre">resume[]</span></code> 是否覆盖所有 open interrupts，并把原始 interrupt 传给 adapter 做恢复转换。</p>
 </section>
 <section id="id6">
 <h2>示例项目<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
@@ -1386,7 +1410,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-08-08</div>
           </div>
           <div class="right-details">
             <div class="icons">
