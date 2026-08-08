@@ -147,7 +147,7 @@ public class AguiRequestProcessor {
                                 }
 
                                 RuntimeContext effectiveRuntimeContext =
-                                        resumeCoordinator.addResumeToolCallIds(
+                                        resumeCoordinator.addResumeInterrupts(
                                                 input, runtimeContext);
 
                                 // Create adapter and run
