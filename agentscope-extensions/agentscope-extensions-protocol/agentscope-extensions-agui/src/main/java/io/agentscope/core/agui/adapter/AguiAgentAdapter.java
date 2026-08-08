@@ -85,7 +85,6 @@ public class AguiAgentAdapter {
     public static final String RUNTIME_CONTEXT_STATE_KEY = "agui.state";
     public static final String RUNTIME_CONTEXT_FORWARDED_PROPS_KEY = "agui.forwardedProps";
     public static final String RUNTIME_CONTEXT_RESUME_KEY = "agui.resume";
-    public static final String RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY = "agui.resume.toolCallIds";
     public static final String RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY = "agui.resume.interrupts";
 
     private final Agent agent;
@@ -148,9 +147,7 @@ public class AguiAgentAdapter {
                     // Convert AG-UI messages and official resume entries to AgentScope messages.
                     List<Msg> msgs =
                             messageConverter.toMsgList(
-                                    input,
-                                    resumeToolCallIds(effectiveRuntimeContext),
-                                    resumeInterrupts(effectiveRuntimeContext));
+                                    input, resumeInterrupts(effectiveRuntimeContext));
 
                     // Create stream options - use incremental mode for true streaming
                     StreamOptions options =
@@ -312,24 +309,6 @@ public class AguiAgentAdapter {
                 .put(RUNTIME_CONTEXT_FORWARDED_PROPS_KEY, input.getForwardedProps())
                 .put(RUNTIME_CONTEXT_RESUME_KEY, input.getResume())
                 .build();
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, String> resumeToolCallIds(RuntimeContext runtimeContext) {
-        if (runtimeContext == null) {
-            return Map.of();
-        }
-        Object value = runtimeContext.get(RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY);
-        if (!(value instanceof Map<?, ?> map)) {
-            return Map.of();
-        }
-        Map<String, String> toolCallIds = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            if (entry.getKey() instanceof String key && entry.getValue() instanceof String id) {
-                toolCallIds.put(key, id);
-            }
-        }
-        return Map.copyOf(toolCallIds);
     }
 
     @SuppressWarnings("unchecked")

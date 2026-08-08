@@ -764,6 +764,46 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testSuspendedToolResultWithoutStableToolCallIdFailsRun() {
+            ToolUseBlock toolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            Msg suspendedResult =
+                    suspendedToolResult(
+                            "reply-suspended",
+                            toolUse,
+                            ToolResultBlock.builder()
+                                    .id("")
+                                    .name("lookup")
+                                    .output(
+                                            TextBlock.builder()
+                                                    .text("Execute lookup externally")
+                                                    .build())
+                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .build());
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-suspended", "react"),
+                            new AgentResultEvent(suspendedResult),
+                            new AgentEndEvent("reply-suspended"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.RUN_STARTED,
+                            AguiEventType.RUN_ERROR,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+            assertErrorRun(
+                    events.subList(1, 3),
+                    "TOOL_SUSPENDED result contains a suspended tool result without a stable id",
+                    "INVALID_INPUT_ERROR");
+        }
+
+        @Test
         void testOnlySuspendedToolIsInterruptedWhenParallelToolCallsPartiallyComplete() {
             ToolUseBlock suspendedTool =
                     ToolUseBlock.builder()
@@ -848,15 +888,23 @@ class AguiAgentAdapterV2Test {
             assertEquals(1, outcome.interrupts().size());
             AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
             assertEquals("reply-confirm:tool-1", interrupt.id());
-            assertEquals("tool_confirmation", interrupt.reason());
+            assertEquals("tool_call", interrupt.reason());
             assertEquals("tool-1", interrupt.toolCallId());
-            assertNull(interrupt.responseSchema());
+            assertNotNull(interrupt.responseSchema());
+            assertEquals(List.of("approved"), interrupt.responseSchema().get("required"));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> properties =
+                    (Map<String, Object>) interrupt.responseSchema().get("properties");
+            assertTrue(properties.containsKey("approved"));
+            assertTrue(properties.containsKey("editedArgs"));
             assertNull(interrupt.expiresAt());
             assertTrue(interrupt.message().contains("echo"));
             assertEquals("echo", interrupt.metadata().get("toolName"));
             assertEquals(Map.of("message", "hello"), interrupt.metadata().get("toolInput"));
             assertEquals("reply-confirm", interrupt.metadata().get("replyId"));
             assertTrue(interrupt.metadata().get("toolContent").toString().contains("hello"));
+            assertEquals(
+                    "permission_confirm", interrupt.metadata().get("agentscope.interruptKind"));
         }
 
         @Test
@@ -912,7 +960,7 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testPermissionConfirmEventSkipsToolCallsWithoutStableId() {
+        void testPermissionConfirmEventWithoutStableToolCallIdFailsRun() {
             ToolUseBlock invalid = ToolUseBlock.builder().id("").name("echo").build();
 
             List<AguiEvent> events =
@@ -921,9 +969,16 @@ class AguiAgentAdapterV2Test {
                             new RequireUserConfirmEvent("reply-confirm", List.of(invalid)),
                             new AgentEndEvent("reply-confirm"));
 
-            AguiEvent.RunFinished finished =
-                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
-            assertNull(finished.outcome());
+            assertEquals(
+                    List.of(
+                            AguiEventType.RUN_STARTED,
+                            AguiEventType.RUN_ERROR,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+            assertErrorRun(
+                    events.subList(1, 3),
+                    "RequireUserConfirmEvent contains a tool call without a stable id",
+                    "INVALID_INPUT_ERROR");
         }
 
         @Test

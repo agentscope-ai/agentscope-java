@@ -77,12 +77,13 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
-    void addResumeToolCallIdsAddsKnownToolMappingsToRuntimeContext() {
+    void addResumeInterruptsAddsKnownInterruptsToRuntimeContext() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
-        track(coordinator, "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
+        AguiEvent.Interrupt interrupt = interrupt("interrupt-1");
+        track(coordinator, "run-1", interruptedFinished("run-1", interrupt), false);
 
         RuntimeContext context =
-                coordinator.addResumeToolCallIds(
+                coordinator.addResumeInterrupts(
                         RunAgentInput.builder()
                                 .threadId("thread-1")
                                 .runId("run-2")
@@ -97,17 +98,17 @@ class AguiResumeCoordinatorTest {
 
         assertEquals("tenant-a", context.get("tenant"));
         assertEquals(
-                Map.of("interrupt-1", "tool-call-1"),
-                context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY));
+                Map.of("interrupt-1", interrupt),
+                context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY));
     }
 
     @Test
-    void addResumeToolCallIdsAddsConfirmationInterruptToRuntimeContext() {
+    void addResumeInterruptsAddsConfirmationInterruptToRuntimeContext() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
         AguiEvent.Interrupt confirmation =
                 new AguiEvent.Interrupt(
                         "interrupt-1",
-                        "tool_confirmation",
+                        "tool_call",
                         "confirm echo",
                         "tool-call-1",
                         null,
@@ -116,7 +117,7 @@ class AguiResumeCoordinatorTest {
         track(coordinator, "run-1", interruptedFinished("run-1", confirmation), false);
 
         RuntimeContext context =
-                coordinator.addResumeToolCallIds(
+                coordinator.addResumeInterrupts(
                         RunAgentInput.builder()
                                 .threadId("thread-1")
                                 .runId("run-2")
@@ -129,15 +130,12 @@ class AguiResumeCoordinatorTest {
                                 .build(),
                         null);
 
-        assertEquals(
-                Map.of("interrupt-1", "tool-call-1"),
-                context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY));
         Object interrupts = context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY);
         assertEquals(Map.of("interrupt-1", confirmation), interrupts);
     }
 
     @Test
-    void addResumeToolCallIdsIgnoresInterruptsWithoutToolCallId() {
+    void addResumeInterruptsIgnoresInterruptsWithoutToolCallId() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
         AguiEvent.Interrupt custom =
                 new AguiEvent.Interrupt(
@@ -145,7 +143,7 @@ class AguiResumeCoordinatorTest {
         track(coordinator, "run-1", interruptedFinished("run-1", custom), false);
 
         RuntimeContext context =
-                coordinator.addResumeToolCallIds(
+                coordinator.addResumeInterrupts(
                         RunAgentInput.builder()
                                 .threadId("thread-1")
                                 .runId("run-2")
@@ -159,7 +157,6 @@ class AguiResumeCoordinatorTest {
                         RuntimeContext.builder().put("tenant", "tenant-a").build());
 
         assertEquals("tenant-a", context.get("tenant"));
-        assertNull(context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY));
         assertNull(context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY));
     }
 
