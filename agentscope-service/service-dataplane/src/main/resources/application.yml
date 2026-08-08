@@ -1,0 +1,115 @@
+server:
+  port: ${BUILDER_DATA_PORT:8082}
+
+spring:
+  application:
+    name: builder-data
+
+  # --------------------------------------------------------------------------
+  # Dataplane JDBC — schema `dp` only. Control-plane tables live in `cp` and
+  # must be accessed via ControlPlaneClient, never by SELECT.
+  # --------------------------------------------------------------------------
+  datasource:
+    url: ${BUILDER_DB_URL:jdbc:postgresql://localhost:5432/builder?currentSchema=dp}
+    driver-class-name: ${BUILDER_DB_DRIVER:org.postgresql.Driver}
+    username: ${BUILDER_DB_USER:builder}
+    password: ${BUILDER_DB_PASSWORD:builder}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # 'update' is fine for dev / single-node. Production deployments running
+      # against MySQL/PostgreSQL should pin the schema with Flyway/Liquibase and
+      # switch this to `validate`.
+      ddl-auto: ${BUILDER_JPA_DDL_AUTO:update}
+    properties:
+      hibernate:
+        default_schema: dp
+        jdbc:
+          time_zone: UTC
+
+  sql:
+    init:
+      # Schema seeding for CP tables is the control plane's job.
+      mode: never
+
+# --------------------------------------------------------------------------
+# agentscope-builder data-plane configuration
+# --------------------------------------------------------------------------
+builder:
+  # JWT signing secret — MUST match the control plane so user tokens validate.
+  jwt:
+    secret: ${BUILDER_JWT_SECRET:${CLAW_JWT_SECRET:builder-default-dev-secret-change-in-production-32chars}}
+
+  # AES-GCM master key for vault credential decryption — MUST match the
+  # control plane (it encrypts, we decrypt).
+  vault:
+    master-key: ${BUILDER_VAULT_MASTER_KEY:}
+
+  # Multi-replica coordination (JDBC tables by default; override CoordinationStore bean for Redis).
+  instance-id: ${BUILDER_INSTANCE_ID:}
+  coord:
+    turn-lease-ttl-seconds: ${BUILDER_TURN_LEASE_TTL_SECONDS:90}
+
+  # ---- Cross-plane wiring ----
+  # Shared secret authenticating plane-to-plane calls (X-Builder-Internal-Token).
+  # MUST be set identically on control, data and scheduler in production.
+  internal-token: ${BUILDER_INTERNAL_TOKEN:}
+
+  # Control plane (aistiod) base URL for session/environment resolve APIs.
+  control-plane-url: ${BUILDER_CONTROL_URL:http://localhost:8081}
+
+  # aistio data-plane contract + optional Operate self-registration.
+  # Off by default: this process hosts Managed agent runs; it is not an agent itself.
+  # Set BUILDER_DATAPLANE_REGISTER=true only if you want it listed under Operate → Agents.
+  dataplane:
+    agent-name: ${BUILDER_DATAPLANE_AGENT_NAME:agentscope-java-dataplane}
+    namespace: ${BUILDER_DATAPLANE_NAMESPACE:default}
+    version: ${BUILDER_DATAPLANE_VERSION:2.0.1}
+    # Reachable from aistiod (compose: http://data:8082; local: leave empty → localhost:port)
+    public-url: ${BUILDER_DATAPLANE_PUBLIC_URL:}
+    register-enabled: ${BUILDER_DATAPLANE_REGISTER:false}
+    heartbeat-interval-ms: ${BUILDER_DATAPLANE_HEARTBEAT_MS:15000}
+
+  # Platform-wide shared workspace root — MUST match the control plane layout.
+  workspace-root: ${BUILDER_WORKSPACE_ROOT:${user.home}/.agentscope/builder/workspace}
+
+  # ---- Tool confirmation (HITL) ----
+  tool-confirmation:
+    timeout-ms: ${BUILDER_TOOL_CONFIRMATION_TIMEOUT_MS:3600000}
+
+  # ---- E2B cloud sandbox (Managed Environment type=sandbox) ----
+  # Per-environment config.apiKey overrides these defaults.
+  e2b:
+    api-key: ${BUILDER_E2B_API_KEY:${E2B_API_KEY:}}
+    template-id: ${BUILDER_E2B_TEMPLATE_ID:base}
+    workspace-root: ${BUILDER_E2B_WORKSPACE_ROOT:/home/user}
+    sandbox-timeout-seconds: ${BUILDER_E2B_SANDBOX_TIMEOUT_SECONDS:300}
+    api-base-url: ${BUILDER_E2B_API_BASE_URL:}
+    domain: ${BUILDER_E2B_DOMAIN:}
+    persistence-mode: ${BUILDER_E2B_PERSISTENCE_MODE:TAR}
+
+  # ---- Workspace storage topology ----
+  workspace-store:
+    local:
+      max-file-size-mb: 10
+
+  # ---- DashScope default model (used when the agent snapshot pins no model) ----
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY:}
+    model-name: ${BUILDER_MODEL_NAME:${CLAW_MODEL_NAME:qwen-max}}
+    stream: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    io.agentscope: INFO
+    org.springframework.security: WARN

@@ -330,7 +330,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 
 | 字段 | 默认 | 说明 |
 |------|------|------|
-| `remoteStreaming` | `true`（未设置时） | 父代理使用 `streamEvents()` 时，把远程任务的 SSE 事件转发进父流，并带 `source` 标记 |
+| `remoteStreaming` | `true`（未设置时） | 父代理使用 `streamEvents()` 时，把远程任务的 SSE 事件转发进父流，并带 `source` 标记与 `metadata.taskId`（与 harness `TaskRecord` 的 task id 一致） |
 | `remoteAskPolicy` | `DENY` | 如何处理远程工具确认（HITL）请求——见 [远程授权](#远程授权) |
 
 ### 远程授权
@@ -360,7 +360,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 
 > 新代码请用 `streamEvents()`（返回 `Flux<AgentEvent>`）。旧 `stream()` 系列（`Flux<Event>`）在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](../building-blocks/message-and-event.md) 与 [V1 迁移指南 B.4](../change-log.md)。
 
-父 agent 通过 `agent_spawn` / `agent_send` 同步调用子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段（`/` 分隔的路径，如 `"main/researcher"`），父事件的 `source` 为 `null`。
+父 agent 通过 `agent_spawn` / `agent_send` 同步调用子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段（`/` 分隔的路径，如 `"main/researcher"`），父事件的 `source` 为 `null`。远程 Agent Protocol 子 agent 还会写入 `metadata.taskId`（`AgentEvent.METADATA_TASK_ID`），值为 harness 侧任务 id，因此同一轮里对同一远程 agent 的多次调用即使 `source` 相同也能区分。
 
 ```
 caller

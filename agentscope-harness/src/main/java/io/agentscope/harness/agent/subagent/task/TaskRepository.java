@@ -62,18 +62,6 @@ public interface TaskRepository {
             TaskRunSpec spec);
 
     /**
-     * Remove a task from the repository.
-     *
-     * @param rc the current call's runtime context; may be {@link RuntimeContext#empty()}
-     * @param sessionId the parent session scope
-     * @param taskId unique task identifier
-     */
-    void removeTask(RuntimeContext rc, String sessionId, String taskId);
-
-    /** Clear all tasks across all sessions. */
-    void clear();
-
-    /**
      * List all tracked tasks for the given session, optionally filtered by status.
      *
      * @param rc the current call's runtime context; may be {@link RuntimeContext#empty()}
@@ -132,5 +120,36 @@ public interface TaskRepository {
      */
     default boolean isDelivered(RuntimeContext rc, String sessionId, String taskId) {
         return false;
+    }
+
+    /**
+     * Registers a callback invoked when any task reaches a terminal state (COMPLETED or FAILED).
+     * Used by {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to push results
+     * to the session inbox and enqueue a wakeup signal. The {@code result} argument is {@code null}
+     * for failed tasks.
+     *
+     * <p>Default is a no-op. Implementations that support push delivery should override.
+     */
+    default void setCompletionCallback(TaskCompletionCallback callback) {
+        // no-op
+    }
+
+    /** Shuts down background executors owned by this repository. Default is a no-op. */
+    default void shutdown() {
+        // no-op
+    }
+
+    /**
+     * Callback invoked when a background task reaches a terminal state (COMPLETED or FAILED).
+     * {@code result} is {@code null} when the task failed.
+     */
+    @FunctionalInterface
+    interface TaskCompletionCallback {
+        void onCompleted(
+                RuntimeContext rc,
+                String taskId,
+                String subAgentId,
+                String sessionId,
+                String result);
     }
 }

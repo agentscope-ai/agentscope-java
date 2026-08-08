@@ -21,10 +21,13 @@ import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
+import io.agentscope.extensions.aistio.adapter.AgentScopeAdapter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.agent.transcript.FilesystemTranscriptStore;
+import io.agentscope.harness.agent.transcript.TranscriptStore;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -82,6 +85,18 @@ public class BuilderConfig {
                     + " concisely.}")
     private String agentSysPrompt;
 
+    /**
+     * Shared filesystem root for segmented session transcripts. aistiod can read the same tree via
+     * {@code AISTIO_TRANSCRIPT_FS_ROOT}. Empty disables the explicit store (HarnessAgent still
+     * defaults to {@code workspace/.agentscope/transcripts} when a filesystem is absent).
+     */
+    @Value("${claw.transcript.root:}")
+    private String transcriptRoot;
+
+    /** Tenant / namespace segment in transcript keys — keep in sync with {@code claw.aistio.namespace}. */
+    @Value("${claw.transcript.tenant:${claw.aistio.namespace:default}}")
+    private String transcriptTenant;
+
     // -----------------------------------------------------------------
     //  Model bean — only created when an api-key is set AND no other
     //  Model bean is already present in the context.
@@ -99,13 +114,46 @@ public class BuilderConfig {
                 .build();
     }
 
+    /**
+     * Shared segmented transcript store. Same root should be passed to aistiod as
+     * {@code AISTIO_TRANSCRIPT_FS_ROOT} for Operate message history without a live DP.
+     */
+    @Bean
+    @ConditionalOnExpression("'${claw.transcript.enabled:true}' == 'true'")
+    public TranscriptStore pawTranscriptStore() throws IOException {
+        Path home = resolveClawHome();
+        Path root =
+                (transcriptRoot != null && !transcriptRoot.isBlank())
+                        ? resolvePath(transcriptRoot)
+                        : home.resolve("transcripts");
+        Files.createDirectories(root);
+        String tenant =
+                transcriptTenant != null && !transcriptTenant.isBlank()
+                        ? transcriptTenant
+                        : "default";
+        log.info("Session transcript store: root={}, tenant={}", root, tenant);
+        return new FilesystemTranscriptStore(root);
+    }
+
+    @Bean
+    public String pawTranscriptTenant() {
+        return transcriptTenant != null && !transcriptTenant.isBlank()
+                ? transcriptTenant
+                : "default";
+    }
+
     // -----------------------------------------------------------------
     //  Core bootstrap — model injected as method parameter to avoid the
     //  circular dependency that would occur with field-level @Autowired.
     // -----------------------------------------------------------------
 
     @Bean
-    public ClawBootstrap builderBootstrap(Optional<Model> modelOpt, ToolEventBus toolEventBus)
+    public ClawBootstrap builderBootstrap(
+            Optional<Model> modelOpt,
+            ToolEventBus toolEventBus,
+            Optional<AgentScopeAdapter> aistioAdapter,
+            Optional<TranscriptStore> transcriptStore,
+            String pawTranscriptTenant)
             throws IOException {
         Path home = resolveClawHome();
         ensureAgentscopeConfig(home);
@@ -130,6 +178,18 @@ public class BuilderConfig {
         }
 
         builder.configureAllAgents(b -> b.middleware(new ToolNotificationMiddleware(toolEventBus)));
+
+        transcriptStore.ifPresent(
+                store ->
+                        builder.configureAllAgents(
+                                b ->
+                                        b.transcriptStore(store)
+                                                .transcriptTenant(pawTranscriptTenant)));
+
+        // A ReActAgent's middleware list is fixed at build time, so aistio has to be wired in here
+        // rather than when the bridge attaches — without it there is no session to observe.
+        aistioAdapter.ifPresent(
+                adapter -> builder.configureAllAgents(b -> b.middleware(adapter.middleware())));
 
         ClawBootstrap bootstrap = builder.build();
 
@@ -184,10 +244,15 @@ public class BuilderConfig {
 
     private Path resolveClawHome() {
         String raw = clawHome != null && !clawHome.isBlank() ? clawHome : "~/.agentscope/claw";
-        if (raw.startsWith("~")) {
-            raw = System.getProperty("user.home") + raw.substring(1);
+        return resolvePath(raw);
+    }
+
+    private static Path resolvePath(String raw) {
+        String expanded = raw;
+        if (expanded.startsWith("~")) {
+            expanded = System.getProperty("user.home") + expanded.substring(1);
         }
-        return Paths.get(raw).toAbsolutePath().normalize();
+        return Paths.get(expanded).toAbsolutePath().normalize();
     }
 
     /**

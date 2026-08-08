@@ -330,7 +330,7 @@ Declaration knobs specific to remote mode:
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| `remoteStreaming` | `true` (when unset) | When the parent uses `streamEvents()`, forward remote task SSE events into the parent stream with a `source` tag |
+| `remoteStreaming` | `true` (when unset) | When the parent uses `streamEvents()`, forward remote task SSE events into the parent stream with a `source` tag and `metadata.taskId` (same id as the harness `TaskRecord`) |
 | `remoteAskPolicy` | `DENY` | How to resolve remote tool-confirmation (HITL) requests — see [Remote authorization](#remote-authorization) |
 
 ### Remote authorization
@@ -360,7 +360,7 @@ When the parent is in Plan Mode, spawned subagents **automatically inherit the r
 
 > New code should use `streamEvents()` (returns `Flux<AgentEvent>`). The legacy `stream()` family (`Flux<Event>`) is `@Deprecated(forRemoval = true)` since 2.0.0 — see [Message & Event](../building-blocks/message-and-event.md) and [V1 Migration Guide B.4](../change-log.md).
 
-When the parent calls a synchronous subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field (a `/`-separated path like `"main/researcher"`) so you can tell parent events (`source == null`) from child events.
+When the parent calls a synchronous subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field (a `/`-separated path like `"main/researcher"`) so you can tell parent events (`source == null`) from child events. Remote Agent Protocol children additionally set `metadata.taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness task id, so two concurrent / same-turn calls to the same remote agent remain distinguishable even when they share a `source` path.
 
 ```
 caller

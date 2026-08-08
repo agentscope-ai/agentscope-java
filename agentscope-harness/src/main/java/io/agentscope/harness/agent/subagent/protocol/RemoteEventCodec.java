@@ -113,47 +113,62 @@ public final class RemoteEventCodec {
 
     /**
      * Maps a protocol DTO back to an internal {@link AgentEvent}. Unknown or incomplete types are
-     * dropped.
+     * dropped. When the DTO carries a {@code taskId}, it is copied onto {@link
+     * AgentEvent#METADATA_TASK_ID}.
      */
     public static Optional<AgentEvent> toAgentEvent(RemoteAgentEvent remote) {
         if (remote == null || remote.getType() == null) {
             return Optional.empty();
         }
-        return switch (remote.getType()) {
-            case RUN_STARTED ->
-                    Optional.of(
-                            new AgentStartEvent(
-                                    null,
-                                    null,
-                                    remote.getAgentId() != null ? remote.getAgentId() : "remote"));
-            case RUN_FINISHED -> Optional.of(new AgentEndEvent(null));
-            case RUN_ERROR -> Optional.empty();
-            case TEXT_DELTA ->
-                    Optional.of(
-                            new TextBlockDeltaEvent(
-                                    null, null, remote.getText() != null ? remote.getText() : ""));
-            case THINKING_DELTA ->
-                    Optional.of(
-                            new ThinkingBlockDeltaEvent(
-                                    null, null, remote.getText() != null ? remote.getText() : ""));
-            case TOOL_CALL_START ->
-                    Optional.of(
-                            new ToolCallStartEvent(
-                                    null, remote.getToolCallId(), remote.getToolName()));
-            case TOOL_CALL_END ->
-                    Optional.of(
-                            new ToolCallEndEvent(
-                                    null, remote.getToolCallId(), remote.getToolName()));
-            case TOOL_RESULT ->
-                    Optional.of(
-                            new ToolResultEndEvent(
-                                    null,
-                                    remote.getToolCallId(),
-                                    remote.getToolName(),
-                                    parseToolResultState(remote.getStatus())));
-            case REQUIRE_CONFIRM -> Optional.of(toRequireConfirm(remote));
-            case STATUS -> Optional.empty();
-        };
+        Optional<AgentEvent> mapped =
+                switch (remote.getType()) {
+                    case RUN_STARTED ->
+                            Optional.of(
+                                    new AgentStartEvent(
+                                            null,
+                                            null,
+                                            remote.getAgentId() != null
+                                                    ? remote.getAgentId()
+                                                    : "remote"));
+                    case RUN_FINISHED -> Optional.of(new AgentEndEvent(null));
+                    case RUN_ERROR -> Optional.empty();
+                    case TEXT_DELTA ->
+                            Optional.of(
+                                    new TextBlockDeltaEvent(
+                                            null,
+                                            null,
+                                            remote.getText() != null ? remote.getText() : ""));
+                    case THINKING_DELTA ->
+                            Optional.of(
+                                    new ThinkingBlockDeltaEvent(
+                                            null,
+                                            null,
+                                            remote.getText() != null ? remote.getText() : ""));
+                    case TOOL_CALL_START ->
+                            Optional.of(
+                                    new ToolCallStartEvent(
+                                            null, remote.getToolCallId(), remote.getToolName()));
+                    case TOOL_CALL_END ->
+                            Optional.of(
+                                    new ToolCallEndEvent(
+                                            null, remote.getToolCallId(), remote.getToolName()));
+                    case TOOL_RESULT ->
+                            Optional.of(
+                                    new ToolResultEndEvent(
+                                            null,
+                                            remote.getToolCallId(),
+                                            remote.getToolName(),
+                                            parseToolResultState(remote.getStatus())));
+                    case REQUIRE_CONFIRM -> Optional.of(toRequireConfirm(remote));
+                    case STATUS -> Optional.empty();
+                };
+        return mapped.map(
+                event -> {
+                    if (remote.getTaskId() != null && !remote.getTaskId().isBlank()) {
+                        event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, remote.getTaskId());
+                    }
+                    return event;
+                });
     }
 
     /**
