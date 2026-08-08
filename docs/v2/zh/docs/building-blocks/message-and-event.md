@@ -297,6 +297,11 @@ sequenceDiagram
 
     **RequireExternalExecutionEvent** — 智能体暂停等待外部执行。
 
+    | 方法 | 类型 | 描述 |
+    |------|------|------|
+    | `getReplyId()` | `String` | 回复消息 ID |
+    | `getToolCalls()` | `List<ToolUseBlock>` | 待外部执行的工具调用列表 |
+
     **UserConfirmResultEvent** — 用户提供确认结果。携带 `List<ConfirmResult>`。
      `replyId` 与最初暂停智能体的 `RequireUserConfirmEvent` 相同。
 
@@ -305,7 +310,13 @@ sequenceDiagram
     | `getReplyId()` | `String` | 关联的 `RequireUserConfirmEvent` 的回复 ID |
     | `getConfirmResults()` | `List<ConfirmResult>` | 本次恢复接受的确认结果 |
 
-    **ExternalExecutionResultEvent** — 外部系统提供执行结果（输入事件）。携带 `List<ToolResultBlock>`。
+    **ExternalExecutionResultEvent** — 后续 `call()` 恢复外部执行暂停时发出。
+    携带一个或多个 `ToolResultBlock`，且 `replyId` 与之前的 `RequireExternalExecutionEvent` 相同。
+
+    | 方法 | 类型 | 说明 |
+    |------|------|------|
+    | `getReplyId()` | `String` | 关联的 `RequireExternalExecutionEvent` 的回复 ID |
+    | `getToolResults()` | `List<ToolResultBlock>` | 本次恢复接受的外部执行结果 |
 
     **AllToolsDeniedEvent** — 用户通过 HITL 确认拒绝了最近一轮推理产出的全部工具调用。该事件通过 `onActing` middleware 链发出，middleware 可据此发出 `RequestStopEvent` 停止 agent。若无 middleware 处理，agent 默认继续下一轮推理（向后兼容）。
 
