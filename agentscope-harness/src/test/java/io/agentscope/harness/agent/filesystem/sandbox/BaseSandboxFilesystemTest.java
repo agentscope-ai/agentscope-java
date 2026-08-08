@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -30,6 +31,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -130,6 +132,132 @@ class BaseSandboxFilesystemTest {
             assertTrue(dir.isDirectory());
             assertFalse(dir.modifiedAt().isEmpty(), "dir modifiedAt should be populated");
         }
+
+        @Test
+        void edit_downloadFails_returnsFileNotFound() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withDownloadResult(List.of());
+
+            EditResult result = fs.edit(RT, "/workspace/missing.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("not found"));
+            assertTrue(fs.downloadedPaths.contains("/workspace/missing.txt"));
+        }
+
+        @Test
+        void edit_downloadReturnsError_returnsFileNotFound() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withDownloadResult(
+                    List.of(FileDownloadResponse.fail("/workspace/f.txt", "permission denied")));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("not found"));
+        }
+
+        @Test
+        void edit_emptyContent_returnsError() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withDownloadResult(List.of(FileDownloadResponse.success("/workspace/f.txt", null)));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("empty"));
+        }
+
+        @Test
+        void edit_stringNotFound_returnsError() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "hello world".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "nonexistent", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("String not found"));
+        }
+
+        @Test
+        void edit_uploadFails_returnsError() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "hello world".getBytes())));
+            fs.withUploadResult(List.of(FileUploadResponse.fail("/workspace/f.txt", "disk full")));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "world", "Java", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("disk full"));
+        }
+
+        @Test
+        void edit_success_downloadEditUploadFlow() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "Hello World!".getBytes())));
+            fs.withUploadResult(List.of(FileUploadResponse.success("/workspace/f.txt")));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
+
+            assertTrue(result.isSuccess());
+            assertEquals("/workspace/f.txt", result.path());
+            assertEquals(1, result.occurrences());
+            // verify upload contains edited content
+            assertEquals(1, fs.uploadedFiles.size());
+            String uploadedContent =
+                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8);
+            assertEquals("Hello Java!", uploadedContent);
+        }
+
+        @Test
+        void edit_replaceAll_replacesAllOccurrences() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "a b a b a".getBytes())));
+            fs.withUploadResult(List.of(FileUploadResponse.success("/workspace/f.txt")));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "a", "x", true);
+
+            assertTrue(result.isSuccess());
+            assertEquals(3, result.occurrences());
+            String uploadedContent =
+                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8);
+            assertEquals("x b x b x", uploadedContent);
+        }
+
+        @Test
+        void edit_withSpecialCharactersInStrings() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            String content = "line1\nline2\"quote\\backslash\nline3";
+            fs.withDownloadResult(
+                    List.of(FileDownloadResponse.success("/workspace/f.txt", content.getBytes())));
+            fs.withUploadResult(List.of(FileUploadResponse.success("/workspace/f.txt")));
+
+            EditResult result =
+                    fs.edit(
+                            RT,
+                            "/workspace/f.txt",
+                            "line2\"quote\\backslash",
+                            "replaced\"line\\here",
+                            false);
+
+            assertTrue(result.isSuccess());
+            assertEquals(1, result.occurrences());
+            String uploadedContent =
+                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8);
+            assertEquals("line1\nreplaced\"line\\here\nline3", uploadedContent);
+        }
     }
 
     // ================================================================
@@ -206,11 +334,131 @@ class BaseSandboxFilesystemTest {
             assertTrue(result.isSuccess());
             assertTrue(result.matches().isEmpty());
         }
+
+        @Test
+        void edit_simpleReplacement() throws IOException {
+            Path file = tmpDir.resolve("test.txt");
+            Files.writeString(file, "Hello World");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "edit should succeed: " + result.error());
+            assertEquals("Hello Java", Files.readString(file));
+            assertEquals(1, result.occurrences());
+        }
+
+        @Test
+        void edit_withSpecialCharacters() throws IOException {
+            Path file = tmpDir.resolve("special.txt");
+            Files.writeString(file, "line1\nline2\"quote\\backslash\nline3");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result =
+                    fs.edit(
+                            RT,
+                            file.toString(),
+                            "line2\"quote\\backslash",
+                            "replaced\"line\\here",
+                            false);
+
+            assertTrue(result.isSuccess(), "edit should succeed: " + result.error());
+            assertEquals("line1\nreplaced\"line\\here\nline3", Files.readString(file));
+            assertEquals(1, result.occurrences());
+        }
+
+        @Test
+        void edit_replaceAll() throws IOException {
+            Path file = tmpDir.resolve("replace.txt");
+            Files.writeString(file, "a b a b a");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "a", "x", true);
+
+            assertTrue(result.isSuccess(), "edit should succeed: " + result.error());
+            assertEquals("x b x b x", Files.readString(file));
+            assertEquals(3, result.occurrences());
+        }
+
+        @Test
+        void edit_fileNotFound() {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result =
+                    fs.edit(RT, tmpDir.resolve("nonexistent.txt").toString(), "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("not found"));
+        }
+
+        @Test
+        void edit_stringNotFound() throws IOException {
+            Path file = tmpDir.resolve("missing.txt");
+            Files.writeString(file, "Hello World");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "Goodbye", "Hi", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("String not found"));
+        }
+
+        @Test
+        void edit_multipleOccurrencesWithoutReplaceAll() throws IOException {
+            Path file = tmpDir.resolve("multi.txt");
+            Files.writeString(file, "foo bar foo baz foo");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "foo", "x", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("appears"));
+        }
     }
 
     // ================================================================
     // Test helpers
     // ================================================================
+
+    private static final class EditSpyFilesystem extends BaseSandboxFilesystem {
+
+        final List<String> downloadedPaths = new ArrayList<>();
+        final List<Map.Entry<String, byte[]>> uploadedFiles = new ArrayList<>();
+        private List<FileDownloadResponse> cannedDownload = List.of();
+        private List<FileUploadResponse> cannedUpload = List.of();
+
+        void withDownloadResult(List<FileDownloadResponse> responses) {
+            this.cannedDownload = responses;
+        }
+
+        void withUploadResult(List<FileUploadResponse> responses) {
+            this.cannedUpload = responses;
+        }
+
+        @Override
+        public String id() {
+            return "edit-spy";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            uploadedFiles.addAll(files);
+            return cannedUpload;
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            downloadedPaths.addAll(paths);
+            return cannedDownload;
+        }
+    }
 
     private static final class FakeSandboxFilesystem extends BaseSandboxFilesystem {
 
@@ -280,13 +528,31 @@ class BaseSandboxFilesystemTest {
         @Override
         public List<FileUploadResponse> uploadFiles(
                 RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-            return List.of();
+            List<FileUploadResponse> results = new ArrayList<>();
+            for (Map.Entry<String, byte[]> entry : files) {
+                try {
+                    Files.write(Path.of(entry.getKey()), entry.getValue());
+                    results.add(FileUploadResponse.success(entry.getKey()));
+                } catch (IOException e) {
+                    results.add(FileUploadResponse.fail(entry.getKey(), e.getMessage()));
+                }
+            }
+            return results;
         }
 
         @Override
         public List<FileDownloadResponse> downloadFiles(
                 RuntimeContext runtimeContext, List<String> paths) {
-            return List.of();
+            List<FileDownloadResponse> results = new ArrayList<>();
+            for (String path : paths) {
+                try {
+                    byte[] content = Files.readAllBytes(Path.of(path));
+                    results.add(FileDownloadResponse.success(path, content));
+                } catch (IOException e) {
+                    results.add(FileDownloadResponse.fail(path, e.getMessage()));
+                }
+            }
+            return results;
         }
     }
 }
