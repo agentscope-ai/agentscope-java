@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-07T12:03:17+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Context &amp; AgentState" href="context.html"><link rel="prev" title="Permission System" href="permission-system.html">
+    <meta property="article:modified_time" content="2026-08-08T10:58:15+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Context &amp; AgentState" href="context.html"><link rel="prev" title="Permission System" href="permission-system.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/tool.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1225,7 +1225,7 @@
 </section>
 <section id="external-execution-tools">
 <h3>External execution tools<a class="headerlink" href="#external-execution-tools" title="Link to this heading">¶</a></h3>
-<p>External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits <code class="docutils literal notranslate"><span class="pre">RequireExternalExecutionEvent</span></code> and pauses until the result is fed back via <code class="docutils literal notranslate"><span class="pre">ExternalExecutionResultEvent</span></code>.</p>
+<p>External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits <code class="docutils literal notranslate"><span class="pre">RequireExternalExecutionEvent</span></code> and pauses. When the next call feeds back matching <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code>s, the agent emits <code class="docutils literal notranslate"><span class="pre">ExternalExecutionResultEvent</span></code> with the same <code class="docutils literal notranslate"><span class="pre">replyId</span></code> before continuing.</p>
 <p>This pattern is the foundation of <a class="reference internal" href="agent.html#human-in-the-loop"><span class="std std-ref">human-in-the-loop</span></a> flows — some actions need human approval or human execution.</p>
 <p>To create an external tool, set <code class="docutils literal notranslate"><span class="pre">externalTool</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code> and skip implementing <code class="docutils literal notranslate"><span class="pre">callAsync</span></code>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionDecision</span><span class="p">;</span>
@@ -1729,7 +1729,7 @@ Human-in-the-Loop</div>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-07</div>
+              Last updated on 2026-08-08</div>
           </div>
           <div class="right-details">
             <div class="icons">

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-07T12:03:17+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="上下文与 AgentState" href="context.html"><link rel="prev" title="Permission System" href="permission-system.html">
+    <meta property="article:modified_time" content="2026-08-08T10:58:15+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="上下文与 AgentState" href="context.html"><link rel="prev" title="Permission System" href="permission-system.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/tool.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1225,7 +1225,7 @@
 </section>
 <section id="id4">
 <h3>定义外部执行 Tool<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<p>外部执行 tool 把实际执行委派给 agent 运行时之外 —— 通常是人工操作员或外部系统。Agent 调用此类 tool 时会发出 <code class="docutils literal notranslate"><span class="pre">RequireExternalExecutionEvent</span></code> 并暂停，直到结果通过 <code class="docutils literal notranslate"><span class="pre">ExternalExecutionResultEvent</span></code> 回传。</p>
+<p>外部执行 tool 把实际执行委派给 agent 运行时之外 —— 通常是人工操作员或外部系统。Agent 调用此类 tool 时会发出 <code class="docutils literal notranslate"><span class="pre">RequireExternalExecutionEvent</span></code> 并暂停。下一次调用回传匹配的 <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code> 后，agent 会发出带有相同 <code class="docutils literal notranslate"><span class="pre">replyId</span></code> 的 <code class="docutils literal notranslate"><span class="pre">ExternalExecutionResultEvent</span></code>，然后继续执行。</p>
 <p>这种模式是 <a class="reference internal" href="agent.html"><span class="std std-doc">human-in-the-loop</span></a> 工作流的基础 —— 某些动作需要人工确认或人工执行。</p>
 <p>创建外部执行 tool 只需把 <code class="docutils literal notranslate"><span class="pre">externalTool</span></code> 设为 <code class="docutils literal notranslate"><span class="pre">true</span></code>，不必实现 <code class="docutils literal notranslate"><span class="pre">callAsync</span></code>：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionDecision</span><span class="p">;</span>
@@ -1729,7 +1729,7 @@ Human-in-the-Loop</div>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-07</div>
+              Last updated on 2026-08-08</div>
           </div>
           <div class="right-details">
             <div class="icons">

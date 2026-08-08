@@ -729,7 +729,7 @@ for (var tc : externalEvent.getToolCalls()) {
 }
 ```
 
-**3. Resume the agent** — feed the results back as the next `call`'s input message. The results are injected into the agent context and reasoning continues from where it paused. See `agentscope-examples/documentation/.../hitl/InterruptionExample.java` for a complete walkthrough.
+**3. Resume the agent** — feed the results back as the next `call`'s input message. After the results are validated, they are injected into the agent context and the agent emits `ExternalExecutionResultEvent`; its `getReplyId()` matches the earlier `RequireExternalExecutionEvent#getReplyId()`. Reasoning then continues from where it paused.
 
 :::{tip}
 Use `streamEvents` when building interactive UIs — it lets you detect pauses in real time and prompt the user immediately. Use `call` for programmatic flows that handle events automatically. Complete runnable examples: `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`.
@@ -1217,6 +1217,11 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
     **RequireExternalExecutionEvent** — agent pauses for external execution.
 
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getReplyId()` | `String` | Reply message ID |
+    | `getToolCalls()` | `List<ToolUseBlock>` | Tool calls awaiting external execution |
+
     **UserConfirmResultEvent** — emitted when a later `call()` resumes a paused permission HITL request.
     It carries one or more `ConfirmResult`s, and its `replyId` matches the earlier `RequireUserConfirmEvent`.
 
@@ -1225,7 +1230,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply ID of the correlated `RequireUserConfirmEvent` |
     | `getConfirmResults()` | `List<ConfirmResult>` | Confirmation results accepted for this resume |
 
-    **ExternalExecutionResultEvent** — external system returns execution results (input event); carries `List<ToolResultBlock>`.
+    **ExternalExecutionResultEvent** — emitted when a later `call()` resumes a paused external-execution request.
+    It carries one or more `ToolResultBlock`s, and its `replyId` matches the earlier `RequireExternalExecutionEvent`.
+
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getReplyId()` | `String` | Reply ID of the correlated `RequireExternalExecutionEvent` |
+    | `getToolResults()` | `List<ToolResultBlock>` | External execution results accepted for this resume |
 
     **AllToolsDeniedEvent** — the user denied all tool calls from the most recent reasoning step via HITL confirmation. This event is emitted through the `onActing` middleware chain, allowing middlewares to emit a `RequestStopEvent` to stop the agent. If no middleware handles it, the agent continues to the next reasoning iteration (backward compatible).
 
@@ -3018,7 +3029,7 @@ public class WebSearchTool extends ToolBase {
 
 ### External execution tools
 
-External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits `RequireExternalExecutionEvent` and pauses until the result is fed back via `ExternalExecutionResultEvent`.
+External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits `RequireExternalExecutionEvent` and pauses. When the next call feeds back matching `ToolResultBlock`s, the agent emits `ExternalExecutionResultEvent` with the same `replyId` before continuing.
 
 This pattern is the foundation of [human-in-the-loop](./agent.md#human-in-the-loop) flows — some actions need human approval or human execution.
 

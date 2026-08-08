@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-04T12:46:10+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="消息与事件" href="message-and-event.html"><link rel="prev" title="快速开始" href="../quickstart.html">
+    <meta property="article:modified_time" content="2026-08-08T10:58:15+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="消息与事件" href="message-and-event.html"><link rel="prev" title="快速开始" href="../quickstart.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/agent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1462,7 +1462,7 @@
 <span class="p">}</span>
 </pre></div>
 </div>
-<p><strong>3. 恢复智能体</strong> —— 将结果作为下一次 <code class="docutils literal notranslate"><span class="pre">call</span></code> 的输入消息回传。结果会被注入智能体上下文，推理从中断处继续。完整示例见 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/.../hitl/InterruptionExample.java</span></code>。</p>
+<p><strong>3. 恢复智能体</strong> —— 将结果作为下一次 <code class="docutils literal notranslate"><span class="pre">call</span></code> 的输入消息回传。结果校验通过后会被注入智能体上下文，agent 会先发出 <code class="docutils literal notranslate"><span class="pre">ExternalExecutionResultEvent</span></code>，其 <code class="docutils literal notranslate"><span class="pre">getReplyId()</span></code> 与之前的 <code class="docutils literal notranslate"><span class="pre">RequireExternalExecutionEvent#getReplyId()</span></code> 相同，然后从中断处继续推理。</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
 <p>构建交互式 UI 时使用 <code class="docutils literal notranslate"><span class="pre">streamEvents</span></code>——它可以实时检测暂停事件并立即提示用户。以编程方式处理事件的自动化流程则使用 <code class="docutils literal notranslate"><span class="pre">call</span></code>。完整可运行示例见 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/.../hitl/PermissionHITLExample.java</span></code>。</p>
@@ -1748,7 +1748,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-04</div>
+              Last updated on 2026-08-08</div>
           </div>
           <div class="right-details">
             <div class="icons">
