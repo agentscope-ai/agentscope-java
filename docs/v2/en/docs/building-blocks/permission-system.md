@@ -314,7 +314,10 @@ if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_AS
     // Show pending operations to the user
     askingTools.forEach(t -> System.out.println("Pending: " + t.getName() + " " + t.getInput()));
 
-    // 4. Collect the user's decision, build ConfirmResult, and resume
+    // 4. Collect the user's decision, build ConfirmResult, and resume.
+    // Deny with a custom tool-result reason via ConfirmResult.withMessage(...), or the
+    // 4-arg constructor (confirmed, toolCall, rules, message). Blank/null message keeps
+    // the default "Permission denied by user".
     boolean approved = askUser();
     List<ConfirmResult> confirmResults =
             askingTools.stream()

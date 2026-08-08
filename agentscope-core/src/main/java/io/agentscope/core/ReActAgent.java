@@ -1929,13 +1929,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
          *       register any attached {@link PermissionRule}s with the engine.</li>
          *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
-         *       the tool will no longer be pending on resume.</li>
+         *       the tool will no longer be pending on resume, and emit the same
+         *       {@link ToolResultStartEvent} / {@link ToolResultTextDeltaEvent} /
+         *       {@link ToolResultEndEvent} sequence used for auto-denied tools.</li>
          * </ul>
          */
         private void applyConfirmResults(List<ConfirmResult> results) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
             // promote them to ALLOWED. Collect denied ones for separate handling.
-            List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+            List<Map.Entry<ToolUseBlock, String>> deniedEntries = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
             Map<String, ToolCallState> stateUpdates = new HashMap<>();
             for (ConfirmResult r : results) {
@@ -1954,20 +1956,47 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         }
                     }
                 } else {
-                    deniedToolCalls.add(target);
+                    deniedEntries.add(Map.entry(target, resolveUserDenyMessage(r)));
                 }
             }
             applyToolUseBlockReplacements(replacements);
-            for (ToolUseBlock denied : deniedToolCalls) {
+            if (deniedEntries.isEmpty()) {
+                return;
+            }
+            // Correlate all deny tool-result events for this resume with one reply id, matching
+            // the auto-deny path in runToolBatch.
+            String replyId = UUID.randomUUID().toString().replace("-", "");
+            for (Map.Entry<ToolUseBlock, String> entry : deniedEntries) {
+                ToolUseBlock denied = entry.getKey();
+                String denyMessage = entry.getValue();
                 ToolResultBlock deniedResult =
-                        ToolResultBlock.text("Permission denied by user")
+                        ToolResultBlock.text(denyMessage)
                                 .withIdAndName(denied.getId(), denied.getName())
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
                                 deniedResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
+                publishEvent(new ToolResultStartEvent(replyId, denied.getId(), denied.getName()));
+                publishEvent(
+                        new ToolResultTextDeltaEvent(
+                                replyId, denied.getId(), denied.getName(), denyMessage));
+                publishEvent(
+                        new ToolResultEndEvent(
+                                replyId, denied.getId(), denied.getName(), ToolResultState.DENIED));
             }
+        }
+
+        /**
+         * Resolve the tool-result text for a user deny. Prefer {@link ConfirmResult#getMessage()}
+         * when present; otherwise keep the historical default.
+         */
+        private static String resolveUserDenyMessage(ConfirmResult result) {
+            String message = result.getMessage();
+            if (message != null && !message.isBlank()) {
+                return message;
+            }
+            return "Permission denied by user";
         }
 
         /**
