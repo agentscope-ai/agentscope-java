@@ -24,6 +24,7 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -253,6 +254,56 @@ class ReActAgentNewLoopE2ETest {
                         .flatMap(m -> m.getContentBlocks(TextBlock.class).stream())
                         .anyMatch(tb -> tb.getText().equals("done-final"));
         assertTrue(hasFinalText, "final assistant text 'done-final' must be in state.context");
+    }
+
+    @Test
+    void actingMiddlewareStopPersistsCompletedToolResult() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("terminal-1", "respond", "done"))));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new AlwaysAllowTool("respond"));
+        MiddlewareBase terminalMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .concatWith(
+                                        Flux.just(new RequestStopEvent("terminal tool completed")));
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("use the terminal tool")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(terminalMiddleware)
+                        .build();
+
+        Msg result =
+                agent.call(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("respond now")
+                                                .build()))
+                        .block();
+
+        assertNotNull(result);
+        assertEquals(1, model.calls.get(), "stop must skip the next reasoning iteration");
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(
+                                block ->
+                                        block instanceof ToolResultBlock toolResult
+                                                && "terminal-1".equals(toolResult.getId())),
+                "completed tool result must be stored before honoring the stop request");
     }
 
     @Test
