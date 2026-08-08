@@ -52,6 +52,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -1156,6 +1157,50 @@ class HarnessAgentTest {
                                 .factory()
                                 .create(RuntimeContext.empty());
         assertNotNull(child.getCompactionHook(), "CompactionHook should be mirrored to GP child");
+    }
+
+    @Test
+    void generalPurpose_inheritsMemoryConfig_fromParent() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model parentModel = stubModel("ok");
+        Model memoryModel = mock(Model.class);
+        when(memoryModel.getModelName()).thenReturn("memory-model");
+        ChatResponse memoryChunk =
+                new ChatResponse(
+                        "memory-id",
+                        List.of(TextBlock.builder().text("memory-done").build()),
+                        null,
+                        Map.of(),
+                        "stop");
+        when(memoryModel.stream(anyList(), anyList(), any())).thenReturn(Flux.just(memoryChunk));
+
+        MemoryConfig memoryConfig =
+                MemoryConfig.builder()
+                        .model(memoryModel)
+                        .consolidationMinGap(Duration.ofMinutes(1))
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(parentModel)
+                        .workspace(workspace)
+                        .memory(memoryConfig)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        child.call(userText("hi, keep this in memory"), RuntimeContext.empty()).block();
+
+        verify(memoryModel).stream(any(), any(), any());
+        verify(parentModel).stream(any(), any(), any());
     }
 
     // =========================================================================
