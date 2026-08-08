@@ -431,7 +431,7 @@ for (var tc : externalEvent.getToolCalls()) {
 }
 ```
 
-**3. 恢复智能体** —— 将结果作为下一次 `call` 的输入消息回传。结果会被注入智能体上下文，推理从中断处继续。完整示例见 `agentscope-examples/documentation/.../hitl/InterruptionExample.java`。
+**3. 恢复智能体** —— 将结果作为下一次 `call` 的输入消息回传。结果校验通过后会被注入智能体上下文，agent 会先发出 `ExternalExecutionResultEvent`，其 `getReplyId()` 与之前的 `RequireExternalExecutionEvent#getReplyId()` 相同，然后从中断处继续推理。
 
 :::{tip}
 构建交互式 UI 时使用 `streamEvents`——它可以实时检测暂停事件并立即提示用户。以编程方式处理事件的自动化流程则使用 `call`。完整可运行示例见 `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`。
