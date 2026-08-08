@@ -21,18 +21,37 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** HTTP client for {@code https://api.e2b.app} sandbox lifecycle. */
 final class E2bPlatformHttp {
 
+    private static final Logger log = LoggerFactory.getLogger(E2bPlatformHttp.class);
+
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+
+    /**
+     * AgentScope-native snapshot alias: {@code agentscope-<shortId>-<epochMillis>}, where the
+     * middle segment is an 8-hex-char short UUID. The trailing 13-digit epoch millis timestamp
+     * makes ordering deterministic; anything not matching this format is treated as a legacy/foreign
+     * snapshot and never pruned.
+     */
+    private static final Pattern SNAPSHOT_TIMESTAMP_PATTERN =
+            Pattern.compile("^agentscope-[0-9a-f]{8}-(\\d{13})$");
 
     private final OkHttpClient http;
     private final ObjectMapper json = new ObjectMapper();
@@ -67,10 +86,132 @@ final class E2bPlatformHttp {
         return E2bRetry.withRetries(opt.getMaxRetries(), () -> postJson(url, body, true));
     }
 
-    JsonNode createSandboxSnapshot(String sandboxId) throws IOException {
+    JsonNode createSandboxSnapshot(String sandboxId, String name) throws IOException {
         ObjectNode body = json.createObjectNode();
+        if (name != null && !name.isBlank()) {
+            body.put("name", name);
+        }
         String url = trimSlash(opt.getApiBaseUrl()) + "/sandboxes/" + sandboxId + "/snapshots";
         return E2bRetry.withRetries(opt.getMaxRetries(), () -> postJson(url, body, true));
+    }
+
+    void deleteSnapshot(String snapshotId) throws IOException {
+        HttpUrl parsed = HttpUrl.parse(trimSlash(opt.getApiBaseUrl()) + "/templates");
+        if (parsed == null) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "Invalid E2B apiBaseUrl: " + opt.getApiBaseUrl());
+        }
+        HttpUrl url = parsed.newBuilder().addPathSegment(snapshotId).build();
+        Request req =
+                new Request.Builder()
+                        .url(url)
+                        .addHeader("X-API-Key", requireApiKey())
+                        .delete()
+                        .build();
+        E2bRetry.withRetries(
+                opt.getMaxRetries(),
+                () -> {
+                    try (Response res = http.newCall(req).execute()) {
+                        if (!res.isSuccessful() && res.code() != 404) {
+                            throw new SandboxException.SandboxRuntimeException(
+                                    SandboxErrorCode.SNAPSHOT_PERSIST_ERROR,
+                                    "E2B snapshot delete failed: HTTP " + res.code());
+                        }
+                    }
+                    return null;
+                });
+    }
+
+    /**
+     * Best-effort pruning of this session's own snapshots. Keeps at least {@code retention}
+     * snapshots (including the just-created {@code keepSnapshotId}): the keep snapshot plus the
+     * newest {@code retention - 1} from {@code olderSnapshotIds}, ordered by their embedded
+     * timestamp. Older ones are deleted ({@code 404} idempotent, individual failures logged and
+     * skipped). {@code retention <= 0} disables pruning and nothing is deleted.
+     *
+     * <p>The caller passes the snapshots it previously created for this session (from its own
+     * persisted state) rather than a {@code GET /snapshots} listing, so pruning never depends on
+     * the source sandbox id (which changes when a session is resumed from an earlier snapshot) or
+     * a team-wide listing. Snapshots whose alias does not match {@code
+     * agentscope-<shortId>-<epochMillis>} (timestamp unparseable) are conservatively kept.
+     *
+     * @return the snapshot ids to keep afterwards: {@code keepSnapshotId} plus the retained older
+     *     ones (older ids with an unparseable timestamp are always kept). Callers should replace
+     *     their persisted record with this list.
+     */
+    List<String> pruneSnapshots(
+            String keepSnapshotId, List<String> olderSnapshotIds, int retention) {
+        if (retention <= 0) {
+            return append(keepSnapshotId, olderSnapshotIds);
+        }
+        List<StaleSnapshot> stale = new ArrayList<>();
+        List<String> kept = new ArrayList<>();
+        for (String id : olderSnapshotIds) {
+            if (id == null || id.isBlank() || id.equals(keepSnapshotId)) {
+                continue;
+            }
+            long ts = snapshotTimestampMillis(id);
+            if (ts > 0) {
+                stale.add(new StaleSnapshot(id, ts));
+            } else {
+                kept.add(id);
+            }
+        }
+        stale.sort(Comparator.comparingLong(s -> s.timestamp));
+        int toKeep = Math.max(0, retention - 1);
+        int deleteCount = Math.max(0, stale.size() - toKeep);
+        for (int i = deleteCount; i < stale.size(); i++) {
+            kept.add(stale.get(i).id);
+        }
+        for (int i = 0; i < deleteCount; i++) {
+            String old = stale.get(i).id;
+            try {
+                deleteSnapshot(old);
+            } catch (Exception e) {
+                log.warn("[sandbox-e2b] failed to prune snapshot {}: {}", old, e.getMessage());
+                kept.add(old);
+            }
+        }
+        kept.add(keepSnapshotId);
+        return kept;
+    }
+
+    private static List<String> append(String keepSnapshotId, List<String> olderSnapshotIds) {
+        List<String> all = new ArrayList<>(olderSnapshotIds);
+        all.add(keepSnapshotId);
+        return all;
+    }
+
+    /**
+     * One-shot cleanup of a session's snapshot record: keeps the newest {@code retention} ids by
+     * their embedded timestamp and deletes the rest, regardless of any residue left by earlier
+     * persists. {@code retention <= 0} keeps everything. Callers invoke this once the sandbox has
+     * been killed and E2B no longer locks the restored template.
+     *
+     * @param snapshotIds the session's recorded snapshot ids (most recent persist last)
+     * @param retention max snapshots to keep; {@code <= 0} keeps all
+     * @return the ids to keep afterwards
+     */
+    List<String> cleanupSnapshots(List<String> snapshotIds, int retention) {
+        List<String> ids = snapshotIds != null ? new ArrayList<>(snapshotIds) : new ArrayList<>();
+        if (retention <= 0 || ids.isEmpty()) {
+            return ids;
+        }
+        String keep = null;
+        long keepTs = -1;
+        for (String id : ids) {
+            long ts = snapshotTimestampMillis(id);
+            if (ts > keepTs) {
+                keepTs = ts;
+                keep = id;
+            }
+        }
+        if (keep == null) {
+            return ids;
+        }
+        List<String> older = new ArrayList<>(ids);
+        older.remove(keep);
+        return pruneSnapshots(keep, older, retention);
     }
 
     void killSandbox(String sandboxId) throws IOException {
@@ -107,6 +248,35 @@ final class E2bPlatformHttp {
             state.setEnvdVersion(node.get("envdVersion").asText());
         }
     }
+
+    /**
+     * Extracts the embedded epoch-millis timestamp from an AgentScope-native snapshot id, or {@code
+     * -1} when the id is not in the {@code agentscope-...-<epochMillis>} format. The E2B snapshot id
+     * is {@code <namespace>/<alias>:<tag>}; the namespace prefix and tag suffix are stripped before
+     * matching.
+     */
+    private static long snapshotTimestampMillis(String snapshotId) {
+        String alias = snapshotId;
+        int colon = alias.lastIndexOf(':');
+        if (colon >= 0) {
+            alias = alias.substring(0, colon);
+        }
+        int slash = alias.lastIndexOf('/');
+        if (slash >= 0) {
+            alias = alias.substring(slash + 1);
+        }
+        Matcher m = SNAPSHOT_TIMESTAMP_PATTERN.matcher(alias);
+        if (!m.matches()) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(m.group(1));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private record StaleSnapshot(String id, long timestamp) {}
 
     private JsonNode postJson(String url, ObjectNode body, boolean apiKey) throws IOException {
         Request.Builder rb =

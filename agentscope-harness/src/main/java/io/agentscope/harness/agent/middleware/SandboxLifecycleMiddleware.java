@@ -144,15 +144,17 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
         SandboxContext sandboxContext = ctx != null ? ctx.get(SandboxContext.class) : null;
-        try {
-            sandboxManager.persistState(result, sandboxContext, ctx);
-        } catch (Exception e) {
-            log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
-        }
+        // Release (stop/persist workspace) first so state mutations made during stop — e.g.
+        // workspaceRootReady or per-session snapshot records — are captured by the persist below.
         try {
             sandboxManager.release(result);
         } catch (Exception e) {
             log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
+        }
+        try {
+            sandboxManager.persistState(result, sandboxContext, ctx);
+        } catch (Exception e) {
+            log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
         }
         result.getLease().close();
         filesystemProxy.setSandbox(null);
