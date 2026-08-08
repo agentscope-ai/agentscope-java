@@ -26,10 +26,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -458,6 +461,61 @@ class ToolkitTest {
         assertTrue(
                 errorText.contains("Unauthorized") || errorText.contains("not available"),
                 "Error message should indicate unauthorized access: " + errorText);
+    }
+
+    @Test
+    @DisplayName("Should authorize grouped tool from call-scoped active groups")
+    void testCallScopedActiveGroupShouldAuthorizeTool() {
+        toolkit.createToolGroup("sessionGroup", "Session tools", false);
+        toolkit.registration().tool(sampleTools).group("sessionGroup").apply();
+
+        RuntimeContext runtimeContext = runtimeContextWithActiveGroups("sessionGroup");
+        ToolResultBlock result = callAddTool(runtimeContext);
+
+        assertFalse(
+                isErrorResult(result),
+                "Call-scoped activation should authorize the tool: " + getResultText(result));
+    }
+
+    @Test
+    @DisplayName("Should reject grouped tool absent from call-scoped active groups")
+    void testCallScopedInactiveGroupShouldRejectTool() {
+        toolkit.createToolGroup("sharedGroup", "Shared tools", true);
+        toolkit.registration().tool(sampleTools).group("sharedGroup").apply();
+
+        RuntimeContext runtimeContext = runtimeContextWithActiveGroups();
+        ToolResultBlock result = callAddTool(runtimeContext);
+
+        assertTrue(
+                isErrorResult(result),
+                "Call-scoped state should override shared activation: " + getResultText(result));
+        assertTrue(getResultText(result).contains("Unauthorized"));
+    }
+
+    private RuntimeContext runtimeContextWithActiveGroups(String... groupNames) {
+        ToolContextState.Builder toolContext = ToolContextState.builder();
+        for (String groupName : groupNames) {
+            toolContext.addActivatedGroup(groupName);
+        }
+        AgentState state = AgentState.builder().toolContext(toolContext.build()).build();
+        return RuntimeContext.builder().agentState(state).build();
+    }
+
+    private ToolResultBlock callAddTool(RuntimeContext runtimeContext) {
+        Map<String, Object> input = Map.of("a", 1, "b", 2);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-session-add")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+        return toolkit.callTool(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolCall)
+                                .runtimeContext(runtimeContext)
+                                .build())
+                .block();
     }
 
     @Test
