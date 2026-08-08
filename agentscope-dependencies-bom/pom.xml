@@ -111,7 +111,10 @@
         <tree-sitter.version>0.24.4</tree-sitter.version>
         <tree-sitter-bash.version>0.23.3</tree-sitter-bash.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
-        <kotlin.version>1.9.24</kotlin.version>
+        <!-- Kotlin compiler used by agentscope-extensions-kotlin; must not lag behind the Kotlin
+             version our Kotlin-based dependencies were built with (coroutines 1.10.x -> metadata
+             2.1, okhttp/okio -> 2.2), otherwise the compiler rejects their metadata. -->
+        <kotlin.version>2.2.0</kotlin.version>
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
         <jgit.version>7.6.0.202603022253-r</jgit.version>
         <fabric8.kubernetes-client.version>6.13.4</fabric8.kubernetes-client.version>
