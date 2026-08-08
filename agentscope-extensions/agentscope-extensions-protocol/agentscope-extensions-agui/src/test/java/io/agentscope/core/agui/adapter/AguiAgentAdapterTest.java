@@ -103,15 +103,22 @@ class AguiAgentAdapterTest {
     }
 
     @Test
-    void testRunRegistersFrontendToolsForRunAndCleansUp() {
+    void testRunRegistersFrontendToolsOnPerCallToolkit() {
         Toolkit toolkit = new Toolkit();
         when(mockAgent.getToolkit()).thenReturn(toolkit);
         when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
+                            RuntimeContext rc = invocation.getArgument(2);
+                            Toolkit perCallToolkit = rc.getToolkit();
+                            assertNotNull(perCallToolkit);
+                            assertNotSame(toolkit, perCallToolkit);
                             assertInstanceOf(
-                                    SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
-                            assertTrue(toolkit.isExternalTool("frontend_lookup"));
+                                    SchemaOnlyTool.class,
+                                    perCallToolkit.getTool("frontend_lookup"));
+                            assertTrue(perCallToolkit.isExternalTool("frontend_lookup"));
+                            // The agent's shared toolkit must never be mutated.
+                            assertNull(toolkit.getTool("frontend_lookup"));
                             return Flux.empty();
                         });
 
@@ -125,11 +132,12 @@ class AguiAgentAdapterTest {
 
         adapter.run(input).collectList().block();
 
+        // Shared toolkit remains untouched after the run (no cleanup needed).
         assertNull(toolkit.getTool("frontend_lookup"));
     }
 
     @Test
-    void testRunRestoresAgentToolWhenFrontendToolHasSameName() {
+    void testPerCallToolkitOverridesAgentToolWhenFrontendToolHasSameName() {
         Toolkit toolkit = new Toolkit();
         SchemaOnlyTool existingTool = schemaOnlyTool("shared_lookup");
         toolkit.registerAgentTool(existingTool);
@@ -137,9 +145,14 @@ class AguiAgentAdapterTest {
         when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
+                            RuntimeContext rc = invocation.getArgument(2);
+                            Toolkit perCallToolkit = rc.getToolkit();
+                            // The per-call toolkit carries the frontend override...
                             assertInstanceOf(
-                                    SchemaOnlyTool.class, toolkit.getTool("shared_lookup"));
-                            assertNotSame(existingTool, toolkit.getTool("shared_lookup"));
+                                    SchemaOnlyTool.class, perCallToolkit.getTool("shared_lookup"));
+                            assertNotSame(existingTool, perCallToolkit.getTool("shared_lookup"));
+                            // ...while the shared toolkit keeps its original tool untouched.
+                            assertSame(existingTool, toolkit.getTool("shared_lookup"));
                             return Flux.empty();
                         });
 
@@ -153,6 +166,7 @@ class AguiAgentAdapterTest {
 
         adapter.run(input).collectList().block();
 
+        // Shared toolkit is never modified: original tool is intact, no cleanup needed.
         assertSame(existingTool, toolkit.getTool("shared_lookup"));
     }
 
@@ -237,8 +251,13 @@ class AguiAgentAdapterTest {
         when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
+                            RuntimeContext rc = invocation.getArgument(2);
+                            Toolkit perCallToolkit = rc.getToolkit();
                             assertInstanceOf(
-                                    SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
+                                    SchemaOnlyTool.class,
+                                    perCallToolkit.getTool("frontend_lookup"));
+                            // Shared toolkit never carries the frontend tool.
+                            assertNull(toolkit.getTool("frontend_lookup"));
                             return Flux.empty();
                         });
 
@@ -259,7 +278,7 @@ class AguiAgentAdapterTest {
     }
 
     @Test
-    void testRunWithFrontendOnlyTemporarilyReplacesToolkitAndRestoresAgentTools() {
+    void testFrontendOnlyModeStripsAgentToolsOnPerCallToolkitOnly() {
         Toolkit toolkit = new Toolkit();
         SchemaOnlyTool existingTool = schemaOnlyTool("agent_lookup");
         SchemaOnlyTool existingSharedTool = schemaOnlyTool("shared_lookup");
@@ -269,12 +288,20 @@ class AguiAgentAdapterTest {
         when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
-                            assertNull(toolkit.getTool("agent_lookup"));
+                            RuntimeContext rc = invocation.getArgument(2);
+                            Toolkit perCallToolkit = rc.getToolkit();
+                            // FRONTEND_ONLY: agent tools are removed on the per-call copy only.
+                            assertNull(perCallToolkit.getTool("agent_lookup"));
                             assertInstanceOf(
-                                    SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
+                                    SchemaOnlyTool.class,
+                                    perCallToolkit.getTool("frontend_lookup"));
                             assertInstanceOf(
-                                    SchemaOnlyTool.class, toolkit.getTool("shared_lookup"));
-                            assertNotSame(existingSharedTool, toolkit.getTool("shared_lookup"));
+                                    SchemaOnlyTool.class, perCallToolkit.getTool("shared_lookup"));
+                            assertNotSame(
+                                    existingSharedTool, perCallToolkit.getTool("shared_lookup"));
+                            // The shared toolkit is fully intact during the run.
+                            assertSame(existingTool, toolkit.getTool("agent_lookup"));
+                            assertSame(existingSharedTool, toolkit.getTool("shared_lookup"));
                             return Flux.empty();
                         });
 
@@ -297,20 +324,29 @@ class AguiAgentAdapterTest {
 
         frontendOnlyAdapter.run(input).collectList().block();
 
+        // Shared toolkit is never modified; no restore/cleanup needed.
         assertSame(existingTool, toolkit.getTool("agent_lookup"));
         assertSame(existingSharedTool, toolkit.getTool("shared_lookup"));
         assertNull(toolkit.getTool("frontend_lookup"));
     }
 
     @Test
-    void testRunWithFrontendOnlySkipsToolNameThatNoLongerResolves() {
+    void testFrontendOnlyModeSkipsGhostToolNameOnPerCallToolkit() {
+        // A toolkit whose getToolNames() reports a name that doesn't resolve to a real tool.
+        // FRONTEND_ONLY iterates getToolNames() to strip agent tools; the ghost entry must be
+        // tolerated on the per-call copy without error.
         Toolkit toolkit = new GhostToolNameToolkit();
         when(mockAgent.getToolkit()).thenReturn(toolkit);
         when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
+                            RuntimeContext rc = invocation.getArgument(2);
+                            Toolkit perCallToolkit = rc.getToolkit();
                             assertInstanceOf(
-                                    SchemaOnlyTool.class, toolkit.getTool("frontend_lookup"));
+                                    SchemaOnlyTool.class,
+                                    perCallToolkit.getTool("frontend_lookup"));
+                            // Shared toolkit never carries the frontend tool.
+                            assertNull(toolkit.getTool("frontend_lookup"));
                             return Flux.empty();
                         });
 
@@ -334,7 +370,9 @@ class AguiAgentAdapterTest {
     }
 
     @Test
-    void testRunKeepsToolThatReplacesInjectedFrontendToolBeforeCleanup() {
+    void testRunDoesNotRevertAgentToolRegisteredDuringStream() {
+        // The adapter operates on a per-call copy, so any tool the agent itself registers on its
+        // shared toolkit during execution must persist after the run (no revert / cleanup).
         Toolkit toolkit = new Toolkit();
         SchemaOnlyTool existingTool = schemaOnlyTool("shared_lookup");
         SchemaOnlyTool replacementTool = schemaOnlyTool("shared_lookup");

@@ -36,7 +36,6 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.InvocationTargetException;
@@ -156,19 +155,15 @@ public class AguiAgentAdapter {
                                     .incremental(true)
                                     .build();
 
-                    ToolInjection toolInjection = ToolInjection.empty();
                     AgentStream agentStream;
                     try {
-                        toolInjection = injectFrontendTools(input);
                         agentStream =
                                 streamWithRuntimeContext(
                                         msgs, options, effectiveRuntimeContext, input);
                     } catch (Throwable error) {
-                        toolInjection.close();
                         return errorEvents(threadId, runId, input, error, true);
                     }
 
-                    ToolInjection activeToolInjection = toolInjection;
                     AtomicBoolean eventSeen = new AtomicBoolean(false);
 
                     return Flux.concat(
@@ -179,7 +174,6 @@ public class AguiAgentAdapter {
                                                         eventSeen.set(true);
                                                     }),
                                     Flux.defer(() -> agentStream.finish().get()))
-                            .doFinally(signalType -> activeToolInjection.close())
                             .onErrorResume(
                                     error ->
                                             errorEvents(
@@ -289,7 +283,10 @@ public class AguiAgentAdapter {
      * Build the runtime context used for the agent invocation.
      *
      * <p>The caller-provided context is copied first, then AG-UI protocol metadata is applied so
-     * that required request values and session isolation are always preserved.
+     * that required request values and session isolation are always preserved. A per-call toolkit
+     * is built from a {@linkplain Toolkit#copy() deep copy} of the agent's shared toolkit and
+     * carried via {@link RuntimeContext#getToolkit()} so the shared field is never mutated and
+     * concurrent runs on the same agent are isolated.
      *
      * @param input The AG-UI run input
      * @param runtimeContext Optional caller-provided runtime context
@@ -297,8 +294,10 @@ public class AguiAgentAdapter {
      */
     protected RuntimeContext buildRuntimeContext(
             RunAgentInput input, RuntimeContext runtimeContext) {
+        Toolkit perCallToolkit = buildPerCallToolkit(input);
         return RuntimeContext.builder(runtimeContext)
                 .sessionId(input.getThreadId())
+                .toolkit(perCallToolkit)
                 .put(RunAgentInput.class, input)
                 .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
                 .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
@@ -311,7 +310,6 @@ public class AguiAgentAdapter {
                 .build();
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, String> resumeToolCallIds(RuntimeContext runtimeContext) {
         if (runtimeContext == null) {
             return Map.of();
@@ -329,9 +327,19 @@ public class AguiAgentAdapter {
         return Map.copyOf(toolCallIds);
     }
 
-    private ToolInjection injectFrontendTools(RunAgentInput input) {
+    /**
+     * Builds a per-call toolkit based on the frontend tools carried by {@code input}.
+     *
+     * <p>Operates on a {@linkplain Toolkit#copy() deep copy} of the agent's shared toolkit, so the
+     * shared field is never mutated and concurrent runs on the same agent are isolated. The
+     * resulting toolkit is carried via {@link RuntimeContext#getToolkit()}.
+     *
+     * @return a per-call toolkit, or {@code null} when no override is needed (the execution engine
+     *     then falls back to the agent's shared toolkit)
+     */
+    private Toolkit buildPerCallToolkit(RunAgentInput input) {
         if (!input.hasTools()) {
-            return ToolInjection.empty();
+            return null;
         }
 
         ToolMergeMode mergeMode =
@@ -339,38 +347,28 @@ public class AguiAgentAdapter {
                         ? config.getToolMergeMode()
                         : ToolMergeMode.MERGE_FRONTEND_PRIORITY;
         if (mergeMode == ToolMergeMode.AGENT_ONLY) {
-            return ToolInjection.empty();
+            return null;
         }
 
-        Toolkit toolkit = agent.getToolkit();
-        if (toolkit == null) {
-            return ToolInjection.empty();
+        Toolkit source = agent.getToolkit();
+        if (source == null) {
+            return null;
         }
 
-        Map<String, AgentTool> previousTools = new LinkedHashMap<>();
+        // Deep copy: mutate only the copy, never the shared toolkit.
+        Toolkit perCallToolkit = source.copy();
+
         if (mergeMode == ToolMergeMode.FRONTEND_ONLY) {
-            for (String toolName : toolkit.getToolNames()) {
-                AgentTool previousTool = toolkit.getTool(toolName);
-                if (previousTool != null) {
-                    previousTools.put(toolName, previousTool);
-                    toolkit.removeTool(toolName);
-                }
+            for (String toolName : perCallToolkit.getToolNames()) {
+                perCallToolkit.removeTool(toolName);
             }
         }
 
-        List<SchemaOnlyTool> registeredTools = new ArrayList<>();
         for (ToolSchema schema : toolConverter.toToolSchemaList(input.getTools())) {
-            AgentTool previousTool = toolkit.getTool(schema.getName());
-            if (previousTool != null) {
-                previousTools.putIfAbsent(schema.getName(), previousTool);
-            }
-
-            SchemaOnlyTool frontendTool = new SchemaOnlyTool(schema);
-            toolkit.registerAgentTool(frontendTool);
-            registeredTools.add(frontendTool);
+            perCallToolkit.registerAgentTool(new SchemaOnlyTool(schema));
         }
 
-        return new ToolInjection(toolkit, registeredTools, previousTools);
+        return perCallToolkit;
     }
 
     private Flux<AguiEvent> errorEvents(
