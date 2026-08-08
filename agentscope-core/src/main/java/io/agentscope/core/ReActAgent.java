@@ -795,6 +795,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         unbindRuntimeContextFromHooks();
     }
 
+    @Override
+    protected void afterCallScopeExecution(Object callScope) {
+        if (stateStore == null) {
+            return;
+        }
+        CallExecution scope = (CallExecution) callScope;
+        stateCache.computeIfPresent(
+                scope.slotKey,
+                (slot, state) -> {
+                    if (state != scope.state) {
+                        return state;
+                    }
+                    slotVersions.remove(slot);
+                    permissionEngineCache.remove(slot, scope.permissionEngine);
+                    return null;
+                });
+    }
+
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
         if (run == null) {
             if (toolExecutionContext != null) {
@@ -4257,6 +4275,40 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
     }
 
+    /**
+     * Evicts the in-memory state and permission engine for one session.
+     *
+     * <p>This does not delete persisted state. A later access reloads the session from the
+     * configured {@link AgentStateStore}, or creates fresh in-memory state when no store is
+     * configured. Call this only after any in-flight call for the session has terminated.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when blank)
+     */
+    public void evictSession(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        stateCache.remove(slot);
+        slotVersions.remove(slot);
+        permissionEngineCache.remove(slot);
+    }
+
+    /**
+     * Evicts all in-memory state and permission engines belonging to one user.
+     *
+     * <p>This does not delete persisted state. Call this only after any in-flight calls for the
+     * user have terminated.
+     *
+     * @param userId user identity ({@code null} or blank selects anonymous sessions)
+     */
+    public void evictUser(String userId) {
+        String normalizedUser = userId == null || userId.isBlank() ? "__anon__" : userId;
+        String prefix = normalizedUser + "/";
+        stateCache.keySet().removeIf(slot -> slot.startsWith(prefix));
+        slotVersions.keySet().removeIf(slot -> slot.startsWith(prefix));
+        permissionEngineCache.keySet().removeIf(slot -> slot.startsWith(prefix));
+    }
+
     /** Returns how many optimistic-concurrency conflicts have been observed on this agent. */
     public long getStateConflictCount() {
         return stateConflictCount.get();
@@ -4353,6 +4405,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // Release the ShutdownStateSaver registered in the constructor so that ephemeral /
         // per-call agent instances are not retained by GracefulShutdownManager.stateSavers.
         shutdownManager.unbindStateSaver(this);
+        stateCache.clear();
+        slotVersions.clear();
+        permissionEngineCache.clear();
     }
 
     // ==================== Builder ====================
