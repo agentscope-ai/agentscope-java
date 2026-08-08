@@ -67,6 +67,7 @@ class ReActAgentNewLoopE2ETest {
         private final List<Supplier<Flux<ChatResponse>>> scripts;
         private final AtomicInteger idx = new AtomicInteger(0);
         final AtomicInteger calls = new AtomicInteger(0);
+        final List<List<Msg>> inputs = new ArrayList<>();
 
         ScriptedModel(List<Supplier<Flux<ChatResponse>>> scripts) {
             this.scripts = scripts;
@@ -81,6 +82,7 @@ class ReActAgentNewLoopE2ETest {
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             calls.incrementAndGet();
+            inputs.add(List.copyOf(messages));
             int i = idx.getAndIncrement();
             if (i >= scripts.size()) {
                 return Flux.just(textResponse(""));
@@ -291,5 +293,47 @@ class ReActAgentNewLoopE2ETest {
                         .findFirst()
                         .orElseThrow();
         assertEquals(ToolResultState.ERROR, end.getState());
+    }
+
+    @Test
+    void normalizesInlineToolResultsBeforeCallingTheModelWithoutMutatingState() {
+        ScriptedModel model = new ScriptedModel(List.of(() -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("you are helpful").model(model).build();
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("call-history").name("search").input(Map.of()).build();
+        ToolResultBlock toolResult =
+                ToolResultBlock.of(
+                        "call-history", "search", TextBlock.builder().text("found").build());
+        Msg historicalAssistant =
+                Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolUse, toolResult)).build();
+        agent.getAgentState().contextMutable().add(historicalAssistant);
+
+        agent.streamEvents(
+                        List.of(Msg.builder().role(MsgRole.USER).textContent("continue").build()))
+                .collectList()
+                .block();
+
+        List<Msg> modelInput = model.inputs.get(0);
+        int toolUseIndex = -1;
+        for (int index = 0; index < modelInput.size(); index++) {
+            boolean containsHistoricalToolUse =
+                    modelInput.get(index).getContentBlocks(ToolUseBlock.class).stream()
+                            .anyMatch(block -> "call-history".equals(block.getId()));
+            if (containsHistoricalToolUse) {
+                toolUseIndex = index;
+                break;
+            }
+        }
+        assertTrue(toolUseIndex >= 0, "model input should include the historical tool use");
+        assertTrue(modelInput.get(toolUseIndex).getContentBlocks(ToolResultBlock.class).isEmpty());
+        assertEquals(MsgRole.TOOL, modelInput.get(toolUseIndex + 1).getRole());
+        assertEquals(
+                "call-history",
+                modelInput
+                        .get(toolUseIndex + 1)
+                        .getFirstContentBlock(ToolResultBlock.class)
+                        .getId());
+        assertEquals(1, historicalAssistant.getContentBlocks(ToolResultBlock.class).size());
     }
 }
