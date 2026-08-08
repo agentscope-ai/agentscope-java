@@ -2377,19 +2377,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .onErrorResume(
                             InterruptedException.class,
                             error -> {
-                                Msg msg = context.buildFinalMessage();
-                                if (msg != null) {
-                                    boolean discard =
-                                            state.interruptControl().getSource()
-                                                            == InterruptSource.SYSTEM
-                                                    && shutdownManager
-                                                                    .getConfig()
-                                                                    .partialReasoningPolicy()
-                                                            == PartialReasoningPolicy.DISCARD;
-                                    if (!discard) {
-                                        state.contextMutable().add(msg);
-                                    }
-                                }
+                                persistInterruptedReasoningMessage(context.buildFinalMessage());
                                 return Mono.error(error);
                             })
                     .flatMap(
@@ -2415,15 +2403,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .flatMap(
                             event -> {
                                 Msg eventMsg = event.getReasoningMessage();
-                                if (eventMsg != null) {
-                                    state.contextMutable().add(eventMsg);
-                                }
 
                                 // HITL stop
                                 if (event.isStopRequested()) {
                                     if (eventMsg == null) {
                                         return Mono.empty();
                                     }
+                                    state.contextMutable().add(eventMsg);
                                     return Mono.just(
                                             eventMsg.withGenerateReason(
                                                     GenerateReason.REASONING_STOP_REQUESTED));
@@ -2431,6 +2417,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // gotoReasoning requested (e.g., by a PostReasoning hook)
                                 if (event.isGotoReasoningRequested()) {
+                                    if (eventMsg != null) {
+                                        state.contextMutable().add(eventMsg);
+                                    }
                                     List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
                                     if (gotoMsgs != null) {
                                         state.contextMutable().addAll(gotoMsgs);
@@ -2440,11 +2429,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // Check finish conditions
                                 if (isFinished(eventMsg)) {
+                                    if (eventMsg != null) {
+                                        state.contextMutable().add(eventMsg);
+                                    }
                                     return Mono.justOrEmpty(eventMsg);
                                 }
 
                                 // Continue to acting
-                                return checkInterrupted().then(acting(iter));
+                                return checkInterrupted()
+                                        .onErrorResume(
+                                                InterruptedException.class,
+                                                error -> {
+                                                    persistInterruptedReasoningMessage(eventMsg);
+                                                    return Mono.error(error);
+                                                })
+                                        .then(
+                                                Mono.defer(
+                                                        () -> {
+                                                            state.contextMutable().add(eventMsg);
+                                                            return acting(iter);
+                                                        }));
                             })
                     .switchIfEmpty(
                             Mono.defer(
@@ -2452,6 +2456,43 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         // No message was produced
                                         return Mono.justOrEmpty((Msg) null);
                                     }));
+        }
+
+        /**
+         * Persist partial reasoning after an interrupt without leaving user-aborted tool calls in
+         * the conversation. Acting has not started at either call site, so retaining those calls
+         * would create orphaned tool uses with no possible result. System interrupts keep their
+         * existing resume policy.
+         */
+        private void persistInterruptedReasoningMessage(Msg msg) {
+            if (msg == null) {
+                return;
+            }
+
+            InterruptSource source = state.interruptControl().getSource();
+            boolean discard =
+                    source == InterruptSource.SYSTEM
+                            && shutdownManager.getConfig().partialReasoningPolicy()
+                                    == PartialReasoningPolicy.DISCARD;
+            if (discard) {
+                return;
+            }
+
+            Msg interruptedMsg = source == InterruptSource.USER ? withoutToolUseBlocks(msg) : msg;
+            if (interruptedMsg != null) {
+                state.contextMutable().add(interruptedMsg);
+            }
+        }
+
+        private static Msg withoutToolUseBlocks(Msg msg) {
+            if (!msg.hasContentBlocks(ToolUseBlock.class)) {
+                return msg;
+            }
+            List<ContentBlock> retained =
+                    msg.getContent().stream()
+                            .filter(block -> !(block instanceof ToolUseBlock))
+                            .toList();
+            return retained.isEmpty() ? null : msg.withContent(retained);
         }
 
         /**

@@ -17,19 +17,28 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -38,6 +47,10 @@ import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.shutdown.AgentShuttingDownException;
+import io.agentscope.core.shutdown.GracefulShutdownConfig;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.shutdown.PartialReasoningPolicy;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
@@ -47,10 +60,16 @@ import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -58,6 +77,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /** Per-(userId, sessionId) state access / persistence API on {@link ReActAgent}. */
@@ -389,6 +409,265 @@ class ReActAgentPerSessionStateTest {
         assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
     }
 
+    @Test
+    @DisplayName("user interrupt drops a partial streaming tool call from persisted reasoning")
+    void userInterruptDropsPartialStreamingToolCall() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GatedReasoningModel model =
+                new GatedReasoningModel(
+                        List.of(
+                                TextBlock.builder().text("partial response").build(),
+                                ToolUseBlock.builder()
+                                        .id("call-streaming")
+                                        .name("echo")
+                                        .content("{\"value\":")
+                                        .build()));
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("streaming").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        CompletableFuture<Msg> future =
+                first.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(
+                model.afterInitialChunks.await(5, TimeUnit.SECONDS),
+                "partial tool call should be consumed before interrupt");
+
+        first.interrupt(ctx);
+        model.release.tryEmitEmpty();
+
+        Msg reply = future.get(5, TimeUnit.SECONDS);
+        assertEquals(GenerateReason.INTERRUPTED, reply.getGenerateReason());
+
+        StrictHistoryModel strictModel = new StrictHistoryModel();
+        ReActAgent restored =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(strictModel)
+                        .stateStore(store)
+                        .enablePendingToolRecovery(true)
+                        .build();
+        AgentState restoredState = restored.getAgentState("u1", "streaming");
+        assertFalse(hasToolUse(restoredState, "call-streaming"));
+        assertTrue(allText(restoredState).contains("partial response"));
+
+        Msg continued =
+                restored.call(List.of(userMsg("continue")), ctx).block(Duration.ofSeconds(5));
+        assertEquals("continued", continued.getTextContent());
+        assertTrue(strictModel.unresolvedIds.isEmpty());
+    }
+
+    @Test
+    @DisplayName(
+            "user interrupt before acting drops a completed tool call from persisted reasoning")
+    void userInterruptBeforeActingDropsCompletedToolCall() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GateReasoningCompletionMiddleware gate = new GateReasoningCompletionMiddleware();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("pre-acting").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new CompletedToolCallModel())
+                        .stateStore(store)
+                        .middleware(gate)
+                        .build();
+
+        CompletableFuture<Msg> future =
+                first.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(
+                gate.reasoningCompleted.await(5, TimeUnit.SECONDS),
+                "model reasoning should complete before interrupt");
+
+        first.interrupt(ctx);
+        gate.release.tryEmitEmpty();
+
+        Msg reply = future.get(5, TimeUnit.SECONDS);
+        assertEquals(GenerateReason.INTERRUPTED, reply.getGenerateReason());
+
+        AgentState restoredState = agent(store).getAgentState("u1", "pre-acting");
+        assertFalse(hasToolUse(restoredState, "call-complete"));
+        assertTrue(allText(restoredState).contains("completed response"));
+    }
+
+    @Test
+    @DisplayName("user interrupt preserves partial reasoning when no tool call was generated")
+    void userInterruptPreservesPartialTextWithoutToolCall() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GatedReasoningModel model =
+                new GatedReasoningModel(
+                        List.of(TextBlock.builder().text("text before interrupt").build()));
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("text-only").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        CompletableFuture<Msg> future =
+                first.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(
+                model.afterInitialChunks.await(5, TimeUnit.SECONDS),
+                "partial text should be consumed before interrupt");
+
+        first.interrupt(ctx);
+        model.release.tryEmitEmpty();
+
+        assertEquals(
+                GenerateReason.INTERRUPTED, future.get(5, TimeUnit.SECONDS).getGenerateReason());
+        assertTrue(
+                allText(first.getAgentState("u1", "text-only")).contains("text before interrupt"));
+    }
+
+    @Test
+    @DisplayName("user interrupt does not persist a reasoning message containing only a tool call")
+    void userInterruptDropsToolOnlyReasoningMessage() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GatedReasoningModel model =
+                new GatedReasoningModel(
+                        List.of(
+                                ToolUseBlock.builder()
+                                        .id("call-only")
+                                        .name("echo")
+                                        .input(Map.of("value", "pending"))
+                                        .build()));
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("tool-only").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        CompletableFuture<Msg> future =
+                first.call(List.of(userMsg("hello")), ctx)
+                        .subscribeOn(Schedulers.parallel())
+                        .toFuture();
+        assertTrue(
+                model.afterInitialChunks.await(5, TimeUnit.SECONDS),
+                "tool call should be consumed before interrupt");
+
+        first.interrupt(ctx);
+        model.release.tryEmitEmpty();
+
+        assertEquals(
+                GenerateReason.INTERRUPTED, future.get(5, TimeUnit.SECONDS).getGenerateReason());
+        assertFalse(hasToolUse(first.getAgentState("u1", "tool-only"), "call-only"));
+    }
+
+    @Test
+    @DisplayName("system interrupt saves partial reasoning under the SAVE policy")
+    void systemInterruptSavesPartialReasoning() throws Exception {
+        AgentState state =
+                runSystemInterruptDuringReasoning(PartialReasoningPolicy.SAVE, "system-save");
+
+        assertTrue(hasToolUse(state, "call-complete"));
+        assertTrue(allText(state).contains("completed response"));
+    }
+
+    @Test
+    @DisplayName("system interrupt discards partial reasoning under the DISCARD policy")
+    void systemInterruptDiscardsPartialReasoning() throws Exception {
+        AgentState state =
+                runSystemInterruptDuringReasoning(PartialReasoningPolicy.DISCARD, "system-discard");
+
+        assertFalse(hasToolUse(state, "call-complete"));
+        assertFalse(allText(state).contains("completed response"));
+    }
+
+    @Test
+    @DisplayName("gotoReasoning persists only non-null reasoning messages")
+    @SuppressWarnings("removal")
+    void gotoReasoningPersistsOnlyNonNullReasoningMessages() {
+        AtomicInteger reasoningRound = new AtomicInteger();
+        Hook gotoHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostReasoningEvent reasoningEvent) {
+                            int round = reasoningRound.getAndIncrement();
+                            if (round == 0) {
+                                reasoningEvent.gotoReasoning();
+                            } else if (round == 1) {
+                                reasoningEvent.setReasoningMessage(null);
+                                reasoningEvent.gotoReasoning();
+                            }
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new SequentialTextModel("first response", "discarded", "final"))
+                        .hook(gotoHook)
+                        .build();
+
+        Msg result = agent.call(userMsg("hello")).block(Duration.ofSeconds(5));
+
+        assertEquals("final", result.getTextContent());
+        List<String> texts = allText(agent.getAgentState());
+        assertTrue(texts.contains("first response"));
+        assertFalse(texts.contains("discarded"));
+        assertTrue(texts.contains("final"));
+    }
+
+    private AgentState runSystemInterruptDuringReasoning(
+            PartialReasoningPolicy policy, String sessionId) throws Exception {
+        GracefulShutdownManager manager = GracefulShutdownManager.getInstance();
+        manager.resetForTesting();
+        manager.setConfig(new GracefulShutdownConfig(Duration.ofSeconds(30), policy));
+
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        GateReasoningCompletionMiddleware gate = new GateReasoningCompletionMiddleware();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId(sessionId).build();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new CompletedToolCallModel())
+                        .stateStore(store)
+                        .middleware(gate)
+                        .build();
+        try {
+            CompletableFuture<Msg> future =
+                    agent.call(List.of(userMsg("hello")), ctx)
+                            .subscribeOn(Schedulers.parallel())
+                            .toFuture();
+            assertTrue(
+                    gate.reasoningCompleted.await(5, TimeUnit.SECONDS),
+                    "model reasoning should complete before shutdown");
+
+            assertTrue(manager.performGracefulShutdown());
+            gate.release.tryEmitEmpty();
+
+            ExecutionException error =
+                    assertThrows(ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
+            assertInstanceOf(AgentShuttingDownException.class, error.getCause());
+            return agent.getAgentState("u1", sessionId);
+        } finally {
+            gate.release.tryEmitEmpty();
+            agent.close();
+            manager.resetForTesting();
+            manager.setConfig(GracefulShutdownConfig.DEFAULT);
+        }
+    }
+
     private static final class DelayedFirstChunkModel extends ChatModelBase {
         private final CountDownLatch subscribed;
 
@@ -420,12 +699,153 @@ class ReActAgentPerSessionStateTest {
         }
     }
 
+    private static final class GatedReasoningModel extends ChatModelBase {
+        private final List<ContentBlock> initialBlocks;
+        private final CountDownLatch afterInitialChunks = new CountDownLatch(1);
+        private final Sinks.One<Void> release = Sinks.one();
+
+        private GatedReasoningModel(List<ContentBlock> initialBlocks) {
+            this.initialBlocks = List.copyOf(initialBlocks);
+        }
+
+        @Override
+        public String getModelName() {
+            return "gated-reasoning";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.concat(
+                    Flux.fromIterable(initialBlocks).map(ReActAgentPerSessionStateTest::response),
+                    Flux.defer(
+                            () -> {
+                                afterInitialChunks.countDown();
+                                return release.asMono()
+                                        .thenReturn(
+                                                response(
+                                                        TextBlock.builder()
+                                                                .text("not consumed")
+                                                                .build()));
+                            }));
+        }
+    }
+
+    private static final class SequentialTextModel extends ChatModelBase {
+        private final List<String> responses;
+        private final AtomicInteger index = new AtomicInteger();
+
+        private SequentialTextModel(String... responses) {
+            this.responses = List.of(responses);
+        }
+
+        @Override
+        public String getModelName() {
+            return "sequential-text";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(
+                    response(
+                            TextBlock.builder()
+                                    .text(responses.get(index.getAndIncrement()))
+                                    .build()));
+        }
+    }
+
+    private static final class CompletedToolCallModel extends ChatModelBase {
+        @Override
+        public String getModelName() {
+            return "completed-tool-call";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder()
+                            .id("call-complete")
+                            .name("echo")
+                            .input(Map.of("value", "done"))
+                            .build();
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(
+                                    List.of(
+                                            TextBlock.builder().text("completed response").build(),
+                                            toolCall))
+                            .build());
+        }
+    }
+
+    private static final class GateReasoningCompletionMiddleware implements MiddlewareBase {
+        private final CountDownLatch reasoningCompleted = new CountDownLatch(1);
+        private final Sinks.One<Void> release = Sinks.one();
+
+        @Override
+        public Flux<AgentEvent> onReasoning(
+                Agent agent,
+                RuntimeContext ctx,
+                ReasoningInput input,
+                Function<ReasoningInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .concatWith(
+                            Flux.defer(
+                                    () -> {
+                                        reasoningCompleted.countDown();
+                                        return release.asMono().thenMany(Flux.empty());
+                                    }));
+        }
+    }
+
+    private static final class StrictHistoryModel extends ChatModelBase {
+        private volatile Set<String> unresolvedIds = Set.of();
+
+        @Override
+        public String getModelName() {
+            return "strict-history";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            Set<String> toolUseIds = new HashSet<>();
+            Set<String> toolResultIds = new HashSet<>();
+            for (Msg message : messages) {
+                message.getContentBlocks(ToolUseBlock.class)
+                        .forEach(block -> toolUseIds.add(block.getId()));
+                message.getContentBlocks(ToolResultBlock.class)
+                        .forEach(block -> toolResultIds.add(block.getId()));
+            }
+            toolUseIds.removeAll(toolResultIds);
+            unresolvedIds = Set.copyOf(toolUseIds);
+            if (!unresolvedIds.isEmpty()) {
+                return Flux.error(
+                        new IllegalStateException(
+                                "Unresolved tool calls in model history: " + unresolvedIds));
+            }
+            return Flux.just(response(TextBlock.builder().text("continued").build()));
+        }
+    }
+
+    private static ChatResponse response(ContentBlock block) {
+        return ChatResponse.builder().content(List.of(block)).build();
+    }
+
     private static Msg userMsg(String text) {
         return Msg.builder()
                 .name("user")
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
                 .build();
+    }
+
+    private static boolean hasToolUse(AgentState state, String id) {
+        return state.getContext().stream()
+                .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
+                .anyMatch(block -> id.equals(block.getId()));
     }
 
     private static List<String> allText(AgentState state) {
