@@ -1861,13 +1861,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 normalized.add(result);
             }
 
-            applyConfirmResults(normalized);
-
             String replyId = resolvePendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
             if (!replyId.isEmpty()) {
                 publishEvent(new UserConfirmResultEvent(replyId, normalized));
                 clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
             }
+
+            applyConfirmResults(normalized);
         }
 
         /** Resolve the reply id for the pending HITL request stored on the last assistant message. */
@@ -2226,14 +2226,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 + ", Pending: "
                                 + pendingIds);
             }
-
-            state.contextMutable().addAll(msgs);
             String replyId =
                     resolvePendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             if (!replyId.isEmpty()) {
                 publishEvent(new ExternalExecutionResultEvent(replyId, results));
                 clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             }
+            state.contextMutable().addAll(msgs);
         }
 
         /**
