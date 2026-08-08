@@ -33,7 +33,7 @@
     <artifactId>agentscope-extensions-aistio</artifactId>
 
     <properties>
-        <grpc.version>1.75.0</grpc.version>
+        <grpc.version>1.83.1</grpc.version>
         <!-- Kept in sync with agentscope-dependencies-bom; an imported BOM's properties are not
              inherited, so protoc needs its own declaration to match the protobuf-java runtime. -->
         <protoc.version>4.29.3</protoc.version>
