@@ -2277,7 +2277,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SandboxContext defaultSandboxContext = null;
             SandboxBackedFilesystem capturedSandboxFs = null;
             if (sandboxFilesystemSpec != null) {
-                capturedSandboxFs = new SandboxBackedFilesystem();
+                capturedSandboxFs = sandboxFilesystemSpec.createFilesystem();
                 filesystem =
                         filesystemRoutes.isEmpty()
                                 ? capturedSandboxFs
