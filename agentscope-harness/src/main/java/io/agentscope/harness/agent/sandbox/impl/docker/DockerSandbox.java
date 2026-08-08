@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
@@ -62,7 +63,7 @@ import org.slf4j.LoggerFactory;
  *   <li>HydrateWorkspace: {@code docker exec -i <containerId> tar -xf - -C <root>}</li>
  * </ul>
  */
-public class DockerSandbox extends AbstractBaseSandbox {
+public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTransfer {
 
     private static final Logger log = LoggerFactory.getLogger(DockerSandbox.class);
 
@@ -70,6 +71,7 @@ public class DockerSandbox extends AbstractBaseSandbox {
     private static final int CONTAINER_START_TIMEOUT_SECONDS = 60;
     private static final int CONTAINER_STOP_TIMEOUT_SECONDS = 30;
     private static final int TAR_TIMEOUT_SECONDS = 120;
+    private static final int FILE_TRANSFER_TIMEOUT_SECONDS = 120;
 
     private final DockerSandboxState dockerState;
 
@@ -188,6 +190,131 @@ public class DockerSandbox extends AbstractBaseSandbox {
             throw new SandboxException.ExecException(exitCode, stdout, stderr);
         }
         return result;
+    }
+
+    @Override
+    public boolean supportsFileTransfer(String path) {
+        return path != null && !path.isBlank() && path.indexOf('\0') < 0;
+    }
+
+    @Override
+    public void uploadFile(String path, byte[] content) throws Exception {
+        requireTransferPath(path);
+        String containerId = requireContainerId();
+        String workspaceRoot = dockerState.getWorkspaceRoot();
+        int lastSlash = path.lastIndexOf('/');
+        if (lastSlash >= 0) {
+            String parent = lastSlash == 0 ? "/" : path.substring(0, lastSlash);
+            runDockerCliBlocking(
+                    30,
+                    "docker",
+                    "exec",
+                    "-w",
+                    workspaceRoot,
+                    containerId,
+                    "mkdir",
+                    "-p",
+                    "--",
+                    parent);
+        }
+
+        Process process =
+                new ProcessBuilder(
+                                "docker",
+                                "exec",
+                                "-i",
+                                "-w",
+                                workspaceRoot,
+                                containerId,
+                                "sh",
+                                "-c",
+                                "cat > \"$1\"",
+                                "sh",
+                                path)
+                        .start();
+
+        ExecutorService ioExecutor = newFileTransferExecutor("upload", 3);
+        Future<?> writeFuture =
+                ioExecutor.submit(
+                        () -> {
+                            try (OutputStream stdin = process.getOutputStream()) {
+                                stdin.write(content);
+                            }
+                            return null;
+                        });
+        Future<String> stdoutFuture =
+                ioExecutor.submit(
+                        () -> readStream(process.getInputStream(), OUTPUT_TRUNCATE_BYTES));
+        Future<String> stderrFuture =
+                ioExecutor.submit(
+                        () -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+        ioExecutor.shutdown();
+
+        try {
+            writeFuture.get(FILE_TRANSFER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!process.waitFor(FILE_TRANSFER_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IOException("docker file upload timed out: " + path);
+            }
+
+            String stdout = stdoutFuture.get();
+            String stderr = stderrFuture.get();
+            if (process.exitValue() != 0) {
+                String detail = stderr.isBlank() ? stdout : stderr;
+                throw new IOException(
+                        "docker file upload failed (exit=" + process.exitValue() + "): " + detail);
+            }
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+            ioExecutor.shutdownNow();
+        }
+    }
+
+    @Override
+    public byte[] downloadFile(String path) throws Exception {
+        requireTransferPath(path);
+        String containerId = requireContainerId();
+        Process process =
+                new ProcessBuilder(
+                                "docker",
+                                "exec",
+                                "-w",
+                                dockerState.getWorkspaceRoot(),
+                                containerId,
+                                "cat",
+                                "--",
+                                path)
+                        .start();
+
+        ExecutorService ioExecutor = newFileTransferExecutor("download", 2);
+        Future<byte[]> stdoutFuture =
+                ioExecutor.submit(() -> process.getInputStream().readAllBytes());
+        Future<String> stderrFuture =
+                ioExecutor.submit(
+                        () -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+        ioExecutor.shutdown();
+
+        try {
+            if (!process.waitFor(FILE_TRANSFER_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IOException("docker file download timed out: " + path);
+            }
+            byte[] content = stdoutFuture.get();
+            String stderr = stderrFuture.get();
+            if (process.exitValue() != 0) {
+                throw new IOException(
+                        "docker file download failed (exit="
+                                + process.exitValue()
+                                + "): "
+                                + stderr);
+            }
+            return content;
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+            ioExecutor.shutdownNow();
+        }
     }
 
     @Override
@@ -609,6 +736,36 @@ public class DockerSandbox extends AbstractBaseSandbox {
                     SandboxErrorCode.WORKSPACE_START_ERROR,
                     "docker command failed (exit=" + exitCode + "): " + stderr);
         }
+    }
+
+    private String requireContainerId() {
+        String containerId = dockerState.getContainerId();
+        if (containerId == null || containerId.isBlank()) {
+            throw new IllegalStateException("Docker sandbox has no active container");
+        }
+        return containerId;
+    }
+
+    private void requireTransferPath(String path) {
+        if (!supportsFileTransfer(path)) {
+            throw new IllegalArgumentException("Invalid sandbox file path: " + path);
+        }
+    }
+
+    private ExecutorService newFileTransferExecutor(String operation, int threadCount) {
+        return Executors.newFixedThreadPool(
+                threadCount,
+                r -> {
+                    Thread t =
+                            new Thread(
+                                    r,
+                                    "sandbox-docker-"
+                                            + operation
+                                            + "-"
+                                            + dockerState.getSessionId());
+                    t.setDaemon(true);
+                    return t;
+                });
     }
 
     /**
