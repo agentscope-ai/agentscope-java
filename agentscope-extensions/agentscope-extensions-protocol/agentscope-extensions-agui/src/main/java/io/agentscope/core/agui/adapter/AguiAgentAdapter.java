@@ -86,6 +86,7 @@ public class AguiAgentAdapter {
     public static final String RUNTIME_CONTEXT_FORWARDED_PROPS_KEY = "agui.forwardedProps";
     public static final String RUNTIME_CONTEXT_RESUME_KEY = "agui.resume";
     public static final String RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY = "agui.resume.toolCallIds";
+    public static final String RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY = "agui.resume.interrupts";
 
     private final Agent agent;
     private final AguiAdapterConfig config;
@@ -147,7 +148,9 @@ public class AguiAgentAdapter {
                     // Convert AG-UI messages and official resume entries to AgentScope messages.
                     List<Msg> msgs =
                             messageConverter.toMsgList(
-                                    input, resumeToolCallIds(effectiveRuntimeContext));
+                                    input,
+                                    resumeToolCallIds(effectiveRuntimeContext),
+                                    resumeInterrupts(effectiveRuntimeContext));
 
                     // Create stream options - use incremental mode for true streaming
                     StreamOptions options =
@@ -329,6 +332,25 @@ public class AguiAgentAdapter {
         return Map.copyOf(toolCallIds);
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, AguiEvent.Interrupt> resumeInterrupts(RuntimeContext runtimeContext) {
+        if (runtimeContext == null) {
+            return Map.of();
+        }
+        Object value = runtimeContext.get(RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY);
+        if (!(value instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        Map<String, AguiEvent.Interrupt> interrupts = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() instanceof String key
+                    && entry.getValue() instanceof AguiEvent.Interrupt interrupt) {
+                interrupts.put(key, interrupt);
+            }
+        }
+        return Map.copyOf(interrupts);
+    }
+
     private ToolInjection injectFrontendTools(RunAgentInput input) {
         if (!input.hasTools()) {
             return ToolInjection.empty();
@@ -393,7 +415,7 @@ public class AguiAgentAdapter {
                         mapErrorCode(error),
                         System.currentTimeMillis(),
                         null));
-        events.add(new AguiEvent.RunFinished(threadId, runId));
+        // RUN_ERROR is terminal — do not also emit RUN_FINISHED.
         return Flux.fromIterable(events);
     }
 

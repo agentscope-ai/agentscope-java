@@ -23,6 +23,8 @@ import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -141,7 +143,7 @@ public class AguiRequestProcessor {
                                 if (agentResolver.hasMemory(threadId)) {
                                     logger.debug(
                                             "Using server-side memory for thread {}, extracting"
-                                                    + " latest user message",
+                                                    + " latest turn messages",
                                             threadId);
                                     effectiveInput = extractLatestUserMessage(input);
                                 }
@@ -183,6 +185,7 @@ public class AguiRequestProcessor {
     private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
         String errorMessage =
                 error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
+        // RUN_ERROR is terminal — do not also emit RUN_FINISHED.
         return Flux.just(
                 new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input),
                 new AguiEvent.RunError(
@@ -191,8 +194,7 @@ public class AguiRequestProcessor {
                         errorMessage,
                         mapErrorCode(error),
                         System.currentTimeMillis(),
-                        null),
-                new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+                        null));
     }
 
     private static String mapErrorCode(Throwable error) {
@@ -258,13 +260,20 @@ public class AguiRequestProcessor {
     }
 
     /**
-     * Extract only the latest user message from the input.
+     * Extract only the latest turn messages from the input.
      *
-     * <p>This is used when server-side memory is enabled and the agent already
-     * has conversation history. Only the latest user message needs to be passed.
+     * <p>This is used when server-side memory is enabled and the agent already has conversation
+     * history. Prefer trailing frontend tool-result messages when present; otherwise keep the
+     * latest user message.
+     *
+     * <p>Official {@code resume[]} turns are different: the decision is in {@code resume}, not in a
+     * new user utterance. Re-injecting the previous user prompt would look like a fresh turn after
+     * the synthesized tool/confirm result and can make the model call the same gated tool again
+     * (approve loops). Reject often looks "fine" only because the system prompt tells the model not
+     * to retry denials.
      *
      * @param input The original input
-     * @return A new input with only the latest user message
+     * @return A new input with only the latest turn messages
      */
     public RunAgentInput extractLatestUserMessage(RunAgentInput input) {
         List<AguiMessage> messages = input.getMessages();
@@ -272,11 +281,21 @@ public class AguiRequestProcessor {
             return input;
         }
 
+        List<AguiMessage> trailingToolMessages = extractTrailingToolMessages(messages);
+        if (!trailingToolMessages.isEmpty()) {
+            return copyInputWithMessages(input, trailingToolMessages);
+        }
+
+        // Resume-only turn: keep resume[] / metadata, drop historical user/assistant messages.
+        if (input.hasResume()) {
+            return copyInputWithMessages(input, List.of());
+        }
+
         // Find the last user message
         AguiMessage lastUserMessage = null;
         for (int i = messages.size() - 1; i >= 0; i--) {
             AguiMessage msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
+            if (msg != null && msg.isUserMessage()) {
                 lastUserMessage = msg;
                 break;
             }
@@ -286,11 +305,38 @@ public class AguiRequestProcessor {
             return input;
         }
 
-        // Create new input with only the last user message
+        return copyInputWithMessages(input, List.of(lastUserMessage));
+    }
+
+    /**
+     * Collect consecutive tool-result messages at the end of the conversation.
+     *
+     * <p>Frontend SchemaOnly / HITL tools resume by appending {@code role=tool} messages. With
+     * server-side memory those results are the only new messages for the turn and must not be
+     * dropped when stripping historical user/assistant content.
+     */
+    private static List<AguiMessage> extractTrailingToolMessages(List<AguiMessage> messages) {
+        List<AguiMessage> trailing = new ArrayList<>();
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            AguiMessage msg = messages.get(i);
+            if (msg == null || !msg.isToolMessage()) {
+                break;
+            }
+            trailing.add(msg);
+        }
+        if (trailing.isEmpty()) {
+            return List.of();
+        }
+        Collections.reverse(trailing);
+        return List.copyOf(trailing);
+    }
+
+    private static RunAgentInput copyInputWithMessages(
+            RunAgentInput input, List<AguiMessage> messages) {
         return RunAgentInput.builder()
                 .threadId(input.getThreadId())
                 .runId(input.getRunId())
-                .messages(List.of(lastUserMessage))
+                .messages(messages)
                 .tools(input.getTools())
                 .context(input.getContext())
                 .state(input.getState())

@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.encoder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -234,5 +235,35 @@ class AguiEventEncoderTest {
         AguiEvent decoded = JsonUtils.getJsonCodec().fromJson(json.trim(), AguiEvent.class);
         assertNotNull(decoded);
         assertEquals(AguiEventType.STATE_SNAPSHOT, decoded.getType());
+    }
+
+    @Test
+    void testEncodeOmitsNullFieldsOnInterruptOutcome() {
+        AguiEvent.Interrupt interrupt =
+                new AguiEvent.Interrupt(
+                        "int-1",
+                        "tool_call",
+                        "Approve tool call: danger_tool?",
+                        "tc-1",
+                        Map.of("type", "object"),
+                        null,
+                        Map.of("source", "permission"));
+        AguiEvent.RunFinished event =
+                new AguiEvent.RunFinished(
+                        "thread-1",
+                        "run-1",
+                        null,
+                        new AguiEvent.RunFinishedInterruptOutcome(List.of(interrupt)));
+
+        String sse = encoder.encode(event);
+
+        assertTrue(sse.contains("\"type\":\"RUN_FINISHED\""));
+        assertTrue(sse.contains("\"interrupts\""));
+        assertTrue(sse.contains("\"source\":\"permission\""));
+        assertFalse(sse.contains("\"timestamp\":null"));
+        assertFalse(sse.contains("\"rawEvent\":null"));
+        assertFalse(sse.contains("\"expiresAt\":null"));
+        assertFalse(sse.contains("\"result\":null"));
+        assertFalse(sse.contains("\"parentRunId\":null"));
     }
 }

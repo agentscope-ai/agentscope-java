@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.converter;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
@@ -30,6 +31,7 @@ import io.agentscope.core.agui.model.MessageContent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.agui.model.VideoInputContent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -46,6 +48,7 @@ import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -58,6 +61,13 @@ import java.util.stream.Collectors;
  * message format and AgentScope's internal message format.
  */
 public class AguiMessageConverter {
+
+    /** Interrupt metadata key shared with AgentLifecycleEventConverter. */
+    private static final String INTERRUPT_METADATA_SOURCE = "source";
+
+    /** Interrupt metadata value for Permission HITL pauses. */
+    private static final String INTERRUPT_SOURCE_PERMISSION = "permission";
+
     /**
      * Creates a new AguiMessageConverter
      */
@@ -156,7 +166,7 @@ public class AguiMessageConverter {
      * @return The converted AgentScope messages
      */
     public List<Msg> toMsgList(RunAgentInput input) {
-        return toMsgList(input, Map.of());
+        return toMsgList(input, Map.of(), Map.of());
     }
 
     /**
@@ -168,13 +178,65 @@ public class AguiMessageConverter {
      * @return The converted AgentScope messages
      */
     public List<Msg> toMsgList(RunAgentInput input, Map<String, String> resumeToolCallIds) {
+        return toMsgList(input, resumeToolCallIds, Map.of());
+    }
+
+    /**
+     * Convert an AG-UI run input to AgentScope messages, resolving resume entries through known
+     * interrupt metadata.
+     *
+     * <p>Permission HITL resumes become {@link ConfirmResult} metadata. Backend SchemaOnly /
+     * tool-suspended resumes become {@link ToolResultBlock} tool messages, unless the client
+     * already supplied a matching tool-result message (frontend HITL).
+     *
+     * @param input The AG-UI run input
+     * @param resumeToolCallIds Mapping from interrupt ID to tool call ID
+     * @param resumeInterrupts Mapping from interrupt ID to the open AG-UI interrupt
+     * @return The converted AgentScope messages
+     */
+    public List<Msg> toMsgList(
+            RunAgentInput input,
+            Map<String, String> resumeToolCallIds,
+            Map<String, AguiEvent.Interrupt> resumeInterrupts) {
         Objects.requireNonNull(input, "input cannot be null");
         List<Msg> msgs = new ArrayList<>(toMsgList(input.getMessages()));
+        List<ConfirmResult> confirmResults = new ArrayList<>();
+        List<ContentBlock> confirmContent = new ArrayList<>();
         for (AguiResume resume : input.getResume()) {
-            String toolCallId = resolveToolCallId(resume.getInterruptId(), resumeToolCallIds);
-            if (toolCallId != null && !toolCallId.isBlank()) {
+            AguiEvent.Interrupt interrupt =
+                    resumeInterrupts != null ? resumeInterrupts.get(resume.getInterruptId()) : null;
+            String toolCallId =
+                    interrupt != null && interrupt.toolCallId() != null
+                            ? interrupt.toolCallId()
+                            : resolveToolCallId(resume.getInterruptId(), resumeToolCallIds);
+            if (toolCallId == null || toolCallId.isBlank()) {
+                continue;
+            }
+            if (isPermissionInterrupt(interrupt)) {
+                confirmResults.add(toConfirmResult(resume, toolCallId, interrupt));
+                // resume[] may contain multiple HITL decisions; serialize each payload into
+                // content so approved/reason (and any extra fields) are preserved for context.
+                String payloadText = resumeContent(resume);
+                if (payloadText != null && !payloadText.isBlank()) {
+                    confirmContent.add(TextBlock.builder().text(payloadText).build());
+                }
+            } else if (!hasToolResult(msgs, toolCallId)) {
+                // Frontend HITL / SchemaOnly tools already return results as tool messages;
+                // do not synthesize a second ToolResultBlock from the resume entry.
                 msgs.add(toToolResultMsg(resume, toolCallId));
             }
+        }
+        if (!confirmResults.isEmpty()) {
+            msgs.add(
+                    Msg.builder()
+                            .id("agui-resume-confirm")
+                            .role(MsgRole.USER)
+                            .content(List.copyOf(confirmContent))
+                            .metadata(
+                                    Map.of(
+                                            Msg.METADATA_CONFIRM_RESULTS,
+                                            List.copyOf(confirmResults)))
+                            .build());
         }
         return List.copyOf(msgs);
     }
@@ -343,7 +405,9 @@ public class AguiMessageConverter {
 
     private Msg toToolResultMsg(AguiResume resume, String toolCallId) {
         ToolResultState state =
-                resume.isCancelled() ? ToolResultState.INTERRUPTED : ToolResultState.SUCCESS;
+                resume.isCancelled() || !isApproved(resume)
+                        ? ToolResultState.INTERRUPTED
+                        : ToolResultState.SUCCESS;
         ToolResultBlock result =
                 ToolResultBlock.builder()
                         .id(toolCallId)
@@ -365,6 +429,8 @@ public class AguiMessageConverter {
         if (resume.isCancelled()) {
             return "Interrupt cancelled by user";
         }
+        // Keep the client payload as-is (including approved:false + reason). isApproved() only
+        // affects ToolResultState / ConfirmResult, not the serialized tool output text.
         Object payload = resume.getPayload();
         if (payload == null) {
             return "";
@@ -377,6 +443,93 @@ public class AguiMessageConverter {
         } catch (JsonException e) {
             return String.valueOf(payload);
         }
+    }
+
+    private static boolean hasToolResult(List<Msg> msgs, String toolCallId) {
+        for (Msg msg : msgs) {
+            if (msg == null || msg.getContent() == null) {
+                continue;
+            }
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof ToolResultBlock trb && toolCallId.equals(trb.getId())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isPermissionInterrupt(AguiEvent.Interrupt interrupt) {
+        if (interrupt == null || interrupt.metadata() == null) {
+            return false;
+        }
+        return INTERRUPT_SOURCE_PERMISSION.equals(
+                interrupt.metadata().get(INTERRUPT_METADATA_SOURCE));
+    }
+
+    private ConfirmResult toConfirmResult(
+            AguiResume resume, String toolCallId, AguiEvent.Interrupt interrupt) {
+        Map<String, Object> metadata = interrupt != null ? interrupt.metadata() : null;
+        String toolName = metadataString(metadata, "toolName");
+        Map<String, Object> toolInput = metadataMap(metadata, "toolInput");
+
+        boolean approved = isApproved(resume);
+
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id(toolCallId)
+                        .name(toolName != null ? toolName : "")
+                        .input(toolInput)
+                        .content(JsonUtils.getJsonCodec().toJson(toolInput))
+                        .build();
+        return new ConfirmResult(approved, toolCall);
+    }
+
+    private static boolean isApproved(AguiResume resume) {
+        if (resume.isCancelled()) {
+            return false;
+        }
+        Object payload = resume.getPayload();
+        if (payload instanceof Map<?, ?> map && map.containsKey("approved")) {
+            Object approved = map.get("approved");
+            if (approved instanceof Boolean bool) {
+                return bool;
+            }
+            if (approved != null) {
+                return Boolean.parseBoolean(String.valueOf(approved));
+            }
+        }
+        // resolved without an explicit denial counts as approved
+        return resume.isResolved();
+    }
+
+    private static String metadataString(Map<String, Object> metadata, String key) {
+        if (metadata == null) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        if (value instanceof String text && !text.isBlank()) {
+            return text;
+        }
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> metadataMap(Map<String, Object> metadata, String key) {
+        if (metadata == null) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        if (!(value instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() instanceof String mapKey) {
+                result.put(mapKey, entry.getValue());
+            }
+        }
+        return result;
     }
 
     private String resolveToolCallId(String interruptId, Map<String, String> resumeToolCallIds) {

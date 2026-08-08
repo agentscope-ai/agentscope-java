@@ -24,6 +24,7 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.AguiRequestBodyParser;
 import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
 import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
@@ -108,11 +109,18 @@ public class AguiWebFluxHandler {
      * <p>This method parses the request body as {@link RunAgentInput}, resolves the
      * agent from the registry, and returns an SSE stream of AG-UI events.
      *
+     * <p><b>Why raw JSON + {@link AguiRequestBodyParser}?</b> Spring Boot 4 defaults to
+     * Jackson 3 for {@code bodyToMono(RunAgentInput.class)}. Jackson 3 does not honor
+     * Jackson-2 databind annotations ({@code @JsonDeserialize} under
+     * {@code com.fasterxml.jackson.databind.annotation}), so binding {@code MessageContent}
+     * fails with {@code Type definition error}. Reading {@code String} then decoding with
+     * AgentScope Jackson 2 keeps the custom AG-UI deserializers working.
+     *
      * @param request The server request
      * @return A Mono containing the server response with SSE stream
      */
     public Mono<ServerResponse> handle(ServerRequest request) {
-        return request.bodyToMono(RunAgentInput.class)
+        return parseRunAgentInput(request)
                 .flatMap(input -> processInput(input, request, null))
                 .onErrorResume(this::handleParseError);
     }
@@ -123,14 +131,30 @@ public class AguiWebFluxHandler {
      * <p>This method handles requests to {@code /agui/run/{agentId}}.
      * The path variable takes highest priority for agent resolution.
      *
+     * <p>Body parsing uses the same Jackson-2 path as {@link #handle(ServerRequest)};
+     * see that method for the Spring Boot 4 / Jackson 3 rationale.
+     *
      * @param request The server request containing the agentId path variable
      * @return A Mono containing the server response with SSE stream
      */
     public Mono<ServerResponse> handleWithAgentId(ServerRequest request) {
         String pathAgentId = request.pathVariable(AGENT_ID_PATH_VARIABLE);
-        return request.bodyToMono(RunAgentInput.class)
+        return parseRunAgentInput(request)
                 .flatMap(input -> processInput(input, request, pathAgentId))
                 .onErrorResume(this::handleParseError);
+    }
+
+    /**
+     * Read the request body as JSON text, then deserialize with AgentScope Jackson 2.
+     *
+     * <p>Avoid {@code bodyToMono(RunAgentInput.class)}: Spring Boot 4's Jackson 3 codec
+     * cannot construct {@code MessageContent} via the existing {@code @JsonDeserialize}.
+     *
+     * @param request The server request
+     * @return A Mono of the parsed {@link RunAgentInput}
+     */
+    private Mono<RunAgentInput> parseRunAgentInput(ServerRequest request) {
+        return request.bodyToMono(String.class).map(AguiRequestBodyParser::parseRunAgentInput);
     }
 
     private Mono<ServerResponse> processInput(

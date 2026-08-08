@@ -1665,7 +1665,11 @@ public sealed interface AguiEvent
     /**
      * Represents an interrupt that occurred during agent execution, requiring
      * user input to resolve before the agent can continue.
+     *
+     * <p>Nested inside {@link RunFinishedInterruptOutcome}; annotated so null optional fields are
+     * omitted even when serialized outside {@code AguiEventEncoder}'s NON_NULL codec.
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record Interrupt(
             String id,
             String reason,

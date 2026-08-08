@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.event;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -1232,6 +1233,10 @@ class AguiEventTest {
             assertTrue(json.contains("\"type\":\"RUN_FINISHED\""));
             assertTrue(json.contains("\"outcome\""));
             assertTrue(json.contains("\"interrupts\""));
+            // Nested Interrupt is not an AguiEvent implementor — must omit nulls itself.
+            assertFalse(json.contains("\"expiresAt\":null"));
+            assertFalse(json.contains("\"metadata\":null"));
+            assertFalse(json.contains("\"result\":null"));
         }
     }
 
