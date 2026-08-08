@@ -579,15 +579,21 @@ class WorkspaceTaskRepositoryTest {
         String session = "sess-sweep";
         String taskId = "task-stale";
 
-        // Write a RUNNING record with a lastUpdatedAt far in the past (simulates a dead node)
+        // writeTaskRecord() refreshes lastUpdatedAt, so use that persisted timestamp as the exact
+        // zero-timeout sweep boundary.
         TaskRecord stale = new TaskRecord(taskId, "agent-stale", "test-agent", session, null);
         stale.setStatus(TaskStatus.RUNNING);
-        stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
         workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, stale);
 
-        // orphanTimeout=ZERO: every record is instantly "stale".
-        // recentWindow=1 day: scan all session files regardless of disk mtime.
-        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+        Instant persistedLastUpdatedAt =
+                workspaceManager
+                        .readTaskRecord(RuntimeContext.empty(), "test-agent", session, taskId)
+                        .map(TaskRecord::getLastUpdatedAt)
+                        .orElseThrow();
+
+        // A record on the timeout boundary is stale. recentWindow=1 day scans the just-written
+        // session file.
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1), persistedLastUpdatedAt);
 
         Optional<TaskRecord> swept =
                 workspaceManager.readTaskRecord(
