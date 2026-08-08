@@ -52,12 +52,12 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
-import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -1176,7 +1176,10 @@ class HarnessAgentTest {
         when(memoryModel.stream(anyList(), anyList(), any())).thenReturn(Flux.just(memoryChunk));
 
         MemoryConfig memoryConfig =
-                MemoryConfig.builder().model(memoryModel).consolidationMinGap(Duration.ofMinutes(1)).build();
+                MemoryConfig.builder()
+                        .model(memoryModel)
+                        .consolidationMinGap(Duration.ofMinutes(1))
+                        .build();
 
         List<SubagentEntry> entries =
                 HarnessAgent.builder()
