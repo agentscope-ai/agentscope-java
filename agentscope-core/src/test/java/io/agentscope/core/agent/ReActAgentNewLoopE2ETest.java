@@ -24,18 +24,24 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -291,5 +297,221 @@ class ReActAgentNewLoopE2ETest {
                         .findFirst()
                         .orElseThrow();
         assertEquals(ToolResultState.ERROR, end.getState());
+    }
+
+    @Test
+    void retriesAfterModelStreamCompletesWithoutAResponse() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.empty(), () -> Flux.just(textResponse("recovered"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("you are helpful").model(model).build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("continue after an empty response")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(2, model.calls.get());
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(message -> message.getContentBlocks(TextBlock.class).stream())
+                        .anyMatch(text -> "recovered".equals(text.getText())));
+    }
+
+    @Test
+    void retriesAfterModelReturnsOnlyBlankText() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(textResponse("   ")),
+                                () -> Flux.just(textResponse("recovered"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("you are helpful").model(model).build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("continue after a blank response")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(2, model.calls.get());
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(message -> message.getContentBlocks(TextBlock.class).stream())
+                        .anyMatch(text -> "recovered".equals(text.getText())));
+    }
+
+    @Test
+    void stopsWithoutRetryWhenMiddlewareStopsAnEmptyResponse() {
+        ScriptedModel model = new ScriptedModel(List.of(Flux::empty));
+        MiddlewareBase stoppingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ReasoningInput input,
+                            Function<ReasoningInput, Flux<AgentEvent>> next) {
+                        return Flux.concat(
+                                next.apply(input), Flux.just(new RequestStopEvent("test stop")));
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .middleware(stoppingMiddleware)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("stop the empty response")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(1, model.calls.get());
+        assertTrue(events.stream().anyMatch(RequestStopEvent.class::isInstance));
+    }
+
+    @Test
+    void retriesAfterModelReturnsEmptyText() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(textResponse("")),
+                                () -> Flux.just(textResponse("recovered"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("you are helpful").model(model).build();
+
+        agent.streamEvents(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .textContent("continue after a null text response")
+                                        .build()))
+                .collectList()
+                .block();
+
+        assertEquals(2, model.calls.get());
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(message -> message.getContentBlocks(TextBlock.class).stream())
+                        .anyMatch(text -> "recovered".equals(text.getText())));
+    }
+
+    @Test
+    void preservesModelResponseWhenMiddlewareRequestsStop() {
+        ScriptedModel model = new ScriptedModel(List.of(() -> Flux.just(textResponse("paused"))));
+        MiddlewareBase stoppingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ReasoningInput input,
+                            Function<ReasoningInput, Flux<AgentEvent>> next) {
+                        return Flux.concat(
+                                next.apply(input), Flux.just(new RequestStopEvent("test stop")));
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .middleware(stoppingMiddleware)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("stop with a response")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(1, model.calls.get());
+        assertTrue(events.stream().anyMatch(RequestStopEvent.class::isInstance));
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(message -> message.getContentBlocks(TextBlock.class).stream())
+                        .anyMatch(text -> "paused".equals(text.getText())));
+    }
+
+    @Test
+    void doesNotRetryAfterModelReturnsOnlyThinking() {
+        ChatResponse thinkingResponse =
+                ChatResponse.builder()
+                        .content(
+                                List.<ContentBlock>of(
+                                        ThinkingBlock.builder()
+                                                .thinking("internal thought")
+                                                .build()))
+                        .build();
+        ScriptedModel model = new ScriptedModel(List.of(() -> Flux.just(thinkingResponse)));
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("you are helpful").model(model).build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("continue after a thinking response")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(1, model.calls.get());
+    }
+
+    @Test
+    void doesNotRetryWhenPostReasoningHookDiscardsTheMessage() {
+        ScriptedModel model =
+                new ScriptedModel(List.of(() -> Flux.just(textResponse("discarded"))));
+        Hook discardingHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostReasoningEvent postReasoningEvent) {
+                            postReasoningEvent.setReasoningMessage(null);
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .hook(discardingHook)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(1, model.calls.get());
     }
 }
