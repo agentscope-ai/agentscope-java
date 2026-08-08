@@ -297,9 +297,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
     /**
      * Promote a draft skill from {@code skills/_drafts/} to the live skills root via the
      * configured {@link SkillPromotionGate}.
+     *
+     * @param name the draft skill name
+     * @param reviewerId the reviewer identity
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()}) used to resolve the
+     *     active session's namespace; pass {@code null} when not inside a call
      */
-    public Mono<SkillPromoter.PromotionResult> promoteSkill(String name, String reviewerId) {
-        return promoteSkill(name, reviewerId, getRuntimeContext());
+    public Mono<SkillPromoter.PromotionResult> promoteSkill(
+            String name, String reviewerId, String runId) {
+        return promoteSkill(name, reviewerId, getRuntimeContext(runId));
     }
 
     /**
@@ -467,8 +473,27 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getMaxIters();
     }
 
-    public RuntimeContext getRuntimeContext() {
-        return delegate.getRuntimeContext();
+    /**
+     * Returns the active {@link RuntimeContext} for the given runId, or {@code null} if no such
+     * call is currently in flight on the underlying {@link io.agentscope.core.ReActAgent}.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     * @return the matching in-flight context, or {@code null}
+     */
+    @Override
+    public RuntimeContext getRuntimeContext(String runId) {
+        return delegate.getRuntimeContext(runId);
+    }
+
+    /**
+     * Returns a read-only snapshot of all currently in-flight {@link RuntimeContext}s on the
+     * underlying agent instance.
+     *
+     * @return unmodifiable list of active contexts (may be empty)
+     */
+    @Override
+    public List<RuntimeContext> getActiveRuntimeContexts() {
+        return delegate.getActiveRuntimeContexts();
     }
 
     public AgentStateStore getStateStore() {
@@ -2585,7 +2610,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             Supplier<RuntimeContext> currentRcSupplier =
                     () -> {
                         ReActAgent self = selfRef.get();
-                        RuntimeContext rc = self != null ? self.getRuntimeContext() : null;
+                        RuntimeContext rc = self != null ? self.getRuntimeContext(null) : null;
                         return rc != null ? rc : RuntimeContext.empty();
                     };
             List<AgentSkillRepository> orderedSkillRepos =
