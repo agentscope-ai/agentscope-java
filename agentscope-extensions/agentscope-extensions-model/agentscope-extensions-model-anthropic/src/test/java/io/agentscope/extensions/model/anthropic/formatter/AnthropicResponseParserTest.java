@@ -106,6 +106,33 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testParseMessageReadsCacheReadInputTokens() {
+        // Anthropic 报告的 cache_read_input_tokens 必须透传到 ChatUsage.cachedTokens,
+        // 否则下游记账无法识别缓存命中、定价会按全量 input 估算。
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+
+        when(message.id()).thenReturn("msg_cache");
+        when(message.content()).thenReturn(List.of(contentBlock));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(1000L);
+        when(usage.outputTokens()).thenReturn(50L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.of(500L));
+
+        when(contentBlock.text()).thenReturn(Optional.empty());
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.empty());
+
+        Instant startTime = Instant.now();
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
+
+        assertNotNull(response);
+        assertNotNull(response.getUsage());
+        assertEquals(500, response.getUsage().getCachedTokens());
+    }
+
+    @Test
     void testParseMessageWithToolUseBlock() {
         // Create mock Message with tool use content
         // Note: We use null input to avoid Kotlin reflection issues with JsonValue mocking
