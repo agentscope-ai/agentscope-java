@@ -18,10 +18,12 @@ package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /**
@@ -50,14 +52,22 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
 
     @Override
     public Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options) {
-        if (agentCache.containsKey(options.getTaskId())) {
-            throw new IllegalStateException(
-                    "Agent already exists for taskId: " + options.getTaskId());
+        return streamWithAgent(options.getTaskId(), agent -> agent.stream(requestMessages));
+    }
+
+    @Override
+    public Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
+        return streamWithAgent(options.getTaskId(), agent -> agent.streamEvents(requestMessages));
+    }
+
+    private <T> Flux<T> streamWithAgent(
+            String taskId, Function<ReActAgent, Flux<T>> streamFunction) {
+        if (agentCache.containsKey(taskId)) {
+            throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         ReActAgent agent = buildReActAgent();
-        agentCache.put(options.getTaskId(), agent);
-        return agent.stream(requestMessages)
-                .doFinally(signal -> agentCache.remove(options.getTaskId()));
+        agentCache.put(taskId, agent);
+        return streamFunction.apply(agent).doFinally(signal -> agentCache.remove(taskId));
     }
 
     @Override
