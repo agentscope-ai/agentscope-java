@@ -158,13 +158,30 @@ public class AnthropicChatModel extends ChatModelBase {
                                                 .model(modelName)
                                                 .maxTokens(4096);
 
+                                GenerateOptions effectiveOptions =
+                                        GenerateOptions.mergeOptions(options, defaultOptions);
+                                boolean cacheControlEnabled =
+                                        effectiveOptions != null
+                                                && Boolean.TRUE.equals(
+                                                        effectiveOptions.getCacheControl());
+
                                 // Extract and apply system message
-                                // (Anthropic-specific requirement)
-                                formatter.applySystemMessage(paramsBuilder, messages);
+                                // (Anthropic-specific requirement);
+                                // adds cache_control when prompt caching is enabled
+                                formatter.applySystemMessage(
+                                        paramsBuilder, messages, cacheControlEnabled);
 
                                 // Use formatter to convert Msg to Anthropic
                                 // MessageParam
                                 List<MessageParam> formattedMessages = formatter.format(messages);
+
+                                // Apply automatic cache control strategy
+                                // (marks the last message to cache the conversation prefix)
+                                if (cacheControlEnabled) {
+                                    formattedMessages =
+                                            formatter.applyCacheControl(formattedMessages);
+                                }
+
                                 for (MessageParam param : formattedMessages) {
                                     paramsBuilder.addMessage(param);
                                 }

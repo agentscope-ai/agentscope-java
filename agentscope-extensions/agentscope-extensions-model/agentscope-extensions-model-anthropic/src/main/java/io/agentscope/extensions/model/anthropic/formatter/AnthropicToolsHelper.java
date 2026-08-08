@@ -57,16 +57,25 @@ public class AnthropicToolsHelper {
             return;
         }
 
-        // Convert and add tools
-        for (ToolSchema schema : tools) {
-            Tool tool =
+        boolean cacheControlEnabled =
+                options != null && Boolean.TRUE.equals(options.getCacheControl());
+
+        // Convert and add tools. When prompt caching is enabled, mark the last tool definition
+        // with cache_control so all tool definitions are cached (Anthropic caches everything up
+        // to and including the marked block).
+        for (int i = 0; i < tools.size(); i++) {
+            ToolSchema schema = tools.get(i);
+            Tool.Builder toolBuilder =
                     Tool.builder()
                             .name(schema.getName())
                             .description(schema.getDescription())
-                            .inputSchema(convertToJsonValue(schema.getParameters()))
-                            .build();
+                            .inputSchema(convertToJsonValue(schema.getParameters()));
 
-            builder.addTool(tool);
+            if (cacheControlEnabled && i == tools.size() - 1) {
+                toolBuilder.cacheControl(AnthropicBaseFormatter.EPHEMERAL_CACHE_CONTROL);
+            }
+
+            builder.addTool(toolBuilder.build());
         }
 
         // Resolve effective parallelToolCalls and toolChoice
