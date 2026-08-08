@@ -27,26 +27,38 @@ import java.util.List;
  * <p>When confirmed, the caller may supply a modified {@link #toolCall} (allowing the user to
  * tweak input) and/or new {@link #rules} that the {@code PermissionEngine} should remember for
  * future calls — e.g. "always allow this command going forward".
+ *
+ * <p>When denied, the caller may supply a human-readable {@link #reason} explaining the denial;
+ * it becomes the text of the DENIED tool result written back to the model context (and emitted
+ * on the event stream), replacing the default {@code "Permission denied by user"} message.
  */
 public class ConfirmResult {
 
     private final boolean confirmed;
     private final ToolUseBlock toolCall;
     private final List<PermissionRule> rules;
+    private final String reason;
 
     @JsonCreator
     public ConfirmResult(
             @JsonProperty("confirmed") boolean confirmed,
             @JsonProperty("toolCall") ToolUseBlock toolCall,
-            @JsonProperty("rules") List<PermissionRule> rules) {
+            @JsonProperty("rules") List<PermissionRule> rules,
+            @JsonProperty("reason") String reason) {
         this.confirmed = confirmed;
         this.toolCall = toolCall;
         this.rules = rules;
+        this.reason = reason;
+    }
+
+    /** Convenience constructor without a denial reason. */
+    public ConfirmResult(boolean confirmed, ToolUseBlock toolCall, List<PermissionRule> rules) {
+        this(confirmed, toolCall, rules, null);
     }
 
     /** Convenience constructor without rules. */
     public ConfirmResult(boolean confirmed, ToolUseBlock toolCall) {
-        this(confirmed, toolCall, null);
+        this(confirmed, toolCall, null, null);
     }
 
     public boolean isConfirmed() {
@@ -65,5 +77,17 @@ public class ConfirmResult {
      */
     public List<PermissionRule> getRules() {
         return rules;
+    }
+
+    /**
+     * Optional human-readable reason for a denial ({@link #confirmed} == false). When present,
+     * it is used as the text of the DENIED tool result instead of the default
+     * {@code "Permission denied by user"} message, so the model (and downstream event consumers)
+     * can see why the user rejected the call.
+     *
+     * @return the denial reason, or null when not supplied
+     */
+    public String getReason() {
+        return reason;
     }
 }
