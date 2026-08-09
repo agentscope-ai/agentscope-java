@@ -20,6 +20,10 @@ server:
 spring:
   main:
     banner-mode: off
+  http:
+    codecs:
+      # AG-UI models use Jackson 2 annotations and custom serializers.
+      preferred-json-mapper: jackson2
   web:
     resources:
       cache:
