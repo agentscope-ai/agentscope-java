@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="技能（Skill）" href="skill.html"><link rel="prev" title="沙箱（Sandbox）" href="sandbox.html">
+    <meta property="article:modified_time" content="2026-08-09T00:51:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="技能（Skill）" href="skill.html"><link rel="prev" title="沙箱（Sandbox）" href="sandbox.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1082,9 +1082,24 @@ expose_to_user: true          # 可选三态；强制/禁止向用户暴露（�
 <h2>同步还是后台？<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <p>主 agent 通过 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> 创建子 agent，关键是 <code class="docutils literal notranslate"><span class="pre">timeout_seconds</span></code>：</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>（默认 30，最大 600）—— <strong>同步</strong>调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>（默认 30，最大 600）—— <strong>同步</strong>调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。默认超时后会 <strong>promote</strong> 成后台任务（<code class="docutils literal notranslate"><span class="pre">status:</span> <span class="pre">timeout_promoted</span></code> + <code class="docutils literal notranslate"><span class="pre">task_id</span></code>），子 agent 继续跑。</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">=</span> <span class="pre">0</span></code> —— <strong>后台</strong>调用，立即返回一个 <code class="docutils literal notranslate"><span class="pre">task_id</span></code>，子 agent 在后台跑。</p></li>
 </ul>
+<p><strong>通过 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 强制同步。</strong> 应用侧可在当前调用的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 里放入 <code class="docutils literal notranslate"><span class="pre">AgentSpawnTool.CTX_FORCE_SYNC</span> <span class="pre">=</span> <span class="pre">true</span></code>，覆盖 LLM 的异步选择；可选再放 <code class="docutils literal notranslate"><span class="pre">CTX_FORCE_SYNC_TIMEOUT_SECONDS</span></code> 指定硬超时（秒）：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;s-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_FORCE_SYNC</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_FORCE_SYNC_TIMEOUT_SECONDS</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="p">)</span><span class="w"> </span><span class="c1">// 可选；覆盖 LLM 的 timeout_seconds</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>开启后：</p>
+<ol class="arabic simple">
+<li><p>若设置了 <code class="docutils literal notranslate"><span class="pre">CTX_FORCE_SYNC_TIMEOUT_SECONDS</span></code>，它会<strong>完全覆盖</strong> LLM 的 <code class="docutils literal notranslate"><span class="pre">timeout_seconds</span></code>（<code class="docutils literal notranslate"><span class="pre">&lt;=0</span></code> 回退到 30s，上限 600s）。</p></li>
+<li><p>未设置时，LLM 传的 <code class="docutils literal notranslate"><span class="pre">timeout_seconds=0</span></code> 会被改写成默认同步超时（30s），<strong>不会</strong>提交后台任务；LLM 传的正数超时仍生效。</p></li>
+<li><p>同步等待超时后返回 <code class="docutils literal notranslate"><span class="pre">status:</span> <span class="pre">timeout</span></code> 并中断子 agent，<strong>不会</strong> promote 成后台 <code class="docutils literal notranslate"><span class="pre">task_id</span></code>。</p></li>
+</ol>
+<p><code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 同样遵守该开关。同一轮里多个强制同步的 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> 仍可按 Toolkit 默认并行推进。</p>
 <p>如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。Toolkit 默认启用工具并行（<code class="docutils literal notranslate"><span class="pre">ToolkitConfig.parallel=true</span></code>），因此在 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 与 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 上这些同步调用都会并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。若需串行执行工具，可传入 <code class="docutils literal notranslate"><span class="pre">ToolkitConfig.builder().parallel(false).build()</span></code> 构建的自定义 <code class="docutils literal notranslate"><span class="pre">Toolkit</span></code>。</p>
 <p>任务拆解时先画清楚独立性和依赖图：没有依赖边的节点适合交给多个子 agent 并行；有依赖关系的节点要等上游结果后再派发或合并。短任务、关键路径任务适合同步等待或先用 barrier 等齐，用于继续推理；长任务可以用后台模式先跑，主 agent 继续处理其他工作，后续再取结果合并。</p>
 <section id="id6">
@@ -1281,7 +1296,7 @@ description: 调研主题并返回汇总报告。
 <li><p><strong>递归保护</strong>：子 agent 不能再 spawn 子 agent（被强制标为”叶子”）；同时还有一个硬上限 3 层。</p></li>
 <li><p><strong>userId 透传</strong>：父的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> 会自动透到子，所以多租户隔离链不会断。</p></li>
 <li><p><strong>权限继承</strong>：父的所有 DENY 权限规则会自动传给子。如果父被禁用了某个工具，子也一样被禁——安全边界不会因为委派被绕过。在声明里设 <code class="docutils literal notranslate"><span class="pre">inheritParentPermissions(false)</span></code> 可以关闭这个行为。</p></li>
-<li><p><strong>流式转发</strong>：父 agent <code class="docutils literal notranslate"><span class="pre">stream()</span></code> 时，同步子 agent 的中间事件会实时流回父的 <code class="docutils literal notranslate"><span class="pre">Flux</span></code>（带来源标记），见下文 <a class="reference internal" href="#id17">子 Agent 流式</a>。</p></li>
+<li><p><strong>流式转发</strong>：父 agent <code class="docutils literal notranslate"><span class="pre">stream()</span></code> 时，同步子 agent 的中间事件会实时流回父的 <code class="docutils literal notranslate"><span class="pre">Flux</span></code>（带来源标记），见下文 <a class="reference internal" href="#id18">子 Agent 流式</a>。</p></li>
 </ul>
 </section>
 <section id="id14">
@@ -1293,7 +1308,9 @@ description: 调研主题并返回汇总报告。
 <span class="w">    </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;http://agent-task-server:8080&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">headers</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer xxx&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">remoteStreaming</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">          </span><span class="c1">// 未设置时默认 true</span>
+<span class="w">    </span><span class="p">.</span><span class="na">remoteStreamDetail</span><span class="p">(</span><span class="n">RemoteStreamDetail</span><span class="p">.</span><span class="na">VERBOSE</span><span class="p">)</span><span class="w">  </span><span class="c1">// 未设置时为 FULL</span>
 <span class="w">    </span><span class="p">.</span><span class="na">remoteAskPolicy</span><span class="p">(</span><span class="n">RemoteAskPolicy</span><span class="p">.</span><span class="na">DENY</span><span class="p">)</span><span class="w">  </span><span class="c1">// 默认</span>
+<span class="w">    </span><span class="p">.</span><span class="na">remoteContextAttributes</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;region&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;cn&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 </pre></div>
 </div>
@@ -1310,17 +1327,51 @@ description: 调研主题并返回汇总报告。
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">remoteStreaming</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">true</span></code>（未设置时）</p></td>
-<td><p>父代理使用 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 时，把远程任务的 SSE 事件转发进父流，并带 <code class="docutils literal notranslate"><span class="pre">source</span></code> 标记与 <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code>（与 harness <code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code> 的 task id 一致）</p></td>
+<td><p>父代理使用 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 时，把远程任务的 SSE 事件转发进父流，并带 <code class="docutils literal notranslate"><span class="pre">source</span></code> 标记与 <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code> / <code class="docutils literal notranslate"><span class="pre">metadata.parentSessionId</span></code>（与 harness <code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code> / 父 session 一致）</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">remoteAskPolicy</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">remoteStreamDetail</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">FULL</span></code></p></td>
+<td><p>回传多少远程事件——见<a class="reference internal" href="#id15">远程流式详细度</a></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">remoteAskPolicy</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">DENY</span></code></p></td>
-<td><p>如何处理远程工具确认（HITL）请求——见 <a class="reference internal" href="#id15">远程授权</a></p></td>
+<td><p>如何处理远程工具确认（HITL）请求——见 <a class="reference internal" href="#id16">远程授权</a></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">remoteContextAttributes</span></code></p></td>
+<td><p>无</p></td>
+<td><p>每次提交都携带的静态调用方属性，写入 <code class="docutils literal notranslate"><span class="pre">context.attributes</span></code>。按次追加时，在父代理的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 上用 <code class="docutils literal notranslate"><span class="pre">AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES</span></code> 放一个 map；见<a class="reference internal" href="../../integration/protocol/agent-protocol.html#context-attributes"><span class="std std-ref">上下文属性</span></a></p></td>
 </tr>
 </tbody>
 </table>
 </div>
 <section id="id15">
-<h3>远程授权<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<h3>远程流式详细度<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<p>本地子 agent 会把孩子的事件原样转发给父流。远程子 agent 的事件要过一趟网络，过多少由 <code class="docutils literal notranslate"><span class="pre">remoteStreamDetail</span></code> 决定，以 <code class="docutils literal notranslate"><span class="pre">context.detail</span></code> 发送：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>档位</p></th>
+<th class="head"><p>回传内容</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">STATUS</span></code></p></td>
+<td><p>运行生命周期、工具调用起止、工具结果、确认请求</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">FULL</span></code>（默认）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">STATUS</span></code> 之外再加文本与思考增量</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">VERBOSE</span></code></p></td>
+<td><p>远程 agent 发出的每一个事件——块边界、工具入参增量、<strong>工具输出增量</strong>、带 token usage 的模型调用、hint、agent 结果、自定义事件</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>如果希望父流在子 agent 是本地还是远程时表现一致，选 <code class="docutils literal notranslate"><span class="pre">VERBOSE</span></code>——这是唯一能让远程子 agent 的工具输出内容和 token 用量到达父代理的档位。它不作为默认，是因为对只渲染文本的调用方来说这些事件纯粹是额外流量。</p>
+<p>没有专属 wire 类型的事件以 <code class="docutils literal notranslate"><span class="pre">AGENT_EVENT</span></code> 传输，原始事件完整序列化在 <code class="docutils literal notranslate"><span class="pre">payload</span></code> 字段里，父代理解出来的就是本地场景下同一个类，id、时间戳和 metadata 都在。不认识该字段的旧客户端仍读扁平字段，只是看不到这些透传事件。</p>
+</section>
+<section id="id16">
+<h3>远程授权<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
 <p>父代理的 DENY 权限规则会随远程提交的 <code class="docutils literal notranslate"><span class="pre">context.deny_rules</span></code> 一并转发（与本地子 agent 的权限继承一致；可用 <code class="docutils literal notranslate"><span class="pre">inheritParentPermissions(false)</span></code> 关闭）。</p>
 <p>远程 agent 因工具确认而暂停（<code class="docutils literal notranslate"><span class="pre">awaiting_confirm</span></code>）时：</p>
 <ul class="simple">
@@ -1330,8 +1381,8 @@ description: 调研主题并返回汇总报告。
 <p>等待确认期间任务状态保持 <code class="docutils literal notranslate"><span class="pre">RUNNING</span></code>（<code class="docutils literal notranslate"><span class="pre">awaitingConfirm=true</span></code>）。因此 <code class="docutils literal notranslate"><span class="pre">wait_async_results</span></code> 等 barrier 会继续等待，直到任务被 resume 并进入终态。</p>
 </section>
 </section>
-<section id="id16">
-<h2>异步任务的存储位置<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h2>
+<section id="id17">
+<h2>异步任务的存储位置<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h2>
 <p>后台任务的状态默认写到 <code class="docutils literal notranslate"><span class="pre">workspace/agents/&lt;parentAgentId&gt;/tasks/&lt;sessionId&gt;.json</span></code>。这意味着：</p>
 <ul class="simple">
 <li><p>在共享存储模式（多副本）下，任意节点都能读到任务状态；</p></li>
@@ -1343,12 +1394,12 @@ description: 调研主题并返回汇总报告。
 <h2>在 Plan Mode 下委派子 agent<a class="headerlink" href="#plan-mode-agent" title="Link to this heading">¶</a></h2>
 <p>父 agent 在 Plan Mode 时 spawn 的子 agent 会<strong>自动继承只读限制</strong>——子 agent 在 spawn 时就会被置入 Plan Mode，无法执行写操作，安全边界在委派链上不会断。</p>
 </section>
-<section id="id17">
-<h2>子 Agent 流式<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h2>
+<section id="id18">
+<h2>子 Agent 流式<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
 <blockquote>
 <div><p>新代码请用 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>（返回 <code class="docutils literal notranslate"><span class="pre">Flux&lt;AgentEvent&gt;</span></code>）。旧 <code class="docutils literal notranslate"><span class="pre">stream()</span></code> 系列（<code class="docutils literal notranslate"><span class="pre">Flux&lt;Event&gt;</span></code>）在 2.0.0 起 <code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true)</span></code> —— 详见 <a class="reference internal" href="../building-blocks/message-and-event.html"><span class="std std-doc">消息与事件</span></a> 与 <a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 迁移指南 B.4</span></a>。</p>
 </div></blockquote>
-<p>父 agent 通过 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 同步调用子 agent 时，子 agent 的中间事件会<strong>实时转发</strong>到父的 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 流中。每个子事件都带一个 <code class="docutils literal notranslate"><span class="pre">source</span></code> 字段（<code class="docutils literal notranslate"><span class="pre">/</span></code> 分隔的路径，如 <code class="docutils literal notranslate"><span class="pre">&quot;main/researcher&quot;</span></code>），父事件的 <code class="docutils literal notranslate"><span class="pre">source</span></code> 为 <code class="docutils literal notranslate"><span class="pre">null</span></code>。远程 Agent Protocol 子 agent 还会写入 <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code>（<code class="docutils literal notranslate"><span class="pre">AgentEvent.METADATA_TASK_ID</span></code>），值为 harness 侧任务 id，因此同一轮里对同一远程 agent 的多次调用即使 <code class="docutils literal notranslate"><span class="pre">source</span></code> 相同也能区分。</p>
+<p>父 agent 通过 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 同步调用子 agent 时，子 agent 的中间事件会<strong>实时转发</strong>到父的 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 流中。每个子事件都带一个 <code class="docutils literal notranslate"><span class="pre">source</span></code> 字段（<code class="docutils literal notranslate"><span class="pre">/</span></code> 分隔的路径，如 <code class="docutils literal notranslate"><span class="pre">&quot;main/researcher&quot;</span></code>），父事件的 <code class="docutils literal notranslate"><span class="pre">source</span></code> 为 <code class="docutils literal notranslate"><span class="pre">null</span></code>。远程 Agent Protocol 子 agent 还会写入 <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code>（<code class="docutils literal notranslate"><span class="pre">AgentEvent.METADATA_TASK_ID</span></code>，harness 侧任务 id）与 <code class="docutils literal notranslate"><span class="pre">metadata.parentSessionId</span></code>（<code class="docutils literal notranslate"><span class="pre">AgentEvent.METADATA_PARENT_SESSION_ID</span></code>，父 session），因此同一轮里对同一远程 agent 的多次调用即使 <code class="docutils literal notranslate"><span class="pre">source</span></code> 相同也能区分，并能回溯到发起方会话。</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>caller
   └─ parent.streamEvents(msg, ctx)
         │
@@ -1428,8 +1479,8 @@ description: 调研主题并返回汇总报告。
 </pre></div>
 </div>
 </section>
-<section id="id18">
-<h3>行为边界<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h3>
+<section id="id19">
+<h3>行为边界<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1457,13 +1508,13 @@ description: 调研主题并返回汇总报告。
 </table>
 </div>
 </section>
-<section id="id19">
-<h3>错误处理<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
+<section id="id20">
+<h3>错误处理<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h3>
 <p>子 agent 内部出错时，框架会把错误捕获并写成一条 <code class="docutils literal notranslate"><span class="pre">TOOL_RESULT</span></code> 给父，<strong>不会</strong>把 <code class="docutils literal notranslate"><span class="pre">onError</span></code> 传播到父流——父流不会被子 agent 的失败打断。如果父流本身出错（比如模型调用失败），按标准 Reactor 语义处理（<code class="docutils literal notranslate"><span class="pre">onErrorResume</span></code> 等）。</p>
 </section>
 </section>
-<section id="id20">
-<h2>相关文档<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h2>
+<section id="id21">
+<h2>相关文档<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="channel.html"><span class="std std-doc">Channel</span></a> — <code class="docutils literal notranslate"><span class="pre">expose_to_user</span></code>、<code class="docutils literal notranslate"><span class="pre">SendOptions</span></code>、用户直接与子 agent 交互</p></li>
 <li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> 与 <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/tasks/</span></code> 的目录布局</p></li>
@@ -1529,7 +1580,7 @@ description: 调研主题并返回汇总报告。
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-08-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1590,19 +1641,20 @@ description: 调研主题并返回汇总报告。
 <li><a class="reference internal" href="#agent-agent-spec">让 agent 自己写新的子 agent spec</a></li>
 <li><a class="reference internal" href="#id13">一些行为细节</a></li>
 <li><a class="reference internal" href="#id14">远程子 agent</a><ul>
-<li><a class="reference internal" href="#id15">远程授权</a></li>
+<li><a class="reference internal" href="#id15">远程流式详细度</a></li>
+<li><a class="reference internal" href="#id16">远程授权</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id16">异步任务的存储位置</a></li>
+<li><a class="reference internal" href="#id17">异步任务的存储位置</a></li>
 <li><a class="reference internal" href="#plan-mode-agent">在 Plan Mode 下委派子 agent</a></li>
-<li><a class="reference internal" href="#id17">子 Agent 流式</a><ul>
+<li><a class="reference internal" href="#id18">子 Agent 流式</a><ul>
 <li><a class="reference internal" href="#streamevents">使用 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>（推荐）</a></li>
 <li><a class="reference internal" href="#sse">SSE 转发</a></li>
-<li><a class="reference internal" href="#id18">行为边界</a></li>
-<li><a class="reference internal" href="#id19">错误处理</a></li>
+<li><a class="reference internal" href="#id19">行为边界</a></li>
+<li><a class="reference internal" href="#id20">错误处理</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id20">相关文档</a></li>
+<li><a class="reference internal" href="#id21">相关文档</a></li>
 </ul>
 </li>
 </ul>

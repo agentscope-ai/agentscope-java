@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Infrastructure / Middleware" href="../infrastructure/index.html"><link rel="prev" title="AG-UI" href="agui.html">
+    <meta property="article:modified_time" content="2026-08-09T00:51:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Infrastructure / Middleware" href="../infrastructure/index.html"><link rel="prev" title="AG-UI" href="agui.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/integration/protocol/agent-protocol.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1014,15 +1014,30 @@
 <h2>Enable<a class="headerlink" href="#enable" title="Link to this heading">¶</a></h2>
 <p>The module is delivered as a Spring Boot auto-configuration. In a Spring Boot app:</p>
 <ol class="arabic simple">
-<li><p>Provide a <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> bean and a <code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code> bean.</p></li>
+<li><p>Provide a <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> bean (or a custom <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code>).</p></li>
 <li><p>Enable in <code class="docutils literal notranslate"><span class="pre">application.yml</span></code>:</p></li>
 </ol>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">agent-protocol</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="c1"># optional — control-plane TaskRecord directory (not an execution agent&#39;s workspace)</span>
+<span class="w">    </span><span class="c1"># task-store-path: ${user.dir}/.agentscope/agent-protocol</span>
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> REST endpoints are then registered automatically.</p>
+<section id="control-plane-vs-execution-workspace">
+<h3>Control-plane vs execution workspace<a class="headerlink" href="#control-plane-vs-execution-workspace" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">AgentProtocolTaskStore</span></code> persists protocol task metadata (<code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code> for submit / resume /
+snapshot) through a dedicated <code class="docutils literal notranslate"><span class="pre">ProtocolTaskRepository</span></code>. By default that repository is rooted at
+<code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.task-store-path</span></code> (<code class="docutils literal notranslate"><span class="pre">${user.dir}/.agentscope/agent-protocol</span></code>), under the
+synthetic bucket <code class="docutils literal notranslate"><span class="pre">agents/_agentscope_protocol/tasks/</span></code>.</p>
+<p>This path is <strong>independent</strong> of each <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>’s own <code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code> (MEMORY, sessions,
+skills). Multi-agent factories may give each agent a different <code class="docutils literal notranslate"><span class="pre">.workspace(...)</span></code>; protocol
+<code class="docutils literal notranslate"><span class="pre">task_id</span></code> lookup always goes through the control-plane repository.</p>
+<p>You may supply your own <code class="docutils literal notranslate"><span class="pre">ProtocolTaskRepository</span></code> bean to override the default. Construct
+<code class="docutils literal notranslate"><span class="pre">AgentProtocolTaskStore</span></code> with a <code class="docutils literal notranslate"><span class="pre">ProtocolTaskRepository</span></code> only — do not pass an execution agent’s
+<code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code>.</p>
+</section>
 </section>
 <section id="concurrent-execution">
 <h2>Concurrent execution<a class="headerlink" href="#concurrent-execution" title="Link to this heading">¶</a></h2>
@@ -1037,6 +1052,108 @@
 </pre></div>
 </div>
 <p>Concurrent requests for the same session are automatically serialized; different sessions run in parallel.</p>
+</section>
+<section id="agent-selection-agentfactory">
+<h2>Agent selection (<code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code>)<a class="headerlink" href="#agent-selection-agentfactory" title="Link to this heading">¶</a></h2>
+<p>Which agent runs a task is decided by an <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code> bean. Without one, the default factory returns the single <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> bean for every task.</p>
+<p>Define your own bean to route by <code class="docutils literal notranslate"><span class="pre">agent_id</span></code>, tenant, or any custom submission-context key:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">AgentFactory</span><span class="w"> </span><span class="nf">agentFactory</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">contextString</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">log</span><span class="p">.</span><span class="na">info</span><span class="p">(</span><span class="s">&quot;task {} agent_id={} tenant={} resume={}&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="n">request</span><span class="p">.</span><span class="na">taskId</span><span class="p">(),</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">tenant</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">resume</span><span class="p">());</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">getOrDefault</span><span class="p">(</span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">));</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">AgentRequest</span></code> fields:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Field</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">taskId()</span></code></p></td>
+<td><p>Task identifier; also the agent session id</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentId()</span></code></p></td>
+<td><p>Requested <code class="docutils literal notranslate"><span class="pre">agent_id</span></code> from the submission</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">input()</span></code></p></td>
+<td><p>User input; empty on a resume run</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">userId()</span></code> / <code class="docutils literal notranslate"><span class="pre">parentSessionId()</span></code></p></td>
+<td><p>Parsed from <code class="docutils literal notranslate"><span class="pre">context.user_id</span></code> / <code class="docutils literal notranslate"><span class="pre">context.parent_session_id</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">resume()</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code> when re-running a task that was awaiting tool confirmation</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">context()</span></code></p></td>
+<td><p>The submission <code class="docutils literal notranslate"><span class="pre">context</span></code> map exactly as received, including custom keys; <code class="docutils literal notranslate"><span class="pre">contextValue(key)</span></code> / <code class="docutils literal notranslate"><span class="pre">contextString(key)</span></code> are convenience accessors</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">attributes()</span></code></p></td>
+<td><p>Just the <code class="docutils literal notranslate"><span class="pre">context.attributes</span></code> map; <code class="docutils literal notranslate"><span class="pre">attributeString(key)</span></code> is a convenience accessor</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The factory is invoked once per run — on submit and again on every <code class="docutils literal notranslate"><span class="pre">/resume</span></code> — with the original submission context, so routing decisions stay stable across HITL pauses.</p>
+<p>Return a distinct instance per call (for example a prototype-scoped bean) when tasks run concurrently. Returning <code class="docutils literal notranslate"><span class="pre">null</span></code> fails the task with an error status.</p>
+</section>
+<section id="context-attributes">
+<h2>Context attributes<a class="headerlink" href="#context-attributes" title="Link to this heading">¶</a></h2>
+<p>Callers pass their own data in <code class="docutils literal notranslate"><span class="pre">context.attributes</span></code>, nested so it never mixes with the protocol’s own context fields. Besides being visible to the <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code>, attributes reach the running agent through its <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>.</p>
+<p>They arrive as <strong>one map under a single namespaced key</strong>, <code class="docutils literal notranslate"><span class="pre">AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY</span></code> (<code class="docutils literal notranslate"><span class="pre">agentprotocol.context.attributes</span></code>):</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ctx</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">AgentProtocolConstants</span><span class="p">.</span><span class="na">RUNTIME_CONTEXT_ATTRIBUTES_KEY</span><span class="p">);</span>
+<span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">attributes</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Attributes are namespaced rather than written as top-level keys because the framework itself reads a few plain runtime-context keys — <code class="docutils literal notranslate"><span class="pre">agentId</span></code> drives async tool wakeup routing, <code class="docutils literal notranslate"><span class="pre">outboundAddress</span></code> carries the gateway reply address. A caller naming an attribute after one of those would otherwise change how the agent behaves. Attributes are never rendered into the system prompt, so they do not affect what the model sees.</p>
+<section id="promoting-attributes-to-their-own-keys">
+<h3>Promoting attributes to their own keys<a class="headerlink" href="#promoting-attributes-to-their-own-keys" title="Link to this heading">¶</a></h3>
+<p>Register <code class="docutils literal notranslate"><span class="pre">RuntimeContextCustomizer</span></code> beans when a tool expects a plain key such as <code class="docutils literal notranslate"><span class="pre">ctx.get(&quot;tenant&quot;)</span></code>, or to turn attributes into typed values. <code class="docutils literal notranslate"><span class="pre">RuntimeContextCustomizer.flatten</span></code> copies an explicit allow-list, silently skipping framework-reserved names:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">RuntimeContextCustomizer</span><span class="w"> </span><span class="nf">promoteTenantKeys</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">RuntimeContextCustomizer</span><span class="p">.</span><span class="na">flatten</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ticket_id&quot;</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="nd">@Bean</span>
+<span class="n">RuntimeContextCustomizer</span><span class="w"> </span><span class="nf">tenantContext</span><span class="p">(</span><span class="n">TenantService</span><span class="w"> </span><span class="n">tenants</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">request</span><span class="p">,</span><span class="w"> </span><span class="n">builder</span><span class="p">)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">attributeString</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">tenant</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">builder</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">TenantInfo</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">tenants</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="n">tenant</span><span class="p">));</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Every customizer bean is applied to every run, in <code class="docutils literal notranslate"><span class="pre">&#64;Order</span></code>, after the namespaced injection — a later customizer overrides an earlier one. Hand-written customizers are trusted and may write any key, including reserved ones.</p>
+</section>
+<section id="sending-attributes-from-a-parent-agent">
+<h3>Sending attributes from a parent agent<a class="headerlink" href="#sending-attributes-from-a-parent-agent" title="Link to this heading">¶</a></h3>
+<p>A parent agent delegating to a remote subagent supplies attributes in two ways, merged with the per-call ones winning:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Static, per subagent</span>
+<span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;researcher&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Remote researcher&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;http://remote:8080&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">remoteContextAttributes</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;region&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;cn&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Per call, on the parent&#39;s RuntimeContext</span>
+<span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;sess-1&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_REMOTE_CONTEXT_ATTRIBUTES</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;acme&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Values must be JSON-serializable.</p>
+</section>
 </section>
 <section id="endpoints">
 <h2>Endpoints<a class="headerlink" href="#endpoints" title="Link to this heading">¶</a></h2>
@@ -1058,7 +1175,11 @@
 <span class="w">        </span><span class="nt">&quot;behavior&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;DENY&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;parent&quot;</span>
 <span class="w">      </span><span class="p">}</span>
-<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;attributes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;tenant&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;acme&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;ticket_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;INC-1001&quot;</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -1082,10 +1203,13 @@
 <td><p>Whether the caller intends to consume SSE events</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">detail</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">status</span></code> (default) or <code class="docutils literal notranslate"><span class="pre">full</span></code> — <code class="docutils literal notranslate"><span class="pre">full</span></code> includes text/thinking deltas on the event stream</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">status</span></code> (default), <code class="docutils literal notranslate"><span class="pre">full</span></code> or <code class="docutils literal notranslate"><span class="pre">verbose</span></code> — see <a class="reference internal" href="#stream-detail-levels">Stream detail levels</a></p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">deny_rules</span></code></p></td>
 <td><p>Parent DENY permission rules to enforce on the remote side</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">attributes</span></code></p></td>
+<td><p>Caller-defined key/values for routing and for the run’s <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>; see <a class="reference internal" href="#context-attributes">Context attributes</a></p></td>
 </tr>
 </tbody>
 </table>
@@ -1130,6 +1254,50 @@
 <li><p>Header <code class="docutils literal notranslate"><span class="pre">Last-Event-ID</span></code> — used when <code class="docutils literal notranslate"><span class="pre">from_seq</span></code> is omitted (same meaning)</p></li>
 </ul>
 <p>Each SSE message uses the event seq as <code class="docutils literal notranslate"><span class="pre">id</span></code>, the remote event type as <code class="docutils literal notranslate"><span class="pre">event</span></code>, and a JSON body as <code class="docutils literal notranslate"><span class="pre">data</span></code>.</p>
+<section id="stream-detail-levels">
+<h4>Stream detail levels<a class="headerlink" href="#stream-detail-levels" title="Link to this heading">¶</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">context.detail</span></code> on submission decides how much of the run reaches subscribers. Each level is a superset of the previous one:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">detail</span></code></p></th>
+<th class="head"><p>Event types on the stream</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">status</span></code> (default)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code>, <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>, <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code>, <code class="docutils literal notranslate"><span class="pre">TOOL_CALL_START</span></code>, <code class="docutils literal notranslate"><span class="pre">TOOL_CALL_END</span></code>, <code class="docutils literal notranslate"><span class="pre">TOOL_RESULT</span></code>, <code class="docutils literal notranslate"><span class="pre">REQUIRE_CONFIRM</span></code>, <code class="docutils literal notranslate"><span class="pre">STATUS</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">full</span></code></p></td>
+<td><p>plus <code class="docutils literal notranslate"><span class="pre">TEXT_DELTA</span></code>, <code class="docutils literal notranslate"><span class="pre">THINKING_DELTA</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">verbose</span></code></p></td>
+<td><p>plus <code class="docutils literal notranslate"><span class="pre">AGENT_EVENT</span></code> — every remaining agent event, including block boundaries, tool argument and tool output deltas, model calls with token usage, agent results and custom events</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Only <code class="docutils literal notranslate"><span class="pre">verbose</span></code> reproduces the agent’s own event stream in full. An unrecognized value is treated as <code class="docutils literal notranslate"><span class="pre">status</span></code>.</p>
+<p>Every event body also carries two fields beyond its type-specific ones:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Field</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">eventType</span></code></p></td>
+<td><p>Name of the source <code class="docutils literal notranslate"><span class="pre">AgentEventType</span></code>, e.g. <code class="docutils literal notranslate"><span class="pre">MODEL_CALL_END</span></code>. Lets a client filter or log without parsing <code class="docutils literal notranslate"><span class="pre">payload</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">payload</span></code></p></td>
+<td><p>The source <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> serialized in full. Restores the original event with its id, timestamp and metadata intact, and is the only representation of an <code class="docutils literal notranslate"><span class="pre">AGENT_EVENT</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Both are additive: a client that ignores them keeps reading the flat fields (<code class="docutils literal notranslate"><span class="pre">text</span></code>, <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>, <code class="docutils literal notranslate"><span class="pre">status</span></code>, …) exactly as before, and one that predates <code class="docutils literal notranslate"><span class="pre">AGENT_EVENT</span></code> simply skips those messages.</p>
+</section>
 </section>
 <section id="resume-after-hitl">
 <h3>Resume after HITL<a class="headerlink" href="#resume-after-hitl" title="Link to this heading">¶</a></h3>
@@ -1259,7 +1427,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-08-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1298,12 +1466,24 @@
 <li><a class="reference internal" href="#when-to-use">When to use</a></li>
 <li><a class="reference internal" href="#protocol-layering">Protocol layering</a></li>
 <li><a class="reference internal" href="#add-the-dependency">Add the dependency</a></li>
-<li><a class="reference internal" href="#enable">Enable</a></li>
+<li><a class="reference internal" href="#enable">Enable</a><ul>
+<li><a class="reference internal" href="#control-plane-vs-execution-workspace">Control-plane vs execution workspace</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#concurrent-execution">Concurrent execution</a></li>
+<li><a class="reference internal" href="#agent-selection-agentfactory">Agent selection (<code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code>)</a></li>
+<li><a class="reference internal" href="#context-attributes">Context attributes</a><ul>
+<li><a class="reference internal" href="#promoting-attributes-to-their-own-keys">Promoting attributes to their own keys</a></li>
+<li><a class="reference internal" href="#sending-attributes-from-a-parent-agent">Sending attributes from a parent agent</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#endpoints">Endpoints</a><ul>
 <li><a class="reference internal" href="#submit-a-task">Submit a task</a></li>
 <li><a class="reference internal" href="#poll-wait-cancel">Poll / wait / cancel</a></li>
-<li><a class="reference internal" href="#stream-events-sse">Stream events (SSE)</a></li>
+<li><a class="reference internal" href="#stream-events-sse">Stream events (SSE)</a><ul>
+<li><a class="reference internal" href="#stream-detail-levels">Stream detail levels</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#resume-after-hitl">Resume after HITL</a></li>
 </ul>
 </li>

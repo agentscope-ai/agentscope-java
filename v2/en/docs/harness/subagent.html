@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
+    <meta property="article:modified_time" content="2026-08-09T00:51:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1082,9 +1082,24 @@ You are a subagent focused on code review.
 <h2>Sync or background?<a class="headerlink" href="#sync-or-background" title="Link to this heading">¶</a></h2>
 <p>The parent creates a subagent with <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code>; the key knob is <code class="docutils literal notranslate"><span class="pre">timeout_seconds</span></code>:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">&gt;</span> <span class="pre">0</span></code> (default 30, max 600) — <strong>synchronous</strong> call; the parent blocks on this step, result returns as the tool result.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">&gt;</span> <span class="pre">0</span></code> (default 30, max 600) — <strong>synchronous</strong> call; the parent blocks on this step, result returns as the tool result. By default, when the wait expires the in-flight run is <strong>promoted</strong> to a background task (<code class="docutils literal notranslate"><span class="pre">status:</span> <span class="pre">timeout_promoted</span></code> + <code class="docutils literal notranslate"><span class="pre">task_id</span></code>) and keeps running.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">=</span> <span class="pre">0</span></code> — <strong>background</strong> call; returns a <code class="docutils literal notranslate"><span class="pre">task_id</span></code> immediately, subagent runs in the background.</p></li>
 </ul>
+<p><strong>Force sync via <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>.</strong> Application code can put <code class="docutils literal notranslate"><span class="pre">AgentSpawnTool.CTX_FORCE_SYNC</span> <span class="pre">=</span> <span class="pre">true</span></code> on the current call’s <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> to override the LLM’s async choice, and optionally <code class="docutils literal notranslate"><span class="pre">CTX_FORCE_SYNC_TIMEOUT_SECONDS</span></code> for a hard wait budget (seconds):</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;s-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_FORCE_SYNC</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_FORCE_SYNC_TIMEOUT_SECONDS</span><span class="p">,</span><span class="w"> </span><span class="mi">120</span><span class="p">)</span><span class="w"> </span><span class="c1">// optional; overrides LLM timeout_seconds</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>When enabled:</p>
+<ol class="arabic simple">
+<li><p>If <code class="docutils literal notranslate"><span class="pre">CTX_FORCE_SYNC_TIMEOUT_SECONDS</span></code> is set, it <strong>fully replaces</strong> the LLM’s <code class="docutils literal notranslate"><span class="pre">timeout_seconds</span></code> (<code class="docutils literal notranslate"><span class="pre">&lt;=</span> <span class="pre">0</span></code> falls back to 30s; max 600s).</p></li>
+<li><p>Without that override, an LLM-supplied <code class="docutils literal notranslate"><span class="pre">timeout_seconds=0</span></code> is coerced to the default sync timeout (30s) — <strong>no</strong> background task is submitted — while a positive LLM timeout is preserved.</p></li>
+<li><p>If the sync wait expires, the tool returns <code class="docutils literal notranslate"><span class="pre">status:</span> <span class="pre">timeout</span></code> and interrupts the subagent — it is <strong>not</strong> promoted to a background <code class="docutils literal notranslate"><span class="pre">task_id</span></code>.</p></li>
+</ol>
+<p><code class="docutils literal notranslate"><span class="pre">agent_send</span></code> honors the same switch. Multiple force-sync <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> calls in one turn still run in parallel under the Toolkit default.</p>
 <p>If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. Toolkit defaults to parallel tool execution (<code class="docutils literal notranslate"><span class="pre">ToolkitConfig.parallel=true</span></code>), so those synchronous calls advance in parallel on both <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> and <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier. To serialize tool calls, pass a custom <code class="docutils literal notranslate"><span class="pre">Toolkit</span></code> built with <code class="docutils literal notranslate"><span class="pre">ToolkitConfig.builder().parallel(false).build()</span></code>.</p>
 <p>Decompose work by independence and dependency graph first: nodes without dependency edges are good candidates for parallel subagents; dependent nodes should wait for upstream results before dispatch or merge. Short or critical-path tasks are good candidates for synchronous waiting or an explicit barrier so the parent can continue reasoning with their results. Long tasks can run in the background while the parent continues other work, then be collected and merged later.</p>
 <section id="background-tasks-push-back-automatically">
@@ -1293,7 +1308,9 @@ description: Investigates topics and returns a synthesized report.
 <span class="w">    </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;http://agent-task-server:8080&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">headers</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer xxx&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">remoteStreaming</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">          </span><span class="c1">// default when unset</span>
+<span class="w">    </span><span class="p">.</span><span class="na">remoteStreamDetail</span><span class="p">(</span><span class="n">RemoteStreamDetail</span><span class="p">.</span><span class="na">VERBOSE</span><span class="p">)</span><span class="w">  </span><span class="c1">// FULL when unset</span>
 <span class="w">    </span><span class="p">.</span><span class="na">remoteAskPolicy</span><span class="p">(</span><span class="n">RemoteAskPolicy</span><span class="p">.</span><span class="na">DENY</span><span class="p">)</span><span class="w">  </span><span class="c1">// default</span>
+<span class="w">    </span><span class="p">.</span><span class="na">remoteContextAttributes</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;region&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;cn&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 </pre></div>
 </div>
@@ -1310,15 +1327,49 @@ description: Investigates topics and returns a synthesized report.
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">remoteStreaming</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">true</span></code> (when unset)</p></td>
-<td><p>When the parent uses <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>, forward remote task SSE events into the parent stream with a <code class="docutils literal notranslate"><span class="pre">source</span></code> tag and <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code> (same id as the harness <code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code>)</p></td>
+<td><p>When the parent uses <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>, forward remote task SSE events into the parent stream with a <code class="docutils literal notranslate"><span class="pre">source</span></code> tag plus <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code> / <code class="docutils literal notranslate"><span class="pre">metadata.parentSessionId</span></code> (same ids as the harness <code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code> / parent session)</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">remoteAskPolicy</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">remoteStreamDetail</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">FULL</span></code></p></td>
+<td><p>How much of the remote event stream to forward — see <a class="reference internal" href="#remote-streaming-detail">Remote streaming detail</a></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">remoteAskPolicy</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">DENY</span></code></p></td>
 <td><p>How to resolve remote tool-confirmation (HITL) requests — see <a class="reference internal" href="#remote-authorization">Remote authorization</a></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">remoteContextAttributes</span></code></p></td>
+<td><p>none</p></td>
+<td><p>Static caller attributes sent as <code class="docutils literal notranslate"><span class="pre">context.attributes</span></code> on every submission. Merge per-call values by putting a map under <code class="docutils literal notranslate"><span class="pre">AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES</span></code> on the parent’s <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>; see <a class="reference internal" href="../../integration/protocol/agent-protocol.html#context-attributes"><span class="std std-ref">Context attributes</span></a></p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<section id="remote-streaming-detail">
+<h3>Remote streaming detail<a class="headerlink" href="#remote-streaming-detail" title="Link to this heading">¶</a></h3>
+<p>A local subagent forwards its child’s events verbatim. A remote one has to cross the wire, and how much crosses is controlled by <code class="docutils literal notranslate"><span class="pre">remoteStreamDetail</span></code>, sent as <code class="docutils literal notranslate"><span class="pre">context.detail</span></code>:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Level</p></th>
+<th class="head"><p>Forwards</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">STATUS</span></code></p></td>
+<td><p>Run lifecycle, tool call boundaries, tool results, confirmation requests</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">FULL</span></code> (default)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">STATUS</span></code> plus text and thinking deltas</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">VERBOSE</span></code></p></td>
+<td><p>Every event the remote agent emits — block boundaries, tool argument deltas, <strong>tool output deltas</strong>, model calls with token usage, hints, agent results, custom events</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Pick <code class="docutils literal notranslate"><span class="pre">VERBOSE</span></code> when the parent’s stream should look the same whether the subagent is local or remote; that is the only level at which the remote subagent’s tool output content and token usage reach the parent. It is not the default because the extra events are pure volume for callers that only render text.</p>
+<p>Events without a dedicated wire type travel as <code class="docutils literal notranslate"><span class="pre">AGENT_EVENT</span></code> with the original event serialized in the <code class="docutils literal notranslate"><span class="pre">payload</span></code> field, so the parent decodes the exact same class it would have received locally, ids, timestamps and metadata included. A client older than this field still reads the flat per-type fields and simply never sees the passthrough events.</p>
+</section>
 <section id="remote-authorization">
 <h3>Remote authorization<a class="headerlink" href="#remote-authorization" title="Link to this heading">¶</a></h3>
 <p>Parent DENY permission rules are forwarded in the remote submit <code class="docutils literal notranslate"><span class="pre">context.deny_rules</span></code> (same inheritance as local children; opt out with <code class="docutils literal notranslate"><span class="pre">inheritParentPermissions(false)</span></code>).</p>
@@ -1348,7 +1399,7 @@ description: Investigates topics and returns a synthesized report.
 <blockquote>
 <div><p>New code should use <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> (returns <code class="docutils literal notranslate"><span class="pre">Flux&lt;AgentEvent&gt;</span></code>). The legacy <code class="docutils literal notranslate"><span class="pre">stream()</span></code> family (<code class="docutils literal notranslate"><span class="pre">Flux&lt;Event&gt;</span></code>) is <code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true)</span></code> since 2.0.0 — see <a class="reference internal" href="../building-blocks/message-and-event.html"><span class="std std-doc">Message &amp; Event</span></a> and <a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 Migration Guide B.4</span></a>.</p>
 </div></blockquote>
-<p>When the parent calls a synchronous subagent via <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code>, the child’s intermediate events are <strong>forwarded live</strong> into the parent’s <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> stream. Each child event carries a <code class="docutils literal notranslate"><span class="pre">source</span></code> field (a <code class="docutils literal notranslate"><span class="pre">/</span></code>-separated path like <code class="docutils literal notranslate"><span class="pre">&quot;main/researcher&quot;</span></code>) so you can tell parent events (<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">==</span> <span class="pre">null</span></code>) from child events. Remote Agent Protocol children additionally set <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code> (<code class="docutils literal notranslate"><span class="pre">AgentEvent.METADATA_TASK_ID</span></code>) to the harness task id, so two concurrent / same-turn calls to the same remote agent remain distinguishable even when they share a <code class="docutils literal notranslate"><span class="pre">source</span></code> path.</p>
+<p>When the parent calls a synchronous subagent via <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code>, the child’s intermediate events are <strong>forwarded live</strong> into the parent’s <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> stream. Each child event carries a <code class="docutils literal notranslate"><span class="pre">source</span></code> field (a <code class="docutils literal notranslate"><span class="pre">/</span></code>-separated path like <code class="docutils literal notranslate"><span class="pre">&quot;main/researcher&quot;</span></code>) so you can tell parent events (<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">==</span> <span class="pre">null</span></code>) from child events. Remote Agent Protocol children additionally set <code class="docutils literal notranslate"><span class="pre">metadata.taskId</span></code> (<code class="docutils literal notranslate"><span class="pre">AgentEvent.METADATA_TASK_ID</span></code>) to the harness task id and <code class="docutils literal notranslate"><span class="pre">metadata.parentSessionId</span></code> (<code class="docutils literal notranslate"><span class="pre">AgentEvent.METADATA_PARENT_SESSION_ID</span></code>) to the parent session, so two concurrent / same-turn calls to the same remote agent remain distinguishable even when they share a <code class="docutils literal notranslate"><span class="pre">source</span></code> path.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>caller
   └─ parent.streamEvents(msg, ctx)
         │
@@ -1529,7 +1580,7 @@ description: Investigates topics and returns a synthesized report.
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-08-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1590,6 +1641,7 @@ description: Investigates topics and returns a synthesized report.
 <li><a class="reference internal" href="#let-the-agent-author-new-subagent-specs">Let the agent author new subagent specs</a></li>
 <li><a class="reference internal" href="#behavior-notes">Behavior notes</a></li>
 <li><a class="reference internal" href="#remote-subagent">Remote subagent</a><ul>
+<li><a class="reference internal" href="#remote-streaming-detail">Remote streaming detail</a></li>
 <li><a class="reference internal" href="#remote-authorization">Remote authorization</a></li>
 </ul>
 </li>

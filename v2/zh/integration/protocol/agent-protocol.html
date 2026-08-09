@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="基础设施 / 中间件" href="../infrastructure/index.html"><link rel="prev" title="AG-UI" href="agui.html">
+    <meta property="article:modified_time" content="2026-08-09T00:51:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="基础设施 / 中间件" href="../infrastructure/index.html"><link rel="prev" title="AG-UI" href="agui.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/protocol/agent-protocol.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1014,15 +1014,29 @@
 <h2>启用方式<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p>模块以 Spring Boot 自动配置形式提供，所以仅需在 Spring Boot 应用里：</p>
 <ol class="arabic simple">
-<li><p>注入一个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> Bean 和一个 <code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code> Bean。</p></li>
+<li><p>注入一个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> Bean（或自定义 <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code>）。</p></li>
 <li><p>在 <code class="docutils literal notranslate"><span class="pre">application.yml</span></code> 里启用：</p></li>
 </ol>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">agent-protocol</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="c1"># 可选 —— 协议控制面 TaskRecord 目录（不是执行 Agent 的 workspace）</span>
+<span class="w">    </span><span class="c1"># task-store-path: ${user.dir}/.agentscope/agent-protocol</span>
 </pre></div>
 </div>
 <p>随后会自动注册 <code class="docutils literal notranslate"><span class="pre">/tasks</span></code> 系列 REST 接口。</p>
+<section id="vs-workspace">
+<h3>控制面 vs 执行 workspace<a class="headerlink" href="#vs-workspace" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">AgentProtocolTaskStore</span></code> 通过独立的 <code class="docutils literal notranslate"><span class="pre">ProtocolTaskRepository</span></code> 持久化协议任务元数据（submit / resume /
+snapshot 用的 <code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code>）。默认根目录为 <code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.task-store-path</span></code>
+（<code class="docutils literal notranslate"><span class="pre">${user.dir}/.agentscope/agent-protocol</span></code>），落在合成桶
+<code class="docutils literal notranslate"><span class="pre">agents/_agentscope_protocol/tasks/</span></code> 下。</p>
+<p>该路径与每个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 自己的 <code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code>（MEMORY、sessions、skills）<strong>相互独立</strong>。
+多 agent 的 <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code> 可以为每个 agent 配置不同的 <code class="docutils literal notranslate"><span class="pre">.workspace(...)</span></code>；协议侧按 <code class="docutils literal notranslate"><span class="pre">task_id</span></code>
+查找始终走控制面仓库。</p>
+<p>也可以自行提供 <code class="docutils literal notranslate"><span class="pre">ProtocolTaskRepository</span></code> Bean 覆盖默认实现。<code class="docutils literal notranslate"><span class="pre">AgentProtocolTaskStore</span></code> 只接受
+<code class="docutils literal notranslate"><span class="pre">ProtocolTaskRepository</span></code>，不要传入执行 Agent 的 <code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code>。</p>
+</section>
 </section>
 <section id="id5">
 <h2>并发执行<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
@@ -1038,10 +1052,112 @@
 </div>
 <p>同一 session 的并发请求会自动串行化；不同 session 完全并行。</p>
 </section>
+<section id="agent-agentfactory">
+<h2>Agent 选择（<code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code>）<a class="headerlink" href="#agent-agentfactory" title="Link to this heading">¶</a></h2>
+<p>由哪个 agent 执行任务，交给 <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code> bean 决定。不定义时，默认工厂对所有任务返回唯一的 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> bean。</p>
+<p>自定义 bean 即可按 <code class="docutils literal notranslate"><span class="pre">agent_id</span></code>、租户或任意自定义提交上下文字段路由：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">AgentFactory</span><span class="w"> </span><span class="nf">agentFactory</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">contextString</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">log</span><span class="p">.</span><span class="na">info</span><span class="p">(</span><span class="s">&quot;task {} agent_id={} tenant={} resume={}&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="n">request</span><span class="p">.</span><span class="na">taskId</span><span class="p">(),</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">tenant</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">resume</span><span class="p">());</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">getOrDefault</span><span class="p">(</span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">));</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">AgentRequest</span></code> 字段：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>字段</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">taskId()</span></code></p></td>
+<td><p>任务标识，同时作为 agent 的 session id</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentId()</span></code></p></td>
+<td><p>提交时请求的 <code class="docutils literal notranslate"><span class="pre">agent_id</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">input()</span></code></p></td>
+<td><p>用户输入；resume 运行时为空</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">userId()</span></code> / <code class="docutils literal notranslate"><span class="pre">parentSessionId()</span></code></p></td>
+<td><p>解析自 <code class="docutils literal notranslate"><span class="pre">context.user_id</span></code> / <code class="docutils literal notranslate"><span class="pre">context.parent_session_id</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">resume()</span></code></p></td>
+<td><p>为 <code class="docutils literal notranslate"><span class="pre">true</span></code> 表示这是等待工具确认后的续跑</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">context()</span></code></p></td>
+<td><p>原样保留的提交 <code class="docutils literal notranslate"><span class="pre">context</span></code> map（含自定义键）；可用 <code class="docutils literal notranslate"><span class="pre">contextValue(key)</span></code> / <code class="docutils literal notranslate"><span class="pre">contextString(key)</span></code> 取值</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">attributes()</span></code></p></td>
+<td><p>仅 <code class="docutils literal notranslate"><span class="pre">context.attributes</span></code> 这层 map；可用 <code class="docutils literal notranslate"><span class="pre">attributeString(key)</span></code> 取值</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>工厂每次运行调用一次——提交时一次，之后每次 <code class="docutils literal notranslate"><span class="pre">/resume</span></code> 再调用一次，且拿到的仍是最初的提交上下文，因此 HITL 暂停前后的路由结果保持一致。</p>
+<p>任务并发执行时请每次返回独立实例（例如 prototype 作用域 bean）。返回 <code class="docutils literal notranslate"><span class="pre">null</span></code> 会让任务以错误状态结束。</p>
+</section>
+<section id="context-attributes">
+<h2>上下文属性（<code class="docutils literal notranslate"><span class="pre">context.attributes</span></code>）<a class="headerlink" href="#context-attributes" title="Link to this heading">¶</a></h2>
+<p>调用方的自定义数据放在 <code class="docutils literal notranslate"><span class="pre">context.attributes</span></code> 里，单独嵌一层，不与协议自身的上下文字段混在一起。除了 <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code> 能读到之外，这些属性还会随 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 进入实际执行的 agent。</p>
+<p>它们<strong>整体挂在一个带命名空间的键下</strong>——<code class="docutils literal notranslate"><span class="pre">AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY</span></code>（<code class="docutils literal notranslate"><span class="pre">agentprotocol.context.attributes</span></code>）：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ctx</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">AgentProtocolConstants</span><span class="p">.</span><span class="na">RUNTIME_CONTEXT_ATTRIBUTES_KEY</span><span class="p">);</span>
+<span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">attributes</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>之所以命名空间化而不是平铺成顶层键，是因为框架自身会读少量约定键：<code class="docutils literal notranslate"><span class="pre">agentId</span></code> 决定异步工具的唤醒路由，<code class="docutils literal notranslate"><span class="pre">outboundAddress</span></code> 携带网关回推地址。调用方一旦把属性命名成这些词，就会改变 agent 的行为。属性不会写进系统提示词，因此不影响模型看到的内容。</p>
 <section id="id6">
-<h2>端点<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<h3>把属性提升为独立键<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<p>当某个工具期望直接读 <code class="docutils literal notranslate"><span class="pre">ctx.get(&quot;tenant&quot;)</span></code>，或需要把属性转成类型化对象时，注册 <code class="docutils literal notranslate"><span class="pre">RuntimeContextCustomizer</span></code> bean。<code class="docutils literal notranslate"><span class="pre">RuntimeContextCustomizer.flatten</span></code> 按显式白名单拷贝，并自动跳过框架保留键：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
+<span class="n">RuntimeContextCustomizer</span><span class="w"> </span><span class="nf">promoteTenantKeys</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">RuntimeContextCustomizer</span><span class="p">.</span><span class="na">flatten</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ticket_id&quot;</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="nd">@Bean</span>
+<span class="n">RuntimeContextCustomizer</span><span class="w"> </span><span class="nf">tenantContext</span><span class="p">(</span><span class="n">TenantService</span><span class="w"> </span><span class="n">tenants</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">request</span><span class="p">,</span><span class="w"> </span><span class="n">builder</span><span class="p">)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">attributeString</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">tenant</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">builder</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">TenantInfo</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">tenants</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="n">tenant</span><span class="p">));</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>所有 customizer bean 都会按 <code class="docutils literal notranslate"><span class="pre">&#64;Order</span></code> 应用到每次运行，且在命名空间注入之后执行——后者覆盖前者。手写 customizer 属于可信扩展，可以写任意键，包括保留键。</p>
+</section>
+<section id="agent">
+<h3>从父 agent 发送属性<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h3>
+<p>父 agent 调用远程子 agent 时有两个来源，二者合并且按调用传入的优先：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 静态：按子 agent 声明</span>
+<span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;researcher&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;远程研究员&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;http://remote:8080&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">remoteContextAttributes</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;region&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;cn&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 动态：按本次调用，挂在父 agent 的 RuntimeContext 上</span>
+<span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;sess-1&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_REMOTE_CONTEXT_ATTRIBUTES</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;acme&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>值必须可 JSON 序列化。</p>
+</section>
+</section>
 <section id="id7">
-<h3>提交任务<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<h2>端点<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<section id="id8">
+<h3>提交任务<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks</span></code></p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;task_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;task_123&quot;</span><span class="p">,</span>
@@ -1058,7 +1174,11 @@
 <span class="w">        </span><span class="nt">&quot;behavior&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;DENY&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;parent&quot;</span>
 <span class="w">      </span><span class="p">}</span>
-<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;attributes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;tenant&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;acme&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;ticket_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;INC-1001&quot;</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -1082,18 +1202,21 @@
 <td><p>调用方是否打算消费 SSE 事件</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">detail</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">status</span></code>（默认）或 <code class="docutils literal notranslate"><span class="pre">full</span></code>——<code class="docutils literal notranslate"><span class="pre">full</span></code> 会在事件流中包含文本 / 思考增量</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">status</span></code>（默认）、<code class="docutils literal notranslate"><span class="pre">full</span></code> 或 <code class="docutils literal notranslate"><span class="pre">verbose</span></code>——见<a class="reference internal" href="#id10">事件流详细度</a></p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">deny_rules</span></code></p></td>
 <td><p>父侧 DENY 权限规则，供远程侧执行</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">attributes</span></code></p></td>
+<td><p>调用方自定义键值，用于路由以及本次运行的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>；见<a class="reference internal" href="#context-attributes">上下文属性</a></p></td>
 </tr>
 </tbody>
 </table>
 </div>
 <p>成功响应：<code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;task_id&quot;,</span> <span class="pre">&quot;status&quot;:</span> <span class="pre">&quot;pending&quot;</span> <span class="pre">}</span></code>。</p>
 </section>
-<section id="id8">
-<h3>轮询 / 等待 / 取消<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<section id="id9">
+<h3>轮询 / 等待 / 取消<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1130,6 +1253,50 @@
 <li><p>请求头 <code class="docutils literal notranslate"><span class="pre">Last-Event-ID</span></code> —— 未传 <code class="docutils literal notranslate"><span class="pre">from_seq</span></code> 时使用（含义相同）</p></li>
 </ul>
 <p>每条 SSE 消息以事件序号为 <code class="docutils literal notranslate"><span class="pre">id</span></code>、远程事件类型为 <code class="docutils literal notranslate"><span class="pre">event</span></code>、JSON 正文为 <code class="docutils literal notranslate"><span class="pre">data</span></code>。</p>
+<section id="id10">
+<h4>事件流详细度<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h4>
+<p>提交时的 <code class="docutils literal notranslate"><span class="pre">context.detail</span></code> 决定订阅方能收到多少事件，每一档都是前一档的超集：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">detail</span></code></p></th>
+<th class="head"><p>事件流中的类型</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">status</span></code>（默认）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code>、<code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>、<code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code>、<code class="docutils literal notranslate"><span class="pre">TOOL_CALL_START</span></code>、<code class="docutils literal notranslate"><span class="pre">TOOL_CALL_END</span></code>、<code class="docutils literal notranslate"><span class="pre">TOOL_RESULT</span></code>、<code class="docutils literal notranslate"><span class="pre">REQUIRE_CONFIRM</span></code>、<code class="docutils literal notranslate"><span class="pre">STATUS</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">full</span></code></p></td>
+<td><p>再加 <code class="docutils literal notranslate"><span class="pre">TEXT_DELTA</span></code>、<code class="docutils literal notranslate"><span class="pre">THINKING_DELTA</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">verbose</span></code></p></td>
+<td><p>再加 <code class="docutils literal notranslate"><span class="pre">AGENT_EVENT</span></code>——其余所有 agent 事件，包括块边界、工具入参与工具输出增量、带 token usage 的模型调用、agent 结果、自定义事件</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>只有 <code class="docutils literal notranslate"><span class="pre">verbose</span></code> 能完整复现 agent 自身的事件流。无法识别的取值按 <code class="docutils literal notranslate"><span class="pre">status</span></code> 处理。</p>
+<p>除各类型专属字段外，每个事件正文还带两个字段：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>字段</p></th>
+<th class="head"><p>含义</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">eventType</span></code></p></td>
+<td><p>源 <code class="docutils literal notranslate"><span class="pre">AgentEventType</span></code> 的名字，如 <code class="docutils literal notranslate"><span class="pre">MODEL_CALL_END</span></code>。客户端可据此过滤或打日志，无需解析 <code class="docutils literal notranslate"><span class="pre">payload</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">payload</span></code></p></td>
+<td><p>源 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> 的完整序列化。可还原出原始事件，id、时间戳与 metadata 都保留；也是 <code class="docutils literal notranslate"><span class="pre">AGENT_EVENT</span></code> 的唯一表示形式</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>两者都是增量字段：忽略它们的客户端照旧读扁平字段（<code class="docutils literal notranslate"><span class="pre">text</span></code>、<code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>、<code class="docutils literal notranslate"><span class="pre">status</span></code> 等），早于 <code class="docutils literal notranslate"><span class="pre">AGENT_EVENT</span></code> 的客户端则直接跳过这类消息。</p>
+</section>
 </section>
 <section id="hitl">
 <h3>HITL 恢复<a class="headerlink" href="#hitl" title="Link to this heading">¶</a></h3>
@@ -1143,11 +1310,11 @@
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">tool_call_id</span></code> 也可作为 <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code> 的别名。需要 <code class="docutils literal notranslate"><span class="pre">agentscope.agent-protocol.hitl-enabled=true</span></code>（默认开启）。成功响应：<code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;task_id&quot;,</span> <span class="pre">&quot;status&quot;:</span> <span class="pre">&quot;running&quot;</span> <span class="pre">}</span></code>。</p>
-<p>与调用方父 harness 的 HITL 交互见 <a class="reference internal" href="../../docs/harness/subagent.html#id15"><span class="std std-ref">远程授权</span></a>。</p>
+<p>与调用方父 harness 的 HITL 交互见 <a class="reference internal" href="../../docs/harness/subagent.html#id16"><span class="std std-ref">远程授权</span></a>。</p>
 </section>
 </section>
-<section id="id9">
-<h2>配置项<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<section id="id11">
+<h2>配置项<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1259,7 +1426,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-08-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1298,16 +1465,28 @@
 <li><a class="reference internal" href="#id1">何时使用</a></li>
 <li><a class="reference internal" href="#id2">协议分层</a></li>
 <li><a class="reference internal" href="#id3">添加依赖</a></li>
-<li><a class="reference internal" href="#id4">启用方式</a></li>
+<li><a class="reference internal" href="#id4">启用方式</a><ul>
+<li><a class="reference internal" href="#vs-workspace">控制面 vs 执行 workspace</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#id5">并发执行</a></li>
-<li><a class="reference internal" href="#id6">端点</a><ul>
-<li><a class="reference internal" href="#id7">提交任务</a></li>
-<li><a class="reference internal" href="#id8">轮询 / 等待 / 取消</a></li>
-<li><a class="reference internal" href="#sse">事件流（SSE）</a></li>
+<li><a class="reference internal" href="#agent-agentfactory">Agent 选择（<code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code>）</a></li>
+<li><a class="reference internal" href="#context-attributes">上下文属性（<code class="docutils literal notranslate"><span class="pre">context.attributes</span></code>）</a><ul>
+<li><a class="reference internal" href="#id6">把属性提升为独立键</a></li>
+<li><a class="reference internal" href="#agent">从父 agent 发送属性</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id7">端点</a><ul>
+<li><a class="reference internal" href="#id8">提交任务</a></li>
+<li><a class="reference internal" href="#id9">轮询 / 等待 / 取消</a></li>
+<li><a class="reference internal" href="#sse">事件流（SSE）</a><ul>
+<li><a class="reference internal" href="#id10">事件流详细度</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#hitl">HITL 恢复</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id9">配置项</a></li>
+<li><a class="reference internal" href="#id11">配置项</a></li>
 <li><a class="reference internal" href="#workspace">与 Workspace 配合</a></li>
 </ul>
 </li>
