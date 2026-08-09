@@ -743,6 +743,36 @@ class RAGFlowClientTest {
     }
 
     @Test
+    void testRetryKeepsFinalErrorResponseBodyReadable() {
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(500)
+                        .setBody("{\"message\": \"first failure\"}"));
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(500)
+                        .setBody("{\"message\": \"final failure\"}"));
+
+        RAGFlowConfig config =
+                RAGFlowConfig.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockWebServer.url("").toString().replaceAll("/$", ""))
+                        .addDatasetId("dataset-123")
+                        .maxRetries(1)
+                        .build();
+
+        RAGFlowClient client = new RAGFlowClient(config);
+
+        RAGFlowApiException exception =
+                assertThrows(
+                        RAGFlowApiException.class,
+                        () -> client.retrieve("test query", null, null, null).block());
+
+        assertTrue(exception.getMessage().contains("final failure"));
+        assertEquals(2, mockWebServer.getRequestCount());
+    }
+
+    @Test
     void testApiErrorWithNonZeroCode() {
         String errorResponse =
                 """
