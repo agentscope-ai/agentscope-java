@@ -79,6 +79,13 @@ public abstract class AgentEvent {
      */
     public static final String METADATA_TASK_ID = "taskId";
 
+    /**
+     * Well-known {@link #metadata} key identifying the parent agent's session that initiated a
+     * remote subagent run. Distinct from {@link #source} (which embeds the same id as a path
+     * prefix) and from {@link #METADATA_TASK_ID} (which identifies the harness task).
+     */
+    public static final String METADATA_PARENT_SESSION_ID = "parentSessionId";
+
     private final String id;
     private final String createdAt;
     private String source;
