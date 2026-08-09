@@ -87,8 +87,7 @@ public class ChannelSendExample {
         // Attach application context (attributes / force-sync) via SendOptions.
         Msg withCtx =
                 chat.send(
-                                SendOptions.userId("user-1")
-                                        .withAttribute("tenant", "demo"),
+                                SendOptions.userId("user-1").withAttribute("tenant", "demo"),
                                 "Reply with a short hello.")
                         .block();
         System.out.println(
@@ -111,10 +110,8 @@ public class ChannelSendExample {
                                                         .build())
                                         .build())
                         .build();
-        Msg vision =
-                chat.send(SendOptions.userId("user-1"), multimodal).block();
-        System.out.println(
-                "Multimodal: " + (vision != null ? vision.getTextContent() : "(null)"));
+        Msg vision = chat.send(SendOptions.userId("user-1"), multimodal).block();
+        System.out.println("Multimodal: " + (vision != null ? vision.getTextContent() : "(null)"));
         // Equivalent list form:
         chat.send(SendOptions.userId("user-1"), List.of(multimodal)).block();
 

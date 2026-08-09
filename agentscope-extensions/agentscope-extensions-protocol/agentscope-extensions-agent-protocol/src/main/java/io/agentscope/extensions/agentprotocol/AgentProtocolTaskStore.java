@@ -34,7 +34,6 @@ import io.agentscope.harness.agent.subagent.protocol.RemoteEventType;
 import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -53,15 +52,16 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
- * In-memory execution handles with workspace-backed {@link TaskRecord} persistence.
+ * In-memory execution handles with control-plane {@link TaskRecord} persistence.
  *
  * <p>Each run resolves its {@link HarnessAgent} through the {@link AgentFactory}, which receives
  * the submission context and can therefore route per task. For concurrent task execution, return a
  * new instance per call (e.g. a Spring prototype-scoped bean); a shared instance requires the agent
  * to be configured with {@code checkRunning(false)}.
  *
- * <p>Caller-supplied {@code context.attributes} reach the run through its {@link RuntimeContext};
- * see {@link RuntimeContextCustomizer} for controlling how.
+ * <p>Task metadata is stored via {@link ProtocolTaskRepository} (a dedicated control-plane path),
+ * not via any execution agent's workspace. Caller-supplied {@code context.attributes} reach the
+ * run through its {@link RuntimeContext}; see {@link RuntimeContextCustomizer} for controlling how.
  */
 public final class AgentProtocolTaskStore {
 
@@ -72,7 +72,7 @@ public final class AgentProtocolTaskStore {
     static final String AWAITING_CONFIRM_SENTINEL = "__awaiting_confirm__";
 
     private final AgentFactory agentFactory;
-    private final WorkspaceManager workspaceManager;
+    private final ProtocolTaskRepository taskRepository;
     private final AgentProtocolTaskEventBus eventBus;
     private final AgentProtocolProperties properties;
     private final List<RuntimeContextCustomizer> runtimeContextCustomizers;
@@ -90,20 +90,20 @@ public final class AgentProtocolTaskStore {
 
     public AgentProtocolTaskStore(
             AgentFactory agentFactory,
-            WorkspaceManager workspaceManager,
+            ProtocolTaskRepository taskRepository,
             AgentProtocolTaskEventBus eventBus,
             AgentProtocolProperties properties) {
-        this(agentFactory, workspaceManager, eventBus, properties, List.of());
+        this(agentFactory, taskRepository, eventBus, properties, List.of());
     }
 
     public AgentProtocolTaskStore(
             AgentFactory agentFactory,
-            WorkspaceManager workspaceManager,
+            ProtocolTaskRepository taskRepository,
             AgentProtocolTaskEventBus eventBus,
             AgentProtocolProperties properties,
             List<RuntimeContextCustomizer> runtimeContextCustomizers) {
         this.agentFactory = Objects.requireNonNull(agentFactory, "agentFactory");
-        this.workspaceManager = Objects.requireNonNull(workspaceManager, "workspaceManager");
+        this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository");
         this.eventBus = eventBus != null ? eventBus : new AgentProtocolTaskEventBus();
         this.properties = properties != null ? properties : new AgentProtocolProperties();
         this.runtimeContextCustomizers =
@@ -112,16 +112,18 @@ public final class AgentProtocolTaskStore {
                         : List.copyOf(runtimeContextCustomizers);
     }
 
-    public AgentProtocolTaskStore(AgentFactory agentFactory, WorkspaceManager workspaceManager) {
+    public AgentProtocolTaskStore(
+            AgentFactory agentFactory, ProtocolTaskRepository taskRepository) {
         this(
                 agentFactory,
-                workspaceManager,
+                taskRepository,
                 new AgentProtocolTaskEventBus(),
                 new AgentProtocolProperties());
     }
 
-    public AgentProtocolTaskStore(HarnessAgent harnessAgent, WorkspaceManager workspaceManager) {
-        this(AgentFactory.fixed(harnessAgent), workspaceManager);
+    public AgentProtocolTaskStore(
+            HarnessAgent harnessAgent, ProtocolTaskRepository taskRepository) {
+        this(AgentFactory.fixed(harnessAgent), taskRepository);
     }
 
     public AgentProtocolTaskEventBus eventBus() {
@@ -139,12 +141,7 @@ public final class AgentProtocolTaskStore {
     }
 
     public void submit(String taskId, String agentId, String input, Map<String, Object> context) {
-        Optional<TaskRecord> existing =
-                workspaceManager.readTaskRecord(
-                        RuntimeContext.empty(),
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        taskId);
+        Optional<TaskRecord> existing = taskRepository.find(taskId);
         if (existing.isPresent() && existing.get().getStatus().isTerminal()) {
             throw new IllegalStateException("task_id already finished: " + taskId);
         }
@@ -182,12 +179,7 @@ public final class AgentProtocolTaskStore {
         if (!properties.isHitlEnabled()) {
             throw new IllegalStateException("HITL is disabled on this server");
         }
-        Optional<TaskRecord> existing =
-                workspaceManager.readTaskRecord(
-                        RuntimeContext.empty(),
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        taskId);
+        Optional<TaskRecord> existing = taskRepository.find(taskId);
         if (existing.isEmpty() || !existing.get().isAwaitingConfirm()) {
             throw new IllegalStateException("task is not awaiting confirmation: " + taskId);
         }
@@ -343,12 +335,7 @@ public final class AgentProtocolTaskStore {
 
     private void markAwaitingConfirm(
             String taskId, String agentId, List<RemotePendingConfirm> pending) {
-        Optional<TaskRecord> prev =
-                workspaceManager.readTaskRecord(
-                        RuntimeContext.empty(),
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        taskId);
+        Optional<TaskRecord> prev = taskRepository.find(taskId);
         TaskRecord r =
                 prev.orElseGet(
                         () ->
@@ -411,11 +398,7 @@ public final class AgentProtocolTaskStore {
     }
 
     private void persist(TaskRecord r) {
-        workspaceManager.writeTaskRecord(
-                RuntimeContext.empty(),
-                AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                r);
+        taskRepository.save(r);
     }
 
     private void updateRunning(String taskId, String agentId) {
@@ -430,12 +413,7 @@ public final class AgentProtocolTaskStore {
             String agentId,
             boolean awaitingConfirm,
             List<RemotePendingConfirm> pendingConfirms) {
-        Optional<TaskRecord> prev =
-                workspaceManager.readTaskRecord(
-                        RuntimeContext.empty(),
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        taskId);
+        Optional<TaskRecord> prev = taskRepository.find(taskId);
         TaskRecord r =
                 prev.orElseGet(
                         () ->
@@ -461,12 +439,7 @@ public final class AgentProtocolTaskStore {
     public Map<String, Object> snapshot(String taskId) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("task_id", taskId);
-        Optional<TaskRecord> rec =
-                workspaceManager.readTaskRecord(
-                        RuntimeContext.empty(),
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        taskId);
+        Optional<TaskRecord> rec = taskRepository.find(taskId);
         if (rec.isEmpty()) {
             m.put("status", "error");
             m.put("error", "task not found");
@@ -520,12 +493,7 @@ public final class AgentProtocolTaskStore {
 
         int attempt = 0;
         while (System.currentTimeMillis() < deadline) {
-            Optional<TaskRecord> rec =
-                    workspaceManager.readTaskRecord(
-                            RuntimeContext.empty(),
-                            AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                            AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                            taskId);
+            Optional<TaskRecord> rec = taskRepository.find(taskId);
             if (rec.isEmpty()) {
                 Map<String, Object> err = new LinkedHashMap<>();
                 err.put("status", "error");
@@ -571,12 +539,7 @@ public final class AgentProtocolTaskStore {
         if (f != null) {
             f.cancel(true);
         }
-        Optional<TaskRecord> rec =
-                workspaceManager.readTaskRecord(
-                        RuntimeContext.empty(),
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        taskId);
+        Optional<TaskRecord> rec = taskRepository.find(taskId);
         if (rec.isPresent()) {
             TaskRecord r = rec.get();
             r.setCancelRequested(true);

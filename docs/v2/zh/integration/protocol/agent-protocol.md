@@ -33,16 +33,32 @@ AgentScope 用不同协议覆盖不同信任边界 / 交互面：
 
 模块以 Spring Boot 自动配置形式提供，所以仅需在 Spring Boot 应用里：
 
-1. 注入一个 `HarnessAgent` Bean 和一个 `WorkspaceManager` Bean。
+1. 注入一个 `HarnessAgent` Bean（或自定义 `AgentFactory`）。
 2. 在 `application.yml` 里启用：
 
 ```yaml
 agentscope:
   agent-protocol:
     enabled: true
+    # 可选 —— 协议控制面 TaskRecord 目录（不是执行 Agent 的 workspace）
+    # task-store-path: ${user.dir}/.agentscope/agent-protocol
 ```
 
 随后会自动注册 `/tasks` 系列 REST 接口。
+
+### 控制面 vs 执行 workspace
+
+`AgentProtocolTaskStore` 通过独立的 `ProtocolTaskRepository` 持久化协议任务元数据（submit / resume /
+snapshot 用的 `TaskRecord`）。默认根目录为 `agentscope.agent-protocol.task-store-path`
+（`${user.dir}/.agentscope/agent-protocol`），落在合成桶
+`agents/_agentscope_protocol/tasks/` 下。
+
+该路径与每个 `HarnessAgent` 自己的 `WorkspaceManager`（MEMORY、sessions、skills）**相互独立**。
+多 agent 的 `AgentFactory` 可以为每个 agent 配置不同的 `.workspace(...)`；协议侧按 `task_id`
+查找始终走控制面仓库。
+
+也可以自行提供 `ProtocolTaskRepository` Bean 覆盖默认实现。`AgentProtocolTaskStore` 只接受
+`ProtocolTaskRepository`，不要传入执行 Agent 的 `WorkspaceManager`。
 
 ## 并发执行
 
