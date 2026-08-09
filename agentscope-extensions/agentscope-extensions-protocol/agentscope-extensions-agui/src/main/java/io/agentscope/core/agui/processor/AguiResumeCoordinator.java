@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.agui.processor;
 
+import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON;
+
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
@@ -134,13 +136,13 @@ final class AguiResumeCoordinator {
     }
 
     /**
-     * Add known interrupt-to-tool-call mappings to the runtime context for resume conversion.
+     * Add known originating interrupts to the runtime context for resume conversion.
      *
      * @param input The run input containing resume entries
      * @param runtimeContext The caller-provided runtime context, if any
-     * @return A runtime context with AG-UI resume tool-call mappings when available
+     * @return A runtime context with AG-UI resume interrupts when available
      */
-    RuntimeContext addResumeToolCallIds(RunAgentInput input, RuntimeContext runtimeContext) {
+    RuntimeContext addResumeInterrupts(RunAgentInput input, RuntimeContext runtimeContext) {
         if (!input.hasResume()) {
             return runtimeContext;
         }
@@ -149,23 +151,23 @@ final class AguiResumeCoordinator {
         if (pending == null || pending.isEmpty()) {
             return runtimeContext;
         }
-        Map<String, String> toolCallIds = new LinkedHashMap<>();
+        Map<String, AguiEvent.Interrupt> resumeInterrupts = new LinkedHashMap<>();
         for (AguiResume resume : input.getResume()) {
             AguiEvent.Interrupt interrupt = pending.get(resume.getInterruptId());
-            if (interrupt != null
-                    && "tool_call".equals(interrupt.reason())
-                    && interrupt.toolCallId() != null
-                    && !interrupt.toolCallId().isBlank()) {
-                toolCallIds.put(resume.getInterruptId(), interrupt.toolCallId());
+            if (interrupt == null) {
+                continue;
+            }
+            if (shouldPassResumeInterrupt(interrupt)) {
+                resumeInterrupts.put(resume.getInterruptId(), interrupt);
             }
         }
-        if (toolCallIds.isEmpty()) {
+        if (resumeInterrupts.isEmpty()) {
             return runtimeContext;
         }
         return RuntimeContext.builder(runtimeContext)
                 .put(
-                        AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY,
-                        Map.copyOf(toolCallIds))
+                        AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY,
+                        Map.copyOf(resumeInterrupts))
                 .build();
     }
 
@@ -225,6 +227,13 @@ final class AguiResumeCoordinator {
             }
         }
         return ResumeContractResult.proceed();
+    }
+
+    private boolean shouldPassResumeInterrupt(AguiEvent.Interrupt interrupt) {
+        if (TOOL_CALL_INTERRUPT_REASON.equals(interrupt.reason())) {
+            return interrupt.toolCallId() != null && !interrupt.toolCallId().isBlank();
+        }
+        return false;
     }
 
     record ResumeContractResult(boolean error, String message) {

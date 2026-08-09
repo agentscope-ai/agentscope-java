@@ -44,6 +44,7 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
 import io.agentscope.harness.agent.subagent.protocol.RemoteEventCodec;
 import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
+import io.agentscope.harness.agent.subagent.protocol.RemoteStreamDetail;
 import io.agentscope.harness.agent.subagent.task.AgentProtocolTransport;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.RemoteSubagentTransport;
@@ -135,6 +136,73 @@ public class AgentSpawnTool {
      * manager here so concurrent callers never overwrite each other's declarations.
      */
     public static final String CTX_AGENT_MANAGER = "agentscope.subagent.agent_manager";
+
+    /**
+     * {@link RuntimeContext} string key holding a {@code Map<String, Object>} of caller-defined
+     * attributes to send with every remote subagent submission of the current call, as
+     * {@code context.attributes}:
+     *
+     * <pre>{@code
+     * RuntimeContext ctx = RuntimeContext.builder()
+     *     .sessionId("s-1")
+     *     .put(AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES, Map.of("tenant", "acme"))
+     *     .build();
+     * }</pre>
+     *
+     * <p>Merged over the subagent's static {@link
+     * SubagentDeclaration#getRemoteContextAttributes()}, so a per-call value wins on conflict.
+     * Values must be JSON-serializable.
+     */
+    public static final String CTX_REMOTE_CONTEXT_ATTRIBUTES =
+            "agentscope.subagent.remote_context_attributes";
+
+    /**
+     * {@link RuntimeContext} string key that forces synchronous subagent execution for the current
+     * call. Put a {@link Boolean} (or its string form) under this key to ignore LLM-requested
+     * background mode ({@code timeout_seconds=0}) and to disable timeout promotion to a background
+     * {@code task_id}.
+     *
+     * <p>When force-sync is on:
+     *
+     * <ul>
+     *   <li>{@code timeout_seconds=0} is coerced to the default sync timeout (30s), unless {@link
+     *       #CTX_FORCE_SYNC_TIMEOUT_SECONDS} supplies an absolute override
+     *   <li>If the sync wait exceeds the timeout, the subagent is interrupted and the tool returns
+     *       {@code status: timeout} — it is <em>not</em> promoted to an async background task
+     * </ul>
+     *
+     * <pre>{@code
+     * RuntimeContext ctx = RuntimeContext.builder()
+     *     .sessionId("s-1")
+     *     .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+     *     .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120)
+     *     .build();
+     * }</pre>
+     *
+     * <p>Applies to {@code agent_spawn} and {@code agent_send}. Multiple sync tool calls in one
+     * turn still run in parallel by default (Toolkit {@code parallel=true}).
+     */
+    public static final String CTX_FORCE_SYNC = "agentscope.subagent.force_sync";
+
+    /**
+     * Optional {@link RuntimeContext} override for the sync wait (seconds) when {@link
+     * #CTX_FORCE_SYNC} is enabled. Accepts an {@link Integer}/{@link Number} or its string form.
+     *
+     * <p>When present (and force-sync is on), this value fully replaces the LLM's {@code
+     * timeout_seconds} for the call. Values {@code <= 0} fall back to the default sync timeout
+     * (30s); values above 600 are clamped.
+     *
+     * <p>Ignored when force-sync is off.
+     *
+     * <pre>{@code
+     * RuntimeContext ctx = RuntimeContext.builder()
+     *     .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+     *     .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120)
+     *     .build();
+     * }</pre>
+     */
+    public static final String CTX_FORCE_SYNC_TIMEOUT_SECONDS =
+            "agentscope.subagent.force_sync_timeout_seconds";
 
     private static final String BG_RESULT_TEMPLATE =
             """
@@ -380,7 +448,8 @@ public class AgentSpawnTool {
                     canonLabel);
         }
 
-        long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        boolean forceSync = isForceSync(runtimeContext);
+        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -441,7 +510,8 @@ public class AgentSpawnTool {
                             parentSessionId,
                             declOpt.get(),
                             finalTask.trim(),
-                            timeoutMs),
+                            timeoutMs,
+                            forceSync),
                     subagentId,
                     agentId,
                     sessionId,
@@ -449,7 +519,9 @@ public class AgentSpawnTool {
         }
 
         // Sync-local execution with timeout promotion: if the agent doesn't finish within the
-        // timeout, its in-flight execution is promoted to an async task instead of being lost.
+        // timeout, its in-flight execution is promoted to an async task instead of being lost —
+        // unless force-sync is on, in which case the agent is interrupted and status: timeout
+        // is returned.
         final String finalTask = task.trim();
         final String finalSpawnInfo = spawnInfo;
         final String finalSubagentId = subagentId;
@@ -464,7 +536,8 @@ public class AgentSpawnTool {
                         runtimeContext,
                         finalSpawnInfo,
                         timeoutMs,
-                        agentId),
+                        agentId,
+                        forceSync),
                 finalSubagentId,
                 agentId,
                 sessionId,
@@ -545,7 +618,8 @@ public class AgentSpawnTool {
         }
         final SpawnedAgent spawned = resolved;
 
-        long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        boolean forceSync = isForceSync(runtimeContext);
+        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         DefaultAgentManager manager = managerFor(runtimeContext);
@@ -606,7 +680,8 @@ public class AgentSpawnTool {
                     parentSessionId,
                     declOpt.get(),
                     finalMessage.trim(),
-                    timeoutMs);
+                    timeoutMs,
+                    forceSync);
         }
 
         final String finalKey = key;
@@ -619,7 +694,8 @@ public class AgentSpawnTool {
                 runtimeContext,
                 "agent_key: " + finalKey,
                 timeoutMs,
-                spawned.agentId());
+                spawned.agentId(),
+                forceSync);
     }
 
     @Tool(name = "agent_list", description = "List active subagents spawned by this agent.")
@@ -782,7 +858,8 @@ public class AgentSpawnTool {
     /**
      * Executes a local subagent with timeout promotion: if the agent doesn't finish within
      * {@code timeoutMs}, the in-flight execution is promoted to an async background task instead
-     * of being cancelled and lost.
+     * of being cancelled and lost — unless {@code forceSync} is true, in which case the agent is
+     * interrupted and {@code status: timeout} is returned with no background promotion.
      *
      * <p>The key mechanism is a {@link CompletableFuture} bridge that decouples execution from
      * observation. The Mono from {@link #execLocalSync} is subscribed with Reactor Context
@@ -792,8 +869,11 @@ public class AgentSpawnTool {
      *
      * <ul>
      *   <li>Agent finishes before timeout → normal result returned
-     *   <li>Timeout fires first → bridge (still running) is registered in {@link TaskRepository}
-     *       as an {@link TaskRunSpec.AdoptedTaskRunSpec}, and a {@code task_id} is returned
+     *   <li>Timeout fires first (default) → bridge (still running) is registered in {@link
+     *       TaskRepository} as an {@link TaskRunSpec.AdoptedTaskRunSpec}, and a {@code task_id} is
+     *       returned
+     *   <li>Timeout fires first ({@code forceSync}) → agent interrupted, {@code status: timeout},
+     *       no {@code task_id}
      *   <li>Agent errors → error message returned
      * </ul>
      */
@@ -806,7 +886,8 @@ public class AgentSpawnTool {
             RuntimeContext runtimeContext,
             String header,
             long timeoutMs,
-            String agentId) {
+            String agentId,
+            boolean forceSync) {
 
         return Mono.deferContextual(
                 parentCtx ->
@@ -872,7 +953,9 @@ public class AgentSpawnTool {
                                                             header,
                                                             timeoutMs,
                                                             agentId,
-                                                            sink);
+                                                            sink,
+                                                            forceSync,
+                                                            innerSub);
                                                 } else {
                                                     sink.success(
                                                             header
@@ -911,7 +994,8 @@ public class AgentSpawnTool {
 
     /**
      * Handles errors from the race future in {@link #execWithTimeoutPromotion}. Separated to keep
-     * the lambda readable — it distinguishes timeout (→ promote) from real errors (→ report).
+     * the lambda readable — it distinguishes timeout (→ promote, or hard-fail under force-sync)
+     * from real errors (→ report).
      */
     private void handleExecError(
             Throwable err,
@@ -920,10 +1004,25 @@ public class AgentSpawnTool {
             String header,
             long timeoutMs,
             String agentId,
-            reactor.core.publisher.MonoSink<String> sink) {
+            reactor.core.publisher.MonoSink<String> sink,
+            boolean forceSync,
+            Disposable innerSub) {
 
         Throwable cause = err instanceof CompletionException ? err.getCause() : err;
         if (cause instanceof TimeoutException) {
+            if (forceSync) {
+                // Hard timeout: dispose triggers doFinally(CANCEL) → interruptAgent; no promote.
+                if (innerSub != null && !innerSub.isDisposed()) {
+                    innerSub.dispose();
+                }
+                log.info(
+                        "agent_spawn sync timeout after {}ms under force_sync (not promoted):"
+                                + " agentId={}",
+                        timeoutMs,
+                        agentId);
+                sink.success(header + "\n" + formatForceSyncTimeout(timeoutMs));
+                return;
+            }
             String taskId = "task_" + UUID.randomUUID();
             String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
             CompletableFuture<String> textFuture = bridge.thenApply(AgentSpawnTool::textOf);
@@ -1035,6 +1134,15 @@ public class AgentSpawnTool {
                 taskId, timeoutMs / 1000, taskId);
     }
 
+    private static String formatForceSyncTimeout(long timeoutMs) {
+        return String.format(
+                """
+                status: timeout
+                The task exceeded the %ds sync timeout and was interrupted because force_sync                 is enabled. Background promotion is disabled for this call.\
+                """,
+                timeoutMs / 1000);
+    }
+
     /**
      * Builds an {@link EventSource} for a freshly spawned or known subagent. The path is
      * constructed from the parent session ID (or {@code "main"} as fallback) plus the child's
@@ -1079,11 +1187,13 @@ public class AgentSpawnTool {
     }
 
     /**
-     * Tags a remote-forwarded {@link AgentEvent} with the parent-visible {@code source} path and
-     * the harness {@link AgentEvent#METADATA_TASK_ID} so concurrent calls to the same remote agent
-     * stay correlatable to distinct {@code TaskRecord}s.
+     * Tags a remote-forwarded {@link AgentEvent} with the parent-visible {@code source} path, the
+     * harness {@link AgentEvent#METADATA_TASK_ID}, and {@link
+     * AgentEvent#METADATA_PARENT_SESSION_ID} so concurrent calls to the same remote agent stay
+     * correlatable to distinct {@code TaskRecord}s and to the parent session that spawned them.
      */
-    static AgentEvent tagRemoteForwardedEvent(AgentEvent event, String sourcePath, String taskId) {
+    static AgentEvent tagRemoteForwardedEvent(
+            AgentEvent event, String sourcePath, String taskId, String parentSessionId) {
         if (event == null) {
             return null;
         }
@@ -1091,23 +1201,53 @@ public class AgentSpawnTool {
         if (taskId != null && !taskId.isBlank()) {
             event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
         }
+        if (parentSessionId != null && !parentSessionId.isBlank()) {
+            event.withMetadataEntry(AgentEvent.METADATA_PARENT_SESSION_ID, parentSessionId.trim());
+        }
         return event;
     }
 
     /**
      * Builds submission metadata for a remote task (streaming preference, parent identity, denied
-     * permission rules).
+     * permission rules, caller-defined attributes).
      */
     private RemoteSubmitContext buildRemoteSubmitContext(
             RuntimeContext runtimeContext, AgentState parentState, SubagentDeclaration decl) {
         String userId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         boolean stream = decl != null && decl.isRemoteStreaming();
+        String detail =
+                stream
+                        ? decl.getRemoteStreamDetail().wireValue()
+                        : RemoteStreamDetail.STATUS.wireValue();
         return RemoteSubmitContext.builder().userId(userId).parentSessionId(parentSessionId).stream(
                         stream)
-                .detail(stream ? "full" : "status")
+                .detail(detail)
                 .denyRules(collectParentDenyRules(parentState, Optional.ofNullable(decl)))
+                .attributes(collectRemoteContextAttributes(runtimeContext, decl))
                 .build();
+    }
+
+    /**
+     * Merges the subagent's declared static attributes with the per-call ones from {@link
+     * #CTX_REMOTE_CONTEXT_ATTRIBUTES}; per-call entries win on conflict.
+     */
+    static Map<String, Object> collectRemoteContextAttributes(
+            RuntimeContext runtimeContext, SubagentDeclaration decl) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (decl != null && decl.getRemoteContextAttributes() != null) {
+            merged.putAll(decl.getRemoteContextAttributes());
+        }
+        Object perCall =
+                runtimeContext != null ? runtimeContext.get(CTX_REMOTE_CONTEXT_ATTRIBUTES) : null;
+        if (perCall instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    merged.put(String.valueOf(e.getKey()), e.getValue());
+                }
+            }
+        }
+        return merged;
     }
 
     /**
@@ -1156,7 +1296,8 @@ public class AgentSpawnTool {
             String parentSessionId,
             SubagentDeclaration decl,
             String input,
-            long timeoutMs) {
+            long timeoutMs,
+            boolean forceSync) {
         return Mono.deferContextual(
                 ctxView -> {
                     Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
@@ -1171,7 +1312,8 @@ public class AgentSpawnTool {
                                             decl,
                                             input,
                                             timeoutMs,
-                                            emitterOpt.orElse(null)));
+                                            emitterOpt.orElse(null),
+                                            forceSync));
                 });
     }
 
@@ -1193,7 +1335,8 @@ public class AgentSpawnTool {
             SubagentDeclaration decl,
             String input,
             long timeoutMs,
-            AgentEventEmitter emitter) {
+            AgentEventEmitter emitter,
+            boolean forceSync) {
         String taskId = "task_" + UUID.randomUUID();
         RemoteSubmitContext submitContext =
                 buildRemoteSubmitContext(runtimeContext, parentState, decl);
@@ -1226,13 +1369,24 @@ public class AgentSpawnTool {
                                                                         tagRemoteForwardedEvent(
                                                                                 ae,
                                                                                 sourcePath,
-                                                                                taskId))));
+                                                                                taskId,
+                                                                                parentSessionId))));
             }
 
             long deadlineMs = System.currentTimeMillis() + Math.max(timeoutMs, 0L);
             while (true) {
                 long remaining = deadlineMs - System.currentTimeMillis();
                 if (remaining <= 0) {
+                    if (forceSync) {
+                        taskRepository.cancelTask(runtimeContext, parentSessionId, taskId);
+                        log.info(
+                                "agent remote sync timeout after {}ms under force_sync"
+                                        + " (cancelled): agentId={}, taskId={}",
+                                timeoutMs,
+                                agentId,
+                                taskId);
+                        return header + "\n" + formatForceSyncTimeout(timeoutMs);
+                    }
                     return header + "\nstatus: timeout\ntask_id: " + taskId;
                 }
                 long slice = Math.min(REMOTE_CONFIRM_POLL_MS, remaining);
@@ -1351,6 +1505,68 @@ public class AgentSpawnTool {
     }
 
     /**
+     * Whether {@link #CTX_FORCE_SYNC} is enabled on the current call.
+     */
+    static boolean isForceSync(RuntimeContext ctx) {
+        if (ctx == null) {
+            return false;
+        }
+        return Boolean.TRUE.equals(asBoolean(ctx.get(CTX_FORCE_SYNC)));
+    }
+
+    /**
+     * Resolves the effective sync wait for the current call.
+     *
+     * <p>Precedence under force-sync (highest first):
+     *
+     * <ol>
+     *   <li>{@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS} when present — absolute app override
+     *   <li>LLM {@code timeout_seconds}, with {@code 0} coerced to the default sync timeout
+     * </ol>
+     *
+     * <p>Without force-sync, behavior matches {@link #resolveTimeoutMs} (including async {@code
+     * 0}).
+     */
+    static long resolveEffectiveTimeoutMs(Integer timeoutSeconds, RuntimeContext ctx) {
+        boolean forceSync = isForceSync(ctx);
+        if (forceSync) {
+            Integer override = forceSyncTimeoutSeconds(ctx);
+            if (override != null) {
+                int seconds = override <= 0 ? DEFAULT_TIMEOUT_SECONDS : override;
+                return (long) Math.min(seconds, MAX_TIMEOUT_SECONDS) * 1_000;
+            }
+        }
+        long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        if (forceSync && timeoutMs == 0L) {
+            return (long) DEFAULT_TIMEOUT_SECONDS * 1_000;
+        }
+        return timeoutMs;
+    }
+
+    /** Reads {@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS}; {@code null} means "no override". */
+    static Integer forceSyncTimeoutSeconds(RuntimeContext ctx) {
+        if (ctx == null) {
+            return null;
+        }
+        return asPositiveOrZeroInt(ctx.get(CTX_FORCE_SYNC_TIMEOUT_SECONDS));
+    }
+
+    /** Coerces a context value ({@link Number} or numeric string) to Integer; blank/invalid → null. */
+    private static Integer asPositiveOrZeroInt(Object v) {
+        if (v instanceof Number n) {
+            return n.intValue();
+        }
+        if (v instanceof String s && !s.isBlank()) {
+            try {
+                return Integer.parseInt(s.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Wraps a {@code Mono<String>} to emit a {@link SubagentExposedEvent} into the parent's event
      * stream when {@code subagentId} is non-null. When subagentId is null (no expose), returns the
      * original Mono unchanged.
@@ -1405,7 +1621,8 @@ public class AgentSpawnTool {
             String task,
             Integer timeoutSeconds,
             Optional<SubagentDeclaration> declOpt) {
-        long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        boolean forceSync = isForceSync(runtimeContext);
+        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         DefaultAgentManager manager = managerFor(runtimeContext);
@@ -1462,7 +1679,8 @@ public class AgentSpawnTool {
                     parentSessionId,
                     declOpt.get(),
                     finalTask.trim(),
-                    timeoutMs);
+                    timeoutMs,
+                    forceSync);
         }
 
         final String finalTask = task.trim();
@@ -1476,7 +1694,8 @@ public class AgentSpawnTool {
                 runtimeContext,
                 finalSpawnInfo,
                 timeoutMs,
-                spawned.agentId());
+                spawned.agentId(),
+                forceSync);
     }
 
     /**
