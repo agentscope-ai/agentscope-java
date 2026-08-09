@@ -358,7 +358,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
             if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
-            if (capturedMemoryConfig != null) sub.memory(capturedMemoryConfig);
+            sub.memory(capturedMemoryConfig);
             if (capturedDisableCompaction) {
                 sub.disableCompaction();
             } else if (capturedCompactionConfig != null) {

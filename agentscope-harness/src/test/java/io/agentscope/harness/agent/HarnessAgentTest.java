@@ -1203,6 +1203,32 @@ class HarnessAgentTest {
         verify(parentModel).stream(any(), any(), any());
     }
 
+    @Test
+    void generalPurpose_withoutMemoryConfig_usesParentModelOnly() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model parentModel = stubModel("ok");
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(parentModel)
+                        .workspace(workspace)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        child.call(userText("hi, no memory config"), RuntimeContext.empty()).block();
+
+        verify(parentModel).stream(any(), any(), any());
+    }
+
     // =========================================================================
     // Multiple declarations → same definition workspace
     // =========================================================================
