@@ -315,7 +315,6 @@ public class RAGFlowClient {
         public Response intercept(Chain chain) throws IOException {
             Request request = chain.request();
             Response response = null;
-            IOException lastException = null;
             boolean responseReturned = false;
 
             try {
@@ -340,7 +339,6 @@ public class RAGFlowClient {
                                 maxRetries + 1);
 
                     } catch (IOException e) {
-                        lastException = e;
                         logger.warn(
                                 "RAGFlow request failed with exception, attempt {}/{}: {}",
                                 attempt + 1,
@@ -362,10 +360,6 @@ public class RAGFlowClient {
                             throw new IOException("Retry interrupted", e);
                         }
                     }
-                }
-
-                if (lastException != null) {
-                    throw lastException;
                 }
 
                 responseReturned = true;

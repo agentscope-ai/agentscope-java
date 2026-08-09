@@ -17,8 +17,14 @@ package io.agentscope.core.rag.integration.ragflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowApiException;
@@ -26,8 +32,14 @@ import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowAuthException
 import io.agentscope.core.rag.integration.ragflow.model.RAGFlowResponse;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
+import okhttp3.Interceptor;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -770,6 +782,53 @@ class RAGFlowClientTest {
 
         assertTrue(exception.getMessage().contains("final failure"));
         assertEquals(2, mockWebServer.getRequestCount());
+    }
+
+    @Test
+    void testRetryReturnsFinalErrorResponseAfterEarlierIOException() throws Exception {
+        RAGFlowConfig config =
+                RAGFlowConfig.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockWebServer.url("").toString().replaceAll("/$", ""))
+                        .addDatasetId("dataset-123")
+                        .maxRetries(1)
+                        .build();
+        RAGFlowClient client = new RAGFlowClient(config);
+
+        Field httpClientField = RAGFlowClient.class.getDeclaredField("httpClient");
+        httpClientField.setAccessible(true);
+        OkHttpClient httpClient = (OkHttpClient) httpClientField.get(client);
+        Interceptor retryInterceptor =
+                httpClient.interceptors().stream()
+                        .filter(
+                                interceptor ->
+                                        interceptor
+                                                .getClass()
+                                                .getSimpleName()
+                                                .equals("RetryInterceptor"))
+                        .findFirst()
+                        .orElseThrow();
+
+        Interceptor.Chain chain = mock(Interceptor.Chain.class);
+        Request request = new Request.Builder().url(mockWebServer.url("/api/v1/retrieval")).build();
+        ResponseBody responseBody = mock(ResponseBody.class);
+        Response finalErrorResponse = mock(Response.class);
+
+        when(chain.request()).thenReturn(request);
+        when(chain.proceed(request))
+                .thenThrow(new IOException("first attempt failed"))
+                .thenReturn(finalErrorResponse);
+        when(finalErrorResponse.isSuccessful()).thenReturn(false);
+        when(finalErrorResponse.code()).thenReturn(500);
+        when(finalErrorResponse.body()).thenReturn(responseBody);
+        when(responseBody.string()).thenReturn("{\"message\": \"final failure\"}");
+
+        Response returned = retryInterceptor.intercept(chain);
+
+        assertSame(finalErrorResponse, returned);
+        assertEquals("{\"message\": \"final failure\"}", returned.body().string());
+        verify(chain, times(2)).proceed(request);
+        verify(finalErrorResponse, never()).close();
     }
 
     @Test
