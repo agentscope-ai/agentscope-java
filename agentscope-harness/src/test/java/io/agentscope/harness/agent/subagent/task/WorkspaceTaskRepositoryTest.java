@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
@@ -35,6 +36,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -192,8 +194,9 @@ class WorkspaceTaskRepositoryTest {
                     return r.isPresent() && r.get().getStatus().isTerminal();
                 });
 
-        // Simulate cross-node scenario: clear in-memory tasks
-        repo.clear();
+        // Simulate cross-node scenario: fresh JVM overlay, workspace records remain.
+        repo.shutdown();
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent");
 
         BackgroundTask synthetic = repo.getTask(RuntimeContext.empty(), session, taskId);
         assertNotNull(synthetic);
@@ -339,7 +342,8 @@ class WorkspaceTaskRepositoryTest {
                             && r2.map(r -> r.getStatus().isTerminal()).orElse(false);
                 });
 
-        repo.clear();
+        repo.shutdown();
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent");
 
         Collection<BackgroundTask> tasks = repo.listTasks(RuntimeContext.empty(), session, null);
         assertEquals(2, tasks.size());
@@ -417,7 +421,8 @@ class WorkspaceTaskRepositoryTest {
                     return r2.map(r -> r.getStatus().isTerminal()).orElse(false);
                 });
 
-        repo.clear();
+        repo.shutdown();
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent");
 
         Collection<BackgroundTask> completed =
                 repo.listTasks(RuntimeContext.empty(), sessionOk, TaskStatus.COMPLETED);
@@ -574,15 +579,21 @@ class WorkspaceTaskRepositoryTest {
         String session = "sess-sweep";
         String taskId = "task-stale";
 
-        // Write a RUNNING record with a lastUpdatedAt far in the past (simulates a dead node)
+        // writeTaskRecord() refreshes lastUpdatedAt, so use that persisted timestamp as the exact
+        // zero-timeout sweep boundary.
         TaskRecord stale = new TaskRecord(taskId, "agent-stale", "test-agent", session, null);
         stale.setStatus(TaskStatus.RUNNING);
-        stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
         workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, stale);
 
-        // orphanTimeout=ZERO: every record is instantly "stale".
-        // recentWindow=1 day: scan all session files regardless of disk mtime.
-        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+        Instant persistedLastUpdatedAt =
+                workspaceManager
+                        .readTaskRecord(RuntimeContext.empty(), "test-agent", session, taskId)
+                        .map(TaskRecord::getLastUpdatedAt)
+                        .orElseThrow();
+
+        // A record on the timeout boundary is stale. recentWindow=1 day scans the just-written
+        // session file.
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1), persistedLastUpdatedAt);
 
         Optional<TaskRecord> swept =
                 workspaceManager.readTaskRecord(
@@ -697,47 +708,44 @@ class WorkspaceTaskRepositoryTest {
     }
 
     // ------------------------------------------------------------------
-    //  Sweep marker: distributed throttle
+    //  PeriodicGate throttle for orphan sweep
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("sweepOrphanedTasksDefault writes sweep marker after completing a sweep")
-    void sweepMarker_isWrittenAfterSweep() throws Exception {
-        // No marker initially
-        assertTrue(
-                workspaceManager.readSweepMarker(RuntimeContext.empty(), "test-agent").isEmpty());
+    @DisplayName("sweepOrphanedTasksDefault claims the periodic gate before sweeping")
+    void sweepGate_claimsBeforeSweep() throws Exception {
+        AtomicInteger claims = new AtomicInteger();
+        PeriodicGate countingGate =
+                (name, minGap) -> {
+                    claims.incrementAndGet();
+                    assertTrue(name.startsWith("task-sweep:"));
+                    return true;
+                };
+        repo.shutdown();
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent", countingGate);
 
-        // Trigger the default sweep path (uses the marker internally)
         repo.sweepOrphanedTasksDefault_forTest();
 
-        // Marker should now be present and recent
-        Optional<java.time.Instant> marker =
-                workspaceManager.readSweepMarker(RuntimeContext.empty(), "test-agent");
-        assertTrue(marker.isPresent(), "Sweep marker must be written after a successful sweep");
-        assertTrue(
-                marker.get().isAfter(Instant.now().minusSeconds(5)),
-                "Sweep marker should be a very recent timestamp");
+        assertEquals(1, claims.get(), "Default sweep path must claim the periodic gate once");
     }
 
     @Test
-    @DisplayName("sweepOrphanedTasksDefault skips sweep when marker is fresh")
-    void sweepMarker_freshMarkerSkipsSweep() throws Exception {
-        String session = "sess-marker-skip";
-        String taskId = "task-marker-skip";
+    @DisplayName("sweepOrphanedTasksDefault skips sweep when periodic gate denies the claim")
+    void sweepGate_deniedClaimSkipsSweep() throws Exception {
+        String session = "sess-gate-skip";
+        String taskId = "task-gate-skip";
 
-        // A stale orphan that would normally be swept
         TaskRecord stale = new TaskRecord(taskId, "a", "test-agent", session, null);
         stale.setStatus(TaskStatus.RUNNING);
         stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
         workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, stale);
 
-        // Write a fresh marker (simulates another node just swept)
-        workspaceManager.writeSweepMarker(RuntimeContext.empty(), "test-agent");
+        PeriodicGate denyGate = (name, minGap) -> false;
+        repo.shutdown();
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent", denyGate);
 
-        // The default sweep should be skipped due to the fresh marker
         repo.sweepOrphanedTasksDefault_forTest();
 
-        // Orphan should NOT have been swept
         Optional<TaskRecord> record =
                 workspaceManager.readTaskRecord(
                         RuntimeContext.empty(), "test-agent", session, taskId);
@@ -745,7 +753,31 @@ class WorkspaceTaskRepositoryTest {
         assertEquals(
                 TaskStatus.RUNNING,
                 record.get().getStatus(),
-                "Stale task should not be swept when the sweep marker is fresh");
+                "Stale task should not be swept when the periodic gate denies the claim");
+    }
+
+    @Test
+    @DisplayName("sweepOrphanedTasksDefault skips a second claim within the min gap")
+    void sweepGate_localGateThrottlesSecondSweep() {
+        AtomicInteger claims = new AtomicInteger();
+        AtomicInteger denials = new AtomicInteger();
+        PeriodicGate onceGate =
+                (name, minGap) -> {
+                    if (claims.get() == 0) {
+                        claims.incrementAndGet();
+                        return true;
+                    }
+                    denials.incrementAndGet();
+                    return false;
+                };
+        repo.shutdown();
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent", onceGate);
+
+        repo.sweepOrphanedTasksDefault_forTest();
+        repo.sweepOrphanedTasksDefault_forTest();
+
+        assertEquals(1, claims.get(), "First default sweep must win the gate claim");
+        assertEquals(1, denials.get(), "Second default sweep within the gap must be denied");
     }
 
     // ------------------------------------------------------------------

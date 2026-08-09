@@ -58,8 +58,8 @@ public abstract class AnthropicBaseFormatter
             MessageCreateParams.Builder paramsBuilder,
             GenerateOptions options,
             GenerateOptions defaultOptions) {
-        // Save options for applyTools
-        currentOptions.set(options);
+        // Save effective options for applyTools, including model-level defaults.
+        currentOptions.set(GenerateOptions.mergeOptions(options, defaultOptions));
 
         // Apply other options
         AnthropicToolsHelper.applyOptions(paramsBuilder, options, defaultOptions);

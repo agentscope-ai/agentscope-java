@@ -73,7 +73,7 @@ ReActAgent agent =
                 .sysPrompt("你是一个有帮助的助手。")
                 // 由 ModelRegistry 解析；自动读取 DASHSCOPE_API_KEY
                 // 切换其他厂商时改成 "openai:gpt-5.5" / "anthropic:claude-sonnet-4-5"
-                // / "gemini:gemini-2.0-flash" / "ollama:llama3" 即可。
+                // / "deepseek:deepseek-v4-flash" / "gemini:gemini-2.0-flash" / "ollama:llama3" 即可。
                 .model("dashscope:qwen-plus")
                 .toolkit(new Toolkit())
                 .build();
@@ -131,7 +131,7 @@ ReActAgent agent =
 ::::
 
 :::{tip}
-`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](../harness/architecture.md) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
+`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](../harness/architecture.md) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
 :::
 
 ### 参数说明
@@ -431,7 +431,7 @@ for (var tc : externalEvent.getToolCalls()) {
 }
 ```
 
-**3. 恢复智能体** —— 将结果作为下一次 `call` 的输入消息回传。结果会被注入智能体上下文，推理从中断处继续。完整示例见 `agentscope-examples/documentation/.../hitl/InterruptionExample.java`。
+**3. 恢复智能体** —— 将结果作为下一次 `call` 的输入消息回传。结果校验通过后会被注入智能体上下文，agent 会先发出 `ExternalExecutionResultEvent`，其 `getReplyId()` 与之前的 `RequireExternalExecutionEvent#getReplyId()` 相同，然后从中断处继续推理。
 
 :::{tip}
 构建交互式 UI 时使用 `streamEvents`——它可以实时检测暂停事件并立即提示用户。以编程方式处理事件的自动化流程则使用 `call`。完整可运行示例见 `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`。

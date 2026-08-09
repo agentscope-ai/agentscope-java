@@ -38,6 +38,26 @@ OllamaChatModel model = OllamaChatModel.builder()
 
 ## Spring Boot
 
-当前没有专属 Ollama Spring Boot starter。
+Spring Boot 应用可以使用 Ollama starter：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-ollama-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+通过 `agentscope.model.provider=ollama` 配置本地 Ollama 模型。base URL 为可选项，默认是
+`http://localhost:11434`：
+
+```yaml
+agentscope:
+  model:
+    provider: ollama
+  ollama:
+    model-name: llama3
+    # base-url: http://localhost:11434
+```
 
 完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](../../docs/building-blocks/model.md)。

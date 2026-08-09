@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.1-SNAPSHOT</revision>
+        <revision>2.0.3-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -289,6 +289,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope aistio BYO data-plane SDK -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-aistio</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Channel Extensions -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -459,6 +466,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-anthropic-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Ollama Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-ollama-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
