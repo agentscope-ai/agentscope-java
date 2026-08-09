@@ -1200,7 +1200,7 @@ class HarnessAgentTest {
         child.call(userText("hi, keep this in memory"), RuntimeContext.empty()).block();
 
         verify(memoryModel).stream(any(), any(), any());
-        verify(parentModel).stream(any(), any(), any());
+        verify(parentModel, atLeast(2)).stream(any(), any(), any());
     }
 
     @Test
