@@ -19,10 +19,10 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
-import com.mongodb.client.model.IndexOptions;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -73,11 +73,9 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
 
     private void initSchema() {
         try {
-            collection.createIndex(Indexes.ascending(FIELD_CREATED_AT));
             collection.createIndex(
                     Indexes.ascending(FIELD_CREATED_AT),
-                    new IndexOptions()
-                            .expireAfter(7 * 24 * 3600L, TimeUnit.SECONDS));
+                    new IndexOptions().expireAfter(7 * 24 * 3600L, TimeUnit.SECONDS));
         } catch (Exception e) {
             log.warn(
                     "Failed to initialize snapshot collection index '{}': {}",

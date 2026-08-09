@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -82,6 +83,8 @@ public class MongoBaseStore implements BaseStore {
      */
     public MongoBaseStore(
             MongoDatabase database, String collectionName, ObjectMapper objectMapper) {
+        Objects.requireNonNull(database, "database");
+        Objects.requireNonNull(collectionName, "collectionName");
         this.collection = database.getCollection(collectionName);
         this.objectMapper = objectMapper;
         ensureIndexes();
@@ -159,11 +162,7 @@ public class MongoBaseStore implements BaseStore {
                             new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER));
         }
 
-        if (result == null) {
-            return false;
-        }
-        Long newVersion = result.getLong(FIELD_VERSION);
-        return newVersion != null && newVersion == expectedVersion + 1;
+        return result != null;
     }
 
     @Override
