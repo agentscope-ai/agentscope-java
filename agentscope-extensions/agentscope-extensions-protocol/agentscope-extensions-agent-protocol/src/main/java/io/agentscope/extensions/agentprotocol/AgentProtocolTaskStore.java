@@ -34,7 +34,6 @@ import io.agentscope.harness.agent.subagent.protocol.RemoteEventType;
 import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -61,9 +60,8 @@ import reactor.core.publisher.Flux;
  * to be configured with {@code checkRunning(false)}.
  *
  * <p>Task metadata is stored via {@link ProtocolTaskRepository} (a dedicated control-plane path),
- * not via any execution agent's {@link WorkspaceManager}. Caller-supplied {@code context.attributes}
- * reach the run through its {@link RuntimeContext}; see {@link RuntimeContextCustomizer} for
- * controlling how.
+ * not via any execution agent's workspace. Caller-supplied {@code context.attributes} reach the
+ * run through its {@link RuntimeContext}; see {@link RuntimeContextCustomizer} for controlling how.
  */
 public final class AgentProtocolTaskStore {
 
@@ -126,62 +124,6 @@ public final class AgentProtocolTaskStore {
     public AgentProtocolTaskStore(
             HarnessAgent harnessAgent, ProtocolTaskRepository taskRepository) {
         this(AgentFactory.fixed(harnessAgent), taskRepository);
-    }
-
-    /**
-     * @deprecated Prefer {@link #AgentProtocolTaskStore(AgentFactory, ProtocolTaskRepository,
-     *     AgentProtocolTaskEventBus, AgentProtocolProperties)}. The workspace manager is wrapped as
-     *     a control-plane repository only — do not pass an execution agent's workspace.
-     */
-    @Deprecated
-    public AgentProtocolTaskStore(
-            AgentFactory agentFactory,
-            WorkspaceManager workspaceManager,
-            AgentProtocolTaskEventBus eventBus,
-            AgentProtocolProperties properties) {
-        this(
-                agentFactory,
-                new WorkspaceProtocolTaskRepository(workspaceManager),
-                eventBus,
-                properties,
-                List.of());
-    }
-
-    /**
-     * @deprecated Prefer {@link #AgentProtocolTaskStore(AgentFactory, ProtocolTaskRepository,
-     *     AgentProtocolTaskEventBus, AgentProtocolProperties, List)}.
-     */
-    @Deprecated
-    public AgentProtocolTaskStore(
-            AgentFactory agentFactory,
-            WorkspaceManager workspaceManager,
-            AgentProtocolTaskEventBus eventBus,
-            AgentProtocolProperties properties,
-            List<RuntimeContextCustomizer> runtimeContextCustomizers) {
-        this(
-                agentFactory,
-                new WorkspaceProtocolTaskRepository(workspaceManager),
-                eventBus,
-                properties,
-                runtimeContextCustomizers);
-    }
-
-    /**
-     * @deprecated Prefer {@link #AgentProtocolTaskStore(AgentFactory, ProtocolTaskRepository)}.
-     */
-    @Deprecated
-    public AgentProtocolTaskStore(AgentFactory agentFactory, WorkspaceManager workspaceManager) {
-        this(agentFactory, new WorkspaceProtocolTaskRepository(workspaceManager));
-    }
-
-    /**
-     * @deprecated Prefer {@link #AgentProtocolTaskStore(HarnessAgent, ProtocolTaskRepository)}.
-     */
-    @Deprecated
-    public AgentProtocolTaskStore(HarnessAgent harnessAgent, WorkspaceManager workspaceManager) {
-        this(
-                AgentFactory.fixed(harnessAgent),
-                new WorkspaceProtocolTaskRepository(workspaceManager));
     }
 
     public AgentProtocolTaskEventBus eventBus() {

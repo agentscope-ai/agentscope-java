@@ -57,10 +57,9 @@ This path is **independent** of each `HarnessAgent`'s own `WorkspaceManager` (ME
 skills). Multi-agent factories may give each agent a different `.workspace(...)`; protocol
 `task_id` lookup always goes through the control-plane repository.
 
-You may supply your own `ProtocolTaskRepository` bean to override the default. Do **not** inject an
-execution agent's `WorkspaceManager` into the task store unless you intentionally want protocol
-metadata co-located with that agent's files (legacy deprecated constructors still wrap a
-`WorkspaceManager` as a control-plane repo for compatibility).
+You may supply your own `ProtocolTaskRepository` bean to override the default. Construct
+`AgentProtocolTaskStore` with a `ProtocolTaskRepository` only — do not pass an execution agent's
+`WorkspaceManager`.
 
 ## Concurrent execution
 

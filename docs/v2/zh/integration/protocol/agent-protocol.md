@@ -57,9 +57,8 @@ snapshot 用的 `TaskRecord`）。默认根目录为 `agentscope.agent-protocol.
 多 agent 的 `AgentFactory` 可以为每个 agent 配置不同的 `.workspace(...)`；协议侧按 `task_id`
 查找始终走控制面仓库。
 
-也可以自行提供 `ProtocolTaskRepository` Bean 覆盖默认实现。**不要**把执行 Agent 的
-`WorkspaceManager` 注入 TaskStore，除非你有意把协议元数据与该 Agent 文件放在一起（遗留的
-已废弃构造仍会把 `WorkspaceManager` 包成控制面 repo，仅作兼容）。
+也可以自行提供 `ProtocolTaskRepository` Bean 覆盖默认实现。`AgentProtocolTaskStore` 只接受
+`ProtocolTaskRepository`，不要传入执行 Agent 的 `WorkspaceManager`。
 
 ## 并发执行
 

@@ -120,16 +120,6 @@ class WorkspaceProtocolTaskRepositoryTest {
                         .normalize());
     }
 
-    @Test
-    @Deprecated
-    @DisplayName("deprecated WorkspaceManager ctor still wraps as control-plane repo")
-    void deprecatedCtorStillWorks() {
-        WorkspaceManager wm = new WorkspaceManager(controlPlane);
-        AgentProtocolTaskStore store =
-                new AgentProtocolTaskStore(AgentFactory.fixed(mock(HarnessAgent.class)), wm);
-        assertEquals("error", store.snapshot("missing").get("status"));
-    }
-
     private static void awaitStatus(AgentProtocolTaskStore store, String taskId, String status)
             throws Exception {
         long deadline = System.currentTimeMillis() + 5_000L;
