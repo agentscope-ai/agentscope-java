@@ -20,6 +20,7 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -124,6 +125,30 @@ public class RAGFlowKnowledge implements Knowledge {
      */
     @Override
     public Mono<List<Document>> retrieve(String query, RetrieveConfig config) {
+        return retrieve(query, config, null, null);
+    }
+
+    /**
+     * Retrieve documents with request-specific RAGFlow filters.
+     *
+     * <p>Non-empty {@code datasetIds} and {@code metadataCondition} values override the defaults in
+     * {@link RAGFlowConfig} for this request only. If either parameter is {@code null} or empty, the
+     * corresponding config value is used. This allows one {@code RAGFlowKnowledge} instance to
+     * serve requests with different filters without mutating shared configuration or rebuilding an
+     * agent.
+     *
+     * @param query the query text (required)
+     * @param config the retrieval configuration (limit, score threshold)
+     * @param datasetIds dataset IDs for this request, or {@code null} to use the configured IDs
+     * @param metadataCondition metadata filtering conditions for this request, or {@code null} to
+     *     use the configured condition
+     * @return a Mono emitting the list of retrieved documents, sorted by relevance
+     */
+    public Mono<List<Document>> retrieve(
+            String query,
+            RetrieveConfig config,
+            List<String> datasetIds,
+            Map<String, Object> metadataCondition) {
         if (query == null || query.trim().isEmpty()) {
             logger.warn("Empty query provided, returning empty result");
             return Mono.just(new ArrayList<>());
@@ -135,8 +160,7 @@ public class RAGFlowKnowledge implements Knowledge {
         Integer topK = config != null ? config.getLimit() : null;
         Double similarityThreshold = config != null ? config.getScoreThreshold() : null;
 
-        // Call RAGFlow API (metadata condition from config)
-        return client.retrieve(query, topK, similarityThreshold, null)
+        return client.retrieve(query, topK, similarityThreshold, datasetIds, metadataCondition)
                 .map(
                         response -> {
                             if (response.getData() == null
