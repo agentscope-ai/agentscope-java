@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.agui.mvc;
 
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.spring.boot.agui.common.AguiRequestBodyParser;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -63,7 +64,7 @@ public class AguiRestController {
      *   <li>"default"</li>
      * </ol>
      *
-     * @param input The run agent input
+     * @param body The run agent input
      * @param agentIdHeader The agent ID from HTTP header (optional)
      * @return An SseEmitter for streaming AG-UI events
      */
@@ -72,12 +73,13 @@ public class AguiRestController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter run(
-            @RequestBody RunAgentInput input,
+            @RequestBody String body,
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
                     String agentIdHeader,
             HttpServletRequest request) {
+        RunAgentInput input = AguiRequestBodyParser.parse(body);
         return aguiMvcController.handle(input, agentIdHeader, request);
     }
 
@@ -87,7 +89,7 @@ public class AguiRestController {
      * <p>The path variable takes highest priority for agent resolution.
      *
      * @param agentId The agent ID from path variable
-     * @param input The run agent input
+     * @param body The run agent input
      * @param agentIdHeader The agent ID from HTTP header (optional)
      * @return An SseEmitter for streaming AG-UI events
      */
@@ -97,12 +99,13 @@ public class AguiRestController {
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter runWithAgentId(
             @PathVariable String agentId,
-            @RequestBody RunAgentInput input,
+            @RequestBody String body,
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
                     String agentIdHeader,
             HttpServletRequest request) {
+        RunAgentInput input = AguiRequestBodyParser.parse(body);
         return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId, request);
     }
 }

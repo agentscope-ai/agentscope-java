@@ -24,6 +24,7 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.AguiRequestBodyParser;
 import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
 import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
@@ -112,7 +113,8 @@ public class AguiWebFluxHandler {
      * @return A Mono containing the server response with SSE stream
      */
     public Mono<ServerResponse> handle(ServerRequest request) {
-        return request.bodyToMono(RunAgentInput.class)
+        return request.bodyToMono(String.class)
+                .map(AguiRequestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, null))
                 .onErrorResume(this::handleParseError);
     }
@@ -128,7 +130,8 @@ public class AguiWebFluxHandler {
      */
     public Mono<ServerResponse> handleWithAgentId(ServerRequest request) {
         String pathAgentId = request.pathVariable(AGENT_ID_PATH_VARIABLE);
-        return request.bodyToMono(RunAgentInput.class)
+        return request.bodyToMono(String.class)
+                .map(AguiRequestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, pathAgentId))
                 .onErrorResume(this::handleParseError);
     }
