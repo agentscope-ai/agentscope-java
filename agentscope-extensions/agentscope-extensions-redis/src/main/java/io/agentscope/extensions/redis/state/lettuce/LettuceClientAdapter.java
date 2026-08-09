@@ -17,6 +17,7 @@ package io.agentscope.extensions.redis.state.lettuce;
 
 import io.agentscope.extensions.redis.state.RedisClientAdapter;
 import io.lettuce.core.KeyScanCursor;
+import io.lettuce.core.KeyValue;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.ScanArgs;
 import io.lettuce.core.ScanCursor;
@@ -28,6 +29,7 @@ import io.lettuce.core.cluster.api.StatefulRedisClusterConnection;
 import io.lettuce.core.cluster.api.sync.RedisAdvancedClusterCommands;
 import io.lettuce.core.cluster.models.partitions.Partitions;
 import io.lettuce.core.cluster.models.partitions.RedisClusterNode;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -186,6 +188,19 @@ public class LettuceClientAdapter implements RedisClientAdapter {
         } else {
             return clusterCommands.get(key);
         }
+    }
+
+    @Override
+    public List<String> mget(String... keys) {
+        List<KeyValue<String, String>> kvs =
+                commands != null ? commands.mget(keys) : clusterCommands.mget(keys);
+        // Lettuce mget returns a KeyValue per requested key, preserving order; a missing key has
+        // no value, so map it to null.
+        List<String> result = new ArrayList<>(kvs.size());
+        for (KeyValue<String, String> kv : kvs) {
+            result.add(kv.hasValue() ? kv.getValue() : null);
+        }
+        return result;
     }
 
     @Override

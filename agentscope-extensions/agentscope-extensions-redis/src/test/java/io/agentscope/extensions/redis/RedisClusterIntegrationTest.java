@@ -108,7 +108,7 @@ class RedisClusterIntegrationTest {
             stateStore =
                     RedisAgentStateStore.builder()
                             .lettuceClusterClient(lettuceClient)
-                            .keyPrefix("it:session:")
+                            .keyPrefix("agentscope:session:")
                             .build();
 
             Set<redis.clients.jedis.HostAndPort> jedisSeeds = new HashSet<>();
@@ -117,9 +117,9 @@ class RedisClusterIntegrationTest {
             jedisStateStore =
                     RedisAgentStateStore.builder()
                             .jedisClient(jedisCluster)
-                            .keyPrefix("it:jedis:")
+                            .keyPrefix("agentscope:jedis:")
                             .build();
-            redisStore = new RedisStore(jedisCluster, "it:store:");
+            redisStore = new RedisStore(jedisCluster, "agentscope:store:");
         } catch (Throwable t) {
             System.err.println("=== RedisClusterIntegrationTest skipped due to: ===");
             t.printStackTrace(System.err);
@@ -166,10 +166,13 @@ class RedisClusterIntegrationTest {
     void multiKeyEvalWorksAcrossSlots() {
         // 12 users/sessions hash to different slots; SAVE_SCRIPT (3-key EVAL) must not CROSSSLOT.
         for (int i = 0; i < 12; i++) {
-            stateStore.save("u" + i, "s" + i, "k", new TestState("v" + i));
+            stateStore.save(
+                    "user-" + (1000 + i), "session-" + i, "agent:profile", new TestState("v" + i));
         }
         for (int i = 0; i < 12; i++) {
-            var v = stateStore.get("u" + i, "s" + i, "k", TestState.class);
+            var v =
+                    stateStore.get(
+                            "user-" + (1000 + i), "session-" + i, "agent:profile", TestState.class);
             assertTrue(v.isPresent(), "missing state for u" + i);
             assertEquals("v" + i, v.get().value());
         }
@@ -177,9 +180,9 @@ class RedisClusterIntegrationTest {
 
     @Test
     void listSessionIdsAggregatesAcrossMasterNodes() {
-        String user = "lister";
+        String user = "user-lister";
         for (int i = 0; i < 12; i++) {
-            stateStore.save(user, "batch" + i, "k", new TestState("x"));
+            stateStore.save(user, "session-batch-" + i, "agent:profile", new TestState("x"));
         }
         Set<String> ids = stateStore.listSessionIds(user);
         assertEquals(
@@ -194,9 +197,9 @@ class RedisClusterIntegrationTest {
      */
     @Test
     void jedisClusterListSessionIdsAggregatesAcrossNodes() {
-        String user = "jlister";
+        String user = "user-jlister";
         for (int i = 0; i < 12; i++) {
-            jedisStateStore.save(user, "batch" + i, "k", new TestState("x"));
+            jedisStateStore.save(user, "session-batch-" + i, "agent:profile", new TestState("x"));
         }
         Set<String> ids = jedisStateStore.listSessionIds(user);
         assertEquals(
@@ -207,15 +210,15 @@ class RedisClusterIntegrationTest {
 
     @Test
     void redisStorePutSearchDeleteInCluster() {
-        List<String> ns = List.of("cluster", "ns");
-        redisStore.put(ns, "k1", mapOf("name", "alpha"));
-        redisStore.put(ns, "k2", mapOf("name", "beta"));
+        List<String> ns = List.of("tenant-1", "agent-workspace");
+        redisStore.put(ns, "doc-001", mapOf("name", "alpha"));
+        redisStore.put(ns, "doc-002", mapOf("name", "beta"));
         List<StoreItem> items = redisStore.search(ns, 10, 0);
         assertEquals(2, items.size(), "search should find both items");
-        redisStore.delete(ns, "k1");
+        redisStore.delete(ns, "doc-001");
         List<StoreItem> after = redisStore.search(ns, 10, 0);
         assertEquals(1, after.size(), "one item should remain after delete");
-        assertEquals("k2", after.get(0).key());
+        assertEquals("doc-002", after.get(0).key());
     }
 
     private static Map<String, Object> mapOf(String k, Object v) {

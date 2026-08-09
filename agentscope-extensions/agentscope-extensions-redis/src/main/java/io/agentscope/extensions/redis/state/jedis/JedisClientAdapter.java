@@ -110,6 +110,11 @@ public class JedisClientAdapter implements RedisClientAdapter {
     }
 
     @Override
+    public List<String> mget(String... keys) {
+        return unifiedJedis.mget(keys);
+    }
+
+    @Override
     public void rightPushList(String key, String value) {
         unifiedJedis.rpush(key, value);
     }

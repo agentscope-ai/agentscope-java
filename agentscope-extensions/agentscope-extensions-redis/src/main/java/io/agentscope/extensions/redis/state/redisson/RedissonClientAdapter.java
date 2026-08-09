@@ -19,6 +19,7 @@ import io.agentscope.extensions.redis.state.RedisClientAdapter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.redisson.api.RBucket;
 import org.redisson.api.RKeys;
@@ -147,6 +148,18 @@ public class RedissonClientAdapter implements RedisClientAdapter {
     public String get(String key) {
         RBucket<String> bucket = redissonClient.getBucket(key, StringCodec.INSTANCE);
         return bucket.get();
+    }
+
+    @Override
+    public List<String> mget(String... keys) {
+        // RBuckets.get issues MGET (per slot in cluster mode); absent keys are simply missing from
+        // the returned map, so look up by key name to preserve order and nulls.
+        Map<String, String> map = redissonClient.getBuckets(StringCodec.INSTANCE).get(keys);
+        List<String> result = new ArrayList<>(keys.length);
+        for (String key : keys) {
+            result.add(map.get(key));
+        }
+        return result;
     }
 
     @Override
