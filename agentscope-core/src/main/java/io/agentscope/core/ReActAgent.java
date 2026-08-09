@@ -4068,6 +4068,52 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Clears all locally cached per-session state and permission engines.
+     *
+     * <p>This only releases the in-memory cache held by this agent. It does not delete or modify
+     * any state in the configured {@link AgentStateStore}. A later {@code getAgentState(...)} or
+     * {@code call(...)} reloads the session from the store when one is configured.
+     *
+     * <p>Call this after the agent's in-flight calls have completed. Existing callers that still
+     * hold an {@link AgentState} reference, or an in-flight call that captured one, may continue
+     * to retain that object until those references are released.
+     */
+    public void clearStateCache() {
+        stateCache.clear();
+        permissionEngineCache.clear();
+    }
+
+    /**
+     * Clears the locally cached state and permission engine for the session identified by
+     * {@code ctx}.
+     *
+     * @param ctx runtime context identifying the session; a missing session id uses the default
+     *     session id
+     */
+    public void clearStateCache(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        clearStateCache(uid, sid);
+    }
+
+    /**
+     * Clears the locally cached state and permission engine for one {@code (userId, sessionId)}
+     * slot.
+     *
+     * <p>This only releases local references. It does not delete the corresponding state from
+     * the configured {@link AgentStateStore}; the next access reloads the persisted state.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearStateCache(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        stateCache.remove(slot);
+        permissionEngineCache.remove(slot);
+    }
+
+    /**
      * Clears the model-visible conversation context for the session identified by {@code ctx}.
      *
      * <p>The session identity, permission configuration, tool state, tasks, and plan-mode state
@@ -4353,6 +4399,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // Release the ShutdownStateSaver registered in the constructor so that ephemeral /
         // per-call agent instances are not retained by GracefulShutdownManager.stateSavers.
         shutdownManager.unbindStateSaver(this);
+        clearStateCache();
     }
 
     // ==================== Builder ====================
