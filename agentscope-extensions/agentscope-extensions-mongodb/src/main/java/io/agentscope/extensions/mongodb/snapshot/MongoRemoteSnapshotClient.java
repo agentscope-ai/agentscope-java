@@ -15,17 +15,23 @@
  */
 package io.agentscope.extensions.mongodb.snapshot;
 
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.IndexOptions;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Date;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import org.bson.Document;
 import org.bson.types.Binary;
 import org.slf4j.Logger;
@@ -44,12 +50,14 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
     private static final String DEFAULT_COLLECTION = "agentscope_snapshots";
     private static final String FIELD_DATA = "data";
     private static final String FIELD_CREATED_AT = "createdAt";
-    private static final int MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024; // 100 MB
+    // MongoDB BSON document size limit is 16 MB; cap at 15 MB to leave headroom for
+    // metadata. For larger snapshots, use GridFS (not yet implemented).
+    private static final int MAX_SNAPSHOT_BYTES = 15 * 1024 * 1024; // 15 MB
 
     private final MongoCollection<Document> collection;
 
     public MongoRemoteSnapshotClient(
-            com.mongodb.client.MongoClient mongoClient,
+            MongoClient mongoClient,
             String databaseName,
             String collectionName,
             boolean initializeSchema) {
@@ -65,7 +73,11 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
 
     private void initSchema() {
         try {
-            collection.createIndex(com.mongodb.client.model.Indexes.ascending(FIELD_CREATED_AT));
+            collection.createIndex(Indexes.ascending(FIELD_CREATED_AT));
+            collection.createIndex(
+                    Indexes.ascending(FIELD_CREATED_AT),
+                    new IndexOptions()
+                            .expireAfter(7 * 24 * 3600L, TimeUnit.SECONDS));
         } catch (Exception e) {
             log.warn(
                     "Failed to initialize snapshot collection index '{}': {}",
@@ -90,10 +102,10 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
         Document doc =
                 collection
                         .find(Filters.eq(snapshotId))
-                        .projection(com.mongodb.client.model.Projections.include(FIELD_DATA))
+                        .projection(Projections.include(FIELD_DATA))
                         .first();
         if (doc == null) {
-            throw new java.io.FileNotFoundException("Snapshot not found in MongoDB: " + snapshotId);
+            throw new FileNotFoundException("Snapshot not found in MongoDB: " + snapshotId);
         }
         Binary binary = doc.get(FIELD_DATA, Binary.class);
         return new ByteArrayInputStream(binary.getData());
@@ -104,9 +116,21 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
         Objects.requireNonNull(snapshotId, "snapshotId");
         return collection
                         .find(Filters.eq(snapshotId))
-                        .projection(com.mongodb.client.model.Projections.include("_id"))
+                        .projection(Projections.include("_id"))
                         .first()
                 != null;
+    }
+
+    /**
+     * Deletes a snapshot from MongoDB.
+     *
+     * @param snapshotId the snapshot identifier
+     * @return {@code true} if a document was deleted, {@code false} if no matching snapshot existed
+     * @throws Exception if a MongoDB error occurs
+     */
+    public boolean delete(String snapshotId) throws Exception {
+        Objects.requireNonNull(snapshotId, "snapshotId");
+        return collection.deleteOne(Filters.eq(snapshotId)).getDeletedCount() > 0;
     }
 
     private static byte[] readAllBounded(InputStream in, int maxBytes) throws IOException {

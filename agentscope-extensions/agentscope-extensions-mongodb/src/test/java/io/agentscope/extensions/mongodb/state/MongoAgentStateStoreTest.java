@@ -26,25 +26,33 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoWriteException;
+import com.mongodb.ServerAddress;
+import com.mongodb.WriteError;
 import com.mongodb.client.DistinctIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.bson.BsonDocument;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 
 class MongoAgentStateStoreTest {
@@ -76,8 +84,8 @@ class MongoAgentStateStoreTest {
         when(collection.find(any(Bson.class))).thenReturn(findIterable);
         when(findIterable.projection(any())).thenReturn(findIterable);
         when(findIterable.sort(any())).thenReturn(findIterable);
-        when(findIterable.skip(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findIterable);
-        when(findIterable.limit(org.mockito.ArgumentMatchers.anyInt())).thenReturn(findIterable);
+        when(findIterable.skip(ArgumentMatchers.anyInt())).thenReturn(findIterable);
+        when(findIterable.limit(ArgumentMatchers.anyInt())).thenReturn(findIterable);
         when(findIterable.first()).thenReturn(null);
 
         UpdateResult updateResult = mock(UpdateResult.class);
@@ -94,7 +102,7 @@ class MongoAgentStateStoreTest {
 
         when(collection.distinct(anyString(), any(Bson.class), any(Class.class)))
                 .thenReturn(distinctIterable);
-        when(distinctIterable.into(any())).thenReturn(new java.util.ArrayList<>());
+        when(distinctIterable.into(any())).thenReturn(new ArrayList<>());
 
         store =
                 MongoAgentStateStore.builder()
@@ -163,6 +171,22 @@ class MongoAgentStateStoreTest {
     }
 
     @Test
+    void saveListShorteningPerformsFullRewrite() {
+        // Simulate existing document with 3 elements in the list
+        List<Document> existingList =
+                List.of(
+                        Document.parse("{\"value\":\"a\"}"),
+                        Document.parse("{\"value\":\"b\"}"),
+                        Document.parse("{\"value\":\"c\"}"));
+        Document existingDoc = new Document("list:list", existingList);
+        when(findIterable.first()).thenReturn(existingDoc);
+
+        // Save a shorter list (2 elements) — must still call updateOne (full rewrite)
+        store.save("user", "session", "list", List.of(new TestState("x"), new TestState("y")));
+        verify(collection).updateOne(any(Bson.class), any(Bson.class), any());
+    }
+
+    @Test
     void getListReturnsEmptyWhenMissing() {
         List<TestState> result = store.getList("user", "session", "list", TestState.class);
         assertTrue(result.isEmpty());
@@ -209,6 +233,81 @@ class MongoAgentStateStoreTest {
     }
 
     @Test
+    void saveIfVersionZeroCreatesWhenAbsent() {
+        // findOneAndUpdate returns doc with _version_key=1 -> success (version 1 created)
+        Document result =
+                new Document("_id", "anon:session")
+                        .append("key", Document.parse("{\"value\":\"v\"}"))
+                        .append("_version_key", 1L);
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenReturn(result);
+
+        long newVersion = store.saveIfVersion("user", "session", "key", new TestState("v"), 0L);
+
+        assertEquals(1L, newVersion);
+    }
+
+    @Test
+    void saveIfVersionZeroReturnsUnversionedWhenAlreadyExists() {
+        // findOneAndUpdate returns doc with _version_key=5 -> expectedVersion=0 won't match
+        Document result =
+                new Document("_id", "anon:session")
+                        .append("key", Document.parse("{\"value\":\"v\"}"))
+                        .append("_version_key", 5L);
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenReturn(result);
+
+        long newVersion = store.saveIfVersion("user", "session", "key", new TestState("v"), 0L);
+
+        assertEquals(AgentStateStore.UNVERSIONED, newVersion);
+    }
+
+    @Test
+    void saveIfVersionZeroReturnsUnversionedOnDuplicateKey() {
+        // findOneAndUpdate with upsert throws E11000 -> document already exists
+        WriteError writeError =
+                new WriteError(11000, "E11000 duplicate key error", new BsonDocument());
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenThrow(new MongoWriteException(writeError, new ServerAddress()));
+
+        long newVersion = store.saveIfVersion("user", "session", "key", new TestState("v"), 0L);
+
+        assertEquals(AgentStateStore.UNVERSIONED, newVersion);
+    }
+
+    @Test
+    void saveIfVersionReturnsNewVersionOnCasSuccess() {
+        // findOneAndUpdate returns doc with incremented version
+        Document result =
+                new Document("_id", "anon:session")
+                        .append("key", Document.parse("{\"value\":\"updated\"}"))
+                        .append("_version_key", 3L);
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenReturn(result);
+
+        long newVersion =
+                store.saveIfVersion("user", "session", "key", new TestState("updated"), 2L);
+
+        assertEquals(3L, newVersion);
+    }
+
+    @Test
+    void saveIfVersionReturnsUnversionedWhenCasFails() {
+        // findOneAndUpdate returns null -> version mismatch
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenReturn(null);
+
+        long newVersion = store.saveIfVersion("user", "session", "key", new TestState("v"), 99L);
+
+        assertEquals(AgentStateStore.UNVERSIONED, newVersion);
+    }
+
+    @Test
     void existsReturnsFalseWhenNoDocument() {
         when(findIterable.first()).thenReturn(null);
         assertFalse(store.exists("user", "session"));
@@ -241,7 +340,7 @@ class MongoAgentStateStoreTest {
     @Test
     @SuppressWarnings("unchecked")
     void listSessionIdsReturnsIds() {
-        java.util.ArrayList<String> ids = new java.util.ArrayList<>(List.of("s1", "s2"));
+        ArrayList<String> ids = new ArrayList<>(List.of("s1", "s2"));
         when(distinctIterable.into(any())).thenReturn(ids);
 
         Set<String> result = store.listSessionIds("user");
@@ -288,6 +387,6 @@ class MongoAgentStateStoreTest {
     @Test
     void closeWithExternalClientDoesNotCloseClient() {
         store.close();
-        verify(mongoClient, org.mockito.Mockito.never()).close();
+        verify(mongoClient, Mockito.never()).close();
     }
 }

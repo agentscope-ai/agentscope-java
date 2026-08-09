@@ -55,20 +55,33 @@ import java.util.Objects;
  *   <li>{@link MongoSnapshotSpec} — sandbox workspace snapshots in MongoDB
  * </ul>
  *
- * <p>The caller owns the {@link MongoClient} lifecycle; closing the store does NOT close the
- * client.
+ * <p>When created via {@link #create(MongoClient)}, the caller owns the {@link MongoClient}
+ * lifecycle; {@link #close()} will NOT close the client. When created via {@link
+ * #fromConnectionString(String)}, the store owns the client and {@link #close()} will close it.
  */
-public class MongoDistributedStore implements DistributedStore {
+public class MongoDistributedStore implements DistributedStore, AutoCloseable {
 
     private static final String DEFAULT_DATABASE = "agentscope";
     private static final String STATE_COLLECTION = "agentscope_sessions";
     private static final String BASE_COLLECTION = "agentscope_base";
 
     private final MongoClient mongoClient;
+    private final boolean ownsClient;
     private final String databaseName;
 
+    private volatile AgentStateStore cachedAgentStateStore;
+    private volatile BaseStore cachedBaseStore;
+    private volatile SandboxSnapshotSpec cachedSnapshotSpec;
+    private volatile SandboxExecutionGuard cachedExecutionGuard;
+
     private MongoDistributedStore(MongoClient mongoClient, String databaseName) {
+        this(mongoClient, databaseName, false);
+    }
+
+    private MongoDistributedStore(
+            MongoClient mongoClient, String databaseName, boolean ownsClient) {
         this.mongoClient = Objects.requireNonNull(mongoClient, "mongoClient");
+        this.ownsClient = ownsClient;
         this.databaseName = databaseName != null ? databaseName : DEFAULT_DATABASE;
     }
 
@@ -85,7 +98,7 @@ public class MongoDistributedStore implements DistributedStore {
     /**
      * Creates a MongoDB distributed store.
      *
-     * @param mongoClient the MongoDB client
+     * @param mongoClient  the MongoDB client
      * @param databaseName the database name
      * @return a new MongoDB distributed store
      */
@@ -105,31 +118,82 @@ public class MongoDistributedStore implements DistributedStore {
                 MongoClientSettings.builder()
                         .applyConnectionString(new ConnectionString(connectionString))
                         .build();
-        return new MongoDistributedStore(MongoClients.create(settings), null);
+        return new MongoDistributedStore(MongoClients.create(settings), null, true);
     }
 
     @Override
     public AgentStateStore agentStateStore() {
-        return MongoAgentStateStore.builder()
-                .mongoClient(mongoClient)
-                .databaseName(databaseName)
-                .collectionName(STATE_COLLECTION)
-                .build();
+        AgentStateStore result = cachedAgentStateStore;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedAgentStateStore;
+                if (result == null) {
+                    result =
+                            MongoAgentStateStore.builder()
+                                    .mongoClient(mongoClient)
+                                    .databaseName(databaseName)
+                                    .collectionName(STATE_COLLECTION)
+                                    .build();
+                    cachedAgentStateStore = result;
+                }
+            }
+        }
+        return result;
     }
 
     @Override
     public BaseStore baseStore() {
-        MongoDatabase db = mongoClient.getDatabase(databaseName);
-        return new MongoBaseStore(db, BASE_COLLECTION);
+        BaseStore result = cachedBaseStore;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedBaseStore;
+                if (result == null) {
+                    MongoDatabase db = mongoClient.getDatabase(databaseName);
+                    result = new MongoBaseStore(db, BASE_COLLECTION);
+                    cachedBaseStore = result;
+                }
+            }
+        }
+        return result;
     }
 
     @Override
     public SandboxSnapshotSpec sandboxSnapshotSpec() {
-        return new MongoSnapshotSpec(mongoClient, databaseName);
+        SandboxSnapshotSpec result = cachedSnapshotSpec;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedSnapshotSpec;
+                if (result == null) {
+                    result = new MongoSnapshotSpec(mongoClient, databaseName);
+                    cachedSnapshotSpec = result;
+                }
+            }
+        }
+        return result;
     }
 
     @Override
     public SandboxExecutionGuard sandboxExecutionGuard() {
-        return MongoSandboxExecutionGuard.builder(mongoClient).databaseName(databaseName).build();
+        SandboxExecutionGuard result = cachedExecutionGuard;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedExecutionGuard;
+                if (result == null) {
+                    result =
+                            MongoSandboxExecutionGuard.builder(mongoClient)
+                                    .databaseName(databaseName)
+                                    .build();
+                    cachedExecutionGuard = result;
+                }
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public void close() {
+        if (ownsClient) {
+            mongoClient.close();
+        }
     }
 }

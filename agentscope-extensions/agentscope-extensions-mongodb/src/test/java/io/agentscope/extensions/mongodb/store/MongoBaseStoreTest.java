@@ -16,25 +16,32 @@
 package io.agentscope.extensions.mongodb.store;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoWriteException;
+import com.mongodb.ServerAddress;
+import com.mongodb.WriteError;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.bson.BsonDocument;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.AfterEach;
@@ -125,10 +132,62 @@ class MongoBaseStoreTest {
 
     @Test
     void putIfVersionReturnsFalseWhenVersionMismatch() {
-        when(findIterable.first()).thenReturn(null);
+        // findOneAndUpdate returns null when version filter doesn't match
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenReturn(null);
+
         boolean result = store.putIfVersion(List.of("ns"), "key", Map.of("data", "v"), 5L);
-        // findOneAndUpdate returns null when filter doesn't match (no upsert for non-zero version)
-        // Actually the implementation returns null for non-zero expectedVersion when no match
+
+        assertFalse(result);
+    }
+
+    @Test
+    void putIfVersionZeroCreatesWhenAbsent() {
+        // insertOne succeeds -> new document created
+        boolean result = store.putIfVersion(List.of("ns"), "key", Map.of("data", "v"), 0L);
+
+        assertTrue(result);
+        verify(collection).insertOne(any(Document.class));
+    }
+
+    @Test
+    void putIfVersionZeroReturnsFalseWhenAlreadyExists() {
+        // insertOne throws E11000 duplicate key -> document already exists
+        WriteError writeError =
+                new WriteError(11000, "E11000 duplicate key error", new BsonDocument());
+        doThrow(new MongoWriteException(writeError, new ServerAddress()))
+                .when(collection)
+                .insertOne(any(Document.class));
+
+        boolean result = store.putIfVersion(List.of("ns"), "key", Map.of("data", "v"), 0L);
+
+        assertFalse(result);
+    }
+
+    @Test
+    void putIfVersionZeroPropagatesNonDuplicateKeyError() {
+        // insertOne throws a non-duplicate-key error -> should propagate
+        WriteError writeError = new WriteError(12345, "some other error", new BsonDocument());
+        doThrow(new MongoWriteException(writeError, new ServerAddress()))
+                .when(collection)
+                .insertOne(any(Document.class));
+
+        assertThrows(
+                MongoWriteException.class,
+                () -> store.putIfVersion(List.of("ns"), "key", Map.of("data", "v"), 0L));
+    }
+
+    @Test
+    void putIfVersionSuccessWhenVersionMatches() {
+        // findOneAndUpdate returns doc with new version = expectedVersion + 1
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenReturn(new Document("_id", "ns\0key").append("version", 3L));
+
+        boolean result = store.putIfVersion(List.of("ns"), "key", Map.of("data", "v"), 2L);
+
+        assertTrue(result);
     }
 
     @Test

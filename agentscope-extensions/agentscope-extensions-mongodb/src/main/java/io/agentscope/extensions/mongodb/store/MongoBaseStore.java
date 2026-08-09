@@ -15,8 +15,10 @@
  */
 package io.agentscope.extensions.mongodb.store;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
@@ -25,6 +27,7 @@ import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReturnDocument;
 import com.mongodb.client.model.Sorts;
+import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
@@ -35,6 +38,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * MongoDB-backed implementation of {@link BaseStore}.
@@ -44,6 +49,8 @@ import org.bson.conversions.Bson;
  * field.
  */
 public class MongoBaseStore implements BaseStore {
+
+    private static final Logger log = LoggerFactory.getLogger(MongoBaseStore.class);
 
     private static final String FIELD_ID = "_id";
     private static final String FIELD_KEY = "key";
@@ -59,7 +66,7 @@ public class MongoBaseStore implements BaseStore {
     /**
      * Creates a new instance.
      *
-     * @param database the MongoDB database
+     * @param database       the MongoDB database
      * @param collectionName the collection name
      */
     public MongoBaseStore(MongoDatabase database, String collectionName) {
@@ -69,9 +76,9 @@ public class MongoBaseStore implements BaseStore {
     /**
      * Creates a new instance with a custom ObjectMapper.
      *
-     * @param database the MongoDB database
+     * @param database       the MongoDB database
      * @param collectionName the collection name
-     * @param objectMapper Jackson mapper for serializing values
+     * @param objectMapper   Jackson mapper for serializing values
      */
     public MongoBaseStore(
             MongoDatabase database, String collectionName, ObjectMapper objectMapper) {
@@ -122,21 +129,21 @@ public class MongoBaseStore implements BaseStore {
 
         Document result;
         if (expectedVersion == 0) {
-            Bson filter = Filters.and(Filters.eq(id), Filters.exists(FIELD_VERSION, false));
-            Bson update =
-                    Updates.combine(
-                            Updates.set(FIELD_VALUE, Document.parse(json)),
-                            Updates.set(FIELD_KEY, key),
-                            Updates.set(FIELD_NAMESPACE, nsKey),
-                            Updates.set(FIELD_VERSION, 1L),
-                            Updates.setOnInsert(FIELD_ID, id));
-            result =
-                    collection.findOneAndUpdate(
-                            filter,
-                            update,
-                            new FindOneAndUpdateOptions()
-                                    .upsert(true)
-                                    .returnDocument(ReturnDocument.AFTER));
+            Document doc =
+                    new Document(FIELD_ID, id)
+                            .append(FIELD_VALUE, Document.parse(json))
+                            .append(FIELD_KEY, key)
+                            .append(FIELD_NAMESPACE, nsKey)
+                            .append(FIELD_VERSION, 1L);
+            try {
+                collection.insertOne(doc);
+                return true;
+            } catch (MongoWriteException e) {
+                if (e.getError().getCode() == 11000) {
+                    return false;
+                }
+                throw e;
+            }
         } else {
             Bson filter = Filters.and(Filters.eq(id), Filters.eq(FIELD_VERSION, expectedVersion));
             Bson update =
@@ -156,9 +163,6 @@ public class MongoBaseStore implements BaseStore {
             return false;
         }
         Long newVersion = result.getLong(FIELD_VERSION);
-        if (expectedVersion == 0 && newVersion != null && newVersion == 1L) {
-            return true;
-        }
         return newVersion != null && newVersion == expectedVersion + 1;
     }
 
@@ -209,12 +213,11 @@ public class MongoBaseStore implements BaseStore {
     private String serialize(Map<String, Object> value) {
         try {
             return objectMapper.writeValueAsString(value == null ? Map.of() : value);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize value", e);
         }
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> parseValue(Object raw) {
         if (raw instanceof Document doc) {
             return new LinkedHashMap<>(doc);
@@ -223,14 +226,17 @@ public class MongoBaseStore implements BaseStore {
             try {
                 Map<String, Object> parsed = objectMapper.readValue(s, MAP_TYPE);
                 return parsed != null ? parsed : Map.of();
-            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            } catch (JsonProcessingException e) {
+                log.warn(
+                        "Failed to parse stored JSON value, returning empty map: {}",
+                        e.getMessage());
                 return Map.of();
             }
         }
         return Map.of();
     }
 
-    private static com.mongodb.client.model.UpdateOptions upsert() {
-        return new com.mongodb.client.model.UpdateOptions().upsert(true);
+    private static UpdateOptions upsert() {
+        return new UpdateOptions().upsert(true);
     }
 }

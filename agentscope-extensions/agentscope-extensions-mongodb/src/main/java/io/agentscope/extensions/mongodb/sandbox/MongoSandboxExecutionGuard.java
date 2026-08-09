@@ -15,13 +15,15 @@
  */
 package io.agentscope.extensions.mongodb.sandbox;
 
-import com.mongodb.MongoBulkWriteException;
+import com.mongodb.MongoWriteException;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.ReturnDocument;
 import com.mongodb.client.model.Updates;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
@@ -32,6 +34,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Date;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -44,9 +47,19 @@ import org.slf4j.LoggerFactory;
  * with a unique {@code _id} derived from the {@link SandboxIsolationKey} and a TTL index on {@code
  * expiresAt} to auto-release stale locks.
  *
- * <p>Lock acquisition uses {@code findOneAndUpdate} with upsert and a filter that rejects documents
- * whose {@code expiresAt} has not yet passed. This provides a non-blocking try-lock semantics.
- * Acquisition polls until the lock is obtained or the timeout expires.
+ * <p>Lock acquisition uses a two-step approach for correct mutual exclusion:
+ *
+ * <ol>
+ *   <li>Attempt {@code insertOne} — atomic under the unique {@code _id} index; only one
+ *       concurrent caller succeeds.
+ *   <li>If the lock document already exists (duplicate key), attempt {@code findOneAndUpdate}
+ *       (non-upsert) with a filter that matches only when {@code expiresAt &lt;= now} — reclaiming
+ *       an expired lock.
+ * </ol>
+ *
+ * <p>Acquisition polls until the lock is obtained or the timeout expires. The returned {@link
+ * SandboxLease} releases the lock on close, filtered by owner to avoid releasing another
+ * process's lock.
  */
 public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
 
@@ -59,12 +72,14 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
 
     private final MongoCollection<Document> collection;
     private final long lockTimeoutMs;
+    private final long retryIntervalMs;
     private final String owner;
 
     private MongoSandboxExecutionGuard(Builder builder) {
         MongoDatabase db = builder.mongoClient.getDatabase(builder.databaseName);
         this.collection = db.getCollection(builder.collectionName);
         this.lockTimeoutMs = builder.lockTimeout.toMillis();
+        this.retryIntervalMs = builder.retryInterval.toMillis();
         this.owner = builder.owner;
         ensureIndexes();
     }
@@ -75,7 +90,7 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
      * @param mongoClient the MongoDB client
      * @return a new builder
      */
-    public static Builder builder(com.mongodb.client.MongoClient mongoClient) {
+    public static Builder builder(MongoClient mongoClient) {
         return new Builder(mongoClient);
     }
 
@@ -89,60 +104,77 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
             Date now = new Date();
             Date expiresAt = new Date(now.getTime() + lockTimeoutMs);
 
-            Bson filter =
-                    Filters.and(
-                            Filters.eq(FIELD_LOCK_ID, lockId),
-                            Filters.or(
-                                    Filters.exists(FIELD_OWNER, false),
-                                    Filters.lte(FIELD_EXPIRES_AT, now)));
+            // Step 1: Try to insert a new lock document. This is atomic — only one
+            // concurrent caller can succeed due to the _id unique index.
+            Document lockDoc =
+                    new Document(FIELD_LOCK_ID, lockId)
+                            .append(FIELD_OWNER, owner)
+                            .append(FIELD_EXPIRES_AT, expiresAt);
+            try {
+                collection.insertOne(lockDoc);
+                log.debug("[sandbox-guard] Acquired MongoDB lock (insert): {}", lockId);
+                return new MongoLease(collection, lockId, owner);
+            } catch (MongoWriteException e) {
+                if (e.getError().getCode() != 11000) {
+                    throw new RuntimeException("Failed to acquire MongoDB lock: " + lockId, e);
+                }
+                // Duplicate key — lock document already exists, fall through to step 2
+            }
 
-            Bson update =
+            // Step 2: Lock document exists. Try to reclaim it if it has expired.
+            Bson expiredFilter =
+                    Filters.and(
+                            Filters.eq(FIELD_LOCK_ID, lockId), Filters.lte(FIELD_EXPIRES_AT, now));
+            Bson reclaimUpdate =
                     Updates.combine(
-                            Updates.setOnInsert(FIELD_LOCK_ID, lockId),
                             Updates.set(FIELD_OWNER, owner),
                             Updates.set(FIELD_EXPIRES_AT, expiresAt));
 
-            try {
-                Document result =
-                        collection.findOneAndUpdate(
-                                filter, update, new FindOneAndUpdateOptions().upsert(true));
+            Document reclaimed =
+                    collection.findOneAndUpdate(
+                            expiredFilter,
+                            reclaimUpdate,
+                            new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER));
 
-                if (result == null) {
-                    log.debug("[sandbox-guard] Acquired MongoDB lock: {}", lockId);
-                    return new MongoLease(collection, lockId);
-                } else {
+            if (reclaimed != null) {
+                log.debug(
+                        "[sandbox-guard] Acquired MongoDB lock (reclaimed from {}): {}",
+                        reclaimed.getString(FIELD_OWNER),
+                        lockId);
+                return new MongoLease(collection, lockId, owner);
+            }
+
+            // Lock exists and has not expired — held by someone else.
+            //
+            // TOCTOU safety: between the failed insertOne above and the findOneAndUpdate
+            // reclaim attempt, another process may have released the lock and a third process
+            // may have re-acquired it. This is safe because the reclaim filter includes
+            // `expiresAt <= now` — a freshly acquired lock has `expiresAt` in the future and
+            // will NOT match the reclaim filter, so we will not steal it.
+            if (log.isDebugEnabled()) {
+                Document held = collection.find(Filters.eq(FIELD_LOCK_ID, lockId)).first();
+                if (held != null) {
                     log.debug(
                             "[sandbox-guard] Lock held by {}, retrying: {}",
-                            result.getString(FIELD_OWNER),
+                            held.getString(FIELD_OWNER),
                             lockId);
-                }
-            } catch (MongoBulkWriteException e) {
-                // Duplicate key — lock held by someone else, retry
-            } catch (Exception e) {
-                if (e.getMessage() != null && e.getMessage().contains("E11000")) {
-                    // Duplicate key error — lock held by someone else
-                } else {
-                    throw new RuntimeException("Failed to acquire MongoDB lock: " + lockId, e);
                 }
             }
 
             if (System.nanoTime() >= deadline) {
-                throw new InterruptedException(
-                        "Timed out waiting for MongoDB lock: "
-                                + lockId
-                                + " (timeout="
-                                + Duration.ofMillis(lockTimeoutMs)
-                                + ")");
+                throw new InterruptedException("Timed out waiting for MongoDB lock: " + lockId);
             }
 
-            Thread.sleep(100L);
+            // MongoDB lacks server-side blocking locks (unlike MySQL GET_LOCK), so we poll.
+            // InterruptedException is declared on the method signature and propagated by sleep.
+            Thread.sleep(retryIntervalMs);
         }
     }
 
     private void ensureIndexes() {
         collection.createIndex(
                 Indexes.ascending(FIELD_EXPIRES_AT),
-                new IndexOptions().expireAfter(0L, java.util.concurrent.TimeUnit.SECONDS));
+                new IndexOptions().expireAfter(0L, TimeUnit.SECONDS));
     }
 
     private static String composeLockId(SandboxIsolationKey key) {
@@ -164,16 +196,23 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
 
         private final MongoCollection<Document> collection;
         private final String lockId;
+        private final String owner;
 
-        MongoLease(MongoCollection<Document> collection, String lockId) {
+        MongoLease(MongoCollection<Document> collection, String lockId, String owner) {
             this.collection = collection;
             this.lockId = lockId;
+            this.owner = owner;
         }
 
         @Override
         public void close() {
             try {
-                collection.deleteOne(Filters.eq(lockId));
+                // Only delete if we still own the lock — prevents releasing someone else's
+                // lock when close() is called after lease expiry and re-acquisition by another
+                // process. Also makes close() idempotent: if already released, deleteOne is a
+                // no-op.
+                collection.deleteOne(
+                        Filters.and(Filters.eq(lockId), Filters.eq(FIELD_OWNER, owner)));
                 log.debug("[sandbox-guard] Released MongoDB lock: {}", lockId);
             } catch (Exception e) {
                 log.warn(
@@ -184,16 +223,21 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
         }
     }
 
-    /** Builder for {@link MongoSandboxExecutionGuard}. */
+    /**
+     * Builder for {@link MongoSandboxExecutionGuard}.
+     */
     public static final class Builder {
 
-        private final com.mongodb.client.MongoClient mongoClient;
+        private static final Duration DEFAULT_RETRY_INTERVAL = Duration.ofMillis(500);
+
+        private final MongoClient mongoClient;
         private String databaseName = "agentscope";
         private String collectionName = DEFAULT_COLLECTION;
         private Duration lockTimeout = Duration.ofMinutes(30);
+        private Duration retryInterval = DEFAULT_RETRY_INTERVAL;
         private String owner = "agentscope:" + ProcessHandle.current().pid();
 
-        Builder(com.mongodb.client.MongoClient mongoClient) {
+        Builder(MongoClient mongoClient) {
             this.mongoClient = Objects.requireNonNull(mongoClient, "mongoClient");
         }
 
@@ -213,6 +257,24 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
                 throw new IllegalArgumentException("timeout must be positive");
             }
             this.lockTimeout = timeout;
+            return this;
+        }
+
+        /**
+         * Sets the polling interval between lock acquisition attempts.
+         *
+         * <p>Default: {@code 500 ms}. Lower values reduce latency at the cost of more MongoDB
+         * round-trips; higher values reduce load at the cost of increased queuing delay.
+         *
+         * @param interval the retry interval; must be positive
+         * @return this builder
+         */
+        public Builder retryInterval(Duration interval) {
+            Objects.requireNonNull(interval, "retryInterval");
+            if (interval.isNegative() || interval.isZero()) {
+                throw new IllegalArgumentException("retryInterval must be positive");
+            }
+            this.retryInterval = interval;
             return this;
         }
 

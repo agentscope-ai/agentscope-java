@@ -16,8 +16,11 @@
 package io.agentscope.extensions.mongodb;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.mongodb.client.MongoClient;
@@ -25,6 +28,8 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -83,5 +88,72 @@ class MongoDistributedStoreTest {
     @Test
     void createWithNullMongoClientThrows() {
         assertThrows(NullPointerException.class, () -> MongoDistributedStore.create(null));
+    }
+
+    @Test
+    void sandboxExecutionGuardReturnsNonNull() {
+        MongoDistributedStore store = MongoDistributedStore.create(mongoClient);
+        SandboxExecutionGuard guard = store.sandboxExecutionGuard();
+        assertNotNull(guard);
+    }
+
+    @Test
+    void sandboxSnapshotSpecReturnsNonNull() {
+        MongoDistributedStore store = MongoDistributedStore.create(mongoClient);
+        assertNotNull(store.sandboxSnapshotSpec());
+    }
+
+    @Test
+    void fromConnectionStringCreatesStore() {
+        // MongoClient creation is lazy — no actual connection until an operation is performed
+        MongoDistributedStore store =
+                MongoDistributedStore.fromConnectionString("mongodb://localhost:27017");
+        assertNotNull(store);
+    }
+
+    @Test
+    void agentStateStoreReturnsCachedInstance() {
+        MongoDistributedStore store = MongoDistributedStore.create(mongoClient);
+        AgentStateStore first = store.agentStateStore();
+        AgentStateStore second = store.agentStateStore();
+        assertSame(first, second);
+    }
+
+    @Test
+    void baseStoreReturnsCachedInstance() {
+        MongoDistributedStore store = MongoDistributedStore.create(mongoClient);
+        BaseStore first = store.baseStore();
+        BaseStore second = store.baseStore();
+        assertSame(first, second);
+    }
+
+    @Test
+    void sandboxSnapshotSpecReturnsCachedInstance() {
+        MongoDistributedStore store = MongoDistributedStore.create(mongoClient);
+        SandboxSnapshotSpec first = store.sandboxSnapshotSpec();
+        SandboxSnapshotSpec second = store.sandboxSnapshotSpec();
+        assertSame(first, second);
+    }
+
+    @Test
+    void sandboxExecutionGuardReturnsCachedInstance() {
+        MongoDistributedStore store = MongoDistributedStore.create(mongoClient);
+        SandboxExecutionGuard first = store.sandboxExecutionGuard();
+        SandboxExecutionGuard second = store.sandboxExecutionGuard();
+        assertSame(first, second);
+    }
+
+    @Test
+    void closeWithExternalClientDoesNotCloseClient() {
+        MongoDistributedStore store = MongoDistributedStore.create(mongoClient);
+        store.close();
+        verify(mongoClient, never()).close();
+    }
+
+    @Test
+    void closeFromConnectionStringDoesNotThrow() {
+        MongoDistributedStore store =
+                MongoDistributedStore.fromConnectionString("mongodb://localhost:27017");
+        store.close();
     }
 }

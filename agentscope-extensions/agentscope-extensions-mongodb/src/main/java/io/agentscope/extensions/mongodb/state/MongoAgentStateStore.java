@@ -17,15 +17,18 @@ package io.agentscope.extensions.mongodb.state;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
+import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.FindOneAndUpdateOptions;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReturnDocument;
+import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
@@ -121,9 +124,7 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
                         Indexes.ascending(FIELD_USER_ID), Indexes.ascending(FIELD_SESSION_ID)));
         collection.createIndex(
                 Indexes.ascending(FIELD_UPDATED_AT),
-                new com.mongodb.client.model.IndexOptions()
-                        .expireAfter(0L, TimeUnit.SECONDS)
-                        .sparse(true));
+                new IndexOptions().expireAfter(0L, TimeUnit.SECONDS).sparse(true));
     }
 
     // ────────────────── Single Value CRUD ──────────────────
@@ -159,6 +160,15 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
 
     // ────────────────── List CRUD ──────────────────
 
+    /**
+     * Saves a list of state values with incremental-append optimization.
+     *
+     * <p><b>Concurrency note:</b> this method performs a read-then-write to decide between
+     * incremental append and full replacement. It is NOT atomic — concurrent calls for the same
+     * {@code (userId, sessionId, key)} may interleave reads and writes, causing lost appends or
+     * stale hash comparisons. Callers that require strict consistency should synchronize externally
+     * (e.g. via {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard}).
+     */
     @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
         validateKey(key);
@@ -207,6 +217,20 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
                             Updates.set(hashField, currentHash),
                             Updates.set(FIELD_UPDATED_AT, new Date()));
             collection.updateOne(Filters.eq(slotId), update, upsert());
+        } else {
+            // Hash unchanged but size decreased (elements removed) — force full rewrite.
+            List<Document> bsonList = toDocumentList(values);
+            Bson setFields =
+                    Updates.combine(
+                            Updates.set(listKey, bsonList),
+                            Updates.set(hashField, currentHash),
+                            Updates.set(FIELD_UPDATED_AT, new Date()));
+            Bson setOnInsert =
+                    Updates.combine(
+                            Updates.setOnInsert(FIELD_USER_ID, normalizeUser(userId)),
+                            Updates.setOnInsert(FIELD_SESSION_ID, sessionId));
+            collection.updateOne(
+                    Filters.eq(slotId), Updates.combine(setFields, setOnInsert), upsert());
         }
     }
 
@@ -276,18 +300,25 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
                             Updates.set(FIELD_UPDATED_AT, new Date()),
                             Updates.setOnInsert(FIELD_USER_ID, normalizeUser(userId)),
                             Updates.setOnInsert(FIELD_SESSION_ID, sessionId));
-            Document result =
-                    collection.findOneAndUpdate(
-                            filter,
-                            update,
-                            new FindOneAndUpdateOptions()
-                                    .upsert(true)
-                                    .returnDocument(ReturnDocument.AFTER));
-            if (result == null) {
-                return UNVERSIONED;
+            try {
+                Document result =
+                        collection.findOneAndUpdate(
+                                filter,
+                                update,
+                                new FindOneAndUpdateOptions()
+                                        .upsert(true)
+                                        .returnDocument(ReturnDocument.AFTER));
+                if (result == null) {
+                    return UNVERSIONED;
+                }
+                Long newVersion = result.getLong(versionField);
+                return newVersion != null && newVersion == 1L ? 1L : UNVERSIONED;
+            } catch (MongoWriteException e) {
+                if (e.getError().getCode() == 11000) {
+                    return UNVERSIONED;
+                }
+                throw e;
             }
-            Long newVersion = result.getLong(versionField);
-            return newVersion != null && newVersion == 1L ? 1L : UNVERSIONED;
         }
 
         Bson filter = Filters.and(Filters.eq(slotId), Filters.eq(versionField, expectedVersion));
@@ -407,13 +438,15 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         return result;
     }
 
-    private static com.mongodb.client.model.UpdateOptions upsert() {
-        return new com.mongodb.client.model.UpdateOptions().upsert(true);
+    private static UpdateOptions upsert() {
+        return new UpdateOptions().upsert(true);
     }
 
     // ────────────────── Builder ──────────────────
 
-    /** Builder for {@link MongoAgentStateStore}. */
+    /**
+     * Builder for {@link MongoAgentStateStore}.
+     */
     public static class Builder {
         private MongoClient mongoClient;
         private String connectionString;
