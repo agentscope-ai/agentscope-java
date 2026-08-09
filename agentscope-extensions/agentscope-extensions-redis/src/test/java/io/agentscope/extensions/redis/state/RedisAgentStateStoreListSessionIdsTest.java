@@ -16,8 +16,10 @@
 package io.agentscope.extensions.redis.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,15 +49,14 @@ class RedisAgentStateStoreListSessionIdsTest {
     }
 
     @Test
-    void escapesGlobMetacharactersInScanPattern() {
+    void rejectsGlobMetacharactersInUserId() {
         RedisClientAdapter adapter = mock(RedisClientAdapter.class);
-        when(adapter.findKeysByPattern(anyString())).thenReturn(Set.of());
         RedisAgentStateStore store = RedisAgentStateStore.builder().clientAdapter(adapter).build();
 
-        store.listSessionIds("us*er?");
-
-        // '*' and '?' must be backslash-escaped so they match literally, not as globs.
-        verify(adapter).findKeysByPattern("agentscope:session:{us\\*er\\?/*}:_keys");
+        // Glob metacharacters are rejected (not escaped) so that listSessionIds stays consistent
+        // with save/slotId, which also reject them via validateScopeId. No SCAN is issued.
+        assertThrows(IllegalArgumentException.class, () -> store.listSessionIds("us*er?"));
+        verify(adapter, never()).findKeysByPattern(anyString());
     }
 
     @Test

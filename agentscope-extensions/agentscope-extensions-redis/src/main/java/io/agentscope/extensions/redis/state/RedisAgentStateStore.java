@@ -626,9 +626,9 @@ public class RedisAgentStateStore implements AgentStateStore {
         validateScopeId(userSegment, "userId");
         try {
             // Keys have the form: {prefix}{{userSegment}/{sessionId}}:_keys.
-            // Escape glob metacharacters in userSegment so a userId containing
-            // '*', '?', '[', ']' or '\' cannot widen or skew the SCAN MATCH pattern.
-            String pattern = keyPrefix + "{" + escapeGlob(userSegment) + "/*}" + KEYS_SUFFIX;
+            // userSegment is guaranteed free of glob metacharacters by the validateScopeId
+            // check above, so the SCAN MATCH pattern is built from it literally.
+            String pattern = keyPrefix + "{" + userSegment + "/*}" + KEYS_SUFFIX;
             Set<String> keysKeys = client.findKeysByPattern(pattern);
             Set<String> sessionIds = new HashSet<>();
             String openTag = keyPrefix + "{" + userSegment + "/";
@@ -651,19 +651,6 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     private static String normalizeUser(String userId) {
         return userId == null || userId.isBlank() ? ANON_USER : userId;
-    }
-
-    /** Escape Redis glob metacharacters so {@code userSegment} matches literally in SCAN MATCH. */
-    private static String escapeGlob(String s) {
-        StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '*' || c == '?' || c == '[' || c == ']' || c == '\\') {
-                sb.append('\\');
-            }
-            sb.append(c);
-        }
-        return sb.toString();
     }
 
     /**
