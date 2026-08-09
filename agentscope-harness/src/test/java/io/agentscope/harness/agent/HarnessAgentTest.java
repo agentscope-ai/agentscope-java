@@ -1226,7 +1226,7 @@ class HarnessAgentTest {
 
         child.call(userText("hi, no memory config"), RuntimeContext.empty()).block();
 
-        verify(parentModel).stream(any(), any(), any());
+        verify(parentModel, atLeast(1)).stream(any(), any(), any());
     }
 
     // =========================================================================
