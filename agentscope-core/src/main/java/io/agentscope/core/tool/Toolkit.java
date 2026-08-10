@@ -78,7 +78,7 @@ public class Toolkit {
     private final ToolExecutor executor;
 
     /**
-     * Create a Toolkit with default configuration (sequential execution using Reactor).
+     * Create a Toolkit with default configuration (parallel execution using Reactor).
      */
     public Toolkit() {
         this(ToolkitConfig.defaultConfig());

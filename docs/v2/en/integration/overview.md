@@ -11,6 +11,10 @@ All model providers have moved to independent model extension modules, while `ag
 | Provider | Maven artifact | `ModelRegistry` id | Standard environment variable | Docs |
 |----------|----------------|--------------------|-------------------------------|------|
 | OpenAI | `agentscope-extensions-model-openai` | `openai:<model>` | `OPENAI_API_KEY` | <a class="reference internal" href="model/openai.html">OpenAI</a> |
+| DeepSeek | `agentscope-extensions-model-openai` | `deepseek:<model>` | `DEEPSEEK_API_KEY` | <a class="reference internal" href="model/deepseek.html">DeepSeek</a> |
+| GLM | `agentscope-extensions-model-openai` | `glm:<model>` | `ZAI_API_KEY` / `GLM_API_KEY` / `ZHIPUAI_API_KEY` | <a class="reference internal" href="model/glm.html">GLM</a> |
+| Kimi | `agentscope-extensions-model-openai` | `kimi:<model>` | `MOONSHOT_API_KEY` / `KIMI_API_KEY` | <a class="reference internal" href="model/kimi.html">Kimi</a> |
+| MiniMax | `agentscope-extensions-model-openai` | `minimax:<model>` | `MINIMAX_API_KEY` | <a class="reference internal" href="model/minimax.html">MiniMax</a> |
 | DashScope | `agentscope-extensions-model-dashscope` | `dashscope:<model>` / `qwen*` | `DASHSCOPE_API_KEY` | <a class="reference internal" href="model/dashscope.html">DashScope</a> |
 | Gemini | `agentscope-extensions-model-gemini` | `gemini:<model>` | `GEMINI_API_KEY` | <a class="reference internal" href="model/gemini.html">Gemini</a> |
 | Anthropic | `agentscope-extensions-model-anthropic` | `anthropic:<model>` | `ANTHROPIC_API_KEY` | <a class="reference internal" href="model/anthropic.html">Anthropic</a> |

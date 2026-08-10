@@ -19,9 +19,14 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ActingInput;
@@ -31,9 +36,12 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
 
 /**
@@ -43,10 +51,10 @@ import reactor.core.publisher.Flux;
  * <ul>
  *   <li>{@code PostReasoningEvent.stopAgent()} replaced by emitting {@link RequestStopEvent}
  *       from {@link MiddlewareBase#onActing}.</li>
- *   <li>The pending tool calls are preserved in {@code AgentState.context} automatically;
- *       caller resumes execution by issuing a second {@code agent.call(...)}.</li>
- *   <li>The {@code hasPendingToolUse()} check is replaced by inspecting
- *       {@code response.getGenerateReason() == GenerateReason.MIDDLEWARE_STOP_REQUESTED}.</li>
+ *   <li>The pending tool calls are preserved in {@code AgentState.context} automatically.</li>
+ *   <li>For confirmation flows, mark dangerous {@link ToolUseBlock}s as
+ *       {@link ToolCallState#ASKING} and resume with a second {@code agent.call(...)} carrying
+ *       {@link ConfirmResult}s.</li>
  *   <li>Removed {@code .memory(new InMemoryMemory())}.</li>
  *   <li>{@code .hooks(List)} → {@code .middleware(...)}.</li>
  * </ul>
@@ -128,15 +136,12 @@ public class HookStopAgentExample {
                 continue;
             }
 
-            Msg userMsg = new UserMessage("user", input);
+            Msg response = agent.call(new UserMessage("user", input)).block();
 
-            Msg response = agent.call(userMsg).block();
-
-            // Resume loop: middleware emitted RequestStopEvent for dangerous tool confirmation
             while (response != null
-                    && response.getGenerateReason() == GenerateReason.MIDDLEWARE_STOP_REQUESTED) {
-
-                System.out.println("\n⚠  Agent paused — dangerous tool requires confirmation.");
+                    && response.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+                System.out.println(
+                        "\n[PAUSED] Agent paused - dangerous tool requires confirmation.");
                 displayPendingContext(response);
 
                 System.out.print("Confirm execution? (yes/no): ");
@@ -144,11 +149,10 @@ public class HookStopAgentExample {
 
                 if (confirmation.equals("yes") || confirmation.equals("y")) {
                     System.out.println("Resuming execution...\n");
-                    // Resume: pending tool calls are stored in AgentState; call with empty input
-                    response = agent.call().block();
+                    response = agent.call(buildConfirmMsg(response, true)).block();
                 } else {
+                    response = agent.call(buildConfirmMsg(response, false)).block();
                     System.out.println("Operation cancelled by user.\n");
-                    break;
                 }
             }
 
@@ -162,6 +166,33 @@ public class HookStopAgentExample {
         if (response != null) {
             System.out.println("Agent reply so far: " + response.getTextContent());
         }
+    }
+
+    private static Msg buildConfirmMsg(Msg pausedResponse, boolean confirmed) {
+        return Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .textContent(confirmed ? "[confirm]" : "[deny]")
+                .metadata(
+                        Map.of(
+                                Msg.METADATA_CONFIRM_RESULTS,
+                                extractAskingToolCalls(pausedResponse).stream()
+                                        .map(toolCall -> new ConfirmResult(confirmed, toolCall))
+                                        .toList()))
+                .build();
+    }
+
+    private static List<ToolUseBlock> extractAskingToolCalls(Msg response) {
+        if (response == null) {
+            return List.of();
+        }
+        return response.getContent().stream()
+                .filter(
+                        block ->
+                                block instanceof ToolUseBlock toolUse
+                                        && toolUse.getState() == ToolCallState.ASKING)
+                .map(ToolUseBlock.class::cast)
+                .toList();
     }
 
     /**
@@ -182,26 +213,72 @@ public class HookStopAgentExample {
                 RuntimeContext ctx,
                 ActingInput input,
                 Function<ActingInput, Flux<AgentEvent>> next) {
-            boolean hasDangerousTool =
+            List<ToolUseBlock> dangerousToolCalls =
                     input.toolCalls().stream()
-                            .map(ToolUseBlock::getName)
-                            .anyMatch(dangerousTools::contains);
+                            .filter(toolCall -> dangerousTools.contains(toolCall.getName()))
+                            .filter(toolCall -> toolCall.getState() != ToolCallState.ALLOWED)
+                            .toList();
 
-            if (hasDangerousTool) {
-                // Emit RequestStopEvent to pause the agent before executing the tool.
-                // The pending tool call state is saved in AgentState automatically.
-                // The caller can resume with agent.call(List.of()).
+            if (!dangerousToolCalls.isEmpty()) {
+                markToolCallsAsking(ctx, dangerousToolCalls);
                 System.out.println(
-                        "\n[MIDDLEWARE] Dangerous tool detected — requesting stop for"
+                        "\n[MIDDLEWARE] Dangerous tool detected - requesting stop for"
                                 + " confirmation.");
-                return Flux.just(new RequestStopEvent("Dangerous tool requires user confirmation"));
+                return Flux.just(
+                        new RequireUserConfirmEvent(null, dangerousToolCalls),
+                        new RequestStopEvent(
+                                "Dangerous tool requires user confirmation",
+                                GenerateReason.PERMISSION_ASKING));
             }
 
             return next.apply(input);
         }
+
+        private void markToolCallsAsking(
+                RuntimeContext ctx, List<ToolUseBlock> dangerousToolCalls) {
+            if (ctx == null || ctx.getAgentState() == null || dangerousToolCalls.isEmpty()) {
+                return;
+            }
+
+            Set<String> askingIds =
+                    dangerousToolCalls.stream()
+                            .map(ToolUseBlock::getId)
+                            .collect(Collectors.toSet());
+
+            List<Msg> context = ctx.getAgentState().contextMutable();
+            for (int i = context.size() - 1; i >= 0; i--) {
+                Msg msg = context.get(i);
+                if (msg.getRole() != MsgRole.ASSISTANT) {
+                    continue;
+                }
+
+                boolean hasMatch =
+                        msg.getContent().stream()
+                                .anyMatch(
+                                        block ->
+                                                block instanceof ToolUseBlock toolUse
+                                                        && askingIds.contains(toolUse.getId()));
+                if (!hasMatch) {
+                    continue;
+                }
+
+                List<ContentBlock> updatedContent =
+                        msg.getContent().stream()
+                                .map(
+                                        block ->
+                                                block instanceof ToolUseBlock toolUse
+                                                                && askingIds.contains(
+                                                                        toolUse.getId())
+                                                        ? toolUse.withState(ToolCallState.ASKING)
+                                                        : block)
+                                .toList();
+                context.set(i, msg.withContent(updatedContent));
+                return;
+            }
+        }
     }
 
-    /** Simulated sensitive tools — no real side effects in this example. */
+    /** Simulated sensitive tools - no real side effects in this example. */
     public static class SensitiveTools {
 
         /**
@@ -221,9 +298,9 @@ public class HookStopAgentExample {
         /**
          * Simulates sending an email.
          *
-         * @param to      recipient address
+         * @param to recipient address
          * @param subject subject line
-         * @param body    email body
+         * @param body email body
          * @return result message
          */
         @Tool(name = "send_email", description = "Send an email to a recipient")
@@ -231,7 +308,7 @@ public class HookStopAgentExample {
                 @ToolParam(name = "to", description = "Recipient email address") String to,
                 @ToolParam(name = "subject", description = "Email subject") String subject,
                 @ToolParam(name = "body", description = "Email body") String body) {
-            System.out.println("[TOOL] Sending email to " + to + " — subject: " + subject);
+            System.out.println("[TOOL] Sending email to " + to + " - subject: " + subject);
             return "Email sent to '" + to + "'.";
         }
 

@@ -18,57 +18,56 @@ package io.agentscope.harness.agent.middleware;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** Unit tests for {@link MemoryMaintenanceMiddleware#cleanupStaleEntries()}. */
+/** Unit tests for {@link LocalPeriodicGate#cleanupStaleEntries(Duration)}. */
 class MemoryMaintenanceMiddlewareStaleEntryTest {
+
+    private final LocalPeriodicGate gate = new LocalPeriodicGate();
 
     @BeforeEach
     void resetSharedMap() {
-        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.clear();
+        LocalPeriodicGate.clearForTests();
     }
 
     @Test
     void cleanupStaleEntries_removesOldEntries() {
-        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.put(
-                "USER:staleUser", new AtomicReference<>(Instant.EPOCH));
+        LocalPeriodicGate.seedLastClaimAtForTests("USER:staleUser", Instant.EPOCH);
 
-        MemoryMaintenanceMiddleware.cleanupStaleEntries();
+        gate.cleanupStaleEntries(Duration.ofMinutes(60));
 
-        assertTrue(
-                MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.isEmpty(),
+        assertFalse(
+                LocalPeriodicGate.hasClaimForTests("USER:staleUser"),
                 "stale entry (EPOCH timestamp) should be removed");
     }
 
     @Test
     void cleanupStaleEntries_preservesRecentEntries() {
-        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.put(
-                "USER:recentUser", new AtomicReference<>(Instant.now()));
+        gate.tryClaim("USER:recentUser", Duration.ZERO);
 
-        MemoryMaintenanceMiddleware.cleanupStaleEntries();
+        gate.cleanupStaleEntries(Duration.ofMinutes(60));
 
         assertTrue(
-                MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.containsKey("USER:recentUser"),
+                LocalPeriodicGate.hasClaimForTests("USER:recentUser"),
                 "recent entry should survive cleanup");
     }
 
     @Test
     void cleanupStaleEntries_onlyRemovesStaleEntries() {
-        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.put(
-                "USER:staleUser", new AtomicReference<>(Instant.EPOCH));
-        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.put(
-                "USER:recentUser", new AtomicReference<>(Instant.now()));
+        LocalPeriodicGate.seedLastClaimAtForTests("USER:staleUser", Instant.EPOCH);
+        gate.tryClaim("USER:recentUser", Duration.ZERO);
 
-        MemoryMaintenanceMiddleware.cleanupStaleEntries();
+        gate.cleanupStaleEntries(Duration.ofMinutes(60));
 
         assertFalse(
-                MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.containsKey("USER:staleUser"),
+                LocalPeriodicGate.hasClaimForTests("USER:staleUser"),
                 "stale entry should be removed");
         assertTrue(
-                MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.containsKey("USER:recentUser"),
+                LocalPeriodicGate.hasClaimForTests("USER:recentUser"),
                 "recent entry should survive cleanup");
     }
 }
