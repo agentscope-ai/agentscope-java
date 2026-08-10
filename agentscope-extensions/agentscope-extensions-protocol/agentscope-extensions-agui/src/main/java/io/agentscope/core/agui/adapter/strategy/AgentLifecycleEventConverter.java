@@ -15,6 +15,12 @@
  */
 package io.agentscope.core.agui.adapter.strategy;
 
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_REPLY_ID;
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_CONTENT;
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_INPUT;
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_NAME;
+import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON;
+
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -27,6 +33,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,10 +105,13 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
         }
 
         for (ContentBlock block : result.getContent()) {
-            if (!(block instanceof ToolResultBlock toolResult)
-                    || !toolResult.isSuspended()
-                    || isBlank(toolResult.getId())) {
+            if (!(block instanceof ToolResultBlock toolResult) || !toolResult.isSuspended()) {
                 continue;
+            }
+            if (isBlank(toolResult.getId())) {
+                throw new IllegalStateException(
+                        "TOOL_SUSPENDED result contains a suspended tool result without a stable"
+                                + " id");
             }
             context.addInterrupt(
                     buildToolCallInterrupt(result, toolUses.get(toolResult.getId()), toolResult));
@@ -112,28 +122,25 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
             Msg result, ToolUseBlock toolUse, ToolResultBlock toolResult) {
         String toolCallId = toolResult.getId();
         Map<String, Object> metadata = new LinkedHashMap<>();
-        String toolName =
-                toolUse != null && !isBlank(toolUse.getName())
-                        ? toolUse.getName()
-                        : toolResult.getName();
-        if (!isBlank(toolName)) {
-            metadata.put("toolName", toolName);
+        if (!isBlank(toolUse.getName())) {
+            metadata.put(METADATA_TOOL_NAME, toolUse.getName());
         }
         if (toolUse != null && toolUse.getInput() != null && !toolUse.getInput().isEmpty()) {
-            metadata.put("toolInput", toolUse.getInput());
+            metadata.put(METADATA_TOOL_INPUT, toolUse.getInput());
         }
+        metadata.put(METADATA_TOOL_CONTENT, JsonUtils.resolveToolCallArgsJson(toolUse));
         if (!isBlank(result.getId())) {
-            metadata.put("replyId", result.getId());
+            metadata.put(METADATA_REPLY_ID, result.getId());
         }
 
         return new AguiEvent.Interrupt(
                 interruptId(result, toolCallId),
-                "tool_call",
+                TOOL_CALL_INTERRUPT_REASON,
                 extractText(toolResult.getOutput()),
                 toolCallId,
                 null,
                 null,
-                metadata.isEmpty() ? null : Map.copyOf(metadata));
+                Map.copyOf(metadata));
     }
 
     private static String interruptId(Msg result, String toolCallId) {

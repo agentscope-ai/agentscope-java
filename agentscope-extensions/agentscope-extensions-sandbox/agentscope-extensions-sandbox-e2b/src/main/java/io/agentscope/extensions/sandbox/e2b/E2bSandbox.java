@@ -186,6 +186,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
         } catch (Exception e) {
             log.warn("[sandbox-e2b] connect failed, recreating sandbox: {}", e.getMessage());
             e2bState.setWorkspaceRootReady(false);
+            e2bState.setWorkspaceProjectionHash(null);
             JsonNode n =
                     platform.createSandbox(
                             e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());

@@ -15,11 +15,14 @@
  */
 package io.agentscope.core.agui.processor;
 
+import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON;
+
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -134,13 +137,13 @@ final class AguiResumeCoordinator {
     }
 
     /**
-     * Add known interrupt-to-tool-call mappings to the runtime context for resume conversion.
+     * Add known originating interrupts to the runtime context for resume conversion.
      *
      * @param input The run input containing resume entries
      * @param runtimeContext The caller-provided runtime context, if any
-     * @return A runtime context with AG-UI resume tool-call mappings when available
+     * @return A runtime context with AG-UI resume interrupts when available
      */
-    RuntimeContext addResumeToolCallIds(RunAgentInput input, RuntimeContext runtimeContext) {
+    RuntimeContext addResumeInterrupts(RunAgentInput input, RuntimeContext runtimeContext) {
         if (!input.hasResume()) {
             return runtimeContext;
         }
@@ -149,23 +152,23 @@ final class AguiResumeCoordinator {
         if (pending == null || pending.isEmpty()) {
             return runtimeContext;
         }
-        Map<String, String> toolCallIds = new LinkedHashMap<>();
+        Map<String, AguiEvent.Interrupt> resumeInterrupts = new LinkedHashMap<>();
         for (AguiResume resume : input.getResume()) {
             AguiEvent.Interrupt interrupt = pending.get(resume.getInterruptId());
-            if (interrupt != null
-                    && "tool_call".equals(interrupt.reason())
-                    && interrupt.toolCallId() != null
-                    && !interrupt.toolCallId().isBlank()) {
-                toolCallIds.put(resume.getInterruptId(), interrupt.toolCallId());
+            if (interrupt == null) {
+                continue;
+            }
+            if (shouldPassResumeInterrupt(interrupt)) {
+                resumeInterrupts.put(resume.getInterruptId(), interrupt);
             }
         }
-        if (toolCallIds.isEmpty()) {
+        if (resumeInterrupts.isEmpty()) {
             return runtimeContext;
         }
         return RuntimeContext.builder(runtimeContext)
                 .put(
-                        AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY,
-                        Map.copyOf(toolCallIds))
+                        AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY,
+                        Map.copyOf(resumeInterrupts))
                 .build();
     }
 
@@ -202,19 +205,26 @@ final class AguiResumeCoordinator {
      *
      * @param input The invalid run input
      * @param message The validation error message
+     * @param emitRunFinishedAfterError true to append {@code RUN_FINISHED} after {@code RUN_ERROR}
+     *     for legacy clients
      * @return The protocol error lifecycle events
      */
-    List<AguiEvent> contractErrorEvents(RunAgentInput input, String message) {
-        return List.of(
-                new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input),
+    List<AguiEvent> contractErrorEvents(
+            RunAgentInput input, String message, boolean emitRunFinishedAfterError) {
+        List<AguiEvent> events = new ArrayList<>();
+        events.add(new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input));
+        events.add(
                 new AguiEvent.RunError(
                         input.getThreadId(),
                         input.getRunId(),
                         message,
                         CONTRACT_ERROR_CODE,
                         System.currentTimeMillis(),
-                        null),
-                new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+                        null));
+        if (emitRunFinishedAfterError) {
+            events.add(new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+        }
+        return List.copyOf(events);
     }
 
     private ResumeContractResult validateResumeStatuses(List<AguiResume> resumes) {
@@ -225,6 +235,13 @@ final class AguiResumeCoordinator {
             }
         }
         return ResumeContractResult.proceed();
+    }
+
+    private boolean shouldPassResumeInterrupt(AguiEvent.Interrupt interrupt) {
+        if (TOOL_CALL_INTERRUPT_REASON.equals(interrupt.reason())) {
+            return interrupt.toolCallId() != null && !interrupt.toolCallId().isBlank();
+        }
+        return false;
     }
 
     record ResumeContractResult(boolean error, String message) {

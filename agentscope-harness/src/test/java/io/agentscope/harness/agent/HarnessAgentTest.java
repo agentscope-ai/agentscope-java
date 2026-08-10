@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,6 +44,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -178,6 +180,27 @@ class HarnessAgentTest {
         assertFalse(prompt.contains("secret memory marker xyz"));
         assertTrue(mw.isDisableMemoryTools());
         assertTrue(mw.isDisableMemoryHooks());
+    }
+
+    @Test
+    void clearStateCache_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            ReActAgent delegate = agent.getDelegate();
+            AgentState target = delegate.getAgentState("u1", "sessA");
+            AgentState other = delegate.getAgentState("u1", "sessB");
+
+            agent.clearStateCache(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+            assertNotSame(target, delegate.getAgentState("u1", "sessA"));
+            assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
     }
 
     @Test
