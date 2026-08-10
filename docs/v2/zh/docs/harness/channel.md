@@ -48,12 +48,67 @@ Msg otherUser = chat.send(SendOptions.userId("user-2"), "你好").block();
 | `SendOptions.userId("user-1")` | 每个用户一个 session（最常用） |
 | `SendOptions.of("user-1", "session-a")` | 指定 session——同一用户多个对话 |
 | `SendOptions.userId("user-1").withAgentId("support")` | 在多 agent 场景下路由到指定 agent |
+| `SendOptions.userId("user-1").withAttribute("tenant", "acme")` | 给本轮 agent 调用附带字符串/类型化属性 |
+| `SendOptions.userId("user-1").withRuntimeContext(rtc)` | 携带完整 `RuntimeContext`（例如 force-sync 开关） |
 
 ```java
 // 同一用户，两个独立对话
 chat.send(SendOptions.of("user-1", "session-a"), "话题 A").block();
 chat.send(SendOptions.of("user-1", "session-b"), "话题 B").block();
+
+// 把应用侧上下文传入本轮 agent 调用
+chat.send(
+        SendOptions.userId("user-1")
+                .withAttribute("tenant", "acme")
+                .withRuntimeContext(
+                        RuntimeContext.builder()
+                                .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                                .build()),
+        "排查这张工单")
+        .block();
 ```
+
+### 多模态 / 结构化消息
+
+纯文本 `send(String)` 只是便捷方法。图片、音频或多段内容请传预构建的 `Msg`（或 `List<Msg>`）——每个 String 重载都有对应的 `Msg` / `List<Msg>` 版本（含 `SendOptions` 与 `sendStream`）：
+
+```java
+Msg multimodal = Msg.builder()
+        .role(MsgRole.USER)
+        .content(
+                TextBlock.builder().text("这张图里有什么？").build(),
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/photo.png").build())
+                        .build())
+        .build();
+
+chat.send(SendOptions.userId("user-1"), multimodal).block();
+chat.send(SendOptions.userId("user-1"), List.of(multimodal)).block();
+chat.send(multimodal).block(); // 单 session 模式
+```
+
+### RuntimeContext 合并
+
+Channel 路径会在 Gateway 内构建 `RuntimeContext`。调用方可通过 `SendOptions` / `InboundMessage.runtimeContext()` / `ChannelRuntimeContextResolver` 提供 **caller base**。合并顺序：
+
+1. 以 caller 上下文为起点（可为空）
+2. 若配置了 `ChannelRuntimeContextResolver` 且返回非 null，则 **替换** caller base
+3. Gateway 再覆盖身份字段——`sessionId`（`gw-…`）、`userId`、`msgContext`、`gateKey`、`outboundAddress`——冲突时以 Gateway 为准
+
+通过 `GatewayBootstrap` 接线：
+
+```java
+GatewayBootstrap gw = GatewayBootstrap.builder()
+        .agent("main", b -> b.name("assistant").model(model))
+        .runtimeContextResolver(req ->
+                RuntimeContext.builder(req.callerContext())
+                        .put("tenant", resolveTenant(req))
+                        .build())
+        .build();
+ChatUiChannel chat = gw.chatUiChannel();
+```
+
+也可以拿到 gateway 后调用 `gateway.setRuntimeContextResolver(...)`。**不要**把业务属性写进 `MsgContext.extra`——该 map 参与 session key 计算。
 
 ## 流式事件 + SSE
 
@@ -266,15 +321,15 @@ gw.stop();    // 调用所有 channel 的 stop()
 
 AgentScope 提供了多个开箱即用的 Channel 适配器作为扩展模块：
 
-- [钉钉](../../../integration/channel/dingtalk.md) — Stream 协议（持久 WebSocket）
-- [飞书 / Lark](../../../integration/channel/feishu.md) — 事件订阅回调
-- [GitHub](../../../integration/channel/github.md) — Issue / PR 评论 webhook
-- [GitLab](../../../integration/channel/gitlab.md) — Note hook
-- [企业微信](../../../integration/channel/wecom.md) — 加密回调
+- [钉钉](../../integration/channel/dingtalk.md) — Stream 协议（持久 WebSocket）
+- [飞书 / Lark](../../integration/channel/feishu.md) — 事件订阅回调
+- [GitHub](../../integration/channel/github.md) — Issue / PR 评论 webhook
+- [GitLab](../../integration/channel/gitlab.md) — Note hook
+- [企业微信](../../integration/channel/wecom.md) — 加密回调
 
-详见 [Channel 适配器](../../../integration/channel/index.md)集成总览。
+详见 [Channel 适配器](../../integration/channel/index.md)集成总览。
 
 ## 相关文档
 
-- [子 Agent](./subagent) — 声明和 spawn 子 agent、后台任务、流式转发
-- [架构](./architecture) — 主/子 agent 如何协作
+- [子 Agent](./subagent.md) — 声明和 spawn 子 agent、后台任务、流式转发
+- [架构](./architecture.md) — 主/子 agent 如何协作

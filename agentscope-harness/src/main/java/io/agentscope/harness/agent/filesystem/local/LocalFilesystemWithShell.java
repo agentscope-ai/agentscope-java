@@ -22,10 +22,12 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -335,10 +337,9 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
             boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
 
-            String stdout =
-                    new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            String stderr =
-                    new String(proc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            Charset outputCharset = outputCharset(osName);
+            String stdout = new String(proc.getInputStream().readAllBytes(), outputCharset);
+            String stderr = new String(proc.getErrorStream().readAllBytes(), outputCharset);
 
             if (!finished) {
                 proc.destroyForcibly();
@@ -429,5 +430,20 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             log.warn("Failed to create namespace directory {}: {}", namespaced, e.getMessage());
         }
         return namespaced;
+    }
+
+    static Charset outputCharset(String osName) {
+        return outputCharset(osName, System.getProperty("native.encoding"));
+    }
+
+    static Charset outputCharset(String osName, String nativeEncoding) {
+        if (!osName.toLowerCase(Locale.ROOT).contains("win")) {
+            return StandardCharsets.UTF_8;
+        }
+
+        if (nativeEncoding != null && Charset.isSupported(nativeEncoding)) {
+            return Charset.forName(nativeEncoding);
+        }
+        return Charset.defaultCharset();
     }
 }

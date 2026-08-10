@@ -38,6 +38,26 @@ OllamaChatModel model = OllamaChatModel.builder()
 
 ## Spring Boot
 
-There is currently no dedicated Ollama Spring Boot starter.
+Spring Boot applications can use the Ollama starter:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-ollama-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+Configure the local Ollama model with `agentscope.model.provider=ollama`. The base URL
+is optional and defaults to `http://localhost:11434`:
+
+```yaml
+agentscope:
+  model:
+    provider: ollama
+  ollama:
+    model-name: llama3
+    # base-url: http://localhost:11434
+```
 
 Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
