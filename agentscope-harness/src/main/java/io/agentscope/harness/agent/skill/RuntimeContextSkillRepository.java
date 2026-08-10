@@ -25,4 +25,17 @@ public interface RuntimeContextSkillRepository extends AgentSkillRepository {
 
     /** Returns the skills visible to exactly the supplied request context. */
     List<AgentSkill> getAllSkills(RuntimeContext context);
+
+    /** Returns the named skill visible to exactly the supplied request context. */
+    default AgentSkill getSkill(String name, RuntimeContext context) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        for (AgentSkill skill : getAllSkills(context)) {
+            if (name.equals(skill.getName())) {
+                return skill;
+            }
+        }
+        return null;
+    }
 }

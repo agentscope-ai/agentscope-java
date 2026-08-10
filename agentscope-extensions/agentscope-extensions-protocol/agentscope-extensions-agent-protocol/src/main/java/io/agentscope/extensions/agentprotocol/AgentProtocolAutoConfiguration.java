@@ -16,10 +16,11 @@
 package io.agentscope.extensions.agentprotocol;
 
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -31,6 +32,17 @@ import org.springframework.context.annotation.Bean;
  * avoid Spring Boot auto-configuration ordering issues: class-level {@code @ConditionalOnBean} on
  * {@code @AutoConfiguration} classes may evaluate before user-defined beans are registered.
  *
+ * <p>Agent selection goes through {@link AgentFactory}. Without a user-defined bean, the default
+ * factory resolves the single {@link HarnessAgent} bean for every task; define an
+ * {@link AgentFactory} bean to route per {@code agent_id} or submission context.
+ *
+ * <p>Protocol task metadata is persisted through {@link ProtocolTaskRepository},
+ * rooted at {@link AgentProtocolProperties#getTaskStorePath()} by default — not through any
+ * execution agent's workspace.
+ *
+ * <p>All {@link RuntimeContextCustomizer} beans are applied, in {@code @Order}, to the runtime
+ * context of every task run.
+ *
  * <p>For concurrent task execution, register the {@link HarnessAgent} bean as
  * {@code @Scope("prototype")} so that each task obtains its own instance. Alternatively, configure
  * the singleton with {@code checkRunning(false)} if concurrent access is otherwise safe.
@@ -41,15 +53,44 @@ import org.springframework.context.annotation.Bean;
 public class AgentProtocolAutoConfiguration {
 
     @Bean
-    @ConditionalOnBean({HarnessAgent.class, WorkspaceManager.class})
+    @ConditionalOnMissingBean(AgentProtocolEventBus.class)
+    public AgentProtocolEventBus agentProtocolEventBus(AgentProtocolProperties properties) {
+        return new AgentProtocolTaskEventBus(properties.getSseReplayBufferSize());
+    }
+
+    @Bean
+    @ConditionalOnBean(HarnessAgent.class)
+    @ConditionalOnMissingBean(AgentFactory.class)
+    public AgentFactory agentProtocolAgentFactory(ObjectProvider<HarnessAgent> agentProvider) {
+        return request -> agentProvider.getObject();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ProtocolTaskRepository.class)
+    public ProtocolTaskRepository agentProtocolTaskRepository(AgentProtocolProperties properties) {
+        return new WorkspaceProtocolTaskRepository(Path.of(properties.getTaskStorePath()));
+    }
+
+    @Bean
+    @ConditionalOnBean({AgentFactory.class, ProtocolTaskRepository.class})
     public AgentProtocolTaskStore agentProtocolTaskStore(
-            ObjectProvider<HarnessAgent> agentProvider, WorkspaceManager workspaceManager) {
-        return new AgentProtocolTaskStore(agentProvider::getObject, workspaceManager);
+            AgentFactory agentFactory,
+            ProtocolTaskRepository taskRepository,
+            AgentProtocolEventBus eventBus,
+            AgentProtocolProperties properties,
+            ObjectProvider<RuntimeContextCustomizer> runtimeContextCustomizers) {
+        return new AgentProtocolTaskStore(
+                agentFactory,
+                taskRepository,
+                eventBus,
+                properties,
+                runtimeContextCustomizers.orderedStream().toList());
     }
 
     @Bean
     @ConditionalOnBean(AgentProtocolTaskStore.class)
-    public AgentProtocolController agentProtocolController(AgentProtocolTaskStore store) {
-        return new AgentProtocolController(store);
+    public AgentProtocolController agentProtocolController(
+            AgentProtocolTaskStore store, AgentProtocolProperties properties) {
+        return new AgentProtocolController(store, properties);
     }
 }

@@ -110,8 +110,10 @@ public class WorkspaceManager implements AutoCloseable {
      * Keyed by workspace-relative path (e.g. {@code agents/X/tasks/Y.json},
      * {@code agents/X/sessions/sessions.json}, {@code memory/YYYY-MM-DD.md}).
      *
-     * <p>This is an in-process lock only. For cross-process (multi-node) deployments the Remote
-     * backend must additionally use server-side CAS / optimistic locking.
+     * <p>This is an in-process lock only. Workspace file RMW paths here are last-writer-wins
+     * across replicas — {@code WorkspaceManager} does not perform server-side CAS. True
+     * optimistic concurrency lives on {@code BaseStore#putIfVersion} and
+     * {@code AgentStateStore#saveIfVersion}, not on these path locks.
      */
     private final Map<String, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
 
@@ -360,9 +362,8 @@ public class WorkspaceManager implements AutoCloseable {
      * All writes go through the {@link AbstractFilesystem}.
      *
      * <p>A per-path {@link ReentrantLock} serialises concurrent callers so that the
-     * read→merge→write cycle is atomic within this process. For cross-process / multi-node
-     * deployments the {@link AbstractFilesystem} backend must additionally provide server-side
-     * concurrency control.
+     * read→merge→write cycle is atomic within this process. Across replicas the append is
+     * last-writer-wins; this method does not perform CAS.
      */
     public void appendUtf8WorkspaceRelative(
             RuntimeContext rc, String relativePath, String content) {
@@ -593,43 +594,6 @@ public class WorkspaceManager implements AutoCloseable {
         } catch (IOException e) {
             return null;
         }
-    }
-
-    /**
-     * Reads the timestamp written by the most recent successful orphan-sweep for this agent, or
-     * {@link Optional#empty()} if no sweep has been recorded yet.
-     *
-     * <p>Stored in {@code agents/<agentId>/tasks/_sweep.marker} as a plain ISO-8601 string. Any
-     * node can write to this path, so it naturally propagates through the shared filesystem layer.
-     */
-    public Optional<Instant> readSweepMarker(RuntimeContext rc, String agentId) {
-        if (agentId == null || agentId.isBlank()) {
-            return Optional.empty();
-        }
-        String rel = sweepMarkerPath(agentId);
-        String content = readWritableWorkspaceRelativeUtf8(rc, rel);
-        return Optional.ofNullable(parseInstantQuiet(content == null ? null : content.strip()));
-    }
-
-    /**
-     * Records the current timestamp as the completion time of the most recent orphan-sweep for
-     * this agent. Subsequent nodes that read this marker within the sweep interval will skip their
-     * own sweep, reducing redundant workspace I/O in multi-node deployments.
-     */
-    public void writeSweepMarker(RuntimeContext rc, String agentId) {
-        if (agentId == null || agentId.isBlank()) {
-            return;
-        }
-        String rel = sweepMarkerPath(agentId);
-        try {
-            writeUtf8WorkspaceRelative(rc, rel, Instant.now().toString());
-        } catch (Exception e) {
-            log.warn("Failed to write sweep marker for agent {}: {}", agentId, e.getMessage());
-        }
-    }
-
-    private String sweepMarkerPath(String agentId) {
-        return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/_sweep.marker";
     }
 
     private String taskRecordPath(String agentId, String sessionId) {

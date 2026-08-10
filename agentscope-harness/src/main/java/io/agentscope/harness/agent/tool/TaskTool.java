@@ -55,10 +55,13 @@ public class TaskTool {
             description =
                     "Retrieve the output of a background subagent task. Use when agent_spawn or"
                         + " agent_send was called with timeout_seconds=0. Prefer block=false to"
-                        + " check status without waiting. Only use block=true (the default) when"
-                        + " you are ready to wait for the result. Do NOT call this immediately"
-                        + " after launching a task — the task status in conversation history is"
-                        + " stale; always call task_output or task_list to get the current state.")
+                        + " check status without waiting. Use block=true only for one specific task"
+                        + " you are ready to block on. For several async subagent tasks, prefer"
+                        + " wait_async_results(task_ids=...) or wait_async_results(wait_all=true)"
+                        + " when you need a barrier, otherwise keep reasoning and poll selected"
+                        + " tasks later with block=false. Do NOT call this immediately after"
+                        + " launching a task — the task status in conversation history is stale;"
+                        + " always call task_output or task_list to get the current state.")
     public String taskOutput(
             RuntimeContext runtimeContext,
             @ToolParam(
