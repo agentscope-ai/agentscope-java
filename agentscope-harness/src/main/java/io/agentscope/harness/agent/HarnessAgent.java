@@ -575,6 +575,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     @Override
     public void interrupt() {
+        // get the active runtime context
         RuntimeContext active = delegate.getRuntimeContext();
         if (active != null) {
             delegate.interrupt(active);
