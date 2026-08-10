@@ -17,8 +17,10 @@ package io.agentscope.extensions.redis.state.redisson;
 
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.redis.state.RedisAgentStateStore;
+import io.agentscope.extensions.redis.state.RedisStateVersionSupport;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -27,6 +29,7 @@ import java.util.Set;
 import org.redisson.api.RBucket;
 import org.redisson.api.RKeys;
 import org.redisson.api.RList;
+import org.redisson.api.RScript;
 import org.redisson.api.RSet;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
@@ -86,20 +89,70 @@ public class RedissonAgentStateStore implements AgentStateStore {
     }
 
     @Override
+    public boolean supportsVersioning() {
+        return true;
+    }
+
+    @Override
     public void save(String userId, String sessionId, String key, State value) {
+        evalSave(userId, sessionId, key, value, RedisStateVersionSupport.UNCONDITIONAL);
+    }
+
+    @Override
+    public <T extends State> VersionedState<T> getVersioned(
+            String userId, String sessionId, String key, Class<T> type) {
         String slotId = slotId(userId, sessionId);
         String redisKey = getStateKey(slotId, key);
+        String versionKey = RedisStateVersionSupport.versionKey(redisKey);
+
+        try {
+            RBucket<String> bucket = redissonClient.getBucket(redisKey, StringCodec.INSTANCE);
+            String json = bucket.get();
+            if (json == null) {
+                return new VersionedState<>(null, 0L);
+            }
+            RBucket<String> versionBucket =
+                    redissonClient.getBucket(versionKey, StringCodec.INSTANCE);
+            long version = RedisStateVersionSupport.parseVersion(json, versionBucket.get());
+            return new VersionedState<>(JsonUtils.getJsonCodec().fromJson(json, type), version);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get versioned state: " + key, e);
+        }
+    }
+
+    @Override
+    public long saveIfVersion(
+            String userId, String sessionId, String key, State value, long expectedVersion) {
+        if (expectedVersion == UNVERSIONED) {
+            save(userId, sessionId, key, value);
+            return getVersioned(userId, sessionId, key, State.class).version();
+        }
+        return evalSave(userId, sessionId, key, value, Long.toString(expectedVersion));
+    }
+
+    private long evalSave(
+            String userId, String sessionId, String key, State value, String expectedVersionArg) {
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getStateKey(slotId, key);
+        String versionKey = RedisStateVersionSupport.versionKey(redisKey);
         String keysKey = getKeysKey(slotId);
 
         try {
             String json = JsonUtils.getJsonCodec().toJson(value);
-
-            RBucket<String> bucket = redissonClient.getBucket(redisKey, StringCodec.INSTANCE);
-            bucket.set(json);
-
-            // Track this key in the session's key set
-            RSet<String> keysSet = redissonClient.getSet(keysKey, StringCodec.INSTANCE);
-            keysSet.add(key);
+            List<String> scriptKeys =
+                    RedisStateVersionSupport.saveScriptKeys(redisKey, versionKey, keysKey);
+            List<String> scriptArgs = List.of(json, expectedVersionArg, key);
+            Object result =
+                    redissonClient
+                            .getScript(StringCodec.INSTANCE)
+                            .eval(
+                                    RScript.Mode.READ_WRITE,
+                                    RedisStateVersionSupport.SAVE_SCRIPT,
+                                    RScript.ReturnType.LONG,
+                                    new ArrayList<>(scriptKeys),
+                                    scriptArgs.toArray());
+            long newVersion = ((Number) result).longValue();
+            return newVersion == -1L ? UNVERSIONED : newVersion;
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
         }
@@ -211,6 +264,9 @@ public class RedissonAgentStateStore implements AgentStateStore {
                         keysToDelete.add(getListKey(slotId, baseKey));
                     } else {
                         keysToDelete.add(getStateKey(slotId, trackedKey));
+                        keysToDelete.add(
+                                RedisStateVersionSupport.versionKey(
+                                        getStateKey(slotId, trackedKey)));
                     }
                 }
 

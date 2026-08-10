@@ -68,6 +68,7 @@ public class AgentEventConverterRegistry {
             boolean emitSubagentEventsAsNative) {
         Map<Class<? extends AgentEvent>, AgentEventConverter> map = new LinkedHashMap<>();
         register(map, new AgentLifecycleEventConverter());
+        register(map, new PermissionConfirmEventConverter());
         register(map, new TextBlockEventConverter());
         register(map, new ThinkingBlockEventConverter());
         register(map, new ToolCallEventConverter());

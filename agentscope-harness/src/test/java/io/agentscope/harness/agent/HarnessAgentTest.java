@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,6 +44,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -55,6 +57,7 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -146,6 +149,58 @@ class HarnessAgentTest {
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
         assertFalse(toolNames.contains("session_search"));
+    }
+
+    @Test
+    void disableMemoryToolsAndHooks_omitMemoryGuidanceFromSystemPrompt() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("MEMORY.md"), "secret memory marker xyz");
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryTools()
+                        .disableMemoryHooks()
+                        .build();
+
+        WorkspaceContextMiddleware mw =
+                agent.getDelegate().getMiddlewares().stream()
+                        .filter(WorkspaceContextMiddleware.class::isInstance)
+                        .map(WorkspaceContextMiddleware.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        assertNotNull(prompt);
+        assertFalse(prompt.contains("## Memory Recall"));
+        assertFalse(prompt.contains("## Memory Persistence"));
+        assertFalse(prompt.contains("<memory_context>"));
+        assertFalse(prompt.contains("secret memory marker xyz"));
+        assertTrue(mw.isDisableMemoryTools());
+        assertTrue(mw.isDisableMemoryHooks());
+    }
+
+    @Test
+    void clearStateCache_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            ReActAgent delegate = agent.getDelegate();
+            AgentState target = delegate.getAgentState("u1", "sessA");
+            AgentState other = delegate.getAgentState("u1", "sessB");
+
+            agent.clearStateCache(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+            assertNotSame(target, delegate.getAgentState("u1", "sessA"));
+            assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
     }
 
     @Test

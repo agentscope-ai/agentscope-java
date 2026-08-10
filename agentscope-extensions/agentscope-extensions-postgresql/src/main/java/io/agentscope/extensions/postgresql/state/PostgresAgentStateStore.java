@@ -18,6 +18,7 @@ package io.agentscope.extensions.postgresql.state;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -130,6 +131,20 @@ public class PostgresAgentStateStore implements AgentStateStore {
             verifySchemaExists();
             verifyTableExists();
         }
+        ensureVersionColumn();
+    }
+
+    private void ensureVersionColumn() {
+        String sql =
+                "ALTER TABLE "
+                        + getFullTableName()
+                        + " ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.execute();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to ensure version column on table: " + tableName, e);
+        }
     }
 
     private void createSchemaIfNotExist() {
@@ -150,6 +165,7 @@ public class PostgresAgentStateStore implements AgentStateStore {
                     state_key  VARCHAR(255) NOT NULL,
                     item_index INT          NOT NULL DEFAULT 0,
                     state_data TEXT         NOT NULL,
+                    version    BIGINT       NOT NULL DEFAULT 0,
                     created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (session_id, state_key, item_index)
@@ -239,6 +255,11 @@ public class PostgresAgentStateStore implements AgentStateStore {
     }
 
     @Override
+    public boolean supportsVersioning() {
+        return true;
+    }
+
+    @Override
     public void save(String userId, String sessionId, String key, State value) {
         String slotId = slotId(userId, sessionId);
         validateSessionId(slotId);
@@ -246,13 +267,14 @@ public class PostgresAgentStateStore implements AgentStateStore {
 
         String upsertSql =
                 """
-                INSERT INTO %s (session_id, state_key, item_index, state_data, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO %s (session_id, state_key, item_index, state_data, version, updated_at)
+                VALUES (?, ?, ?, ?, 1, ?)
                 ON CONFLICT (session_id, state_key, item_index) DO UPDATE SET
                     state_data = EXCLUDED.state_data,
+                    version = %s.version + 1,
                     updated_at = EXCLUDED.updated_at
                 """
-                        .formatted(getFullTableName());
+                        .formatted(getFullTableName(), getFullTableName());
         Timestamp now = new Timestamp(System.currentTimeMillis());
 
         try (Connection conn = dataSource.getConnection()) {
@@ -271,6 +293,109 @@ public class PostgresAgentStateStore implements AgentStateStore {
                     });
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
+        }
+    }
+
+    @Override
+    public <T extends State> VersionedState<T> getVersioned(
+            String userId, String sessionId, String key, Class<T> type) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
+        validateStateKey(key);
+
+        String sql =
+                "SELECT state_data, version FROM "
+                        + getFullTableName()
+                        + " WHERE session_id = ? AND state_key = ? AND item_index = ?";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, slotId);
+            stmt.setString(2, key);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return new VersionedState<>(null, 0L);
+                }
+                String json = rs.getString("state_data");
+                long version = rs.getLong("version");
+                return new VersionedState<>(JsonUtils.getJsonCodec().fromJson(json, type), version);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get versioned state: " + key, e);
+        }
+    }
+
+    @Override
+    public long saveIfVersion(
+            String userId, String sessionId, String key, State value, long expectedVersion) {
+        if (expectedVersion == UNVERSIONED) {
+            save(userId, sessionId, key, value);
+            return getVersioned(userId, sessionId, key, State.class).version();
+        }
+
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
+        validateStateKey(key);
+
+        try (Connection conn = dataSource.getConnection()) {
+            long[] result = new long[1];
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        if (expectedVersion == 0L) {
+                            result[0] = insertIfAbsent(conn, slotId, key, value);
+                        } else {
+                            result[0] = updateIfVersion(conn, slotId, key, value, expectedVersion);
+                        }
+                    });
+            return result[0];
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save state if version: " + key, e);
+        }
+    }
+
+    private long insertIfAbsent(Connection conn, String slotId, String key, State value)
+            throws Exception {
+        String insertSql =
+                """
+                INSERT INTO %s (session_id, state_key, item_index, state_data, version, updated_at)
+                VALUES (?, ?, ?, ?, 1, ?)
+                ON CONFLICT (session_id, state_key, item_index) DO NOTHING
+                """
+                        .formatted(getFullTableName());
+        Timestamp now = new Timestamp(System.currentTimeMillis());
+        try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
+            String json = JsonUtils.getJsonCodec().toJson(value);
+            stmt.setString(1, slotId);
+            stmt.setString(2, key);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
+            stmt.setString(4, json);
+            stmt.setTimestamp(5, now);
+            return stmt.executeUpdate() == 1 ? 1L : UNVERSIONED;
+        }
+    }
+
+    private long updateIfVersion(
+            Connection conn, String slotId, String key, State value, long expectedVersion)
+            throws Exception {
+        String updateSql =
+                """
+                UPDATE %s SET state_data = ?, version = ?, updated_at = ?
+                WHERE session_id = ? AND state_key = ? AND item_index = ? AND version = ?
+                """
+                        .formatted(getFullTableName());
+        Timestamp now = new Timestamp(System.currentTimeMillis());
+        try (PreparedStatement stmt = conn.prepareStatement(updateSql)) {
+            String json = JsonUtils.getJsonCodec().toJson(value);
+            long newVersion = expectedVersion + 1L;
+            stmt.setString(1, json);
+            stmt.setLong(2, newVersion);
+            stmt.setTimestamp(3, now);
+            stmt.setString(4, slotId);
+            stmt.setString(5, key);
+            stmt.setInt(6, SINGLE_STATE_INDEX);
+            stmt.setLong(7, expectedVersion);
+            return stmt.executeUpdate() == 1 ? newVersion : UNVERSIONED;
         }
     }
 
