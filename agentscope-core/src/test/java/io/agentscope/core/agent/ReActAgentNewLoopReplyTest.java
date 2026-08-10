@@ -22,8 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
+import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
@@ -310,6 +312,59 @@ class ReActAgentNewLoopReplyTest {
         assertEquals(1, event.getToolCalls().size());
         assertEquals("ext1", event.getToolCalls().get(0).getId());
         assertEquals("external_api", event.getToolCalls().get(0).getName());
+    }
+
+    @Test
+    void externalToolResultResumeEmitsExternalExecutionResultEvent() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("ext1", "external_api", "/users")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWithExternalSchema())
+                        .build();
+
+        List<AgentEvent> firstEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(firstEvents);
+        int iRequireExternal = indexOf(firstEvents, RequireExternalExecutionEvent.class);
+        assertTrue(iRequireExternal >= 0, "RequireExternalExecutionEvent expected");
+
+        RequireExternalExecutionEvent requireEvent =
+                (RequireExternalExecutionEvent) firstEvents.get(iRequireExternal);
+        ToolResultBlock externalResult =
+                ToolResultBlock.builder()
+                        .id("ext1")
+                        .name("external_api")
+                        .output(TextBlock.builder().text("external result").build())
+                        .state(ToolResultState.SUCCESS)
+                        .build();
+        Msg resumeMsg = Msg.builder().role(MsgRole.TOOL).content(externalResult).build();
+
+        List<AgentEvent> resumedEvents =
+                agent.streamEvents(List.of(resumeMsg)).collectList().block();
+        assertNotNull(resumedEvents);
+
+        int iExternalResult = indexOf(resumedEvents, ExternalExecutionResultEvent.class);
+        int iModelStart = indexOf(resumedEvents, ModelCallStartEvent.class);
+        assertTrue(iExternalResult >= 0, "ExternalExecutionResultEvent expected");
+        assertTrue(
+                iModelStart > iExternalResult,
+                "ExternalExecutionResultEvent should be emitted before resumed reasoning");
+
+        ExternalExecutionResultEvent resultEvent =
+                (ExternalExecutionResultEvent) resumedEvents.get(iExternalResult);
+        assertEquals(requireEvent.getReplyId(), resultEvent.getReplyId());
+        assertEquals(1, resultEvent.getToolResults().size());
+        assertEquals("ext1", resultEvent.getToolResults().get(0).getId());
+
+        AgentResultEvent agentResult =
+                (AgentResultEvent)
+                        resumedEvents.get(indexOf(resumedEvents, AgentResultEvent.class));
+        assertEquals("done", agentResult.getResult().getTextContent());
     }
 
     @Test

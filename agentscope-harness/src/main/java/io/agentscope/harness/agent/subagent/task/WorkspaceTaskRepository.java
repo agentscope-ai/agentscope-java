@@ -754,6 +754,16 @@ public class WorkspaceTaskRepository implements TaskRepository {
      *     {@link WorkspaceManager#listAllTaskRecords})
      */
     void sweepOrphanedTasks(Duration orphanTimeout, Duration recentWindow) {
+        sweepOrphanedTasks(orphanTimeout, recentWindow, Instant.now());
+    }
+
+    /**
+     * Sweeps orphaned tasks using the supplied sweep time.
+     *
+     * <p>Package-private so tests can verify the timeout boundary without depending on the
+     * platform clock resolution.
+     */
+    void sweepOrphanedTasks(Duration orphanTimeout, Duration recentWindow, Instant sweepTime) {
         // Sweep runs without per-user RC. Tasks persisted under user-scoped namespaces are
         // visible to the sweep only via the captured per-task RC of any still-local entry; this
         // empty-RC path covers AGENT/GLOBAL-scoped persistence and the per-task local maps.
@@ -761,7 +771,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         try {
             Collection<TaskRecord> all =
                     workspaceManager.listAllTaskRecords(sweepRc, parentAgentId, recentWindow);
-            Instant threshold = Instant.now().minus(orphanTimeout);
+            Instant threshold = sweepTime.minus(orphanTimeout);
             for (TaskRecord record : all) {
                 if (record.getStatus() == null || record.getStatus().isTerminal()) {
                     continue;
@@ -771,7 +781,10 @@ public class WorkspaceTaskRepository implements TaskRepository {
                     continue;
                 }
                 Instant lastUpdated = record.getLastUpdatedAt();
-                if (lastUpdated == null || !lastUpdated.isBefore(threshold)) {
+                // A task is stale as soon as it reaches the timeout boundary. Besides matching
+                // the timeout contract, this avoids leaving a zero-timeout task RUNNING when the
+                // system clock returns the same instant for its last update and this sweep.
+                if (lastUpdated == null || lastUpdated.isAfter(threshold)) {
                     continue;
                 }
                 String sid = record.getParentSessionId();

@@ -33,6 +33,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
+import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequestStopEvent;
@@ -1720,12 +1721,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
-                List<ConfirmResult> confirmResults = extractAndValidateConfirmResults(msgs, asking);
-                publishEvent(
-                        new UserConfirmResultEvent(
-                                resolvePendingConfirmRequestReplyId(), confirmResults));
-                applyConfirmResults(confirmResults);
-                clearPendingConfirmRequest();
+                validateAndAcceptConfirmResults(msgs, asking);
                 return resumeAgent();
             }
 
@@ -1793,15 +1789,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Validate the user-provided confirmation payload against the currently ASKING tool calls.
+         * Validate and accept a permission-HITL resume payload against the currently ASKING tool
+         * calls.
          *
          * <p>Permission HITL resumes with one or more confirmations for currently ASKING tool
          * calls. Confirmations may cover a subset of ASKING calls, but no result may reference a
-         * stale or unrelated tool call. Returning a copied list gives downstream event emission and
-         * state mutation the same trusted payload.
+         * stale or unrelated tool call. Once accepted, the normalized results are applied to agent
+         * state and the correlated resume event is emitted.
          */
-        private List<ConfirmResult> extractAndValidateConfirmResults(
-                List<Msg> msgs, List<ToolUseBlock> asking) {
+        private void validateAndAcceptConfirmResults(List<Msg> msgs, List<ToolUseBlock> asking) {
             List<ConfirmResult> results = extractConfirmResults(msgs);
             if (results.isEmpty()) {
                 String pendingSummary =
@@ -1864,57 +1860,53 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
                 normalized.add(result);
             }
-            return normalized;
+
+            String replyId = resolvePendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            if (!replyId.isEmpty()) {
+                publishEvent(new UserConfirmResultEvent(replyId, normalized));
+                clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            }
+
+            applyConfirmResults(normalized);
         }
 
-        /**
-         * Resolve the reply id from the assistant message that originally paused for confirmation.
-         *
-         * <p>This keeps {@link UserConfirmResultEvent} correlated with the prior
-         * {@link RequireUserConfirmEvent}, even though the confirmation arrives in a later
-         * {@code agent.call(...)} invocation.
-         */
-        private String resolvePendingConfirmRequestReplyId() {
-            Msg confirmRequestMsg = findLastAssistantMsg();
-            if (confirmRequestMsg == null || confirmRequestMsg.getMetadata() == null) {
+        /** Resolve the reply id for the pending HITL request stored on the last assistant message. */
+        private String resolvePendingRequestReplyId(String metadataKey) {
+            Msg requestMsg = findLastAssistantMsg();
+            if (requestMsg == null || requestMsg.getMetadata() == null) {
                 return "";
             }
-            Object raw = confirmRequestMsg.getMetadata().get(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            Object raw = requestMsg.getMetadata().get(metadataKey);
             return raw instanceof String s ? s : "";
         }
 
         /**
-         * Persist the reply id for the pending confirmation request on the live assistant message.
+         * Persist the reply id for a pending HITL request on the live assistant message.
          *
-         * <p>The assistant message already owns the ASKING {@link ToolUseBlock}s, so storing the
-         * correlation metadata there lets the next call recover it from session state.
+         * <p>The assistant message owns the paused {@link ToolUseBlock}s, so storing the correlation
+         * metadata there lets the next call recover it from session state.
          */
-        private void persistPendingConfirmRequest(String replyId) {
+        private void persistPendingRequestReplyId(String metadataKey, String replyId) {
             Msg lastAssistant = findLastAssistantMsg();
             if (lastAssistant == null) {
                 return;
             }
             Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
-            metadata.put(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
+            metadata.put(metadataKey, replyId);
             replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
         }
 
-        /**
-         * Remove confirmation-request correlation metadata after the resume payload is accepted.
-         *
-         * <p>Leaving it behind would make later agent turns appear to belong to an already-closed
-         * HITL request.
-         */
-        private void clearPendingConfirmRequest() {
+        /** Remove HITL correlation metadata after the resume payload is accepted. */
+        private void clearPendingRequestReplyId(String metadataKey) {
             Msg lastAssistant = findLastAssistantMsg();
             if (lastAssistant == null || lastAssistant.getMetadata() == null) {
                 return;
             }
-            if (!lastAssistant.getMetadata().containsKey(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID)) {
+            if (!lastAssistant.getMetadata().containsKey(metadataKey)) {
                 return;
             }
             Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
-            metadata.remove(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            metadata.remove(metadataKey);
             replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
         }
 
@@ -2234,7 +2226,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 + ", Pending: "
                                 + pendingIds);
             }
-
+            String replyId =
+                    resolvePendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
+            if (!replyId.isEmpty()) {
+                publishEvent(new ExternalExecutionResultEvent(replyId, results));
+                clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
+            }
             state.contextMutable().addAll(msgs);
         }
 
@@ -2853,7 +2850,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // completion;
                                 // initialise it to empty since no successful execution happened.
                                 resultHolder.set(List.of());
-                                persistPendingConfirmRequest(replyId);
+                                persistPendingRequestReplyId(
+                                        Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
                                 return Flux.<AgentEvent>just(
                                         new RequireUserConfirmEvent(replyId, pending),
                                         new RequestStopEvent(
@@ -3046,6 +3044,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                     results);
                                                                             if (!suspendedCalls
                                                                                     .isEmpty()) {
+                                                                                persistPendingRequestReplyId(
+                                                                                        Msg
+                                                                                                .METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID,
+                                                                                        replyId);
                                                                                 sink.next(
                                                                                         new RequireExternalExecutionEvent(
                                                                                                 replyId,
@@ -4066,6 +4068,52 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Clears all locally cached per-session state and permission engines.
+     *
+     * <p>This only releases the in-memory cache held by this agent. It does not delete or modify
+     * any state in the configured {@link AgentStateStore}. A later {@code getAgentState(...)} or
+     * {@code call(...)} reloads the session from the store when one is configured.
+     *
+     * <p>Call this after the agent's in-flight calls have completed. Existing callers that still
+     * hold an {@link AgentState} reference, or an in-flight call that captured one, may continue
+     * to retain that object until those references are released.
+     */
+    public void clearStateCache() {
+        stateCache.clear();
+        permissionEngineCache.clear();
+    }
+
+    /**
+     * Clears the locally cached state and permission engine for the session identified by
+     * {@code ctx}.
+     *
+     * @param ctx runtime context identifying the session; a missing session id uses the default
+     *     session id
+     */
+    public void clearStateCache(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        clearStateCache(uid, sid);
+    }
+
+    /**
+     * Clears the locally cached state and permission engine for one {@code (userId, sessionId)}
+     * slot.
+     *
+     * <p>This only releases local references. It does not delete the corresponding state from
+     * the configured {@link AgentStateStore}; the next access reloads the persisted state.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearStateCache(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        stateCache.remove(slot);
+        permissionEngineCache.remove(slot);
+    }
+
+    /**
      * Clears the model-visible conversation context for the session identified by {@code ctx}.
      *
      * <p>The session identity, permission configuration, tool state, tasks, and plan-mode state
@@ -4351,6 +4399,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // Release the ShutdownStateSaver registered in the constructor so that ephemeral /
         // per-call agent instances are not retained by GracefulShutdownManager.stateSavers.
         shutdownManager.unbindStateSaver(this);
+        clearStateCache();
     }
 
     // ==================== Builder ====================
