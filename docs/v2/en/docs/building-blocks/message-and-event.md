@@ -187,7 +187,7 @@ All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the c
 | `getCreatedAt()` | `String` | ISO 8601 timestamp |
 | `getType()` | `AgentEventType` | Event type enum |
 | `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; a slash-separated path (e.g. `"main/researcher"`) for events forwarded from a subagent |
-| `getMetadata()` | `Map<String, Object>` | Optional key/value bag. Remote subagent forwards also set `taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness / Agent Protocol task id when events are task-backed |
+| `getMetadata()` | `Map<String, Object>` | Optional key/value bag. Remote subagent forwards also set `taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness / Agent Protocol task id and `parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session when events are task-backed |
 
 Events are grouped below; unless noted otherwise, every event also carries `getReplyId()` linking it to the message being assembled.
 
@@ -297,6 +297,11 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
     **RequireExternalExecutionEvent** — agent pauses for external execution.
 
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getReplyId()` | `String` | Reply message ID |
+    | `getToolCalls()` | `List<ToolUseBlock>` | Tool calls awaiting external execution |
+
     **UserConfirmResultEvent** — emitted when a later `call()` resumes a paused permission HITL request.
     It carries one or more `ConfirmResult`s, and its `replyId` matches the earlier `RequireUserConfirmEvent`.
 
@@ -305,7 +310,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply ID of the correlated `RequireUserConfirmEvent` |
     | `getConfirmResults()` | `List<ConfirmResult>` | Confirmation results accepted for this resume |
 
-    **ExternalExecutionResultEvent** — external system returns execution results (input event); carries `List<ToolResultBlock>`.
+    **ExternalExecutionResultEvent** — emitted when a later `call()` resumes a paused external-execution request.
+    It carries one or more `ToolResultBlock`s, and its `replyId` matches the earlier `RequireExternalExecutionEvent`.
+
+    | Method | Type | Description |
+    |--------|------|-------------|
+    | `getReplyId()` | `String` | Reply ID of the correlated `RequireExternalExecutionEvent` |
+    | `getToolResults()` | `List<ToolResultBlock>` | External execution results accepted for this resume |
 
     **AllToolsDeniedEvent** — the user denied all tool calls from the most recent reasoning step via HITL confirmation. This event is emitted through the `onActing` middleware chain, allowing middlewares to emit a `RequestStopEvent` to stop the agent. If no middleware handles it, the agent continues to the next reasoning iteration (backward compatible).
 

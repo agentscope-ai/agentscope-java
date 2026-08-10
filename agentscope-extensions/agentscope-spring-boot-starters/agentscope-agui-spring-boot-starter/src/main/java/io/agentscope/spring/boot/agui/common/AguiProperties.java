@@ -39,6 +39,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     enable-path-routing: true
  *     enable-reasoning: false
  *     emit-token-usage: false
+ *     emit-run-finished-after-error: false
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -76,6 +77,14 @@ public class AguiProperties {
      * backward compatibility and privacy compliance.
      */
     private boolean enableReasoning = false;
+
+    /**
+     * Whether to emit {@code RUN_FINISHED} after {@code RUN_ERROR}.
+     *
+     * <p>Default is {@code false} (standard AG-UI). Set {@code true} for legacy clients that expect
+     * a finish event after an error.
+     */
+    private boolean emitRunFinishedAfterError = false;
 
     /** Default agent ID to use when not specified in the request. */
     private String defaultAgentId = "default";
@@ -186,6 +195,14 @@ public class AguiProperties {
 
     public void setEnableReasoning(boolean enableReasoning) {
         this.enableReasoning = enableReasoning;
+    }
+
+    public boolean isEmitRunFinishedAfterError() {
+        return emitRunFinishedAfterError;
+    }
+
+    public void setEmitRunFinishedAfterError(boolean emitRunFinishedAfterError) {
+        this.emitRunFinishedAfterError = emitRunFinishedAfterError;
     }
 
     public String getDefaultAgentId() {
