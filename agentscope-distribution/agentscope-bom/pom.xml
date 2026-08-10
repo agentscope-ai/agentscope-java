@@ -267,6 +267,11 @@
                 <artifactId>agentscope-extensions-sandbox-e2b</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-opensandbox</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- AgentScope Extensions Studio -->
             <dependency>
