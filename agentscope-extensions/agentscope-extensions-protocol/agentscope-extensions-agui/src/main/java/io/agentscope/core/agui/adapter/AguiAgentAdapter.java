@@ -394,7 +394,9 @@ public class AguiAgentAdapter {
                         mapErrorCode(error),
                         System.currentTimeMillis(),
                         null));
-        events.add(new AguiEvent.RunFinished(threadId, runId));
+        if (config.isEmitRunFinishedAfterError()) {
+            events.add(new AguiEvent.RunFinished(threadId, runId));
+        }
         return Flux.fromIterable(events);
     }
 
