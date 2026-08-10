@@ -238,7 +238,23 @@ class AguiResumeCoordinatorTest {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
 
         List<AguiEvent> events =
-                coordinator.contractErrorEvents(input("run-1"), "resume contract failed");
+                coordinator.contractErrorEvents(input("run-1"), "resume contract failed", false);
+
+        assertEquals(
+                List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
+                events.stream().map(AguiEvent::getType).toList());
+        AguiEvent.RunError error = (AguiEvent.RunError) events.get(1);
+        assertEquals(AguiResumeCoordinator.CONTRACT_ERROR_CODE, error.code());
+        assertEquals("resume contract failed", error.message());
+        assertNotNull(error.timestamp());
+    }
+
+    @Test
+    void contractErrorEventsEmitRunFinishedWhenEnabled() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+
+        List<AguiEvent> events =
+                coordinator.contractErrorEvents(input("run-1"), "resume contract failed", true);
 
         assertEquals(
                 List.of(
@@ -246,10 +262,6 @@ class AguiResumeCoordinatorTest {
                         AguiEventType.RUN_ERROR,
                         AguiEventType.RUN_FINISHED),
                 events.stream().map(AguiEvent::getType).toList());
-        AguiEvent.RunError error = (AguiEvent.RunError) events.get(1);
-        assertEquals(AguiResumeCoordinator.CONTRACT_ERROR_CODE, error.code());
-        assertEquals("resume contract failed", error.message());
-        assertNotNull(error.timestamp());
     }
 
     private static void track(
