@@ -128,6 +128,59 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should not execute a tool with length-limited incomplete arguments")
+    void shouldBlockLengthLimitedIncompleteToolCall() {
+        AtomicInteger invocations = new AtomicInteger();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "blocked_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Records executions for a truncation test";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        invocations.incrementAndGet();
+                        return Mono.just(ToolResultBlock.text("should-not-run"));
+                    }
+                });
+
+        ToolUseBlock truncatedCall =
+                ToolUseBlock.builder()
+                        .id("call-truncated")
+                        .name("blocked_tool")
+                        .input(Map.of())
+                        .content("{}")
+                        .metadata(Map.of(ToolUseBlock.METADATA_OUTPUT_LENGTH_LIMIT, true))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(truncatedCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses);
+        assertEquals(0, invocations.get());
+        assertEquals(1, responses.size());
+        assertEquals("call-truncated", responses.get(0).getId());
+        assertEquals("blocked_tool", responses.get(0).getName());
+        assertEquals(
+                "Error: Tool arguments were incomplete because the model output reached its length"
+                        + " limit. The tool was not executed. Do not retry this call unchanged."
+                        + " Reduce the argument payload and complete the work with multiple"
+                        + " smaller calls or an available incremental update tool.",
+                extractFirstText(responses.get(0)));
+    }
+
+    @Test
     @DisplayName("Should convert empty tool publishers to error responses")
     void shouldReturnErrorWhenToolCompletesEmpty() {
         toolkit.registerTool(
