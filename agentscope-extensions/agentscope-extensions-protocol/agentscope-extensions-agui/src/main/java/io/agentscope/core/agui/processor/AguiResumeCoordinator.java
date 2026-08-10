@@ -205,6 +205,8 @@ final class AguiResumeCoordinator {
      *
      * @param input The invalid run input
      * @param message The validation error message
+     * @param emitRunFinishedAfterError true to append {@code RUN_FINISHED} after {@code RUN_ERROR}
+     *     for legacy clients
      * @return The protocol error lifecycle events
      */
     List<AguiEvent> contractErrorEvents(
