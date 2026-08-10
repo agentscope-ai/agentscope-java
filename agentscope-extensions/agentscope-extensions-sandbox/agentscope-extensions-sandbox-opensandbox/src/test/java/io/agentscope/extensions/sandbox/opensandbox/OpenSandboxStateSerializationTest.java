@@ -62,4 +62,15 @@ class OpenSandboxStateSerializationTest {
         assertTrue(json.contains("\"type\":\"opensandbox\""));
         assertFalse(json.toLowerCase().contains("apikey"));
     }
+
+    @Test
+    void nullCollectionsNormalizeToEmptyImmutableValues() {
+        OpenSandboxState state = new OpenSandboxState();
+
+        state.setEntrypoint(null);
+        state.setResourceLimits(null);
+
+        assertEquals(List.of(), state.getEntrypoint());
+        assertEquals(Map.of(), state.getResourceLimits());
+    }
 }

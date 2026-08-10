@@ -17,6 +17,7 @@ package io.agentscope.extensions.sandbox.opensandbox;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -41,6 +42,27 @@ class OpenSandboxTest {
 
         assertEquals(1, fixture.sdk.createCalls);
         assertEquals("created-id", fixture.state.getSandboxId());
+    }
+
+    @Test
+    void repeatedStartReusesConnectedHandle() throws Exception {
+        Fixture fixture = fixture();
+
+        fixture.sandbox.start();
+        fixture.sandbox.start();
+
+        assertEquals(1, fixture.sdk.createCalls);
+    }
+
+    @Test
+    void failedWorkspaceSetupClosesCreatedHandle() {
+        Fixture fixture = fixture();
+        fixture.sdk.handle.nextResult = new ExecResult(9, "", "mkdir failed", false);
+
+        assertThrows(SandboxException.WorkspaceStartException.class, fixture.sandbox::start);
+
+        assertEquals(1, fixture.sdk.handle.closeCalls);
+        assertFalse(fixture.state.isWorkspaceRootReady());
     }
 
     @Test
@@ -76,6 +98,35 @@ class OpenSandboxTest {
 
         assertEquals(1, fixture.sdk.handle.closeCalls);
         assertEquals(List.of("created-id"), fixture.sdk.killedIds);
+    }
+
+    @Test
+    void shutdownIsIdempotentAndDoesNotKillUnownedSandbox() throws Exception {
+        Fixture fixture = fixture();
+        fixture.state.setSandboxId("external-id");
+        fixture.state.setSandboxOwned(false);
+
+        fixture.sandbox.start();
+        fixture.sandbox.shutdown();
+        fixture.sandbox.shutdown();
+
+        assertTrue(fixture.sdk.killedIds.isEmpty());
+        assertEquals(1, fixture.sdk.handle.closeCalls);
+    }
+
+    @Test
+    void shutdownPreservesCloseFailureAndSuppressesKillFailure() throws Exception {
+        Fixture fixture = fixture();
+        fixture.sandbox.start();
+        IOException closeFailure = new IOException("close failed");
+        fixture.sdk.handle.closeFailure = closeFailure;
+        fixture.sdk.killFailure = new IOException("kill failed");
+
+        Exception failure = assertThrows(Exception.class, fixture.sandbox::shutdown);
+
+        assertEquals(closeFailure, failure);
+        assertEquals(1, failure.getSuppressed().length);
+        assertEquals("kill failed", failure.getSuppressed()[0].getMessage());
     }
 
     @Test
@@ -117,14 +168,90 @@ class OpenSandboxTest {
         assertTrue(fixture.sdk.handle.commands.stream().anyMatch(c -> c.contains("rm -f")));
     }
 
+    @Test
+    void persistDownloadsTarAndCleansTemporaryFile() throws Exception {
+        Fixture fixture = fixture();
+        byte[] archive = new byte[] {4, 5, 6};
+        String temp =
+                "/tmp/agentscope-persist-" + Integer.toHexString("session-1".hashCode()) + ".tar";
+        fixture.sdk.handle.files.put(temp, archive);
+        fixture.sandbox.start();
+
+        byte[] persisted;
+        try (InputStream input = fixture.sandbox.persistWorkspace()) {
+            persisted = input.readAllBytes();
+        }
+
+        assertArrayEquals(archive, persisted);
+        assertTrue(fixture.sdk.handle.commands.stream().anyMatch(c -> c.contains("tar -cf")));
+        assertTrue(fixture.sdk.handle.commands.stream().anyMatch(c -> c.contains("rm -f")));
+    }
+
+    @Test
+    void cleanupFailureDoesNotMaskSuccessfulHydration() throws Exception {
+        Fixture fixture = fixture();
+        fixture.sandbox.start();
+        fixture.sdk.handle.failCommandContains = "rm -f";
+
+        fixture.sandbox.hydrateWorkspace(new ByteArrayInputStream(new byte[] {1}));
+
+        assertTrue(fixture.sdk.handle.commands.stream().anyMatch(c -> c.contains("tar -xf")));
+    }
+
+    @Test
+    void transferValidationAndShellQuotingCoverEdgePaths() throws Exception {
+        Fixture fixture = fixture();
+
+        assertFalse(fixture.sandbox.supportsFileTransfer(null));
+        assertFalse(fixture.sandbox.supportsFileTransfer("relative"));
+        assertTrue(fixture.sandbox.supportsFileTransfer("/absolute"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> fixture.sandbox.uploadFile("relative", new byte[0]));
+        assertThrows(IllegalArgumentException.class, () -> fixture.sandbox.downloadFile(null));
+        assertThrows(
+                NullPointerException.class,
+                () -> fixture.sandbox.uploadFile("/workspace/file", null));
+        assertThrows(
+                SandboxException.SandboxRuntimeException.class,
+                () -> fixture.sandbox.downloadFile("/workspace/file"));
+
+        fixture.sandbox.start();
+        fixture.sandbox.uploadFile("/workspace/o'hara/file", new byte[] {1});
+
+        assertTrue(
+                fixture.sdk.handle.commands.stream()
+                        .anyMatch(command -> command.contains("'\"'\"'")));
+    }
+
+    @Test
+    void destroyWorkspaceUsesRootDirectoryAsWorkingDirectory() throws Exception {
+        OpenSandboxState state = state();
+        RecordingSdk sdk = new RecordingSdk();
+        ExposedOpenSandbox sandbox =
+                new ExposedOpenSandbox(state, new OpenSandboxClientOptions(), sdk);
+        sandbox.start();
+
+        sandbox.destroyWorkspace();
+
+        assertTrue(sdk.handle.commands.stream().anyMatch(c -> c.startsWith("rm -rf")));
+        assertEquals(
+                "/", sdk.handle.workingDirectories.get(sdk.handle.workingDirectories.size() - 1));
+    }
+
     private static Fixture fixture() {
+        OpenSandboxState state = state();
+        RecordingSdk sdk = new RecordingSdk();
+        return new Fixture(state, sdk, new OpenSandbox(state, new OpenSandboxClientOptions(), sdk));
+    }
+
+    private static OpenSandboxState state() {
         OpenSandboxState state = new OpenSandboxState();
         state.setSessionId("session-1");
         WorkspaceSpec workspace = new WorkspaceSpec();
         workspace.setRoot("/workspace");
         state.setWorkspaceSpec(workspace);
-        RecordingSdk sdk = new RecordingSdk();
-        return new Fixture(state, sdk, new OpenSandbox(state, new OpenSandboxClientOptions(), sdk));
+        return state;
     }
 
     private record Fixture(OpenSandboxState state, RecordingSdk sdk, OpenSandbox sandbox) {}
@@ -135,6 +262,7 @@ class OpenSandboxTest {
         private int createCalls;
         private int connectCalls;
         private Exception connectFailure;
+        private Exception killFailure;
         private final List<String> killedIds = new ArrayList<>();
         private final RecordingHandle handle = new RecordingHandle();
 
@@ -152,7 +280,8 @@ class OpenSandboxTest {
         }
 
         @Override
-        public void kill(String sandboxId, OpenSandboxClientOptions options) {
+        public void kill(String sandboxId, OpenSandboxClientOptions options) throws Exception {
+            if (killFailure != null) throw killFailure;
             killedIds.add(sandboxId);
         }
 
@@ -164,8 +293,11 @@ class OpenSandboxTest {
 
     private static final class RecordingHandle implements OpenSandboxSdk.Handle {
         private final List<String> commands = new ArrayList<>();
+        private final List<String> workingDirectories = new ArrayList<>();
         private final Map<String, byte[]> files = new HashMap<>();
         private ExecResult nextResult = new ExecResult(0, "", "", false);
+        private String failCommandContains;
+        private Exception closeFailure;
         private int closeCalls;
 
         @Override
@@ -174,8 +306,13 @@ class OpenSandboxTest {
         }
 
         @Override
-        public ExecResult exec(String command, String workingDirectory, int timeoutSeconds) {
+        public ExecResult exec(String command, String workingDirectory, int timeoutSeconds)
+                throws Exception {
             commands.add(command);
+            workingDirectories.add(workingDirectory);
+            if (failCommandContains != null && command.contains(failCommandContains)) {
+                throw new IOException("command failed");
+            }
             ExecResult result = nextResult;
             nextResult = new ExecResult(0, "", "", false);
             return result;
@@ -192,8 +329,20 @@ class OpenSandboxTest {
         }
 
         @Override
-        public void close() {
+        public void close() throws Exception {
             closeCalls++;
+            if (closeFailure != null) throw closeFailure;
+        }
+    }
+
+    private static final class ExposedOpenSandbox extends OpenSandbox {
+        private ExposedOpenSandbox(
+                OpenSandboxState state, OpenSandboxClientOptions options, OpenSandboxSdk sdk) {
+            super(state, options, sdk);
+        }
+
+        private void destroyWorkspace() throws Exception {
+            doDestroyWorkspace();
         }
     }
 }

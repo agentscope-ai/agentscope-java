@@ -17,7 +17,9 @@ package io.agentscope.extensions.sandbox.opensandbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
@@ -49,6 +51,14 @@ class OpenSandboxClientOptionsTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> OpenSandboxEndpoint.parse("ftp://localhost:8080"));
+        assertThrows(NullPointerException.class, () -> OpenSandboxEndpoint.parse(null));
+        assertThrows(IllegalArgumentException.class, () -> OpenSandboxEndpoint.parse(" "));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenSandboxEndpoint.parse("http://localhost:8080?debug=true"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenSandboxEndpoint.parse("http://localhost:8080#fragment"));
     }
 
     @Test
@@ -73,11 +83,47 @@ class OpenSandboxClientOptionsTest {
         assertThrows(IllegalArgumentException.class, () -> options.setRequestTimeoutSeconds(-1));
         assertThrows(IllegalArgumentException.class, () -> options.setSandboxTimeoutSeconds(0));
         assertThrows(IllegalArgumentException.class, () -> options.setImage(" "));
+        assertThrows(IllegalArgumentException.class, () -> options.setEntrypoint(null));
         assertThrows(IllegalArgumentException.class, () -> options.setEntrypoint(List.of()));
+        assertThrows(
+                IllegalArgumentException.class, () -> options.setEntrypoint(List.of("echo", " ")));
+        assertThrows(IllegalArgumentException.class, () -> options.setResourceLimits(null));
+        assertThrows(
+                IllegalArgumentException.class, () -> options.setResourceLimits(Map.of(" ", "1")));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> options.setResourceLimits(Map.of("cpu", " ")));
     }
 
     @Test
     void createClientReturnsOpenSandboxClient() {
         assertInstanceOf(OpenSandboxClient.class, new OpenSandboxClientOptions().createClient());
+    }
+
+    @Test
+    void copyIsIndependentAndPreservesAllValues() {
+        OpenSandboxClientOptions source = new OpenSandboxClientOptions();
+        source.setEndpoint(" https://sandbox.example.com:8443 ");
+        source.setApiKey("secret");
+        source.setImage("ubuntu:24.04");
+        source.setEntrypoint(List.of("sleep", "infinity"));
+        source.setResourceLimits(Map.of("cpu", "2", "memory", "4Gi"));
+        source.setSandboxTimeoutSeconds(901);
+        source.setReadyTimeoutSeconds(41);
+        source.setRequestTimeoutSeconds(42);
+        source.setUseServerProxy(true);
+
+        OpenSandboxClientOptions copy = OpenSandboxClientOptions.copyOf(source);
+
+        assertNotSame(source, copy);
+        assertEquals("https://sandbox.example.com:8443", copy.getEndpoint());
+        assertEquals("secret", copy.getApiKey());
+        assertEquals("ubuntu:24.04", copy.getImage());
+        assertEquals(List.of("sleep", "infinity"), copy.getEntrypoint());
+        assertEquals(Map.of("cpu", "2", "memory", "4Gi"), copy.getResourceLimits());
+        assertEquals(901, copy.getSandboxTimeoutSeconds());
+        assertEquals(41, copy.getReadyTimeoutSeconds());
+        assertEquals(42, copy.getRequestTimeoutSeconds());
+        assertTrue(copy.isUseServerProxy());
     }
 }
