@@ -10722,6 +10722,8 @@ Source: https://java.agentscope.io/_sources/v2/en/integration/protocol/agui.md
 
 `agentscope-extensions-agui` converts AgentScope v2 `AgentEvent` streams into [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) events so front-end UIs can render an agent run in real time, including text, reasoning, tool calls, state, custom events, token usage, and HITL interrupts.
 
+`RUN_ERROR` and `RUN_FINISHED` are mutually exclusive terminal events. Set `emitRunFinishedAfterError=true` only if you still need the legacy `RUN_ERROR` + `RUN_FINISHED` sequence.
+
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
 Multimodal input is supported, but document types are not supported yet.
@@ -10795,7 +10797,7 @@ The v2 path consumes `AgentEvent`. Built-in converters handle semantic mapping, 
 | token usage (`emitTokenUsage=true`)    | `CUSTOM`, `name=token_usage` |
 | Unmapped `AgentEvent`                  | `RAW`, with official `event` and `source` fields |
 
-Normal `RUN_STARTED` and `RUN_FINISHED` events are driven by upstream `AgentStartEvent` and `AgentEndEvent`. If a normal stream completes without an upstream `AgentEndEvent`, the adapter does not synthesize `RUN_FINISHED`. On errors, the adapter emits a `RUN_ERROR` with a `timestamp`, then emits a fallback `RUN_FINISHED`.
+Normal `RUN_STARTED` and `RUN_FINISHED` events are driven by upstream `AgentStartEvent` and `AgentEndEvent`. If a normal stream completes without an upstream `AgentEndEvent`, the adapter does not synthesize `RUN_FINISHED`. On errors, the adapter emits a `RUN_ERROR` with a `timestamp`. `RUN_ERROR` and `RUN_FINISHED` are mutually exclusive terminal events. Set `emitRunFinishedAfterError=true` (or Spring Boot `agentscope.agui.emit-run-finished-after-error=true`) only for legacy clients that still expect a finish event after an error.
 
 ## Subagent events
 
@@ -10934,6 +10936,7 @@ agentscope:
     emit-tool-call-args: true
     emit-token-usage: false
     enable-reasoning: false
+    emit-run-finished-after-error: false
     server-side-memory: false
 ```
 

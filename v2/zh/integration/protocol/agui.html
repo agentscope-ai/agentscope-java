@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-09T00:51:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A（Agent-to-Agent）" href="a2a.html">
+    <meta property="article:modified_time" content="2026-08-10T07:16:16+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Agent Protocol" href="agent-protocol.html"><link rel="prev" title="A2A（Agent-to-Agent）" href="a2a.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/protocol/agui.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -969,6 +969,7 @@
 <section id="id1">
 <h2>兼容性说明<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-agui</span></code> 把 AgentScope v2 的 <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> 流转换为 <a class="reference external" href="https://github.com/ag-ui-protocol/ag-ui">AG-UI Protocol</a> 事件，让前端 UI 可以实时渲染 agent 的运行过程，包括文本、推理内容、工具调用、状态、自定义事件、token usage 和 HITL interrupt。</p>
+<p><code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code> 和 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 是互斥终态事件。只有还需要旧版 <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code> + <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 序列时，才开启 <code class="docutils literal notranslate"><span class="pre">emitRunFinishedAfterError=true</span></code>。</p>
 <p><code class="docutils literal notranslate"><span class="pre">AguiMessage.content</span></code> 现在使用类型化消息内容表示。仅处理纯文本时，请使用 <code class="docutils literal notranslate"><span class="pre">getTextContent()</span></code>。</p>
 <p>已支持多模态输入，但是暂不支持文档类型。</p>
 <p><code class="docutils literal notranslate"><span class="pre">AguiMessageConverter.toAguiMessage()</span></code> 目前只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。</p>
@@ -1063,7 +1064,7 @@
 </tbody>
 </table>
 </div>
-<p>正常运行的 <code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code> 和 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 由上游 <code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 决定。正常流结束但上游没有发 <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 时，adapter 不会额外补 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>。异常路径会输出带 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> 的 <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code>，并补发一个 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>。</p>
+<p>正常运行的 <code class="docutils literal notranslate"><span class="pre">RUN_STARTED</span></code> 和 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 由上游 <code class="docutils literal notranslate"><span class="pre">AgentStartEvent</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 决定。正常流结束但上游没有发 <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code> 时，adapter 不会额外补 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code>。异常路径会输出带 <code class="docutils literal notranslate"><span class="pre">timestamp</span></code> 的 <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code>。 <code class="docutils literal notranslate"><span class="pre">RUN_ERROR</span></code> 和 <code class="docutils literal notranslate"><span class="pre">RUN_FINISHED</span></code> 是互斥终态事件。只有旧客户端仍依赖错误后补发完成事件时，才设置 <code class="docutils literal notranslate"><span class="pre">emitRunFinishedAfterError=true</span></code>（Spring Boot 配置为 <code class="docutils literal notranslate"><span class="pre">agentscope.agui.emit-run-finished-after-error=true</span></code>）。</p>
 </section>
 <section id="agent">
 <h2>子 agent 事件<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
@@ -1232,6 +1233,7 @@
 <span class="w">    </span><span class="nt">emit-tool-call-args</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">    </span><span class="nt">emit-token-usage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 <span class="w">    </span><span class="nt">enable-reasoning</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">emit-run-finished-after-error</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 <span class="w">    </span><span class="nt">server-side-memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 </pre></div>
 </div>
@@ -1410,7 +1412,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-09</div>
+              Last updated on 2026-08-10</div>
           </div>
           <div class="right-details">
             <div class="icons">
