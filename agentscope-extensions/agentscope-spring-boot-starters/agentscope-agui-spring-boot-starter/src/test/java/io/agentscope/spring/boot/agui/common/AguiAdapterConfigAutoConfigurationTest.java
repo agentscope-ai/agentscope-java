@@ -115,6 +115,42 @@ class AguiAdapterConfigAutoConfigurationTest {
     }
 
     @Test
+    @DisplayName("Should default emit-run-finished-after-error to false")
+    void testDefaultEmitRunFinishedAfterError() {
+        mvcContextRunner.run(
+                ctx -> {
+                    AguiAdapterConfig config = mvcConfig(ctx.getBean(AguiMvcController.class));
+                    assertFalse(config.isEmitRunFinishedAfterError());
+                });
+    }
+
+    @Test
+    @DisplayName("Should bind emit-run-finished-after-error property for MVC")
+    void testMvcEmitRunFinishedAfterErrorProperty() {
+        mvcContextRunner
+                .withPropertyValues("agentscope.agui.emit-run-finished-after-error=true")
+                .run(
+                        ctx -> {
+                            AguiAdapterConfig config =
+                                    mvcConfig(ctx.getBean(AguiMvcController.class));
+                            assertTrue(config.isEmitRunFinishedAfterError());
+                        });
+    }
+
+    @Test
+    @DisplayName("Should bind emit-run-finished-after-error property for WebFlux")
+    void testWebFluxEmitRunFinishedAfterErrorProperty() {
+        webFluxContextRunner
+                .withPropertyValues("agentscope.agui.emit-run-finished-after-error=true")
+                .run(
+                        ctx -> {
+                            AguiAdapterConfig config =
+                                    webFluxConfig(ctx.getBean(AguiWebFluxHandler.class));
+                            assertTrue(config.isEmitRunFinishedAfterError());
+                        });
+    }
+
+    @Test
     @DisplayName("Should register ordered converter and enricher beans for MVC")
     void testMvcRegistersOrderedExtensions() {
         mvcContextRunner
