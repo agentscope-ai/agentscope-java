@@ -159,6 +159,42 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
+        @DisplayName("Should execute blocking request through the fine-grained event stream")
+        void testExecuteBlockingAgentWithFineGrainedEvents() throws JSONRPCError {
+            doMockForContext(false, false, true);
+            Msg resultMessage = Msg.builder().textContent("fine-grained blocking result").build();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new TextBlockDeltaEvent(
+                                            UUID.randomUUID().toString(),
+                                            "text",
+                                            "fine-grained blocking result"),
+                                    new AgentResultEvent(resultMessage)));
+
+            AtomicReference<Message> messageRef = new AtomicReference<>();
+            doAnswer(
+                            (Answer<Void>)
+                                    invocationOnMock -> {
+                                        Object arg = invocationOnMock.getArgument(0);
+                                        messageRef.set((Message) arg);
+                                        return null;
+                                    })
+                    .when(mockEventQueue)
+                    .enqueueEvent(any(Message.class));
+            executor.execute(mockContext, mockEventQueue);
+
+            assertNotNull(messageRef.get());
+            assertBlockResultMessage(
+                    messageRef.get(),
+                    List.of("fine-grained blocking result"),
+                    mockContext.getTaskId(),
+                    mockContext.getContextId());
+            verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
+            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
+        }
+
+        @Test
         @DisplayName("Should execute agent and process blocking request without agent result event")
         void testExecuteAgentWithBlockingRequestWithoutAgentResultEvent() throws JSONRPCError {
             doMockForContext(false, true, false);
@@ -336,6 +372,30 @@ class AgentScopeAgentExecutorTest {
                     false);
             verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
             verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
+        }
+
+        @Test
+        @DisplayName(
+                "Should fall back to the legacy stream when fine-grained events are unsupported")
+        void testExecuteAgentFallsBackToLegacyStream() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.error(new UnsupportedOperationException("not supported")));
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockFlux(false, true, false));
+
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+            executor.execute(mockContext, mockEventQueue);
+
+            assertStreamingEventKind(
+                    messageRef.get(),
+                    List.of("streaming result 1", " 2"),
+                    mockContext.getTaskId(),
+                    mockContext.getContextId(),
+                    false,
+                    false);
+            verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
+            verify(mockAgentRunner).stream(anyList(), any(AgentRequestOptions.class));
         }
 
         @Test
