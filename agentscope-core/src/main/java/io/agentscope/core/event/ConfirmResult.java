@@ -16,6 +16,7 @@
 package io.agentscope.core.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.permission.PermissionRule;
@@ -33,20 +34,28 @@ public class ConfirmResult {
     private final boolean confirmed;
     private final ToolUseBlock toolCall;
     private final List<PermissionRule> rules;
+    private final String reason;
 
     @JsonCreator
     public ConfirmResult(
             @JsonProperty("confirmed") boolean confirmed,
             @JsonProperty("toolCall") ToolUseBlock toolCall,
-            @JsonProperty("rules") List<PermissionRule> rules) {
+            @JsonProperty("rules") List<PermissionRule> rules,
+            @JsonProperty("reason") String reason) {
         this.confirmed = confirmed;
         this.toolCall = toolCall;
         this.rules = rules;
+        this.reason = reason;
+    }
+
+    /** Backward-compatible constructor without a decision reason. */
+    public ConfirmResult(boolean confirmed, ToolUseBlock toolCall, List<PermissionRule> rules) {
+        this(confirmed, toolCall, rules, null);
     }
 
     /** Convenience constructor without rules. */
     public ConfirmResult(boolean confirmed, ToolUseBlock toolCall) {
-        this(confirmed, toolCall, null);
+        this(confirmed, toolCall, null, null);
     }
 
     public boolean isConfirmed() {
@@ -65,5 +74,19 @@ public class ConfirmResult {
      */
     public List<PermissionRule> getRules() {
         return rules;
+    }
+
+    /**
+     * Optional user-supplied reason for the confirmation decision.
+     *
+     * <p>When {@link #confirmed} is false, the agent includes this reason in the denied tool result
+     * that is added to model context. It is otherwise retained on the confirmation event for
+     * callers that need to inspect it.
+     *
+     * @return decision reason, or null if none was supplied
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String getReason() {
+        return reason;
     }
 }
