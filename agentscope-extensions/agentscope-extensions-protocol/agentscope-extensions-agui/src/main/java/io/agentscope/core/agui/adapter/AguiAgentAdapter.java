@@ -576,8 +576,7 @@ public class AguiAgentAdapter {
                                     toolCallId,
                                     result,
                                     "tool",
-                                    msg.getId(),
-                                    toolResult.getMetadata()));
+                                    msg.getId()));
                     state.endToolCall(toolCallId);
                 }
             }

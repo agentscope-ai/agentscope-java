@@ -554,7 +554,6 @@ public sealed interface AguiEvent
     /**
      * Event containing the result of a tool call.
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     record ToolCallResult(
             String threadId,
             String runId,
@@ -618,10 +617,6 @@ public sealed interface AguiEvent
 
         public String getMessageId() {
             return messageId;
-        }
-
-        public Map<String, Object> getMetadata() {
-            return metadata;
         }
     }
 
