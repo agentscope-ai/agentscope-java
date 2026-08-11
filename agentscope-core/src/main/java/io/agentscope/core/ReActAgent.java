@@ -2036,7 +2036,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ToolResultBlock errorResult =
                         ToolResultBlock.error(
                                 toolCall.getId(),
-                                "[ERROR] Previous tool execution failed or was interrupted. Tool: "
+                                "Previous tool execution failed or was interrupted. Tool: "
                                         + toolCall.getName());
                 Msg toolResultMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
