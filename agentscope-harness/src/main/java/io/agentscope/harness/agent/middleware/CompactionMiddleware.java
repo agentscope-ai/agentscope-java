@@ -29,11 +29,14 @@ import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Middleware that performs conversation compaction before each LLM reasoning call.
@@ -58,15 +61,39 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(CompactionMiddleware.class);
 
-    private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final CompactionExecutor compactionExecutor;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
-        this.workspaceManager = workspaceManager;
+        this(
+                workspaceManager,
+                model,
+                config,
+                (runtimeContext, conversation, effectiveConfig, agentId, sessionId) ->
+                        new ConversationCompactor(
+                                        model, new MemoryFlushManager(workspaceManager, model))
+                                .compactIfNeeded(
+                                        runtimeContext,
+                                        conversation,
+                                        effectiveConfig,
+                                        agentId,
+                                        sessionId));
+    }
+
+    /**
+     * Allows package-local tests to replace the compaction step and isolate its failure boundary
+     * from downstream reasoning.
+     */
+    CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            CompactionExecutor compactionExecutor) {
         this.model = model;
         this.config = config;
+        this.compactionExecutor = compactionExecutor;
     }
 
     @Override
@@ -100,14 +127,22 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
                     CompactionConfig effectiveConfig = resolveEffectiveConfig();
 
-                    MemoryFlushManager flushManager =
-                            new MemoryFlushManager(workspaceManager, model);
-                    ConversationCompactor compactor =
-                            new ConversationCompactor(model, flushManager);
                     final Msg sys = systemMsg;
 
-                    return compactor
+                    // Only compaction may degrade; downstream reasoning errors must propagate.
+                    return compactionExecutor
                             .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
+                            .onErrorResume(
+                                    error -> {
+                                        if (containsInterruptedException(error)) {
+                                            return Mono.error(error);
+                                        }
+                                        log.warn(
+                                                "Compaction failed, continuing without compaction:"
+                                                        + " {}",
+                                                error.getMessage());
+                                        return Mono.just(Optional.empty());
+                                    })
                             .flatMapMany(
                                     optResult -> {
                                         if (optResult.isEmpty()) {
@@ -130,16 +165,39 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                         newMessages,
                                                         input.tools(),
                                                         input.options()));
-                                    })
-                            .onErrorResume(
-                                    e -> {
-                                        log.warn(
-                                                "Compaction failed, continuing without compaction:"
-                                                        + " {}",
-                                                e.getMessage());
-                                        return next.apply(input);
                                     });
                 });
+    }
+
+    /**
+     * Recognizes interruptions wrapped by Reactor or application exceptions so compaction fallback
+     * does not swallow a user interrupt.
+     */
+    private boolean containsInterruptedException(Throwable error) {
+        IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
+        Throwable current = error;
+        while (current != null && visited.put(current, Boolean.TRUE) == null) {
+            if (current instanceof InterruptedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    /**
+     * Defines a replaceable compaction step; production continues to use ConversationCompactor.
+     */
+    @FunctionalInterface
+    interface CompactionExecutor {
+
+        /** Performs one optional conversation compaction. */
+        Mono<Optional<List<Msg>>> compactIfNeeded(
+                RuntimeContext runtimeContext,
+                List<Msg> conversation,
+                CompactionConfig effectiveConfig,
+                String agentId,
+                String sessionId);
     }
 
     /**
