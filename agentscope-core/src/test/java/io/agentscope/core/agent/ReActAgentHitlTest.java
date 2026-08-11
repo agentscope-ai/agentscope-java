@@ -46,6 +46,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +71,7 @@ class ReActAgentHitlTest {
     private static final class ScriptedModel extends ChatModelBase {
         private final List<Supplier<Flux<ChatResponse>>> scripts;
         private final AtomicInteger idx = new AtomicInteger(0);
+        private final List<List<Msg>> invocations = new ArrayList<>();
 
         ScriptedModel(List<Supplier<Flux<ChatResponse>>> scripts) {
             this.scripts = scripts;
@@ -83,11 +85,16 @@ class ReActAgentHitlTest {
         @Override
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            invocations.add(List.copyOf(messages));
             int i = idx.getAndIncrement();
             if (i >= scripts.size()) {
                 return Flux.just(textResponse(""));
             }
             return scripts.get(i).get();
+        }
+
+        List<List<Msg>> getInvocations() {
+            return List.copyOf(invocations);
         }
     }
 
@@ -406,6 +413,53 @@ class ReActAgentHitlTest {
                                         "tc1".equals(tr.getId())
                                                 && tr.getState() == ToolResultState.DENIED);
         assertTrue(foundDenied, "expected a DENIED ToolResultBlock for the rejected tool");
+
+        ToolResultBlock deniedResult =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "Permission denied by user",
+                ((TextBlock) deniedResult.getOutput().get(0)).getText());
+    }
+
+    @Test
+    void deniedConfirmationReasonIsIncludedInNextModelInput() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        ToolUseBlock pending = first.getContentBlocks(ToolUseBlock.class).get(0);
+
+        Msg resume =
+                confirmMsg(
+                        List.of(
+                                new ConfirmResult(
+                                        false,
+                                        pending,
+                                        null,
+                                        "The file is still needed by another task.")));
+        agent.call(List.of(resume)).block();
+
+        assertEquals(2, model.getInvocations().size());
+        ToolResultBlock deniedResult =
+                model.getInvocations().get(1).stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(ToolResultState.DENIED, deniedResult.getState());
+        assertEquals(
+                "Permission denied by user. User-provided reason: The file is still needed by"
+                        + " another task.",
+                ((TextBlock) deniedResult.getOutput().get(0)).getText());
     }
 
     @Test
