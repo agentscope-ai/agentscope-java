@@ -1963,8 +1963,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private void applyConfirmResults(List<ConfirmResult> results) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
-            // promote them to ALLOWED. Collect denied ones for separate handling.
-            List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+            // promote them to ALLOWED. Collect denied results for separate handling so any
+            // user-supplied reason can be included in the denied tool result.
+            List<ConfirmResult> deniedResults = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
             for (ConfirmResult r : results) {
                 ToolUseBlock target = r.getToolCall();
@@ -1981,18 +1982,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         }
                     }
                 } else {
-                    deniedToolCalls.add(target);
+                    deniedResults.add(r);
                 }
             }
             applyToolUseBlockReplacements(replacements);
-            for (ToolUseBlock denied : deniedToolCalls) {
-                ToolResultBlock deniedResult =
-                        ToolResultBlock.text("Permission denied by user")
+            for (ConfirmResult deniedResult : deniedResults) {
+                ToolUseBlock denied = deniedResult.getToolCall();
+                String reason = deniedResult.getReason();
+                String message =
+                        reason == null || reason.isBlank()
+                                ? "Permission denied by user"
+                                : "Permission denied by user. User-provided reason: "
+                                        + reason.strip();
+                ToolResultBlock deniedToolResult =
+                        ToolResultBlock.text(message)
                                 .withIdAndName(denied.getId(), denied.getName())
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
-                                deniedResult, denied, getName());
+                                deniedToolResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
             }
         }
