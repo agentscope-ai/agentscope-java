@@ -58,25 +58,25 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
 
     @Test
     void sandboxPrompt_withoutDeliveryTool_admitsNoBoundaryMechanism(@TempDir Path workspace) {
-        WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem());
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            String prompt = prompt(wm, false);
 
-        String prompt = prompt(wm, false);
-
-        assertNotNull(prompt);
-        assertTrue(prompt.contains("Sandbox root: /workspace"));
-        assertTrue(prompt.contains("no mechanism for moving files across the boundary"));
-        assertFalse(prompt.contains("deliver_artifact"), () -> prompt);
-        assertFalse(prompt.contains("upload/download tools"), () -> prompt);
+            assertNotNull(prompt);
+            assertTrue(prompt.contains("Sandbox root: /workspace"));
+            assertTrue(prompt.contains("no mechanism for moving files across the boundary"));
+            assertFalse(prompt.contains("deliver_artifact"), () -> prompt);
+            assertFalse(prompt.contains("upload/download tools"), () -> prompt);
+        }
     }
 
     @Test
     void sandboxPrompt_withDeliveryTool_namesIt(@TempDir Path workspace) {
-        WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem());
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            String prompt = prompt(wm, true);
 
-        String prompt = prompt(wm, true);
-
-        assertNotNull(prompt);
-        assertTrue(prompt.contains("use the deliver_artifact tool"), () -> prompt);
-        assertFalse(prompt.contains("upload/download tools"), () -> prompt);
+            assertNotNull(prompt);
+            assertTrue(prompt.contains("use the deliver_artifact tool"), () -> prompt);
+            assertFalse(prompt.contains("upload/download tools"), () -> prompt);
+        }
     }
 }
