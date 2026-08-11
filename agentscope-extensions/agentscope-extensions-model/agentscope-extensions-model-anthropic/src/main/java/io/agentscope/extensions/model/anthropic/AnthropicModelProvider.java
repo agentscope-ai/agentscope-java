@@ -15,6 +15,10 @@
  */
 package io.agentscope.extensions.model.anthropic;
 
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.intOption;
+import static io.agentscope.core.model.ModelProviderSupport.trimToNull;
+
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
@@ -81,30 +85,5 @@ public final class AnthropicModelProvider implements ModelProvider {
         if (contextWindowSize != null) {
             builder.contextWindowSize(contextWindowSize);
         }
-    }
-
-    private static String firstNonBlank(String preferred, String fallback) {
-        String normalized = trimToNull(preferred);
-        return normalized != null ? normalized : trimToNull(fallback);
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static Integer intOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a number");
     }
 }

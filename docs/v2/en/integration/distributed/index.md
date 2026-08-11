@@ -83,3 +83,22 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 - [Redis](redis.md) — full capability coverage, recommended for multi-replica production
 - [MySQL / JDBC](mysql.md) — for existing relational database infrastructure
 - [Alibaba Cloud OSS](oss.md) — object storage, best for large-capacity snapshots
+
+## aistio Hosted Store
+
+When you already run an aistio control plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / MySQL / Postgres / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
+
+```java
+ControlPlaneStores cp = ControlPlaneStores.fromEnv();
+HarnessAgent.builder()
+    .distributedStore(cp.withAgentStateStore(redis.agentStateStore()))
+    .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
+    .build();
+```
+
+- Enable on the control plane with `--enable-hosted-store` (Postgres recommended for production).
+- **`withAgentStateStore` includes** hosted `TaskRepository` and `SessionTurnGate`. With **`SandboxFilesystemSpec` and subagent background tasks**, use this path — the workspace `TaskRepository` cannot persist tasks across replicas.
+- **AgentStateStore versioning**: Redis, Postgres, MySQL, and InMemory support CAS; JsonFile, OSS, COS, and JPA remain last-writer-wins. Prefer a versioning backend for multi-replica deployments.
+- **Turn gate + `ConflictPolicy.FAIL`** are optional: they reduce duplicate LLM turns on multi-replica setups; correctness still comes from CAS when the backend supports versioning.
+- Auth today is a shared internal token; tenant (`agentName` / `namespace`) comes from the request body — **not** for mutually untrusted multi-tenant agents on one control plane.
+- `MessageBus.queueDrain` is **destructive** (ack-on-read); a wrong tenant key drops messages.

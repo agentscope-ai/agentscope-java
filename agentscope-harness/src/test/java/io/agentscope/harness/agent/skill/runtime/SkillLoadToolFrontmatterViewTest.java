@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.skill.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -26,7 +27,6 @@ import io.agentscope.core.tool.ToolCallParam;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -52,9 +52,11 @@ class SkillLoadToolFrontmatterViewTest {
 
         SkillCatalog catalog =
                 SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null)));
-        SkillLoadTool tool = new SkillLoadTool(new AtomicReference<>(catalog));
+        SkillLoadTool tool = new SkillLoadTool();
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(SkillCatalog.class, catalog);
 
-        String text = runTool(tool, Map.of("skillId", skill.getSkillId(), "path", "SKILL.md"));
+        String text = runTool(tool, ctx, Map.of("skillId", skill.getSkillId(), "path", "SKILL.md"));
 
         assertTrue(
                 text.contains("name: alpha"),
@@ -84,10 +86,12 @@ class SkillLoadToolFrontmatterViewTest {
                         "custom");
         SkillCatalog catalog =
                 SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null)));
-        SkillLoadTool tool = new SkillLoadTool(new AtomicReference<>(catalog));
+        SkillLoadTool tool = new SkillLoadTool();
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(SkillCatalog.class, catalog);
 
         String text =
-                runTool(tool, Map.of("skillId", skill.getSkillId(), "path", "scripts/run.sh"));
+                runTool(tool, ctx, Map.of("skillId", skill.getSkillId(), "path", "scripts/run.sh"));
 
         assertTrue(text.contains("scripts/run.sh"), "resource path should appear in header");
         assertTrue(text.contains("echo hi"), "resource body should be present");
@@ -96,14 +100,20 @@ class SkillLoadToolFrontmatterViewTest {
         assertEquals(2, fenceCount, "expected exactly one open + one close fence, got " + text);
     }
 
-    private static String runTool(SkillLoadTool tool, Map<String, Object> input) {
+    private static String runTool(
+            SkillLoadTool tool, RuntimeContext ctx, Map<String, Object> input) {
         ToolUseBlock useBlock =
                 ToolUseBlock.builder()
                         .id("view-test")
                         .name(SkillLoadTool.TOOL_NAME)
                         .input(input)
                         .build();
-        ToolCallParam param = ToolCallParam.builder().toolUseBlock(useBlock).input(input).build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(useBlock)
+                        .input(input)
+                        .runtimeContext(ctx)
+                        .build();
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
         if (result == null || result.getOutput() == null) {
             return "";

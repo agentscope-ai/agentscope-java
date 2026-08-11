@@ -108,12 +108,38 @@ description: "智能体定义与进化的 source of truth：目录布局、工�
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
-    .workspace(Paths.get(".agentscope/workspace"))   // 不传则用 ${user.dir}/.agentscope/workspace
+    .workspace(Paths.get(".agentscope/workspace"))   // 不传则走下面的默认解析顺序
     .additionalContextFile("SOUL.md")                // 任意 workspace 相对路径，全文注入
     .additionalContextFile("PREFERENCES.md")
     .maxContextTokens(8000)                          // MEMORY 注入预算
     .build();
 ```
+
+### workspace 的解析顺序
+
+不显式调用 `workspace(...)` 时，`build()` 按以下优先级（从高到低）确定工作区目录：
+
+| 优先级 | 来源 | 说明 |
+|-------|------|------|
+| 1 | `workspace(Path)` / `workspace(String)` | Builder 显式设置，覆盖一切 |
+| 2 | `agentscope.workspace` 系统属性 | `-Dagentscope.workspace=/data/workspace` |
+| 3 | `AGENTSCOPE_WORKSPACE` 环境变量 | `export AGENTSCOPE_WORKSPACE=/data/workspace` |
+| 4 | 默认值 | `${user.dir}/.agentscope/workspace` |
+
+系统属性和环境变量主要服务于**镜像打包 / 容器部署**：应用代码里不写死路径，构建镜像或启动容器时通过环境变量灵活注入。例如：
+
+```dockerfile
+ENV AGENTSCOPE_WORKSPACE=/data/agent-workspace
+```
+
+```yaml
+# k8s / docker-compose
+env:
+  - name: AGENTSCOPE_WORKSPACE
+    value: /data/agent-workspace
+```
+
+> 空白值（如 `"   "`）视为未设置，会继续往下一级回退。
 
 `AGENTS.md` 至少写一份骨架：
 
@@ -132,8 +158,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | 方法 | 关掉的是 |
 |------|---------|
 | `disableWorkspaceContext()` | system prompt 注入（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
-| `disableMemoryHooks()` | 记忆 flush + 后台维护 |
-| `disableMemoryTools()` | `memory_search` / `memory_get` / `session_search` 工具 |
+| `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `<memory_context>`（`MEMORY.md`） |
+| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
@@ -150,11 +176,11 @@ HarnessAgent agent = HarnessAgent.builder()
 | 段落 | 来源 | 受预算约束 |
 |------|------|-----------|
 | `## Session Context` | 模板生成（日期、操作系统、workspace 绝对路径、临时目录、当前 `sessionId`） | 否 |
-| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` 引导段 | 内置模板（教模型怎么用记忆 + 怎么查 knowledge） | 否 |
+| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` 引导段 | 内置模板（教模型怎么用记忆 + 怎么查 knowledge）。Memory 相关段会随 `disableMemoryTools()` / `disableMemoryHooks()` 裁剪或整段省略 | 否 |
 | `## Workspace` 段 | 模板生成，**按 filesystem 模式分支**（详见下面）—— 告诉模型自己跑在本机 / 沙箱 / 远端 | 否 |
 | `## Workspace Files (Injected)` 段 | 框架自动从工作区把以下文件拉成 `<loaded_context>` XML 块注入 | 见下 |
 | `<agents_context>` | `AGENTS.md` 全文 | 无限 |
-| `<memory_context>` | `MEMORY.md`（剩余预算下，超出按字符截断 + 提示「用 memory_search 查更早」） | `maxContextTokens` 默认 8000 |
+| `<memory_context>` | `MEMORY.md`（剩余预算下，超出按字符截断 + 提示「用 memory_search 查更早」；关 tools 时只硬截断不提工具；tools + hooks 都关时整段不注入） | `maxContextTokens` 默认 8000 |
 | `<domain_knowledge_context>` | `knowledge/KNOWLEDGE.md` 全文 + `knowledge/` 下所有文件路径列表 | 无限（仅文件名做索引） |
 | `<x_md>` / `<y_md>` | 你 `additionalContextFile("X.md")` 添加的任意文件 | 无限 |
 

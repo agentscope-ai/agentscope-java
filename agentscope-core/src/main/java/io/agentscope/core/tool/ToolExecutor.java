@@ -189,13 +189,6 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
-        // External tool short-circuit: surface the call to the caller without running schema
-        // validation, preset injection, or scheduling. SchemaOnlyTool and any
-        // @Tool(externalTool=true) method end up here.
-        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
-            return Mono.just(ToolResultBlock.suspended(toolCall, new ToolSuspendException()));
-        }
-
         // Check tool activation
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
         if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
@@ -219,6 +212,13 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
+        // External tool short-circuit: once availability and schema are validated, surface the call
+        // without preset injection or local invocation. SchemaOnlyTool and any
+        // @Tool(externalTool=true) method end up here.
+        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
+            return Mono.just(ToolResultBlock.suspended(toolCall));
+        }
+
         // Merge runtime context: param-level > toolkit default
         io.agentscope.core.agent.RuntimeContext runtimeContext = param.getRuntimeContext();
         @SuppressWarnings("deprecation")
@@ -233,7 +233,7 @@ class ToolExecutor {
                     ToolExecutionContext.merge(
                             runtimeContext.asToolExecutionContext(), toolkitDefault);
             runtimeContext =
-                    io.agentscope.core.agent.RuntimeContext.builder()
+                    io.agentscope.core.agent.RuntimeContext.builder(runtimeContext)
                             .toolExecutionContext(merged)
                             .build();
         }
