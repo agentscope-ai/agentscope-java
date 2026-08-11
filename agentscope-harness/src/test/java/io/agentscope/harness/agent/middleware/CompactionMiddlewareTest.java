@@ -169,6 +169,29 @@ class CompactionMiddlewareTest {
         assertEquals(0, nextCalls.get());
     }
 
+    /** A cyclic exception cause chain must terminate and retain ordinary compaction fallback. */
+    @Test
+    void cyclicCompactionFailureCauseFallsBackWithoutLooping() {
+        AtomicInteger nextCalls = new AtomicInteger();
+        CompactionMiddleware middleware =
+                middleware(
+                        (ctx, messages, config, agentId, sessionId) ->
+                                Mono.error(new CyclicCauseException()));
+
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent(),
+                                context("user", "session"),
+                                input(),
+                                next -> {
+                                    nextCalls.incrementAndGet();
+                                    return Flux.empty();
+                                }))
+                .verifyComplete();
+
+        assertEquals(1, nextCalls.get());
+    }
+
     /** An interrupt from downstream reasoning must propagate without a fallback retry. */
     @Test
     void interruptedDownstreamPropagatesWithoutRetryingNext() {
@@ -387,6 +410,15 @@ class CompactionMiddlewareTest {
                                                 .build())
                                 .delaySubscription(Duration.ofMillis(200));
                     });
+        }
+    }
+
+    /** Supplies a malformed cause chain to verify cycle-safe interruption detection. */
+    private static final class CyclicCauseException extends RuntimeException {
+
+        @Override
+        public synchronized Throwable getCause() {
+            return this;
         }
     }
 }
