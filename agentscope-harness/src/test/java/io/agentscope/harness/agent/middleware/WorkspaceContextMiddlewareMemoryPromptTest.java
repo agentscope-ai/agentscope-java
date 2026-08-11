@@ -79,6 +79,21 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
     }
 
     @Test
+    void onSystemPromptHandlesNullAndNonNewlineBasePrompts() {
+        WorkspaceManager wm = track(new WorkspaceManager(workspace));
+        WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
+
+        String promptWithoutBase = mw.onSystemPrompt(null, null, null).block();
+        String promptWithBase = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE").block();
+
+        assertNotNull(promptWithoutBase);
+        assertFalse(promptWithoutBase.startsWith("null"));
+        assertTrue(promptWithoutBase.contains("## Domain Knowledge"));
+        assertNotNull(promptWithBase);
+        assertTrue(promptWithBase.startsWith("BASE\n"));
+    }
+
+    @Test
     void defaultFlags_includeMemoryRecallPersistenceAndContext() throws Exception {
         Files.writeString(workspace.resolve("MEMORY.md"), "remember: cats prefer windowsills");
         WorkspaceManager wm = track(new WorkspaceManager(workspace));

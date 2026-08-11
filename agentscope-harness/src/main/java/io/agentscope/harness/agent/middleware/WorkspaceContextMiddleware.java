@@ -187,9 +187,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                             RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
                             String base = currentPrompt != null ? currentPrompt : "";
                             String section = buildWorkspaceSection(rc);
-                            if (section.isEmpty()) {
-                                return base;
-                            }
                             String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
                             return base + separator + section;
                         })
