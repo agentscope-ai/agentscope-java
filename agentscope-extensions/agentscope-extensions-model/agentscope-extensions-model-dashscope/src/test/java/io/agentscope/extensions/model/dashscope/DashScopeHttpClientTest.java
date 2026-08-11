@@ -175,6 +175,9 @@ class DashScopeHttpClientTest {
                 client.selectEndpoint("qwen3.6-plus", EndpointType.AUTO));
         assertEquals(
                 DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.8-max", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
                 client.selectEndpoint("kimi-k2.5", EndpointType.AUTO));
         assertEquals(
                 DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
@@ -198,6 +201,7 @@ class DashScopeHttpClientTest {
         assertTrue(client.requiresMultimodalApi("qwen-vl-plus", EndpointType.AUTO));
         assertTrue(client.requiresMultimodalApi("qwen3.5-plus", EndpointType.AUTO));
         assertTrue(client.requiresMultimodalApi("qwen3.6-plus", EndpointType.AUTO));
+        assertTrue(client.requiresMultimodalApi("qwen3.8-max", EndpointType.AUTO));
     }
 
     @Test
@@ -219,6 +223,14 @@ class DashScopeHttpClientTest {
         assertTrue(DashScopeHttpClient.isMultimodalModel("Qwen3.6-Plus"));
         // qwen-3.6-plus (with hyphen before 3.6) does not match
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.6-plus"));
+    }
+
+    @Test
+    void testIsMultimodalModelIncludesQwen38MaxFamily() {
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.8-max"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("Qwen3.8-Max"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.8-max-2026-08-01"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.8-max"));
     }
 
     @Test
@@ -647,8 +659,24 @@ class DashScopeHttpClientTest {
                                         && dashScopeHttpException.getErrorCode().equals(errorCode)
                                         && dashScopeHttpException
                                                 .getMessage()
-                                                .equals("DashScope API error: " + errorMessage))
+                                                .equals("DashScope API error: " + errorMessage)
+                                        && dashScopeHttpException
+                                                .getResponseBody()
+                                                .contains("\"request_id\":\"request_id_123\""))
                 .verify();
+    }
+
+    @Test
+    void testStreamIgnoresMalformedSseData() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: malformed-json\\n\\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+
+        StepVerifier.create(client.stream(request, null, null, null)).verifyComplete();
     }
 
     @Test

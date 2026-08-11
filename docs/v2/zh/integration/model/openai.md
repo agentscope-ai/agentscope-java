@@ -1,6 +1,6 @@
 # OpenAI 模型
 
-`agentscope-extensions-model-openai` 接入 OpenAI Chat Completions 风格的模型。OpenAI 兼容端点也使用这个适配模块，例如 DeepSeek、GLM 等遵循 OpenAI API 载荷格式的服务。
+`agentscope-extensions-model-openai` 接入 OpenAI Chat Completions 风格的模型。OpenAI 兼容端点也使用这个适配模块，例如 DeepSeek、GLM、Kimi、MiniMax 等遵循 OpenAI API 载荷格式的服务。
 
 ## 添加依赖
 
@@ -36,8 +36,6 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .stream(true)
     .build();
 ```
-
-接入兼容端点时，设置 `baseUrl(...)` 和该服务期望的模型名。
 
 ## Spring Boot
 
