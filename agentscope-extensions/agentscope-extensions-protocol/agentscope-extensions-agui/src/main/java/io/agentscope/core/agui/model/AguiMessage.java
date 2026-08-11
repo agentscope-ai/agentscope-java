@@ -34,12 +34,16 @@ import java.util.Objects;
  *   <li>system - System instructions</li>
  *   <li>tool - Tool execution results</li>
  * </ul>
+ *
+ * <p>The {@code content} field uses {@link MessageContent}, a type-safe sealed union
+ * that can represent either plain text or a list of structured {@link InputContent}
+ * parts (text, image, audio, video, document).
  */
 public class AguiMessage {
 
     private final String id;
     private final String role;
-    private final String content;
+    private final MessageContent content;
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
 
@@ -48,7 +52,7 @@ public class AguiMessage {
      *
      * @param id The unique message ID
      * @param role The message role (user, assistant, system, tool)
-     * @param content The message content
+     * @param content The message content (plain text or structured blocks), may be null
      * @param toolCalls Tool calls for assistant messages (optional)
      * @param toolCallId Tool call ID for tool messages (optional)
      */
@@ -56,7 +60,7 @@ public class AguiMessage {
     public AguiMessage(
             @JsonProperty("id") String id,
             @JsonProperty("role") String role,
-            @JsonProperty("content") String content,
+            @JsonProperty("content") MessageContent content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
             @JsonProperty("toolCallId") String toolCallId) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
@@ -70,36 +74,47 @@ public class AguiMessage {
     }
 
     /**
-     * Creates a simple user message.
+     * Creates a simple user message with plain text content.
      *
      * @param id The message ID
-     * @param content The message content
+     * @param content The message content as plain text
      * @return A new user message
      */
     public static AguiMessage userMessage(String id, String content) {
-        return new AguiMessage(id, "user", content, null, null);
+        return new AguiMessage(id, "user", wrapText(content), null, null);
+    }
+
+    /**
+     * Creates a user message with structured content blocks.
+     *
+     * @param id The message ID
+     * @param blocks The structured content parts
+     * @return A new user message
+     */
+    public static AguiMessage userMessage(String id, List<InputContent> blocks) {
+        return new AguiMessage(id, "user", new MessageContent.Blocks(blocks), null, null);
     }
 
     /**
      * Creates a simple assistant message.
      *
      * @param id The message ID
-     * @param content The message content
+     * @param content The message content as plain text
      * @return A new assistant message
      */
     public static AguiMessage assistantMessage(String id, String content) {
-        return new AguiMessage(id, "assistant", content, null, null);
+        return new AguiMessage(id, "assistant", wrapText(content), null, null);
     }
 
     /**
      * Creates a system message.
      *
      * @param id The message ID
-     * @param content The message content
+     * @param content The message content as plain text
      * @return A new system message
      */
     public static AguiMessage systemMessage(String id, String content) {
-        return new AguiMessage(id, "system", content, null, null);
+        return new AguiMessage(id, "system", wrapText(content), null, null);
     }
 
     /**
@@ -107,11 +122,57 @@ public class AguiMessage {
      *
      * @param id The message ID
      * @param toolCallId The ID of the tool call this is responding to
-     * @param content The tool result content
+     * @param content The tool result content as plain text
      * @return A new tool message
      */
     public static AguiMessage toolMessage(String id, String toolCallId, String content) {
-        return new AguiMessage(id, "tool", content, null, toolCallId);
+        return new AguiMessage(id, "tool", wrapText(content), null, toolCallId);
+    }
+
+    /**
+     * Creates a message with plain text content, supporting a custom role, tool calls, and
+     * tool call ID. This is the full-parameter convenience factory for text-based messages.
+     *
+     * @param id The message ID
+     * @param role The message role (user, assistant, system, tool)
+     * @param text The message content as plain text, may be null
+     * @param toolCalls Tool calls for assistant messages (optional)
+     * @param toolCallId Tool call ID for tool messages (optional)
+     * @return A new message
+     */
+    public static AguiMessage textMessage(
+            String id, String role, String text, List<AguiToolCall> toolCalls, String toolCallId) {
+        return new AguiMessage(id, role, wrapText(text), toolCalls, toolCallId);
+    }
+
+    /**
+     * Creates a message with structured content blocks, supporting a custom role, tool calls,
+     * and tool call ID. This is the full-parameter convenience factory for blocks-based messages.
+     *
+     * @param id The message ID
+     * @param role The message role (user, assistant, system, tool)
+     * @param blocks The structured content parts
+     * @param toolCalls Tool calls for assistant messages (optional)
+     * @param toolCallId Tool call ID for tool messages (optional)
+     * @return A new message
+     */
+    public static AguiMessage blocksMessage(
+            String id,
+            String role,
+            List<InputContent> blocks,
+            List<AguiToolCall> toolCalls,
+            String toolCallId) {
+        return new AguiMessage(id, role, new MessageContent.Blocks(blocks), toolCalls, toolCallId);
+    }
+
+    /**
+     * Wraps a plain text string into a {@link MessageContent.Text}, or returns null.
+     *
+     * @param text the text to wrap, may be null
+     * @return a {@code MessageContent.Text} or null if text is null
+     */
+    private static MessageContent wrapText(String text) {
+        return text != null ? new MessageContent.Text(text) : null;
     }
 
     /**
@@ -133,12 +194,36 @@ public class AguiMessage {
     }
 
     /**
-     * Get the message content.
+     * Get the message content as a type-safe {@link MessageContent}.
      *
      * @return The content, may be null
      */
-    public String getContent() {
+    public MessageContent getContent() {
         return content;
+    }
+
+    /**
+     * Get the plain text content if the content is a {@link MessageContent.Text}.
+     *
+     * <p>This is a convenience method for the common case where content is plain text.
+     * If the content is structured blocks or null, this returns null.
+     *
+     * @return The text value, or null if content is not plain text
+     */
+    public String getTextContent() {
+        if (content instanceof MessageContent.Text text) {
+            return text.value();
+        }
+        return null;
+    }
+
+    /**
+     * Check if this message has structured content blocks.
+     *
+     * @return true if the content is a {@link MessageContent.Blocks}
+     */
+    public boolean hasBlocks() {
+        return content instanceof MessageContent.Blocks;
     }
 
     /**
@@ -165,7 +250,7 @@ public class AguiMessage {
      * @return true if role is "user"
      */
     public boolean isUserMessage() {
-        return "user".equals(role);
+        return "user".equalsIgnoreCase(role);
     }
 
     /**
@@ -174,7 +259,7 @@ public class AguiMessage {
      * @return true if role is "assistant"
      */
     public boolean isAssistantMessage() {
-        return "assistant".equals(role);
+        return "assistant".equalsIgnoreCase(role);
     }
 
     /**
@@ -183,7 +268,7 @@ public class AguiMessage {
      * @return true if role is "system"
      */
     public boolean isSystemMessage() {
-        return "system".equals(role);
+        return "system".equalsIgnoreCase(role);
     }
 
     /**
@@ -192,7 +277,7 @@ public class AguiMessage {
      * @return true if role is "tool"
      */
     public boolean isToolMessage() {
-        return "tool".equals(role);
+        return "tool".equalsIgnoreCase(role);
     }
 
     /**
@@ -210,9 +295,9 @@ public class AguiMessage {
                 + id
                 + "', role='"
                 + role
-                + "', content='"
+                + "', content="
                 + content
-                + "', toolCalls="
+                + ", toolCalls="
                 + toolCalls
                 + ", toolCallId='"
                 + toolCallId

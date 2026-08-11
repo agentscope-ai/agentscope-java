@@ -80,7 +80,7 @@ import org.slf4j.LoggerFactory;
  *   <li>{@link #start()} — initialize and start all pre-registered channel adapters.
  * </ol>
  */
-public final class ClawBootstrap {
+public final class ClawBootstrap implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ClawBootstrap.class);
     private static final String DEFAULT_MAIN_ID = "default";
@@ -200,6 +200,32 @@ public final class ClawBootstrap {
         }
     }
 
+    /**
+     * Stops managed channels and closes all agents created by this bootstrap.
+     *
+     * <p>Closing agents releases background task repositories and workspace indexes associated
+     * with the claw home directory.
+     */
+    @Override
+    public void close() {
+        stop();
+        RuntimeException failure = null;
+        for (HarnessAgent agent : new LinkedHashSet<>(agents.values())) {
+            try {
+                agent.close();
+            } catch (RuntimeException e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
     // -----------------------------------------------------------------
     //  Public / package-private accessors
     // -----------------------------------------------------------------
@@ -231,7 +257,8 @@ public final class ClawBootstrap {
         return mainAgentId;
     }
 
-    HarnessAgent mainAgent() {
+    /** The configured main agent instance. */
+    public HarnessAgent mainAgent() {
         HarnessAgent a = agents.get(mainAgentId);
         if (a == null) {
             throw new IllegalStateException("Main agent not registered: " + mainAgentId);
@@ -380,6 +407,8 @@ public final class ClawBootstrap {
                         ? e.getName()
                         : agentId;
         b.name(name);
+        // Stable catalog id — used for session JSONL paths and TranscriptRef agent segment.
+        b.agentId(agentId);
 
         if (e != null) {
             if (e.getDescription() != null) {
