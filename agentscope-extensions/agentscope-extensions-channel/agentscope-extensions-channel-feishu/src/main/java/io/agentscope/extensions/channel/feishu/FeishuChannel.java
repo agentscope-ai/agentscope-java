@@ -159,7 +159,12 @@ public final class FeishuChannel implements Channel {
                     new IllegalStateException("FeishuChannel '" + channelId + "' has no gateway"));
         }
         RouteResult route = router.resolveRoute(config, message);
-        return g.run(route.context(), message.messages(), route.outboundAddress())
+        return g.run(
+                        route.context(),
+                        message.messages(),
+                        route.outboundAddress(),
+                        message.runtimeContext(),
+                        message)
                 .flatMap(reply -> sendReply(route.outboundAddress(), reply).thenReturn(reply));
     }
 

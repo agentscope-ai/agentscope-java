@@ -48,6 +48,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.DataBlockStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
@@ -763,6 +764,42 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testSuspendedToolResultWithoutStableToolCallIdFailsRun() {
+            ToolUseBlock toolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            Msg suspendedResult =
+                    suspendedToolResult(
+                            "reply-suspended",
+                            toolUse,
+                            ToolResultBlock.builder()
+                                    .id("")
+                                    .name("lookup")
+                                    .output(
+                                            TextBlock.builder()
+                                                    .text("Execute lookup externally")
+                                                    .build())
+                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .build());
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-suspended", "react"),
+                            new AgentResultEvent(suspendedResult),
+                            new AgentEndEvent("reply-suspended"));
+
+            assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR), types(events));
+            assertErrorRun(
+                    events.subList(1, 2),
+                    "TOOL_SUSPENDED result contains a suspended tool result without a stable id",
+                    "INVALID_INPUT_ERROR");
+        }
+
+        @Test
         void testOnlySuspendedToolIsInterruptedWhenParallelToolCallsPartiallyComplete() {
             ToolUseBlock suspendedTool =
                     ToolUseBlock.builder()
@@ -819,6 +856,134 @@ class AguiAgentAdapterV2Test {
                             AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
             assertEquals(1, outcome.interrupts().size());
             assertEquals("tool-2", outcome.interrupts().get(0).toolCallId());
+        }
+
+        @Test
+        void testPermissionConfirmEventFinishesRunWithToolConfirmationInterrupt() {
+            ToolUseBlock pending =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("echo")
+                            .input(Map.of("message", "hello"))
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(pending)),
+                            new AgentEndEvent("reply-confirm"));
+
+            assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_FINISHED), types(events));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertEquals(1, outcome.interrupts().size());
+            AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+            assertEquals("reply-confirm:tool-1", interrupt.id());
+            assertEquals("tool_call", interrupt.reason());
+            assertEquals("tool-1", interrupt.toolCallId());
+            assertNotNull(interrupt.responseSchema());
+            assertEquals(List.of("approved"), interrupt.responseSchema().get("required"));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> properties =
+                    (Map<String, Object>) interrupt.responseSchema().get("properties");
+            assertTrue(properties.containsKey("approved"));
+            assertTrue(properties.containsKey("editedArgs"));
+            assertNull(interrupt.expiresAt());
+            assertTrue(interrupt.message().contains("echo"));
+            assertEquals("echo", interrupt.metadata().get("toolName"));
+            assertEquals(Map.of("message", "hello"), interrupt.metadata().get("toolInput"));
+            assertEquals("reply-confirm", interrupt.metadata().get("replyId"));
+            assertTrue(interrupt.metadata().get("toolContent").toString().contains("hello"));
+            assertEquals(
+                    "permission_confirm", interrupt.metadata().get("agentscope.interruptKind"));
+        }
+
+        @Test
+        void testPermissionConfirmEventEmitsOneInterruptPerPendingToolCall() {
+            ToolUseBlock first =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("echo")
+                            .input(Map.of("message", "one"))
+                            .build();
+            ToolUseBlock second =
+                    ToolUseBlock.builder()
+                            .id("tool-2")
+                            .name("echo")
+                            .input(Map.of("message", "two"))
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(first, second)),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertEquals(
+                    List.of("reply-confirm:tool-1", "reply-confirm:tool-2"),
+                    outcome.interrupts().stream().map(AguiEvent.Interrupt::id).toList());
+        }
+
+        @Test
+        void testPermissionConfirmEventWithoutReplyIdUsesToolCallIdAsInterruptId() {
+            ToolUseBlock pending = ToolUseBlock.builder().id("tool-1").name("echo").build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent(null, List.of(pending)),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+            assertEquals("tool-1", interrupt.id());
+            assertNull(interrupt.metadata().get("replyId"));
+            assertFalse(interrupt.metadata().containsKey("toolInput"));
+        }
+
+        @Test
+        void testPermissionConfirmEventWithoutStableToolCallIdFailsRun() {
+            ToolUseBlock invalid = ToolUseBlock.builder().id("").name("echo").build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", List.of(invalid)),
+                            new AgentEndEvent("reply-confirm"));
+
+            assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR), types(events));
+            assertErrorRun(
+                    events.subList(1, 2),
+                    "RequireUserConfirmEvent contains a tool call without a stable id",
+                    "INVALID_INPUT_ERROR");
+        }
+
+        @Test
+        void testPermissionConfirmEventWithNullToolCallsFinishesRunWithoutInterrupt() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-confirm", "react"),
+                            new RequireUserConfirmEvent("reply-confirm", null),
+                            new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            assertNull(finished.outcome());
         }
 
         @Test
@@ -1316,12 +1481,29 @@ class AguiAgentAdapterV2Test {
                                     Flux.error(new RuntimeException("boom"))));
 
             assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR), types(events));
+            assertErrorRun(events.subList(1, 2), "boom", "INTERNAL_ERROR");
+        }
+
+        @Test
+        void testRunEmitsRunFinishedAfterErrorWhenEnabled() {
+            List<AguiEvent> events =
+                    runReActFlux(
+                            AguiAdapterConfig.builder().emitRunFinishedAfterError(true).build(),
+                            Flux.concat(
+                                    Flux.just(new AgentStartEvent("thread-v2", "reply", "react")),
+                                    Flux.error(new RuntimeException("boom"))));
+
+            assertEquals(
                     List.of(
                             AguiEventType.RUN_STARTED,
                             AguiEventType.RUN_ERROR,
                             AguiEventType.RUN_FINISHED),
                     types(events));
-            assertErrorRun(events.subList(1, 3), "boom", "INTERNAL_ERROR");
+            AguiEvent.RunError runError = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
+            assertEquals("boom", runError.message());
+            assertEquals("INTERNAL_ERROR", runError.code());
+            assertInstanceOf(AguiEvent.RunFinished.class, events.get(2));
         }
 
         @Test
@@ -1349,8 +1531,7 @@ class AguiAgentAdapterV2Test {
                             AguiEventType.TEXT_MESSAGE_START,
                             AguiEventType.TEXT_MESSAGE_CONTENT,
                             AguiEventType.TEXT_MESSAGE_END,
-                            AguiEventType.RUN_ERROR,
-                            AguiEventType.RUN_FINISHED),
+                            AguiEventType.RUN_ERROR),
                     types(events));
         }
 
@@ -1370,8 +1551,7 @@ class AguiAgentAdapterV2Test {
                             AguiEventType.REASONING_MESSAGE_START,
                             AguiEventType.REASONING_MESSAGE_CONTENT,
                             AguiEventType.REASONING_MESSAGE_END,
-                            AguiEventType.RUN_ERROR,
-                            AguiEventType.RUN_FINISHED),
+                            AguiEventType.RUN_ERROR),
                     types(events));
         }
 
@@ -1392,8 +1572,7 @@ class AguiAgentAdapterV2Test {
                             AguiEventType.TOOL_CALL_START,
                             AguiEventType.TOOL_CALL_ARGS,
                             AguiEventType.TOOL_CALL_END,
-                            AguiEventType.RUN_ERROR,
-                            AguiEventType.RUN_FINISHED),
+                            AguiEventType.RUN_ERROR),
                     types(events));
         }
 
@@ -1411,8 +1590,7 @@ class AguiAgentAdapterV2Test {
                     List.of(
                             AguiEventType.TOOL_CALL_START,
                             AguiEventType.TOOL_CALL_END,
-                            AguiEventType.RUN_ERROR,
-                            AguiEventType.RUN_FINISHED),
+                            AguiEventType.RUN_ERROR),
                     types(events));
         }
 
@@ -1433,12 +1611,10 @@ class AguiAgentAdapterV2Test {
                             AguiEventType.TEXT_MESSAGE_START,
                             AguiEventType.TEXT_MESSAGE_CONTENT,
                             AguiEventType.TEXT_MESSAGE_END,
-                            AguiEventType.RUN_ERROR,
-                            AguiEventType.RUN_FINISHED),
+                            AguiEventType.RUN_ERROR),
                     types(events));
             assertNotNull(events.get(2).timestamp());
             assertNotNull(events.get(3).timestamp());
-            assertNull(events.get(4).timestamp());
         }
     }
 
@@ -1625,27 +1801,21 @@ class AguiAgentAdapterV2Test {
 
     private static void assertStartedErrorRun(List<AguiEvent> events, String message, String code) {
         assertNotNull(events);
-        assertEquals(3, events.size());
+        assertEquals(2, events.size());
         assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
         AguiEvent.RunError runError = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals(message, runError.message());
         assertEquals(code, runError.code());
         assertNotNull(runError.timestamp());
-        AguiEvent.RunFinished finished =
-                assertInstanceOf(AguiEvent.RunFinished.class, events.get(2));
-        assertNull(finished.timestamp());
     }
 
     private static void assertErrorRun(List<AguiEvent> events, String message, String code) {
         assertNotNull(events);
-        assertEquals(2, events.size());
+        assertEquals(1, events.size());
         AguiEvent.RunError runError = assertInstanceOf(AguiEvent.RunError.class, events.get(0));
         assertEquals(message, runError.message());
         assertEquals(code, runError.code());
         assertNotNull(runError.timestamp());
-        AguiEvent.RunFinished finished =
-                assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
-        assertNull(finished.timestamp());
     }
 
     private static void assertToolCallId(AguiEvent event, String expectedToolCallId) {
