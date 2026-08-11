@@ -4,7 +4,7 @@ description: "Keep the conversation within the model's token budget without losi
 ---
 
 :::{note}
-This page covers **context compaction** — the strategies `HarnessAgent` uses to keep the conversation within the model's token budget. It builds on the stateless-engine design and `AgentState` persistence described in [Context & AgentState](../building-blocks/context). Read that page first if you haven't — compaction operates on the same `AgentState` that the persistence layer saves and restores.
+This page covers **context compaction** — the strategies `HarnessAgent` uses to keep the conversation within the model's token budget. It builds on the stateless-engine design and `AgentState` persistence described in [Context & AgentState](../building-blocks/context.md). Read that page first if you haven't — compaction operates on the same `AgentState` that the persistence layer saves and restores.
 
 **How they work together**: compaction mutates `AgentState.contextMutable()` in memory; the state store writes the updated `AgentState` at end of call. The two paths are independent but always run in that order — the state store sees the post-compaction state.
 :::
@@ -35,7 +35,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-The default summary prompt organizes content into `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` — works well for engineering/orchestration agents. `CompactionConfig` also supports `.model(...)` to specify a dedicated model for the summarization LLM call (falls back to the agent's primary model when not set). The full configuration surface (`triggerTokens`, `keepTokens`, `flushBeforeCompact`, `offloadBeforeCompact`, `model`, `TruncateArgsConfig`) and the summary prompt template are in [Memory — Enable compaction](./memory#enable-compaction); not duplicated here.
+The default summary prompt organizes content into `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` — works well for engineering/orchestration agents. `CompactionConfig` also supports `.model(...)` to specify a dedicated model for the summarization LLM call (falls back to the agent's primary model when not set). The full configuration surface (`triggerTokens`, `keepTokens`, `flushBeforeCompact`, `offloadBeforeCompact`, `model`, `TruncateArgsConfig`) and the summary prompt template are in [Memory — Enable compaction](./memory.md#enable-compaction); not duplicated here.
 
 ### 2. Large tool-result eviction (`ToolResultEvictionMiddleware`)
 
@@ -49,7 +49,7 @@ HarnessAgent.builder()
 
 `read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files` / `memory_*` / `session_search` are excluded by default — they either self-paginate or return tiny payloads. **Shell `execute` is deliberately NOT excluded** because command output can be arbitrarily large.
 
-Details in [Memory — Large tool-result offloading](./memory#large-tool-result-offloading).
+Details in [Memory — Large tool-result offloading](./memory.md#large-tool-result-offloading).
 
 ### 3. Overflow safety net
 
@@ -79,15 +79,15 @@ In many workloads this single step delays the summarization trigger considerably
 
 Similarly, `offloadBeforeCompact` (default `true`) writes the **raw messages** to the uncompressed `*.log.jsonl` before summarization, so `session_search` can still reach them.
 
-> The full Memory subsystem — two-tier structure, background maintenance (archive, merge), memory tools — is in [Memory](./memory). Compaction and memory are commonly used together but have independent switches.
+> The full Memory subsystem — two-tier structure, background maintenance (archive, merge), memory tools — is in [Memory](./memory.md). Compaction and memory are commonly used together but have independent switches.
 
 ## What compaction does *not* touch
 
 `ConversationCompactor` only operates on the **conversation message list** in `AgentState.contextMutable()`. The following live in other `AgentState` fields and **stay untouched by summarization**:
 
-- **Plan Mode state** (`AgentState.getPlanModeContext()`): whether plan mode is active, current plan file path. The plan file itself lives under `plans/` in the workspace and is managed by Plan Mode's own lifecycle. See [Plan Mode](./plan-mode).
-- **Subagent background tasks** (`task_id`, status, result): stored at `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json`, managed by `TaskRepository`; completed results are injected back into the parent via a system reminder on the next reasoning turn — they **do not enter the conversation message stream**, so summarization can't touch them. See [Subagent — Background task storage](./subagent#background-task-storage).
-- **`todo_write` task list** (`AgentState.getTasksContext()`): independent field, persisted with `AgentState` but not in the compaction path. See [Plan Mode — Interaction with `todo_write`](./plan-mode#interaction-with-todo_write).
+- **Plan Mode state** (`AgentState.getPlanModeContext()`): whether plan mode is active, current plan file path. The plan file itself lives under `plans/` in the workspace and is managed by Plan Mode's own lifecycle. See [Plan Mode](./plan-mode.md).
+- **Subagent background tasks** (`task_id`, status, result): stored at `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json`, managed by `TaskRepository`; completed results are injected back into the parent via a system reminder on the next reasoning turn — they **do not enter the conversation message stream**, so summarization can't touch them. See [Subagent — Background task storage](./subagent.md#background-task-storage).
+- **`todo_write` task list** (`AgentState.getTasksContext()`): independent field, persisted with `AgentState` but not in the compaction path. See [Plan Mode — Interaction with `todo_write`](./plan-mode.md#interaction-with-todo_write).
 - **Permission rules** (`getPermissionContext()`): independent field, self-persisting.
 
 Each of these owns its own state machine and recovery path; the compaction track is transparent to them — you can enable `.compaction(...)` without worrying about losing a plan or an in-flight background task.
@@ -106,9 +106,9 @@ These tools read the **uncompressed conversation log** (`<workspace>/agents/<age
 
 ## Related pages
 
-- [Context & AgentState](../building-blocks/context) — stateless engine design, `AgentState` structure, state persistence, `RuntimeContext`
-- [Architecture](./architecture) — how context, state persistence, and workspace cooperate inside one call
-- [Memory](./memory) — long-term memory, full compaction configuration, large tool-result offloading, background maintenance
-- [Plan Mode](./plan-mode) — independent persistence and recovery of plan state
-- [Subagent](./subagent) — where background tasks live and how they survive node migration
-- [Filesystem](./filesystem) — `userId`-based multi-tenant path isolation
+- [Context & AgentState](../building-blocks/context.md) — stateless engine design, `AgentState` structure, state persistence, `RuntimeContext`
+- [Architecture](./architecture.md) — how context, state persistence, and workspace cooperate inside one call
+- [Memory](./memory.md) — long-term memory, full compaction configuration, large tool-result offloading, background maintenance
+- [Plan Mode](./plan-mode.md) — independent persistence and recovery of plan state
+- [Subagent](./subagent.md) — where background tasks live and how they survive node migration
+- [Filesystem](./filesystem.md) — `userId`-based multi-tenant path isolation

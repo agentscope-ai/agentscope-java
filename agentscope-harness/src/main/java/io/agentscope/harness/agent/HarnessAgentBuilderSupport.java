@@ -24,13 +24,15 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
+import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
@@ -51,7 +53,6 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
@@ -279,7 +280,8 @@ final class HarnessAgentBuilderSupport {
     static SubagentFactory buildGeneralPurposeFactory(
             HarnessAgent.Builder b, Path workspace, SandboxBackedFilesystem sandboxFs) {
         final Model capturedModel = b.model;
-        final Toolkit capturedParentToolkit = b.toolkit != null ? b.toolkit.copy() : new Toolkit();
+        final Toolkit capturedParentToolkit =
+                b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final AbstractFilesystem capturedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
         final int capturedMaxIters = b.maxIters;
@@ -298,6 +300,9 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
+        final boolean capturedPlanModeEnabled = b.planModeEnabled;
+        final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
+        final String capturedPlanFileDir = b.planFileDir;
         final CompactionConfig capturedCompactionConfig = b.compactionConfig;
         final boolean capturedDisableCompaction = b.disableCompaction;
         final ToolResultEvictionConfig capturedToolResultEvictionConfig =
@@ -339,6 +344,8 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
+            configurePlanMode(
+                    sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
 
             if (!capturedSkillRepos.isEmpty()) sub.skillRepositories(capturedSkillRepos);
             if (capturedProjectGlobalSkillsDir != null) {
@@ -376,7 +383,8 @@ final class HarnessAgentBuilderSupport {
             Path mainWorkspace,
             SandboxBackedFilesystem sandboxFs) {
         final Model capturedModel = b.model;
-        final Toolkit capturedParentToolkit = b.toolkit != null ? b.toolkit.copy() : new Toolkit();
+        final Toolkit capturedParentToolkit =
+                b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
@@ -387,7 +395,16 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
+        final boolean capturedPlanModeEnabled = b.planModeEnabled;
+        final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
+        final String capturedPlanFileDir = b.planFileDir;
         final GenerateOptions capturedGenOpts = b.generateOptions;
+        // See buildGeneralPurposeFactory: propagate the parent's model/tool execution configs so
+        // declared subagents honor the parent's timeouts. Without this they fall back to
+        // ExecutionConfig defaults (e.g. the 5-minute tool timeout), ignoring a longer timeout
+        // configured on the main agent.
+        final ExecutionConfig capturedModelExec = b.modelExecutionConfig;
+        final ExecutionConfig capturedToolExec = b.toolExecutionConfig;
         // Snapshot of main agent's Local filesystem configuration. ISOLATED subagents get a
         // fresh spec carrying the same project / additionalRoots / mode so PathPolicy stays in
         // sync; without this, every isolated subagent would default to project=${user.dir} and
@@ -464,11 +481,16 @@ final class HarnessAgentBuilderSupport {
                 sub.stateStore(capturedStateStore);
             }
 
+            if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
+            if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
+
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
+            configurePlanMode(
+                    sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
 
             if (!capturedSkillRepos.isEmpty()) sub.skillRepositories(capturedSkillRepos);
             if (capturedProjectGlobalSkillsDir != null) {
@@ -483,6 +505,28 @@ final class HarnessAgentBuilderSupport {
             sub.middlewares(capturedMiddlewares);
             return sub.build();
         };
+    }
+
+    /**
+     * Propagates build-time plan-mode capabilities to an automatically constructed subagent.
+     *
+     * <p>Copying the parent's explicit middleware list is not sufficient: {@code
+     * PlanModeMiddleware} and {@code PlanModeManager} are installed dynamically by {@link
+     * HarnessAgent.Builder#build()}. The child must therefore receive the builder configuration
+     * before it is built; setting only {@code AgentState.planActive} later would expose the state
+     * without installing the write-operation guard.
+     */
+    private static void configurePlanMode(
+            HarnessAgent.Builder sub,
+            boolean planModeEnabled,
+            boolean planModeAllowShell,
+            String planFileDir) {
+        if (!planModeEnabled) {
+            return;
+        }
+        sub.enablePlanMode()
+                .planFileDirectory(planFileDir)
+                .allowShellInPlanMode(planModeAllowShell);
     }
 
     /**
@@ -509,7 +553,10 @@ final class HarnessAgentBuilderSupport {
 
     /** Returns a defensive copy of inherited parent tools filtered by the optional allowlist. */
     static Toolkit allowlistedInheritedToolkit(Toolkit parentToolkit, List<String> allowlist) {
-        Toolkit toolkit = parentToolkit != null ? parentToolkit.copy() : new Toolkit();
+        Toolkit toolkit =
+                parentToolkit != null
+                        ? parentToolkit.copy()
+                        : HarnessAgent.Builder.newDefaultToolkit();
         if (allowlist == null || allowlist.isEmpty()) {
             return toolkit;
         }
@@ -693,6 +740,12 @@ final class HarnessAgentBuilderSupport {
         if (b.taskRepository != null) {
             return b.taskRepository;
         }
+        if (b.distributedStore != null) {
+            TaskRepository distributed = b.distributedStore.taskRepository();
+            if (distributed != null) {
+                return distributed;
+            }
+        }
         Objects.requireNonNull(
                 wsManager,
                 "WorkspaceManager must be non-null when resolving the default TaskRepository;"
@@ -702,7 +755,28 @@ final class HarnessAgentBuilderSupport {
                 b.agentId != null && !b.agentId.isBlank()
                         ? b.agentId
                         : (b.name != null && !b.name.isBlank() ? b.name : "ReActAgent");
-        return new WorkspaceTaskRepository(wsManager, taskAgentId);
+        return new WorkspaceTaskRepository(wsManager, taskAgentId, resolvePeriodicGate(b));
+    }
+
+    /**
+     * Resolves a {@link PeriodicGate} for workspace-backed orphan sweeping: prefer the
+     * {@link DistributedStore}'s {@link BaseStore}, then a store attached to
+     * {@code RemoteFilesystemSpec}, otherwise a process-local gate.
+     */
+    private static PeriodicGate resolvePeriodicGate(HarnessAgent.Builder b) {
+        if (b.distributedStore != null) {
+            BaseStore store = b.distributedStore.baseStore();
+            if (store != null) {
+                return new StoreBackedPeriodicGate(store);
+            }
+        }
+        if (b.remoteFilesystemSpec != null) {
+            BaseStore store = b.remoteFilesystemSpec.store();
+            if (store != null) {
+                return new StoreBackedPeriodicGate(store);
+            }
+        }
+        return new LocalPeriodicGate();
     }
 
     // -----------------------------------------------------------------
@@ -761,42 +835,5 @@ final class HarnessAgentBuilderSupport {
         }
 
         return ordered;
-    }
-
-    /**
-     * Eagerly assembles a static {@link SkillBox} from {@code repos} (low-to-high priority) so
-     * callers using {@code disableDynamicSkills()} keep the legacy {@code SkillHook} path while
-     * still benefiting from the additive composition.
-     */
-    static SkillBox staticSkillBoxFromRepos(
-            List<AgentSkillRepository> repos, Toolkit agentToolkit) {
-        LinkedHashMap<String, AgentSkill> merged = new LinkedHashMap<>();
-        for (AgentSkillRepository repo : repos) {
-            try {
-                List<AgentSkill> skills = repo.getAllSkills();
-                if (skills == null) {
-                    continue;
-                }
-                for (AgentSkill skill : skills) {
-                    if (skill != null && skill.getName() != null) {
-                        merged.put(skill.getName(), skill);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn(
-                        "Failed to load skills from {}: {}",
-                        repo.getClass().getSimpleName(),
-                        e.getMessage());
-            }
-        }
-        if (merged.isEmpty()) {
-            return null;
-        }
-        SkillBox box = new SkillBox(agentToolkit);
-        for (AgentSkill skill : merged.values()) {
-            box.registerSkill(skill);
-        }
-        log.info("Loaded {} skills from {} repositories (static)", merged.size(), repos.size());
-        return box;
     }
 }

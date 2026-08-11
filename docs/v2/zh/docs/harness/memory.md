@@ -251,15 +251,18 @@ HarnessAgent.builder()
 ```java
 HarnessAgent.builder()
     ...
-    .disableMemoryHooks()      // 关掉 flush + 后台维护
-    .disableMemoryTools()      // 不注册 memory_search / memory_get / session_search
+    .disableMemoryHooks()      // 关掉 flush + 后台维护（并去掉「对话结束自动抽取」引导）
+    .disableMemoryTools()      // 不注册 memory_search / memory_get / memory_save / session_search
+                               // 同时去掉对应的 Memory Recall / 工具 Persistence 引导
     .build();
 ```
+
+两者一起用时，还会跳过 `<memory_context>`（`MEMORY.md`）注入，但保留 Domain Knowledge / AGENTS / knowledge 上下文。
 
 `disableMemoryHooks()` 是核选项；只想节流不想关，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。
 
 ## 相关文档
 
-- [工作区](./workspace) — `MEMORY.md` / `memory/` 在工作区的位置
-- [Context](./context) — 永不压缩的对话日志 `*.log.jsonl`
-- [架构](./architecture) — 长会话事实如何沉淀进 `MEMORY.md`
+- [工作区](./workspace.md) — `MEMORY.md` / `memory/` 在工作区的位置
+- [Context](../building-blocks/context.md) — 永不压缩的对话日志 `*.log.jsonl`
+- [架构](./architecture.md) — 长会话事实如何沉淀进 `MEMORY.md`

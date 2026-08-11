@@ -2,7 +2,7 @@
 
 AgentScope Java supports multiple models, RAG stores, and extensions, each requiring different third-party SDKs. Bundling everything together would bloat your project, so we offer two ways to add dependencies:
 
-- **All-in-one**: Single dependency with DashScope SDK and MCP SDK included, get started quickly
+- **All-in-one**: Single dependency with common model extensions (OpenAI / Gemini / Anthropic / DashScope / Ollama) and MCP SDK included, get started quickly
 - **Core + extensions**: Minimal core package, add extension modules as needed, for strict dependency control
 
 For most cases, all-in-one is enough. Switch to core + extensions when you need fine-grained dependency control.
@@ -13,7 +13,7 @@ For most cases, all-in-one is enough. Switch to core + extensions when you need 
 
 | Approach | Use Case | Features |
 |----------|----------|----------|
-| **all-in-one** | Quick start, most users | Single dependency, includes DashScope SDK |
+| **all-in-one** | Quick start, most users | Single dependency, includes common model extensions and MCP SDK |
 | **core + extensions** | Fine-grained control | On-demand imports, minimal dependencies |
 
 ## All-in-One (Recommended)
@@ -23,32 +23,33 @@ For most cases, all-in-one is enough. Switch to core + extensions when you need 
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.12'
+implementation 'io.agentscope:agentscope:2.0.0'
 ```
 
 ### Included Dependencies
 
-The all-in-one package includes these dependencies by default:
+The all-in-one package (`io.agentscope:agentscope`) already bundles the common model extensions and their required third-party SDKs. **You do not need to add model-provider SDKs separately:**
 
-- DashScope model support (Qwen series models, via native HTTP calls, no additional SDK required)
+- OpenAI model support (`agentscope-extensions-model-openai`, native HTTP — no `openai-java` required)
+- Google Gemini model support (includes Google GenAI SDK)
+- Anthropic model support (includes Anthropic Java SDK)
+- DashScope model support (Qwen series)
+- Ollama model support
 - MCP SDK (Model Context Protocol)
 - Reactor Core, Jackson, SLF4J (base frameworks)
 
 ### Additional Dependencies
 
-When using other models or features, add the corresponding dependencies:
+Add the following only when using **core + extensions**, or when you need runtime drivers / optional components that are not covered above. All-in-one users do **not** need to manually add OpenAI / Gemini / Anthropic / DashScope / Ollama SDKs for the models listed in the previous section.
 
 | Feature                   | Dependency                                                                               | Maven Coordinates                |
 |---------------------------|------------------------------------------------------------------------------------------|----------------------------------|
-| **OpenAI Models**         | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java)          | `com.openai:openai-java`         |
-| **Google Gemini Models**  | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai)  | `com.google.genai:google-genai`  |
-| **Anthropic Models**      | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java`   |
 | **Mem0 Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **ReME Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **Bailian RAG**           | [Bailian SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229)          | `com.aliyun:bailian20231229`     |
@@ -65,20 +66,10 @@ When using other models or features, add the corresponding dependencies:
 | **Document Processing** | [Apache Tika Core](https://central.sonatype.com/artifact/org.apache.tika/tika-core) + [Apache Tika Parsers](https://central.sonatype.com/artifact/org.apache.tika/tika-parsers-standard-package) | `org.apache.tika:tika-core` + `org.apache.tika:tika-parsers-standard-package` |
 | **Nacos Registry**        | [Nacos Client](https://central.sonatype.com/artifact/com.alibaba.nacos/nacos-client)     | `com.alibaba.nacos:nacos-client` |
 
-#### Example: Using OpenAI Models
-
-```xml
-<!-- Add on top of agentscope -->
-<dependency>
-    <groupId>com.openai</groupId>
-    <artifactId>openai-java</artifactId>
-</dependency>
-```
-
 #### Example: Using Qdrant RAG + PDF Processing
 
 ```xml
-<!-- Add on top of agentscope -->
+<!-- Add on top of agentscope when the runtime drivers are not already available -->
 <dependency>
     <groupId>io.qdrant</groupId>
     <artifactId>client</artifactId>
@@ -136,13 +127,13 @@ For fine-grained dependency control, use `agentscope-core` with extension module
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.12'
+implementation 'io.agentscope:agentscope-core:2.0.0'
 ```
 
 ### Extension Modules
@@ -202,7 +193,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -214,7 +205,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -233,7 +224,7 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -243,6 +234,6 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.12</version>
+    <version>2.0.0</version>
 </dependency>
 ```

@@ -23,10 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestConstants;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
@@ -191,6 +195,55 @@ class ReActAgentStructuredOutputWithToolsTest {
                                 .build());
     }
 
+    private static Function<List<Msg>, List<ChatResponse>> fencedNativeResponder() {
+        return msgs ->
+                List.of(
+                        ChatResponse.builder()
+                                .id("msg_1")
+                                .content(List.of(TextBlock.builder().text("```json\n").build()))
+                                .build(),
+                        ChatResponse.builder()
+                                .id("msg_1")
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text(
+                                                                "{\"city\":\"Shanghai\","
+                                                                    + "\"temperature\":\"32°C\"}")
+                                                        .build()))
+                                .build(),
+                        ChatResponse.builder()
+                                .id("msg_1")
+                                .content(List.of(TextBlock.builder().text("\n```").build()))
+                                .build());
+    }
+
+    private static final class MarkdownFenceRemovingMiddleware implements MiddlewareBase {
+
+        @Override
+        public Flux<AgentEvent> onModelCall(
+                Agent agent,
+                RuntimeContext ctx,
+                ModelCallInput input,
+                Function<ModelCallInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .map(
+                            event -> {
+                                if (!(event instanceof TextBlockDeltaEvent textDelta)) {
+                                    return event;
+                                }
+                                String delta = textDelta.getDelta();
+                                if (delta == null
+                                        || (!delta.startsWith("```json")
+                                                && !delta.endsWith("```"))) {
+                                    return event;
+                                }
+                                return new TextBlockDeltaEvent(
+                                        textDelta.getReplyId(), textDelta.getBlockId(), "");
+                            });
+        }
+    }
+
     private static Msg userMsg() {
         return Msg.builder()
                 .name("user")
@@ -222,6 +275,31 @@ class ReActAgentStructuredOutputWithToolsTest {
         assertFalse(
                 model.toolListContainsGenerateResponse(),
                 "Native path should not inject generate_response tool");
+    }
+
+    @Test
+    @DisplayName("Model-call text delta replacement is used for native structured output")
+    void modelCallTextDeltaReplacement_updatesNativeStructuredOutput() {
+        ConfigurableMockModel model =
+                new ConfigurableMockModel(true, true, fencedNativeResponder());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .middlewares(List.of(new MarkdownFenceRemovingMiddleware()))
+                        .build();
+
+        Msg result =
+                agent.call(userMsg(), WeatherInfo.class)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(result);
+        assertEquals("{\"city\":\"Shanghai\",\"temperature\":\"32°C\"}", result.getTextContent());
+        assertTrue(result.hasStructuredData());
+        WeatherInfo info = result.getStructuredData(WeatherInfo.class);
+        assertEquals("Shanghai", info.city);
+        assertEquals("32°C", info.temperature);
     }
 
     @Test
