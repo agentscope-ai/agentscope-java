@@ -33,10 +33,12 @@ public class AgentEventConverterRegistry {
 
     private final Map<Class<? extends AgentEvent>, AgentEventConverter> converters;
     private final RawAgentEventConverter rawConverter = new RawAgentEventConverter();
+    private final SubagentEventConverter subagentConverter = new SubagentEventConverter();
     private final List<AguiEventEnricher> enrichers;
+    private final boolean emitSubagentEventsAsNative;
 
     public AgentEventConverterRegistry() {
-        this(List.of(), List.of());
+        this(List.of(), List.of(), false);
     }
 
     /**
@@ -47,8 +49,26 @@ public class AgentEventConverterRegistry {
      */
     public AgentEventConverterRegistry(
             List<AgentEventConverter> customConverters, List<AguiEventEnricher> enrichers) {
+        this(customConverters, enrichers, false);
+    }
+
+    /**
+     * Create a registry with built-in converters, custom converters, enrichers, and subagent
+     * presentation mode.
+     *
+     * @param customConverters converters registered after built-in converters
+     * @param enrichers enrichers applied after each conversion
+     * @param emitSubagentEventsAsNative when {@code true}, child events use the same converters as
+     *     the parent; when {@code false} (default), {@code source != null} events become {@code
+     *     subagent.*} CUSTOM / RAW events
+     */
+    public AgentEventConverterRegistry(
+            List<AgentEventConverter> customConverters,
+            List<AguiEventEnricher> enrichers,
+            boolean emitSubagentEventsAsNative) {
         Map<Class<? extends AgentEvent>, AgentEventConverter> map = new LinkedHashMap<>();
         register(map, new AgentLifecycleEventConverter());
+        register(map, new PermissionConfirmEventConverter());
         register(map, new TextBlockEventConverter());
         register(map, new ThinkingBlockEventConverter());
         register(map, new ToolCallEventConverter());
@@ -62,6 +82,7 @@ public class AgentEventConverterRegistry {
         }
         this.converters = Map.copyOf(map);
         this.enrichers = enrichers != null ? List.copyOf(enrichers) : List.of();
+        this.emitSubagentEventsAsNative = emitSubagentEventsAsNative;
     }
 
     /**
@@ -75,7 +96,13 @@ public class AgentEventConverterRegistry {
         Objects.requireNonNull(event, "event cannot be null");
         Objects.requireNonNull(context, "context cannot be null");
         context.beginEvent();
-        converters.getOrDefault(event.getClass(), rawConverter).convert(event, context);
+        if (!emitSubagentEventsAsNative
+                && event.getSource() != null
+                && !event.getSource().isBlank()) {
+            subagentConverter.convert(event, context);
+        } else {
+            converters.getOrDefault(event.getClass(), rawConverter).convert(event, context);
+        }
         return enrich(event, context.drainEvents(), context);
     }
 

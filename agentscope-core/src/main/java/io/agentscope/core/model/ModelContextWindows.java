@@ -103,6 +103,20 @@ public final class ModelContextWindows {
                     Map.entry("minimax-m2", 204_800),
                     Map.entry("m2-her", 65_536));
 
+    public static final Map<String, Integer> KIMI =
+            Map.ofEntries(
+                    Map.entry("kimi-k3", 1_048_576),
+                    Map.entry("kimi-k2.7-code-highspeed", 262_144),
+                    Map.entry("kimi-k2.7-code", 262_144),
+                    Map.entry("kimi-k2.6", 262_144),
+                    Map.entry("kimi-k2.5", 262_144),
+                    Map.entry("moonshot-v1-128k-vision-preview", 131_072),
+                    Map.entry("moonshot-v1-128k", 131_072),
+                    Map.entry("moonshot-v1-32k-vision-preview", 32_768),
+                    Map.entry("moonshot-v1-32k", 32_768),
+                    Map.entry("moonshot-v1-8k-vision-preview", 8_192),
+                    Map.entry("moonshot-v1-8k", 8_192));
+
     public static final Map<String, Integer> ANTHROPIC =
             Map.ofEntries(
                     Map.entry("claude-opus-4", 200_000),

@@ -15,5 +15,35 @@
  */
 package io.agentscope.harness.agent.subagent.task;
 
-/** Status snapshot returned by the remote task HTTP API ({@code GET /tasks/{taskId}}). */
-public record RemoteTaskStatus(String status, String error) {}
+import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
+import java.util.List;
+
+/**
+ * Status snapshot returned by the remote task HTTP API ({@code GET /tasks/{taskId}}).
+ *
+ * <p>Known status values: {@code pending}, {@code running}, {@code success}, {@code error},
+ * {@code cancelled}, {@code awaiting_confirm}.
+ */
+public record RemoteTaskStatus(
+        String status, String error, List<RemotePendingConfirm> pendingConfirms) {
+
+    public RemoteTaskStatus(String status, String error) {
+        this(status, error, List.of());
+    }
+
+    public boolean isAwaitingConfirm() {
+        return "awaiting_confirm".equalsIgnoreCase(status);
+    }
+
+    public boolean isTerminalSuccess() {
+        return "success".equalsIgnoreCase(status);
+    }
+
+    public boolean isTerminalFailure() {
+        return "error".equalsIgnoreCase(status) || "failed".equalsIgnoreCase(status);
+    }
+
+    public boolean isCancelled() {
+        return "cancelled".equalsIgnoreCase(status) || "canceled".equalsIgnoreCase(status);
+    }
+}

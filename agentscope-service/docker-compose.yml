@@ -1,0 +1,140 @@
+# docker-compose.yml — AgentScope Service with aistiod (Go) + Java DP
+#
+#   docker compose up --build
+#
+# Prerequisites:
+#   mvn -pl agentscope-service -am install -DskipTests
+#   (cd frontend && npm run build)   # emits aistio/ui, baked into the image
+#
+# Services:
+#   gateway    :8080
+#   control    :8081  (aistiod: /api/*, /api/v1/*, console SPA)
+#   data       :8082
+#   scheduler  :8083
+#   db         postgres (schemas cp + rt + dp)
+
+x-builder-env: &builder-env
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-jdbc}
+  BUILDER_DB_URL: jdbc:postgresql://db:5432/builder?currentSchema=dp
+  BUILDER_DB_DRIVER: org.postgresql.Driver
+  BUILDER_DB_USER: builder
+  BUILDER_DB_PASSWORD: builder
+  BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:-builder-compose-dev-secret-change-in-production-32chars}
+  BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-compose-local-internal-token-at-least-32chars}
+  BUILDER_CONTROL_URL: http://control:8081
+  BUILDER_DATA_URL: http://data:8082
+  DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+
+x-plane-health: &plane-health
+  test: ["CMD-SHELL", "curl -sf http://127.0.0.1:$${SERVER_PORT}/actuator/health || exit 1"]
+  interval: 10s
+  timeout: 5s
+  retries: 30
+  start_period: 40s
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: builder
+      POSTGRES_USER: builder
+      POSTGRES_PASSWORD: builder
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U builder -d builder"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro
+    ports:
+      - "5432:5432"
+
+  control:
+    build:
+      context: ./aistio
+      dockerfile: Dockerfile
+    command:
+      - --storage-driver=postgres
+      - --storage-dsn=postgres://builder:builder@db:5432/builder?sslmode=disable&search_path=rt
+      - --log-format=console
+    environment:
+      AISTIO_ENABLE_KUBERNETES: "false"
+      AISTIO_PRODUCT_DSN: postgres://builder:builder@db:5432/builder?sslmode=disable
+      AISTIO_HTTP_BIND: ":8081"
+      BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:-builder-compose-dev-secret-change-in-production-32chars}
+      BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-compose-local-internal-token-at-least-32chars}
+      BUILDER_DATA_URL: http://data:8082
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "/aistiod", "--healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  data:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.plane
+      args:
+        JAR_FILE: service-dataplane/target/service-dataplane-2.0.1-SNAPSHOT.jar
+    environment:
+      << : *builder-env
+      SERVER_PORT: 8082
+      BUILDER_DATAPLANE_PUBLIC_URL: http://data:8082
+    healthcheck:
+      << : *plane-health
+    depends_on:
+      db:
+        condition: service_healthy
+      control:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.plane
+      args:
+        JAR_FILE: service-scheduler/target/service-scheduler-2.0.1-SNAPSHOT.jar
+    environment:
+      << : *builder-env
+      SERVER_PORT: 8083
+      BUILDER_SCHEDULER_URL: http://scheduler:8083
+    healthcheck:
+      << : *plane-health
+    depends_on:
+      control:
+        condition: service_healthy
+      data:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.plane
+      args:
+        JAR_FILE: service-gateway/target/service-gateway-2.0.1-SNAPSHOT.jar
+    environment:
+      SERVER_PORT: 8080
+      BUILDER_CONTROL_URL: http://control:8081
+      BUILDER_DATA_URL: http://data:8082
+      BUILDER_SCHEDULER_URL: http://scheduler:8083
+    ports:
+      - "8080:8080"
+    healthcheck:
+      << : *plane-health
+    depends_on:
+      control:
+        condition: service_healthy
+      data:
+        condition: service_healthy
+      scheduler:
+        condition: service_healthy
+
+volumes:
+  db-data:

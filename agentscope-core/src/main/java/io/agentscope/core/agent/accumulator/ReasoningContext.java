@@ -240,6 +240,16 @@ public class ReasoningContext {
     }
 
     /**
+     * Replace accumulated text after {@code onModelCall} middleware transforms text delta events.
+     *
+     * @hidden
+     * @param text text reconstructed from the transformed event stream
+     */
+    public void replaceAccumulatedText(String text) {
+        textAcc.replace(text);
+    }
+
+    /**
      * Get the accumulated thinking content.
      *
      * @hidden
