@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
@@ -44,9 +45,17 @@ import org.slf4j.LoggerFactory;
 /**
  * A {@link BaseSandboxFilesystem} that delegates execution to a live {@link Sandbox}.
  *
- * <p>Stable proxy created at agent build time; a fresh {@link Sandbox} is injected on each call
- * via the volatile {@code sandbox} field by {@link
- * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware}.
+ * <p>Stable proxy created once per agent bean. The live {@link Sandbox} for a call is bound
+ * <em>per-call</em> on the invocation's {@link RuntimeContext} by {@link
+ * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} and resolved here via {@link
+ * #requireSandbox(RuntimeContext)} — this per-call binding takes precedence and is what keeps
+ * concurrent distinct-session calls on the same agent bean isolated (issue #2490). The legacy
+ * {@code volatile sandbox} field is retained only as a best-effort fallback for context-free
+ * internal callers that resolve the filesystem with a shared empty {@link RuntimeContext} (e.g.
+ * {@link io.agentscope.harness.agent.bus.WorkspaceMessageBus}, which carries no per-call binding).
+ * The middleware still maintains that field via {@link #setSandbox} on acquire and {@link
+ * #clearSandboxIfCurrent} on release, so it remains last-writer-wins under concurrency and must not
+ * be relied on for isolation.
  */
 public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements SandboxAware {
 
@@ -60,13 +69,26 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     @Override
-    public void setSandbox(Sandbox sandbox) {
+    public synchronized void setSandbox(Sandbox sandbox) {
         this.sandbox = sandbox;
     }
 
     @Override
     public Sandbox getSandbox() {
         return sandbox;
+    }
+
+    /**
+     * Clears the fallback {@code sandbox} field only if it still points at {@code expected}. Used by
+     * {@link io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} on release so a
+     * finishing call never nulls a concurrent sibling call's fallback binding (issue #2490).
+     *
+     * @param expected the sandbox this call bound at acquire time
+     */
+    public synchronized void clearSandboxIfCurrent(Sandbox expected) {
+        if (this.sandbox == expected) {
+            this.sandbox = null;
+        }
     }
 
     @Override
@@ -77,7 +99,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public ExecuteResponse execute(
             RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         try {
             ExecResult result = active.exec(runtimeContext, command, timeoutSeconds);
             return new ExecuteResponse(
@@ -100,7 +122,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         List<FileUploadResponse> results = new ArrayList<>(files.size());
 
         for (Map.Entry<String, byte[]> file : files) {
@@ -137,7 +159,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 
         for (String path : paths) {
@@ -182,8 +204,23 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         return results;
     }
 
-    private Sandbox requireSandbox() {
-        Sandbox s = sandbox;
+    /**
+     * Resolves the {@link Sandbox} bound to the current call, preferring the per-call binding
+     * carried on {@code runtimeContext} (concurrency-safe under parallel distinct-session calls,
+     * issue #2490) and falling back to the legacy {@code sandbox} field for direct
+     * {@link #setSandbox} callers that do not thread a per-call context.
+     */
+    private Sandbox requireSandbox(RuntimeContext runtimeContext) {
+        Sandbox s = null;
+        if (runtimeContext != null) {
+            SandboxAcquireResult bound = runtimeContext.get(SandboxAcquireResult.class);
+            if (bound != null) {
+                s = bound.getSandbox();
+            }
+        }
+        if (s == null) {
+            s = sandbox;
+        }
         if (s == null) {
             throw new SandboxException.SandboxConfigurationException(
                     "No active sandbox — sandbox filesystem used outside of a call context");
