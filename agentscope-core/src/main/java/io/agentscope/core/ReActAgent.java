@@ -143,6 +143,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -2690,8 +2691,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .firePreActing(pendingToolCalls, toolkit)
                     .flatMap(
                             toolCalls -> {
-                                List<AgentEvent> coreToolResultEvents = new ArrayList<>();
-                                List<AgentEvent> transformedToolResultEvents = new ArrayList<>();
+                                List<AgentEvent> coreToolResultEvents =
+                                        new CopyOnWriteArrayList<>();
+                                List<AgentEvent> transformedToolResultEvents =
+                                        new CopyOnWriteArrayList<>();
                                 Function<ActingInput, Flux<AgentEvent>> actingCore =
                                         ai ->
                                                 actingStream(ai.toolCalls(), replyId, resultHolder)
