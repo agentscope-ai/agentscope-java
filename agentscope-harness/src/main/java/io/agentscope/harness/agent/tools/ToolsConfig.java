@@ -28,19 +28,21 @@ import java.util.Map;
  * <p>Two responsibilities:
  *
  * <ul>
- *   <li>{@link #allow} / {@link #deny} — filter the harness's built-in tool surface.
+ *   <li>{@link #allow} / {@link #deny} — filter the <em>product catalog</em> tool surface
+ *       (filesystem, shell, web, …).
  *   <li>{@link #mcpServers} — declare additional tools served by external MCP servers.
  * </ul>
  *
- * <p>Filter semantics: when {@code allow} is non-empty, only tools whose names appear in it are
- * kept; {@code deny} always wins regardless of {@code allow}. Empty/absent values mean "no
- * filtering on this side".
+ * <p>Filter semantics: when {@code allow} is non-empty, catalogued tools not listed are removed;
+ * {@link HarnessPlatformTools} (subagents, teams, tasks, plan, skills, memory helpers, …) always
+ * survive {@code allow}. {@code deny} always wins. Empty/absent values mean "no filtering on this
+ * side".
  */
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ToolsConfig {
 
-    /** When non-empty, only tools whose name is in this list are exposed to the model. */
+    /** When non-empty, catalogued tools not listed here are hidden (platform tools exempt). */
     @JsonProperty("allow")
     private List<String> allow;
 

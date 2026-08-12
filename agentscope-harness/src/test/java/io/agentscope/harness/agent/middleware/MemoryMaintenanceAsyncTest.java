@@ -31,17 +31,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 class MemoryMaintenanceAsyncTest {
-
-    @AfterEach
-    void clearThrottleState() {
-        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.clear();
-    }
 
     @Test
     void asyncMaintenanceDoesNotDelayAgentCompletion() throws Exception {

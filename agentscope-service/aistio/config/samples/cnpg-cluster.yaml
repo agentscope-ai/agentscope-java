@@ -1,0 +1,45 @@
+# Example PostgreSQL cluster for Aistio's runtime store, provisioned via
+# CloudNativePG (https://cloudnative-pg.io). Install the CloudNativePG
+# operator first:
+#
+#   kubectl apply --server-side -f \
+#     https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.24.0.yaml
+#
+# Then apply this file, and point Aistio at the generated app Secret:
+#
+#   kubectl apply -f config/samples/cnpg-cluster.yaml
+#   helm upgrade --install aistio ./helm/aistio -f helm/aistio/profiles/postgres.yaml \
+#     --set storage.postgres.existingSecret=aistio-pg-app \
+#     --set storage.postgres.existingSecretKey=uri
+#
+# CloudNativePG publishes "<cluster-name>-app" (owner credentials/DSN for the
+# "app" database) and "<cluster-name>-superuser" Secrets automatically; each
+# contains a "uri" key with a ready-to-use PostgreSQL connection string.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: aistio-pg
+  namespace: aistio-system
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+
+  bootstrap:
+    initdb:
+      database: aistio
+      owner: aistio
+
+  storage:
+    size: 10Gi
+    storageClass: standard
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  monitoring:
+    enablePodMonitor: false

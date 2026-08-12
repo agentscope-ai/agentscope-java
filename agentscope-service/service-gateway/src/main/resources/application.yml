@@ -1,0 +1,119 @@
+server:
+  port: ${BUILDER_GATEWAY_PORT:8080}
+
+spring:
+  application:
+    name: builder-gateway
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            # Long-lived SSE (/api/sessions/*/events/stream) must not be cut by the default timeout.
+            connect-timeout: 5000
+            response-timeout: 1h
+          default-filters:
+            # Never forward client-supplied internal auth headers through the public gateway.
+            - RemoveRequestHeader=X-Builder-Internal-Token
+            - RemoveRequestHeader=X-Builder-Internal-User
+          routes:
+            # ------------------------------------------------------------------
+            # Reject plane-to-plane internal APIs at the public edge.
+            # ------------------------------------------------------------------
+            - id: reject-internal
+              uri: no://op
+              order: -1
+              predicates:
+                - Path=/api/internal/**
+              filters:
+                - SetStatus=404
+
+            # ------------------------------------------------------------------
+            # Data plane — session turns and the worker HTTP API.
+            # Evaluated first (order 0): these overlap the control plane's
+            # /api/sessions/** and /api/environments/** namespaces.
+            # ------------------------------------------------------------------
+            - id: data-session-turn
+              uri: ${builder.data-plane-url}
+              order: 0
+              predicates:
+                # user.message + event log + SSE stream + hands-stats
+                - Path=/api/sessions/*/events/**,/api/sessions/*/hands-stats
+            - id: data-environment-work
+              uri: ${builder.data-plane-url}
+              order: 0
+              predicates:
+                # work queue server side (poll/ack/heartbeat/stop/stats)
+                - Path=/api/environments/*/work/**
+            - id: data-selfhosted-worker
+              uri: ${builder.data-plane-url}
+              order: 0
+              predicates:
+                # self-hosted worker callbacks: pending-tools / tool-results / skills
+                - Path=/api/environments/*/sessions/*/**
+            - id: data-hands-observability
+              uri: ${builder.data-plane-url}
+              order: 0
+              predicates:
+                - Path=/api/hands/**
+
+            # ------------------------------------------------------------------
+            # Scheduler plane — outbound send + IM platform callbacks/webhooks.
+            # Must be higher priority than control-api's /api/channels/** CRUD.
+            # ------------------------------------------------------------------
+            - id: scheduler-outbound
+              uri: ${builder.scheduler-plane-url}
+              order: 5
+              predicates:
+                - Path=/api/outbound/**
+
+            - id: scheduler-channel-callbacks
+              uri: ${builder.scheduler-plane-url}
+              order: 6
+              predicates:
+                - Path=/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
+
+            # ------------------------------------------------------------------
+            # Control plane (aistiod) — Managed Agents APIs, the /api/v1
+            # management API, and the console SPA, all on one upstream port.
+            # ------------------------------------------------------------------
+            - id: control-api
+              uri: ${builder.control-plane-url}
+              order: 10
+              predicates:
+                - Path=/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/workspaces/**,/api/marketplaces/**,/api/toolsets/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/files,/api/files/**,/api/v1/**
+              filters:
+                # Env-key auth is data-plane only; strip if a client spoofs it toward control.
+                - RemoveRequestHeader=X-Builder-Environment-Key
+            - id: control-spa
+              uri: ${builder.control-plane-url}
+              order: 100
+              predicates:
+                # Console SPA + static assets (and anything else: the control
+                # plane 404s what it does not own).
+                - Path=/**
+              filters:
+                - RemoveRequestHeader=X-Builder-Environment-Key
+
+# --------------------------------------------------------------------------
+# Cross-plane wiring — same property family as the scheduler plane.
+# --------------------------------------------------------------------------
+builder:
+  control-plane-url: ${BUILDER_CONTROL_URL:http://localhost:8081}
+  data-plane-url: ${BUILDER_DATA_URL:http://localhost:8082}
+  scheduler-plane-url: ${BUILDER_SCHEDULER_URL:http://localhost:8083}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    io.agentscope: INFO
+    org.springframework.cloud.gateway: INFO
