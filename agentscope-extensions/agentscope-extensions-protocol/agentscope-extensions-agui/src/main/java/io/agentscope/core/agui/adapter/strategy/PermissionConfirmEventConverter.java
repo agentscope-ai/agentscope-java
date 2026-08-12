@@ -54,7 +54,7 @@ import java.util.Set;
  * {@code ToolUseBlock}, and tool-input validation reads {@code content} directly with no fallback to
  * {@code input}; a null content would fail the resume with {@code argument "content" is null}.
  *
- * <p>{@link UserConfirmResultEvent} is intentionally registered here as a no-op..
+ * <p>{@link UserConfirmResultEvent} is intentionally registered here as a no-op.
  */
 final class PermissionConfirmEventConverter implements AgentEventConverter {
 
