@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -30,6 +31,9 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -51,11 +55,13 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -63,6 +69,10 @@ import reactor.core.scheduler.Schedulers;
 /** Per-(userId, sessionId) state access / persistence API on {@link ReActAgent}. */
 @DisplayName("ReActAgent per-session state API")
 class ReActAgentPerSessionStateTest {
+
+    static class StructuredResponse {
+        public String value;
+    }
 
     private static final class NoopModel extends ChatModelBase {
         @Override
@@ -435,6 +445,201 @@ class ReActAgentPerSessionStateTest {
         assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
     }
 
+    @Test
+    @DisplayName("model errors checkpoint committed context without partial output")
+    void modelErrorCheckpointsCommittedContext() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("model-error").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(failingReasoningModel())
+                        .stateStore(store)
+                        .build();
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                first.streamEvents(List.of(userMsg("hello")), ctx)
+                                        .blockLast(Duration.ofSeconds(5)));
+
+        assertEquals("model stream failed", error.getMessage());
+        AgentState restored = agent(store).getAgentState("u1", "model-error");
+        assertTrue(allText(restored).contains("hello"));
+        assertFalse(allText(restored).contains("visible before error"));
+        assertFalse(hasToolUse(restored, "call-malformed"));
+    }
+
+    @Test
+    @DisplayName("acting errors remove newly persisted tool calls without results")
+    void actingErrorDropsUncommittedToolCallBeforeCheckpoint() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx =
+                RuntimeContext.builder().userId("u1").sessionId("acting-error").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(completedToolCallModel())
+                        .stateStore(store)
+                        .middleware(new FailingActingMiddleware())
+                        .build();
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                first.streamEvents(List.of(userMsg("hello")), ctx)
+                                        .blockLast(Duration.ofSeconds(5)));
+
+        assertEquals("acting failed", error.getMessage());
+        AgentState restored = agent(store).getAgentState("u1", "acting-error");
+        assertTrue(allText(restored).contains("completed response"));
+        assertFalse(hasToolUse(restored, "call-complete"));
+    }
+
+    @Test
+    @DisplayName("stream cancellation checkpoints committed context")
+    void cancellationCheckpointsCommittedContext() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CountDownLatch chunksEmitted = new CountDownLatch(1);
+        ChatModelBase model =
+                model(
+                        Flux.just(
+                                        response(
+                                                TextBlock.builder()
+                                                        .text("visible before cancel")
+                                                        .build()),
+                                        response(
+                                                ToolUseBlock.builder()
+                                                        .id("call-cancelled")
+                                                        .name("echo")
+                                                        .content("{\"value\":")
+                                                        .build()))
+                                .doOnComplete(chunksEmitted::countDown)
+                                .concatWith(Flux.never()));
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("cancelled").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        Disposable subscription =
+                first.streamEvents(List.of(userMsg("hello")), ctx).subscribe(event -> {});
+        assertTrue(
+                chunksEmitted.await(5, TimeUnit.SECONDS),
+                "visible chunks should be consumed before cancellation");
+
+        subscription.dispose();
+
+        AgentState restored = agent(store).getAgentState("u1", "cancelled");
+        assertTrue(allText(restored).contains("hello"));
+        assertFalse(allText(restored).contains("visible before cancel"));
+        assertFalse(hasToolUse(restored, "call-cancelled"));
+    }
+
+    @Test
+    @DisplayName("structured-output errors checkpoint committed context")
+    void structuredOutputErrorCheckpointsCommittedContext() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx =
+                RuntimeContext.builder().userId("u1").sessionId("structured-error").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(failingReasoningModel())
+                        .stateStore(store)
+                        .build();
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                first.call(List.of(userMsg("hello")), StructuredResponse.class, ctx)
+                                        .block());
+
+        assertEquals("model stream failed", error.getMessage());
+        AgentState restored = agent(store).getAgentState("u1", "structured-error");
+        assertTrue(allText(restored).contains("hello"));
+        assertFalse(allText(restored).contains("visible before error"));
+        assertFalse(hasToolUse(restored, "call-malformed"));
+    }
+
+    @Test
+    @DisplayName("native structured-output cancellation checkpoints committed context")
+    void nativeStructuredOutputCancellationCheckpointsCommittedContext() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CountDownLatch chunkEmitted = new CountDownLatch(1);
+        ChatModelBase model =
+                model(
+                        Flux.just(
+                                        response(
+                                                TextBlock.builder()
+                                                        .text("visible before cancel")
+                                                        .build()))
+                                .doOnComplete(chunkEmitted::countDown)
+                                .concatWith(Flux.never()),
+                        true);
+        RuntimeContext ctx =
+                RuntimeContext.builder().userId("u1").sessionId("structured-cancel").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        Disposable subscription =
+                first.call(List.of(userMsg("hello")), StructuredResponse.class, ctx).subscribe();
+        assertTrue(
+                chunkEmitted.await(5, TimeUnit.SECONDS),
+                "visible chunk should be consumed before cancellation");
+
+        subscription.dispose();
+
+        AgentState restored = agent(store).getAgentState("u1", "structured-cancel");
+        assertTrue(allText(restored).contains("hello"));
+        assertFalse(allText(restored).contains("visible before cancel"));
+    }
+
+    @Test
+    @DisplayName("checkpoint failures do not replace the original model error")
+    void checkpointFailurePreservesOriginalModelError() {
+        InMemoryAgentStateStore store =
+                new InMemoryAgentStateStore() {
+                    @Override
+                    public long saveIfVersion(
+                            String userId,
+                            String sessionId,
+                            String key,
+                            io.agentscope.core.state.State value,
+                            long expectedVersion) {
+                        throw new IllegalStateException("state save failed");
+                    }
+                };
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("save-error").build();
+        ReActAgent first =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(failingReasoningModel())
+                        .stateStore(store)
+                        .build();
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> first.call(List.of(userMsg("hello")), ctx).block());
+
+        assertEquals("model stream failed", error.getMessage());
+    }
+
     private static final class DelayedFirstChunkModel extends ChatModelBase {
         private final CountDownLatch subscribed;
 
@@ -466,12 +671,84 @@ class ReActAgentPerSessionStateTest {
         }
     }
 
+    private static ChatModelBase completedToolCallModel() {
+        return model(
+                Flux.just(
+                        response(
+                                TextBlock.builder().text("completed response").build(),
+                                ToolUseBlock.builder()
+                                        .id("call-complete")
+                                        .name("echo")
+                                        .input(java.util.Map.of("value", "done"))
+                                        .build())));
+    }
+
+    private static ChatModelBase failingReasoningModel() {
+        return model(
+                Flux.concat(
+                        Flux.just(
+                                response(TextBlock.builder().text("visible before error").build()),
+                                response(
+                                        ToolUseBlock.builder()
+                                                .id("call-malformed")
+                                                .name("echo")
+                                                .content("{\"value\":")
+                                                .build())),
+                        Flux.error(new IllegalStateException("model stream failed"))));
+    }
+
+    private static ChatModelBase model(Flux<ChatResponse> responses) {
+        return model(responses, false);
+    }
+
+    private static ChatModelBase model(
+            Flux<ChatResponse> responses, boolean supportsNativeStructuredOutput) {
+        return new ChatModelBase() {
+            @Override
+            public String getModelName() {
+                return "test";
+            }
+
+            @Override
+            protected Flux<ChatResponse> doStream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                return responses;
+            }
+
+            @Override
+            public boolean supportsNativeStructuredOutput() {
+                return supportsNativeStructuredOutput;
+            }
+        };
+    }
+
+    private static final class FailingActingMiddleware implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return Flux.error(new IllegalStateException("acting failed"));
+        }
+    }
+
+    private static ChatResponse response(ContentBlock... blocks) {
+        return ChatResponse.builder().content(List.of(blocks)).build();
+    }
+
     private static Msg userMsg(String text) {
         return Msg.builder()
                 .name("user")
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
                 .build();
+    }
+
+    private static boolean hasToolUse(AgentState state, String id) {
+        return state.getContext().stream()
+                .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
+                .anyMatch(block -> id.equals(block.getId()));
     }
 
     private static List<String> allText(AgentState state) {

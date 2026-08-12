@@ -480,24 +480,55 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (stateStore == null) {
             return Mono.empty();
         }
+        return Mono.<Void>fromRunnable(() -> persistState(scope))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private void persistState(CallExecution scope) {
         syncToolkitToState(scope.state);
         SlotRef ref = SlotRef.parse(scope.slotKey);
-        AgentState toSave = scope.state;
-        return Mono.<Void>fromRunnable(
-                        () -> {
-                            long newVersion =
-                                    persistAgentStateCas(
-                                            ref.userId,
-                                            ref.sessionId,
-                                            scope.slotKey,
-                                            toSave,
-                                            scope.loadedVersion,
-                                            scope.loadedContextSize);
-                            if (newVersion != AgentStateStore.UNVERSIONED) {
-                                scope.loadedVersion = newVersion;
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
+        long newVersion =
+                persistAgentStateCas(
+                        ref.userId,
+                        ref.sessionId,
+                        scope.slotKey,
+                        scope.state,
+                        scope.loadedVersion,
+                        scope.loadedContextSize);
+        if (newVersion != AgentStateStore.UNVERSIONED) {
+            scope.loadedVersion = newVersion;
+        }
+    }
+
+    private Mono<Msg> saveStateAfterError(CallExecution scope, Throwable error) {
+        if (error instanceof InterruptedException
+                || error.getCause() instanceof InterruptedException) {
+            return Mono.error(error);
+        }
+        return Mono.<Void>fromRunnable(() -> checkpointAbnormalState(scope))
+                .subscribeOn(Schedulers.boundedElastic())
+                .then(Mono.error(error));
+    }
+
+    private Mono<Msg> checkpointOnAbnormalTermination(CallExecution scope, Mono<Msg> execution) {
+        return execution
+                .doOnCancel(() -> checkpointAbnormalState(scope))
+                .onErrorResume(error -> saveStateAfterError(scope, error));
+    }
+
+    private void checkpointAbnormalState(CallExecution scope) {
+        try {
+            scope.dropUncommittedToolCallsFromCurrentCall();
+        } catch (RuntimeException repairError) {
+            log.warn("Failed to repair agent state before checkpoint", repairError);
+        }
+        try {
+            if (stateStore != null) {
+                persistState(scope);
+            }
+        } catch (RuntimeException saveError) {
+            log.warn("Failed to save agent state after abnormal termination", saveError);
+        }
     }
 
     /**
@@ -1186,7 +1217,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         AgentEventEmitter.fromForwardingContext(cv)
                                 .ifPresent(ae -> scope.externalEventEmitter = ae);
                     }
-                    return scope.doCallInner(msgs)
+                    return checkpointOnAbnormalTermination(scope, scope.doCallInner(msgs))
                             .flatMap(result -> saveStateToSession(scope).thenReturn(result));
                 });
     }
@@ -1227,20 +1258,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 hasTools
                         ? model.supportsNativeStructuredOutputWithTools()
                         : model.supportsNativeStructuredOutput();
+        Mono<Msg> execution;
         if (useNative) {
-            return doNativeStructuredCall(msgs, jsonSchema)
-                    .onErrorResume(
-                            e -> {
-                                log.warn(
-                                        "Native structured output failed ({}) — falling back to"
-                                                + " synthetic tool path",
-                                        e.getMessage() != null
-                                                ? e.getMessage()
-                                                : e.getClass().getSimpleName());
-                                return doFallbackStructuredCall(msgs, jsonSchema);
-                            });
+            execution =
+                    doNativeStructuredCall(msgs, jsonSchema)
+                            .onErrorResume(
+                                    e -> {
+                                        log.warn(
+                                                "Native structured output failed ({}) — falling"
+                                                        + " back to synthetic tool path",
+                                                e.getMessage() != null
+                                                        ? e.getMessage()
+                                                        : e.getClass().getSimpleName());
+                                        return doFallbackStructuredCall(msgs, jsonSchema);
+                                    });
+        } else {
+            execution = doFallbackStructuredCall(msgs, jsonSchema);
         }
-        return doFallbackStructuredCall(msgs, jsonSchema);
+        return Mono.deferContextual(
+                cv -> checkpointOnAbnormalTermination(scopeFrom(cv), execution));
     }
 
     /**
@@ -2082,6 +2118,40 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         "Synthesized interrupted-result for pending tool call: {} ({})",
                         toolCall.getName(),
                         toolCall.getId());
+            }
+        }
+
+        /** Remove current-call PENDING tool calls that never produced results. */
+        private void dropUncommittedToolCallsFromCurrentCall() {
+            Set<String> pendingIds = getPendingToolUseIds();
+            if (pendingIds.isEmpty()) {
+                return;
+            }
+            List<Msg> context = state.contextMutable();
+            for (int i = context.size() - 1; i >= loadedContextSize; i--) {
+                Msg message = context.get(i);
+                if (message.getRole() != MsgRole.ASSISTANT
+                        || !message.hasContentBlocks(ToolUseBlock.class)) {
+                    continue;
+                }
+                List<ContentBlock> retained =
+                        message.getContent().stream()
+                                .filter(
+                                        block ->
+                                                !(block instanceof ToolUseBlock toolUse)
+                                                        || toolUse.getState()
+                                                                != ToolCallState.PENDING
+                                                        || !pendingIds.contains(toolUse.getId()))
+                                .toList();
+                if (retained.size() == message.getContent().size()) {
+                    return;
+                }
+                if (retained.isEmpty()) {
+                    context.remove(i);
+                } else {
+                    context.set(i, message.withContent(retained));
+                }
+                return;
             }
         }
 
