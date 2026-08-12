@@ -285,7 +285,7 @@ class HarnessAgentTest {
 
         String combined = capturedPrompt(model);
         assertTrue(combined.contains("Sandbox root: /workspace"), () -> combined);
-        assertTrue(combined.contains("use the deliver_artifact tool"), () -> combined);
+        assertTrue(combined.contains("call deliver_artifact"), () -> combined);
     }
 
     @Test
