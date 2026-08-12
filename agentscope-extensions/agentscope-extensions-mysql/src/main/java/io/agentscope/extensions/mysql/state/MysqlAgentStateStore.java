@@ -18,6 +18,7 @@ package io.agentscope.extensions.mysql.state;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -174,6 +175,31 @@ public class MysqlAgentStateStore implements AgentStateStore {
             verifyDatabaseExists();
             verifyTableExists();
         }
+        ensureVersionColumn();
+    }
+
+    private void ensureVersionColumn() {
+        String checkSql =
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS"
+                        + " WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = 'version'";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(checkSql)) {
+            stmt.setString(1, databaseName);
+            stmt.setString(2, tableName);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next() && rs.getInt(1) == 0) {
+                    String alterSql =
+                            "ALTER TABLE "
+                                    + getFullTableName()
+                                    + " ADD COLUMN version BIGINT NOT NULL DEFAULT 0";
+                    try (PreparedStatement alter = conn.prepareStatement(alterSql)) {
+                        alter.execute();
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to ensure version column on table: " + tableName, e);
+        }
     }
 
     /**
@@ -209,10 +235,10 @@ public class MysqlAgentStateStore implements AgentStateStore {
                         + getFullTableName()
                         + " (session_id VARCHAR(255) NOT NULL, state_key VARCHAR(255) NOT NULL,"
                         + " item_index INT NOT NULL DEFAULT 0, state_data LONGTEXT NOT NULL,"
-                        + " created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME"
-                        + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY"
-                        + " (session_id, state_key, item_index)) DEFAULT CHARACTER SET utf8mb4"
-                        + " COLLATE utf8mb4_unicode_ci";
+                        + " version BIGINT NOT NULL DEFAULT 0, created_at DATETIME DEFAULT"
+                        + " CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON"
+                        + " UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (session_id, state_key,"
+                        + " item_index)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(createTableSql)) {
@@ -323,6 +349,11 @@ public class MysqlAgentStateStore implements AgentStateStore {
     }
 
     @Override
+    public boolean supportsVersioning() {
+        return true;
+    }
+
+    @Override
     public void save(String userId, String sessionId, String key, State value) {
         String slotId = slotId(userId, sessionId);
         validateSessionId(slotId);
@@ -331,9 +362,10 @@ public class MysqlAgentStateStore implements AgentStateStore {
         String upsertSql =
                 "INSERT INTO "
                         + getFullTableName()
-                        + " (session_id, state_key, item_index, state_data)"
-                        + " VALUES (?, ?, ?, ?)"
-                        + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data)";
+                        + " (session_id, state_key, item_index, state_data, version)"
+                        + " VALUES (?, ?, ?, ?, 1)"
+                        + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data),"
+                        + " version = version + 1";
 
         try (Connection conn = dataSource.getConnection()) {
             executeInWriteTransaction(
@@ -352,6 +384,115 @@ public class MysqlAgentStateStore implements AgentStateStore {
                     });
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
+        }
+    }
+
+    @Override
+    public <T extends State> VersionedState<T> getVersioned(
+            String userId, String sessionId, String key, Class<T> type) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
+        validateStateKey(key);
+
+        String selectSql =
+                "SELECT state_data, version FROM "
+                        + getFullTableName()
+                        + " WHERE session_id = ? AND state_key = ? AND item_index = ?";
+
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(selectSql)) {
+
+            stmt.setString(1, slotId);
+            stmt.setString(2, key);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return new VersionedState<>(null, 0L);
+                }
+                String json = rs.getString("state_data");
+                long version = rs.getLong("version");
+                return new VersionedState<>(JsonUtils.getJsonCodec().fromJson(json, type), version);
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get versioned state: " + key, e);
+        }
+    }
+
+    @Override
+    public long saveIfVersion(
+            String userId, String sessionId, String key, State value, long expectedVersion) {
+        if (expectedVersion == UNVERSIONED) {
+            save(userId, sessionId, key, value);
+            return getVersioned(userId, sessionId, key, State.class).version();
+        }
+
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
+        validateStateKey(key);
+
+        try (Connection conn = dataSource.getConnection()) {
+            long[] result = new long[1];
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        if (expectedVersion == 0L) {
+                            result[0] = insertIfAbsent(conn, slotId, key, value);
+                        } else {
+                            result[0] = updateIfVersion(conn, slotId, key, value, expectedVersion);
+                        }
+                    });
+            return result[0];
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save state if version: " + key, e);
+        }
+    }
+
+    private long insertIfAbsent(Connection conn, String slotId, String key, State value)
+            throws Exception {
+        String insertSql =
+                "INSERT INTO "
+                        + getFullTableName()
+                        + " (session_id, state_key, item_index, state_data, version)"
+                        + " VALUES (?, ?, ?, ?, 1)";
+
+        try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
+            String json = JsonUtils.getJsonCodec().toJson(value);
+            stmt.setString(1, slotId);
+            stmt.setString(2, key);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
+            stmt.setString(4, json);
+            try {
+                return stmt.executeUpdate() == 1 ? 1L : UNVERSIONED;
+            } catch (SQLException e) {
+                if (e.getErrorCode() == 1062 || "23000".equals(e.getSQLState())) {
+                    return UNVERSIONED;
+                }
+                throw e;
+            }
+        }
+    }
+
+    private long updateIfVersion(
+            Connection conn, String slotId, String key, State value, long expectedVersion)
+            throws Exception {
+        String updateSql =
+                "UPDATE "
+                        + getFullTableName()
+                        + " SET state_data = ?, version = ? WHERE session_id = ? AND state_key = ?"
+                        + " AND item_index = ? AND version = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(updateSql)) {
+            String json = JsonUtils.getJsonCodec().toJson(value);
+            long newVersion = expectedVersion + 1L;
+            stmt.setString(1, json);
+            stmt.setLong(2, newVersion);
+            stmt.setString(3, slotId);
+            stmt.setString(4, key);
+            stmt.setInt(5, SINGLE_STATE_INDEX);
+            stmt.setLong(6, expectedVersion);
+            return stmt.executeUpdate() == 1 ? newVersion : UNVERSIONED;
         }
     }
 
@@ -811,9 +952,6 @@ public class MysqlAgentStateStore implements AgentStateStore {
     protected void validateSessionId(String sessionId) {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             throw new IllegalArgumentException("AgentStateStore ID cannot be null or empty");
-        }
-        if (sessionId.contains("/") || sessionId.contains("\\")) {
-            throw new IllegalArgumentException("AgentStateStore ID cannot contain path separators");
         }
         if (sessionId.length() > 255) {
             throw new IllegalArgumentException("AgentStateStore ID cannot exceed 255 characters");

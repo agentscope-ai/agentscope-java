@@ -13,5 +13,7 @@ AgentScope 在 Java 侧提供了多种"让 Agent 与外部交互"的协议适配
 ## 怎么选
 
 - **想被前端 UI 实时消费 Agent 事件流（含 ThinkingBlock）** → AG-UI
-- **想让其他业务系统通过 REST 调度 Agent** → Agent Protocol
+- **想让其他业务系统通过 REST 调度 Agent / 托管远程子 agent** → Agent Protocol
 - **想让多个 Agent / Agent 与外部 Agent 系统互相调用** → A2A
+
+> 分层：AG-UI 面向用户；Agent Protocol 是内部远程子 agent / 任务 HTTP 面；A2A 用于外部互操作。

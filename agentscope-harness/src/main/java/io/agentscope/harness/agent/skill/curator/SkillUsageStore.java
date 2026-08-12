@@ -15,25 +15,15 @@
  */
 package io.agentscope.harness.agent.skill.curator;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.skill.curator.SkillUsageRecord.State;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.UnaryOperator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,15 +31,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Sidecar telemetry store for per-skill usage and provenance.
  *
- * <p>Persists {@link SkillUsageRecord} instances (one per skill) as a single JSON object at
- * {@code <workspace>/skills/.usage.json}. Reads / writes go through {@link AbstractFilesystem}
- * with {@link RuntimeContext#empty()} — telemetry is agent-scoped, not user-scoped, so we
- * intentionally bypass per-user namespacing.
- *
- * <p><b>Concurrency</b>: a {@link ReentrantLock} serialises in-process read-modify-write cycles.
- * For cross-process safety on a {@code LocalFilesystem} a future milestone will add
- * {@link java.nio.channels.FileLock} on a sibling {@code .usage.json.lock} file; for
- * {@code RemoteFilesystem} a KV CAS path is required. Both are tracked as TODO.
+ * <p>Persists {@link SkillUsageRecord} instances (one per skill). The default backend stores all
+ * records in a single JSON file at {@code <workspace>/skills/.usage.json}; when constructed with
+ * a {@link BaseStore}, each skill is stored under {@code ["skills", "usage"]} with CAS updates.
  *
  * <p><b>Provenance gate</b>: counter mutators (bumpView/bumpUse/bumpPatch) silently skip skills
  * that are not agent-created. This avoids polluting telemetry for bundled / hub-installed /
@@ -59,34 +43,26 @@ public class SkillUsageStore {
 
     private static final Logger log = LoggerFactory.getLogger(SkillUsageStore.class);
 
-    /** Default workspace-relative path for the sidecar. */
+    /** Default workspace-relative path for the filesystem sidecar. */
     public static final String DEFAULT_RELATIVE_PATH = "skills/.usage.json";
 
-    private static final ObjectMapper JSON =
-            new ObjectMapper()
-                    .registerModule(new JavaTimeModule())
-                    .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-                    .enable(SerializationFeature.INDENT_OUTPUT)
-                    // Tolerate fields the schema doesn't expect — e.g. {@code agentCreated}
-                    // which Jackson's default getter discovery emits from {@code
-                    // SkillUsageRecord.isAgentCreated()}, plus any field added in a future
-                    // schema bump that an older binary needs to load gracefully.
-                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-
-    private final AbstractFilesystem filesystem;
-    private final String relativePath;
-    private final ReentrantLock lock = new ReentrantLock();
+    private final SkillUsageBackend backend;
 
     public SkillUsageStore(AbstractFilesystem filesystem) {
         this(filesystem, DEFAULT_RELATIVE_PATH);
     }
 
     public SkillUsageStore(AbstractFilesystem filesystem, String relativePath) {
-        this.filesystem = java.util.Objects.requireNonNull(filesystem, "filesystem");
-        this.relativePath =
-                relativePath != null && !relativePath.isBlank()
-                        ? relativePath
-                        : DEFAULT_RELATIVE_PATH;
+        this(new FilesystemSkillUsageBackend(filesystem, relativePath));
+    }
+
+    /** Creates a store backed by a distributed {@link BaseStore} (one key per skill). */
+    public static SkillUsageStore baseStore(BaseStore store) {
+        return new SkillUsageStore(new BaseStoreSkillUsageBackend(store));
+    }
+
+    SkillUsageStore(SkillUsageBackend backend) {
+        this.backend = java.util.Objects.requireNonNull(backend, "backend");
     }
 
     // ---------------------------------------------------------------------
@@ -95,37 +71,12 @@ public class SkillUsageStore {
 
     /** Load the entire sidecar map. Returns an empty map on missing / unreadable / corrupt. */
     public Map<String, SkillUsageRecord> load() {
-        try {
-            ReadResult rr = filesystem.read(RuntimeContext.empty(), relativePath, 0, 0);
-            if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
-                return new LinkedHashMap<>();
-            }
-            String body = rr.fileData().content();
-            if (body.isBlank()) {
-                return new LinkedHashMap<>();
-            }
-            Map<String, SkillUsageRecord> parsed =
-                    JSON.readValue(
-                            body, new TypeReference<LinkedHashMap<String, SkillUsageRecord>>() {});
-            return parsed != null ? parsed : new LinkedHashMap<>();
-        } catch (Exception e) {
-            log.debug("SkillUsageStore.load() failed: {}", e.getMessage());
-            return new LinkedHashMap<>();
-        }
+        return backend.loadAll();
     }
 
-    /** Persist the entire sidecar map atomically (full rewrite). Best-effort on failure. */
+    /** Persist the entire sidecar map. Best-effort on failure. */
     public void save(Map<String, SkillUsageRecord> data) {
-        try {
-            String json = JSON.writeValueAsString(data != null ? data : Map.of());
-            filesystem.uploadFiles(
-                    RuntimeContext.empty(),
-                    List.of(
-                            new AbstractMap.SimpleImmutableEntry<>(
-                                    relativePath, json.getBytes(StandardCharsets.UTF_8))));
-        } catch (Exception e) {
-            log.warn("SkillUsageStore.save() failed: {}", e.getMessage(), e);
-        }
+        backend.replaceAll(data != null ? data : Map.of());
     }
 
     /** Read a single record by name. */
@@ -133,32 +84,22 @@ public class SkillUsageStore {
         if (name == null || name.isBlank()) {
             return Optional.empty();
         }
-        return Optional.ofNullable(load().get(name));
+        return backend.get(name);
     }
 
     /**
-     * Apply {@code mutator} to the record for {@code name} under the in-process lock. Creates a
-     * fresh {@link SkillUsageRecord#defaults()} record if none exists.
+     * Apply {@code mutator} to the record for {@code name}. Creates a fresh
+     * {@link SkillUsageRecord#defaults()} record if none exists. Concurrency is owned by the
+     * backend (in-process lock or CAS).
      */
     private void mutate(String name, UnaryOperator<SkillUsageRecord> mutator) {
         if (name == null || name.isBlank()) {
             return;
         }
-        lock.lock();
         try {
-            Map<String, SkillUsageRecord> all = load();
-            SkillUsageRecord current = all.getOrDefault(name, SkillUsageRecord.defaults());
-            SkillUsageRecord updated = mutator.apply(current);
-            if (updated == null) {
-                all.remove(name);
-            } else {
-                all.put(name, updated);
-            }
-            save(all);
+            backend.mutate(name, mutator);
         } catch (Exception e) {
             log.debug("SkillUsageStore.mutate({}) failed: {}", name, e.getMessage());
-        } finally {
-            lock.unlock();
         }
     }
 
@@ -236,27 +177,25 @@ public class SkillUsageStore {
      * Apply {@code mutator} only if a record for {@code name} exists with non-null {@code
      * createdBy} (i.e. the agent has explicitly tracked this skill). Skipping unknown / external
      * skills keeps the sidecar focused on agent-authored procedural memory.
+     *
+     * <p>The provenance check runs inside the backend mutator so CAS / locking covers the full
+     * read-modify-write (no TOCTOU between a separate get and mutate).
      */
     private void bumpIfAgentTracked(String name, UnaryOperator<SkillUsageRecord> mutator) {
         if (name == null || name.isBlank()) {
             return;
         }
-        lock.lock();
         try {
-            Map<String, SkillUsageRecord> all = load();
-            SkillUsageRecord existing = all.get(name);
-            if (existing == null || existing.createdBy() == null) {
-                return; // provenance gate: do not record telemetry for non-agent skills
-            }
-            SkillUsageRecord updated = mutator.apply(existing);
-            if (updated != null) {
-                all.put(name, updated);
-                save(all);
-            }
+            backend.mutate(
+                    name,
+                    rec -> {
+                        if (rec.createdBy() == null) {
+                            return rec; // same reference → backend no-op
+                        }
+                        return mutator.apply(rec);
+                    });
         } catch (Exception e) {
             log.debug("SkillUsageStore.bumpIfAgentTracked({}) failed: {}", name, e.getMessage());
-        } finally {
-            lock.unlock();
         }
     }
 
@@ -268,25 +207,23 @@ public class SkillUsageStore {
     public void markAgentDraft(String name, String sessionId) {
         mutate(
                 name,
-                rec -> {
-                    // Preserve any pre-existing telemetry but stamp provenance + DRAFT state.
-                    return new SkillUsageRecord(
-                            "agent-draft",
-                            rec.useCount(),
-                            rec.viewCount(),
-                            rec.patchCount(),
-                            rec.lastUsedAt(),
-                            rec.lastViewedAt(),
-                            rec.lastPatchedAt(),
-                            rec.createdAt() != null ? rec.createdAt() : Instant.now(),
-                            State.DRAFT,
-                            rec.pinned(),
-                            rec.archivedAt(),
-                            rec.promotedAt(),
-                            rec.promotedBy(),
-                            sessionId,
-                            List.of("draft"));
-                });
+                rec ->
+                        new SkillUsageRecord(
+                                "agent-draft",
+                                rec.useCount(),
+                                rec.viewCount(),
+                                rec.patchCount(),
+                                rec.lastUsedAt(),
+                                rec.lastViewedAt(),
+                                rec.lastPatchedAt(),
+                                rec.createdAt() != null ? rec.createdAt() : Instant.now(),
+                                State.DRAFT,
+                                rec.pinned(),
+                                rec.archivedAt(),
+                                rec.promotedAt(),
+                                rec.promotedBy(),
+                                sessionId,
+                                List.of("draft")));
     }
 
     /**

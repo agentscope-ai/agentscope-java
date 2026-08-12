@@ -1,0 +1,784 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: agents.agentscope.io
+spec:
+  group: agentscope.io
+  names:
+    kind: Agent
+    listKind: AgentList
+    plural: agents
+    shortNames:
+    - ag
+    singular: agent
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.runtime
+      name: Runtime
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.replicas.ready
+      name: Replicas
+      type: integer
+    - jsonPath: .status.activeSessions
+      name: Sessions
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Agent represents a managed AI agent in the cluster.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AgentSpec defines the desired state of an Agent.
+            properties:
+              allowedNamespaces:
+                description: AllowedNamespaces defines namespace access policy.
+                properties:
+                  from:
+                    type: string
+                type: object
+              byo:
+                description: BYO mode configuration (mutually exclusive with Declarative).
+                properties:
+                  advanced:
+                    description: AdvancedConfig holds advanced agent configuration.
+                    properties:
+                      contextStrategy:
+                        description: ContextStrategyConfig defines context management
+                          strategy.
+                        properties:
+                          compressionModel:
+                            type: string
+                          reserveRatio:
+                            description: ReserveRatio is the ratio of context to reserve
+                              after compression (0.0-1.0).
+                            pattern: ^(0(\.\d+)?|1(\.0+)?)$
+                            type: string
+                          triggerRatio:
+                            description: TriggerRatio is the context pressure ratio
+                              that triggers compression (0.0-1.0).
+                            pattern: ^(0(\.\d+)?|1(\.0+)?)$
+                            type: string
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      reactConfig:
+                        description: ReactConfig defines ReAct loop configuration.
+                        properties:
+                          maxIters:
+                            format: int32
+                            maximum: 100
+                            minimum: 1
+                            type: integer
+                          stopOnReject:
+                            type: boolean
+                        type: object
+                      tolerations:
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                                Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                  agentPort:
+                    default: 8080
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  args:
+                    items:
+                      type: string
+                    type: array
+                  command:
+                    items:
+                      type: string
+                    type: array
+                  contractPath:
+                    default: /agentscope
+                    type: string
+                  env:
+                    items:
+                      description: EnvVar represents an environment variable.
+                      properties:
+                        name:
+                          type: string
+                        value:
+                          type: string
+                        valueFrom:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  healthProbe:
+                    description: HealthProbeRef defines a custom health check probe.
+                    properties:
+                      httpGet:
+                        description: HTTPGetAction describes an HTTP GET health check.
+                        properties:
+                          path:
+                            type: string
+                          port:
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        required:
+                        - path
+                        - port
+                        type: object
+                    type: object
+                  image:
+                    description: 'Image mode: control plane creates Deployment (mutually
+                      exclusive with WorkloadRef).'
+                    type: string
+                  overrides:
+                    description: BYOOverrides defines additional configuration the
+                      control plane appends to BYO agents.
+                    properties:
+                      tools:
+                        items:
+                          description: ToolBinding defines a tool attached to an agent.
+                          properties:
+                            mcpServer:
+                              description: MCPServerRef references an MCPServer resource.
+                              properties:
+                                name:
+                                  minLength: 1
+                                  type: string
+                                requireApproval:
+                                  items:
+                                    type: string
+                                  type: array
+                                toolNames:
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - name
+                              type: object
+                            skill:
+                              description: SkillRef references a skill.
+                              properties:
+                                name:
+                                  type: string
+                                version:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type:
+                              enum:
+                              - McpServer
+                              - Skill
+                              type: string
+                          required:
+                          - type
+                          type: object
+                        type: array
+                    type: object
+                  replicas:
+                    format: int32
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                  resources:
+                    description: ResourceRequirements defines resource requests and
+                      limits.
+                    properties:
+                      limits:
+                        description: ResourceList is a set of resource quantities.
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                        type: object
+                      requests:
+                        description: ResourceList is a set of resource quantities.
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                        type: object
+                    type: object
+                  workloadRef:
+                    description: 'WorkloadRef mode: control plane adopts existing
+                      Deployment (mutually exclusive with Image).'
+                    properties:
+                      kind:
+                        type: string
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: exactly one of spec.byo.image or spec.byo.workloadRef must
+                    be set
+                  rule: has(self.image) != has(self.workloadRef)
+              declarative:
+                description: Declarative mode configuration (mutually exclusive with
+                  BYO).
+                properties:
+                  advanced:
+                    description: AdvancedConfig holds advanced agent configuration.
+                    properties:
+                      contextStrategy:
+                        description: ContextStrategyConfig defines context management
+                          strategy.
+                        properties:
+                          compressionModel:
+                            type: string
+                          reserveRatio:
+                            description: ReserveRatio is the ratio of context to reserve
+                              after compression (0.0-1.0).
+                            pattern: ^(0(\.\d+)?|1(\.0+)?)$
+                            type: string
+                          triggerRatio:
+                            description: TriggerRatio is the context pressure ratio
+                              that triggers compression (0.0-1.0).
+                            pattern: ^(0(\.\d+)?|1(\.0+)?)$
+                            type: string
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      reactConfig:
+                        description: ReactConfig defines ReAct loop configuration.
+                        properties:
+                          maxIters:
+                            format: int32
+                            maximum: 100
+                            minimum: 1
+                            type: integer
+                          stopOnReject:
+                            type: boolean
+                        type: object
+                      tolerations:
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                                Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                  agentConfig:
+                    description: AgentConfig holds the agent's runtime configuration.
+                    properties:
+                      maxTurns:
+                        default: 50
+                        format: int32
+                        maximum: 1000
+                        minimum: 1
+                        type: integer
+                      modelConfigRef:
+                        type: string
+                      sessionAffinity:
+                        enum:
+                        - none
+                        - instance
+                        type: string
+                      stream:
+                        default: true
+                        type: boolean
+                      systemMessage:
+                        maxLength: 65536
+                        type: string
+                      systemMessageFrom:
+                        description: ConfigMapKeyRef refers to a key in a ConfigMap.
+                        properties:
+                          key:
+                            type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                    type: object
+                  env:
+                    items:
+                      description: EnvVar represents an environment variable.
+                      properties:
+                        name:
+                          type: string
+                        value:
+                          type: string
+                        valueFrom:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  replicas:
+                    default: 1
+                    format: int32
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                  resources:
+                    description: ResourceRequirements defines resource requests and
+                      limits.
+                    properties:
+                      limits:
+                        description: ResourceList is a set of resource quantities.
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                        type: object
+                      requests:
+                        description: ResourceList is a set of resource quantities.
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                        type: object
+                    type: object
+                  skills:
+                    description: SkillsSpec defines skill references.
+                    properties:
+                      bindings:
+                        items:
+                          description: SkillBinding defines a skill attached to an
+                            agent with inline or OCI configuration.
+                          properties:
+                            description:
+                              type: string
+                            instructions:
+                              type: string
+                            name:
+                              type: string
+                            ref:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                      refs:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  subagents:
+                    items:
+                      description: SubagentSpec defines an in-process sub-agent.
+                      properties:
+                        description:
+                          type: string
+                        instructions:
+                          type: string
+                        model:
+                          type: string
+                        name:
+                          minLength: 1
+                          type: string
+                        steps:
+                          format: int32
+                          minimum: 1
+                          type: integer
+                        tools:
+                          items:
+                            type: string
+                          type: array
+                        url:
+                          type: string
+                        workspaceMode:
+                          enum:
+                          - isolated
+                          - shared
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  teamTemplates:
+                    items:
+                      description: TeamTemplateRef defines a team template for cross-agent
+                        collaboration.
+                      properties:
+                        config:
+                          description: TeamConfig defines team-level configuration.
+                          properties:
+                            shutdownPolicy:
+                              default: lead-decides
+                              enum:
+                              - lead-decides
+                              - all-complete
+                              - timeout
+                              type: string
+                            taskClaimStrategy:
+                              default: self-claim
+                              enum:
+                              - self-claim
+                              - lead-assign
+                              type: string
+                          type: object
+                        description:
+                          type: string
+                        dynamicMembers:
+                          description: DynamicMembersSpec defines the policy for dynamic
+                            team membership.
+                          properties:
+                            allowedAgentRefs:
+                              items:
+                                description: ObjectReference refers to a Kubernetes
+                                  object.
+                                properties:
+                                  kind:
+                                    type: string
+                                  name:
+                                    type: string
+                                  namespace:
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                            enabled:
+                              type: boolean
+                            maxTotal:
+                              format: int32
+                              maximum: 32
+                              minimum: 1
+                              type: integer
+                          required:
+                          - enabled
+                          type: object
+                        members:
+                          items:
+                            description: TeamTemplateMember defines a member in a
+                              team template.
+                            properties:
+                              agentRef:
+                                type: string
+                              prompt:
+                                type: string
+                              role:
+                                type: string
+                            required:
+                            - agentRef
+                            - role
+                            type: object
+                          type: array
+                        name:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  tools:
+                    items:
+                      description: ToolBinding defines a tool attached to an agent.
+                      properties:
+                        mcpServer:
+                          description: MCPServerRef references an MCPServer resource.
+                          properties:
+                            name:
+                              minLength: 1
+                              type: string
+                            requireApproval:
+                              items:
+                                type: string
+                              type: array
+                            toolNames:
+                              items:
+                                type: string
+                              type: array
+                          required:
+                          - name
+                          type: object
+                        skill:
+                          description: SkillRef references a skill.
+                          properties:
+                            name:
+                              type: string
+                            version:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type:
+                          enum:
+                          - McpServer
+                          - Skill
+                          type: string
+                      required:
+                      - type
+                      type: object
+                    type: array
+                required:
+                - agentConfig
+                type: object
+              description:
+                maxLength: 1024
+                type: string
+              displayName:
+                maxLength: 256
+                type: string
+              runtime:
+                description: Runtime identifies the data plane runtime (e.g. agentscope-java,
+                  agentscope-go, custom).
+                minLength: 1
+                type: string
+              sandbox:
+                description: SandboxSpec defines sandbox configuration for an agent.
+                properties:
+                  enabled:
+                    type: boolean
+                  lifecycle:
+                    description: SandboxLifecycle defines sandbox lifecycle behavior.
+                    properties:
+                      idleTimeout:
+                        type: string
+                      shutdownPolicy:
+                        enum:
+                        - Delete
+                        - Retain
+                        type: string
+                    type: object
+                  network:
+                    description: NetworkPolicy defines network access rules.
+                    properties:
+                      allowedDomains:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  templateRef:
+                    type: string
+                type: object
+              type:
+                description: 'Type specifies the management mode: Declarative or BYO.'
+                enum:
+                - Declarative
+                - BYO
+                type: string
+            required:
+            - runtime
+            - type
+            type: object
+            x-kubernetes-validations:
+            - message: Declarative agents must set spec.declarative and must not set
+                spec.byo
+              rule: self.type != 'Declarative' || (has(self.declarative) && !has(self.byo))
+            - message: BYO agents must set spec.byo and must not set spec.declarative
+              rule: self.type != 'BYO' || (has(self.byo) && !has(self.declarative))
+          status:
+            description: AgentStatus defines the observed state of an Agent.
+            properties:
+              activeSessions:
+                format: int32
+                type: integer
+              conditions:
+                items:
+                  description: Condition represents a status condition.
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      description: ConditionType defines the type of condition.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              dataPlaneInfo:
+                description: DataPlaneInfo holds information probed from the data
+                  plane.
+                properties:
+                  capabilities:
+                    items:
+                      type: string
+                    type: array
+                  contractLevel:
+                    format: int32
+                    type: integer
+                  lastProbeAt:
+                    type: string
+                  model:
+                    type: string
+                  modelProvider:
+                    type: string
+                  sdkVersion:
+                    type: string
+                  sessionAffinity:
+                    type: string
+                  tools:
+                    items:
+                      type: string
+                    type: array
+                  version:
+                    type: string
+                required:
+                - contractLevel
+                type: object
+              endpoints:
+                items:
+                  description: Endpoint represents a pod endpoint.
+                  properties:
+                    ip:
+                      type: string
+                    port:
+                      format: int32
+                      type: integer
+                  required:
+                  - ip
+                  - port
+                  type: object
+                type: array
+              managementMode:
+                description: ManagementMode describes how the control plane manages
+                  this agent.
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              replicas:
+                description: ReplicaStatus tracks desired/ready/available replica
+                  counts.
+                properties:
+                  available:
+                    format: int32
+                    type: integer
+                  desired:
+                    format: int32
+                    type: integer
+                  ready:
+                    format: int32
+                    type: integer
+                required:
+                - desired
+                - ready
+                type: object
+              revision:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
