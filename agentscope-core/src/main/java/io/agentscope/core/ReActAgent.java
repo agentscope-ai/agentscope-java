@@ -216,6 +216,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =
             GracefulShutdownManager.getInstance();
+    private static final int MAX_CONFIRM_REASON_CODE_POINTS = 500;
 
     /** Tool name used for the per-call structured-output {@code generate_response} tool. */
     public static final String STRUCTURED_OUTPUT_TOOL_NAME = "generate_response";
@@ -1960,11 +1961,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             for (ConfirmResult deniedResult : deniedResults) {
                 ToolUseBlock denied = deniedResult.getToolCall();
                 String reason = deniedResult.getReason();
+                String normalizedReason = reason == null ? "" : reason.strip();
+                if (normalizedReason.codePointCount(0, normalizedReason.length())
+                        > MAX_CONFIRM_REASON_CODE_POINTS) {
+                    int endIndex =
+                            normalizedReason.offsetByCodePoints(0, MAX_CONFIRM_REASON_CODE_POINTS);
+                    normalizedReason = normalizedReason.substring(0, endIndex) + " <truncated>";
+                }
                 String message =
-                        reason == null || reason.isBlank()
+                        normalizedReason.isEmpty()
                                 ? "Permission denied by user"
                                 : "Permission denied by user. User-provided reason: "
-                                        + reason.strip();
+                                        + normalizedReason;
                 ToolResultBlock deniedToolResult =
                         ToolResultBlock.text(message)
                                 .withIdAndName(denied.getId(), denied.getName())
