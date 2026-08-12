@@ -2690,8 +2690,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .firePreActing(pendingToolCalls, toolkit)
                     .flatMap(
                             toolCalls -> {
+                                List<AgentEvent> coreToolResultEvents = new ArrayList<>();
+                                List<AgentEvent> transformedToolResultEvents = new ArrayList<>();
                                 Function<ActingInput, Flux<AgentEvent>> actingCore =
-                                        ai -> actingStream(ai.toolCalls(), replyId, resultHolder);
+                                        ai ->
+                                                actingStream(ai.toolCalls(), replyId, resultHolder)
+                                                        .doOnNext(
+                                                                event ->
+                                                                        addToolResultEvent(
+                                                                                coreToolResultEvents,
+                                                                                event));
                                 Flux<AgentEvent> stream =
                                         MiddlewareChain.build(
                                                         middlewares,
@@ -2702,11 +2710,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 .apply(new ActingInput(toolCalls));
                                 return stream.doOnNext(
                                                 ev -> {
+                                                    addToolResultEvent(
+                                                            transformedToolResultEvents, ev);
+                                                    publishEvent(ev);
                                                     if (ev instanceof RequestStopEvent rs) {
                                                         actingStopRequested.compareAndSet(null, rs);
                                                     }
                                                 })
-                                        .then(Mono.defer(() -> Mono.just(resultHolder.get())));
+                                        .then(
+                                                Mono.fromSupplier(
+                                                        () ->
+                                                                applyToolResultTransformations(
+                                                                        resultHolder.get(),
+                                                                        coreToolResultEvents,
+                                                                        transformedToolResultEvents)));
                             })
                     .flatMap(
                             results -> {
@@ -2765,6 +2782,107 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     return executeIteration(iter + 1);
                                                 });
                             });
+        }
+
+        private void addToolResultEvent(List<AgentEvent> events, AgentEvent event) {
+            if (event instanceof ToolResultTextDeltaEvent
+                    || event instanceof ToolResultDataDeltaEvent
+                    || event instanceof ToolResultEndEvent) {
+                events.add(event);
+            }
+        }
+
+        private List<Map.Entry<ToolUseBlock, ToolResultBlock>> applyToolResultTransformations(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> results,
+                List<AgentEvent> coreEvents,
+                List<AgentEvent> transformedEvents) {
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> updated = new ArrayList<>();
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> entry : results) {
+                String toolCallId = entry.getKey().getId();
+                List<AgentEvent> coreForTool = toolResultEventsFor(toolCallId, coreEvents);
+                List<AgentEvent> transformedForTool =
+                        toolResultEventsFor(toolCallId, transformedEvents);
+
+                if (sameEventInstances(coreForTool, transformedForTool)) {
+                    updated.add(entry);
+                    continue;
+                }
+
+                ToolResultBlock original = entry.getValue();
+                List<ContentBlock> output = new ArrayList<>();
+                StringBuilder text = new StringBuilder();
+                Map<String, Object> metadata = original.getMetadata();
+                ToolResultState state = original.getState();
+                for (AgentEvent event : transformedForTool) {
+                    if (event instanceof ToolResultTextDeltaEvent textDelta) {
+                        if (textDelta.getDelta() != null) {
+                            text.append(textDelta.getDelta());
+                        }
+                        if (textDelta.getMetadata() != null) {
+                            metadata = textDelta.getMetadata();
+                        }
+                    } else if (event instanceof ToolResultDataDeltaEvent dataDelta) {
+                        flushToolResultText(output, text);
+                        if (dataDelta.getData() != null) {
+                            output.add(dataDelta.getData());
+                        }
+                        if (dataDelta.getMetadata() != null) {
+                            metadata = dataDelta.getMetadata();
+                        }
+                    } else if (event instanceof ToolResultEndEvent endEvent) {
+                        if (endEvent.getState() != null) {
+                            state = endEvent.getState();
+                        }
+                        if (endEvent.getMetadata() != null) {
+                            metadata = endEvent.getMetadata();
+                        }
+                    }
+                }
+                flushToolResultText(output, text);
+                ToolResultBlock transformed =
+                        new ToolResultBlock(
+                                original.getId(), original.getName(), output, metadata, state);
+                updated.add(Map.entry(entry.getKey(), transformed));
+            }
+            return updated;
+        }
+
+        private List<AgentEvent> toolResultEventsFor(String toolCallId, List<AgentEvent> events) {
+            return events.stream()
+                    .filter(event -> Objects.equals(toolCallId, toolResultCallId(event)))
+                    .toList();
+        }
+
+        private String toolResultCallId(AgentEvent event) {
+            if (event instanceof ToolResultTextDeltaEvent textDelta) {
+                return textDelta.getToolCallId();
+            }
+            if (event instanceof ToolResultDataDeltaEvent dataDelta) {
+                return dataDelta.getToolCallId();
+            }
+            if (event instanceof ToolResultEndEvent endEvent) {
+                return endEvent.getToolCallId();
+            }
+            return null;
+        }
+
+        private boolean sameEventInstances(List<AgentEvent> left, List<AgentEvent> right) {
+            if (left.size() != right.size()) {
+                return false;
+            }
+            for (int i = 0; i < left.size(); i++) {
+                if (left.get(i) != right.get(i)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private void flushToolResultText(List<ContentBlock> output, StringBuilder text) {
+            if (!text.isEmpty()) {
+                output.add(TextBlock.builder().text(text.toString()).build());
+                text.setLength(0);
+            }
         }
 
         /**
@@ -2840,8 +2958,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         new RequestStopEvent(
                                                 "permission asking",
                                                 GenerateReason.PERMISSION_ASKING));
-                            })
-                    .doOnNext(this::publishEvent);
+                            });
         }
 
         /**
