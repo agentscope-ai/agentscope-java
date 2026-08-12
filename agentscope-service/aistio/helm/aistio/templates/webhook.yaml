@@ -1,0 +1,126 @@
+{{- if .Values.api.authToken }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-api-token
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+type: Opaque
+stringData:
+  token: {{ .Values.api.authToken | quote }}
+{{- end }}
+{{- if .Values.webhook.enabled }}
+{{- $svc := printf "%s-webhook" .Release.Name }}
+{{- $altNames := list (printf "%s.%s.svc" $svc .Release.Namespace) (printf "%s.%s.svc.cluster.local" $svc .Release.Namespace) }}
+{{- $useCertManager := .Values.webhook.certManager.enabled }}
+{{- /* Generate a self-signed CA + serving cert when cert-manager is not used,
+       so the webhook works out of the box with no external dependency. */ -}}
+{{- $ca := genCA (printf "%s-webhook-ca" .Release.Name) 3650 }}
+{{- $cert := genSignedCert (index $altNames 0) nil $altNames 3650 $ca }}
+{{- $caBundle := "" }}
+{{- if .Values.webhook.caBundle }}
+{{-   $caBundle = .Values.webhook.caBundle }}
+{{- else if not $useCertManager }}
+{{-   $caBundle = b64enc $ca.Cert }}
+{{- end }}
+{{- if not $useCertManager }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.webhook.certSecret }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+type: kubernetes.io/tls
+data:
+  tls.crt: {{ b64enc $cert.Cert }}
+  tls.key: {{ b64enc $cert.Key }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  ports:
+    - port: 443
+      targetPort: webhook
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ .Release.Name }}-validator
+  {{- if $useCertManager }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ .Values.webhook.certSecret }}
+  {{- end }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+webhooks:
+{{- range $w := list (dict "name" "vagent.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-agent" "resource" "agents") (dict "name" "vagentteam.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-agentteam" "resource" "agentteams") (dict "name" "vmodelconfig.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-modelconfig" "resource" "modelconfigs") (dict "name" "vmcpserver.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-mcpserver" "resource" "mcpservers") }}
+  - name: {{ $w.name }}
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      {{- if $caBundle }}
+      caBundle: {{ $caBundle }}
+      {{- end }}
+      service:
+        name: {{ $svc }}
+        namespace: {{ $.Release.Namespace }}
+        path: {{ $w.path }}
+        port: 443
+    rules:
+      - apiGroups: ["agentscope.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["{{ $w.resource }}"]
+        scope: Namespaced
+{{- end }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ .Release.Name }}-defaulter
+  {{- if $useCertManager }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ .Values.webhook.certSecret }}
+  {{- end }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+webhooks:
+  - name: magent.agentscope.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      {{- if $caBundle }}
+      caBundle: {{ $caBundle }}
+      {{- end }}
+      service:
+        name: {{ $svc }}
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-agentscope-io-v1alpha1-agent
+        port: 443
+    rules:
+      - apiGroups: ["agentscope.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["agents"]
+        scope: Namespaced
+{{- end }}

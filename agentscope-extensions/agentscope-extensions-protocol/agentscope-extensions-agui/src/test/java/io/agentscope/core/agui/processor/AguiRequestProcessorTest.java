@@ -533,10 +533,7 @@ class AguiRequestProcessorTest {
 
     private static void assertResumeContractErrorLifecycle(List<AguiEvent> events) {
         assertEquals(
-                List.of(
-                        AguiEventType.RUN_STARTED,
-                        AguiEventType.RUN_ERROR,
-                        AguiEventType.RUN_FINISHED),
+                List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
                 events.stream().map(AguiEvent::getType).toList());
         AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals("AGUI_INTERRUPT_CONTRACT_ERROR", error.code());
@@ -546,10 +543,7 @@ class AguiRequestProcessorTest {
     private static void assertProcessorErrorLifecycle(
             List<AguiEvent> events, String message, String code) {
         assertEquals(
-                List.of(
-                        AguiEventType.RUN_STARTED,
-                        AguiEventType.RUN_ERROR,
-                        AguiEventType.RUN_FINISHED),
+                List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
                 events.stream().map(AguiEvent::getType).toList());
         AguiEvent.RunError error = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals(message, error.message());

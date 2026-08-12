@@ -1,0 +1,51 @@
+AgentScope Control Plane {{ .Chart.AppVersion }} installed in namespace "{{ .Release.Namespace }}".
+
+Release:     {{ .Release.Name }}
+Image:       {{ .Values.image.repository }}:{{ .Values.image.tag }}
+Experimental: {{ .Values.experimental.enabled }}
+Webhook:     {{ .Values.webhook.enabled }}
+API auth:    {{ if .Values.api.authToken }}enabled{{ else }}disabled{{ end }}
+Storage:     {{ .Values.storage.driver }}
+{{ if eq .Values.storage.driver "memory" }}
+WARNING: storage.driver=memory is NOT durable. All session, event, and team
+coordination data is lost on every pod restart and is NOT shared across
+replicas. Use the "postgres" profile (-f profiles/postgres.yaml) for any
+deployment beyond local development or testing.
+{{- end }}
+
+1. Check the controller is running:
+
+   kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ .Release.Name }}-controller
+
+2. Verify the CRDs are installed:
+
+   kubectl get crds | grep agentscope.io
+
+3. Query the REST API (port-forward):
+
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-controller {{ .Values.service.httpPort }}:{{ .Values.service.httpPort }}
+   curl http://localhost:{{ .Values.service.httpPort }}/api/v1/version
+{{ if .Values.api.authToken }}
+   # API auth is enabled — pass the bearer token:
+   curl -H "Authorization: Bearer <token>" http://localhost:{{ .Values.service.httpPort }}/api/v1/agents
+{{- end }}
+
+4. Deploy a sample agent:
+
+   kubectl apply -f https://raw.githubusercontent.com/spring-ai-alibaba/aistio/main/config/samples/agent_declarative.yaml
+   kubectl get agents
+{{ if not .Values.webhook.enabled }}
+NOTE: The validating admission webhook is disabled. CRD-level CEL validation still
+enforces the Declarative/BYO invariants, but enable webhook=true (with serving
+certs) for richer admission checks.
+{{- end }}
+{{- if .Values.experimental.enabled }}
+
+EXPERIMENTAL FEATURES ENABLED:
+- ASDP gRPC data plane protocol
+- AgentTeam distributed coordination
+- SandboxClaim (NOT YET IMPLEMENTED - claims will remain in Pending phase)
+
+NOTE: SandboxClaim provisioning requires the agent-sandbox project which is
+not yet integrated. Do not rely on SandboxClaim for production workloads.
+{{- end }}

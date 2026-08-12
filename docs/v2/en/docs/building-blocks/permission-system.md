@@ -141,7 +141,7 @@ Each rule has the fields below. When the engine evaluates a rule, it calls the t
 
 - **`toolName` · `String` · *required*** — The tool name the rule applies to: `todo_write` (built-in) or any custom tool name.
 
-- **`ruleContent` · `String | null` · *required*** — Match pattern — semantics depend on the tool, interpreted by the tool's `matchRule()`. `null` means the rule matches every invocation of that tool.
+- **`ruleContent` · `String | null` · *optional*** — Match pattern — semantics depend on the tool, interpreted by the tool's `matchRule()`. `null` means the rule matches every invocation of that tool.
 
 - **`behavior` · `PermissionBehavior` · *required*** — `ALLOW`, `DENY`, `ASK`, or `PASSTHROUGH`
 
@@ -387,6 +387,11 @@ Msg resumeMsg =
                 .build();
 agent.call(List.of(resumeMsg)).block();
 ```
+
+If the resume is sent with `streamEvents(List.of(resumeMsg))`, the stream includes a
+`UserConfirmResultEvent` before the resumed tool execution. Use its `replyId` to associate
+the accepted results with the earlier `RequireUserConfirmEvent`; the event contains only
+the confirmations included in that resume call.
 
 Comparison of the two modes:
 
