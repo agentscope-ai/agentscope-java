@@ -199,6 +199,14 @@ class ArtifactDeliveryToolTest {
     }
 
     @Test
+    void deliverArtifact_fileNameWithNul_isRejected() {
+        String result = tool.deliverArtifact(RT, "report.md", "report\0.md", null, null);
+
+        assertTrue(result.startsWith("Error:"));
+        verify(target, never()).deliver(eq(RT), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void deliverArtifact_filePathWithTrailingSeparator_derivesSafeFileName() {
         when(filesystem.downloadFiles(RT, List.of("outputs/")))
                 .thenReturn(List.of(FileDownloadResponse.success("outputs/", new byte[] {1})));

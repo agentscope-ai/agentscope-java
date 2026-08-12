@@ -168,6 +168,7 @@ public class ArtifactDeliveryTool {
     private static boolean isPlainFileName(String name) {
         return name.indexOf('/') < 0
                 && name.indexOf('\\') < 0
+                && name.indexOf('\0') < 0
                 && !name.equals(".")
                 && !name.equals("..");
     }

@@ -1948,8 +1948,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * constructed subagents, which return plain text results for the main agent to deliver.
          *
          * <p>Note: the tool reads files from the agent filesystem, so it is also suppressed when
-         * {@link #disableFilesystemTools()} is used — combine the two only when you intend the
-         * delivery tool to remain available.
+         * {@link #disableFilesystemTools()} is used. Combining both leaves the tool
+         * unregistered.
          */
         public Builder artifactDeliveryTarget(ArtifactDeliveryTarget target) {
             this.artifactDeliveryTarget = target;
