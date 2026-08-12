@@ -255,7 +255,7 @@ class ReActAgentHitlTest {
     }
 
     private static Msg confirmMsg(boolean confirmed, ToolUseBlock toolCall) {
-        return confirmMsg(List.of(new ConfirmResult(confirmed, toolCall, null)));
+        return confirmMsg(List.of(new ConfirmResult(confirmed, toolCall)));
     }
 
     private static Msg confirmMsg(List<ConfirmResult> confirmResults) {
@@ -566,7 +566,8 @@ class ReActAgentHitlTest {
         ToolUseBlock pending = lastAssistant.getContentBlocks(ToolUseBlock.class).get(0);
 
         // Second call → deny
-        Msg second = agent.call(List.of(confirmMsg(false, pending))).block();
+        Msg confirmation = confirmMsg(List.of(new ConfirmResult(false, pending, null, "  ")));
+        Msg second = agent.call(List.of(confirmation)).block();
         assertNotNull(second);
 
         // Context should contain a DENIED ToolResultBlock for tc1
@@ -611,7 +612,7 @@ class ReActAgentHitlTest {
                                         pending,
                                         null,
                                         "The file is still needed by another task.")));
-        agent.call(List.of(resume)).block();
+        List<AgentEvent> events = agent.streamEvents(List.of(resume)).collectList().block();
 
         assertEquals(2, model.getInvocations().size());
         ToolResultBlock deniedResult =
@@ -625,6 +626,56 @@ class ReActAgentHitlTest {
                 "Permission denied by user. User-provided reason: The file is still needed by"
                         + " another task.",
                 ((TextBlock) deniedResult.getOutput().get(0)).getText());
+        assertNotNull(events);
+        assertEquals(
+                ((TextBlock) deniedResult.getOutput().get(0)).getText(),
+                events.stream()
+                        .filter(ToolResultTextDeltaEvent.class::isInstance)
+                        .map(ToolResultTextDeltaEvent.class::cast)
+                        .filter(event -> "tc1".equals(event.getToolCallId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .getDelta());
+    }
+
+    @Test
+    void deniedConfirmationReasonIsTruncatedBeforeEnteringModelInput() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        ToolUseBlock pending = first.getContentBlocks(ToolUseBlock.class).get(0);
+        String reason = "a".repeat(499) + "😀ignored";
+
+        Msg resume = confirmMsg(List.of(new ConfirmResult(false, pending, null, reason)));
+        List<AgentEvent> events = agent.streamEvents(List.of(resume)).collectList().block();
+
+        ToolResultBlock deniedResult =
+                model.getInvocations().get(1).stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "Permission denied by user. User-provided reason: "
+                        + "a".repeat(499)
+                        + "😀 <truncated>",
+                ((TextBlock) deniedResult.getOutput().get(0)).getText());
+        assertNotNull(events);
+        assertEquals(
+                ((TextBlock) deniedResult.getOutput().get(0)).getText(),
+                events.stream()
+                        .filter(ToolResultTextDeltaEvent.class::isInstance)
+                        .map(ToolResultTextDeltaEvent.class::cast)
+                        .filter(event -> "tc1".equals(event.getToolCallId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .getDelta());
     }
 
     @Test
