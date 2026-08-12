@@ -16,7 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -32,22 +32,17 @@ import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
@@ -59,10 +54,11 @@ class CompactionMiddlewareTest {
     void ordinaryCompactionFailureFallsBackToOriginalInputOnce() {
         AtomicInteger nextCalls = new AtomicInteger();
         CompactionMiddleware middleware =
-                middleware(
-                        (ctx, messages, config, agentId, sessionId) ->
-                                Mono.error(
-                                        new IllegalStateException("summary provider unavailable")));
+                new CompactionMiddleware(
+                        null,
+                        new SynchronousFailingSummaryModel(
+                                new IllegalStateException("summary provider unavailable")),
+                        fixedConfig());
 
         StepVerifier.create(
                         middleware.onReasoning(
@@ -78,15 +74,47 @@ class CompactionMiddlewareTest {
         assertEquals(1, nextCalls.get());
     }
 
-    /** An interrupt during compaction must propagate without entering downstream reasoning. */
+    /** A normal summary failure is still best-effort and continues with a failed-summary message. */
     @Test
-    void interruptedCompactionPropagatesWithoutCallingNext() {
+    void ordinarySummaryFailureContinuesWithCompactedInput() {
         AtomicInteger nextCalls = new AtomicInteger();
         CompactionMiddleware middleware =
-                middleware(
-                        (ctx, messages, config, agentId, sessionId) ->
-                                Mono.error(
-                                        new InterruptedException("interrupted while compacting")));
+                new CompactionMiddleware(
+                        null,
+                        new FailingSummaryModel(
+                                new IllegalStateException("summary provider unavailable")),
+                        fixedConfig());
+
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent(),
+                                context("user", "session"),
+                                input(),
+                                next -> {
+                                    nextCalls.incrementAndGet();
+                                    assertEquals(2, next.messages().size());
+                                    assertTrue(
+                                            next.messages()
+                                                    .get(0)
+                                                    .getTextContent()
+                                                    .contains("Summarization failed"));
+                                    return Flux.empty();
+                                }))
+                .verifyComplete();
+
+        assertEquals(1, nextCalls.get());
+    }
+
+    /** An interrupt during real compaction summarization must propagate without entering reasoning. */
+    @Test
+    void interruptedSummaryCompactionPropagatesWithoutCallingNext() {
+        AtomicInteger nextCalls = new AtomicInteger();
+        CompactionMiddleware middleware =
+                new CompactionMiddleware(
+                        null,
+                        new FailingSummaryModel(
+                                new InterruptedException("interrupted while compacting")),
+                        fixedConfig());
 
         StepVerifier.create(
                         middleware.onReasoning(
@@ -103,38 +131,29 @@ class CompactionMiddlewareTest {
         assertEquals(0, nextCalls.get());
     }
 
-    /** An interrupt received after asynchronous compaction starts must not degrade to reasoning. */
+    /** An async interrupt from real compaction summarization must not degrade to reasoning. */
     @Test
-    void interruptedInFlightCompactionPropagatesWithoutCallingNext() throws Exception {
+    void asynchronousInterruptedSummaryCompactionPropagatesWithoutCallingNext() {
         AtomicInteger nextCalls = new AtomicInteger();
-        CountDownLatch compactionStarted = new CountDownLatch(1);
-        Sinks.One<Optional<List<Msg>>> compactionResult = Sinks.one();
         CompactionMiddleware middleware =
-                middleware(
-                        (ctx, messages, config, agentId, sessionId) ->
-                                compactionResult
-                                        .asMono()
-                                        .doOnSubscribe(ignored -> compactionStarted.countDown()));
+                new CompactionMiddleware(
+                        null,
+                        new AsyncFailingSummaryModel(
+                                new InterruptedException("interrupted while compacting")),
+                        fixedConfig());
 
-        var result =
-                middleware
-                        .onReasoning(
+        StepVerifier.create(
+                        middleware.onReasoning(
                                 agent(),
                                 context("user", "session"),
                                 input(),
                                 next -> {
                                     nextCalls.incrementAndGet();
                                     return Flux.empty();
-                                })
-                        .subscribeOn(Schedulers.parallel())
-                        .collectList()
-                        .toFuture();
-        assertTrue(compactionStarted.await(5, TimeUnit.SECONDS), "compaction should start");
-        compactionResult.tryEmitError(new InterruptedException("interrupted while compacting"));
+                                }))
+                .expectError(InterruptedException.class)
+                .verify();
 
-        ExecutionException error =
-                assertThrows(ExecutionException.class, () -> result.get(5, TimeUnit.SECONDS));
-        assertTrue(error.getCause() instanceof InterruptedException);
         assertEquals(0, nextCalls.get());
     }
 
@@ -143,13 +162,13 @@ class CompactionMiddlewareTest {
     void wrappedInterruptedCompactionPropagatesWithoutCallingNext() {
         AtomicInteger nextCalls = new AtomicInteger();
         CompactionMiddleware middleware =
-                middleware(
-                        (ctx, messages, config, agentId, sessionId) ->
-                                Mono.error(
-                                        new IllegalStateException(
-                                                "compaction wrapper",
-                                                new InterruptedException(
-                                                        "interrupted while compacting"))));
+                new CompactionMiddleware(
+                        null,
+                        new FailingSummaryModel(
+                                new IllegalStateException(
+                                        "compaction wrapper",
+                                        new InterruptedException("interrupted while compacting"))),
+                        fixedConfig());
 
         StepVerifier.create(
                         middleware.onReasoning(
@@ -174,9 +193,8 @@ class CompactionMiddlewareTest {
     void cyclicCompactionFailureCauseFallsBackWithoutLooping() {
         AtomicInteger nextCalls = new AtomicInteger();
         CompactionMiddleware middleware =
-                middleware(
-                        (ctx, messages, config, agentId, sessionId) ->
-                                Mono.error(new CyclicCauseException()));
+                new CompactionMiddleware(
+                        null, new FailingSummaryModel(new CyclicCauseException()), fixedConfig());
 
         StepVerifier.create(
                         middleware.onReasoning(
@@ -197,8 +215,7 @@ class CompactionMiddlewareTest {
     void interruptedDownstreamPropagatesWithoutRetryingNext() {
         AtomicInteger nextCalls = new AtomicInteger();
         CompactionMiddleware middleware =
-                middleware(
-                        (ctx, messages, config, agentId, sessionId) -> Mono.just(Optional.empty()));
+                new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
 
         StepVerifier.create(
                         middleware.onReasoning(
@@ -224,23 +241,14 @@ class CompactionMiddlewareTest {
         AtomicInteger activeNextCalls = new AtomicInteger();
         Set<String> compactedSessions = ConcurrentHashMap.newKeySet();
         CompactionMiddleware middleware =
-                middleware(
-                        (ctx, messages, config, agentId, sessionId) ->
-                                Mono.defer(
-                                        () -> {
-                                            compactedSessions.add(ctx.getSessionId());
-                                            return "session-a".equals(ctx.getSessionId())
-                                                    ? Mono.error(
-                                                            new InterruptedException(
-                                                                    "interrupted session-a"))
-                                                    : Mono.just(Optional.empty());
-                                        }));
+                new CompactionMiddleware(
+                        null, new PerSessionSummaryModel(compactedSessions), fixedConfig());
 
         Flux<AgentEvent> interrupted =
                 middleware.onReasoning(
                         agent(),
                         context("user-a", "session-a"),
-                        input(),
+                        input("session-a previous", "session-a latest"),
                         next -> {
                             interruptedNextCalls.incrementAndGet();
                             return Flux.empty();
@@ -249,7 +257,7 @@ class CompactionMiddlewareTest {
                 middleware.onReasoning(
                         agent(),
                         context("user-b", "session-b"),
-                        input(),
+                        input("session-b previous", "session-b latest"),
                         next -> {
                             activeNextCalls.incrementAndGet();
                             return Flux.empty();
@@ -274,11 +282,7 @@ class CompactionMiddlewareTest {
         CountDownLatch subscribed = new CountDownLatch(1);
         CountingDelayedFirstChunkModel model = new CountingDelayedFirstChunkModel(subscribed);
         CompactionMiddleware middleware =
-                new CompactionMiddleware(
-                        null,
-                        model,
-                        fixedConfig(),
-                        (ctx, messages, config, agentId, sessionId) -> Mono.just(Optional.empty()));
+                new CompactionMiddleware(null, model, noCompactionConfig());
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("compaction-test-agent")
@@ -312,11 +316,7 @@ class CompactionMiddlewareTest {
         CountDownLatch subscribed = new CountDownLatch(2);
         CountingDelayedFirstChunkModel model = new CountingDelayedFirstChunkModel(subscribed);
         CompactionMiddleware middleware =
-                new CompactionMiddleware(
-                        null,
-                        model,
-                        fixedConfig(),
-                        (ctx, messages, config, agentId, sessionId) -> Mono.just(Optional.empty()));
+                new CompactionMiddleware(null, model, noCompactionConfig());
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("compaction-test-agent")
@@ -341,20 +341,30 @@ class CompactionMiddlewareTest {
         assertEquals(
                 GenerateReason.INTERRUPTED,
                 interruptedReply.get(5, TimeUnit.SECONDS).getGenerateReason());
-        assertTrue(
+        assertFalse(
                 activeReply.get(5, TimeUnit.SECONDS).getGenerateReason()
-                        != GenerateReason.INTERRUPTED);
+                        == GenerateReason.INTERRUPTED);
         assertEquals(2, model.callCount.get());
-    }
-
-    /** Creates middleware with an explicit compaction executor, avoiding real model or filesystem dependencies. */
-    private CompactionMiddleware middleware(CompactionMiddleware.CompactionExecutor executor) {
-        return new CompactionMiddleware(null, mock(Model.class), fixedConfig(), executor);
     }
 
     /** Creates stable configuration that enters the compaction branch. */
     private CompactionConfig fixedConfig() {
-        return CompactionConfig.builder().triggerTokens(1).keepTokens(1).build();
+        return CompactionConfig.builder()
+                .triggerTokens(1)
+                .keepTokens(1)
+                .flushBeforeCompact(false)
+                .offloadBeforeCompact(false)
+                .prune(null)
+                .build();
+    }
+
+    /** Creates stable configuration that bypasses compaction for model-stream interrupt tests. */
+    private CompactionConfig noCompactionConfig() {
+        return CompactionConfig.builder()
+                .triggerMessages(0)
+                .triggerTokens(Integer.MAX_VALUE)
+                .keepTokens(0)
+                .build();
     }
 
     /** Creates the ReActAgent test double required by the middleware. */
@@ -371,12 +381,120 @@ class CompactionMiddlewareTest {
 
     /** Creates the minimal input containing one user message. */
     private ReasoningInput input() {
-        return new ReasoningInput(List.of(userMessage("test")), List.of(), null);
+        return input("previous context", "latest request");
+    }
+
+    /** Creates input with enough conversation messages for compaction to cut a prefix. */
+    private ReasoningInput input(String first, String second) {
+        return new ReasoningInput(
+                List.of(userMessage(first), userMessage(second)), List.of(), null);
     }
 
     /** Creates a minimal user message shared by single-session and concurrent-session tests. */
     private Msg userMessage(String text) {
         return Msg.builder().role(MsgRole.USER).textContent(text).build();
+    }
+
+    /** Throws while creating the summary publisher, exercising the outer compaction fallback. */
+    private static final class SynchronousFailingSummaryModel extends ChatModelBase {
+        private final RuntimeException error;
+
+        private SynchronousFailingSummaryModel(RuntimeException error) {
+            this.error = error;
+        }
+
+        @Override
+        public String getModelName() {
+            return "synchronous-failing-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            throw error;
+        }
+    }
+
+    /** Provides a summary model that emits one successful summary chunk. */
+    private static final class SuccessfulSummaryModel extends ChatModelBase {
+
+        @Override
+        public String getModelName() {
+            return "successful-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
+    }
+
+    /** Provides a real summary-model failure for compaction boundary tests. */
+    private static class FailingSummaryModel extends ChatModelBase {
+        private final Throwable error;
+
+        private FailingSummaryModel(Throwable error) {
+            this.error = error;
+        }
+
+        @Override
+        public String getModelName() {
+            return "failing-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.error(error);
+        }
+    }
+
+    /** Provides an asynchronous summary-model failure for in-flight interrupt coverage. */
+    private static final class AsyncFailingSummaryModel extends FailingSummaryModel {
+
+        private AsyncFailingSummaryModel(Throwable error) {
+            super(error);
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return super.doStream(messages, tools, options)
+                    .delaySubscription(Duration.ofMillis(20));
+        }
+    }
+
+    /** Fails one session's summary while allowing another to complete. */
+    private static final class PerSessionSummaryModel extends ChatModelBase {
+        private final Set<String> compactedSessions;
+
+        private PerSessionSummaryModel(Set<String> compactedSessions) {
+            this.compactedSessions = compactedSessions;
+        }
+
+        @Override
+        public String getModelName() {
+            return "per-session-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            String rendered = messages.get(0).getTextContent();
+            if (rendered.contains("session-a")) {
+                compactedSessions.add("session-a");
+                return Flux.error(new InterruptedException("interrupted session-a"));
+            }
+            compactedSessions.add("session-b");
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
     }
 
     /** Provides a model interruptible before its first chunk to verify real ReAct stream request counts. */
