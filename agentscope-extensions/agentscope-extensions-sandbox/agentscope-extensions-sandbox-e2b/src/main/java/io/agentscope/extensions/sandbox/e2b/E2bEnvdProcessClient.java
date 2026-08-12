@@ -205,8 +205,7 @@ final class E2bEnvdProcessClient {
                     Descriptors.FieldDescriptor ec =
                             end.getDescriptorForType().findFieldByName("exit_code");
                     if (ec != null) {
-                        Object v = end.getField(ec);
-                        exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
+                        exit = ((Number) end.getField(ec)).intValue();
                     }
                 }
             } catch (IOException e) {
