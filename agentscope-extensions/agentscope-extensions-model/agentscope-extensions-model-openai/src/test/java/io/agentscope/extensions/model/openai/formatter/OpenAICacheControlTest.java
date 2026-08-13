@@ -38,6 +38,8 @@ class OpenAICacheControlTest {
 
     private static final Map<String, String> EPHEMERAL = Map.of("type", "ephemeral");
 
+    private static final Map<String, String> NO_CACHE = Map.of("type", "no_cache");
+
     private OpenAIChatFormatter formatter;
 
     @BeforeEach
@@ -201,7 +203,7 @@ class OpenAICacheControlTest {
         }
 
         @Test
-        @DisplayName("should not set cache_control when metadata flag is false")
+        @DisplayName("should mark explicit no-cache when metadata flag is false")
         void metadataFalse() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
@@ -215,7 +217,27 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(msg));
 
             assertEquals(1, result.size());
-            assertNull(result.get(0).getCacheControl());
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should not auto-cache a system message explicitly marked false")
+        void systemMessageExplicitNoCache() {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
+            Msg systemMsg =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .textContent("System prompt")
+                            .metadata(metadata)
+                            .build();
+            Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("User msg").build();
+
+            List<OpenAIMessage> result = formatter.format(List.of(systemMsg, userMsg));
+            formatter.applyCacheControl(result);
+
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, result.get(1).getCacheControl());
         }
 
         @Test

@@ -44,6 +44,9 @@ public class DashScopeChatFormatter
 
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
 
+    /** Explicit <code>no_cache</code> control sentinel marking a message excluded from caching. */
+    private static final Map<String, String> NO_CACHE_CONTROL = Map.of("type", "no_cache");
+
     private final DashScopeMessageConverter messageConverter;
     private final DashScopeResponseParser responseParser;
     private final DashScopeToolsHelper toolsHelper;
@@ -176,8 +179,8 @@ public class DashScopeChatFormatter
      * Apply cache control to DashScope messages.
      *
      * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
-     * marking) will not be overwritten.
+     * message in the list, unless they are explicitly marked as no-cache. Messages that are unset
+     * ({@code null}) or already explicitly cached are treated as cacheable.
      *
      * @param messages the list of formatted DashScope messages
      */
@@ -186,12 +189,12 @@ public class DashScopeChatFormatter
             return;
         }
         for (DashScopeMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
+            if ("system".equals(msg.getRole()) && shouldAutoCache(msg.getCacheControl())) {
                 msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
             }
         }
         DashScopeMessage lastMsg = messages.get(messages.size() - 1);
-        if (lastMsg.getCacheControl() == null) {
+        if (shouldAutoCache(lastMsg.getCacheControl())) {
             lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
         }
     }
@@ -203,5 +206,28 @@ public class DashScopeChatFormatter
      */
     static Map<String, String> getEphemeralCacheControl() {
         return EPHEMERAL_CACHE_CONTROL;
+    }
+
+    /**
+     * Get the "no cache" control constant.
+     *
+     * @return unmodifiable map representing an explicit "no cache" marker
+     */
+    static Map<String, String> getNoCacheControl() {
+        return NO_CACHE_CONTROL;
+    }
+
+    /**
+     * Whether the automatic cache-control strategy should mark a message as ephemeral.
+     *
+     * <p>Returns {@code true} when the cache_control is unset ({@code null}) or already explicitly
+     * marked for caching ({@code {"type": "ephemeral"}}). A message explicitly marked as no-cache
+     * ({@code {"type": "no_cache"}}) or carrying any other custom cache_control is left untouched.
+     *
+     * @param cacheControl the current cache_control of the message, may be {@code null}
+     * @return {@code true} if the message should be auto-cached, {@code false} otherwise
+     */
+    static boolean shouldAutoCache(Map<String, String> cacheControl) {
+        return cacheControl == null || EPHEMERAL_CACHE_CONTROL.equals(cacheControl);
     }
 }
