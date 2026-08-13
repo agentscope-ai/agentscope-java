@@ -21,12 +21,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
+import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -106,8 +115,140 @@ class LocalFilesystemSpecTest {
         assertTrue(filesystem instanceof AbstractSandboxFilesystem);
     }
 
+    @Test
+    void knowledgeListingAndSearchMergeAllThreeLayers() throws Exception {
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        Path project = Files.createDirectories(tempDir.resolve("project"));
+        Files.createDirectories(project.resolve("knowledge"));
+        Files.writeString(project.resolve("knowledge/project.md"), "needle from project");
+        Files.createDirectories(workspace.resolve("knowledge"));
+        Files.writeString(workspace.resolve("knowledge/shared.md"), "needle from shared");
+        Files.createDirectories(workspace.resolve("alice/knowledge"));
+        Files.writeString(workspace.resolve("alice/knowledge/personal.md"), "needle from alice");
+
+        AbstractFilesystem filesystem =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .toFilesystem(workspace, rc -> List.of(rc.getUserId()));
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+
+        LsResult ls = filesystem.ls(alice, "knowledge");
+        GlobResult glob = filesystem.glob(alice, "*.md", "knowledge");
+        GrepResult grep = filesystem.grep(alice, "needle", "knowledge", "*.md");
+
+        assertTrue(ls.isSuccess());
+        assertPathsContain(
+                ls.entries(),
+                "knowledge/project.md",
+                "knowledge/shared.md",
+                "knowledge/personal.md");
+        assertTrue(glob.isSuccess());
+        assertPathsContain(
+                glob.matches(),
+                "knowledge/project.md",
+                "knowledge/shared.md",
+                "knowledge/personal.md");
+        assertTrue(grep.isSuccess());
+        Set<String> grepPaths =
+                grep.matches().stream().map(match -> match.path()).collect(Collectors.toSet());
+        assertTrue(grepPaths.stream().anyMatch(path -> path.endsWith("knowledge/project.md")));
+        assertTrue(grepPaths.stream().anyMatch(path -> path.endsWith("knowledge/shared.md")));
+        assertTrue(grepPaths.stream().anyMatch(path -> path.endsWith("knowledge/personal.md")));
+    }
+
+    @Test
+    void downloadsResolveKnowledgeInLayerOrderAndKeepRegularOverlayBehavior() throws Exception {
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        Path project = Files.createDirectories(tempDir.resolve("project"));
+        Files.createDirectories(project.resolve("knowledge"));
+        Files.writeString(project.resolve("knowledge/project.txt"), "project");
+        Files.createDirectories(project.resolve("docs"));
+        Files.writeString(project.resolve("docs/regular.txt"), "regular");
+        Files.createDirectories(workspace.resolve("knowledge"));
+        Files.writeString(workspace.resolve("knowledge/shared.txt"), "shared");
+        Files.createDirectories(workspace.resolve("alice/knowledge"));
+        Files.writeString(workspace.resolve("alice/knowledge/personal.txt"), "personal");
+
+        AbstractFilesystem filesystem =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .toFilesystem(workspace, rc -> List.of(rc.getUserId()));
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+
+        List<FileDownloadResponse> downloads =
+                filesystem.downloadFiles(
+                        alice,
+                        List.of(
+                                "knowledge/personal.txt",
+                                "knowledge/shared.txt",
+                                "knowledge/project.txt",
+                                "docs/regular.txt"));
+
+        assertEquals(4, downloads.size());
+        assertEquals("personal", content(downloads.get(0)));
+        assertEquals("shared", content(downloads.get(1)));
+        assertEquals("project", content(downloads.get(2)));
+        assertEquals("regular", content(downloads.get(3)));
+    }
+
+    @Test
+    void sharedKnowledgeMoveCopiesToIsolatedLayerAndDeleteCannotRemoveBaseline() throws Exception {
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        Path project = Files.createDirectories(tempDir.resolve("project"));
+        Files.createDirectories(workspace.resolve("knowledge"));
+        Files.writeString(workspace.resolve("knowledge/reference.md"), "shared reference");
+        Files.createDirectories(workspace.resolve("alice/knowledge"));
+        Files.writeString(workspace.resolve("alice/knowledge/personal.md"), "personal reference");
+
+        AbstractFilesystem filesystem =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .toFilesystem(workspace, rc -> List.of(rc.getUserId()));
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+
+        WriteResult sharedDelete = filesystem.delete(alice, "knowledge/reference.md");
+        WriteResult move = filesystem.move(alice, "knowledge/reference.md", "knowledge/copied.md");
+        WriteResult personalDelete = filesystem.delete(alice, "knowledge/personal.md");
+
+        assertFalse(sharedDelete.isSuccess());
+        assertTrue(move.isSuccess());
+        assertEquals(
+                "shared reference",
+                Files.readString(workspace.resolve("alice/knowledge/copied.md")));
+        assertEquals(
+                "shared reference", Files.readString(workspace.resolve("knowledge/reference.md")));
+        assertTrue(personalDelete.isSuccess());
+        assertFalse(Files.exists(workspace.resolve("alice/knowledge/personal.md")));
+    }
+
+    @Test
+    void localOverlayDelegatesIdAndShellExecution() throws Exception {
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        Path project = Files.createDirectories(tempDir.resolve("project"));
+        AbstractFilesystem filesystem =
+                new LocalFilesystemSpec().project(project).toFilesystem(workspace, rc -> List.of());
+        AbstractSandboxFilesystem sandbox = (AbstractSandboxFilesystem) filesystem;
+
+        assertFalse(sandbox.id().isBlank());
+        var result = sandbox.execute(RuntimeContext.empty(), "printf local-overlay", 10);
+        assertEquals(0, result.exitCode());
+        assertEquals("local-overlay", result.output());
+    }
+
     private static void assertContent(ReadResult result, String expected) {
         assertTrue(result.isSuccess());
         assertEquals(expected, result.fileData().content());
+    }
+
+    private static void assertPathsContain(List<FileInfo> entries, String... expectedPaths) {
+        Set<String> paths = entries.stream().map(FileInfo::path).collect(Collectors.toSet());
+        for (String expectedPath : expectedPaths) {
+            assertTrue(paths.stream().anyMatch(path -> path.endsWith(expectedPath)));
+        }
+    }
+
+    private static String content(FileDownloadResponse response) {
+        assertTrue(response.isSuccess());
+        return new String(response.content(), StandardCharsets.UTF_8);
     }
 }
