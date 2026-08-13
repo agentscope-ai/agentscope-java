@@ -17,6 +17,7 @@ package io.agentscope.extensions.mongodb.state;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
+import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
@@ -122,9 +123,24 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         collection.createIndex(
                 Indexes.compoundIndex(
                         Indexes.ascending(FIELD_USER_ID), Indexes.ascending(FIELD_SESSION_ID)));
-        collection.createIndex(
-                Indexes.ascending(FIELD_UPDATED_AT),
-                new IndexOptions().expireAfter(0L, TimeUnit.SECONDS).sparse(true));
+
+        String ttlIndexName = FIELD_UPDATED_AT + "_1";
+        long ttlSeconds = 30L * 24 * 3600;
+        try {
+            collection.createIndex(
+                    Indexes.ascending(FIELD_UPDATED_AT),
+                    new IndexOptions().expireAfter(ttlSeconds, TimeUnit.SECONDS).sparse(true));
+        } catch (MongoCommandException e) {
+            // IndexOptionsConflict
+            if (e.getErrorCode() == 85) {
+                collection.dropIndex(ttlIndexName);
+                collection.createIndex(
+                        Indexes.ascending(FIELD_UPDATED_AT),
+                        new IndexOptions().expireAfter(ttlSeconds, TimeUnit.SECONDS).sparse(true));
+            } else {
+                throw e;
+            }
+        }
     }
 
     // ────────────────── Single Value CRUD ──────────────────
@@ -133,10 +149,12 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     public void save(String userId, String sessionId, String key, State value) {
         validateKey(key);
         String slotId = slotId(userId, sessionId);
+        String versionField = VERSION_PREFIX + key;
         String json = JsonUtils.getJsonCodec().toJson(value);
         Bson setFields =
                 Updates.combine(
                         Updates.set(key, Document.parse(json)),
+                        Updates.inc(versionField, 1L),
                         Updates.set(FIELD_UPDATED_AT, new Date()));
         Bson setOnInsert =
                 Updates.combine(
@@ -283,8 +301,18 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         validateKey(key);
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            VersionedState<State> after = getVersioned(userId, sessionId, key, State.class);
-            return after.version();
+            String slotId = slotId(userId, sessionId);
+            String versionField = VERSION_PREFIX + key;
+            Document doc =
+                    collection
+                            .find(Filters.eq(slotId))
+                            .projection(Projections.include(versionField))
+                            .first();
+            if (doc == null) {
+                return UNVERSIONED;
+            }
+            Long v = doc.getLong(versionField);
+            return v != null ? v : 0L;
         }
 
         String slotId = slotId(userId, sessionId);
@@ -315,6 +343,11 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
                 return newVersion != null && newVersion == 1L ? 1L : UNVERSIONED;
             } catch (MongoWriteException e) {
                 if (e.getError().getCode() == 11000) {
+                    return UNVERSIONED;
+                }
+                throw e;
+            } catch (MongoCommandException e) {
+                if (e.getErrorCode() == 11000) {
                     return UNVERSIONED;
                 }
                 throw e;
