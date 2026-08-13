@@ -25,6 +25,9 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.gateway.channel.ChannelRuntimeContextRequest;
+import io.agentscope.harness.agent.gateway.channel.ChannelRuntimeContextResolver;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.time.Instant;
 import java.util.HashMap;
@@ -102,6 +105,12 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
      */
     private volatile BaseStore baseStore;
 
+    /**
+     * Optional resolver that supplies / replaces the caller {@link RuntimeContext} before gateway
+     * identity fields are applied.
+     */
+    private volatile ChannelRuntimeContextResolver runtimeContextResolver;
+
     private HarnessGateway(ChannelManager channelManager, MessageBus messageBus) {
         this.channelManager = channelManager;
         this.messageBus = messageBus;
@@ -133,6 +142,19 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         return channelManager;
     }
 
+    /**
+     * Sets an optional {@link ChannelRuntimeContextResolver} used when building the per-turn {@link
+     * RuntimeContext}. Passing {@code null} clears any previously configured resolver.
+     */
+    public void setRuntimeContextResolver(ChannelRuntimeContextResolver runtimeContextResolver) {
+        this.runtimeContextResolver = runtimeContextResolver;
+    }
+
+    /** Returns the configured {@link ChannelRuntimeContextResolver}, or {@code null}. */
+    public ChannelRuntimeContextResolver getRuntimeContextResolver() {
+        return runtimeContextResolver;
+    }
+
     @Override
     public void bindMainAgent(HarnessAgent agent) {
         Objects.requireNonNull(agent, "agent");
@@ -160,11 +182,30 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
 
     @Override
     public Mono<Msg> run(MsgContext context, List<Msg> messages) {
-        return run(context, messages, null);
+        return run(context, messages, null, null);
     }
 
     @Override
     public Mono<Msg> run(MsgContext context, List<Msg> messages, OutboundAddress outboundAddress) {
+        return run(context, messages, outboundAddress, null);
+    }
+
+    @Override
+    public Mono<Msg> run(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext) {
+        return run(context, messages, outboundAddress, callerContext, null);
+    }
+
+    @Override
+    public Mono<Msg> run(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage) {
         MsgContext ctx = context != null ? context : MsgContext.defaultContext();
         String gateKey = ctx.canonicalKey();
 
@@ -182,16 +223,9 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
             persistRoute(sessionId, outboundAddress);
         }
 
-        RuntimeContext.Builder rtcBuilder =
-                RuntimeContext.builder()
-                        .sessionId(sessionId)
-                        .put("msgContext", ctx)
-                        .put("gateKey", gateKey)
-                        .put("outboundAddress", outboundAddress);
-        if (ctx.userId() != null && !ctx.userId().isBlank()) {
-            rtcBuilder.userId(ctx.userId());
-        }
-        RuntimeContext runtimeContext = rtcBuilder.build();
+        RuntimeContext runtimeContext =
+                buildRuntimeContext(
+                        ctx, outboundAddress, callerContext, inboundMessage, sessionId, gateKey);
 
         return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext));
     }
@@ -199,6 +233,25 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     @Override
     public Flux<AgentEvent> runStream(
             MsgContext context, List<Msg> messages, OutboundAddress outboundAddress) {
+        return runStream(context, messages, outboundAddress, null, null);
+    }
+
+    @Override
+    public Flux<AgentEvent> runStream(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext) {
+        return runStream(context, messages, outboundAddress, callerContext, null);
+    }
+
+    @Override
+    public Flux<AgentEvent> runStream(
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage) {
         MsgContext ctx = context != null ? context : MsgContext.defaultContext();
         String gateKey = ctx.canonicalKey();
 
@@ -216,18 +269,63 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
             persistRoute(sessionId, outboundAddress);
         }
 
-        RuntimeContext.Builder rtcBuilder =
-                RuntimeContext.builder()
-                        .sessionId(sessionId)
-                        .put("msgContext", ctx)
-                        .put("gateKey", gateKey)
-                        .put("outboundAddress", outboundAddress);
-        if (ctx.userId() != null && !ctx.userId().isBlank()) {
-            rtcBuilder.userId(ctx.userId());
-        }
-        RuntimeContext runtimeContext = rtcBuilder.build();
+        RuntimeContext runtimeContext =
+                buildRuntimeContext(
+                        ctx, outboundAddress, callerContext, inboundMessage, sessionId, gateKey);
 
         return withGatedStream(gateKey, () -> ha.streamEvents(messages, runtimeContext));
+    }
+
+    /**
+     * Builds the effective {@link RuntimeContext} for a Gateway turn.
+     *
+     * <ol>
+     *   <li>Start from {@code callerContext} (may be null)
+     *   <li>If a {@link ChannelRuntimeContextResolver} is configured and returns non-null, that
+     *       value replaces the caller base
+     *   <li>Gateway identity fields ({@code sessionId}, {@code userId}, {@code msgContext}, {@code
+     *       gateKey}, {@code outboundAddress}) are applied and win on conflict
+     * </ol>
+     *
+     * @param inboundMessage optional inbound envelope (for resolver); may be null
+     */
+    RuntimeContext buildRuntimeContext(
+            MsgContext ctx,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage,
+            String sessionId,
+            String gateKey) {
+        RuntimeContext base = callerContext;
+        ChannelRuntimeContextResolver resolver = this.runtimeContextResolver;
+        if (resolver != null) {
+            ChannelRuntimeContextRequest request =
+                    new ChannelRuntimeContextRequest(
+                            ctx != null ? ctx.channel() : null,
+                            inboundMessage,
+                            ctx,
+                            outboundAddress,
+                            callerContext);
+            RuntimeContext resolved = resolver.resolve(request);
+            if (resolved != null) {
+                base = resolved;
+            }
+        }
+
+        RuntimeContext.Builder rtcBuilder = RuntimeContext.builder(base).sessionId(sessionId);
+        if (ctx != null) {
+            rtcBuilder.put("msgContext", ctx);
+        }
+        if (gateKey != null) {
+            rtcBuilder.put("gateKey", gateKey);
+        }
+        if (outboundAddress != null) {
+            rtcBuilder.put("outboundAddress", outboundAddress);
+        }
+        if (ctx != null && ctx.userId() != null && !ctx.userId().isBlank()) {
+            rtcBuilder.userId(ctx.userId());
+        }
+        return rtcBuilder.build();
     }
 
     /**

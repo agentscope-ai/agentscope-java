@@ -84,6 +84,14 @@ public class Msg implements State {
             "agentscope_confirm_request_reply_id";
 
     /**
+     * Metadata key storing the {@code replyId} of the {@code RequireExternalExecutionEvent} that
+     * paused this assistant turn. Used to correlate the later
+     * {@code ExternalExecutionResultEvent}.
+     */
+    public static final String METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID =
+            "agentscope_external_execution_request_reply_id";
+
+    /**
      * Metadata key (boolean) marking a message as <em>synthetic</em>: framework-injected rather
      * than authored by the user, the model, or a tool. Synthetic messages (e.g. the per-turn todo
      * reminder produced by {@code TaskReminderMiddleware}) are appended transiently to the

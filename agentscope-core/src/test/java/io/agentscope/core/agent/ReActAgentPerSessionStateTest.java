@@ -259,6 +259,54 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearStateCache releases all local session caches")
+    void clearStateCacheReleasesAllLocalCaches() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        AgentState sessA = agent.getAgentState("u1", "sessA");
+        AgentState sessB = agent.getAgentState("u1", "sessB");
+        var defaultPermissionEngine = agent.getPermissionEngine();
+        assertTrue(cacheSize(agent, "slotVersions") > 0);
+
+        agent.clearStateCache();
+
+        assertEquals(0, cacheSize(agent, "slotVersions"));
+        assertNotSame(sessA, agent.getAgentState("u1", "sessA"));
+        assertNotSame(sessB, agent.getAgentState("u1", "sessB"));
+        assertNotSame(defaultPermissionEngine, agent.getPermissionEngine());
+    }
+
+    @Test
+    @DisplayName("clearStateCache removes only the targeted session")
+    void clearStateCacheRemovesOnlyTargetedSession() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        AgentState target = agent.getAgentState("u1", "sessA");
+        AgentState other = agent.getAgentState("u1", "sessB");
+
+        agent.clearStateCache(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+        assertFalse(cacheContains(agent, "slotVersions", "u1/sessA"));
+        assertTrue(cacheContains(agent, "slotVersions", "u1/sessB"));
+        assertNotSame(target, agent.getAgentState("u1", "sessA"));
+        assertSame(other, agent.getAgentState("u1", "sessB"));
+    }
+
+    @Test
+    @DisplayName("clearStateCache preserves persisted session state")
+    void clearStateCachePreservesPersistedState(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent agent = agent(store);
+        AgentState state = agent.getAgentState("u1", "sessA");
+        state.setSummary("remembered");
+        agent.saveAgentState("u1", "sessA");
+
+        agent.clearStateCache("u1", "sessA");
+
+        AgentState reloaded = agent.getAgentState("u1", "sessA");
+        assertNotSame(state, reloaded);
+        assertEquals("remembered", reloaded.getSummary());
+    }
+
+    @Test
     @DisplayName("saveAgentState(uid,sid) round-trips through the store into a fresh engine")
     void savePersistsPerSlot() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
@@ -384,72 +432,6 @@ class ReActAgentPerSessionStateTest {
                 loadsAfterMerge,
                 store.versionedLoadCount(),
                 "the append-merged state should remain cached after call cleanup");
-    }
-
-    @Test
-    @DisplayName("session eviction removes only the selected in-memory slot")
-    void evictSessionRemovesOnlySelectedSlot() {
-        ReActAgent agent =
-                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
-        RuntimeContext first = RuntimeContext.builder().userId("u").sessionId("first").build();
-        RuntimeContext second = RuntimeContext.builder().userId("u").sessionId("second").build();
-        AgentState firstState = agent.getAgentState(first);
-        AgentState secondState = agent.getAgentState(second);
-        agent.call(List.of(userMsg("first")), first).block(Duration.ofSeconds(5));
-        agent.call(List.of(userMsg("second")), second).block(Duration.ofSeconds(5));
-
-        agent.evictSession("u", "first");
-
-        assertFalse(cacheContains(agent, "slotVersions", "u/first"));
-        assertNotSame(firstState, agent.getAgentState(first));
-        assertSame(secondState, agent.getAgentState(second));
-
-        AgentState defaultState = agent.getAgentState(null, agent.getDefaultSessionId());
-        agent.evictSession(null, null);
-        assertNotSame(defaultState, agent.getAgentState(null, agent.getDefaultSessionId()));
-
-        AgentState blankSessionState = agent.getAgentState(null, agent.getDefaultSessionId());
-        agent.evictSession(null, " ");
-        assertNotSame(blankSessionState, agent.getAgentState(null, agent.getDefaultSessionId()));
-    }
-
-    @Test
-    @DisplayName("user eviction removes all and only that user's in-memory slots")
-    void evictUserRemovesOnlySelectedUsersSlots() {
-        ReActAgent agent =
-                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
-        AgentState first = agent.getAgentState("u1", "first");
-        AgentState second = agent.getAgentState("u1", "second");
-        AgentState other = agent.getAgentState("u2", "first");
-        agent.call(
-                        List.of(userMsg("first")),
-                        RuntimeContext.builder().userId("u1").sessionId("first").build())
-                .block(Duration.ofSeconds(5));
-        agent.call(
-                        List.of(userMsg("second")),
-                        RuntimeContext.builder().userId("u1").sessionId("second").build())
-                .block(Duration.ofSeconds(5));
-        agent.call(
-                        List.of(userMsg("other")),
-                        RuntimeContext.builder().userId("u2").sessionId("first").build())
-                .block(Duration.ofSeconds(5));
-
-        agent.evictUser("u1");
-
-        assertFalse(cacheContains(agent, "slotVersions", "u1/first"));
-        assertFalse(cacheContains(agent, "slotVersions", "u1/second"));
-        assertTrue(cacheContains(agent, "slotVersions", "u2/first"));
-        assertNotSame(first, agent.getAgentState("u1", "first"));
-        assertNotSame(second, agent.getAgentState("u1", "second"));
-        assertSame(other, agent.getAgentState("u2", "first"));
-
-        AgentState anonymous = agent.getAgentState(null, "anonymous");
-        agent.evictUser(null);
-        assertNotSame(anonymous, agent.getAgentState(null, "anonymous"));
-
-        AgentState blankUser = agent.getAgentState(null, "blank-user");
-        agent.evictUser(" ");
-        assertNotSame(blankUser, agent.getAgentState(null, "blank-user"));
     }
 
     @Test
