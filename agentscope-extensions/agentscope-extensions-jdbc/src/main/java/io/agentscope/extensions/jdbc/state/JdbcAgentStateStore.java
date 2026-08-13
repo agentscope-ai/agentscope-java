@@ -19,125 +19,58 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
 import io.agentscope.core.state.State;
 import io.agentscope.core.util.JsonUtils;
-import io.agentscope.extensions.jdbc.dialect.AgentStateStoreDialect;
+import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import io.agentscope.extensions.jdbc.dialect.table.SessionStateDialect;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 import javax.sql.DataSource;
 
 /**
- * Database-agnostic session state store backed by {@link AgentStateStoreDialect}.
+ * Database-agnostic session state store backed by {@link SessionStateDialect}.
  *
- * <p>Implements {@link AgentStateStore} with zero inline SQL — every statement is
- * sourced from the dialect. Supports MySQL, PostgreSQL, H2, and SQLite via the
- * unified dialect abstraction.
- *
- * <h2>Storage model</h2>
- *
- * <ul>
- *   <li>Single state: stored as JSON with {@code item_index = 0}
- *   <li>List state: each item in a separate row with {@code item_index = 0, 1, 2, ...}
- * </ul>
- *
- * <h2>Features</h2>
- *
- * <ul>
- *   <li>True incremental list storage (only INSERTs new items when append-only)
- *   <li>Hash-based change detection for mutable lists
- *   <li>Type-safe state serialisation using Jackson
- *   <li>Optional automatic schema creation
- * </ul>
+ * <p>Implements {@link AgentStateStore} with zero inline SQL — every statement is sourced
+ * from the dialect via {@link BoundSql}.
  *
  * @author shanhongyu
  */
 public class JdbcAgentStateStore implements AgentStateStore {
 
-    public static final String DEFAULT_TABLE_NAME = "agentscope_sessions";
-
-    /** Suffix for hash storage keys. */
     private static final String HASH_KEY_SUFFIX = ":_hash";
-
-    /** item_index value for single state values. */
     private static final int SINGLE_STATE_INDEX = 0;
 
-    /**
-     * Pattern for validating table names — only alphanumeric, underscores, and
-     * hyphens, starting with a letter or underscore. Prevents SQL injection through
-     * the table name (which cannot be parameterised in DDL).
-     */
-    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_-]*$");
-
-    private static final int MAX_IDENTIFIER_LENGTH = 64;
-
     private final DataSource dataSource;
-    private final AgentStateStoreDialect dialect;
-    private final String tableName;
-    private final String fullTableRef;
-
-    // Pre-resolved SQL (table reference substituted once at construction)
-    private final String upsertStateSql;
-    private final String insertStateSql;
-    private final String selectStateSql;
-    private final String selectStateListSql;
-    private final String deleteStateByKeySql;
-    private final String deleteSessionSql;
-    private final String selectMaxIndexSql;
-    private final String existsSql;
-    private final String listSessionIdsSql;
+    private final SessionStateDialect dialect;
 
     /**
-     * Creates a store with default table name and auto-creation disabled.
+     * Creates a store with auto-schema creation disabled.
      *
-     * @param dataSource the JDBC data source; must not be {@code null}
-     * @param dialect the dialect for SQL generation; must not be {@code null}
+     * @param dataSource the JDBC data source
+     * @param dialect the session-state dialect
      */
-    public JdbcAgentStateStore(DataSource dataSource, AgentStateStoreDialect dialect) {
-        this(dataSource, dialect, DEFAULT_TABLE_NAME, false);
+    public JdbcAgentStateStore(DataSource dataSource, SessionStateDialect dialect) {
+        this(dataSource, dialect, false);
     }
 
     /**
-     * Creates a store with full configuration.
+     * Creates a store with optional auto-schema creation.
      *
-     * @param dataSource the JDBC data source; must not be {@code null}
-     * @param dialect the dialect for SQL generation; must not be {@code null}
-     * @param tableName the sessions table name; defaults to {@value #DEFAULT_TABLE_NAME}
-     * @param createIfNotExist when {@code true}, auto-creates the table (and database
-     *     if the dialect supports it); when {@code false}, verifies the table exists
+     * @param dataSource the JDBC data source
+     * @param dialect the session-state dialect
+     * @param createIfNotExist when true, auto-creates the sessions table
      */
     public JdbcAgentStateStore(
-            DataSource dataSource,
-            AgentStateStoreDialect dialect,
-            String tableName,
-            boolean createIfNotExist) {
+            DataSource dataSource, SessionStateDialect dialect, boolean createIfNotExist) {
         this.dataSource = requireNonNull(dataSource, "dataSource");
         this.dialect = requireNonNull(dialect, "dialect");
-        this.tableName =
-                (tableName == null || tableName.trim().isEmpty())
-                        ? DEFAULT_TABLE_NAME
-                        : tableName.trim();
-        validateIdentifier(this.tableName, "Table name");
-        this.fullTableRef = this.dialect.getFullTableReference(null, this.tableName);
-
-        // Pre-resolve all SQL templates with the full table reference
-        this.upsertStateSql = String.format(dialect.getUpsertStateSql(), fullTableRef);
-        this.insertStateSql = String.format(dialect.getInsertStateSql(), fullTableRef);
-        this.selectStateSql = String.format(dialect.getSelectStateSql(), fullTableRef);
-        this.selectStateListSql = String.format(dialect.getSelectStateListSql(), fullTableRef);
-        this.deleteStateByKeySql = String.format(dialect.getDeleteStateByKeySql(), fullTableRef);
-        this.deleteSessionSql = String.format(dialect.getDeleteSessionSql(), fullTableRef);
-        this.selectMaxIndexSql = String.format(dialect.getSelectMaxIndexSql(), fullTableRef);
-        this.existsSql = String.format(dialect.getExistsSql(), fullTableRef);
-        this.listSessionIdsSql = String.format(dialect.getListSessionIdsSql(), fullTableRef);
-
         if (createIfNotExist) {
-            createDatabaseIfSupported();
             createTableIfNotExist();
         } else {
             verifyTableExists();
@@ -148,45 +81,31 @@ public class JdbcAgentStateStore implements AgentStateStore {
     //  Schema management
     // -------------------------------------------------------------------------
 
-    private void createDatabaseIfSupported() {
-        String ddl = dialect.getCreateDatabaseSql(null);
-        if (ddl == null) {
-            return; // ANSI databases skip database creation
-        }
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(ddl)) {
-            stmt.execute();
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to create database", e);
-        }
-    }
-
     private void createTableIfNotExist() {
-        String ddl = String.format(dialect.getCreateSessionsTableSql(), fullTableRef);
+        String ddl = dialect.sessionStateCreateTableSql();
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(ddl)) {
-            stmt.execute();
+                Statement stmt = conn.createStatement()) {
+            stmt.execute(ddl);
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to create session table: " + tableName, e);
+            throw new RuntimeException("Failed to create session table", e);
         }
     }
 
     private void verifyTableExists() {
-        String checkSql = dialect.getCheckTableExistsSql();
+        BoundSql boundSql = dialect.sessionStateCheckTableExists(dialect.sessionStateTableName());
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(checkSql)) {
-            stmt.setString(1, tableName);
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             try (ResultSet rs = stmt.executeQuery()) {
                 if (!rs.next()) {
                     throw new IllegalStateException(
                             "Table does not exist: "
-                                    + tableName
-                                    + "."
-                                    + " Use createIfNotExist=true to auto-create.");
+                                    + dialect.sessionStateTableName()
+                                    + ". Use createIfNotExist=true to auto-create.");
                 }
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to check table existence: " + tableName, e);
+            throw new RuntimeException("Failed to check table existence", e);
         }
     }
 
@@ -204,12 +123,14 @@ public class JdbcAgentStateStore implements AgentStateStore {
             executeInWriteTransaction(
                     conn,
                     () -> {
-                        try (PreparedStatement stmt = conn.prepareStatement(upsertStateSql)) {
-                            String json = JsonUtils.getJsonCodec().toJson(value);
-                            stmt.setString(1, slotId);
-                            stmt.setString(2, key);
-                            stmt.setInt(3, SINGLE_STATE_INDEX);
-                            stmt.setString(4, json);
+                        BoundSql boundSql =
+                                dialect.sessionStateUpsert(
+                                        slotId,
+                                        key,
+                                        SINGLE_STATE_INDEX,
+                                        JsonUtils.getJsonCodec().toJson(value));
+                        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+                            bindParams(stmt, boundSql.params());
                             stmt.executeUpdate();
                         }
                     });
@@ -263,15 +184,14 @@ public class JdbcAgentStateStore implements AgentStateStore {
         validateSlotId(slotId);
         validateStateKey(key);
 
+        BoundSql boundSql = dialect.sessionStateSelect(slotId, key, SINGLE_STATE_INDEX);
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(selectStateSql)) {
-            stmt.setString(1, slotId);
-            stmt.setString(2, key);
-            stmt.setInt(3, SINGLE_STATE_INDEX);
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    String json = rs.getString("state_data");
-                    return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
+                    return Optional.of(
+                            JsonUtils.getJsonCodec().fromJson(rs.getString("state_data"), type));
                 }
                 return Optional.empty();
             }
@@ -287,15 +207,16 @@ public class JdbcAgentStateStore implements AgentStateStore {
         validateSlotId(slotId);
         validateStateKey(key);
 
+        BoundSql boundSql = dialect.sessionStateSelectList(slotId, key);
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(selectStateListSql)) {
-            stmt.setString(1, slotId);
-            stmt.setString(2, key);
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             try (ResultSet rs = stmt.executeQuery()) {
                 List<T> result = new ArrayList<>();
                 while (rs.next()) {
-                    String json = rs.getString("state_data");
-                    result.add(JsonUtils.getJsonCodec().fromJson(json, itemType));
+                    result.add(
+                            JsonUtils.getJsonCodec()
+                                    .fromJson(rs.getString("state_data"), itemType));
                 }
                 return result;
             }
@@ -309,9 +230,10 @@ public class JdbcAgentStateStore implements AgentStateStore {
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);
 
+        BoundSql boundSql = dialect.sessionStateExists(slotId);
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(existsSql)) {
-            stmt.setString(1, slotId);
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next();
             }
@@ -329,8 +251,9 @@ public class JdbcAgentStateStore implements AgentStateStore {
             executeInWriteTransaction(
                     conn,
                     () -> {
-                        try (PreparedStatement stmt = conn.prepareStatement(deleteSessionSql)) {
-                            stmt.setString(1, slotId);
+                        BoundSql boundSql = dialect.sessionStateDeleteSession(slotId);
+                        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+                            bindParams(stmt, boundSql.params());
                             stmt.executeUpdate();
                         }
                     });
@@ -344,9 +267,13 @@ public class JdbcAgentStateStore implements AgentStateStore {
         String userSegment = normalizeUser(userId);
         String prefix = userSegment + ":";
 
+        // Escape LIKE wildcards (_ and %) plus the escape char itself so session IDs that
+        // merely resemble the user prefix (e.g. a real user "u_anon_x" vs. the anonymous
+        // namespace "__anon__") are not matched by the pattern.
+        BoundSql boundSql = dialect.sessionStateListSessionIds(likePrefixPattern(prefix));
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(listSessionIdsSql)) {
-            stmt.setString(1, prefix + "%");
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             try (ResultSet rs = stmt.executeQuery()) {
                 Set<String> sessionIds = new HashSet<>();
                 while (rs.next()) {
@@ -360,16 +287,33 @@ public class JdbcAgentStateStore implements AgentStateStore {
         }
     }
 
+    /**
+     * Builds a {@code LIKE} prefix pattern that matches exactly {@code prefix} followed by
+     * anything, escaping every {@code _}, {@code %} and the dialect's escape char so the
+     * user segment is treated literally.
+     */
+    private String likePrefixPattern(String prefix) {
+        char esc = dialect.sessionStateLikeEscapeChar();
+        StringBuilder sb = new StringBuilder();
+        for (char ch : prefix.toCharArray()) {
+            if (ch == esc || ch == '%' || ch == '_') {
+                sb.append(esc);
+            }
+            sb.append(ch);
+        }
+        sb.append('%');
+        return sb.toString();
+    }
+
     // -------------------------------------------------------------------------
     //  Internal helpers — list state operations
     // -------------------------------------------------------------------------
 
     private String getStoredHash(Connection conn, String slotId, String hashKey)
             throws SQLException {
-        try (PreparedStatement stmt = conn.prepareStatement(selectStateSql)) {
-            stmt.setString(1, slotId);
-            stmt.setString(2, hashKey);
-            stmt.setInt(3, SINGLE_STATE_INDEX);
+        BoundSql boundSql = dialect.sessionStateSelect(slotId, hashKey, SINGLE_STATE_INDEX);
+        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next() ? rs.getString("state_data") : null;
             }
@@ -378,19 +322,17 @@ public class JdbcAgentStateStore implements AgentStateStore {
 
     private void saveHash(Connection conn, String slotId, String hashKey, String hash)
             throws SQLException {
-        try (PreparedStatement stmt = conn.prepareStatement(upsertStateSql)) {
-            stmt.setString(1, slotId);
-            stmt.setString(2, hashKey);
-            stmt.setInt(3, SINGLE_STATE_INDEX);
-            stmt.setString(4, hash);
+        BoundSql boundSql = dialect.sessionStateUpsert(slotId, hashKey, SINGLE_STATE_INDEX, hash);
+        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             stmt.executeUpdate();
         }
     }
 
     private void deleteListItems(Connection conn, String slotId, String key) throws SQLException {
-        try (PreparedStatement stmt = conn.prepareStatement(deleteStateByKeySql)) {
-            stmt.setString(1, slotId);
-            stmt.setString(2, key);
+        BoundSql boundSql = dialect.sessionStateDeleteByKey(slotId, key);
+        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             stmt.executeUpdate();
         }
     }
@@ -398,14 +340,18 @@ public class JdbcAgentStateStore implements AgentStateStore {
     private void insertItems(
             Connection conn, String slotId, String key, List<? extends State> items, int startIndex)
             throws Exception {
-        try (PreparedStatement stmt = conn.prepareStatement(insertStateSql)) {
-            int index = startIndex;
-            for (State item : items) {
-                String json = JsonUtils.getJsonCodec().toJson(item);
-                stmt.setString(1, slotId);
-                stmt.setString(2, key);
-                stmt.setInt(3, index);
-                stmt.setString(4, json);
+        // All dialects return the same SQL template from sessionStateInsert (only params vary),
+        // so we prepare once and batch — matching the MySQL module's addBatch/executeBatch pattern.
+        String firstJson = JsonUtils.getJsonCodec().toJson(items.get(0));
+        BoundSql firstBound = dialect.sessionStateInsert(slotId, key, startIndex, firstJson);
+        try (PreparedStatement stmt = conn.prepareStatement(firstBound.sql())) {
+            bindParams(stmt, firstBound.params());
+            stmt.addBatch();
+            int index = startIndex + 1;
+            for (int i = 1; i < items.size(); i++) {
+                String json = JsonUtils.getJsonCodec().toJson(items.get(i));
+                BoundSql boundSql = dialect.sessionStateInsert(slotId, key, index, json);
+                bindParams(stmt, boundSql.params());
                 stmt.addBatch();
                 index++;
             }
@@ -414,9 +360,9 @@ public class JdbcAgentStateStore implements AgentStateStore {
     }
 
     private int getListCount(Connection conn, String slotId, String key) throws SQLException {
-        try (PreparedStatement stmt = conn.prepareStatement(selectMaxIndexSql)) {
-            stmt.setString(1, slotId);
-            stmt.setString(2, key);
+        BoundSql boundSql = dialect.sessionStateSelectMaxIndex(slotId, key);
+        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
                     int maxIndex = rs.getInt(1);
@@ -462,6 +408,12 @@ public class JdbcAgentStateStore implements AgentStateStore {
         }
     }
 
+    private static void bindParams(PreparedStatement ps, List<Object> params) throws SQLException {
+        for (int i = 0; i < params.size(); i++) {
+            ps.setObject(i + 1, params.get(i));
+        }
+    }
+
     private static final String ANON_USER = "__anon__";
 
     private static String normalizeUser(String userId) {
@@ -493,23 +445,6 @@ public class JdbcAgentStateStore implements AgentStateStore {
         }
         if (key.length() > 255) {
             throw new IllegalArgumentException("State key cannot exceed 255 characters");
-        }
-    }
-
-    private static void validateIdentifier(String identifier, String identifierType) {
-        if (identifier == null || identifier.isEmpty()) {
-            throw new IllegalArgumentException(identifierType + " cannot be null or empty");
-        }
-        if (identifier.length() > MAX_IDENTIFIER_LENGTH) {
-            throw new IllegalArgumentException(
-                    identifierType + " cannot exceed " + MAX_IDENTIFIER_LENGTH + " characters");
-        }
-        if (!IDENTIFIER_PATTERN.matcher(identifier).matches()) {
-            throw new IllegalArgumentException(
-                    identifierType
-                            + " contains invalid characters. Only alphanumeric characters,"
-                            + " underscores, and hyphens are allowed. Invalid value: "
-                            + identifier);
         }
     }
 

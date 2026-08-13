@@ -16,7 +16,7 @@
 package io.agentscope.extensions.jdbc;
 
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.extensions.jdbc.dialect.JdbcDialect;
+import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.sandbox.JdbcSandboxExecutionGuard;
 import io.agentscope.extensions.jdbc.snapshot.JdbcSnapshotSpec;
 import io.agentscope.extensions.jdbc.state.JdbcAgentStateStore;
@@ -29,19 +29,16 @@ import java.util.Objects;
 import javax.sql.DataSource;
 
 /**
- * Multi-database JDBC-backed {@link DistributedStore} with automatic dialect
- * detection.
+ * Multi-database JDBC-backed {@link DistributedStore} with automatic dialect detection.
  *
  * <p>Pass any JDBC {@link DataSource} and the store auto-detects the database via
- * {@link JdbcDialect#from(DataSource)}, then assembles all four components with the
- * correct dialect:
+ * {@link AbstractJdbcDialect#from(DataSource)}, then assembles all four components:
  *
  * <ul>
  *   <li>{@link JdbcAgentStateStore} — agent session state
  *   <li>{@link JdbcStore} — workspace filesystem KV
  *   <li>{@link JdbcSnapshotSpec} — sandbox snapshots as BLOBs
- *   <li>{@link JdbcSandboxExecutionGuard} — distributed lock via the dialect's
- *       {@link io.agentscope.extensions.jdbc.dialect.SandboxLockStrategy}
+ *   <li>{@link JdbcSandboxExecutionGuard} — distributed lock via the dialect's lock strategy
  * </ul>
  *
  * <h2>Usage</h2>
@@ -58,47 +55,44 @@ import javax.sql.DataSource;
  *     .build();
  * }</pre>
  *
- * <p>This replaces the deprecated {@code MysqlDistributedStore} and
- * {@code PostgresDistributedStore} facades. The database is detected automatically;
- * no manual dialect selection is required.
- *
  * @author shanhongyu
  */
 public class JdbcDistributedStore implements DistributedStore {
 
     private final DataSource dataSource;
-    private final JdbcDialect dialect;
+    private final AbstractJdbcDialect dialect;
 
-    private JdbcDistributedStore(DataSource dataSource, JdbcDialect dialect) {
+    private JdbcDistributedStore(DataSource dataSource, AbstractJdbcDialect dialect) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
         this.dialect = Objects.requireNonNull(dialect, "dialect");
+        this.dialect.bindDataSource(dataSource);
     }
 
     /**
-     * Creates a JDBC distributed store with auto-detected dialect.
+     * Creates a JDBC distributed store with auto-detected dialect and table creation.
      *
      * @param dataSource the JDBC data source for any supported database
      * @return a new distributed store
      */
     public static JdbcDistributedStore create(DataSource dataSource) {
-        return new JdbcDistributedStore(dataSource, JdbcDialect.from(dataSource));
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource).build();
+        return new JdbcDistributedStore(dataSource, dialect);
     }
 
     /**
-     * Creates a JDBC distributed store with an explicitly specified dialect.
+     * Creates a JDBC distributed store with an explicitly provided dialect.
      *
      * @param dataSource the JDBC data source
-     * @param dialect the dialect to use (skips auto-detection)
+     * @param dialect the pre-built dialect (skips auto-detection)
      * @return a new distributed store
      */
-    public static JdbcDistributedStore create(DataSource dataSource, JdbcDialect dialect) {
+    public static JdbcDistributedStore create(DataSource dataSource, AbstractJdbcDialect dialect) {
         return new JdbcDistributedStore(dataSource, dialect);
     }
 
     @Override
     public AgentStateStore agentStateStore() {
-        return new JdbcAgentStateStore(
-                dataSource, dialect, JdbcAgentStateStore.DEFAULT_TABLE_NAME, true);
+        return new JdbcAgentStateStore(dataSource, dialect, true);
     }
 
     @Override
@@ -108,11 +102,11 @@ public class JdbcDistributedStore implements DistributedStore {
 
     @Override
     public SandboxSnapshotSpec sandboxSnapshotSpec() {
-        return new JdbcSnapshotSpec(dataSource, dialect);
+        return new JdbcSnapshotSpec(dataSource, dialect, true);
     }
 
     @Override
     public SandboxExecutionGuard sandboxExecutionGuard() {
-        return JdbcSandboxExecutionGuard.builder(dialect.lockStrategy(dataSource)).build();
+        return JdbcSandboxExecutionGuard.builder(dialect).build();
     }
 }

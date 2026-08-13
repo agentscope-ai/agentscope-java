@@ -16,18 +16,20 @@
 package io.agentscope.extensions.jdbc.dialect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for SQL generation in each dialect implementation. These tests verify
- * that the correct database-specific syntax is produced and that ANSI defaults are
- * inherited where expected.
+ * Unit tests for dialect SQL generation, verifying vendor-specific syntax differences.
  *
  * @author shanhongyu
  */
@@ -35,226 +37,265 @@ import org.junit.jupiter.api.Test;
 class DialectSqlTests {
 
     // ------------------------------------------------------------------
-    //  PostgresDialect — ANSI baseline
+    //  Table-name resolution (prefix + base, override)
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("PostgresDialect createTable uses VARCHAR and TEXT")
-    void postgresCreateTableUsesAnsiTypes() {
-        String sql = new PostgresDialect().getCreateTableSql();
-        assertTrue(sql.contains("VARCHAR(2048)"), "should use VARCHAR(2048) for namespace_path");
-        assertTrue(sql.contains("TEXT"), "should use TEXT for value_json");
-        assertFalse(sql.contains("ENGINE="), "should not have MySQL ENGINE clause");
+    @DisplayName("default prefix produces expected table names")
+    void defaultPrefixTableNames() {
+        var d = new PostgresDialect();
+        assertEquals("agentscope_store", d.storeTableName());
+        assertEquals("agentscope_sessions", d.sessionStateTableName());
+        assertEquals("agentscope_snapshots", d.snapshotTableName());
     }
 
     @Test
-    @DisplayName("PostgresDialect upsert uses ON CONFLICT")
-    void postgresUpsertUsesOnConflict() {
-        String sql = new PostgresDialect().getUpsertSql();
-        assertTrue(sql.contains("ON CONFLICT"), "should use ON CONFLICT syntax");
-        assertTrue(sql.contains("EXCLUDED.value_json"), "should reference EXCLUDED");
+    @DisplayName("custom prefix via builder")
+    void customPrefixTableNames() {
+        var ds = new org.h2.jdbcx.JdbcDataSource();
+        ds.setUrl("jdbc:h2:mem:prefix_test;DB_CLOSE_DELAY=-1");
+        ds.setUser("sa");
+        var d = AbstractJdbcDialect.from(ds).tablePrefix("custom_").autoCreateTable(false).build();
+        assertEquals("custom_store", d.storeTableName());
+        assertEquals("custom_sessions", d.sessionStateTableName());
     }
 
     @Test
-    @DisplayName("PostgresDialect blobType is BYTEA")
-    void postgresBlobTypeIsBytea() {
-        assertEquals("BYTEA", new PostgresDialect().getBlobType());
-    }
-
-    @Test
-    @DisplayName("PostgresDialect inherits ANSI insertSql from default")
-    void postgresInheritsInsertSql() {
-        String sql = new PostgresDialect().getInsertSql();
-        assertTrue(sql.contains("VALUES (?, ?, ?, 1, ?)"));
-    }
-
-    @Test
-    @DisplayName("PostgresDialect inherits ANSI casUpdateSql from default")
-    void postgresInheritsCasUpdateSql() {
-        String sql = new PostgresDialect().getCasUpdateSql();
-        assertTrue(sql.contains("version = version + 1"));
-        assertTrue(sql.contains("AND version = ?"));
-    }
-
-    @Test
-    @DisplayName("PostgresDialect checkTableExists uses current_schema()")
-    void postgresCheckTableExistsUsesCurrentSchema() {
-        String sql = new PostgresDialect().getCheckTableExistsSql();
-        assertTrue(sql.contains("current_schema()"));
+    @DisplayName("per-table name override takes priority over prefix")
+    void perTableOverride() {
+        var ds = new org.h2.jdbcx.JdbcDataSource();
+        ds.setUrl("jdbc:h2:mem:override_test;DB_CLOSE_DELAY=-1");
+        ds.setUser("sa");
+        var d =
+                AbstractJdbcDialect.from(ds)
+                        .tablePrefix("custom_")
+                        .storeTableName("my_kv_table")
+                        .autoCreateTable(false)
+                        .build();
+        assertEquals("my_kv_table", d.storeTableName());
+        assertEquals("custom_sessions", d.sessionStateTableName());
     }
 
     // ------------------------------------------------------------------
-    //  MysqlDialect — MySQL-specific overrides
+    //  StoreDialect — UPSERT syntax differences
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("MysqlDialect createTable uses LONGTEXT and ENGINE=InnoDB")
-    void mysqlCreateTableUsesLongTextAndInnoDB() {
-        String sql = new MysqlDialect().getCreateTableSql();
-        assertTrue(sql.contains("LONGTEXT"), "should use LONGTEXT for value_json");
-        assertTrue(sql.contains("ENGINE=InnoDB"), "should use ENGINE=InnoDB");
-        assertTrue(sql.contains("utf8mb4"), "should specify utf8mb4 charset");
+    @DisplayName("PostgresDialect storeUpsert uses ON CONFLICT")
+    void postgresStoreUpsertUsesOnConflict() {
+        BoundSql bs = new PostgresDialect().storeUpsert("ns", "k", "{}", 1L);
+        assertTrue(bs.sql().contains("ON CONFLICT"));
+        assertTrue(bs.sql().contains("EXCLUDED.value_json"));
+        assertEquals(4, bs.params().size());
     }
 
     @Test
-    @DisplayName("MysqlDialect PK fits InnoDB utf8mb4 3072-byte limit")
-    void mysqlPkFitsInnodbLimit() {
-        String ddl = new MysqlDialect().getCreateTableSql();
-        // namespace_path VARCHAR(512) + item_key VARCHAR(255) = 767 chars
-        // 767 * 4 bytes/char (utf8mb4) = 3068 bytes < 3072 limit
-        assertTrue(ddl.contains("VARCHAR(512)"), "namespace_path should be VARCHAR(512)");
-        assertTrue(ddl.contains("VARCHAR(255)"), "item_key should be VARCHAR(255)");
+    @DisplayName("MysqlDialect storeUpsert uses ON DUPLICATE KEY")
+    void mysqlStoreUpsertUsesOnDuplicateKey() {
+        BoundSql bs = new MysqlDialect().storeUpsert("ns", "k", "{}", 1L);
+        assertTrue(bs.sql().contains("ON DUPLICATE KEY UPDATE"));
+        assertTrue(bs.sql().contains("VALUES(value_json)"));
     }
 
     @Test
-    @DisplayName("MysqlDialect upsert uses ON DUPLICATE KEY")
-    void mysqlUpsertUsesOnDuplicateKey() {
-        String sql = new MysqlDialect().getUpsertSql();
-        assertTrue(sql.contains("ON DUPLICATE KEY UPDATE"));
-        assertTrue(sql.contains("VALUES(value_json)"));
+    @DisplayName("H2Dialect storeUpsert uses MERGE INTO")
+    void h2StoreUpsertUsesMergeInto() {
+        BoundSql bs = new H2Dialect().storeUpsert("ns", "k", "{}", 1L);
+        assertTrue(bs.sql().contains("MERGE INTO"));
     }
 
     @Test
-    @DisplayName("MysqlDialect quoteIdentifier uses backticks")
-    void mysqlQuoteIdentifierUsesBackticks() {
-        assertEquals("`my_table`", new MysqlDialect().quoteIdentifier("my_table"));
-    }
-
-    @Test
-    @DisplayName("MysqlDialect createDatabaseSql returns non-null")
-    void mysqlCreateDatabaseSqlIsNonNull() {
-        String sql = new MysqlDialect().getCreateDatabaseSql("agentscope");
-        assertNotNull(sql);
-        assertTrue(sql.contains("CREATE DATABASE IF NOT EXISTS"));
-        assertTrue(sql.contains("utf8mb4"));
-    }
-
-    @Test
-    @DisplayName("MysqlDialect createDatabaseSql is null for ANSI databases")
-    void postgresCreateDatabaseSqlIsNull() {
-        // The ANSI default returns null — PostgreSQL, H2, SQLite skip DB creation
-        assertNull(new PostgresDialect().getCreateDatabaseSql("agentscope"));
-        assertNull(new H2Dialect().getCreateDatabaseSql("agentscope"));
-        assertNull(new SqliteDialect().getCreateDatabaseSql("agentscope"));
-    }
-
-    @Test
-    @DisplayName("MysqlDialect fullTableReference includes database prefix")
-    void mysqlFullTableReferenceIncludesDatabase() {
-        String ref = new MysqlDialect().getFullTableReference("agentscope", "sessions");
-        assertEquals("`agentscope`.`sessions`", ref);
-    }
-
-    @Test
-    @DisplayName("PostgresDialect fullTableReference is just quoted table name")
-    void postgresFullTableReferenceIsQuotedTable() {
-        String ref = new PostgresDialect().getFullTableReference("agentscope", "sessions");
-        assertEquals("\"sessions\"", ref);
-    }
-
-    @Test
-    @DisplayName("MysqlDialect blobType is LONGBLOB")
-    void mysqlBlobTypeIsLongBlob() {
-        assertEquals("LONGBLOB", new MysqlDialect().getBlobType());
+    @DisplayName("SqliteDialect storeUpsert uses ON CONFLICT")
+    void sqliteStoreUpsertUsesOnConflict() {
+        BoundSql bs = new SqliteDialect().storeUpsert("ns", "k", "{}", 1L);
+        assertTrue(bs.sql().contains("ON CONFLICT"));
     }
 
     // ------------------------------------------------------------------
-    //  H2Dialect
+    //  StoreDialect — DDL type differences
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("H2Dialect createTable uses CLOB")
-    void h2CreateTableUsesClob() {
-        String sql = new H2Dialect().getCreateTableSql();
-        assertTrue(sql.contains("CLOB"), "should use CLOB for value_json");
+    @DisplayName("MysqlDialect store DDL has LONGTEXT and ENGINE=InnoDB")
+    void mysqlStoreDdlHasInnoDB() {
+        String ddl = new MysqlDialect().storeCreateTableSql();
+        assertTrue(ddl.contains("LONGTEXT"));
+        assertTrue(ddl.contains("ENGINE=InnoDB"));
+        assertTrue(ddl.contains("utf8mb4"));
     }
 
     @Test
-    @DisplayName("H2Dialect upsert uses MERGE INTO")
-    void h2UpsertUsesMergeInto() {
-        String sql = new H2Dialect().getUpsertSql();
-        assertTrue(sql.contains("MERGE INTO"), "H2 should use MERGE INTO for UPSERT");
+    @DisplayName("SqliteDialect store DDL uses TEXT and INTEGER")
+    void sqliteStoreDdlUsesTextInteger() {
+        String ddl = new SqliteDialect().storeCreateTableSql();
+        assertTrue(ddl.contains("TEXT"));
+        assertTrue(ddl.contains("INTEGER"));
     }
 
     @Test
-    @DisplayName("H2Dialect checkTableExists uses INFORMATION_SCHEMA")
-    void h2CheckTableExistsUsesInformationSchema() {
-        String sql = new H2Dialect().getCheckTableExistsSql();
-        assertTrue(sql.contains("INFORMATION_SCHEMA.TABLES"));
-    }
-
-    // ------------------------------------------------------------------
-    //  SqliteDialect
-    // ------------------------------------------------------------------
-
-    @Test
-    @DisplayName("SqliteDialect createTable uses TEXT and INTEGER")
-    void sqliteCreateTableUsesTextAndInteger() {
-        String sql = new SqliteDialect().getCreateTableSql();
-        assertTrue(sql.contains("TEXT"), "should use TEXT for string columns");
-        assertTrue(sql.contains("INTEGER"), "should use INTEGER for numeric columns");
-        assertFalse(sql.contains("VARCHAR"), "should not use VARCHAR");
-    }
-
-    @Test
-    @DisplayName("SqliteDialect checkTableExists uses sqlite_master")
-    void sqliteCheckTableExistsUsesSqliteMaster() {
-        String sql = new SqliteDialect().getCheckTableExistsSql();
-        assertTrue(sql.contains("sqlite_master"));
-    }
-
-    @Test
-    @DisplayName("SqliteDialect upsert uses ON CONFLICT")
-    void sqliteUpsertUsesOnConflict() {
-        String sql = new SqliteDialect().getUpsertSql();
-        assertTrue(sql.contains("ON CONFLICT"));
+    @DisplayName("H2Dialect store DDL uses CLOB")
+    void h2StoreDdlUsesClob() {
+        assertTrue(new H2Dialect().storeCreateTableSql().contains("CLOB"));
     }
 
     // ------------------------------------------------------------------
-    //  Cross-dialect: ANSI defaults inherited
+    //  SessionStateDialect — UPSERT + table existence check
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("All dialects inherit identical insertSql from default")
-    void allDialectsInheritIdenticalInsertSql() {
+    @DisplayName("MysqlDialect state UPSERT uses ON DUPLICATE KEY and INFORMATION_SCHEMA")
+    void mysqlStateUpsertAndCheck() {
+        var d = new MysqlDialect();
+        BoundSql upsert = d.sessionStateUpsert("sid", "key", 0, "data");
+        assertTrue(upsert.sql().contains("ON DUPLICATE KEY UPDATE"));
+
+        BoundSql check = d.sessionStateCheckTableExists("my_table");
+        assertTrue(check.sql().contains("DATABASE()"));
+    }
+
+    @Test
+    @DisplayName("H2Dialect state UPSERT uses MERGE INTO and INFORMATION_SCHEMA")
+    void h2StateUpsertAndCheck() {
+        var d = new H2Dialect();
+        BoundSql upsert = d.sessionStateUpsert("sid", "key", 0, "data");
+        assertTrue(upsert.sql().contains("MERGE INTO"));
+
+        BoundSql check = d.sessionStateCheckTableExists("my_table");
+        assertTrue(check.sql().contains("INFORMATION_SCHEMA"));
+    }
+
+    @Test
+    @DisplayName("SqliteDialect state check uses sqlite_master")
+    void sqliteStateCheckUsesSqliteMaster() {
+        BoundSql check = new SqliteDialect().sessionStateCheckTableExists("my_table");
+        assertTrue(check.sql().contains("sqlite_master"));
+    }
+
+    // ------------------------------------------------------------------
+    //  SnapshotDialect — UPSERT + DDL differences
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("PostgresDialect snapshot DDL uses BYTEA")
+    void postgresSnapshotDdlUsesBytea() {
+        assertTrue(new PostgresDialect().snapshotCreateTableSql().contains("BYTEA"));
+    }
+
+    @Test
+    @DisplayName("MysqlDialect snapshot DDL uses LONGBLOB")
+    void mysqlSnapshotDdlUsesLongBlob() {
+        assertTrue(new MysqlDialect().snapshotCreateTableSql().contains("LONGBLOB"));
+    }
+
+    @Test
+    @DisplayName("H2Dialect snapshot UPSERT uses full MERGE INTO with created_at update")
+    void h2SnapshotUpsertUpdatesCreatedAt() {
+        BoundSql bs = new H2Dialect().snapshotUpsert("snap", new byte[] {1, 2});
+        assertTrue(bs.sql().contains("MERGE INTO"));
+        assertTrue(bs.sql().contains("WHEN MATCHED THEN UPDATE SET"));
+        assertTrue(bs.sql().contains("created_at = CURRENT_TIMESTAMP"));
+    }
+
+    // ------------------------------------------------------------------
+    //  ANSI defaults inherited identically
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("all dialects inherit identical storeInsert from default")
+    void allInheritStoreInsert() {
         String expected =
-                new JdbcStoreDialect() {
-                    @Override
-                    public String getCreateTableSql() {
-                        return "";
-                    }
-
-                    @Override
-                    public String getUpsertSql() {
-                        return "";
-                    }
-                }.getInsertSql();
-
-        assertEquals(expected, new PostgresDialect().getInsertSql());
-        assertEquals(expected, new MysqlDialect().getInsertSql());
-        assertEquals(expected, new H2Dialect().getInsertSql());
-        assertEquals(expected, new SqliteDialect().getInsertSql());
+                "INSERT INTO agentscope_store"
+                        + " (namespace_path, item_key, value_json, version, updated_at)"
+                        + " VALUES (?, ?, ?, 1, ?)";
+        assertEquals(expected, new PostgresDialect().storeInsert("a", "b", "c", 1L).sql());
+        assertEquals(expected, new MysqlDialect().storeInsert("a", "b", "c", 1L).sql());
+        assertEquals(expected, new H2Dialect().storeInsert("a", "b", "c", 1L).sql());
+        assertEquals(expected, new SqliteDialect().storeInsert("a", "b", "c", 1L).sql());
     }
 
     @Test
-    @DisplayName("All dialects inherit identical casUpdateSql from default")
-    void allDialectsInheritIdenticalCasUpdateSql() {
-        String expected =
-                new JdbcStoreDialect() {
-                    @Override
-                    public String getCreateTableSql() {
-                        return "";
-                    }
+    @DisplayName("MysqlDialect IS a SandboxLockStrategy")
+    void mysqlDialectIsLockStrategy() {
+        assertTrue(
+                new MysqlDialect()
+                        instanceof io.agentscope.extensions.jdbc.dialect.SandboxLockStrategy);
+    }
 
-                    @Override
-                    public String getUpsertSql() {
-                        return "";
-                    }
-                }.getCasUpdateSql();
+    // ------------------------------------------------------------------
+    //  InnoDB utf8mb4 index limit (ported from MysqlJdbcStoreDialectTest)
+    // ------------------------------------------------------------------
 
-        assertEquals(expected, new PostgresDialect().getCasUpdateSql());
-        assertEquals(expected, new MysqlDialect().getCasUpdateSql());
-        assertEquals(expected, new H2Dialect().getCasUpdateSql());
-        assertEquals(expected, new SqliteDialect().getCasUpdateSql());
+    private static final int INNODB_UTF8MB4_INDEX_LIMIT_BYTES = 3072;
+    private static final int UTF8MB4_MAX_BYTES_PER_CHAR = 4;
+
+    @Test
+    @DisplayName("MysqlDialect store PK fits InnoDB utf8mb4 3072-byte limit")
+    void mysqlStorePkFitsInnoDbUtf8mb4Limit() {
+        String ddl = new MysqlDialect().storeCreateTableSql();
+
+        int namespacePathLength = varcharLength(ddl, "namespace_path");
+        int itemKeyLength = varcharLength(ddl, "item_key");
+        long compositePkBytes =
+                (long) (namespacePathLength + itemKeyLength) * UTF8MB4_MAX_BYTES_PER_CHAR;
+
+        assertTrue(
+                compositePkBytes <= INNODB_UTF8MB4_INDEX_LIMIT_BYTES,
+                () ->
+                        String.format(
+                                "Composite PK is %d bytes, over the InnoDB utf8mb4 limit of %d"
+                                        + " bytes",
+                                compositePkBytes, INNODB_UTF8MB4_INDEX_LIMIT_BYTES));
+    }
+
+    private static int varcharLength(String ddl, String columnName) {
+        Matcher matcher =
+                Pattern.compile("(?i)\\b" + Pattern.quote(columnName) + "\\s+VARCHAR\\((\\d+)\\)")
+                        .matcher(ddl);
+        if (!matcher.find()) {
+            throw new IllegalStateException("Missing VARCHAR definition for " + columnName);
+        }
+        return Integer.parseInt(matcher.group(1));
+    }
+
+    // ------------------------------------------------------------------
+    //  Table-name validation (SQL injection guard)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("builder rejects invalid table prefix")
+    void builderRejectsInvalidPrefix() {
+        var ds = new org.h2.jdbcx.JdbcDataSource();
+        ds.setUrl("jdbc:h2:mem:validation_test;DB_CLOSE_DELAY=-1");
+        ds.setUser("sa");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AbstractJdbcDialect.from(ds).tablePrefix("evil; DROP TABLE"));
+    }
+
+    @Test
+    @DisplayName("builder rejects invalid store table name")
+    void builderRejectsInvalidTableName() {
+        var ds = new org.h2.jdbcx.JdbcDataSource();
+        ds.setUrl("jdbc:h2:mem:validation_test2;DB_CLOSE_DELAY=-1");
+        ds.setUser("sa");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AbstractJdbcDialect.from(ds).storeTableName("t; DROP TABLE users"));
+    }
+
+    @Test
+    @DisplayName("builder accepts valid table prefix and name")
+    void builderAcceptsValidNames() {
+        var ds = new org.h2.jdbcx.JdbcDataSource();
+        ds.setUrl("jdbc:h2:mem:validation_test3;DB_CLOSE_DELAY=-1");
+        ds.setUser("sa");
+        var d =
+                AbstractJdbcDialect.from(ds)
+                        .tablePrefix("my_app_")
+                        .storeTableName("my_store")
+                        .autoCreateTable(false)
+                        .build();
+        assertEquals("my_store", d.storeTableName());
+        assertEquals("my_app_sessions", d.sessionStateTableName());
     }
 }

@@ -15,7 +15,8 @@
  */
 package io.agentscope.extensions.jdbc.snapshot;
 
-import io.agentscope.extensions.jdbc.dialect.SnapshotStoreDialect;
+import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import io.agentscope.extensions.jdbc.dialect.table.SnapshotDialect;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -24,8 +25,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 import java.util.Objects;
-import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,8 +34,8 @@ import org.slf4j.LoggerFactory;
 /**
  * {@link RemoteSnapshotClient} backed by a JDBC BLOB column, with zero inline SQL.
  *
- * <p>Stores sandbox workspace tar archives in a database table. All SQL is sourced
- * from {@link SnapshotStoreDialect}, supporting MySQL, PostgreSQL, H2, and SQLite.
+ * <p>All SQL is sourced from {@link SnapshotDialect}, supporting MySQL, PostgreSQL, H2,
+ * and SQLite.
  *
  * @author shanhongyu
  */
@@ -42,83 +43,62 @@ public class JdbcRemoteSnapshotClient implements RemoteSnapshotClient {
 
     private static final Logger log = LoggerFactory.getLogger(JdbcRemoteSnapshotClient.class);
 
-    static final String DEFAULT_TABLE = "agentscope_snapshots";
-
-    private static final Pattern VALID_TABLE_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
-
     private final DataSource dataSource;
-    private final String tableName;
-
-    // Pre-resolved SQL (table name substituted once at construction)
-    private final String upsertSql;
-    private final String selectSql;
-    private final String existsSql;
+    private final SnapshotDialect dialect;
 
     /**
-     * Creates a client with the default table name and auto-creates the table.
+     * Creates a client with auto table creation.
      *
-     * @param dataSource the JDBC data source; must not be {@code null}
-     * @param dialect the snapshot dialect for SQL generation; must not be {@code null}
+     * @param dataSource the JDBC data source
+     * @param dialect the snapshot dialect
      */
-    public JdbcRemoteSnapshotClient(DataSource dataSource, SnapshotStoreDialect dialect) {
-        this(dataSource, dialect, DEFAULT_TABLE, true);
+    public JdbcRemoteSnapshotClient(DataSource dataSource, SnapshotDialect dialect) {
+        this(dataSource, dialect, true);
     }
 
     /**
-     * Creates a client with full configuration.
+     * Creates a client with optional auto table creation.
      *
-     * @param dataSource the JDBC data source; must not be {@code null}
-     * @param dialect the snapshot dialect for SQL generation; must not be {@code null}
-     * @param tableName the snapshots table name; defaults to {@value #DEFAULT_TABLE}
-     * @param initializeSchema when {@code true}, auto-creates the table
+     * @param dataSource the JDBC data source
+     * @param dialect the snapshot dialect
+     * @param initializeSchema when true, auto-creates the table
      */
     public JdbcRemoteSnapshotClient(
-            DataSource dataSource,
-            SnapshotStoreDialect dialect,
-            String tableName,
-            boolean initializeSchema) {
+            DataSource dataSource, SnapshotDialect dialect, boolean initializeSchema) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
-        Objects.requireNonNull(dialect, "dialect");
-        String resolved = tableName != null ? tableName : DEFAULT_TABLE;
-        if (!VALID_TABLE_NAME.matcher(resolved).matches()) {
-            throw new IllegalArgumentException(
-                    "tableName must match [A-Za-z_][A-Za-z0-9_]*, got: " + resolved);
-        }
-        this.tableName = resolved;
-        this.upsertSql = String.format(dialect.getUpsertSnapshotSql(), tableName);
-        this.selectSql = String.format(dialect.getSelectSnapshotSql(), tableName);
-        this.existsSql = String.format(dialect.getExistsSnapshotSql(), tableName);
+        this.dialect = Objects.requireNonNull(dialect, "dialect");
         if (initializeSchema) {
-            initSchema(dialect);
+            initSchema();
         }
     }
 
-    private void initSchema(SnapshotStoreDialect dialect) {
-        String ddl = String.format(dialect.getCreateSnapshotTableSql(), tableName);
+    private void initSchema() {
+        String ddl = dialect.snapshotCreateTableSql();
         try (Connection conn = dataSource.getConnection();
                 Statement stmt = conn.createStatement()) {
             stmt.execute(ddl);
         } catch (SQLException e) {
-            log.warn("Failed to initialize snapshot table '{}': {}", tableName, e.getMessage());
+            log.warn("Failed to initialize snapshot table: {}", e.getMessage());
         }
     }
 
     @Override
     public void upload(String snapshotId, InputStream data) throws Exception {
         byte[] bytes = data.readAllBytes();
+        BoundSql boundSql = dialect.snapshotUpsert(snapshotId, bytes);
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement(upsertSql)) {
-            ps.setString(1, snapshotId);
-            ps.setBytes(2, bytes);
+                PreparedStatement ps = conn.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
             ps.executeUpdate();
         }
     }
 
     @Override
     public InputStream download(String snapshotId) throws Exception {
+        BoundSql boundSql = dialect.snapshotSelect(snapshotId);
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement(selectSql)) {
-            ps.setString(1, snapshotId);
+                PreparedStatement ps = conn.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
                     throw new java.io.FileNotFoundException(
@@ -131,12 +111,19 @@ public class JdbcRemoteSnapshotClient implements RemoteSnapshotClient {
 
     @Override
     public boolean exists(String snapshotId) throws Exception {
+        BoundSql boundSql = dialect.snapshotExists(snapshotId);
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement(existsSql)) {
-            ps.setString(1, snapshotId);
+                PreparedStatement ps = conn.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
             }
+        }
+    }
+
+    private static void bindParams(PreparedStatement ps, List<Object> params) throws SQLException {
+        for (int i = 0; i < params.size(); i++) {
+            ps.setObject(i + 1, params.get(i));
         }
     }
 }

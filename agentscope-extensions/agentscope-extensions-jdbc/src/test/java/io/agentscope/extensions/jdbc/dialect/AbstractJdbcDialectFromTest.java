@@ -20,6 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
@@ -28,79 +32,73 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for {@link JdbcDialect#from(DataSource)} auto-detection logic.
+ * Unit tests for {@link AbstractJdbcDialect#from(DataSource)} SPI-based auto-detection.
  *
  * @author shanhongyu
  */
-@DisplayName("JdbcDialect.from() auto-detection")
-class JdbcDialectFromTest {
+@DisplayName("AbstractJdbcDialect.from() SPI auto-detection")
+class AbstractJdbcDialectFromTest {
 
     @Test
     @DisplayName("detects PostgreSQL")
     void detectsPostgres() throws Exception {
-        DataSource ds = mockDataSource("PostgreSQL");
-        assertInstanceOf(PostgresDialect.class, JdbcDialect.from(ds));
+        assertInstanceOf(PostgresDialect.class, detect("PostgreSQL"));
     }
 
     @Test
     @DisplayName("detects MySQL")
     void detectsMysql() throws Exception {
-        DataSource ds = mockDataSource("MySQL");
-        assertInstanceOf(MysqlDialect.class, JdbcDialect.from(ds));
+        assertInstanceOf(MysqlDialect.class, detect("MySQL"));
     }
 
     @Test
-    @DisplayName("detects MariaDB as MySQL")
+    @DisplayName("detects MariaDB as MysqlDialect")
     void detectsMariaDb() throws Exception {
-        DataSource ds = mockDataSource("MariaDB");
-        assertInstanceOf(MysqlDialect.class, JdbcDialect.from(ds));
+        assertInstanceOf(MysqlDialect.class, detect("MariaDB"));
     }
 
     @Test
     @DisplayName("detects H2")
     void detectsH2() throws Exception {
-        DataSource ds = mockDataSource("H2");
-        assertInstanceOf(H2Dialect.class, JdbcDialect.from(ds));
+        assertInstanceOf(H2Dialect.class, detect("H2"));
     }
 
     @Test
     @DisplayName("detects SQLite")
     void detectsSqlite() throws Exception {
-        DataSource ds = mockDataSource("SQLite");
-        assertInstanceOf(SqliteDialect.class, JdbcDialect.from(ds));
+        assertInstanceOf(SqliteDialect.class, detect("SQLite"));
     }
 
     @Test
-    @DisplayName("defaults to PostgresDialect for unknown database")
-    void defaultsToPostgresForUnknown() throws Exception {
+    @DisplayName("throws IllegalStateException for unsupported database")
+    void throwsForUnsupported() throws Exception {
         DataSource ds = mockDataSource("Oracle");
-        assertInstanceOf(PostgresDialect.class, JdbcDialect.from(ds));
+        assertThrows(
+                IllegalStateException.class,
+                () -> AbstractJdbcDialect.from(ds).autoCreateTable(false).build());
     }
 
     @Test
-    @DisplayName("defaults to PostgresDialect when metadata is unavailable")
-    void defaultsToPostgresOnSqlException() throws Exception {
+    @DisplayName("throws IllegalStateException on connection failure")
+    void throwsOnConnectionFailure() throws Exception {
         DataSource ds = mock(DataSource.class);
         when(ds.getConnection()).thenThrow(new SQLException("connection failed"));
-        assertInstanceOf(PostgresDialect.class, JdbcDialect.from(ds));
+        assertThrows(
+                IllegalStateException.class,
+                () -> AbstractJdbcDialect.from(ds).autoCreateTable(false).build());
     }
 
     @Test
-    @DisplayName("defaults to PostgresDialect when product name is blank")
-    void defaultsToPostgresForBlankName() throws Exception {
-        DataSource ds = mockDataSource("  ");
-        assertInstanceOf(PostgresDialect.class, JdbcDialect.from(ds));
-    }
-
-    @Test
-    @DisplayName("throws NullPointerException for null dataSource")
+    @DisplayName("throws IllegalArgumentException for null dataSource")
     void throwsForNullDataSource() {
-        assertThrows(NullPointerException.class, () -> JdbcDialect.from(null));
+        assertThrows(IllegalArgumentException.class, () -> AbstractJdbcDialect.from(null));
     }
 
-    /**
-     * Creates a mock DataSource whose connection reports the given product name.
-     */
+    private static AbstractJdbcDialect detect(String productName) throws Exception {
+        DataSource ds = mockDataSource(productName);
+        return AbstractJdbcDialect.from(ds).autoCreateTable(false).build();
+    }
+
     private static DataSource mockDataSource(String productName) throws Exception {
         DataSource ds = mock(DataSource.class);
         Connection conn = mock(Connection.class);

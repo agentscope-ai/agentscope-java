@@ -3,7 +3,7 @@
 Unified multi-database JDBC dialect abstraction for AgentScope Java. Replaces the
 deprecated `agentscope-extensions-mysql` and `agentscope-extensions-postgresql`
 modules with a single module that supports MySQL, PostgreSQL, H2, and SQLite
-through one aggregated `JdbcDialect` interface.
+through one aggregated `AbstractJdbcDialect` abstract class.
 
 ## Quick Start
 
@@ -18,8 +18,8 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-The dialect is auto-detected from the `DataSource`. No manual dialect selection
-required.
+The dialect is auto-detected from the `DataSource` via JDK SPI. No manual dialect
+selection required.
 
 ## Architecture
 
@@ -28,36 +28,44 @@ Four layers, top-down:
 1. **Facade** — `JdbcDistributedStore.create(DataSource)` auto-detects the dialect
    and assembles all four components.
 2. **Component layer** (database-agnostic) — `JdbcStore`, `JdbcAgentStateStore`,
-   `JdbcRemoteSnapshotClient`, `JdbcSandboxExecutionGuard`. Zero inline SQL.
-3. **Dialect interface layer** — `JdbcDialect` extends `JdbcStoreDialect`,
-   `AgentStateStoreDialect`, `SnapshotStoreDialect`. ANSI/PostgreSQL defaults;
-   portable `TableBasedLockStrategy` fallback.
-4. **Database implementation layer** — one class per database, overrides only
-   what diverges from ANSI.
+   `JdbcRemoteSnapshotClient`, `JdbcSandboxExecutionGuard`. Zero inline SQL — all
+   SQL sourced from `BoundSql` returned by dialect methods.
+3. **Dialect layer** — `AbstractJdbcDialect` (aggregate abstract class) implements
+   all table-domain interfaces (`StoreDialect`, `SessionStateDialect`,
+   `SnapshotDialect`). Holds unified table prefix + per-table overrides.
+   `AbstractJdbcDialectBuilder` handles SPI detection + table creation.
+4. **Vendor layer** — one class per database (`extends AbstractJdbcDialect`),
+   overrides only DDL and divergent SQL syntax.
 
 ### Adding a New Database
 
-Implement `JdbcDialect` in a single class. Override only the methods where your
-database's SQL diverges from the ANSI/PostgreSQL defaults. The compiler enforces
-coverage of all abstract methods.
+Create a vendor class extending `AbstractJdbcDialect`. Override only the methods
+where your database's SQL diverges from ANSI defaults:
 
 ```java
-public class OracleDialect implements JdbcDialect {
+public class OracleDialect extends AbstractJdbcDialect {
     @Override
-    public String getCreateTableSql() { /* VARCHAR2 / CLOB types */ }
+    public String storeCreateTableSql() { /* VARCHAR2 / CLOB types */ }
 
     @Override
-    public String getUpsertSql() { /* MERGE INTO syntax */ }
+    public BoundSql storeUpsert(...) { /* MERGE INTO syntax */ }
+
+    @Override
+    public boolean supports(DatabaseMetaData md) throws SQLException {
+        return md.getDatabaseProductName().toLowerCase(Locale.ROOT).contains("oracle");
+    }
 
     // ... override only what differs from ANSI
 }
 ```
 
-Then add a case in `JdbcDialect.from()`:
+Register it in `META-INF/services/io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect`:
 
-```java
-case "Oracle" -> new OracleDialect();
 ```
+io.agentscope.extensions.jdbc.dialect.vendor.OracleDialect
+```
+
+No code changes needed elsewhere — SPI auto-discovers the new dialect.
 
 ## Database Capability Matrix
 
@@ -71,20 +79,19 @@ case "Oracle" -> new OracleDialect();
 | — Hash-based change detection | ✅ | ✅ | ✅ | ✅ |
 | **Snapshot** (RemoteSnapshotClient) | ✅ LONGBLOB | ✅ BYTEA | ✅ BLOB | ✅ BLOB |
 | **Distributed Lock** | ✅ GET_LOCK | ✅ table-based | ✅ table-based | ✅ table-based |
-| — Native advisory lock | ✅ | ⚠️ override needed | ❌ | ❌ |
-| — Table-based fallback | ✅ | ✅ | ✅ | ✅ |
-| **CREATE DATABASE** | ✅ utf8mb4 | N/A (schema) | N/A | N/A |
-| **Identifier quoting** | `` `backtick` `` | `"double-quote"` | `"double-quote"` | `"double-quote"` |
 
 ### Lock Strategy Notes
 
-- **MySQL**: Uses native `GET_LOCK()` / `RELEASE_LOCK()` via `MysqlLockStrategy`.
+The dialect itself is the lock strategy: `AbstractJdbcDialect` implements
+`SandboxLockStrategy` and `JdbcSandboxExecutionGuard` delegates every acquisition
+to the dialect's `tryEnter(lockName, timeoutSeconds)`.
+
+- **MySQL**: Overrides `tryEnter` to use native `GET_LOCK()` / `RELEASE_LOCK()`.
   Locks auto-release on connection close (crash-safe).
-- **PostgreSQL**: Uses portable `TableBasedLockStrategy` by default. Override
-  `lockStrategy()` to use `pg_advisory_lock` for production performance.
-- **H2 / SQLite / Unknown**: Uses `TableBasedLockStrategy` — a portable
-  INSERT/DELETE-based lock that works on any JDBC database. Note: if the JVM
-  crashes, the lock row remains and must be manually removed.
+- **PostgreSQL / H2 / SQLite**: Inherit the portable default `tryEnter` — an
+  INSERT/DELETE-based lock on the `agentscope_distributed_locks` table that works
+  on any JDBC database. A vendor dialect can override `tryEnter` to use native
+  advisory locks (e.g. PostgreSQL `pg_advisory_lock`) for production performance.
 
 ## Testing
 
@@ -106,7 +113,7 @@ mvn -pl agentscope-extensions/agentscope-extensions-jdbc -am verify -Pintegratio
 |------------------|-----|
 | `MysqlDistributedStore.create(ds)` | `JdbcDistributedStore.create(ds)` |
 | `PostgresDistributedStore.create(ds)` | `JdbcDistributedStore.create(ds)` |
-| `MysqlAgentStateStore(ds)` | `new JdbcAgentStateStore(ds, JdbcDialect.from(ds))` |
-| `JdbcStore.builder(ds).dialect(mysqlDialect)` | `JdbcStore.builder(ds).dialect(JdbcDialect.from(ds))` |
+| `MysqlAgentStateStore(ds)` | `new JdbcAgentStateStore(ds, AbstractJdbcDialect.from(ds).build())` |
+| `JdbcStore.builder(ds).dialect(mysqlDialect)` | `JdbcStore.builder(ds).dialect(AbstractJdbcDialect.from(ds).build())` |
 
 The deprecated modules remain fully functional. Migrate at your own pace.

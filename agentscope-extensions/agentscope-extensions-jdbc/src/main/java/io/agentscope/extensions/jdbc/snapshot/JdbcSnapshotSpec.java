@@ -15,7 +15,7 @@
  */
 package io.agentscope.extensions.jdbc.snapshot;
 
-import io.agentscope.extensions.jdbc.dialect.JdbcDialect;
+import io.agentscope.extensions.jdbc.dialect.table.SnapshotDialect;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import javax.sql.DataSource;
 
@@ -23,31 +23,29 @@ import javax.sql.DataSource;
  * Convenience {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}
  * for JDBC-backed snapshot storage.
  *
- * <p>Stores sandbox workspace tar archives as BLOBs in a database table, using the
- * snapshot dialect for database-specific SQL.
- *
  * @author shanhongyu
  */
 public class JdbcSnapshotSpec extends RemoteSnapshotSpec {
 
     /**
-     * Creates a snapshot spec with the default table name and auto-schema creation.
+     * Creates a snapshot spec with auto table creation.
      *
      * @param dataSource the JDBC data source
-     * @param dialect the JDBC dialect providing the snapshot SQL
+     * @param dialect the snapshot dialect
      */
-    public JdbcSnapshotSpec(DataSource dataSource, JdbcDialect dialect) {
-        super(new JdbcRemoteSnapshotClient(dataSource, dialect));
+    public JdbcSnapshotSpec(DataSource dataSource, SnapshotDialect dialect) {
+        super(new JdbcRemoteSnapshotClient(dataSource, dialect, true));
     }
 
     /**
-     * Creates a snapshot spec with a custom table name.
+     * Creates a snapshot spec with explicit table creation control.
      *
      * @param dataSource the JDBC data source
-     * @param dialect the JDBC dialect providing the snapshot SQL
-     * @param tableName the snapshots table name
+     * @param dialect the snapshot dialect
+     * @param initializeSchema when true, auto-creates the table
      */
-    public JdbcSnapshotSpec(DataSource dataSource, JdbcDialect dialect, String tableName) {
-        super(new JdbcRemoteSnapshotClient(dataSource, dialect, tableName, true));
+    public JdbcSnapshotSpec(
+            DataSource dataSource, SnapshotDialect dialect, boolean initializeSchema) {
+        super(new JdbcRemoteSnapshotClient(dataSource, dialect, initializeSchema));
     }
 }

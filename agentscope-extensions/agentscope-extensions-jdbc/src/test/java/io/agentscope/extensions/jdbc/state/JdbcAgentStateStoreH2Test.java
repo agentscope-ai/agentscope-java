@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.H2TestSupport;
-import io.agentscope.extensions.jdbc.dialect.H2Dialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -45,7 +45,7 @@ class JdbcAgentStateStoreH2Test {
     @BeforeEach
     void setUp() {
         DataSource ds = H2TestSupport.createDataSource("state_store_test");
-        store = new JdbcAgentStateStore(ds, new H2Dialect(), "agentscope_sessions", true);
+        store = new JdbcAgentStateStore(ds, new H2Dialect(), true);
     }
 
     @Test
@@ -170,5 +170,32 @@ class JdbcAgentStateStoreH2Test {
 
         Set<String> anonSessions = store.listSessionIds(null);
         assertTrue(anonSessions.contains("anon-session"));
+    }
+
+    @Test
+    @DisplayName("listSessionIds escapes LIKE wildcards in the user prefix")
+    void listSessionIdsEscapesLikeWildcards() {
+        // A real user whose id resembles the anonymous namespace must not leak.
+        store.save("u_anon_x", "sess", "k", new TestState("v"));
+        store.save(null, "anon-session", "k", new TestState("v"));
+
+        Set<String> anonSessions = store.listSessionIds(null);
+        assertTrue(anonSessions.contains("anon-session"));
+        assertFalse(
+                anonSessions.contains("sess"),
+                "non-anon session must not leak into the anonymous list");
+
+        Set<String> realSessions = store.listSessionIds("u_anon_x");
+        assertTrue(realSessions.contains("sess"));
+    }
+
+    @Test
+    @DisplayName("listSessionIds escapes % and _ inside a plain user id")
+    void listSessionIdsEscapesPercentAndUnderscore() {
+        store.save("a_%_b", "s1", "k", new TestState("v"));
+
+        Set<String> sessions = store.listSessionIds("a_%_b");
+        assertEquals(1, sessions.size());
+        assertTrue(sessions.contains("s1"));
     }
 }

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.mysql.cj.jdbc.MysqlDataSource;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
-import io.agentscope.extensions.jdbc.dialect.JdbcDialect;
+import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
@@ -57,10 +57,10 @@ class MysqlIntegrationTest {
     record TestState(String value) implements State {}
 
     @Test
-    @DisplayName("01: JdbcDialect.from detects MySQL")
+    @DisplayName("01: AbstractJdbcDialect.from detects MySQL")
     void dialectDetection() {
         DataSource ds = createDataSource();
-        JdbcDialect dialect = JdbcDialect.from(ds);
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).build();
         assertTrue(dialect.getClass().getSimpleName().contains("Mysql"));
     }
 
@@ -91,7 +91,7 @@ class MysqlIntegrationTest {
         var ds = createDataSource();
         var spec =
                 new io.agentscope.extensions.jdbc.snapshot.JdbcSnapshotSpec(
-                        ds, JdbcDialect.from(ds));
+                        ds, AbstractJdbcDialect.from(ds).build());
         RemoteSnapshotClient client = spec.getClient();
 
         byte[] data = "mysql blob content".getBytes();

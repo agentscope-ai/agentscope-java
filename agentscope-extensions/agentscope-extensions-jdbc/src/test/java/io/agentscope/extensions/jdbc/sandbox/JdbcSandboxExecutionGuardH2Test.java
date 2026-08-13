@@ -18,8 +18,7 @@ package io.agentscope.extensions.jdbc.sandbox;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.extensions.jdbc.H2TestSupport;
-import io.agentscope.extensions.jdbc.dialect.H2Dialect;
-import io.agentscope.extensions.jdbc.dialect.TableBasedLockStrategy;
+import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
@@ -48,8 +47,10 @@ class JdbcSandboxExecutionGuardH2Test {
     @BeforeEach
     void setUp() {
         DataSource ds = H2TestSupport.createDataSource("guard_test");
+        H2Dialect dialect = new H2Dialect();
+        dialect.bindDataSource(ds);
         guard =
-                JdbcSandboxExecutionGuard.builder(new H2Dialect().lockStrategy(ds))
+                JdbcSandboxExecutionGuard.builder(dialect)
                         .lockTimeout(Duration.ofSeconds(5))
                         .build();
     }

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.extensions.jdbc.H2TestSupport;
-import io.agentscope.extensions.jdbc.dialect.H2Dialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.List;
 import java.util.Map;

@@ -17,9 +17,9 @@ package io.agentscope.extensions.jdbc.store;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.extensions.jdbc.dialect.JdbcStoreDialect;
+import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import io.agentscope.extensions.jdbc.dialect.table.StoreDialect;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
-import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -31,44 +31,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * JDBC-backed {@link BaseStore} with zero inline SQL — all database-specific SQL
- * is delegated to {@link JdbcStoreDialect}.
+ * JDBC-backed {@link BaseStore} with zero inline SQL — all database-specific SQL is
+ * delegated to {@link StoreDialect}.
  *
- * <p>Supports MySQL, PostgreSQL, SQLite, and H2 out of the box via the dialect
- * interface. The business logic (CAS, namespace encoding, hash-based change
- * detection, pagination) is completely database-agnostic.
- *
- * <h2>Schema</h2>
- *
- * <pre>{@code
- * CREATE TABLE agentscope_store (
- *   namespace_path  -- VARCHAR or TEXT, joined namespace + trailing 0x1F
- *   item_key        -- VARCHAR or TEXT, item key
- *   value_json      -- TEXT / LONGTEXT / CLOB, Jackson-serialised Map
- *   version         -- BIGINT / INTEGER, monotonically increasing per row
- *   updated_at      -- BIGINT / INTEGER, epoch millis of the last write
- *   PRIMARY KEY (namespace_path, item_key)
- * )
- * }</pre>
- *
- * <h2>Namespace encoding</h2>
- *
- * <p>To preserve the prefix-search behaviour of {@link InMemoryStore}, namespace
- * components are joined with the ASCII unit separator {@code 0x1F} and stored
- * with a trailing separator.
- *
- * <h2>CAS</h2>
- *
- * <p>{@link #putIfVersion} runs a single-statement conditional UPDATE keyed on
- * {@code version}. The {@code expectedVersion == 0} case (create-if-absent) issues
- * an INSERT and treats a primary-key violation as a failed CAS. Both paths are
- * atomic without additional locking.
+ * <p>Supports MySQL, PostgreSQL, SQLite, and H2 via the dialect abstraction. Business
+ * logic (CAS, namespace encoding, hash-based change detection, pagination) is completely
+ * database-agnostic.
  *
  * @author shanhongyu
  */
@@ -76,42 +49,17 @@ public class JdbcStore implements BaseStore {
 
     private static final Logger LOG = LoggerFactory.getLogger(JdbcStore.class);
 
-    /**
-     * ASCII unit separator (U+001F) used between namespace segments. Picked because
-     * it does not collide with printable identifiers and is rare in JSON / user
-     * input.
-     */
+    /** ASCII unit separator (U+001F) between namespace segments. */
     private static final String NS_SEPARATOR = "";
 
-    /** Default table name used when the builder is not customised. */
-    public static final String DEFAULT_TABLE_NAME = "agentscope_store";
-
-    private static final Pattern VALID_TABLE_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
-
     private final DataSource dataSource;
-    private final JdbcStoreDialect dialect;
+    private final StoreDialect dialect;
     private final ObjectMapper objectMapper;
-    private final String tableName;
-
-    // Pre-resolved SQL (table name substituted once at construction)
-    private final String selectSql;
-    private final String upsertSql;
-    private final String insertSql;
-    private final String casUpdateSql;
-    private final String deleteSql;
-    private final String searchSql;
 
     private JdbcStore(Builder b) {
         this.dataSource = b.dataSource;
         this.dialect = b.dialect;
         this.objectMapper = b.objectMapper != null ? b.objectMapper : new ObjectMapper();
-        this.tableName = b.tableName;
-        this.selectSql = String.format(dialect.getSelectSql(), tableName);
-        this.upsertSql = String.format(dialect.getUpsertSql(), tableName);
-        this.insertSql = String.format(dialect.getInsertSql(), tableName);
-        this.casUpdateSql = String.format(dialect.getCasUpdateSql(), tableName);
-        this.deleteSql = String.format(dialect.getDeleteSql(), tableName);
-        this.searchSql = String.format(dialect.getSearchSql(), tableName);
         if (b.initializeSchema) {
             initializeSchema();
         }
@@ -123,13 +71,12 @@ public class JdbcStore implements BaseStore {
     }
 
     private void initializeSchema() {
-        String ddl = String.format(dialect.getCreateTableSql(), tableName);
+        String ddl = dialect.storeCreateTableSql();
         try (Connection c = dataSource.getConnection();
                 Statement st = c.createStatement()) {
             st.executeUpdate(ddl);
         } catch (SQLException e) {
-            throw new IllegalStateException(
-                    "Failed to initialize JdbcStore schema for table " + tableName, e);
+            throw new IllegalStateException("Failed to initialize JdbcStore schema", e);
         }
     }
 
@@ -140,11 +87,10 @@ public class JdbcStore implements BaseStore {
     @Override
     public StoreItem get(List<String> namespace, String key) {
         validateKey(key);
-        String nsPath = namespacePath(namespace);
+        BoundSql boundSql = dialect.storeSelect(namespacePath(namespace), key);
         try (Connection c = dataSource.getConnection();
-                PreparedStatement ps = c.prepareStatement(selectSql)) {
-            ps.setString(1, nsPath);
-            ps.setString(2, key);
+                PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
                     return null;
@@ -161,14 +107,13 @@ public class JdbcStore implements BaseStore {
     @Override
     public void put(List<String> namespace, String key, Map<String, Object> value) {
         validateKey(key);
-        String nsPath = namespacePath(namespace);
         String json = serialize(value);
+        BoundSql boundSql =
+                dialect.storeUpsert(
+                        namespacePath(namespace), key, json, System.currentTimeMillis());
         try (Connection c = dataSource.getConnection();
-                PreparedStatement ps = c.prepareStatement(upsertSql)) {
-            ps.setString(1, nsPath);
-            ps.setString(2, key);
-            ps.setString(3, json);
-            ps.setLong(4, System.currentTimeMillis());
+                PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("JdbcStore put failed", e);
@@ -187,13 +132,10 @@ public class JdbcStore implements BaseStore {
         long now = System.currentTimeMillis();
 
         if (expectedVersion == 0L) {
-            // Create-if-absent: rely on the PK constraint to detect a pre-existing row.
+            BoundSql boundSql = dialect.storeInsert(nsPath, key, json, now);
             try (Connection c = dataSource.getConnection();
-                    PreparedStatement ps = c.prepareStatement(insertSql)) {
-                ps.setString(1, nsPath);
-                ps.setString(2, key);
-                ps.setString(3, json);
-                ps.setLong(4, now);
+                    PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+                bindParams(ps, boundSql.params());
                 ps.executeUpdate();
                 return true;
             } catch (SQLIntegrityConstraintViolationException dup) {
@@ -206,13 +148,10 @@ public class JdbcStore implements BaseStore {
             }
         }
 
+        BoundSql boundSql = dialect.storeCasUpdate(json, now, nsPath, key, expectedVersion);
         try (Connection c = dataSource.getConnection();
-                PreparedStatement ps = c.prepareStatement(casUpdateSql)) {
-            ps.setString(1, json);
-            ps.setLong(2, now);
-            ps.setString(3, nsPath);
-            ps.setString(4, key);
-            ps.setLong(5, expectedVersion);
+                PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
             return ps.executeUpdate() == 1;
         } catch (SQLException e) {
             throw new IllegalStateException("JdbcStore putIfVersion (update) failed", e);
@@ -226,12 +165,11 @@ public class JdbcStore implements BaseStore {
         }
         int safeOffset = Math.max(offset, 0);
         String pattern = likePrefixPattern(namespace);
+        BoundSql boundSql = dialect.storeSearch(pattern, limit, safeOffset);
         List<StoreItem> result = new ArrayList<>();
         try (Connection c = dataSource.getConnection();
-                PreparedStatement ps = c.prepareStatement(searchSql)) {
-            ps.setString(1, pattern);
-            ps.setInt(2, limit);
-            ps.setInt(3, safeOffset);
+                PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     String itemKey = rs.getString(1);
@@ -249,11 +187,10 @@ public class JdbcStore implements BaseStore {
     @Override
     public void delete(List<String> namespace, String key) {
         validateKey(key);
-        String nsPath = namespacePath(namespace);
+        BoundSql boundSql = dialect.storeDelete(namespacePath(namespace), key);
         try (Connection c = dataSource.getConnection();
-                PreparedStatement ps = c.prepareStatement(deleteSql)) {
-            ps.setString(1, nsPath);
-            ps.setString(2, key);
+                PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("JdbcStore delete failed", e);
@@ -263,6 +200,12 @@ public class JdbcStore implements BaseStore {
     // -------------------------------------------------------------------------
     //  Helpers
     // -------------------------------------------------------------------------
+
+    private static void bindParams(PreparedStatement ps, List<Object> params) throws SQLException {
+        for (int i = 0; i < params.size(); i++) {
+            ps.setObject(i + 1, params.get(i));
+        }
+    }
 
     private String serialize(Map<String, Object> value) {
         try {
@@ -283,10 +226,6 @@ public class JdbcStore implements BaseStore {
         }
     }
 
-    /**
-     * Joins namespace segments with the unit separator, always trailing the result
-     * with one so prefix queries can distinguish {@code "a/b"} from {@code "a/bc"}.
-     */
     private static String namespacePath(List<String> namespace) {
         Objects.requireNonNull(namespace, "namespace must not be null");
         StringBuilder sb = new StringBuilder();
@@ -304,7 +243,7 @@ public class JdbcStore implements BaseStore {
     }
 
     private String likePrefixPattern(List<String> namespace) {
-        char esc = dialect.getLikeEscapeChar();
+        char esc = dialect.storeLikeEscapeChar();
         StringBuilder sb = new StringBuilder();
         for (char ch : namespacePath(namespace).toCharArray()) {
             if (ch == esc || ch == '%' || ch == '_') {
@@ -322,10 +261,6 @@ public class JdbcStore implements BaseStore {
         }
     }
 
-    /**
-     * Returns {@code true} if the given exception represents a primary-key / unique
-     * constraint violation across common JDBC drivers.
-     */
     private static boolean isDuplicateKey(SQLException e) {
         if (e instanceof SQLIntegrityConstraintViolationException) {
             return true;
@@ -334,7 +269,6 @@ public class JdbcStore implements BaseStore {
         if (state != null && state.startsWith("23")) {
             return true;
         }
-        // SQLite reports constraint violations as errorCode=19 with a null SQLSTATE.
         return e.getErrorCode() == 19 && e.getClass().getName().startsWith("org.sqlite.");
     }
 
@@ -346,66 +280,41 @@ public class JdbcStore implements BaseStore {
     public static final class Builder {
 
         private final DataSource dataSource;
-        private JdbcStoreDialect dialect;
+        private StoreDialect dialect;
         private ObjectMapper objectMapper;
-        private String tableName = DEFAULT_TABLE_NAME;
         private boolean initializeSchema;
 
         private Builder(DataSource dataSource) {
             this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
         }
 
-        /**
-         * Sets the dialect explicitly. When omitted, the dialect is auto-detected
-         * via {@link JdbcStoreDialect} on {@link #build()}.
-         */
-        public Builder dialect(JdbcStoreDialect dialect) {
+        /** Sets the store dialect (required). */
+        public Builder dialect(StoreDialect dialect) {
             this.dialect = Objects.requireNonNull(dialect, "dialect must not be null");
             return this;
         }
 
-        /** Sets a custom Jackson {@link ObjectMapper} for value serialisation. */
+        /** Sets a custom Jackson ObjectMapper. */
         public Builder objectMapper(ObjectMapper objectMapper) {
             this.objectMapper = objectMapper;
             return this;
         }
 
-        /**
-         * Overrides the table name. Must match {@code [A-Za-z_][A-Za-z0-9_]*}; this
-         * is the only place a table identifier ever flows into the SQL string
-         * verbatim, so the validation here is the SQL-injection guard.
-         */
-        public Builder tableName(String tableName) {
-            if (tableName == null
-                    || tableName.isBlank()
-                    || !VALID_TABLE_NAME.matcher(tableName).matches()) {
-                throw new IllegalArgumentException(
-                        "tableName must match [A-Za-z_][A-Za-z0-9_]*, got: " + tableName);
-            }
-            this.tableName = tableName;
-            return this;
-        }
-
-        /**
-         * When {@code true}, runs the dialect's {@code CREATE TABLE IF NOT EXISTS}
-         * during construction. Defaults to {@code false}.
-         */
+        /** When true, runs the dialect's CREATE TABLE during construction. */
         public Builder initializeSchema(boolean initializeSchema) {
             this.initializeSchema = initializeSchema;
             return this;
         }
 
-        /** Builds the {@link JdbcStore}. */
+        /** Builds the JdbcStore. */
         public JdbcStore build() {
             if (dialect == null) {
                 throw new IllegalStateException(
-                        "dialect must be set; use JdbcDistributedStore or pass a JdbcDialect");
+                        "dialect must be set; use JdbcDistributedStore or pass a"
+                                + " AbstractJdbcDialect");
             }
             JdbcStore store = new JdbcStore(this);
-            LOG.debug(
-                    "JdbcStore built: table={}, dialect={}",
-                    store.tableName,
-                    store.dialect.getClass().getSimpleName());
+            LOG.debug("JdbcStore built: dialect={}", store.dialect.getClass().getSimpleName());
             return store;
         }
     }

@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.extensions.jdbc.H2TestSupport;
-import io.agentscope.extensions.jdbc.dialect.H2Dialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import javax.sql.DataSource;

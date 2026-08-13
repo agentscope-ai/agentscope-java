@@ -27,7 +27,7 @@
     </parent>
 
     <name>AgentScope Java - Extensions - JDBC</name>
-    <description>Unified multi-database JDBC dialect abstraction for AgentStateStore, BaseStore, RemoteSnapshotClient, and SandboxExecutionGuard. Supports MySQL, PostgreSQL, H2, and SQLite via a single aggregated JdbcDialect interface.</description>
+    <description>Unified multi-database JDBC dialect abstraction for AgentStateStore, BaseStore, RemoteSnapshotClient, and SandboxExecutionGuard. Supports MySQL, PostgreSQL, H2, and SQLite via a single aggregated AbstractJdbcDialect abstract class.</description>
     <artifactId>agentscope-extensions-jdbc</artifactId>
 
     <properties>

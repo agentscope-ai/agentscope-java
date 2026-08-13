@@ -18,26 +18,26 @@ package io.agentscope.extensions.jdbc.dialect;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 
 /**
- * Portable abstraction over a database-backed distributed lock.
+ * Distributed lock contract implemented by {@link AbstractJdbcDialect}.
  *
- * <p>Databases with native advisory-lock support (MySQL {@code GET_LOCK},
- * PostgreSQL {@code pg_advisory_lock}) provide their own strategy implementation.
- * Databases without native locks use {@link TableBasedLockStrategy} as a
- * portable fallback.
+ * <p>The default implementation in {@link AbstractJdbcDialect#tryEnter} uses a portable
+ * table-based lock (INSERT/DELETE with polling). Vendor dialects with native advisory
+ * locks override {@code tryEnter} — e.g. {@code MysqlDialect} uses {@code GET_LOCK}.
+ *
+ * <p>Adding a new database with native lock support requires only overriding
+ * {@code tryEnter()} in the vendor dialect class — no separate strategy class needed.
  *
  * @author shanhongyu
- * @see TableBasedLockStrategy
  */
 public interface SandboxLockStrategy {
 
     /**
-     * Acquires the named lock, blocking until the lock is available or the timeout
-     * expires.
+     * Acquires the named lock, blocking until available or timeout expires.
      *
      * @param lockName a unique, validated lock name
-     * @param timeoutSeconds maximum seconds to wait before giving up
+     * @param timeoutSeconds maximum wait in seconds
      * @return a lease that releases the lock when closed
-     * @throws InterruptedException if the calling thread is interrupted while waiting
+     * @throws InterruptedException if the calling thread is interrupted
      */
     SandboxLease tryEnter(String lockName, int timeoutSeconds) throws InterruptedException;
 }
