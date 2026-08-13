@@ -71,6 +71,25 @@ public interface Model {
     }
 
     /**
+     * Whether this model supports forcing a specific tool call via {@code tool_choice}
+     * (i.e. {@link ToolChoice.Specific}).
+     *
+     * <p>Used by the agent's structured-output fallback path to decide how to force the
+     * {@code generate_response} tool when the model fails to call it voluntarily: providers
+     * that support {@code ToolChoice.Specific} get a hard {@code tool_choice} constraint,
+     * while providers that do not (e.g. GLM, MiniMax) fall back to injecting a prompt
+     * reminder message instead.
+     *
+     * <p>Defaults to {@code true}; providers that only support {@code tool_choice="auto"}
+     * (or none at all) must override this to return {@code false}.
+     *
+     * @return {@code true} if {@code ToolChoice.Specific} is supported
+     */
+    default boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
+    /**
      * Returns the model's context window size in tokens, or {@code 0} if unknown.
      *
      * <p>Used by the compaction middleware to dynamically compute when to trigger
