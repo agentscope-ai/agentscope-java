@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +45,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -52,6 +55,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -178,6 +182,27 @@ class HarnessAgentTest {
         assertFalse(prompt.contains("secret memory marker xyz"));
         assertTrue(mw.isDisableMemoryTools());
         assertTrue(mw.isDisableMemoryHooks());
+    }
+
+    @Test
+    void clearStateCache_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            ReActAgent delegate = agent.getDelegate();
+            AgentState target = delegate.getAgentState("u1", "sessA");
+            AgentState other = delegate.getAgentState("u1", "sessB");
+
+            agent.clearStateCache(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+            assertNotSame(target, delegate.getAgentState("u1", "sessA"));
+            assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
     }
 
     @Test
@@ -1109,6 +1134,45 @@ class HarnessAgentTest {
                 "declared subagent must inherit parent modelExecutionConfig");
     }
 
+    @Test
+    void declaredSubagent_honorsParentMemoryConfig() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("done");
+        MemoryConfig memoryConfig =
+                MemoryConfig.builder().flushTrigger(MemoryConfig.FlushTrigger.never()).build();
+        SubagentDeclaration declaration =
+                SubagentDeclaration.builder()
+                        .name("memory-worker")
+                        .description("declared worker")
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(model)
+                        .workspace(workspace)
+                        .memory(memoryConfig)
+                        .subagent(declaration)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "memory-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        child.call(
+                        userText("Remember this."),
+                        RuntimeContext.builder().userId("user").sessionId("declared").build())
+                .block();
+
+        verify(model, times(1)).stream(anyList(), any(), any());
+    }
+
     // =========================================================================
     // general-purpose mirroring
     // =========================================================================
@@ -1156,6 +1220,37 @@ class HarnessAgentTest {
                                 .factory()
                                 .create(RuntimeContext.empty());
         assertNotNull(child.getCompactionHook(), "CompactionHook should be mirrored to GP child");
+    }
+
+    @Test
+    void generalPurpose_honorsParentMemoryConfig() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("done");
+        MemoryConfig memoryConfig =
+                MemoryConfig.builder().flushTrigger(MemoryConfig.FlushTrigger.never()).build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(model)
+                        .workspace(workspace)
+                        .memory(memoryConfig)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        child.call(
+                        userText("Remember this."),
+                        RuntimeContext.builder().userId("user").sessionId("gp").build())
+                .block();
+
+        verify(model, times(1)).stream(anyList(), any(), any());
     }
 
     // =========================================================================
