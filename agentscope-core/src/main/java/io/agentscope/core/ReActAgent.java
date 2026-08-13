@@ -1456,15 +1456,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private Msg buildSoToolEnterReminder() {
         return SystemMessage.builder()
                 .name("system")
-                .content(TextBlock.builder()
-                        .text("<system-reminder>\n"
-                                + "STRUCTURED OUTPUT mode is now active. Your final response MUST"
-                                + " be produced by calling the `" + STRUCTURED_OUTPUT_TOOL_NAME
-                                + "` tool with a JSON object that conforms to the required "
-                                + "output schema. Do NOT output free-form text as the final "
-                                + "answer.\n"
-                                + "</system-reminder>")
-                        .build())
+                .content(
+                        TextBlock.builder()
+                                .text(
+                                        "<system-reminder>\n"
+                                                + "STRUCTURED OUTPUT mode is now active. Your final"
+                                                + " response MUST be produced by calling the `"
+                                                + STRUCTURED_OUTPUT_TOOL_NAME
+                                                + "` tool with a JSON object that conforms to the"
+                                                + " required output schema. Do NOT output free-form"
+                                                + " text as the final answer.\n"
+                                                + "</system-reminder>")
+                                .build())
                 .build();
     }
 
@@ -1475,14 +1478,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private Msg buildSoToolExitReminder() {
         return SystemMessage.builder()
                 .name("system")
-                .content(TextBlock.builder()
-                        .text("<system-reminder>\n"
-                                + "STRUCTURED OUTPUT mode has ended. You are back in normal "
-                                + "conversation mode; you no longer need to call the `"
-                                + STRUCTURED_OUTPUT_TOOL_NAME
-                                + "` tool.\n"
-                                + "</system-reminder>")
-                        .build())
+                .content(
+                        TextBlock.builder()
+                                .text(
+                                        "<system-reminder>\n"
+                                            + "STRUCTURED OUTPUT mode has ended. You are back in"
+                                            + " normal conversation mode; you no longer need to"
+                                            + " call the `"
+                                                + STRUCTURED_OUTPUT_TOOL_NAME
+                                                + "` tool.\n"
+                                                + "</system-reminder>")
+                                .build())
                 .build();
     }
 
@@ -1500,18 +1506,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private Msg buildSoToolForceReminder() {
         return SystemMessage.builder()
                 .name("system")
-                .content(TextBlock.builder()
-                        .text("<system-reminder>\n"
-                                + "You MUST call the `" + STRUCTURED_OUTPUT_TOOL_NAME
-                                + "` tool to generate your final structured response. Do NOT "
-                                + "output free-form text as the final answer.\n"
-                                + "</system-reminder>")
-                        .build())
-                .metadata(Map.of(
-                        MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER, true,
-                        MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
-                        StructuredOutputReminder.PROMPT,
-                        MessageMetadataKeys.CACHE_CONTROL, false))
+                .content(
+                        TextBlock.builder()
+                                .text(
+                                        "<system-reminder>\n"
+                                                + "You MUST call the `"
+                                                + STRUCTURED_OUTPUT_TOOL_NAME
+                                                + "` tool to generate your final structured"
+                                                + " response. Do NOT output free-form text as the"
+                                                + " final answer.\n"
+                                                + "</system-reminder>")
+                                .build())
+                .metadata(
+                        Map.of(
+                                MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER,
+                                true,
+                                MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
+                                StructuredOutputReminder.PROMPT,
+                                MessageMetadataKeys.CACHE_CONTROL,
+                                false))
                 .build();
     }
 
