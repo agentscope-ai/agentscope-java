@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Appends workspace context (session info, AGENTS.md, MEMORY.md, knowledge) to the
@@ -181,14 +182,15 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
-        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        String section = buildWorkspaceSection(rc);
-        if (section.isEmpty()) {
-            return Mono.just(currentPrompt);
-        }
-        String base = currentPrompt != null ? currentPrompt : "";
-        String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
-        return Mono.just(base + separator + section);
+        return Mono.fromCallable(
+                        () -> {
+                            RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+                            String base = currentPrompt != null ? currentPrompt : "";
+                            String section = buildWorkspaceSection(rc);
+                            String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
+                            return base + separator + section;
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private String buildWorkspaceSection(RuntimeContext rc) {

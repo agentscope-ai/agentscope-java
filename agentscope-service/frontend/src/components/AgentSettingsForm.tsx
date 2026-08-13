@@ -22,6 +22,7 @@ import { getWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspace
 import { Environment, listEnvironments } from '../api/environments';
 import { Vault, listVaults } from '../api/vaults';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
+import { getUsername } from '../lib/auth';
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '32px 36px', maxWidth: 820 },
@@ -91,13 +92,15 @@ export default function AgentSettingsForm({
   const navigate = useNavigate();
   const isGlobal = agent.scope === 'global';
   const tier = agent.tierForCurrentUser;
-  const canEdit = !isGlobal && tier === 'EDIT';
+  // The backend never populates tierForCurrentUser, so treat the owner as EDIT-capable.
+  const canEdit = !isGlobal && (tier === 'EDIT' || (tier == null && agent.ownerId === getUsername()));
   const canShare = canEdit; // sharing requires EDIT
   const readOnly = !canEdit;
   const [shareOpen, setShareOpen] = useState(false);
 
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description ?? '');
+  const [model, setModel] = useState(agent.model ?? '');
   const [system, setSystem] = useState(agent.system ?? '');
   const [maxIters, setMaxIters] = useState<string>(String(agent.maxIters ?? 12));
   const [workspaceId, setWorkspaceId] = useState(agent.workspaceId ?? '');
@@ -120,6 +123,7 @@ export default function AgentSettingsForm({
   useEffect(() => {
     setName(agent.name);
     setDescription(agent.description ?? '');
+    setModel(agent.model ?? '');
     setSystem(agent.system ?? '');
     setMaxIters(String(agent.maxIters ?? 12));
     setWorkspaceId(agent.workspaceId ?? '');
@@ -128,7 +132,7 @@ export default function AgentSettingsForm({
     setDefaultMemoryStoreIds(agent.defaultMemoryStoreIds ?? []);
     setVersion(agent.version);
   }, [
-    agent.id, agent.version, agent.system, agent.name, agent.description, agent.maxIters,
+    agent.id, agent.version, agent.system, agent.name, agent.description, agent.model, agent.maxIters,
     agent.workspaceId, agent.defaultEnvironmentId,
     JSON.stringify(agent.defaultVaultIds ?? []),
     JSON.stringify(agent.defaultMemoryStoreIds ?? []),
@@ -172,6 +176,7 @@ export default function AgentSettingsForm({
       const updated = await updateAgent(agent.id, {
         name: name.trim() || agent.id,
         description: description.trim() || undefined,
+        model: model.trim() || undefined,
         system: system || undefined,
         maxIters: Number.isFinite(iters) && iters > 0 ? iters : undefined,
         // Empty string unlinks; omitted would keep previous on some clients — always send.
@@ -276,6 +281,20 @@ export default function AgentSettingsForm({
             disabled={readOnly}
             placeholder="Short summary shown on cards and tabs"
           />
+        </div>
+
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Model</label>
+          <input
+            style={S.input}
+            value={model}
+            onChange={e => setModel(e.target.value)}
+            disabled={readOnly}
+            placeholder="e.g. dashscope:qwen-max, deepseek:deepseek-chat, openai:gpt-4o"
+          />
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>
+            Provider-qualified model id resolved via ModelRegistry; empty falls back to the data-plane default model.
+          </div>
         </div>
       </div>
 

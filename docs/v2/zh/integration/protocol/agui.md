@@ -4,6 +4,8 @@
 
 `agentscope-extensions-agui` 把 AgentScope v2 的 `AgentEvent` 流转换为 [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) 事件，让前端 UI 可以实时渲染 agent 的运行过程，包括文本、推理内容、工具调用、状态、自定义事件、token usage 和 HITL interrupt。
 
+`RUN_ERROR` 和 `RUN_FINISHED` 是互斥终态事件。只有还需要旧版 `RUN_ERROR` + `RUN_FINISHED` 序列时，才开启 `emitRunFinishedAfterError=true`。
+
 `AguiMessage.content` 现在使用类型化消息内容表示。仅处理纯文本时，请使用 `getTextContent()`。
 
 已支持多模态输入，但是暂不支持文档类型。
@@ -77,7 +79,7 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 | token usage（`emitTokenUsage=true`） | `CUSTOM`，`name=token_usage` |
 | 未映射 `AgentEvent`                 | `RAW`，包含官方 `event` 和 `source` 字段 |
 
-正常运行的 `RUN_STARTED` 和 `RUN_FINISHED` 由上游 `AgentStartEvent` / `AgentEndEvent` 决定。正常流结束但上游没有发 `AgentEndEvent` 时，adapter 不会额外补 `RUN_FINISHED`。异常路径会输出带 `timestamp` 的 `RUN_ERROR`，并补发一个 `RUN_FINISHED`。
+正常运行的 `RUN_STARTED` 和 `RUN_FINISHED` 由上游 `AgentStartEvent` / `AgentEndEvent` 决定。正常流结束但上游没有发 `AgentEndEvent` 时，adapter 不会额外补 `RUN_FINISHED`。异常路径会输出带 `timestamp` 的 `RUN_ERROR`。 `RUN_ERROR` 和 `RUN_FINISHED` 是互斥终态事件。只有旧客户端仍依赖错误后补发完成事件时，才设置 `emitRunFinishedAfterError=true`（Spring Boot 配置为 `agentscope.agui.emit-run-finished-after-error=true`）。
 
 ## 子 agent 事件
 
@@ -216,6 +218,7 @@ agentscope:
     emit-tool-call-args: true
     emit-token-usage: false
     enable-reasoning: false
+    emit-run-finished-after-error: false
     server-side-memory: false
 ```
 

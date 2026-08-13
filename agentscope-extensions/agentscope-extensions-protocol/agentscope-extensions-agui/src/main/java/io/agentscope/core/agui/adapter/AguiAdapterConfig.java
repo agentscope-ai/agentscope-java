@@ -37,6 +37,7 @@ public class AguiAdapterConfig {
     private final boolean emitToolCallArgs;
     private final boolean emitTokenUsage;
     private final boolean enableReasoning;
+    private final boolean emitRunFinishedAfterError;
     private final Duration runTimeout;
     private final String defaultAgentId;
     private final List<AgentEventConverter> eventConverters;
@@ -50,6 +51,7 @@ public class AguiAdapterConfig {
         this.emitToolCallArgs = builder.emitToolCallArgs;
         this.emitTokenUsage = builder.emitTokenUsage;
         this.enableReasoning = builder.enableReasoning;
+        this.emitRunFinishedAfterError = builder.emitRunFinishedAfterError;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
         this.eventConverters = List.copyOf(builder.eventConverters);
@@ -108,6 +110,19 @@ public class AguiAdapterConfig {
      */
     public boolean isEnableReasoning() {
         return enableReasoning;
+    }
+
+    /**
+     * Check whether {@code RUN_FINISHED} should be emitted after {@code RUN_ERROR}.
+     *
+     * <p>AG-UI treats {@code RUN_ERROR} and {@code RUN_FINISHED} as mutually exclusive terminal
+     * events. Default is {@code false} (standard AG-UI). Set {@code true} only for legacy clients
+     * that still expect a finish event after an error.
+     *
+     * @return true if {@code RUN_FINISHED} should follow {@code RUN_ERROR}
+     */
+    public boolean isEmitRunFinishedAfterError() {
+        return emitRunFinishedAfterError;
     }
 
     /**
@@ -204,6 +219,7 @@ public class AguiAdapterConfig {
         private boolean emitToolCallArgs = true;
         private boolean emitTokenUsage = false;
         private boolean enableReasoning = false;
+        private boolean emitRunFinishedAfterError = false;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
         private final List<AgentEventConverter> eventConverters = new ArrayList<>();
@@ -270,6 +286,22 @@ public class AguiAdapterConfig {
          */
         public Builder enableReasoning(boolean enableReasoning) {
             this.enableReasoning = enableReasoning;
+            return this;
+        }
+
+        /**
+         * Set whether to emit {@code RUN_FINISHED} after {@code RUN_ERROR}.
+         *
+         * <p>Default is {@code false} to match the AG-UI invariant of a single terminal event
+         * ({@code RUN_ERROR} alone). Set {@code true} for legacy clients that expect a finish
+         * event even on failure.
+         *
+         * @param emitRunFinishedAfterError true to emit {@code RUN_FINISHED} after {@code
+         *     RUN_ERROR}
+         * @return This builder
+         */
+        public Builder emitRunFinishedAfterError(boolean emitRunFinishedAfterError) {
+            this.emitRunFinishedAfterError = emitRunFinishedAfterError;
             return this;
         }
 

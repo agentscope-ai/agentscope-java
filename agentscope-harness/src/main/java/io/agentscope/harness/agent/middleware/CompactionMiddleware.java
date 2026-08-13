@@ -29,11 +29,14 @@ import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Middleware that performs conversation compaction before each LLM reasoning call.
@@ -106,8 +109,20 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             new ConversationCompactor(model, flushManager);
                     final Msg sys = systemMsg;
 
+                    // Only compaction may degrade; downstream reasoning errors must propagate.
                     return compactor
                             .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
+                            .onErrorResume(
+                                    error -> {
+                                        if (containsInterruptedException(error)) {
+                                            return Mono.error(error);
+                                        }
+                                        log.warn(
+                                                "Compaction failed, continuing without compaction:"
+                                                        + " {}",
+                                                error.getMessage());
+                                        return Mono.just(Optional.empty());
+                                    })
                             .flatMapMany(
                                     optResult -> {
                                         if (optResult.isEmpty()) {
@@ -130,16 +145,20 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                         newMessages,
                                                         input.tools(),
                                                         input.options()));
-                                    })
-                            .onErrorResume(
-                                    e -> {
-                                        log.warn(
-                                                "Compaction failed, continuing without compaction:"
-                                                        + " {}",
-                                                e.getMessage());
-                                        return next.apply(input);
                                     });
                 });
+    }
+
+    private static boolean containsInterruptedException(Throwable error) {
+        IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
+        Throwable current = error;
+        while (current != null && visited.put(current, Boolean.TRUE) == null) {
+            if (current instanceof InterruptedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**

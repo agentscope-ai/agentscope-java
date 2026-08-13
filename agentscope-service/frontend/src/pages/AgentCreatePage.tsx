@@ -70,6 +70,7 @@ export default function AgentCreatePage() {
   const [defaultEnvironmentId, setDefaultEnvironmentId] = useState('');
   const [environments, setEnvironments] = useState<{ id: string; name: string; type: string }[]>([]);
   const [sysPrompt, setSysPrompt] = useState('');
+  const [model, setModel] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -99,6 +100,7 @@ export default function AgentCreatePage() {
       const req: AgentCreateRequest = {
         name: name.trim(),
         description: description.trim() || undefined,
+        model: model.trim() || undefined,
         system: sysPrompt.trim() || undefined,
         workspacePath: workspacePath.trim() || undefined,
         workspaceId: workspaceId || undefined,
@@ -198,6 +200,19 @@ export default function AgentCreatePage() {
           />
           <div style={S.hint}>
             Leave blank to use the control-plane default path. Absolute paths are used as-is.
+          </div>
+        </div>
+
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Model</label>
+          <input
+            style={S.input}
+            value={model}
+            onChange={e => setModel(e.target.value)}
+            placeholder="e.g. dashscope:qwen-max, deepseek:deepseek-chat, openai:gpt-4o"
+          />
+          <div style={S.hint}>
+            Provider-qualified model id resolved via ModelRegistry; empty falls back to the data-plane default model.
           </div>
         </div>
 

@@ -53,7 +53,8 @@ import org.springframework.context.annotation.Bean;
 public class AgentProtocolAutoConfiguration {
 
     @Bean
-    public AgentProtocolTaskEventBus agentProtocolTaskEventBus(AgentProtocolProperties properties) {
+    @ConditionalOnMissingBean(AgentProtocolEventBus.class)
+    public AgentProtocolEventBus agentProtocolEventBus(AgentProtocolProperties properties) {
         return new AgentProtocolTaskEventBus(properties.getSseReplayBufferSize());
     }
 
@@ -75,7 +76,7 @@ public class AgentProtocolAutoConfiguration {
     public AgentProtocolTaskStore agentProtocolTaskStore(
             AgentFactory agentFactory,
             ProtocolTaskRepository taskRepository,
-            AgentProtocolTaskEventBus eventBus,
+            AgentProtocolEventBus eventBus,
             AgentProtocolProperties properties,
             ObjectProvider<RuntimeContextCustomizer> runtimeContextCustomizers) {
         return new AgentProtocolTaskStore(

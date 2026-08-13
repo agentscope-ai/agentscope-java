@@ -73,7 +73,7 @@ public final class AgentProtocolTaskStore {
 
     private final AgentFactory agentFactory;
     private final ProtocolTaskRepository taskRepository;
-    private final AgentProtocolTaskEventBus eventBus;
+    private final AgentProtocolEventBus eventBus;
     private final AgentProtocolProperties properties;
     private final List<RuntimeContextCustomizer> runtimeContextCustomizers;
     private final ExecutorService executor =
@@ -91,7 +91,7 @@ public final class AgentProtocolTaskStore {
     public AgentProtocolTaskStore(
             AgentFactory agentFactory,
             ProtocolTaskRepository taskRepository,
-            AgentProtocolTaskEventBus eventBus,
+            AgentProtocolEventBus eventBus,
             AgentProtocolProperties properties) {
         this(agentFactory, taskRepository, eventBus, properties, List.of());
     }
@@ -99,7 +99,7 @@ public final class AgentProtocolTaskStore {
     public AgentProtocolTaskStore(
             AgentFactory agentFactory,
             ProtocolTaskRepository taskRepository,
-            AgentProtocolTaskEventBus eventBus,
+            AgentProtocolEventBus eventBus,
             AgentProtocolProperties properties,
             List<RuntimeContextCustomizer> runtimeContextCustomizers) {
         this.agentFactory = Objects.requireNonNull(agentFactory, "agentFactory");
@@ -126,7 +126,7 @@ public final class AgentProtocolTaskStore {
         this(AgentFactory.fixed(harnessAgent), taskRepository);
     }
 
-    public AgentProtocolTaskEventBus eventBus() {
+    public AgentProtocolEventBus eventBus() {
         return eventBus;
     }
 

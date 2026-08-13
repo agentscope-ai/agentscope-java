@@ -22,6 +22,7 @@ import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -204,19 +205,26 @@ final class AguiResumeCoordinator {
      *
      * @param input The invalid run input
      * @param message The validation error message
+     * @param emitRunFinishedAfterError true to append {@code RUN_FINISHED} after {@code RUN_ERROR}
+     *     for legacy clients
      * @return The protocol error lifecycle events
      */
-    List<AguiEvent> contractErrorEvents(RunAgentInput input, String message) {
-        return List.of(
-                new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input),
+    List<AguiEvent> contractErrorEvents(
+            RunAgentInput input, String message, boolean emitRunFinishedAfterError) {
+        List<AguiEvent> events = new ArrayList<>();
+        events.add(new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input));
+        events.add(
                 new AguiEvent.RunError(
                         input.getThreadId(),
                         input.getRunId(),
                         message,
                         CONTRACT_ERROR_CODE,
                         System.currentTimeMillis(),
-                        null),
-                new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+                        null));
+        if (emitRunFinishedAfterError) {
+            events.add(new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+        }
+        return List.copyOf(events);
     }
 
     private ResumeContractResult validateResumeStatuses(List<AguiResume> resumes) {

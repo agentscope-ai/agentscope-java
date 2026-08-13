@@ -34,15 +34,17 @@ export DASHSCOPE_API_KEY=your_api_key_here
 
 | Example | Description | Core Concepts | Run Command |
 |---------|-------------|---------------|-------------|
-| **BasicChatExample** | Simplest agent conversation | Agent, Model, Memory | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.BasicChatExample"` |
-| **ToolCallingExample** | Equipping agents with tools | @Tool, Toolkit, Tool calling | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.ToolCallingExample"` |
-| **StructuredOutputExample** | Generate typed structured output | Structured output, Schema validation | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.StructuredOutputExample"` |
-| **ToolGroupExample** | Autonomous tool group management | Meta-tool, Tool groups, Self-activation | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.ToolGroupExample"` |
-| **McpToolExample** | MCP tool server integration | MCP, External tools | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.McpToolExample"` |
-| **HookExample** | Monitoring agent execution | Hook, Lifecycle callbacks | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.HookExample"` |
-| **StreamingWebExample** | Spring Boot + SSE streaming | Web API, Real-time streaming | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.StreamingWebExample"` |
-| **SessionExample** | Persistent conversations | JsonSession, State management | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.SessionExample"` |
-| **InterruptionExample** | Agent interruption mechanism | User interruption, Recovery | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.InterruptionExample"` |
+| **BasicChatExample** | Simplest agent conversation | Agent, Model, Memory | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.quickstart.BasicChatExample"` |
+| **ToolCallingExample** | Equipping agents with tools | @Tool, Toolkit, Tool calling | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.tool.ToolCallingExample"` |
+| **StructuredOutputExample** | Generate typed structured output | Structured output, Schema validation | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.structuredoutput.StructuredOutputExample"` |
+| **ToolGroupExample** | Autonomous tool group management | Meta-tool, Tool groups, Self-activation | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.tool.ToolGroupExample"` |
+| **McpStdioExample** | Local MCP server integration | MCP, StdIO transport | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.mcp.McpStdioExample"` |
+| **McpSseExample** | Remote MCP server integration | MCP, SSE transport | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.mcp.McpSseExample"` |
+| **McpStreamableHttpExample** | Remote MCP server integration | MCP, Streamable HTTP | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.mcp.McpStreamableHttpExample"` |
+| **CustomizedMiddlewareExample** | Monitoring agent execution | Middleware, Lifecycle interception | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.middleware.CustomizedMiddlewareExample"` |
+| **StreamingWebExample** | Spring Boot + SSE streaming | Web API, Real-time streaming | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.streaming.StreamingWebExample"` |
+| **StateExample** | Persistent conversations | AgentStateStore, State management | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.state.StateExample"` |
+| **InterruptionExample** | Agent interruption mechanism | User interruption, Recovery | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.hitl.InterruptionExample"` |
 
 ## 📖 Detailed Examples
 
@@ -51,7 +53,7 @@ export DASHSCOPE_API_KEY=your_api_key_here
 The simplest way to create and chat with an agent.
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.BasicChatExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.quickstart.BasicChatExample"
 ```
 
 **What you'll learn:**
@@ -70,7 +72,7 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.BasicChatExample"
 Learn how to give agents access to tools.
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.ToolCallingExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.tool.ToolCallingExample"
 ```
 
 **What you'll learn:**
@@ -90,7 +92,7 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.ToolCallingExample"
 Generate structured, typed output from natural language queries.
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.StructuredOutputExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.structuredoutput.StructuredOutputExample"
 ```
 
 **What you'll learn:**
@@ -139,7 +141,7 @@ Extracted structured data:
 Agent autonomously managing tool groups using meta-tool.
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.ToolGroupExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.tool.ToolGroupExample"
 ```
 
 **What you'll learn:**
@@ -191,12 +193,19 @@ This example demonstrates **autonomous tool management** - the agent intelligent
 
 ---
 
-### 4. McpToolExample
+### 4. MCP Examples
 
 Connect to external tool servers using Model Context Protocol (MCP).
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.McpToolExample"
+# Local subprocess over stdin/stdout
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.mcp.McpStdioExample"
+
+# Remote server over Server-Sent Events
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.mcp.McpSseExample"
+
+# Remote server over Streamable HTTP
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.mcp.McpStreamableHttpExample"
 ```
 
 **Prerequisites:**
@@ -205,10 +214,13 @@ Install an MCP server:
 npm install -g @modelcontextprotocol/server-filesystem
 ```
 
+For remote transports, set `MCP_SSE_URL` or `MCP_HTTP_URL` before running the corresponding
+example. Optional credentials can be provided with `MCP_SSE_TOKEN` or `MCP_HTTP_API_KEY`.
+
 **What you'll learn:**
 - Connecting to MCP servers (StdIO, SSE, HTTP)
 - Using external tools from MCP servers
-- Interactive MCP configuration
+- Selecting the appropriate MCP transport for local or remote servers
 
 **Try asking:**
 - "List files in /tmp"
@@ -216,16 +228,16 @@ npm install -g @modelcontextprotocol/server-filesystem
 
 ---
 
-### 5. HookExample
+### 5. CustomizedMiddlewareExample (formerly HookExample)
 
 Monitor and intercept agent execution in real-time.
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.HookExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.middleware.CustomizedMiddlewareExample"
 ```
 
 **What you'll learn:**
-- Complete Hook lifecycle callbacks
+- Intercepting agent, reasoning, and acting stages with `MiddlewareBase`
 - Streaming output monitoring
 - Tool execution tracking
 - ToolEmitter for progress updates
@@ -247,7 +259,7 @@ You'll see detailed logs of:
 Spring Boot web application with Server-Sent Events (SSE) streaming.
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.StreamingWebExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.streaming.StreamingWebExample"
 ```
 
 **What you'll learn:**
@@ -274,18 +286,18 @@ You'll see the agent's response streaming in real-time, character by character.
 
 ---
 
-### 7. SessionExample
+### 7. StateExample
 
 Maintain persistent conversation history across runs.
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.SessionExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.state.StateExample"
 ```
 
 **What you'll learn:**
-- Using JsonSession for persistence
-- Saving/loading conversation state
-- Session management
+- Using `JsonFileAgentStateStore` for persistence
+- Automatically saving and loading `AgentState`
+- Resuming a conversation with the same session ID
 
 **Try this flow:**
 ```
@@ -306,7 +318,7 @@ Agent> Your name is Alice and you love pizza!
 Gracefully interrupt long-running agent tasks.
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.InterruptionExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.hitl.InterruptionExample"
 ```
 
 **What you'll learn:**
@@ -324,14 +336,14 @@ The example automatically demonstrates interruption by starting a long task and 
 ### Running a Specific Example
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.BasicChatExample"
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.quickstart.BasicChatExample"
 ```
 
 ### Debugging Examples
 
 Add debug logging:
 ```bash
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.BasicChatExample" \
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.documentation2.quickstart.BasicChatExample" \
   -Dorg.slf4j.simpleLogger.defaultLogLevel=debug
 ```
 
@@ -367,7 +379,7 @@ Or the example will prompt you to enter it interactively.
 
 ### MCP Server Connection Failed
 
-For McpToolExample, ensure the MCP server is installed:
+For `McpStdioExample`, ensure the MCP server is installed:
 ```bash
 # For filesystem server
 npm install -g @modelcontextprotocol/server-filesystem

@@ -27,23 +27,17 @@ import {
   SessionEvent,
   streamEvents,
 } from '../api/managedSessions';
-import MessageBlock from './MessageBlock';
+import MessageBlock, { ContentBlock } from './MessageBlock';
 
 type Role = 'user' | 'assistant' | 'system' | 'error';
-
-interface ToolEntry {
-  id: string;
-  name: string;
-  input?: string;
-  result?: string;
-}
 
 interface Message {
   id: string;
   role: Role;
-  text: string;
-  tools: ToolEntry[];
+  blocks: ContentBlock[];
   pending?: boolean;
+  /** Turn finished: no more blocks are appended to this bubble. */
+  closed?: boolean;
 }
 
 interface PendingConfirmation {
@@ -135,23 +129,46 @@ function errorText(evt: SessionEvent): string {
 
 function eventsToMessages(events: SessionEvent[]): Message[] {
   const out: Message[] = [];
+  // Index of the current assistant turn bubble; content appends into it until
+  // a status/error event closes the turn.
+  let open = -1;
+  const closeOpen = () => {
+    if (open >= 0 && out[open].role === 'assistant') {
+      out[open].pending = false;
+      out[open].closed = true;
+    }
+    open = -1;
+  };
+  const ensureOpen = (seedId: string): Message => {
+    if (open >= 0 && !out[open].closed) {
+      return out[open];
+    }
+    const msg: Message = { id: `${seedId}-turn`, role: 'assistant', blocks: [], pending: true };
+    out.push(msg);
+    open = out.length - 1;
+    return msg;
+  };
   for (const evt of events) {
     if (evt.type === 'user.message') {
-      out.push({ id: evt.id, role: 'user', text: payloadText(evt.payload), tools: [] });
+      closeOpen();
+      out.push({
+        id: evt.id,
+        role: 'user',
+        blocks: [{ kind: 'text', id: evt.id, text: payloadText(evt.payload) }],
+      });
     } else if (evt.type === 'agent.turn_stub' || evt.type === 'agent.message') {
-      out.push({ id: evt.id, role: 'assistant', text: payloadText(evt.payload) || '[agent response]', tools: [] });
+      ensureOpen(evt.id).blocks.push({
+        kind: 'text',
+        id: evt.id,
+        text: payloadText(evt.payload) || '[agent response]',
+      });
     } else if (evt.type === 'agent.tool_use') {
-      const tool: ToolEntry = {
+      ensureOpen(evt.id).blocks.push({
+        kind: 'tool',
         id: String(evt.payload?.id ?? evt.payload?.toolCallId ?? evt.payload?.toolUseId ?? evt.id),
-        name: String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool'),
-        input: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
-      };
-      const last = out[out.length - 1];
-      if (last?.role === 'assistant') {
-        last.tools = [...last.tools, tool];
-      } else {
-        out.push({ id: `${evt.id}-host`, role: 'assistant', text: '', tools: [tool] });
-      }
+        toolName: String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool'),
+        text: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
+      });
     } else if (evt.type === 'agent.tool_result') {
       const toolUseId = String(
         evt.payload?.tool_use_id ?? evt.payload?.toolCallId ?? evt.payload?.id ?? '',
@@ -160,17 +177,28 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
         ? String(evt.payload.output)
         : payloadText(evt.payload);
       if (!toolUseId) continue;
-      for (let i = out.length - 1; i >= 0; i--) {
-        const m = out[i];
-        if (m.role !== 'assistant') continue;
-        const idx = m.tools.findIndex(t => t.id === toolUseId);
+      for (const m of out) {
+        const idx = m.blocks.findIndex(b => b.kind === 'tool' && b.id === toolUseId);
         if (idx >= 0) {
-          m.tools = m.tools.map((t, j) => (j === idx ? { ...t, result: output } : t));
+          m.blocks = m.blocks.map((b, i) => (i === idx ? { ...b, result: output } : b));
           break;
         }
       }
     } else if (evt.type === 'session.error') {
-      out.push({ id: evt.id, role: 'error', text: errorText(evt), tools: [] });
+      closeOpen();
+      out.push({
+        id: evt.id,
+        role: 'error',
+        blocks: [{ kind: 'text', id: evt.id, text: errorText(evt) }],
+      });
+    } else if (evt.type.startsWith('session.status')) {
+      // Status events do not end the turn bubble: the backend may emit
+      // status_idle between model iterations of one user question, followed
+      // by more tool calls and the final text. Only user.message / session.error
+      // (or a later user.message) close the bubble.
+      if (open >= 0 && out[open].role === 'assistant') {
+        out[open].pending = false;
+      }
     }
   }
   return out;
@@ -260,8 +288,9 @@ export default function ChatPanel({
   const threadRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const streamHandleRef = useRef<EventStreamHandle | null>(null);
-  const replyMsgIdRef = useRef<string | null>(null);
   const pendingUserMsgIdRef = useRef<string | null>(null);
+  /** Id of the current open assistant turn bubble; null when no turn is active. */
+  const openMsgIdRef = useRef<string | null>(null);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const lastSeqRef = useRef(0);
   /** When true, keep pinned to latest message as stream grows. */
@@ -285,21 +314,35 @@ export default function ChatPanel({
     const confirm = extractConfirmation(evt);
     if (confirm) setPendingConfirm(confirm);
 
+    const closeOpen = (prev: Message[]): Message[] => {
+      const id = openMsgIdRef.current;
+      openMsgIdRef.current = null;
+      if (!id) return prev;
+      return prev.map(m => (m.id === id ? { ...m, pending: false, closed: true } : m));
+    };
+    const append = (prev: Message[], seedId: string, block: ContentBlock): Message[] => {
+      const cur = openMsgIdRef.current;
+      if (cur) {
+        const existing = prev.find(m => m.id === cur);
+        if (existing && !existing.closed) {
+          // Avoid duplicate blocks for the same event id (preview vs persisted).
+          if (existing.blocks.some(
+            b => b.kind === block.kind && (b.id === block.id || b.id === seedId),
+          )) return prev;
+          return prev.map(m =>
+            m.id === cur ? { ...m, blocks: [...m.blocks, block], pending: true } : m);
+        }
+      }
+      openMsgIdRef.current = `${seedId}-turn`;
+      return [...prev, { id: `${seedId}-turn`, role: 'assistant', blocks: [block], pending: true }];
+    };
+
     if (evt.type === 'event_start') {
       const targetType = String(evt.payload?.type ?? '');
       const eventId = String(evt.payload?.event_id ?? '');
-      if (!eventId) return;
-      if (targetType === 'agent.message') {
-        const localReply = replyMsgIdRef.current;
-        replyMsgIdRef.current = eventId;
-        setMessages(prev => {
-          if (prev.some(m => m.id === eventId)) return prev;
-          if (localReply) {
-            return prev.map(m => (m.id === localReply ? { ...m, id: eventId, pending: true } : m));
-          }
-          return [...prev, { id: eventId, role: 'assistant', text: '', tools: [], pending: true }];
-        });
-      }
+      if (!eventId || targetType !== 'agent.message') return;
+      // Reserve the turn bubble so deltas stream into it.
+      setMessages(prev => append(prev, eventId, { kind: 'text', id: eventId, text: '' }));
       return;
     }
 
@@ -309,104 +352,111 @@ export default function ChatPanel({
       const delta = evt.payload?.delta != null ? String(evt.payload.delta) : '';
       if (!eventId || !delta) return;
       if (targetType === 'agent.message') {
-        const localReply = replyMsgIdRef.current;
-        replyMsgIdRef.current = eventId;
         setMessages(prev => {
-          if (prev.some(m => m.id === eventId)) {
-            return prev.map(m => (m.id === eventId ? { ...m, text: m.text + delta, pending: true } : m));
+          const cur = openMsgIdRef.current;
+          if (cur) {
+            const existing = prev.find(m => m.id === cur);
+            if (existing && !existing.closed) {
+              return prev.map(m => {
+                if (m.id !== cur) return m;
+                const idx = m.blocks.findIndex(b => b.kind === 'text' && b.id === eventId);
+                if (idx >= 0) {
+                  return {
+                    ...m,
+                    blocks: m.blocks.map((b, i) =>
+                      i === idx ? { ...b, text: (b.text ?? '') + delta } : b),
+                    pending: true,
+                  };
+                }
+                return { ...m, blocks: [...m.blocks, { kind: 'text', id: eventId, text: delta }], pending: true };
+              });
+            }
           }
-          if (localReply && localReply !== eventId && prev.some(m => m.id === localReply)) {
-            return prev.map(m =>
-              m.id === localReply ? { ...m, id: eventId, text: m.text + delta, pending: true } : m);
-          }
-          return [...prev, { id: eventId, role: 'assistant', text: delta, tools: [], pending: true }];
+          return append(prev, eventId, { kind: 'text', id: eventId, text: delta });
         });
       } else if (targetType === 'agent.tool_use') {
-        setMessages(prev => {
-          const lastAssistantIdx = [...prev].map((m, i) => ({ m, i })).reverse()
-            .find(x => x.m.role === 'assistant')?.i;
-          if (lastAssistantIdx == null) {
-            return [...prev, {
-              id: `${eventId}-host`,
-              role: 'assistant',
-              text: '',
-              tools: [{ id: eventId, name: 'tool', input: delta }],
-              pending: true,
-            }];
-          }
-          return prev.map((m, i) => {
-            if (i !== lastAssistantIdx) return m;
-            const existing = m.tools.find(t => t.id === eventId);
-            const tools = existing
-              ? m.tools.map(t => (t.id === eventId ? { ...t, input: (t.input ?? '') + delta } : t))
-              : [...m.tools, { id: eventId, name: 'tool', input: delta }];
-            return { ...m, tools, pending: true };
-          });
-        });
+        setMessages(prev => append(prev, eventId, { kind: 'tool', id: eventId, toolName: 'tool', text: delta }));
       }
       return;
     }
 
     if (evt.type === 'user.message') {
       const text = payloadText(evt.payload);
-      if (text) {
-        const localUser = pendingUserMsgIdRef.current;
-        pendingUserMsgIdRef.current = null;
-        setMessages(prev => {
-          if (prev.some(m => m.id === evt.id)) return prev;
-          // Adopt the server id onto the optimistic bubble instead of appending a twin.
-          if (localUser && prev.some(m => m.id === localUser)) {
-            return prev.map(m => (m.id === localUser ? { ...m, id: evt.id, text } : m));
-          }
-          return [...prev, { id: evt.id, role: 'user', text, tools: [] }];
-        });
-      }
-    } else if (evt.type === 'agent.message' || evt.type === 'agent.turn_stub') {
-      const text = payloadText(evt.payload);
-      const replyId = replyMsgIdRef.current;
-      replyMsgIdRef.current = null;
+      if (!text) return;
+      const localUser = pendingUserMsgIdRef.current;
+      pendingUserMsgIdRef.current = null;
       setMessages(prev => {
-        if (prev.some(m => m.id === evt.id)) {
-          return prev.map(m =>
-            m.id === evt.id ? { ...m, text: text || m.text || '[agent response]', pending: false } : m);
-        }
-        if (replyId && prev.some(m => m.id === replyId)) {
-          return prev.map(m =>
-            m.id === replyId
-              ? { ...m, id: evt.id, text: text || m.text || '[agent response]', pending: false }
+        let next = closeOpen(prev);
+        if (next.some(m => m.id === evt.id)) return next;
+        if (localUser && next.some(m => m.id === localUser)) {
+          return next.map(m =>
+            m.id === localUser
+              ? { ...m, id: evt.id, blocks: [{ kind: 'text', id: evt.id, text }] }
               : m);
         }
-        return [...prev, { id: evt.id, role: 'assistant', text: text || '[agent response]', tools: [] }];
+        return [...next, { id: evt.id, role: 'user', blocks: [{ kind: 'text', id: evt.id, text }] }];
       });
-    } else if (evt.type === 'agent.tool_use') {
-      const tool: ToolEntry = {
-        id: String(evt.payload?.id ?? evt.payload?.toolCallId ?? evt.payload?.toolUseId ?? evt.id),
-        name: String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool'),
-        input: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
-      };
-      const previewKey = evt.id;
+      return;
+    }
+
+    if (evt.type === 'agent.message' || evt.type === 'agent.turn_stub') {
+      const text = payloadText(evt.payload) || '[agent response]';
       setMessages(prev => {
-        let matched = false;
-        const next = prev.map(m => {
-          if (m.role !== 'assistant') return m;
-          const tools = m.tools.map(t => {
-            if (t.id === previewKey || t.id === tool.id) {
-              matched = true;
-              return { ...tool, id: tool.id };
+        // The final persisted event carries the full text: replace the streamed
+        // preview block instead of appending a duplicate.
+        const cur = openMsgIdRef.current;
+        if (cur) {
+          const existing = prev.find(m => m.id === cur);
+          if (existing && !existing.closed) {
+            const idx = existing.blocks.findIndex(b => b.kind === 'text' && b.id === evt.id);
+            if (idx >= 0) {
+              return prev.map(m =>
+                m.id === cur
+                  ? { ...m, blocks: m.blocks.map((b, i) => (i === idx ? { ...b, text } : b)) }
+                  : m);
             }
-            return t;
-          });
-          return matched ? { ...m, tools, pending: false } : m;
-        });
-        if (matched) return next;
-        const last = next[next.length - 1];
-        if (last?.role === 'assistant') {
-          return next.map((m, i) =>
-            i === next.length - 1 ? { ...m, tools: [...m.tools, tool], pending: false } : m);
+          }
         }
-        return [...next, { id: `${evt.id}-host`, role: 'assistant', text: '', tools: [tool] }];
+        return append(prev, evt.id, { kind: 'text', id: evt.id, text });
       });
-    } else if (evt.type === 'agent.tool_result') {
+      return;
+    }
+
+    if (evt.type === 'agent.tool_use') {
+      const toolId = String(
+        evt.payload?.id ?? evt.payload?.toolCallId ?? evt.payload?.toolUseId ?? evt.id,
+      );
+      const toolName = String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool');
+      const input = evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined;
+      setMessages(prev => {
+        // Adopt the preview block (id = the event id) and finalize its id to the
+        // tool-call id so tool_result can match it later.
+        const cur = openMsgIdRef.current;
+        if (cur) {
+          const existing = prev.find(m => m.id === cur);
+          if (existing && !existing.closed) {
+            const idx = existing.blocks.findIndex(
+              b => b.kind === 'tool' && (b.id === toolId || b.id === evt.id),
+            );
+            if (idx >= 0) {
+              return prev.map(m =>
+                m.id === cur
+                  ? {
+                      ...m,
+                      blocks: m.blocks.map((b, i) =>
+                        i === idx ? { ...b, id: toolId, toolName, text: b.text ?? input } : b),
+                      pending: false,
+                    }
+                  : m);
+            }
+          }
+        }
+        return append(prev, evt.id, { kind: 'tool', id: toolId, toolName, text: input });
+      });
+      return;
+    }
+
+    if (evt.type === 'agent.tool_result') {
       const toolUseId = String(
         evt.payload?.tool_use_id ?? evt.payload?.toolCallId ?? evt.payload?.id ?? '',
       );
@@ -414,29 +464,40 @@ export default function ChatPanel({
         ? String(evt.payload.output)
         : payloadText(evt.payload);
       if (!toolUseId) return;
-      setMessages(prev => prev.map(m => {
-        if (m.role !== 'assistant') return m;
-        if (!m.tools.some(t => t.id === toolUseId)) return m;
-        return {
-          ...m,
-          tools: m.tools.map(t => (t.id === toolUseId ? { ...t, result: output } : t)),
-        };
-      }));
-    } else if (evt.type === 'session.status_idle' && !confirm) {
-      const replyId = replyMsgIdRef.current;
-      if (replyId) {
-        setMessages(prev => prev.map(m => m.id === replyId ? { ...m, pending: false } : m));
-        replyMsgIdRef.current = null;
-      }
-    } else if (evt.type === 'session.error') {
       setMessages(prev => {
-        if (prev.some(m => m.id === evt.id)) return prev;
-        const replyId = replyMsgIdRef.current;
-        replyMsgIdRef.current = null;
-        return [
-          ...prev.map(m => (m.id === replyId ? { ...m, pending: false } : m)),
-          { id: evt.id, role: 'error', text: errorText(evt), tools: [] },
-        ];
+        let updated = false;
+        const next = prev.map(m => {
+          const idx = m.blocks.findIndex(b => b.kind === 'tool' && b.id === toolUseId);
+          if (idx < 0) return m;
+          updated = true;
+          return { ...m, blocks: m.blocks.map((b, i) => (i === idx ? { ...b, result: output } : b)) };
+        });
+        return updated ? next : prev;
+      });
+      return;
+    }
+
+    if (evt.type.startsWith('session.status')) {
+      // Keep the turn bubble open across status events (the backend may emit
+      // status_idle between model iterations of one user question); only
+      // user.message / session.error close it.
+      setMessages(prev => {
+        const id = openMsgIdRef.current;
+        if (!id) return prev;
+        return prev.map(m => (m.id === id ? { ...m, pending: false } : m));
+      });
+      return;
+    }
+
+    if (evt.type === 'session.error') {
+      setMessages(prev => {
+        const next = closeOpen(prev);
+        if (next.some(m => m.id === evt.id)) return next;
+        return [...next, {
+          id: evt.id,
+          role: 'error',
+          blocks: [{ kind: 'text', id: evt.id, text: errorText(evt) }],
+        }];
       });
     }
   }, []);
@@ -451,7 +512,7 @@ export default function ChatPanel({
     setManagedSession(null);
     seenEventIdsRef.current = new Set();
     lastSeqRef.current = 0;
-    replyMsgIdRef.current = null;
+    openMsgIdRef.current = null;
     pendingUserMsgIdRef.current = null;
     stickToBottomRef.current = true;
     streamHandleRef.current?.close();
@@ -478,6 +539,9 @@ export default function ChatPanel({
           {
             after: lastSeqRef.current,
             eventDeltas: ['agent.message', 'agent.thinking', 'agent.tool_use'],
+            // Resume from the last seen sequence on automatic reconnects.
+            getAfter: () => lastSeqRef.current,
+            retryMs: 2000,
           },
         );
       } catch (e: unknown) {
@@ -548,8 +612,9 @@ export default function ChatPanel({
 
   /**
    * Relabels the optimistic user bubble with the server event id so the same event
-   * arriving over the stream is dropped by the seen-id guard. No-op when the stream
-   * already won the race and reconciled it.
+   * arriving over the stream reconciles instead of appending a twin. The stream is
+   * deliberately NOT pre-deduped: the user.message handler must run so it closes the
+   * previous turn bubble before the next reply is appended.
    */
   function adoptRecordedUserEvent(recorded: SessionEvent[]) {
     const localUser = pendingUserMsgIdRef.current;
@@ -557,7 +622,6 @@ export default function ChatPanel({
     const serverEvent = recorded.find(e => e.type === 'user.message' && e.id);
     if (!serverEvent) return;
     pendingUserMsgIdRef.current = null;
-    seenEventIdsRef.current.add(serverEvent.id);
     if (typeof serverEvent.seq === 'number' && serverEvent.seq > lastSeqRef.current) {
       lastSeqRef.current = serverEvent.seq;
     }
@@ -573,21 +637,24 @@ export default function ChatPanel({
     setInput('');
     setBusy(true);
     stickToBottomRef.current = true;
-    const userMsg: Message = { id: nextId(), role: 'user', text, tools: [] };
-    const replyMsg: Message = { id: nextId(), role: 'assistant', text: '', tools: [], pending: true };
-    replyMsgIdRef.current = replyMsg.id;
+    const userMsg: Message = {
+      id: nextId(),
+      role: 'user',
+      blocks: [{ kind: 'text', id: nextId(), text }],
+    };
     pendingUserMsgIdRef.current = userMsg.id;
-    setMessages(prev => [...prev, userMsg, replyMsg]);
+    setMessages(prev => [...prev, userMsg]);
 
     try {
       const recorded = await postUserMessage(sessionId, text);
       adoptRecordedUserEvent(recorded);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'send failed';
-      setMessages(prev => prev.map(m => m.id === replyMsg.id
-        ? { ...m, pending: false, text: `[error] ${msg}` }
-        : m));
-      replyMsgIdRef.current = null;
+      setMessages(prev => [...prev, {
+        id: nextId(),
+        role: 'system',
+        blocks: [{ kind: 'text', id: nextId(), text: `[error] ${msg}` }],
+      }]);
       pendingUserMsgIdRef.current = null;
     } finally {
       setBusy(false);
@@ -610,12 +677,19 @@ export default function ChatPanel({
       setMessages(prev => [...prev, {
         id: nextId(),
         role: 'system',
-        text: allow ? `Tool "${pendingConfirm.toolName}" allowed.` : `Tool "${pendingConfirm.toolName}" denied.`,
-        tools: [],
+        blocks: [{
+          kind: 'text',
+          id: nextId(),
+          text: allow ? `Tool "${pendingConfirm.toolName}" allowed.` : `Tool "${pendingConfirm.toolName}" denied.`,
+        }],
       }]);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'confirmation failed';
-      setMessages(prev => [...prev, { id: nextId(), role: 'system', text: `[error] ${msg}`, tools: [] }]);
+      setMessages(prev => [...prev, {
+        id: nextId(),
+        role: 'system',
+        blocks: [{ kind: 'text', id: nextId(), text: `[error] ${msg}` }],
+      }]);
     } finally {
       setBusy(false);
     }
@@ -712,15 +786,26 @@ export default function ChatPanel({
             Session ready. Send a message to start the first turn — events stay empty until then.
           </div>
         )}
-        {messages.map(m => (
-          <MessageBlock
-            key={m.id}
-            role={m.role}
-            text={m.text}
-            tools={m.tools}
-            pending={m.pending}
-          />
-        ))}
+        {(() => {
+          // Auto-expand the latest assistant turn bubble (even when a follow-up
+          // user message sits after it) so replies and tool calls are readable.
+          let lastAssistant = -1;
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role === 'assistant') {
+              lastAssistant = i;
+              break;
+            }
+          }
+          return messages.map((m, i) => (
+            <MessageBlock
+              key={m.id}
+              role={m.role}
+              blocks={m.blocks}
+              pending={m.pending}
+              defaultOpen={i === lastAssistant}
+            />
+          ));
+        })()}
         {pendingConfirm && !readOnly && (
           <div style={S.confirmCard}>
             <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 8 }}>

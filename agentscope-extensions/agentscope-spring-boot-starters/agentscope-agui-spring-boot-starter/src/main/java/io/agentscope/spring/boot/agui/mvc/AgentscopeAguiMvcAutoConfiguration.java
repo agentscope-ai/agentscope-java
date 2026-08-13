@@ -93,6 +93,7 @@ public class AgentscopeAguiMvcAutoConfiguration {
                         .emitToolCallArgs(props.isEmitToolCallArgs())
                         .emitTokenUsage(props.isEmitTokenUsage())
                         .enableReasoning(props.isEnableReasoning())
+                        .emitRunFinishedAfterError(props.isEmitRunFinishedAfterError())
                         .defaultAgentId(props.getDefaultAgentId())
                         .eventConverters(eventConvertersProvider.orderedStream().toList())
                         .eventEnrichers(eventEnrichersProvider.orderedStream().toList())
