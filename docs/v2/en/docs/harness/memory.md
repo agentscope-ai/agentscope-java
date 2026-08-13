@@ -56,6 +56,8 @@ Flush (path 1) is triggered at three different moments:
 2. **Pre-compaction extraction** — when `CompactionConfig.flushBeforeCompact = true` (default), the conversation prefix is flushed once before being summarized.
 3. **Overflow safety net** — when the model actually returns `context_length_exceeded`, the framework runs an emergency compaction that includes a flush.
 
+`HarnessAgent.Builder.disableMemoryHooks()` disables all three flush paths, including normal and emergency compaction flush, as well as background consolidation. It does not disable compaction summarization or raw-message offload; set `offloadBeforeCompact(false)` separately when the session JSONL should also be disabled.
+
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.
 
 Both flush and offload are **asynchronous**: they are launched in a fire-and-forget fashion via `doOnComplete` after the response stream has ended, so they never block the current `call()` return. The caller receives the full response first; the flush LLM call and JSONL offload run in the background afterward.
@@ -82,8 +84,8 @@ Common options:
 | `triggerTokens` | `80_000` | Trigger by estimated tokens (`0` = off) |
 | `keepMessages` | `20` | Number of tail messages to keep |
 | `keepTokens` | `0` | When non-zero, walk back by token budget; overrides `keepMessages` |
-| `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
-| `offloadBeforeCompact` | `true` | Append raw messages to the never-compacted log before compacting |
+| `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2); overridden to `false` by `disableMemoryHooks()` |
+| `offloadBeforeCompact` | `true` | Append raw messages to the never-compacted log before compacting; independent of memory hooks |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
 
@@ -251,7 +253,7 @@ If you want to handle memory yourself or wire your own tools:
 ```java
 HarnessAgent.builder()
     ...
-    .disableMemoryHooks()      // disables flush + background maintenance (+ auto-extract prompt line)
+    .disableMemoryHooks()      // disables all flush paths + background maintenance
     .disableMemoryTools()      // skips memory_search / memory_get / memory_save / session_search
                                // and matching Memory Recall / tool Persistence guidance
     .build();
@@ -259,7 +261,7 @@ HarnessAgent.builder()
 
 Together these also skip `<memory_context>` (`MEMORY.md`) injection while keeping Domain Knowledge / AGENTS / knowledge context.
 
-`disableMemoryHooks()` is the nuclear option for background memory work; if you only want to throttle, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead.
+`disableMemoryHooks()` leaves compaction summarization and session JSONL offload enabled. Add `.compaction(CompactionConfig.builder().offloadBeforeCompact(false).build())` if raw-message offload must also be disabled. If you only want to throttle per-call flush, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead.
 
 ## Related Pages
 
