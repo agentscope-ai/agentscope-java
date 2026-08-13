@@ -245,7 +245,7 @@ public class LocalFilesystemSpec {
 
     /**
      * Sets the user project root used as the lower layer of the resulting
-     * {@link OverlayFilesystem}. Reads of {@code AGENTS.md}, {@code knowledge/}, {@code skills/}
+     * {@link LocalWorkspaceOverlay}. Reads of {@code AGENTS.md}, {@code knowledge/}, {@code skills/}
      * etc. fall back to this directory when the agent {@code workspace} does not contain them;
      * shell {@code execute()} runs with {@code pwd} set to this directory.
      *
