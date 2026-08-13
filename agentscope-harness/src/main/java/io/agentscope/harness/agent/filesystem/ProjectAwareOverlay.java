@@ -18,7 +18,6 @@ package io.agentscope.harness.agent.filesystem;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
-import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
@@ -36,10 +35,10 @@ import java.util.Set;
  * when {@code projectWritable(true)} is set. Other filesystem specs ({@code RemoteFilesystemSpec},
  * {@code SandboxFilesystemSpec}) are not affected.
  *
- * <p>Read operations retain standard overlay semantics: check upper (workspace) first, fall back
- * to lower (project). Shell {@code execute()} delegates to the upper layer as before.
+ * <p>Read operations use the same layered knowledge fallback as {@link LocalWorkspaceOverlay}.
+ * Shell execution continues to delegate to the upper layer.
  */
-public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSandboxFilesystem {
+public class ProjectAwareOverlay extends LocalWorkspaceOverlay {
 
     private static final Set<String> WORKSPACE_PREFIXES =
             Set.of(
@@ -57,7 +56,6 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
                     ".skills-cache",
                     "large_tool_results");
 
-    private final AbstractSandboxFilesystem shellBackend;
     private final LocalFilesystem projectFs;
     private final Path workspaceRoot;
 
@@ -69,24 +67,26 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
      */
     public ProjectAwareOverlay(
             AbstractSandboxFilesystem upper,
+            AbstractFilesystem sharedWorkspace,
             AbstractFilesystem lower,
             LocalFilesystem projectFs,
             Path workspaceRoot) {
-        super(upper, lower);
-        this.shellBackend = upper;
+        super(upper, sharedWorkspace, lower);
         this.projectFs = projectFs;
         this.workspaceRoot = workspaceRoot.toAbsolutePath().normalize();
     }
 
-    @Override
-    public String id() {
-        return shellBackend.id();
-    }
-
-    @Override
-    public ExecuteResponse execute(
-            RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
-        return shellBackend.execute(runtimeContext, command, timeoutSeconds);
+    public ProjectAwareOverlay(
+            AbstractSandboxFilesystem upper,
+            AbstractFilesystem lower,
+            LocalFilesystem projectFs,
+            Path workspaceRoot) {
+        this(
+                upper,
+                new LocalFilesystem(workspaceRoot, true, 10, null),
+                lower,
+                projectFs,
+                workspaceRoot);
     }
 
     // ==================== Write routing ====================
