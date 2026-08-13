@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
@@ -289,6 +290,7 @@ final class HarnessAgentBuilderSupport {
         final ExecutionConfig capturedToolExec = b.toolExecutionConfig;
         final GenerateOptions capturedGenOpts = b.generateOptions;
         final String capturedEnvMemory = b.environmentMemory;
+        final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         final List<Hook> capturedHooks = List.copyOf(b.hooks);
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
@@ -332,6 +334,7 @@ final class HarnessAgentBuilderSupport {
                             .asLeafSubagent()
                             .maxIters(capturedMaxIters)
                             .environmentMemory(capturedEnvMemory)
+                            .memory(capturedMemoryConfig)
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
                             .maxContextTokens(capturedMaxContextTokens);
@@ -389,6 +392,7 @@ final class HarnessAgentBuilderSupport {
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
+        final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
@@ -450,6 +454,7 @@ final class HarnessAgentBuilderSupport {
                             .defaultSessionId(childSessionId)
                             .maxIters(decl.getSteps())
                             .asLeafSubagent()
+                            .memory(capturedMemoryConfig)
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
 
