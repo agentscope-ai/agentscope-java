@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -102,6 +103,25 @@ class LocalFilesystemSpecTest {
 
         assertFalse(filesystem.exists(alice, "bob/knowledge/private.md"));
         assertFalse(filesystem.read(alice, "bob/knowledge/private.md", 0, 100).isSuccess());
+    }
+
+    @Test
+    void sharedFallbackDoesNotAllowTraversalOutsideKnowledge() throws Exception {
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        Path project = Files.createDirectories(tempDir.resolve("project"));
+        Files.writeString(workspace.resolve("MEMORY.md"), "shared root secret");
+
+        AbstractFilesystem filesystem =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .toFilesystem(workspace, rc -> List.of(rc.getUserId()));
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+
+        String traversalPath = "knowledge/../MEMORY.md";
+        assertThrows(IllegalArgumentException.class, () -> filesystem.exists(alice, traversalPath));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> filesystem.read(alice, traversalPath, 0, 100));
     }
 
     @Test

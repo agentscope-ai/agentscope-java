@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -167,6 +168,10 @@ public class LocalWorkspaceOverlay extends OverlayFilesystem implements Abstract
         return super.delete(rc, path);
     }
 
+    /**
+     * Moves an isolated file normally. Moving shared knowledge creates an isolated copy at the
+     * destination because the shared layer is a read-only baseline; the shared source remains.
+     */
     @Override
     public WriteResult move(RuntimeContext rc, String fromPath, String toPath) {
         if (!isKnowledgePath(fromPath) || upper().exists(rc, fromPath)) {
@@ -196,6 +201,7 @@ public class LocalWorkspaceOverlay extends OverlayFilesystem implements Abstract
         while (normalized.startsWith("/")) {
             normalized = normalized.substring(1);
         }
+        normalized = Path.of(normalized).normalize().toString().replace('\\', '/');
         return normalized.equals(KNOWLEDGE) || normalized.startsWith(KNOWLEDGE + "/");
     }
 
