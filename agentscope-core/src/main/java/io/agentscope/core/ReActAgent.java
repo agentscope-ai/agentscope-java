@@ -1229,6 +1229,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 hasTools
                         ? model.supportsNativeStructuredOutputWithTools()
                         : model.supportsNativeStructuredOutput();
+        log.debug(
+                "Structured output routing: native={}, hasTools={} (agent={}#{})",
+                useNative,
+                hasTools,
+                getAgentId(),
+                getName());
         if (useNative) {
             return doNativeStructuredCall(msgs, jsonSchema)
                     .onErrorResume(
@@ -1276,6 +1282,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             .schema(jsonSchema)
                                             .strict(true)
                                             .build());
+                    log.debug(
+                            "Native structured output path: injected response_format schema"
+                                    + " (agent={}#{})",
+                            getAgentId(),
+                            getName());
 
                     int contextSizeBefore = scope.state.contextMutable().size();
 
@@ -1321,12 +1332,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     }
 
                     scope.soTool = createStructuredOutputTool(jsonSchema);
+                    log.debug(
+                            "Fallback structured output path: injected '{}' synthetic tool"
+                                    + " (agent={}#{})",
+                            STRUCTURED_OUTPUT_TOOL_NAME,
+                            getAgentId(),
+                            getName());
 
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
                                         Msg out = result;
                                         if (scope.soCompleted && scope.soResultMsg != null) {
+                                            log.debug(
+                                                    "Structured output completed via '{}';"
+                                                            + " compressing context (agent={}#{})",
+                                                    STRUCTURED_OUTPUT_TOOL_NAME,
+                                                    getAgentId(),
+                                                    getName());
                                             ChatUsage aggregatedUsage =
                                                     collectAggregatedUsage(scope.state);
                                             ThinkingBlock aggregatedThinking =
@@ -1796,9 +1819,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (soTool != null && !state.isSoToolActive()) {
                 state.contextMutable().add(buildSoToolEnterReminder());
                 state.setSoToolActive(true);
+                log.debug(
+                        "Entering structured-output mode: injected enter <system-reminder>"
+                                + " (agent={}#{})",
+                        getAgentId(),
+                        getName());
             } else if (soTool == null && state.isSoToolActive()) {
                 state.contextMutable().add(buildSoToolExitReminder());
                 state.setSoToolActive(false);
+                log.debug(
+                        "Leaving structured-output mode: injected exit <system-reminder>"
+                                + " (agent={}#{})",
+                        getAgentId(),
+                        getName());
             }
 
             // Graceful-shutdown deduplication: if the agent's session was previously interrupted
@@ -2379,6 +2412,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     && soTool != null
                     && !model.supportsToolChoiceSpecific()) {
                 state.contextMutable().add(buildSoToolForceReminder());
+                log.debug(
+                        "Forcing '{}' via prompt reminder (strategy B), retry {} (agent={}#{})",
+                        STRUCTURED_OUTPUT_TOOL_NAME,
+                        soForceToolChoiceCount,
+                        getAgentId(),
+                        getName());
             }
 
             return checkInterrupted()
@@ -2414,6 +2453,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             STRUCTURED_OUTPUT_TOOL_NAME))
                                                             .build(),
                                                     options);
+                                    log.debug(
+                                            "Forcing '{}' via tool_choice (strategy A), retry {}"
+                                                    + " (agent={}#{})",
+                                            STRUCTURED_OUTPUT_TOOL_NAME,
+                                            soForceToolChoiceCount,
+                                            getAgentId(),
+                                            getName());
                                 }
                                 List<Msg> modelInput =
                                         prependSystemMsg(
@@ -2559,6 +2605,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     if (soTool != null && !soCompleted) {
                                         if (soForceToolChoiceCount < 3) {
                                             soForceToolChoiceCount++;
+                                            log.debug(
+                                                    "Structured output still pending after finish;"
+                                                            + " forcing retry {} (agent={}#{})",
+                                                    soForceToolChoiceCount,
+                                                    getAgentId(),
+                                                    getName());
                                             return reasoning(iter + 1, true);
                                         }
                                         log.warn(
@@ -2567,8 +2619,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         + "structured data (agent={}#{})",
                                                 STRUCTURED_OUTPUT_TOOL_NAME,
                                                 soForceToolChoiceCount,
-                                                getName(),
-                                                getAgentId());
+                                                getAgentId(),
+                                                getName());
                                     }
                                     return Mono.justOrEmpty(eventMsg);
                                 }
@@ -3564,6 +3616,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     soCompleted = true;
                                     soResultMsg = e.getToolResultMsg();
                                     e.stopAgent();
+                                    log.debug(
+                                            "Structured output tool '{}' called successfully;"
+                                                    + " stopping agent (agent={}#{})",
+                                            STRUCTURED_OUTPUT_TOOL_NAME,
+                                            getAgentId(),
+                                            getName());
                                 }
                                 Msg resultMsg = e.getToolResultMsg();
                                 state.contextMutable().add(resultMsg);
