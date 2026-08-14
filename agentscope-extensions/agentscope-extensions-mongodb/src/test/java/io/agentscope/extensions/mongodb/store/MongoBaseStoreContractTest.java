@@ -58,12 +58,14 @@ class MongoBaseStoreContractTest {
     private static MongoClient client;
     private static MongoDatabase db;
     private static BaseStore store;
+    private static boolean connected;
 
     @BeforeAll
     static void setUp() {
         try {
             client = MongoClients.create("mongodb://localhost:27017");
             client.getDatabase("ping").runCommand(new Document("ping", 1));
+            connected = true;
         } catch (Exception e) {
             Assumptions.abort("MongoDB not available: " + e.getMessage());
         }
@@ -73,11 +75,13 @@ class MongoBaseStoreContractTest {
 
     @AfterAll
     static void tearDown() {
-        if (db != null) {
-            db.drop();
-        }
-        if (client != null) {
-            client.close();
+        if (connected) {
+            if (db != null) {
+                db.drop();
+            }
+            if (client != null) {
+                client.close();
+            }
         }
     }
 

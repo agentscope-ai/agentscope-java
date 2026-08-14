@@ -56,23 +56,25 @@ class MongoAgentStateStoreContractTest {
 
     private static MongoClient mongoClient;
     private static String dbName;
+    private static boolean connected;
 
     private AgentStateStore store;
 
     @BeforeAll
     static void connectMongo() {
+        dbName = "test_state_contract_" + System.currentTimeMillis();
         try {
             mongoClient = MongoClients.create("mongodb://localhost:27017");
             mongoClient.getDatabase("ping").runCommand(new Document("ping", 1));
+            connected = true;
         } catch (Exception e) {
             Assumptions.abort("MongoDB not available: " + e.getMessage());
         }
-        dbName = "test_state_contract_" + System.currentTimeMillis();
     }
 
     @AfterAll
     static void disconnectMongo() {
-        if (mongoClient != null) {
+        if (connected && mongoClient != null) {
             mongoClient.getDatabase(dbName).drop();
             mongoClient.close();
         }

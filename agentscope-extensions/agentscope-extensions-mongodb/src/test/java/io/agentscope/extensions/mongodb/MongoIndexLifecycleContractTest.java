@@ -58,21 +58,23 @@ class MongoIndexLifecycleContractTest {
 
     private static MongoClient client;
     private static String dbName;
+    private static boolean connected;
 
     @BeforeAll
     static void connect() {
+        dbName = "test_idx_lifecycle_" + System.currentTimeMillis();
         try {
             client = MongoClients.create("mongodb://localhost:27017");
             client.getDatabase("ping").runCommand(new Document("ping", 1));
+            connected = true;
         } catch (Exception e) {
             Assumptions.abort("MongoDB not available: " + e.getMessage());
         }
-        dbName = "test_idx_lifecycle_" + System.currentTimeMillis();
     }
 
     @AfterAll
     static void disconnect() {
-        if (client != null) {
+        if (connected && client != null) {
             client.getDatabase(dbName).drop();
             client.close();
         }
