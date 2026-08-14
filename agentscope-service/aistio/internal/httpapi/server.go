@@ -416,9 +416,18 @@ func (s *Server) spaFallback() gin.HandlerFunc {
 		}
 		path := filepath.Join(s.staticDir, filepath.Clean(c.Request.URL.Path))
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			// Vite content-hashes /assets/* filenames, so they are safe to cache
+			// immutably; everything else is revalidated so console updates land
+			// without a hard refresh.
+			if strings.HasPrefix(c.Request.URL.Path, "/assets/") {
+				c.Header("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				c.Header("Cache-Control", "no-cache")
+			}
 			fileServer.ServeHTTP(c.Writer, c.Request)
 			return
 		}
+		c.Header("Cache-Control", "no-cache")
 		c.File(index)
 	}
 }
