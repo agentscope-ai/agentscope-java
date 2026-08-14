@@ -32,6 +32,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.converter.HttpMessageConverters;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -53,6 +55,27 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableConfigurationProperties(AguiProperties.class)
 public class AgentscopeAguiMvcAutoConfiguration {
+
+    /**
+     * Adds a Jackson 2 converter for AG-UI run input.
+     *
+     * <p>AG-UI models use Jackson 2 custom deserializers, while Spring Boot 4 uses Jackson 3 by
+     * default. Limiting this converter to {@code RunAgentInput} preserves the application's default
+     * Jackson 3 behavior for all other request and response types.
+     *
+     * @return The AG-UI MVC message converter configurer
+     */
+    @Bean
+    public WebMvcConfigurer aguiRunAgentInputWebMvcConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void configureMessageConverters(
+                    HttpMessageConverters.ServerBuilder messageConverters) {
+                messageConverters.configureMessageConvertersList(
+                        converters -> converters.add(0, new RunAgentInputHttpMessageConverter()));
+            }
+        };
+    }
 
     /**
      * Creates the thread session manager bean.

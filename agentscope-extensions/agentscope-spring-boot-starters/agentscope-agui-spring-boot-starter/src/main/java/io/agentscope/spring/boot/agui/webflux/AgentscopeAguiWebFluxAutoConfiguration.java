@@ -32,6 +32,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.codec.ServerCodecConfigurer;
+import org.springframework.web.reactive.config.WebFluxConfigurer;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -56,6 +58,25 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.REACTIVE)
 @EnableConfigurationProperties(AguiProperties.class)
 public class AgentscopeAguiWebFluxAutoConfiguration {
+
+    /**
+     * Adds a Jackson 2 decoder for AG-UI run input.
+     *
+     * <p>AG-UI models use Jackson 2 custom deserializers, while Spring Boot 4 uses Jackson 3 by
+     * default. Limiting this decoder to {@code RunAgentInput} preserves the application's default
+     * Jackson 3 behavior for all other request and response types.
+     *
+     * @return The AG-UI WebFlux codec configurer
+     */
+    @Bean
+    public WebFluxConfigurer aguiRunAgentInputWebFluxConfigurer() {
+        return new WebFluxConfigurer() {
+            @Override
+            public void configureHttpMessageCodecs(ServerCodecConfigurer configurer) {
+                configurer.customCodecs().register(new RunAgentInputJsonDecoder());
+            }
+        };
+    }
 
     /**
      * Creates the thread session manager bean.
