@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.postgresql.state;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -384,15 +385,15 @@ class PostgresAgentStateStoreTest {
     }
 
     @Test
-    void rejectsSessionIdWithPathSeparators() {
+    void acceptsSessionIdWithPathSeparators() {
         PostgresAgentStateStore store =
                 PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> store.save("user", "a/b", "key", new TestState("v")));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> store.save("user", "a\\b", "key", new TestState("v")));
+        // Harness packs the sandbox isolation scope into the session id, e.g.
+        // "sandbox/session/<sessionId>". Path separators carry no meaning for a relational
+        // store, so they must not be rejected.
+        assertDoesNotThrow(
+                () -> store.save(null, "sandbox/session/conv-1", "key", new TestState("v")));
+        assertDoesNotThrow(() -> store.save("user", "a\\b", "key", new TestState("v")));
     }
 
     @Test
