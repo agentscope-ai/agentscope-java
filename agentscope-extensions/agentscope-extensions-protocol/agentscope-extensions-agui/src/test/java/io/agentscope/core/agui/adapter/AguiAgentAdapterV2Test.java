@@ -45,9 +45,12 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.DataBlockStartEvent;
+import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
@@ -62,6 +65,7 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -1735,6 +1739,27 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testReActHandshakeEventsAreSuppressedInsteadOfRaw() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            ToolResultBlock toolResult =
+                    ToolResultBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .output(TextBlock.builder().text("done").build())
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new UserConfirmResultEvent(
+                                    "reply-confirm", List.of(new ConfirmResult(true, toolUse))),
+                            new RequireExternalExecutionEvent("reply-external", List.of(toolUse)),
+                            new ExternalExecutionResultEvent(
+                                    "reply-external", List.of(toolResult)));
+
+            assertTrue(events.isEmpty());
+        }
+
+        @Test
         void testCustomConverterOverridesBuiltInConverter() {
             AguiAdapterConfig config =
                     AguiAdapterConfig.builder()
@@ -1765,6 +1790,46 @@ class AguiAgentAdapterV2Test {
                     assertInstanceOf(AguiEvent.TextMessageContent.class, events.get(1));
             assertEquals("custom", content.delta());
             assertNull(content.timestamp());
+        }
+
+        @Test
+        void testCustomConverterCanOverrideSuppressedExternalExecutionEvent() {
+            AguiAdapterConfig config =
+                    AguiAdapterConfig.builder()
+                            .addEventConverter(
+                                    new AgentEventConverter() {
+                                        @Override
+                                        public Set<Class<? extends AgentEvent>> eventTypes() {
+                                            return Set.of(RequireExternalExecutionEvent.class);
+                                        }
+
+                                        @Override
+                                        public void convert(
+                                                AgentEvent event, AguiStreamContext context) {
+                                            context.emit(
+                                                    new AguiEvent.Custom(
+                                                            context.getThreadId(),
+                                                            context.getRunId(),
+                                                            "external.required",
+                                                            Map.of("handled", true)));
+                                        }
+                                    })
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            config,
+                            new RequireExternalExecutionEvent(
+                                    "reply-external",
+                                    List.of(
+                                            ToolUseBlock.builder()
+                                                    .id("tool-1")
+                                                    .name("lookup")
+                                                    .build())));
+
+            assertEquals(List.of(AguiEventType.CUSTOM), types(events));
+            AguiEvent.Custom custom = assertInstanceOf(AguiEvent.Custom.class, events.get(0));
+            assertEquals("external.required", custom.name());
         }
     }
 

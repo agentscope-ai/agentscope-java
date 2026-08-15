@@ -23,6 +23,7 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
@@ -77,6 +78,7 @@ public class AguiWebFluxHandler {
 
     private final AguiRequestProcessor processor;
     private final AguiEventEncoder encoder;
+    private final AguiRequestBodyParser requestBodyParser;
     private final String agentIdHeader;
 
     private AguiWebFluxHandler(Builder builder) {
@@ -96,6 +98,10 @@ public class AguiWebFluxHandler {
                         .runtimeContextResolver(builder.runtimeContextResolver)
                         .build();
         this.encoder = new AguiEventEncoder();
+        this.requestBodyParser =
+                builder.requestBodyParser != null
+                        ? builder.requestBodyParser
+                        : new AguiRequestBodyParser();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
     }
@@ -110,7 +116,8 @@ public class AguiWebFluxHandler {
      * @return A Mono containing the server response with SSE stream
      */
     public Mono<ServerResponse> handle(ServerRequest request) {
-        return request.bodyToMono(RunAgentInput.class)
+        return request.bodyToMono(String.class)
+                .map(requestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, null))
                 .onErrorResume(this::handleParseError);
     }
@@ -126,7 +133,8 @@ public class AguiWebFluxHandler {
      */
     public Mono<ServerResponse> handleWithAgentId(ServerRequest request) {
         String pathAgentId = request.pathVariable(AGENT_ID_PATH_VARIABLE);
-        return request.bodyToMono(RunAgentInput.class)
+        return request.bodyToMono(String.class)
+                .map(requestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, pathAgentId))
                 .onErrorResume(this::handleParseError);
     }
@@ -270,6 +278,7 @@ public class AguiWebFluxHandler {
         private String agentIdHeader;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
+        private AguiRequestBodyParser requestBodyParser;
 
         /**
          * Set the agent registry.
@@ -345,6 +354,17 @@ public class AguiWebFluxHandler {
          */
         public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
             this.adapterFactory = adapterFactory;
+            return this;
+        }
+
+        /**
+         * Set the request body parser.
+         *
+         * @param requestBodyParser The parser used to decode request bodies
+         * @return This builder
+         */
+        public Builder requestBodyParser(AguiRequestBodyParser requestBodyParser) {
+            this.requestBodyParser = requestBodyParser;
             return this;
         }
 
