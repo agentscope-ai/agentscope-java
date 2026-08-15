@@ -272,6 +272,32 @@ class ToolValidatorTest {
     }
 
     @Nested
+    @DisplayName("validateInput - Error Message Includes Field Name")
+    class ValidateInputErrorIncludesFieldName {
+
+        @Test
+        @DisplayName("Should include the field name in type validation errors")
+        void testErrorIncludesFieldName() {
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of(
+                                    "name", Map.of("type", "string"),
+                                    "age", Map.of("type", "integer")));
+
+            Map<String, Object> input = Map.of("name", 123, "age", "not a number");
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+
+            assertNotNull(result);
+            assertTrue(result.contains("name"), "Error should mention field 'name': " + result);
+            assertTrue(result.contains("age"), "Error should mention field 'age': " + result);
+        }
+    }
+
+    @Nested
     @DisplayName("validateInput - Enum Validation")
     class ValidateInputEnumValidation {
 
