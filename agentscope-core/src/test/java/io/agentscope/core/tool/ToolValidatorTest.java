@@ -272,28 +272,35 @@ class ToolValidatorTest {
     }
 
     @Nested
-    @DisplayName("validateInput - Error Message Includes Field Name")
-    class ValidateInputErrorIncludesFieldName {
+    @DisplayName("validateInput - Error Message Includes Field Path")
+    class ValidateInputErrorIncludesFieldPath {
 
         @Test
-        @DisplayName("Should include the field name in type validation errors")
-        void testErrorIncludesFieldName() {
+        @DisplayName("Should include JSON Pointer paths in type validation errors")
+        void testErrorIncludesFieldPath() {
+            Map<String, Object> addressSchema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("city", Map.of("type", "string")));
+
             Map<String, Object> schema =
                     Map.of(
                             "type",
                             "object",
                             "properties",
-                            Map.of(
-                                    "name", Map.of("type", "string"),
-                                    "age", Map.of("type", "integer")));
+                            Map.of("name", Map.of("type", "string"), "address", addressSchema));
 
-            Map<String, Object> input = Map.of("name", 123, "age", "not a number");
+            Map<String, Object> input = Map.of("name", 123, "address", Map.of("city", 456));
             String result =
                     ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
-            assertTrue(result.contains("name"), "Error should mention field 'name': " + result);
-            assertTrue(result.contains("age"), "Error should mention field 'age': " + result);
+            assertTrue(result.contains("/name"), "Error should include path '/name': " + result);
+            assertTrue(
+                    result.contains("/address/city"),
+                    "Error should include nested path '/address/city': " + result);
         }
     }
 
