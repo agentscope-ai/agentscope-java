@@ -4197,6 +4197,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * {@link PermissionMode#DEFAULT}). {@code BYPASS} disables all rule evaluation, so it should be
      * an explicit, per-session action and is best paired with a sandboxed environment.
      *
+     * <p>When a state store is configured, the authoritative persisted state for the session is
+     * reloaded before the mode is applied, so the toggle neither reverts newer persisted state
+     * written by another replica nor promotes an unpersisted failed-call state into the store.
+     *
      * <p>An in-flight call keeps the engine it started with; the new mode applies to subsequent
      * calls on the slot.
      *
@@ -4207,13 +4211,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public void setPermissionMode(String userId, String sessionId, PermissionMode mode) {
         Objects.requireNonNull(mode, "mode must not be null");
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        AgentState state = getAgentState(userId, sid);
-        installPermissionContext(userId, sid, state, state.getPermissionContext().withMode(mode));
+        AgentState previous = stateCache.get(slotKey(userId, sid));
+        AgentState state = stateForPermissionAdminWrite(userId, sid);
+        installPermissionContext(
+                userId, sid, previous, state, state.getPermissionContext().withMode(mode));
     }
 
     /**
      * Replaces the permission context for one {@code (userId, sessionId)} slot, rebuilds that
      * slot's permission engine, and persists the updated state.
+     *
+     * <p>When a state store is configured, the authoritative persisted state for the session is
+     * reloaded before the replacement is applied, so it neither reverts newer persisted state
+     * written by another replica nor promotes an unpersisted failed-call state into the store.
      *
      * <p>An in-flight call keeps the call-scoped engine it started with. The replacement applies
      * to subsequent calls on this slot and does not affect any other user or session.
@@ -4226,18 +4236,82 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String userId, String sessionId, PermissionContextState permissionContext) {
         Objects.requireNonNull(permissionContext, "permissionContext must not be null");
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        AgentState state = getAgentState(userId, sid);
-        installPermissionContext(userId, sid, state, permissionContext);
+        AgentState previous = stateCache.get(slotKey(userId, sid));
+        AgentState state = stateForPermissionAdminWrite(userId, sid);
+        installPermissionContext(userId, sid, previous, state, permissionContext);
     }
 
+    /**
+     * Resolves the {@link AgentState} a permission admin write should mutate. When a {@link
+     * AgentStateStore} is configured, the authoritative persisted state for the slot is reloaded
+     * first (mirroring the per-call reload in {@code activateSlotForContext}) and replaces the
+     * local cache entry, so the write can neither revert newer persisted state on another replica
+     * nor promote an unpersisted failed-call state into the store. Any unpersisted mutations in
+     * the previously cached local instance are discarded in favor of the authoritative store
+     * state — call-path context changes are persisted by {@code saveStateToSession} and are not
+     * affected. Without a store the locally cached state is used, as before.
+     *
+     * <p>Note the deliberate divergence from {@code clearContext}: that method no-ops when the
+     * store has no record and nothing is cached (there is nothing to clear), whereas a permission
+     * admin write is create-if-absent — {@code loadOrCreateAgentStateForSlot} hands back a fresh
+     * state that the caller persists, matching the pre-fix behavior for never-persisted slots.
+     * Do not "normalize" the two paths.
+     */
+    private AgentState stateForPermissionAdminWrite(String userId, String sid) {
+        if (stateStore == null) {
+            return getAgentState(userId, sid);
+        }
+        String slot = slotKey(userId, sid);
+        VersionedState<AgentState> versioned =
+                loadOrCreateAgentStateForSlot(
+                        stateStore,
+                        userId,
+                        sid,
+                        initialPermissionContext,
+                        getAgentId(),
+                        initialActiveToolGroups);
+        AgentState state = versioned.value();
+        stateCache.put(slot, state);
+        slotVersions.put(slot, versioned.version());
+        return state;
+    }
+
+    /**
+     * Copies the (just-installed) permission context onto the previously cached instance. An
+     * in-flight call still holds that instance and persists it at call end; without this mirror
+     * its save would revert the permission change written by the admin call.
+     *
+     * <p>The mirror only guarantees that the <em>most recent</em> admin write is visible to the
+     * instance held by an in-flight call: two consecutive admin writes during one call chain
+     * mirror onto the instance cached at the time of the second write, and an instance displaced
+     * by the first write no longer receives later updates. That residual race is part of the
+     * call-path CAS contention window and is intentionally out of scope here.
+     */
+    private static void mirrorPermissionContext(AgentState previous, AgentState current) {
+        if (previous != null && previous != current) {
+            previous.setPermissionContext(current.getPermissionContext());
+        }
+    }
+
+    /**
+     * Installs the permission context on the reloaded {@code state}, mirrors it onto the
+     * previously cached instance, then persists. The mirror deliberately runs before the save:
+     * an end-of-call save of the previous instance that lands after the mirror carries the new
+     * context, and one that lands before it is superseded by this save — either way the store
+     * ends up with the new context. Had the mirror run after the save, an end-save racing inside
+     * that gap could hit the OVERWRITE conflict policy and persist the previous instance without
+     * the new context, silently swallowing the admin change.
+     */
     private void installPermissionContext(
             String userId,
             String sessionId,
+            AgentState previous,
             AgentState state,
             PermissionContextState permissionContext) {
         state.setPermissionContext(permissionContext);
         permissionEngineCache.put(
                 slotKey(userId, sessionId), new PermissionEngine(permissionContext));
+        mirrorPermissionContext(previous, state);
         saveAgentState(userId, sessionId);
     }
 
