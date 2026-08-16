@@ -172,13 +172,11 @@ public class AguiMvcController {
                     Disposable subscription = null;
                     try {
                         // Process request - returns both agent and event stream
+                        RuntimeContext runtimeContext =
+                                resolveRuntimeContext(input, headerAgentId, pathAgentId, request);
                         AguiRequestProcessor.ProcessResult result =
                                 processor.process(
-                                        input,
-                                        headerAgentId,
-                                        pathAgentId,
-                                        resolveRuntimeContext(
-                                                input, headerAgentId, pathAgentId, request));
+                                        input, headerAgentId, pathAgentId, runtimeContext);
 
                         // Set up callbacks for client disconnect handling
                         // using the same agent instance from the result
@@ -191,7 +189,7 @@ public class AguiMvcController {
                                                 "SSE connection timed out for run {}, interrupting"
                                                         + " agent",
                                                 runId);
-                                        result.agent().interrupt();
+                                        result.interrupt(threadId, runtimeContext);
                                     } else {
                                         logger.info(
                                                 "SSE connection timed out for run {}, agent"
@@ -207,7 +205,7 @@ public class AguiMvcController {
                                                         + " agent",
                                                 runId,
                                                 ex.getMessage());
-                                        result.agent().interrupt();
+                                        result.interrupt(threadId, runtimeContext);
                                     } else {
                                         logger.info(
                                                 "SSE connection error for run {}: {}, agent"

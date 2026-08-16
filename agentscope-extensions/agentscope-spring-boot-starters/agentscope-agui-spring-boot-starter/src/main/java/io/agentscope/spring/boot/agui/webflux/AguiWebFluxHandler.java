@@ -146,14 +146,12 @@ public class AguiWebFluxHandler {
         try {
             // Get header agent ID
             String headerAgentId = request.headers().firstHeader(agentIdHeader);
+            RuntimeContext runtimeContext =
+                    resolveRuntimeContext(input, headerAgentId, pathAgentId, request);
 
             // Process request - returns both agent and event stream
             AguiRequestProcessor.ProcessResult result =
-                    processor.process(
-                            input,
-                            headerAgentId,
-                            pathAgentId,
-                            resolveRuntimeContext(input, headerAgentId, pathAgentId, request));
+                    processor.process(input, headerAgentId, pathAgentId, runtimeContext);
 
             // Create SSE stream using ServerSentEvent for proper streaming behavior
             Flux<AguiEvent> events =
@@ -174,7 +172,7 @@ public class AguiWebFluxHandler {
                                                     "SSE stream cancelled for run {}, interrupting"
                                                             + " agent",
                                                     runId);
-                                            result.agent().interrupt();
+                                            result.interrupt(threadId, runtimeContext);
                                         } else {
                                             logger.info(
                                                     "SSE stream cancelled for run {}, agent"
