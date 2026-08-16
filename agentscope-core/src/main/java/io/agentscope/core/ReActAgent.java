@@ -1547,7 +1547,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
                                 StructuredOutputReminder.PROMPT,
                                 MessageMetadataKeys.CACHE_CONTROL,
-                                "UNSET")) // If PR#2685 has already been merged, please modify it to 'CacheContro.UNSET' here
+                                false))
                 .build();
     }
 
