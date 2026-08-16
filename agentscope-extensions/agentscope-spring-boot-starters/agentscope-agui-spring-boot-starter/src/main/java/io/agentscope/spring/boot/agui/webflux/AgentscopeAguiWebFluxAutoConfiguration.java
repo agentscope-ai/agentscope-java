@@ -124,6 +124,7 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
                 .sessionManager(sessionManager)
                 .serverSideMemory(props.isServerSideMemory())
                 .agentIdHeader(props.getAgentIdHeader())
+                .interruptOnDisconnect(props.isInterruptOnDisconnect())
                 .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
                 .adapterFactory(adapterFactoryProvider.getIfAvailable())
                 .requestBodyParser(requestBodyParser)

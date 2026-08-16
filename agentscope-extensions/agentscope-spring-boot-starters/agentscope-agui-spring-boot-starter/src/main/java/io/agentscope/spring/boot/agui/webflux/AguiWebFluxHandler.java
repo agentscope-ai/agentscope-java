@@ -80,6 +80,7 @@ public class AguiWebFluxHandler {
     private final AguiEventEncoder encoder;
     private final AguiRequestBodyParser requestBodyParser;
     private final String agentIdHeader;
+    private final boolean interruptOnDisconnect;
 
     private AguiWebFluxHandler(Builder builder) {
         this.processor =
@@ -104,6 +105,7 @@ public class AguiWebFluxHandler {
                         : new AguiRequestBodyParser();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
+        this.interruptOnDisconnect = builder.interruptOnDisconnect;
     }
 
     /**
@@ -154,21 +156,31 @@ public class AguiWebFluxHandler {
                             runtimeContextRequest(input, headerAgentId, pathAgentId, request));
 
             // Create SSE stream using ServerSentEvent for proper streaming behavior
+            Flux<AguiEvent> events =
+                    interruptOnDisconnect
+                            ? result.events()
+                            : result.events().publish().autoConnect(1);
             Flux<ServerSentEvent<String>> sseStream =
-                    result.events()
-                            .map(
+                    events.map(
                                     event ->
                                             ServerSentEvent.<String>builder()
                                                     .data(encoder.encodeToJson(event).trim())
                                                     .build())
-                            // When client closes connection (cancels stream), interrupt the agent
+                            // When the client closes the connection, optionally interrupt the agent
                             .doOnCancel(
                                     () -> {
-                                        logger.info(
-                                                "SSE stream cancelled for run {}, interrupting"
-                                                        + " agent",
-                                                runId);
-                                        result.agent().interrupt();
+                                        if (interruptOnDisconnect) {
+                                            logger.info(
+                                                    "SSE stream cancelled for run {}, interrupting"
+                                                            + " agent",
+                                                    runId);
+                                            result.interrupt(threadId);
+                                        } else {
+                                            logger.info(
+                                                    "SSE stream cancelled for run {}, agent"
+                                                            + " continues running",
+                                                    runId);
+                                        }
                                     });
 
             return ServerResponse.ok()
@@ -276,6 +288,7 @@ public class AguiWebFluxHandler {
         private AguiAdapterConfig config;
         private boolean serverSideMemory = false;
         private String agentIdHeader;
+        private boolean interruptOnDisconnect = true;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRequestBodyParser requestBodyParser;
@@ -332,6 +345,17 @@ public class AguiWebFluxHandler {
          */
         public Builder agentIdHeader(String agentIdHeader) {
             this.agentIdHeader = agentIdHeader;
+            return this;
+        }
+
+        /**
+         * Set whether to interrupt the agent when the client disconnects.
+         *
+         * @param interruptOnDisconnect whether to interrupt the agent
+         * @return This builder
+         */
+        public Builder interruptOnDisconnect(boolean interruptOnDisconnect) {
+            this.interruptOnDisconnect = interruptOnDisconnect;
             return this;
         }
 

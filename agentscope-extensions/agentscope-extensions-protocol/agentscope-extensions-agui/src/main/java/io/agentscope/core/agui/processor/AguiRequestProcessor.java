@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agui.processor;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
@@ -54,9 +55,11 @@ import reactor.core.publisher.Flux;
  *     .config(AguiAdapterConfig.defaultConfig())
  *     .build();
  *
- * ProcessResult result = processor.process(input, headerAgentId, pathAgentId);
+ * AguiRuntimeContextRequest<?> request = AguiRuntimeContextRequest.builder()
+ *         .input(input)
+ *         .build();
+ * ProcessResult result = processor.process(request);
  * Flux<AguiEvent> events = result.events();
- * Agent agent = result.agent(); // For interrupt handling
  * }</pre>
  */
 public class AguiRequestProcessor {
@@ -88,8 +91,31 @@ public class AguiRequestProcessor {
      *
      * @param agent The resolved agent instance
      * @param events The event stream
+     * @param runtimeContext The resolved caller-provided runtime context, may be null
      */
-    public record ProcessResult(Agent agent, Flux<AguiEvent> events) {}
+    public record ProcessResult(
+            Agent agent, Flux<AguiEvent> events, RuntimeContext runtimeContext) {
+
+        /**
+         * Interrupt this request's active session.
+         *
+         * <p>AG-UI uses {@code threadId} as the session id. For a multi-session
+         * {@link ReActAgent}, preserve the caller's user id and target that session instead of
+         * invoking the deprecated no-argument interrupt method, which always targets the default
+         * session.
+         *
+         * @param threadId The AG-UI thread id for this request
+         */
+        public void interrupt(String threadId) {
+            if (agent instanceof ReActAgent reActAgent) {
+                RuntimeContext interruptContext =
+                        RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
+                reActAgent.interrupt(interruptContext);
+            } else {
+                agent.interrupt();
+            }
+        }
+    }
 
     /**
      * Process an AG-UI request and return the result containing agent and event stream.
@@ -174,7 +200,7 @@ public class AguiRequestProcessor {
                                 return processorErrorEvents(input, error);
                             }
                         });
-        return new ProcessResult(agent, events);
+        return new ProcessResult(agent, events, runtimeContext);
     }
 
     private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
