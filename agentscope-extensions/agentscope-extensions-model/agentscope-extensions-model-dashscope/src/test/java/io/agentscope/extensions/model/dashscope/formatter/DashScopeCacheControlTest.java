@@ -18,7 +18,6 @@ package io.agentscope.extensions.model.dashscope.formatter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -40,6 +39,7 @@ import org.junit.jupiter.api.Test;
 class DashScopeCacheControlTest {
 
     private static final Map<String, String> EPHEMERAL = Map.of("type", "ephemeral");
+    private static final Map<String, String> NO_CACHE = Map.of();
 
     private DashScopeChatFormatter formatter;
 
@@ -218,8 +218,7 @@ class DashScopeCacheControlTest {
             List<DashScopeMessage> result = formatter.format(List.of(msg));
 
             assertEquals(1, result.size());
-            assertTrue(result.get(0).isExcludedFromCaching());
-            assertNull(result.get(0).getCacheControl());
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
         }
 
         @Test
@@ -238,8 +237,7 @@ class DashScopeCacheControlTest {
             List<DashScopeMessage> result = formatter.format(List.of(systemMsg, userMsg));
             formatter.applyCacheControl(result);
 
-            assertTrue(result.get(0).isExcludedFromCaching());
-            assertNull(result.get(0).getCacheControl());
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
             assertEquals(EPHEMERAL, result.get(1).getCacheControl());
         }
 
@@ -258,9 +256,8 @@ class DashScopeCacheControlTest {
             List<DashScopeMessage> result = formatter.format(List.of(msg));
             String json = JsonUtils.getJsonCodec().toJson(result.get(0));
 
-            assertTrue(result.get(0).isExcludedFromCaching());
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
             assertFalse(json.contains("no_cache"));
-            assertFalse(json.contains("excludedFromCaching"));
             assertFalse(json.contains("cache_control"));
         }
 

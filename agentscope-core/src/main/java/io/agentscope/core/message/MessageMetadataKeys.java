@@ -110,7 +110,9 @@ public final class MessageMetadataKeys {
      * Metadata key to explicitly mark a message for prompt caching or non-caching.
      *
      * <p>When set to {@code true}, the formatter adds <code>cache_control:
-     * {"type": "ephemeral"}</code> to this message during formatting. When set to {@code false}, the
+     * {"type": "ephemeral"}</code> to this message during formatting, unless the message already
+     * carries a custom <code>cache_control</code> value (e.g. with additional attributes such as
+     * <code>ttl</code>), in which case it is left untouched. When set to {@code false}, the
      * message is explicitly excluded from caching: no <code>cache_control</code> is emitted for it,
      * and the automatic cache control strategy configured via
      * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()} skips it.

@@ -83,19 +83,18 @@ public class DashScopeMessage {
     @JsonAlias("reasoning")
     private String reasoningContent;
 
-    /** Cache control configuration for prompt caching. */
-    @JsonProperty("cache_control")
-    private Map<String, String> cacheControl;
-
     /**
-     * Internal flag marking this message as explicitly excluded from prompt caching.
+     * Cache control configuration for prompt caching.
      *
-     * <p>Not part of the API payload: the upstream API has no valid {@code cache_control} type to
-     * express "no cache", so exclusion is represented by omitting {@code cache_control} entirely.
-     * This flag only tells the automatic cache-control strategy to skip the message.
+     * <p>Tri-state: {@code null} means "not specified" (the automatic cache-control strategy may
+     * add {@code {"type": "ephemeral"}}); a non-empty map is an explicit {@code cache_control}
+     * value; an empty map is the explicit "no cache" sentinel — combined with
+     * {@link JsonInclude.Include#NON_EMPTY} it is serialized away, so the API receives no
+     * {@code cache_control} field and therefore performs no caching.
      */
-    @JsonIgnore
-    private boolean excludedFromCaching;
+    @JsonProperty("cache_control")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, String> cacheControl;
 
     public DashScopeMessage() {}
 
@@ -202,20 +201,6 @@ public class DashScopeMessage {
         this.cacheControl = cacheControl;
     }
 
-    /**
-     * Whether this message is explicitly excluded from prompt caching.
-     *
-     * @return {@code true} if the message must not be cached
-     */
-    @JsonIgnore
-    public boolean isExcludedFromCaching() {
-        return excludedFromCaching;
-    }
-
-    public void setExcludedFromCaching(boolean excludedFromCaching) {
-        this.excludedFromCaching = excludedFromCaching;
-    }
-
     public static Builder builder() {
         return new Builder();
     }
@@ -260,11 +245,6 @@ public class DashScopeMessage {
 
         public Builder cacheControl(Map<String, String> cacheControl) {
             message.setCacheControl(cacheControl);
-            return this;
-        }
-
-        public Builder excludedFromCaching(boolean excludedFromCaching) {
-            message.setExcludedFromCaching(excludedFromCaching);
             return this;
         }
 
