@@ -101,6 +101,16 @@ public class OpenAIMessage {
     @JsonProperty("cache_control")
     private Map<String, String> cacheControl;
 
+    /**
+     * Internal flag marking this message as explicitly excluded from prompt caching.
+     *
+     * <p>Not part of the API payload: the upstream API has no valid {@code cache_control} type to
+     * express "no cache", so exclusion is represented by omitting {@code cache_control} entirely.
+     * This flag only tells the automatic cache-control strategy to skip the message.
+     */
+    @JsonIgnore
+    private boolean excludedFromCaching;
+
     public OpenAIMessage() {}
 
     public String getRole() {
@@ -173,6 +183,20 @@ public class OpenAIMessage {
 
     public void setCacheControl(Map<String, String> cacheControl) {
         this.cacheControl = cacheControl;
+    }
+
+    /**
+     * Whether this message is explicitly excluded from prompt caching.
+     *
+     * @return {@code true} if the message must not be cached
+     */
+    @JsonIgnore
+    public boolean isExcludedFromCaching() {
+        return excludedFromCaching;
+    }
+
+    public void setExcludedFromCaching(boolean excludedFromCaching) {
+        this.excludedFromCaching = excludedFromCaching;
     }
 
     /**
@@ -277,6 +301,11 @@ public class OpenAIMessage {
 
         public Builder cacheControl(Map<String, String> cacheControl) {
             message.setCacheControl(cacheControl);
+            return this;
+        }
+
+        public Builder excludedFromCaching(boolean excludedFromCaching) {
+            message.setExcludedFromCaching(excludedFromCaching);
             return this;
         }
 

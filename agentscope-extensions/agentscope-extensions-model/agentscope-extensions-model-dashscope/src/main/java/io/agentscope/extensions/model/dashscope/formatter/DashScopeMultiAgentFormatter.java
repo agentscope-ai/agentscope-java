@@ -367,8 +367,8 @@ public class DashScopeMultiAgentFormatter
      * Apply cache control to DashScope messages.
      *
      * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list, unless they are explicitly marked as no-cache. Messages that are unset
-     * ({@code null}) or already explicitly cached are treated as cacheable.
+     * message in the list. Messages that are explicitly excluded from caching or that already carry
+     * a cache_control value are left untouched.
      *
      * @param messages the list of formatted DashScope messages
      */
@@ -378,13 +378,12 @@ public class DashScopeMultiAgentFormatter
         }
         Map<String, String> ephemeral = DashScopeChatFormatter.getEphemeralCacheControl();
         for (DashScopeMessage msg : messages) {
-            if ("system".equals(msg.getRole())
-                    && DashScopeChatFormatter.shouldAutoCache(msg.getCacheControl())) {
+            if ("system".equals(msg.getRole()) && DashScopeChatFormatter.shouldAutoCache(msg)) {
                 msg.setCacheControl(ephemeral);
             }
         }
         DashScopeMessage lastMsg = messages.get(messages.size() - 1);
-        if (DashScopeChatFormatter.shouldAutoCache(lastMsg.getCacheControl())) {
+        if (DashScopeChatFormatter.shouldAutoCache(lastMsg)) {
             lastMsg.setCacheControl(ephemeral);
         }
     }

@@ -16,11 +16,14 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,8 +40,6 @@ import org.junit.jupiter.api.Test;
 class OpenAICacheControlTest {
 
     private static final Map<String, String> EPHEMERAL = Map.of("type", "ephemeral");
-
-    private static final Map<String, String> NO_CACHE = Map.of("type", "no_cache");
 
     private OpenAIChatFormatter formatter;
 
@@ -217,7 +218,8 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(msg));
 
             assertEquals(1, result.size());
-            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+            assertTrue(result.get(0).isExcludedFromCaching());
+            assertNull(result.get(0).getCacheControl());
         }
 
         @Test
@@ -236,8 +238,30 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(systemMsg, userMsg));
             formatter.applyCacheControl(result);
 
-            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+            assertTrue(result.get(0).isExcludedFromCaching());
+            assertNull(result.get(0).getCacheControl());
             assertEquals(EPHEMERAL, result.get(1).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should not serialize the no-cache marker into the API payload")
+        void noCacheNotSerialized() throws Exception {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Hello")
+                            .metadata(metadata)
+                            .build();
+
+            List<OpenAIMessage> result = formatter.format(List.of(msg));
+            String json = JsonUtils.getJsonCodec().toJson(result.get(0));
+
+            assertTrue(result.get(0).isExcludedFromCaching());
+            assertFalse(json.contains("no_cache"));
+            assertFalse(json.contains("excludedFromCaching"));
+            assertFalse(json.contains("cache_control"));
         }
 
         @Test

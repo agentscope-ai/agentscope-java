@@ -44,9 +44,6 @@ public abstract class OpenAIBaseFormatter
 
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
 
-    /** Explicit <code>no_cache</code> control sentinel marking a message excluded from caching. */
-    private static final Map<String, String> NO_CACHE_CONTROL = Map.of("type", "no_cache");
-
     protected final OpenAIMessageConverter messageConverter;
     protected final OpenAIResponseParser responseParser;
 
@@ -176,8 +173,8 @@ public abstract class OpenAIBaseFormatter
      * Apply cache control to OpenAI messages.
      *
      * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list, unless they are explicitly marked as no-cache. Messages that are unset
-     * ({@code null}) or already explicitly cached are treated as cacheable.
+     * message in the list. Messages that are explicitly excluded from caching or that already carry
+     * a cache_control value are left untouched.
      *
      * @param messages the list of formatted OpenAI messages
      */
@@ -186,12 +183,12 @@ public abstract class OpenAIBaseFormatter
             return;
         }
         for (OpenAIMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && shouldAutoCache(msg.getCacheControl())) {
+            if ("system".equals(msg.getRole()) && shouldAutoCache(msg)) {
                 msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
             }
         }
         OpenAIMessage lastMsg = messages.get(messages.size() - 1);
-        if (shouldAutoCache(lastMsg.getCacheControl())) {
+        if (shouldAutoCache(lastMsg)) {
             lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
         }
     }
@@ -206,25 +203,16 @@ public abstract class OpenAIBaseFormatter
     }
 
     /**
-     * Get the "no cache" control constant.
-     *
-     * @return unmodifiable map representing an explicit "no cache" marker
-     */
-    static Map<String, String> getNoCacheControl() {
-        return NO_CACHE_CONTROL;
-    }
-
-    /**
      * Whether the automatic cache-control strategy should mark a message as ephemeral.
      *
-     * <p>Returns {@code true} when the cache_control is unset ({@code null}) or already explicitly
-     * marked for caching ({@code {"type": "ephemeral"}}). A message explicitly marked as no-cache
-     * ({@code {"type": "no_cache"}}) or carrying any other custom cache_control is left untouched.
+     * <p>Returns {@code true} only when the message is neither explicitly excluded from caching nor
+     * already carrying a cache_control value. Excluded messages are skipped, and any existing
+     * cache_control (including an explicit {@code {"type": "ephemeral"}}) is left unchanged.
      *
-     * @param cacheControl the current cache_control of the message, may be {@code null}
+     * @param message the message to inspect
      * @return {@code true} if the message should be auto-cached, {@code false} otherwise
      */
-    private static boolean shouldAutoCache(Map<String, String> cacheControl) {
-        return cacheControl == null || EPHEMERAL_CACHE_CONTROL.equals(cacheControl);
+    private static boolean shouldAutoCache(OpenAIMessage message) {
+        return !message.isExcludedFromCaching() && message.getCacheControl() == null;
     }
 }

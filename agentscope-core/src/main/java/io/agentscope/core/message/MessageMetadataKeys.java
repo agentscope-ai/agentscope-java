@@ -111,10 +111,9 @@ public final class MessageMetadataKeys {
      *
      * <p>When set to {@code true}, the formatter adds <code>cache_control:
      * {"type": "ephemeral"}</code> to this message during formatting. When set to {@code false}, the
-     * message is explicitly excluded from caching — the formatter marks it with a
-     * <code>cache_control: {"type": "no_cache"}</code> sentinel so the automatic cache control
-     * strategy configured via {@link io.agentscope.core.model.GenerateOptions#getCacheControl()}
-     * skips it.
+     * message is explicitly excluded from caching: no <code>cache_control</code> is emitted for it,
+     * and the automatic cache control strategy configured via
+     * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()} skips it.
      *
      * <p>Explicitly marked messages (either {@code true} or {@code false}) take priority over the
      * automatic strategy — they will not be overwritten.
