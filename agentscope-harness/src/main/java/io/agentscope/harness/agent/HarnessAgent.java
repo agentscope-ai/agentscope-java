@@ -1846,10 +1846,33 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Adds a fully custom subagent factory for a given agent id. */
+        /**
+         * Adds a fully custom subagent factory for a given agent id, advertising {@code name} as
+         * the subagent's description.
+         *
+         * <p>Prefer {@link #subagentFactory(String, String, Function)}: the description is what
+         * this agent's model reads when deciding which subagent to delegate to, and a bare name
+         * carries no routing signal.
+         */
         public Builder subagentFactory(String name, Function<String, Agent> factory) {
             this.customSubagentFactories.add(
                     new HarnessAgentBuilderSupport.SubagentFactoryEntry(name, factory));
+            return this;
+        }
+
+        /**
+         * Adds a fully custom subagent factory for a given agent id, with the description this
+         * agent's model sees when choosing a delegate.
+         *
+         * @param name        the subagent's agent id
+         * @param description what the subagent is for; falls back to {@code name} when null or blank
+         * @param factory     creates the subagent from its agent id
+         */
+        public Builder subagentFactory(
+                String name, String description, Function<String, Agent> factory) {
+            this.customSubagentFactories.add(
+                    new HarnessAgentBuilderSupport.SubagentFactoryEntry(
+                            name, description, factory));
             return this;
         }
 

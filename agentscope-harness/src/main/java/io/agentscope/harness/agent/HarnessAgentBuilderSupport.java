@@ -128,8 +128,26 @@ final class HarnessAgentBuilderSupport {
         return base.isEmpty() ? SUBAGENT_CONTEXT_SECTION : base + "\n\n" + SUBAGENT_CONTEXT_SECTION;
     }
 
-    /** Custom-supplied subagent factory entry: name + factory function from name to Agent. */
-    record SubagentFactoryEntry(String name, Function<String, Agent> factory) {}
+    /**
+     * Custom-supplied subagent factory entry: name + description + factory function from name to
+     * Agent.
+     *
+     * <p>{@code description} is what the parent agent's model sees when choosing which subagent to
+     * delegate to, so a blank value degrades routing quality. When callers do not supply one it
+     * falls back to {@code name}, preserving the behaviour of the two-argument
+     * {@link HarnessAgent.Builder#subagentFactory(String, Function)} overload.
+     */
+    record SubagentFactoryEntry(String name, String description, Function<String, Agent> factory) {
+
+        SubagentFactoryEntry(String name, Function<String, Agent> factory) {
+            this(name, null, factory);
+        }
+
+        /** The description to advertise, falling back to {@link #name()} when none was supplied. */
+        String effectiveDescription() {
+            return (description != null && !description.isBlank()) ? description : name;
+        }
+    }
 
     // -----------------------------------------------------------------
     //  Filesystem
@@ -220,7 +238,7 @@ final class HarnessAgentBuilderSupport {
             entries.add(
                     new SubagentEntry(
                             custom.name(),
-                            custom.name(),
+                            custom.effectiveDescription(),
                             // custom factory uses Function<String, Agent> — pre-B-0 signature
                             // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
                             // that need parent-aware isolation should register a programmatic
@@ -263,7 +281,7 @@ final class HarnessAgentBuilderSupport {
             entries.add(
                     new SubagentEntry(
                             custom.name(),
-                            custom.name(),
+                            custom.effectiveDescription(),
                             // custom factory uses Function<String, Agent> — pre-B-0 signature
                             // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
                             // that need parent-aware isolation should register a programmatic
