@@ -16,8 +16,7 @@
 package io.agentscope.core.memory;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.AgentStateStore;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -29,7 +28,12 @@ import java.util.stream.Collectors;
  *
  * This implementation stores messages in memory using thread-safe collections
  * and provides state serialization/deserialization for session management.
+ *
+ * @deprecated since 2.0.0. Conversation context lives on
+ *     {@link io.agentscope.core.state.AgentState#getContext()}; this class is retained for
+ *     source compatibility with 1.0.x user code.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class InMemoryMemory implements Memory {
 
     private final List<Msg> messages = new CopyOnWriteArrayList<>();
@@ -48,27 +52,30 @@ public class InMemoryMemory implements Memory {
      * Save memory state to the session.
      *
      * <p>Passes the full message list to the session, including the case where the list is empty.
-     * The Session implementation is responsible for incremental storage (e.g., JsonSession appends
+     * The AgentStateStore implementation is responsible for incremental storage (e.g., JsonFileAgentStateStore appends
      * only new items based on file line count).
      *
-     * @param session the session to save state to
-     * @param sessionKey the session identifier
+     * @param stateStore the state store to save to
+     * @param userId the user identifier
+     * @param sessionId the session identifier
      */
     @Override
-    public void saveTo(Session session, SessionKey sessionKey) {
+    public void saveTo(AgentStateStore stateStore, String userId, String sessionId) {
         // Always save, even when empty, to ensure cleared state is persisted
-        session.save(sessionKey, KEY_PREFIX + "_messages", new ArrayList<>(messages));
+        stateStore.save(userId, sessionId, KEY_PREFIX + "_messages", new ArrayList<>(messages));
     }
 
     /**
-     * Load memory state from the session.
+     * Load memory state from the store.
      *
-     * @param session the session to load state from
-     * @param sessionKey the session identifier
+     * @param stateStore the state store to load from
+     * @param userId nullable user identifier
+     * @param sessionId session identifier
      */
     @Override
-    public void loadFrom(Session session, SessionKey sessionKey) {
-        List<Msg> loaded = session.getList(sessionKey, KEY_PREFIX + "_messages", Msg.class);
+    public void loadFrom(AgentStateStore stateStore, String userId, String sessionId) {
+        List<Msg> loaded =
+                stateStore.getList(userId, sessionId, KEY_PREFIX + "_messages", Msg.class);
         messages.clear();
         messages.addAll(loaded);
     }

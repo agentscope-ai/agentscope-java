@@ -272,6 +272,39 @@ class ToolValidatorTest {
     }
 
     @Nested
+    @DisplayName("validateInput - Error Message Includes Field Path")
+    class ValidateInputErrorIncludesFieldPath {
+
+        @Test
+        @DisplayName("Should include JSON Pointer paths in type validation errors")
+        void testErrorIncludesFieldPath() {
+            Map<String, Object> addressSchema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("city", Map.of("type", "string")));
+
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("name", Map.of("type", "string"), "address", addressSchema));
+
+            Map<String, Object> input = Map.of("name", 123, "address", Map.of("city", 456));
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+
+            assertNotNull(result);
+            assertTrue(result.contains("/name"), "Error should include path '/name': " + result);
+            assertTrue(
+                    result.contains("/address/city"),
+                    "Error should include nested path '/address/city': " + result);
+        }
+    }
+
+    @Nested
     @DisplayName("validateInput - Enum Validation")
     class ValidateInputEnumValidation {
 
@@ -813,7 +846,7 @@ class ToolValidatorTest {
                             "tool-2", "fetch", TextBlock.builder().text("result2").build());
 
             Msg userMsg =
-                    Msg.builder().role(MsgRole.USER).content(List.of(result1, result2)).build();
+                    Msg.builder().role(MsgRole.TOOL).content(List.of(result1, result2)).build();
 
             assertDoesNotThrow(
                     () -> ToolValidator.validateToolResultMatch(assistantMsg, List.of(userMsg)));
@@ -846,7 +879,7 @@ class ToolValidatorTest {
                     ToolResultBlock.of(
                             "tool-1", "search", TextBlock.builder().text("result1").build());
 
-            Msg userMsg = Msg.builder().role(MsgRole.USER).content(result1).build();
+            Msg userMsg = Msg.builder().role(MsgRole.TOOL).content(result1).build();
 
             IllegalStateException exception =
                     assertThrows(
@@ -888,8 +921,8 @@ class ToolValidatorTest {
                     ToolResultBlock.of(
                             "tool-2", "fetch", TextBlock.builder().text("result2").build());
 
-            Msg userMsg1 = Msg.builder().role(MsgRole.USER).content(result1).build();
-            Msg userMsg2 = Msg.builder().role(MsgRole.USER).content(result2).build();
+            Msg userMsg1 = Msg.builder().role(MsgRole.TOOL).content(result1).build();
+            Msg userMsg2 = Msg.builder().role(MsgRole.TOOL).content(result2).build();
 
             assertDoesNotThrow(
                     () ->

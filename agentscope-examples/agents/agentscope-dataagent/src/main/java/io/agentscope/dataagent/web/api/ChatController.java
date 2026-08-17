@@ -20,9 +20,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
-import io.agentscope.dataagent.runtime.channel.InboundMessage;
-import io.agentscope.dataagent.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.dataagent.runtime.gateway.MsgContext;
 import io.agentscope.dataagent.runtime.session.SessionAgentManager;
 import io.agentscope.dataagent.runtime.session.SessionEntry;
 import io.agentscope.dataagent.runtime.session.SessionKind;
@@ -35,6 +32,10 @@ import io.agentscope.dataagent.web.share.AgentAccessGuard;
 import io.agentscope.dataagent.web.share.AgentAclService.Tier;
 import io.agentscope.dataagent.web.toolbus.ToolEventBus;
 import io.agentscope.dataagent.web.usage.UsageStore;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.Peer;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -88,7 +89,7 @@ public class ChatController {
     private final AgentActivityStore activity;
 
     /**
-     * Session keys for which we have already recorded a RUN_SESSION event. Each (userId, agentId)
+     * AgentStateStore keys for which we have already recorded a RUN_SESSION event. Each (userId, agentId)
      * pair gets one entry per process lifetime so the activity log shows one row per session, not
      * one per turn.
      */
@@ -360,12 +361,10 @@ public class ChatController {
         try {
             String gatewayAgentId = catalogService.resolveGatewayAgentId(userId, agentId);
             InboundMessage probe =
-                    InboundMessage.dmFor(
-                            ChatUiChannel.CHANNEL_ID,
-                            userId,
-                            gatewayAgentId,
-                            List.of(),
-                            conversationId);
+                    InboundMessage.builder(ChatUiChannel.CHANNEL_ID, Peer.direct(userId), List.of())
+                            .preferredAgentId(gatewayAgentId)
+                            .accountId(conversationId)
+                            .build();
             return chatUiChannel.previewRoute(probe).context().canonicalKey();
         } catch (Exception e) {
             return null;
@@ -438,8 +437,8 @@ public class ChatController {
                     startedSessions.remove(gateKey);
                     return new CommandResult(
                             ok
-                                    ? "Session reset. Conversation history cleared; the next"
-                                            + " message starts a fresh turn."
+                                    ? "AgentStateStore reset. Conversation history cleared; the"
+                                            + " next message starts a fresh turn."
                                     : "No matching session found for reset.",
                             null);
                 }
@@ -488,7 +487,7 @@ public class ChatController {
 
     /**
      * Core dispatch logic. Always routes through {@link ChatUiChannel#dispatch} so that the
-     * {@link io.agentscope.dataagent.runtime.channel.ChannelRouter} runs uniformly — including for
+     * {@link io.agentscope.harness.agent.gateway.channel.ChannelRouter} runs uniformly — including for
      * the path-mapped Web UI calls. The URL-supplied {@code agentId} is passed as
      * {@link InboundMessage#preferredAgentId()} so it short-circuits the binding-tier evaluation
      * (the user explicitly picked this agent) while still letting the router derive sessionScope
@@ -509,12 +508,11 @@ public class ChatController {
         } else {
             String gatewayAgentId = catalogService.resolveGatewayAgentId(userId, agentId);
             inbound =
-                    InboundMessage.dmFor(
-                            ChatUiChannel.CHANNEL_ID,
-                            userId,
-                            gatewayAgentId,
-                            List.of(userMsg),
-                            conversationId);
+                    InboundMessage.builder(
+                                    ChatUiChannel.CHANNEL_ID, Peer.direct(userId), List.of(userMsg))
+                            .preferredAgentId(gatewayAgentId)
+                            .accountId(conversationId)
+                            .build();
         }
         Mono<Msg> call = chatUiChannel.dispatch(inbound);
 

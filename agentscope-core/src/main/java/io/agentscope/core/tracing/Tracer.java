@@ -32,6 +32,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.context.ContextView;
 
+/**
+ * @deprecated since 2.0.0. Use {@link OtelTracingMiddleware} instead.
+ */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface Tracer {
 
     default Mono<Msg> callAgent(

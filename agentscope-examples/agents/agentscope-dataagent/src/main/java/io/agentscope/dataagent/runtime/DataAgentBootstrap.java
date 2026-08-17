@@ -19,17 +19,11 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.dataagent.runtime.channel.Channel;
-import io.agentscope.dataagent.runtime.channel.ChannelConfig;
-import io.agentscope.dataagent.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.dataagent.runtime.config.AgentConfigEntry;
 import io.agentscope.dataagent.runtime.config.AgentscopeConfig;
 import io.agentscope.dataagent.runtime.config.ChannelConfigEntry;
-import io.agentscope.dataagent.runtime.config.ChannelFactory;
 import io.agentscope.dataagent.runtime.config.ChannelTypeRegistry;
 import io.agentscope.dataagent.runtime.config.SkillRepositorySupport;
-import io.agentscope.dataagent.runtime.gateway.ChannelManager;
-import io.agentscope.dataagent.runtime.gateway.Gateway;
 import io.agentscope.dataagent.runtime.gateway.HarnessGateway;
 import io.agentscope.dataagent.runtime.outbound.OutboundTool;
 import io.agentscope.dataagent.runtime.session.AgentManagerConfig;
@@ -38,10 +32,16 @@ import io.agentscope.dataagent.runtime.session.SessionStore;
 import io.agentscope.dataagent.runtime.session.SubagentRunRegistry;
 import io.agentscope.dataagent.runtime.session.tool.SessionsTool;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.hook.SubagentsHook;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -553,8 +553,7 @@ public final class DataAgentBootstrap {
                 gc.accept(mainEntryBuilder);
             }
 
-            List<SubagentsHook.SubagentEntry> entries =
-                    mainEntryBuilder.buildSubagentEntries(mainWorkspace);
+            List<SubagentEntry> entries = mainEntryBuilder.buildSubagentEntries(mainWorkspace);
 
             WorkspaceManager wsManager = new WorkspaceManager(mainWorkspace);
             DefaultAgentManager dam = new DefaultAgentManager(entries, wsManager);
@@ -569,7 +568,7 @@ public final class DataAgentBootstrap {
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
-            TaskRepository taskRepo = new DefaultTaskRepository();
+            TaskRepository taskRepo = new WorkspaceTaskRepository(wsManager, main);
             SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
             OutboundTool outboundTool = new OutboundTool(channelMgr);
 

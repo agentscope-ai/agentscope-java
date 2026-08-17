@@ -127,7 +127,7 @@ public final class WorkspaceCopier {
             return absPath.substring(srcPrefix.length() + 1);
         }
         if (absPath.equals(srcPrefix)) return "";
-        // Defensive: glob may return paths without leading slash in some backends.
+        // Defensive: glob may return paths without leading slash in some stores.
         String trimmedPrefix = srcPrefix.startsWith("/") ? srcPrefix.substring(1) : srcPrefix;
         if (absPath.startsWith(trimmedPrefix + "/")) {
             return absPath.substring(trimmedPrefix.length() + 1);

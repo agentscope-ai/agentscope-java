@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.msg;
 
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import java.util.Map;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,7 @@ public class MsgTests {
                 Msg.builder()
                         .name("test")
                         .role(MsgRole.SYSTEM)
-                        .content(new ContentBlock())
+                        .content(TextBlock.builder().text("hello").build())
                         .timestamp(String.valueOf(System.currentTimeMillis()))
                         .metadata(Map.of("key", "value"))
                         .build();

@@ -15,7 +15,7 @@
  */
 package io.agentscope.harness.coding.session;
 
-/** Session classification, matching OpenClaw session kinds. */
+/** AgentStateStore classification, matching OpenClaw session kinds. */
 public enum SessionKind {
     SUBAGENT("subagent"),
     MAIN("main"),

@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventSource;
@@ -23,7 +24,7 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.HashMap;
@@ -66,11 +67,7 @@ public final class DefaultAgentManager {
         this.workspaceManager = workspaceManager;
     }
 
-    /**
-     * Replaces the current set of entries with a new snapshot. Called per-call from
-     * {@link io.agentscope.harness.agent.hook.SubagentsHook} to reflect per-user subagent
-     * configurations.
-     */
+    /** Replaces the current set of entries with a new snapshot. */
     public void refreshEntries(List<SubagentEntry> entries) {
         Map<String, SubagentFactory> factories = new HashMap<>();
         Map<String, SubagentDeclaration> decls = new HashMap<>();
@@ -86,7 +83,7 @@ public final class DefaultAgentManager {
 
     /**
      * Atomic alias of {@link #refreshEntries(List)} used by
-     * {@link io.agentscope.harness.agent.hook.DynamicSubagentsHook} to swap the registered
+     * {@link io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware} to swap the registered
      * subagent set on every reasoning step. The two volatile reference assignments below ensure
      * any concurrent reader observes either the previous snapshot or the new one fully — never a
      * partial state.
@@ -97,16 +94,41 @@ public final class DefaultAgentManager {
 
     /**
      * Race-safe lookup-and-create. Returns {@link Optional#empty()} when no factory is registered
-     * for {@code agentId} at the moment of the volatile read, otherwise returns a freshly created
-     * agent. Preferred over the two-step {@link #hasAgent(String)} + {@link #createAgent(String)}
-     * pair when the registry may be replaced concurrently (e.g. dynamic reload between calls).
+     * for {@code agentId} at the moment of the volatile read, when the registered declaration is
+     * {@link SubagentDeclaration.Mode#PRIMARY}-only (cannot be spawned as a subagent), otherwise
+     * returns a freshly created agent. Preferred over the two-step {@link #hasAgent(String)} +
+     * {@link #createAgent(String, RuntimeContext)} pair when the registry may be replaced
+     * concurrently (e.g. dynamic reload between calls).
+     *
+     * <p>{@code parentRc} is forwarded to {@link SubagentFactory#create(RuntimeContext)} so child
+     * agents can bucket their persisted state by parent identity. Pass
+     * {@link RuntimeContext#empty()} when no parent context is available.
      */
-    public Optional<Agent> createAgentIfPresent(String agentId) {
+    public Optional<Agent> createAgentIfPresent(String agentId, RuntimeContext parentRc) {
         if (agentId == null) {
             return Optional.empty();
         }
         SubagentFactory factory = agentFactories.get(agentId);
-        return factory == null ? Optional.empty() : Optional.of(factory.create());
+        if (factory == null) {
+            return Optional.empty();
+        }
+        SubagentDeclaration decl = declarations.get(agentId);
+        if (decl != null && decl.getMode() == SubagentDeclaration.Mode.PRIMARY) {
+            return Optional.empty();
+        }
+        return Optional.of(factory.create(parentRc != null ? parentRc : RuntimeContext.empty()));
+    }
+
+    /**
+     * Returns {@code true} when {@code agentId} is registered with a {@code PRIMARY}-only
+     * declaration. Lets {@link io.agentscope.harness.agent.tool.AgentSpawnTool} produce a more
+     * helpful error message ("PRIMARY-only, cannot be spawned") instead of the generic
+     * "Unknown agent_id" when {@link #createAgentIfPresent} returns empty.
+     */
+    public boolean isPrimaryOnly(String agentId) {
+        if (agentId == null) return false;
+        SubagentDeclaration decl = declarations.get(agentId);
+        return decl != null && decl.getMode() == SubagentDeclaration.Mode.PRIMARY;
     }
 
     /** Whether a factory is registered for the given agent id. */
@@ -129,12 +151,12 @@ public final class DefaultAgentManager {
      *
      * @throws IllegalArgumentException if no factory is registered for the given id
      */
-    public Agent createAgent(String agentId) {
+    public Agent createAgent(String agentId, RuntimeContext parentRc) {
         SubagentFactory factory = agentFactories.get(agentId);
         if (factory == null) {
             throw new IllegalArgumentException("Unknown agent_id: " + agentId);
         }
-        return factory.create();
+        return factory.create(parentRc != null ? parentRc : RuntimeContext.empty());
     }
 
     /**
@@ -151,9 +173,22 @@ public final class DefaultAgentManager {
      * @param prompt the user message to send
      */
     public Mono<Msg> invokeAgent(Agent agent, String sessionId, String userId, String prompt) {
+        return invokeAgent(agent, sessionId, userId, prompt, null);
+    }
+
+    public Mono<Msg> invokeAgent(
+            Agent agent, String sessionId, String userId, String prompt, RuntimeContext parentRc) {
+        RuntimeContext ctx =
+                parentRc != null
+                        ? RuntimeContext.builder(parentRc)
+                                .sessionId(sessionId)
+                                .userId(userId)
+                                .build()
+                        : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        if (agent instanceof ReActAgent react) {
+            return react.call(List.of(userMessage(prompt)), ctx);
+        }
         if (agent instanceof HarnessAgent harness) {
-            RuntimeContext ctx =
-                    RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
             return harness.call(userMessage(prompt), ctx);
         }
         return agent.call(List.of(userMessage(prompt)));
@@ -185,14 +220,31 @@ public final class DefaultAgentManager {
             String prompt,
             EventSource source,
             StreamOptions options) {
+        return invokeAgentStream(agent, sessionId, userId, prompt, source, options, null);
+    }
+
+    public Flux<Event> invokeAgentStream(
+            Agent agent,
+            String sessionId,
+            String userId,
+            String prompt,
+            EventSource source,
+            StreamOptions options,
+            RuntimeContext parentRc) {
         Flux<Event> childFlux;
-        if (agent instanceof HarnessAgent harness) {
-            RuntimeContext ctx =
-                    RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
-            StreamOptions effective = options != null ? options : StreamOptions.defaults();
+        StreamOptions effective = options != null ? options : StreamOptions.defaults();
+        RuntimeContext ctx =
+                parentRc != null
+                        ? RuntimeContext.builder(parentRc)
+                                .sessionId(sessionId)
+                                .userId(userId)
+                                .build()
+                        : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        if (agent instanceof ReActAgent react) {
+            childFlux = react.stream(List.of(userMessage(prompt)), effective, ctx);
+        } else if (agent instanceof HarnessAgent harness) {
             childFlux = harness.stream(List.of(userMessage(prompt)), effective, ctx);
         } else {
-            StreamOptions effective = options != null ? options : StreamOptions.defaults();
             childFlux = agent.stream(List.of(userMessage(prompt)), effective);
         }
         return childFlux.map(event -> event.withSource(source));

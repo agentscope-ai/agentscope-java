@@ -24,7 +24,10 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostSummaryEvent;
+import io.agentscope.core.hook.PreSummaryEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -32,12 +35,18 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for ReActAgent's summarizing functionality.
@@ -54,7 +63,6 @@ class ReActAgentSummarizingTest {
     @Test
     @DisplayName("Should generate summary when max iterations reached")
     void testSummarizingOnMaxIterations() {
-        InMemoryMemory memory = new InMemoryMemory();
 
         // Create model that returns plain text (not calling generate_response tool)
         // This causes the agent to continue iteration without finishing
@@ -111,7 +119,6 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a test assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(2) // Small number to reach limit quickly
                         .build();
 
@@ -145,14 +152,13 @@ class ReActAgentSummarizingTest {
         assertTrue(summaryText.length() > 10, "Summary should be substantial");
 
         // Verify memory contains the summary
-        List<Msg> memoryMessages = agent.getMemory().getMessages();
+        List<Msg> memoryMessages = agent.getAgentState().getContext();
         assertTrue(memoryMessages.contains(response), "Memory should contain summary message");
     }
 
     @Test
     @DisplayName("Should include context from memory in summary")
     void testSummarizingIncludesMemoryContext() {
-        InMemoryMemory memory = new InMemoryMemory();
 
         // Pre-populate memory with some context
         Msg contextMsg1 =
@@ -161,7 +167,6 @@ class ReActAgentSummarizingTest {
                         .role(MsgRole.USER)
                         .content(TextBlock.builder().text("What is the weather today?").build())
                         .build();
-        memory.addMessage(contextMsg1);
 
         Msg contextMsg2 =
                 Msg.builder()
@@ -169,7 +174,6 @@ class ReActAgentSummarizingTest {
                         .role(MsgRole.ASSISTANT)
                         .content(TextBlock.builder().text("I don't have that information.").build())
                         .build();
-        memory.addMessage(contextMsg2);
 
         // Create model that captures the messages sent to it
         final List<Msg>[] capturedMessages = new List[] {null};
@@ -225,7 +229,6 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a helpful assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(1)
                         .build();
 
@@ -261,7 +264,6 @@ class ReActAgentSummarizingTest {
     @Test
     @DisplayName("Should handle summarizing with empty memory")
     void testSummarizingWithEmptyMemory() {
-        InMemoryMemory memory = new InMemoryMemory();
 
         final int[] callCount = {0};
         MockModel mockModel =
@@ -311,7 +313,6 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a test assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(1)
                         .build();
 
@@ -330,7 +331,6 @@ class ReActAgentSummarizingTest {
     @Test
     @DisplayName("Should add summary message to memory")
     void testSummaryAddedToMemory() {
-        InMemoryMemory memory = new InMemoryMemory();
 
         final int[] callCount = {0};
         MockModel mockModel =
@@ -376,25 +376,24 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a helpful assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(1)
                         .build();
 
         // Check initial memory size
-        int initialMemorySize = memory.getMessages().size();
+        int initialMemorySize = agent.getAgentState().getContext().size();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Please help");
         Msg response =
                 agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify memory has grown
-        int finalMemorySize = memory.getMessages().size();
+        int finalMemorySize = agent.getAgentState().getContext().size();
         assertTrue(
                 finalMemorySize > initialMemorySize,
                 "Memory should contain additional messages after summarizing");
 
         // Verify the last message is the summary
-        Msg lastMessage = memory.getMessages().get(finalMemorySize - 1);
+        Msg lastMessage = agent.getAgentState().getContext().get(finalMemorySize - 1);
         assertEquals(response, lastMessage, "Last message in memory should be the summary");
         assertEquals(
                 MsgRole.ASSISTANT, lastMessage.getRole(), "Summary message should be ASSISTANT");
@@ -408,8 +407,6 @@ class ReActAgentSummarizingTest {
         // 2. Tool doesn't respond (or times out), leaving pending tool calls
         // 3. maxIters is reached, session auto-ends
         // 4. User sends new message -> Should NOT throw IllegalStateException
-
-        InMemoryMemory memory = new InMemoryMemory();
         final String toolId = "call_638e428da2cf48ceb8b05762";
 
         // Mock model that returns a tool call on first call, then summary
@@ -465,7 +462,6 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a helpful assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(1)
                         .build();
 
@@ -482,7 +478,7 @@ class ReActAgentSummarizingTest {
         // CRITICAL: Verify that the pending tool call has been resolved in memory
         // Before the fix, memory would have pending tool calls without results
         // After the fix, summarizing() should add error results for pending tools
-        List<Msg> memoryMessages = memory.getMessages();
+        List<Msg> memoryMessages = agent.getAgentState().getContext();
 
         // Find if there's a tool result message for the pending tool
         boolean hasToolResultForPendingTool =
@@ -558,7 +554,6 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a helpful assistant.")
                         .model(secondMockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory) // Same memory
                         .maxIters(2)
                         .build();
 
@@ -586,7 +581,6 @@ class ReActAgentSummarizingTest {
     @Test
     @DisplayName("Should add exactly one TOOL result for each pending tool during summarizing")
     void testSummarizingAddsOneToolResultPerPendingTool() {
-        InMemoryMemory memory = new InMemoryMemory();
         final String toolId1 = "call_pending_1";
         final String toolId2 = "call_pending_2";
 
@@ -607,7 +601,6 @@ class ReActAgentSummarizingTest {
                                                 .input(Map.of("query", "news"))
                                                 .build()))
                         .build();
-        memory.addMessage(pendingAssistantMsg);
 
         MockModel mockModel =
                 new MockModel(
@@ -632,14 +625,14 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a helpful assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(1)
                         .build();
+        agent.getAgentState().contextMutable().add(pendingAssistantMsg);
 
         Msg summaryResponse = invokeSummarizing(agent);
         assertNotNull(summaryResponse, "Summary response should not be null");
 
-        List<Msg> memoryMessages = memory.getMessages();
+        List<Msg> memoryMessages = agent.getAgentState().getContext();
 
         long toolId1ToolRoleCount =
                 memoryMessages.stream()
@@ -702,16 +695,117 @@ class ReActAgentSummarizingTest {
                 0L, toolId2NonToolRoleCount, "toolId2 should not have non-TOOL result messages");
     }
 
+    @Test
+    @DisplayName("Should report fallback model name in summary hooks")
+    void testSummaryHooksUseFallbackModelName() {
+        List<String> seenModelNames = new CopyOnWriteArrayList<>();
+        Hook captureHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreSummaryEvent pre) {
+                            seenModelNames.add("pre:" + pre.getModelName());
+                        } else if (event instanceof PostSummaryEvent post) {
+                            seenModelNames.add("post:" + post.getModelName());
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(new ThrowingModel("Primary summary model failed"))
+                        .fallbackModel(
+                                new StaticModel("Fallback summary output", "FallbackSummaryModel"))
+                        .toolkit(new MockToolkit())
+                        .hook(captureHook)
+                        .maxIters(1)
+                        .build();
+
+        Msg pendingAssistantMsg =
+                Msg.builder()
+                        .name("TestAgent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("search_tool")
+                                                .id("call_summary_fallback")
+                                                .input(Map.of("query", "weather"))
+                                                .build()))
+                        .build();
+        agent.getAgentState().contextMutable().add(pendingAssistantMsg);
+
+        Msg response = invokeSummarizing(agent);
+        assertNotNull(response, "Summary response should not be null");
+        assertEquals("Fallback summary output", TestUtils.extractTextContent(response));
+        assertEquals(
+                List.of("pre:primary-summary-model", "post:FallbackSummaryModel"), seenModelNames);
+    }
+
     private static Msg invokeSummarizing(ReActAgent agent) {
         try {
-            Method method = ReActAgent.class.getDeclaredMethod("summarizing");
+            // Create a CallExecution for the default session via activateSlotForContext(null)
+            Method activateMethod =
+                    ReActAgent.class.getDeclaredMethod(
+                            "activateSlotForContext", RuntimeContext.class);
+            activateMethod.setAccessible(true);
+            Object exec = activateMethod.invoke(agent, (Object) null);
+            Method method = exec.getClass().getDeclaredMethod("summarizing");
             method.setAccessible(true);
             @SuppressWarnings("unchecked")
             reactor.core.publisher.Mono<Msg> mono =
-                    (reactor.core.publisher.Mono<Msg>) method.invoke(agent);
+                    (reactor.core.publisher.Mono<Msg>) method.invoke(exec);
             return mono.block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
         } catch (Exception e) {
             throw new RuntimeException("Failed to invoke summarizing()", e);
+        }
+    }
+
+    private static final class ThrowingModel implements Model {
+        private final String errorMessage;
+
+        private ThrowingModel(String errorMessage) {
+            this.errorMessage = errorMessage;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.error(new RuntimeException(errorMessage));
+        }
+
+        @Override
+        public String getModelName() {
+            return "primary-summary-model";
+        }
+    }
+
+    private static final class StaticModel implements Model {
+        private final String responseText;
+        private final String modelName;
+
+        private StaticModel(String responseText, String modelName) {
+            this.responseText = responseText;
+            this.modelName = modelName;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(
+                    ChatResponse.builder()
+                            .id("msg_summary")
+                            .content(List.of(TextBlock.builder().text(responseText).build()))
+                            .usage(new ChatUsage(10, 20, 30))
+                            .build());
+        }
+
+        @Override
+        public String getModelName() {
+            return modelName;
         }
     }
 }

@@ -100,7 +100,6 @@ public class AgentscopeNacosReActAgentAutoConfiguration {
                 .name(agentConfig.getName())
                 .sysPrompt(sysPrompt)
                 .model(model)
-                .memory(memory)
                 .toolkit(toolkit)
                 .maxIters(agentConfig.getMaxIters())
                 .build();

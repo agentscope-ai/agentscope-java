@@ -22,52 +22,62 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.hook.Hook;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.SkillHook;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.hook.DynamicSkillHook;
-import io.agentscope.harness.agent.hook.DynamicSubagentsHook;
-import io.agentscope.harness.agent.hook.SubagentsHook;
+import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 
 /**
  * Verifies the wiring in {@link HarnessAgent.Builder} for skills + subagents:
  *
  * <ul>
- *   <li>default (workspace filesystem available, no opt-out) → {@link DynamicSkillHook} +
- *       {@link DynamicSubagentsHook} are registered.
+ *   <li>default (workspace filesystem available, no opt-out) → {@link
+ *       io.agentscope.core.skill.DynamicSkillMiddleware} + {@link DynamicSubagentsMiddleware}
+ *       are registered.
  *   <li>{@code skillRepository(custom)} composes <em>additively</em> with workspace skills — the
- *       dynamic hook is still registered and exposes both sources.
- *   <li>{@code disableDynamicSkills()} → no {@link DynamicSkillHook}; falls back to the static
- *       legacy {@link SkillHook} path.
- *   <li>{@code disableDynamicSubagents()} → no {@link DynamicSubagentsHook}; falls back to the
- *       static {@link SubagentsHook}.
+ *       dynamic middleware is still registered and exposes both sources.
+ *   <li>{@code disableDynamicSkills()} → repositories are frozen in the harness-native skill
+ *       middleware without reloading them per call.
+ *   <li>{@code disableDynamicSubagents()} → no {@link DynamicSubagentsMiddleware}; falls back to
+ *       the static {@link SubagentsMiddleware}.
  * </ul>
  *
- * <p>The contract under test is the hook list registered on the underlying {@code ReActAgent}.
+ * <p>The contract under test is the middleware list registered on the underlying
+ * {@code ReActAgent}.
  */
 class HarnessAgentDynamicHookBuilderTest {
 
     @TempDir Path workspace;
 
     @Test
-    void defaultBuild_registersDynamicSkillAndSubagentHooks() throws Exception {
+    void defaultBuild_registersDynamicSkillAndSubagentMiddlewares() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
                 HarnessAgent.builder()
@@ -77,23 +87,23 @@ class HarnessAgentDynamicHookBuilderTest {
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
 
-        List<Hook> hooks = agent.getDelegate().getHooks();
+        List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertTrue(
-                anyOfType(hooks, DynamicSkillHook.class),
-                "Default build with workspace filesystem must register DynamicSkillHook");
+                anyOfType(mws, io.agentscope.harness.agent.middleware.HarnessSkillMiddleware.class),
+                "Default build with workspace filesystem must register HarnessSkillMiddleware");
         assertFalse(
-                anyOfType(hooks, SkillHook.class),
-                "Default build must NOT register the legacy SkillHook");
+                anyOfType(mws, io.agentscope.core.skill.DynamicSkillMiddleware.class),
+                "Harness path must NOT install core's DynamicSkillMiddleware");
         assertTrue(
-                anyOfType(hooks, DynamicSubagentsHook.class),
-                "Default build with workspace filesystem must register DynamicSubagentsHook");
+                anyOfType(mws, DynamicSubagentsMiddleware.class),
+                "Default build with workspace filesystem must register DynamicSubagentsMiddleware");
         assertFalse(
-                anyOfType(hooks, SubagentsHook.class),
-                "Default build must NOT register the legacy SubagentsHook");
+                anyOfType(mws, SubagentsMiddleware.class),
+                "Default build must NOT register the static SubagentsMiddleware");
     }
 
     @Test
-    void customSkillRepository_composesWithDynamicHook() throws Exception {
+    void customSkillRepository_composesWithDynamicMiddleware() throws Exception {
         Files.createDirectories(workspace);
         AgentSkillRepository emptyRepo = new EmptySkillRepository();
 
@@ -106,19 +116,14 @@ class HarnessAgentDynamicHookBuilderTest {
                         .skillRepository(emptyRepo)
                         .build();
 
-        List<Hook> hooks = agent.getDelegate().getHooks();
-        // Repos now compose additively with the workspace and namespaced filesystem layers.
-        // The dynamic hook must be registered, and the legacy SkillHook must NOT be registered.
+        List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertTrue(
-                anyOfType(hooks, DynamicSkillHook.class),
-                "Custom skillRepository must compose with the dynamic skill hook");
-        assertFalse(
-                anyOfType(hooks, SkillHook.class),
-                "Legacy SkillHook must not be registered when dynamic loading is active");
+                anyOfType(mws, io.agentscope.harness.agent.middleware.HarnessSkillMiddleware.class),
+                "Custom skillRepository must compose with the harness skill middleware");
     }
 
     @Test
-    void disableDynamicSkills_fallsBackToLegacyPath() throws Exception {
+    void disableDynamicSkills_skipsDynamicSkillMiddleware() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
                 HarnessAgent.builder()
@@ -129,10 +134,196 @@ class HarnessAgentDynamicHookBuilderTest {
                         .disableDynamicSkills()
                         .build();
 
-        List<Hook> hooks = agent.getDelegate().getHooks();
+        List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertFalse(
-                anyOfType(hooks, DynamicSkillHook.class),
-                "disableDynamicSkills() must skip the dynamic skill hook");
+                anyOfType(mws, io.agentscope.core.skill.DynamicSkillMiddleware.class),
+                "disableDynamicSkills() must skip the dynamic skill middleware");
+    }
+
+    @Test
+    void disableDynamicSkills_freezesRepositoriesIntoStaticMiddleware() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        CountingSkillRepository repository =
+                new CountingSkillRepository(
+                        List.of(
+                                new AgentSkill(
+                                        "frozen-skill",
+                                        "A skill loaded once during agent construction",
+                                        "# Frozen skill",
+                                        null)));
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .skillRepository(repository)
+                        .disableDynamicSkills()
+                        .build();
+
+        assertEquals(
+                1,
+                repository.readCount(),
+                "Static mode must read each repository once while building the agent");
+        io.agentscope.harness.agent.middleware.HarnessSkillMiddleware skillMiddleware =
+                agent.getDelegate().getMiddlewares().stream()
+                        .filter(
+                                io.agentscope.harness.agent.middleware.HarnessSkillMiddleware.class
+                                        ::isInstance)
+                        .map(
+                                io.agentscope.harness.agent.middleware.HarnessSkillMiddleware.class
+                                        ::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(skillMiddleware.isFrozen(), "Static mode must freeze repository enumeration");
+        assertNotNull(
+                agent.getDelegate().getToolkit().getTool("load_skill_through_path"),
+                "Static mode must register the skill loading tool during construction");
+
+        agent.call("hello", RuntimeContext.builder().sessionId("static-skills").build()).block();
+
+        assertEquals(
+                1,
+                repository.readCount(),
+                "Static mode must not refresh repositories for each model call");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ToolSchema>> toolsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(model, atLeast(1)).stream(anyList(), toolsCaptor.capture(), any());
+        assertTrue(
+                toolsCaptor.getAllValues().stream()
+                        .flatMap(List::stream)
+                        .anyMatch(tool -> "load_skill_through_path".equals(tool.getName())),
+                "The ungrouped skill loader must remain visible with an empty active-group list");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+        String modelInput =
+                captor.getAllValues().stream()
+                        .flatMap(List::stream)
+                        .map(msg -> msg.getTextContent() == null ? "" : msg.getTextContent())
+                        .collect(Collectors.joining("\n"));
+        assertTrue(
+                modelInput.contains("frozen-skill"),
+                "Static skill middleware must expose repository skills in the model prompt");
+    }
+
+    @Test
+    void disableDynamicSkills_appliesBuilderAndVisibilityFiltersToPromptAndLoader()
+            throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        CountingSkillRepository repository =
+                new CountingSkillRepository(
+                        List.of(
+                                skill("alpha", "alpha description"),
+                                skill("beta", "beta description"),
+                                skill("gamma", "gamma description")));
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .skillRepository(repository)
+                        .enableSkills("alpha", "beta")
+                        .enableSkillPromotionGate(
+                                null,
+                                (skills, ctx) ->
+                                        skills.stream()
+                                                .filter(skill -> !"alpha".equals(skill.getName()))
+                                                .toList())
+                        .disableDynamicSkills()
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("filtered-static").build();
+        agent.call("hello", ctx).block();
+
+        String modelInput = capturedModelInput(model);
+        assertFalse(modelInput.contains("alpha description"));
+        assertTrue(modelInput.contains("beta description"));
+        assertFalse(modelInput.contains("gamma description"));
+
+        io.agentscope.harness.agent.middleware.HarnessSkillMiddleware middleware =
+                frozenSkillMiddleware(agent);
+        middleware.onSystemPrompt(agent.getDelegate(), ctx, "").block();
+        assertEquals(1, middleware.runtime().currentCatalog(ctx).size());
+        assertEquals(
+                "beta",
+                middleware.runtime().currentCatalog(ctx).all().iterator().next().skill().getName(),
+                "The loader catalog must use the same filtered view as the prompt");
+        assertEquals(1, repository.readCount());
+    }
+
+    @Test
+    void disableDynamicSkills_skillsEnabledFalseLeavesCatalogEmpty() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        CountingSkillRepository repository =
+                new CountingSkillRepository(List.of(skill("disabled", "must stay hidden")));
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .skillRepository(repository)
+                        .skillsEnabled(false)
+                        .disableDynamicSkills()
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("no-static-skills").build();
+        agent.call("hello", ctx).block();
+
+        assertFalse(capturedModelInput(model).contains("must stay hidden"));
+        assertTrue(frozenSkillMiddleware(agent).runtime().currentCatalog(ctx).isEmpty());
+        assertEquals(1, repository.readCount());
+    }
+
+    @Test
+    void disableDynamicSkills_keepsWorkspaceLazyResourcesLoadable() throws Exception {
+        Path skillDir = workspace.resolve("skills/lazy-resource");
+        Files.createDirectories(skillDir.resolve("references"));
+        Files.writeString(
+                skillDir.resolve("SKILL.md"),
+                "---\nname: lazy-resource\ndescription: Loads a lazy reference\n---\n# Body\n");
+        Files.writeString(skillDir.resolve("references/guide.md"), "lazy reference body");
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableDynamicSkills()
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("lazy-static").build();
+        agent.call("hello", ctx).block();
+        frozenSkillMiddleware(agent).onSystemPrompt(agent.getDelegate(), ctx, "").block();
+
+        ToolResultBlock result =
+                agent.getDelegate()
+                        .getToolkit()
+                        .getTool("load_skill_through_path")
+                        .callAsync(
+                                ToolCallParam.builder()
+                                        .runtimeContext(ctx)
+                                        .input(
+                                                Map.of(
+                                                        "skillId",
+                                                        "lazy-resource_workspace-namespaced",
+                                                        "path",
+                                                        "references/guide.md"))
+                                        .build())
+                        .block();
+
+        assertNotNull(result);
+        assertTrue(toolResultText(result).contains("lazy reference body"));
     }
 
     @Test
@@ -165,9 +356,6 @@ class HarnessAgentDynamicHookBuilderTest {
     @Test
     void getSkillRepositories_isEmptyWhenNothingComposed() throws Exception {
         Files.createDirectories(workspace);
-        // Use disableDynamicSkills() to bypass workspace/namespace layers; build with no
-        // marketplaces. Even when dynamic loading is off, composeSkillRepositories() still
-        // computes a snapshot at build time, which is what getSkillRepositories() returns.
         HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
@@ -177,7 +365,6 @@ class HarnessAgentDynamicHookBuilderTest {
                         .disableDynamicSkills()
                         .build();
 
-        // Even in static mode the field must be non-null.
         assertNotNull(agent.getSkillRepositories());
     }
 
@@ -194,11 +381,9 @@ class HarnessAgentDynamicHookBuilderTest {
 
         List<AgentSkillRepository> first = agent.getSkillRepositories();
         List<AgentSkillRepository> second = agent.getSkillRepositories();
-        // Same snapshot on repeated calls.
         assertEquals(first.size(), second.size());
         try {
             first.add(new EmptySkillRepository());
-            // If we reach here, the list is mutable — this is a bug in the accessor contract.
             org.junit.jupiter.api.Assertions.fail(
                     "getSkillRepositories() must return an immutable list");
         } catch (UnsupportedOperationException expected) {
@@ -207,7 +392,7 @@ class HarnessAgentDynamicHookBuilderTest {
     }
 
     @Test
-    void disableDynamicSubagents_fallsBackToLegacySubagentsHook() throws Exception {
+    void disableDynamicSubagents_fallsBackToStaticSubagentsMiddleware() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
                 HarnessAgent.builder()
@@ -218,22 +403,52 @@ class HarnessAgentDynamicHookBuilderTest {
                         .disableDynamicSubagents()
                         .build();
 
-        List<Hook> hooks = agent.getDelegate().getHooks();
+        List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertFalse(
-                anyOfType(hooks, DynamicSubagentsHook.class),
-                "disableDynamicSubagents() must skip the dynamic subagent hook");
+                anyOfType(mws, DynamicSubagentsMiddleware.class),
+                "disableDynamicSubagents() must skip the dynamic subagent middleware");
         assertTrue(
-                anyOfType(hooks, SubagentsHook.class),
-                "Legacy SubagentsHook must be registered when dynamic is disabled");
+                anyOfType(mws, SubagentsMiddleware.class),
+                "Static SubagentsMiddleware must be registered when dynamic is disabled");
     }
 
-    // =====================================================================
-    //  Helpers
-    // =====================================================================
+    private static io.agentscope.harness.agent.middleware.HarnessSkillMiddleware
+            frozenSkillMiddleware(HarnessAgent agent) {
+        return agent.getDelegate().getMiddlewares().stream()
+                .filter(
+                        io.agentscope.harness.agent.middleware.HarnessSkillMiddleware.class
+                                ::isInstance)
+                .map(io.agentscope.harness.agent.middleware.HarnessSkillMiddleware.class::cast)
+                .filter(io.agentscope.harness.agent.middleware.HarnessSkillMiddleware::isFrozen)
+                .findFirst()
+                .orElseThrow();
+    }
 
-    private static boolean anyOfType(List<Hook> hooks, Class<?> type) {
-        for (Hook hook : hooks) {
-            if (type.isInstance(hook)) {
+    private static AgentSkill skill(String name, String description) {
+        return new AgentSkill(name, description, "# " + name, null);
+    }
+
+    private static String capturedModelInput(Model model) {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+        return captor.getAllValues().stream()
+                .flatMap(List::stream)
+                .map(msg -> msg.getTextContent() == null ? "" : msg.getTextContent())
+                .collect(Collectors.joining("\n"));
+    }
+
+    private static String toolResultText(ToolResultBlock result) {
+        return result.getOutput().stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .collect(Collectors.joining());
+    }
+
+    private static boolean anyOfType(List<MiddlewareBase> mws, Class<?> type) {
+        for (MiddlewareBase mw : mws) {
+            if (type.isInstance(mw)) {
                 return true;
             }
         }
@@ -254,8 +469,7 @@ class HarnessAgentDynamicHookBuilderTest {
         return model;
     }
 
-    /** Skill repository that returns no skills, used to exercise the custom-repo branch. */
-    private static final class EmptySkillRepository implements AgentSkillRepository {
+    private static class EmptySkillRepository implements AgentSkillRepository {
         @Override
         public AgentSkill getSkill(String name) {
             return null;
@@ -304,6 +518,25 @@ class HarnessAgentDynamicHookBuilderTest {
         @Override
         public boolean isWriteable() {
             return false;
+        }
+    }
+
+    private static final class CountingSkillRepository extends EmptySkillRepository {
+        private final List<AgentSkill> skills;
+        private final AtomicInteger reads = new AtomicInteger();
+
+        private CountingSkillRepository(List<AgentSkill> skills) {
+            this.skills = skills;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills() {
+            reads.incrementAndGet();
+            return skills;
+        }
+
+        private int readCount() {
+            return reads.get();
         }
     }
 }

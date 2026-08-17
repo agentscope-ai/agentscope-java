@@ -20,7 +20,7 @@ package io.agentscope.harness.agent.sandbox.snapshot;
  * {@link RemoteSnapshotClient}.
  *
  * <p>The same client instance is shared across all sessions created by this spec.
- * Implement {@link RemoteSnapshotClient} to connect to your remote storage backend
+ * Implement {@link RemoteSnapshotClient} to connect to your remote storage store
  * (e.g. AWS S3, Alibaba OSS, Google GCS).
  */
 public class RemoteSnapshotSpec implements SandboxSnapshotSpec {
@@ -34,6 +34,10 @@ public class RemoteSnapshotSpec implements SandboxSnapshotSpec {
      */
     public RemoteSnapshotSpec(RemoteSnapshotClient client) {
         this.client = client;
+    }
+
+    public RemoteSnapshotClient getClient() {
+        return client;
     }
 
     /**

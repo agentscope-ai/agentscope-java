@@ -62,8 +62,8 @@ public class PublishReviewTool {
     }
 
     private static String resolveThreadId(RuntimeContext ctx) {
-        if (ctx != null && ctx.getSessionKey() != null) {
-            return ctx.getSessionKey().toIdentifier();
+        if (ctx != null && ctx.getSessionId() != null) {
+            return ctx.getSessionId();
         }
         return "default";
     }

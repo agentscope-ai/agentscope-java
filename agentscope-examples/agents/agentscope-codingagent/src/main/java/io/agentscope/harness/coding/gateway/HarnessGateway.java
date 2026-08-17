@@ -19,7 +19,14 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.coding.channel.OutboundAddress;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.LocalSessionTurnGate;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.agent.gateway.SessionTurnGate;
+import io.agentscope.harness.agent.gateway.TurnBusyException;
+import io.agentscope.harness.agent.gateway.TurnLease;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.coding.session.PendingCompletion;
 import io.agentscope.harness.coding.session.SessionAgentManager;
 import io.agentscope.harness.coding.session.SessionConstants;
@@ -33,7 +40,6 @@ import io.agentscope.harness.coding.session.SpawnResult;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -46,12 +52,12 @@ import reactor.core.scheduler.Schedulers;
  * completion announces as new {@link HarnessAgent} runs on the root requester (OpenClaw gateway
  * analogue).
  *
- * <p>Session management is delegated to {@link SessionAgentManager}. The gateway wires itself as
+ * <p>AgentStateStore management is delegated to {@link SessionAgentManager}. The gateway wires itself as
  * the {@link SessionAgentManager.AnnounceDispatcher} and {@link
  * SessionAgentManager.SpawnInterceptor} on creation, so subagent spawns and announces flow through
  * the correct channel gates.
  *
- * <h2>Session routing</h2>
+ * <h2>AgentStateStore routing</h2>
  *
  * On the first {@link #run} call for a given {@link MsgContext#canonicalKey()}, a MAIN session is
  * registered in the {@link SessionAgentManager}. Subsequent calls for the same key reuse that
@@ -105,7 +111,7 @@ public final class HarnessGateway implements Gateway {
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySessionKey =
             new ConcurrentHashMap<>();
 
-    private final SessionTurnGate sessionTurnGate = new SessionTurnGate();
+    private final SessionTurnGate sessionTurnGate = new LocalSessionTurnGate();
 
     private HarnessGateway(SessionAgentManager sessionAgentManager, ChannelManager channelManager) {
         this.sessionAgentManager = Objects.requireNonNull(sessionAgentManager);
@@ -397,7 +403,7 @@ public final class HarnessGateway implements Gateway {
                             return existingSessionKey;
                         }
                         log.info(
-                                "Session stale, rolling over: gateKey={}, oldSessionKey={}",
+                                "AgentStateStore stale, rolling over: gateKey={}, oldSessionKey={}",
                                 gateKey,
                                 existingSessionKey);
                     }
@@ -435,22 +441,24 @@ public final class HarnessGateway implements Gateway {
     }
 
     private Mono<Msg> withGatedTurn(String gateKey, Supplier<Mono<Msg>> turn) {
-        AtomicBoolean acquired = new AtomicBoolean(false);
-        return Mono.defer(turn::get)
-                .doOnSubscribe(
-                        s -> {
+        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
+        return Mono.defer(
+                        () -> {
                             try {
-                                sessionTurnGate.acquire(gateKey);
-                                acquired.set(true);
+                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                            } catch (TurnBusyException e) {
+                                return Mono.empty();
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
-                                throw new IllegalStateException(e);
+                                return Mono.error(new IllegalStateException(e));
                             }
+                            return turn.get();
                         })
                 .doFinally(
                         sig -> {
-                            if (acquired.get()) {
-                                sessionTurnGate.release(gateKey);
+                            TurnLease lease = leaseRef.get();
+                            if (lease != null) {
+                                lease.close();
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());

@@ -15,9 +15,11 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import static org.junit.Assert.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,6 +33,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -155,7 +158,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result =
                 tool.callAsync(ToolCallParam.builder().input(input).build()).block();
@@ -164,7 +168,7 @@ class McpToolTest {
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
 
-        verify(mockClientWrapper).callTool(eq("test-tool"), any());
+        verify(mockClientWrapper).callTool(eq("test-tool"), any(), any());
     }
 
     @Test
@@ -178,7 +182,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result =
                 tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
@@ -199,7 +204,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result = tool.callAsync(ToolCallParam.builder().build()).block();
         assertNotNull(result);
@@ -228,7 +234,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result =
                 tool.callAsync(ToolCallParam.builder().input(input).build()).block();
@@ -238,7 +245,7 @@ class McpToolTest {
         assertFalse(outputText.startsWith("Error:"));
 
         // Verify the merged arguments were passed
-        verify(mockClientWrapper).callTool(eq("test-tool"), any(Map.class));
+        verify(mockClientWrapper).callTool(eq("test-tool"), any(Map.class), any(Map.class));
     }
 
     @Test
@@ -257,7 +264,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         // Call with null input - should use preset args only
         ToolResultBlock result = tool.callAsync(ToolCallParam.builder().build()).block();
@@ -271,7 +279,7 @@ class McpToolTest {
     void testCallAsync_ErrorHandling() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any()))
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
                 .thenReturn(Mono.error(new RuntimeException("Network error")));
 
         ToolResultBlock result =
@@ -288,7 +296,7 @@ class McpToolTest {
     void testCallAsync_ErrorWithNullMessage() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any()))
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
                 .thenReturn(Mono.error(new NullPointerException()));
 
         ToolResultBlock result =
@@ -426,7 +434,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result =
                 tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
@@ -451,7 +460,8 @@ class McpToolTest {
         McpSchema.CallToolResult mcpResult =
                 new McpSchema.CallToolResult(List.of(resultContent), false);
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         // The merged args should have input_value (not preset_value)
         ToolResultBlock result =
@@ -792,5 +802,299 @@ class McpToolTest {
         assertNotNull(result);
         assertTrue(result.containsKey("$defs"), "$defs should be present");
         assertFalse(result.containsKey("definitions"), "null definitions should not be present");
+    }
+
+    @Test
+    void testConstructor_FullConstructor_WithAllParams() {
+        Map<String, Object> outputSchema = Map.of("type", "object");
+        Map<String, Object> presetArgs = Map.of("key", "value");
+
+        McpTool tool =
+                new McpTool(
+                        "test-tool",
+                        "Description",
+                        parameters,
+                        outputSchema,
+                        mockClientWrapper,
+                        presetArgs,
+                        "custom-mcp-server",
+                        true);
+
+        assertEquals("test-tool", tool.getName());
+        assertEquals("Description", tool.getDescription());
+        assertEquals("custom-mcp-server", tool.getMcpName());
+        assertTrue(tool.isReadOnly());
+        assertNotNull(tool.getOutputSchema());
+        assertNotNull(tool.getPresetArguments());
+        assertEquals(1, tool.getPresetArguments().size());
+    }
+
+    @Test
+    void testConstructor_FullConstructor_WithNullDescription() {
+        McpTool tool =
+                new McpTool(
+                        "test-tool",
+                        null,
+                        parameters,
+                        null,
+                        mockClientWrapper,
+                        null,
+                        "mcp-server",
+                        false);
+
+        assertEquals("", tool.getDescription());
+    }
+
+    @Test
+    void testConstructor_FullConstructor_DefensiveCopyOutputSchema() {
+        Map<String, Object> outputSchema = new HashMap<>();
+        outputSchema.put("key", "value");
+
+        McpTool tool =
+                new McpTool(
+                        "test-tool",
+                        "Description",
+                        parameters,
+                        outputSchema,
+                        mockClientWrapper,
+                        null,
+                        "mcp-server",
+                        false);
+
+        // Modify original should not affect tool
+        outputSchema.put("newKey", "newValue");
+        assertFalse(tool.getOutputSchema().containsKey("newKey"));
+    }
+
+    @Test
+    void testConstructor_FullConstructor_DefensiveCopyPresetArgs() {
+        Map<String, Object> presetArgs = new HashMap<>();
+        presetArgs.put("key", "value");
+
+        McpTool tool =
+                new McpTool(
+                        "test-tool",
+                        "Description",
+                        parameters,
+                        null,
+                        mockClientWrapper,
+                        presetArgs,
+                        "mcp-server",
+                        false);
+
+        // Modify original should not affect tool
+        presetArgs.put("newKey", "newValue");
+        assertFalse(tool.getPresetArguments().containsKey("newKey"));
+    }
+
+    @Test
+    void testGetOutputSchema_ReturnsDefensiveCopy() {
+        Map<String, Object> outputSchema = new HashMap<>();
+        outputSchema.put("type", "object");
+        outputSchema.put("properties", Map.of("result", Map.of("type", "string")));
+
+        McpTool tool =
+                new McpTool(
+                        "test-tool",
+                        "Description",
+                        parameters,
+                        outputSchema,
+                        mockClientWrapper,
+                        null,
+                        "mcp-server",
+                        false);
+
+        Map<String, Object> schema1 = tool.getOutputSchema();
+        Map<String, Object> schema2 = tool.getOutputSchema();
+
+        // Should return different instances
+        assertNotSame(schema1, schema2);
+        assertEquals(schema1, schema2);
+
+        // Modifying returned map should not affect internal state
+        schema1.put("modified", true);
+        Map<String, Object> schema3 = tool.getOutputSchema();
+        assertFalse(schema3.containsKey("modified"));
+    }
+
+    @Test
+    void testGetOutputSchema_Null() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+        assertNull(tool.getOutputSchema());
+    }
+
+    // ==================== extractMcpMeta Tests ====================
+
+    @Test
+    void testCallAsync_WithMcpMetaInRuntimeContext() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
+
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
+
+        // Create RuntimeContext with McpMeta
+        io.agentscope.core.agent.RuntimeContext rtCtx =
+                io.agentscope.core.agent.RuntimeContext.builder()
+                        .put(McpMeta.class, new McpMeta(Map.of("traceId", "abc-123")))
+                        .build();
+
+        ToolResultBlock result =
+                tool.callAsync(
+                                ToolCallParam.builder()
+                                        .input(new HashMap<>())
+                                        .runtimeContext(rtCtx)
+                                        .build())
+                        .block();
+
+        assertNotNull(result);
+        verify(mockClientWrapper)
+                .callTool(eq("test-tool"), any(), eq(Map.of("traceId", "abc-123")));
+    }
+
+    @Test
+    void testCallAsync_WithEmptyMcpMeta() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
+
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
+
+        // Create RuntimeContext with empty McpMeta
+        io.agentscope.core.agent.RuntimeContext rtCtx =
+                io.agentscope.core.agent.RuntimeContext.builder()
+                        .put(McpMeta.class, new McpMeta(null))
+                        .build();
+
+        ToolResultBlock result =
+                tool.callAsync(
+                                ToolCallParam.builder()
+                                        .input(new HashMap<>())
+                                        .runtimeContext(rtCtx)
+                                        .build())
+                        .block();
+
+        assertNotNull(result);
+        // Should pass empty map for meta
+        verify(mockClientWrapper).callTool(eq("test-tool"), any(), eq(Collections.emptyMap()));
+    }
+
+    @Test
+    void testCallAsync_WithNullRuntimeContext() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
+
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
+
+        ToolResultBlock result =
+                tool.callAsync(
+                                ToolCallParam.builder()
+                                        .input(new HashMap<>())
+                                        .runtimeContext(null)
+                                        .build())
+                        .block();
+
+        assertNotNull(result);
+        verify(mockClientWrapper).callTool(eq("test-tool"), any(), eq(Collections.emptyMap()));
+    }
+
+    @Test
+    void testCallAsync_WithNullToolCallParam() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
+
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
+
+        // This should throw NullPointerException or handle gracefully
+        assertThrows(
+                NullPointerException.class,
+                () -> {
+                    tool.callAsync(null).block();
+                });
+    }
+
+    @Test
+    void testCallAsync_ErrorWithIllegalArgumentException() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.error(new IllegalArgumentException("Invalid argument")));
+
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
+        assertNotNull(result);
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
+        assertTrue(outputText.contains("Invalid argument"));
+    }
+
+    @Test
+    void testMergeArguments_PresetOnly_NoInput() {
+        Map<String, Object> presetArgs = new HashMap<>();
+        presetArgs.put("preset1", "value1");
+        presetArgs.put("preset2", "value2");
+
+        McpTool tool =
+                new McpTool("test-tool", "Description", parameters, mockClientWrapper, presetArgs);
+
+        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
+
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
+
+        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().build()).block();
+        assertNotNull(result);
+        // Should use preset args only
+        verify(mockClientWrapper).callTool(eq("test-tool"), eq(presetArgs), any());
+    }
+
+    @Test
+    void testMergeArguments_NullInput_NoPresets() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
+
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
+
+        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().build()).block();
+        assertNotNull(result);
+        // Should pass empty map
+        verify(mockClientWrapper).callTool(eq("test-tool"), eq(new HashMap<>()), any());
     }
 }

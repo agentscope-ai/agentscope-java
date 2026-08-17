@@ -48,6 +48,7 @@ import java.util.zip.ZipInputStream;
  * // Create skill from markdown with custom source
  * AgentSkill skill2 = SkillUtil.createFrom(skillMd, resources, "github");
  * }</pre>
+ *
  */
 public class SkillUtil {
 

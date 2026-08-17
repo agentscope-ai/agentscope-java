@@ -30,6 +30,36 @@
     );
   }
 
+  // Sidebar captions for the English ``Harness`` section carry a
+  // ``" (English)"`` suffix in _toc.yml so they don't collide with the Chinese
+  // ``Harness`` caption when the section matcher in this file does set lookups.
+  // The suffix is only there to disambiguate; users should not see it. Strip
+  // it from the visible text and stash the original in ``dataset.captionKey``
+  // so caption-text matching (filterSidebarByTab) keeps working.
+  const CAPTION_DISAMBIGUATION_SUFFIX = " (English)";
+
+  function captionText(caption) {
+    return caption.dataset.captionKey || caption.textContent.trim();
+  }
+
+  function rewriteCaptionDisplay(caption) {
+    if (caption.dataset.captionRewritten === "1") {
+      return;
+    }
+    const original = caption.textContent.trim();
+    if (original.endsWith(CAPTION_DISAMBIGUATION_SUFFIX)) {
+      caption.dataset.captionKey = original;
+      const stripped = original.slice(0, -CAPTION_DISAMBIGUATION_SUFFIX.length);
+      const span = caption.querySelector(".caption-text");
+      if (span) {
+        span.textContent = stripped;
+      } else {
+        caption.textContent = stripped;
+      }
+    }
+    caption.dataset.captionRewritten = "1";
+  }
+
   function getCurrentPage() {
     const container = getTabsContainer();
     if (container && container.dataset.currentPage) {
@@ -47,6 +77,37 @@
     return path.includes("/zh/") ? "zh" : "en";
   }
 
+  // Detect which version (v1/v2/…) the current page belongs to.
+  // Captions in _toc.yml are prefixed with ``v2 · `` for v2; bare captions are v1.
+  // Keeping the convention in one place so the sidebar filter can hide
+  // cross-version sections.
+  const VERSION_CAPTION_PREFIX = {
+    v2: "v2 · ",
+  };
+
+  function getCurrentVersion() {
+    const path = window.location.pathname;
+    if (path.indexOf("/v2/") !== -1) return "v2";
+    return "v1";
+  }
+
+  function captionVersion(text) {
+    const trimmed = (text || "").trim();
+    for (const v in VERSION_CAPTION_PREFIX) {
+      if (trimmed.indexOf(VERSION_CAPTION_PREFIX[v]) === 0) {
+        return v;
+      }
+    }
+    return "v1";
+  }
+
+  // v1 separates en/zh captions via tab ``sections_en``/``sections_zh``; v2
+  // has no tab so we infer language directly from the caption text. Any CJK
+  // codepoint marks the section as zh.
+  function captionLang(text) {
+    return /[一-鿿]/.test(text || "") ? "zh" : "en";
+  }
+
   function parseList(value) {
     if (!value) {
       return [];
@@ -62,17 +123,32 @@
     return Array.from(document.querySelectorAll(".docs-top-tabs__link"));
   }
 
+  // Pick the version+lang-specific dataset field. v2 fields are named
+  // ``prefixesV2En`` / ``urlV2Zh`` / etc.; for v1 we keep the historical
+  // un-prefixed names. Falls back to the v1 field when a v2 entry is missing,
+  // so partially-configured tabs still work.
+  function tabField(link, base, lang, version) {
+    const langSuffix = lang === "zh" ? "Zh" : "En";
+    if (version === "v2") {
+      const v2Key = base + "V2" + langSuffix;
+      const v2Val = link.dataset[v2Key];
+      if (v2Val !== undefined && v2Val !== "") return v2Val;
+    }
+    return link.dataset[base + langSuffix];
+  }
+
   function getTabData(link, lang) {
     if (!link) {
       return null;
     }
 
+    const version = getCurrentVersion();
     return {
       id: link.dataset.tabId,
       mirrorPaths: link.dataset.mirrorPaths === "true",
-      prefixes: parseList(lang === "zh" ? link.dataset.prefixesZh : link.dataset.prefixesEn),
-      sections: parseList(lang === "zh" ? link.dataset.sectionsZh : link.dataset.sectionsEn),
-      url: lang === "zh" ? link.dataset.urlZh : link.dataset.urlEn,
+      prefixes: parseList(tabField(link, "prefixes", lang, version)),
+      sections: parseList(tabField(link, "sections", lang, version)),
+      url: tabField(link, "url", lang, version),
     };
   }
 
@@ -172,19 +248,36 @@
       return;
     }
 
+    captions.forEach(rewriteCaptionDisplay);
+
     clearSidebarGroupVisibility();
 
-    if (!activeLink) {
-      captions.forEach((caption) => setSectionVisibility(caption, true));
-      return;
-    }
-
-    const activeTab = getTabData(activeLink, lang);
-    const visibleSections = new Set(activeTab && activeTab.sections ? activeTab.sections : []);
+    const currentVersion = getCurrentVersion();
+    const activeTab = activeLink ? getTabData(activeLink, lang) : null;
+    const tabSections = activeTab && activeTab.sections && activeTab.sections.length
+      ? new Set(activeTab.sections)
+      : null;
 
     captions.forEach((caption) => {
-      const sectionName = caption.textContent.trim();
-      setSectionVisibility(caption, visibleSections.has(sectionName));
+      const sectionName = captionText(caption);
+      const sectionVersion = captionVersion(sectionName);
+
+      // Hide cross-version captions outright so users don't see the other
+      // version's sidebar stacked on top of the current page's TOC.
+      if (sectionVersion !== currentVersion) {
+        setSectionVisibility(caption, false);
+        return;
+      }
+
+      // Within the current version: prefer the active tab's section list
+      // (works for both v1 and v2 now that v2 tab data is wired up). Fall back
+      // to a language filter for pages that don't match any tab (e.g. a v2
+      // intro tab whose ``sections_*`` is intentionally empty).
+      if (tabSections) {
+        setSectionVisibility(caption, tabSections.has(sectionName));
+      } else {
+        setSectionVisibility(caption, captionLang(sectionName) === lang);
+      }
     });
   }
 
@@ -274,7 +367,7 @@
       return null;
     }
 
-    return lang === "zh" ? homeTab.dataset.urlZh : homeTab.dataset.urlEn;
+    return tabField(homeTab, "url", lang, getCurrentVersion());
   }
 
   function buildLanguageTarget(lang) {
@@ -285,7 +378,7 @@
 
     const activeLink = getActiveTabLink(currentLang, getCurrentPage());
     const activeTab = getTabData(activeLink, currentLang);
-    const activeTargetUrl = lang === "zh" ? activeLink && activeLink.dataset.urlZh : activeLink && activeLink.dataset.urlEn;
+    const activeTargetUrl = activeLink ? tabField(activeLink, "url", lang, getCurrentVersion()) : null;
 
     if (activeTab && activeTab.mirrorPaths) {
       return (

@@ -53,10 +53,17 @@ import org.slf4j.LoggerFactory;
  *
  * <p><strong>Capabilities:</strong> Read operations work: {@link #getSkill(String)}, {@link
  * #skillExists(String)}, {@link #getRepositoryInfo()}, {@link #getSource()}, {@link
- * #isWriteable()} (always {@code false}). Listing and writes are unsupported: {@link
- * #getAllSkillNames()} and {@link #getAllSkills()} return empty results; {@link #save(List,
- * boolean)} and {@link #delete(String)} do nothing; {@link #setWriteable(boolean)} is ignored. These
- * paths log a warning.
+ * #isWriteable()} (always {@code false}). Writes are unsupported: {@link #save(List, boolean)} and
+ * {@link #delete(String)} do nothing; {@link #setWriteable(boolean)} is ignored. These paths log a
+ * warning.
+ *
+ * <p><strong>Listing:</strong> Nacos AI Service has no "list all skills" API. When constructed
+ * without {@code knownSkillNames}, {@link #getAllSkillNames()} and {@link #getAllSkills()} return
+ * empty results and log a warning. Pass a non-empty {@code knownSkillNames} list to the
+ * {@link #NacosSkillRepository(AiService, String, Properties, List)} constructor to enable
+ * enumeration — {@link #getAllSkills()} will then fetch each skill via {@link #getSkill(String)}
+ * in sequence (one network call per skill; prefer {@code MysqlSkillRepository} for large
+ * catalogues).
  *
  * <p><strong>Version and label resolution:</strong> Independently for version and for label, the
  * first non-blank value wins, in order: (1) {@link Properties} from {@link
@@ -98,25 +105,39 @@ public class NacosSkillRepository implements AgentSkillRepository {
     private final String location;
     private final String skillVersion;
     private final String skillLabel;
+    private final List<String> knownSkillNames;
 
     /**
      * Same as {@link #NacosSkillRepository(AiService, String, Properties)} with {@code properties
      * == null}.
      */
     public NacosSkillRepository(AiService aiService, String namespaceId) {
-        this(aiService, namespaceId, null);
+        this(aiService, namespaceId, null, Collections.emptyList());
+    }
+
+    /**
+     * Same as {@link #NacosSkillRepository(AiService, String, Properties, List)} with an empty
+     * {@code knownSkillNames}.
+     */
+    public NacosSkillRepository(AiService aiService, String namespaceId, Properties properties) {
+        this(aiService, namespaceId, properties, Collections.emptyList());
     }
 
     /**
      * Creates a repository for the given Nacos namespace; resolves skill version and label once
      * (see class Javadoc for precedence).
      *
-     * @param aiService   the Nacos AI service (must not be null)
-     * @param namespaceId the Nacos namespace id (blank treated as {@code public})
-     * @param properties  optional application properties (e.g. from {@code application.properties});
-     *                    may be {@code null}
+     * @param aiService        the Nacos AI service (must not be null)
+     * @param namespaceId      the Nacos namespace id (blank treated as {@code public})
+     * @param properties       optional application properties; may be {@code null}
+     * @param knownSkillNames  skill names to expose via {@link #getAllSkillNames()} and
+     *                         {@link #getAllSkills()}; pass empty list to keep the no-op behaviour
      */
-    public NacosSkillRepository(AiService aiService, String namespaceId, Properties properties) {
+    public NacosSkillRepository(
+            AiService aiService,
+            String namespaceId,
+            Properties properties,
+            List<String> knownSkillNames) {
         if (aiService == null) {
             throw new IllegalArgumentException("AiService cannot be null");
         }
@@ -135,12 +156,15 @@ public class NacosSkillRepository implements AgentSkillRepository {
                         getProperties(properties, SKILL_LABEL_PATH),
                         System.getProperty(SKILL_LABEL_PATH),
                         System.getenv(ENV_SKILL_LABEL_PATH));
+        this.knownSkillNames =
+                knownSkillNames == null ? Collections.emptyList() : List.copyOf(knownSkillNames);
         log.info(
                 "NacosSkillRepository initialized for namespace: {}, skillVersion: {},"
-                        + " skillLabel: {}",
+                        + " skillLabel: {}, knownSkillNames: {}",
                 this.namespaceId,
                 StringUtils.isBlank(skillVersion) ? "(none)" : skillVersion,
-                StringUtils.isBlank(skillLabel) ? "(none)" : skillLabel);
+                StringUtils.isBlank(skillLabel) ? "(none)" : skillLabel,
+                this.knownSkillNames.isEmpty() ? "(none)" : this.knownSkillNames);
     }
 
     @Override
@@ -204,14 +228,33 @@ public class NacosSkillRepository implements AgentSkillRepository {
 
     @Override
     public List<String> getAllSkillNames() {
-        log.warn("NacosSkillRepository is read-only, getAllSkillNames returns empty list");
-        return Collections.emptyList();
+        if (knownSkillNames.isEmpty()) {
+            log.warn(
+                    "NacosSkillRepository: no knownSkillNames configured, returning empty list."
+                            + " Pass knownSkillNames to the constructor to enable enumeration.");
+            return Collections.emptyList();
+        }
+        return knownSkillNames;
     }
 
     @Override
     public List<AgentSkill> getAllSkills() {
-        log.warn("NacosSkillRepository is read-only, getAllSkills returns empty list");
-        return Collections.emptyList();
+        if (knownSkillNames.isEmpty()) {
+            log.warn(
+                    "NacosSkillRepository: no knownSkillNames configured, returning empty list."
+                            + " Pass knownSkillNames to the constructor to enable enumeration.");
+            return Collections.emptyList();
+        }
+        // one network call per skill — prefer MysqlSkillRepository for large catalogues
+        List<AgentSkill> result = new ArrayList<>(knownSkillNames.size());
+        for (String name : knownSkillNames) {
+            try {
+                result.add(getSkill(name));
+            } catch (Exception e) {
+                log.warn("NacosSkillRepository: failed to load skill '{}', skipping", name, e);
+            }
+        }
+        return result;
     }
 
     @Override

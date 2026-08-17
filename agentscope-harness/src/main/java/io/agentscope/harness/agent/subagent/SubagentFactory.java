@@ -16,18 +16,33 @@
 package io.agentscope.harness.agent.subagent;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 
 /**
  * Creates a new subagent instance for a single spawn or session. Registered under an {@code
- * agent_id} in {@link DefaultAgentManager}; each {@link #create()} call should return a fresh
- * agent when isolation is required.
+ * agent_id} in {@link DefaultAgentManager}; each {@link #create(RuntimeContext)} call should
+ * return a fresh agent when isolation is required.
  *
  * <p>This type replaces a raw {@link java.util.function.Supplier} for subagent wiring so call sites
  * and maps are self-documenting.
+ *
+ * <p><b>Phase B-0:</b> Implementations should bake {@code parentRc.getUserId()} and
+ * {@code parentRc.getSessionId()} into the child agent's persisted {@code SessionKey} so that
+ * {@code AgentState} stays isolated per (user, parent-session) — regardless of which
+ * {@link io.agentscope.core.state.AgentStateStore} backend (Workspace / Redis / InMemory / custom) is
+ * configured. Both fields are nullable; when absent the child falls back to the legacy single
+ * bucket form keyed only by declaration name.
  */
 @FunctionalInterface
 public interface SubagentFactory {
 
-    /** Builds a new subagent instance (typically a new {@link io.agentscope.harness.agent.HarnessAgent}). */
-    Agent create();
+    /**
+     * Builds a new subagent instance for the given parent runtime context. Implementations are
+     * responsible for translating {@code parentRc} into appropriate state-isolation hints (e.g.
+     * a parent-aware {@code SessionKey}); see the type-level javadoc.
+     *
+     * @param parentRc parent agent's runtime context at spawn time; may be
+     *     {@link RuntimeContext#empty()} when caller has no scope
+     */
+    Agent create(RuntimeContext parentRc);
 }

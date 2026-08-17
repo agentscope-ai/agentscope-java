@@ -25,7 +25,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.Optional;
@@ -43,7 +42,7 @@ class SandboxManagerIsolationTest {
     private static final String STATE_JSON = "{\"sessionId\":\"s42\"}";
 
     @Mock SandboxClient<SandboxClientOptions> client;
-    @Mock SandboxStateStore stateStore;
+    @Mock SessionSandboxStateStore stateStore;
     @Mock Sandbox freshSandbox;
     @Mock Sandbox resumedSandbox;
     @Mock Sandbox externalSandbox;
@@ -92,11 +91,10 @@ class SandboxManagerIsolationTest {
     @Test
     void priority3_stateStoreHit_resumesSession() throws Exception {
         when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
-        when(client.deserializeState(STATE_JSON)).thenReturn(resumedState);
+        when(client.deserializeState(STATE_JSON, null)).thenReturn(resumedState);
         when(client.resume(resumedState)).thenReturn(resumedSandbox);
 
-        RuntimeContext rtx =
-                RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-1")).build();
+        RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-1").build();
         SandboxContext sCtx =
                 SandboxContext.builder().isolationScope(IsolationScope.SESSION).build();
 
@@ -114,8 +112,7 @@ class SandboxManagerIsolationTest {
         when(stateStore.load(any())).thenReturn(Optional.empty());
         when(client.create(any(), any(), any())).thenReturn(freshSandbox);
 
-        RuntimeContext rtx =
-                RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-2")).build();
+        RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-2").build();
         SandboxContext sCtx =
                 SandboxContext.builder()
                         .isolationScope(IsolationScope.SESSION)
@@ -134,8 +131,8 @@ class SandboxManagerIsolationTest {
     void noScopeKey_createsFreshSession() throws Exception {
         when(client.create(any(), any(), any())).thenReturn(freshSandbox);
 
-        RuntimeContext rtx = RuntimeContext.builder().build(); // no sessionKey
-        SandboxContext sCtx = SandboxContext.builder().build(); // scope = SESSION (default)
+        RuntimeContext rtx = RuntimeContext.builder().build(); // no userId or sessionId
+        SandboxContext sCtx = SandboxContext.builder().build(); // scope = null → USER default
 
         SandboxAcquireResult result = manager.acquire(sCtx, rtx);
 
@@ -148,7 +145,7 @@ class SandboxManagerIsolationTest {
     @Test
     void userScope_withUserId_loadsFromStore() throws Exception {
         when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
-        when(client.deserializeState(STATE_JSON)).thenReturn(resumedState);
+        when(client.deserializeState(STATE_JSON, null)).thenReturn(resumedState);
         when(client.resume(resumedState)).thenReturn(resumedSandbox);
 
         RuntimeContext rtx = RuntimeContext.builder().userId("user-42").build();
@@ -157,6 +154,25 @@ class SandboxManagerIsolationTest {
         SandboxAcquireResult result = manager.acquire(sCtx, rtx);
 
         assertSame(resumedSandbox, result.getSandbox());
+    }
+
+    @Test
+    void priority3_stateStoreHit_passesSnapshotSpecToDeserialize() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.of(STATE_JSON));
+        when(client.deserializeState(STATE_JSON, snapshotSpec)).thenReturn(resumedState);
+        when(client.resume(resumedState)).thenReturn(resumedSandbox);
+
+        RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-1").build();
+        SandboxContext sCtx =
+                SandboxContext.builder()
+                        .isolationScope(IsolationScope.SESSION)
+                        .snapshotSpec(snapshotSpec)
+                        .build();
+
+        SandboxAcquireResult result = manager.acquire(sCtx, rtx);
+
+        assertSame(resumedSandbox, result.getSandbox());
+        verify(client).deserializeState(STATE_JSON, snapshotSpec);
     }
 
     @Test
@@ -236,8 +252,7 @@ class SandboxManagerIsolationTest {
         when(client.serializeState(state)).thenReturn(STATE_JSON);
         SandboxAcquireResult result = SandboxAcquireResult.selfManaged(sandbox);
 
-        RuntimeContext rtx =
-                RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-p")).build();
+        RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-p").build();
         SandboxContext sCtx =
                 SandboxContext.builder().isolationScope(IsolationScope.SESSION).build();
 
@@ -264,8 +279,7 @@ class SandboxManagerIsolationTest {
 
     @Test
     void clearState_deletesFromStore() throws Exception {
-        RuntimeContext rtx =
-                RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-c")).build();
+        RuntimeContext rtx = RuntimeContext.builder().sessionId("sess-c").build();
         SandboxContext sCtx =
                 SandboxContext.builder().isolationScope(IsolationScope.SESSION).build();
 

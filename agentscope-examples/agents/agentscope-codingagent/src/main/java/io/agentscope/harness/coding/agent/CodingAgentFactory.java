@@ -15,16 +15,16 @@
  */
 package io.agentscope.harness.coding.agent;
 
-import io.agentscope.core.model.AnthropicChatModel;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.coding.hook.FallbackModel;
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
+import io.agentscope.harness.coding.model.FallbackModel;
 import io.agentscope.harness.coding.prompt.CodingSystemPrompt;
 import java.nio.file.Path;
 
@@ -81,7 +81,7 @@ public final class CodingAgentFactory {
             String image = resolveSandboxImage();
             DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec();
             sandboxSpec.image(image);
-            sandboxSpec.workspaceRoot("/home/agentscope/workspace");
+            sandboxSpec.workspaceRoot(workingDir);
             sandboxSpec.isolationScope(IsolationScope.SESSION);
             builder.filesystem(sandboxSpec);
         }

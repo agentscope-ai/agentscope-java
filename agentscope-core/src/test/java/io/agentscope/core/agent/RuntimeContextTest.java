@@ -16,11 +16,10 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,6 +33,16 @@ class RuntimeContextTest {
         final String id;
 
         PojoA(String id) {
+            this.id = id;
+        }
+    }
+
+    private interface Marker {}
+
+    private static final class MarkerImpl implements Marker {
+        final String id;
+
+        MarkerImpl(String id) {
             this.id = id;
         }
     }
@@ -52,7 +61,6 @@ class RuntimeContextTest {
         RuntimeContext ctx = RuntimeContext.empty();
         assertNull(ctx.getSessionId());
         assertNull(ctx.getUserId());
-        assertNull(ctx.getSessionKey());
         ctx.put("k", "v");
         assertEquals("v", ctx.get("k"));
     }
@@ -61,15 +69,9 @@ class RuntimeContextTest {
     @DisplayName("builder sets session fields and string extras")
     void builderSessionAndStringExtras() {
         RuntimeContext ctx =
-                RuntimeContext.builder()
-                        .sessionId("sid-1")
-                        .userId("u-1")
-                        .sessionKey(SimpleSessionKey.of("sk"))
-                        .put("extra", 42)
-                        .build();
+                RuntimeContext.builder().sessionId("sid-1").userId("u-1").put("extra", 42).build();
         assertEquals("sid-1", ctx.getSessionId());
         assertEquals("u-1", ctx.getUserId());
-        assertNotNull(ctx.getSessionKey());
         assertEquals(Integer.valueOf(42), ctx.get("extra"));
     }
 
@@ -108,6 +110,51 @@ class RuntimeContextTest {
         ToolExecutionContext merged =
                 ToolExecutionContext.merge(run.asToolExecutionContext(), agent);
         assertSame(fromRun, merged.get(PojoA.class));
+    }
+
+    @Test
+    @DisplayName("builder(source) preserves typed and string extras")
+    void builderCopyPreservesTypedData() {
+        MarkerImpl filesystem = new MarkerImpl("filesystem");
+        RuntimeContext source =
+                RuntimeContext.builder()
+                        .sessionId("sid-copy")
+                        .userId("user-copy")
+                        .put("plain", "value")
+                        .put(MarkerImpl.class, filesystem)
+                        .build();
+
+        RuntimeContext copy = RuntimeContext.builder(source).build();
+
+        assertEquals("sid-copy", copy.getSessionId());
+        assertEquals("user-copy", copy.getUserId());
+        assertEquals("value", copy.get("plain"));
+        assertSame(filesystem, copy.get(MarkerImpl.class));
+        assertSame(filesystem, copy.get(Marker.class));
+        assertSame(copy, copy.get(RuntimeContext.class));
+        assertInstanceOf(MarkerImpl.class, copy.get(Marker.class));
+    }
+
+    @Test
+    @DisplayName("typed keyed access falls back to assignable singleton values")
+    void keyedTypedAccessFallsBackToAssignableSingleton() {
+        MarkerImpl filesystem = new MarkerImpl("filesystem");
+        RuntimeContext ctx =
+                RuntimeContext.builder().put("filesystem", MarkerImpl.class, filesystem).build();
+
+        assertSame(filesystem, ctx.get("filesystem", Marker.class));
+        assertSame(filesystem, ctx.get("filesystem", MarkerImpl.class));
+        assertNull(ctx.get("missing", Marker.class));
+    }
+
+    @Test
+    @DisplayName("builder(source) tolerates null and preserves empty contexts")
+    void builderCopyHandlesNullSource() {
+        RuntimeContext empty = RuntimeContext.builder((RuntimeContext) null).build();
+
+        assertNull(empty.getSessionId());
+        assertNull(empty.getUserId());
+        assertNull(empty.get("missing", Marker.class));
     }
 
     @Test

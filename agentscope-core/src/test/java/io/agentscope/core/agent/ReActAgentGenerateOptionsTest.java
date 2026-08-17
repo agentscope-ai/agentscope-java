@@ -88,7 +88,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(options)
                             .build();
 
@@ -117,7 +116,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .build();
 
             assertNull(
@@ -147,7 +145,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(options)
                             .build();
 
@@ -200,7 +197,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(genOptions)
                             .modelExecutionConfig(execConfig)
                             .hook(captureHook)
@@ -233,7 +229,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .modelExecutionConfig(execConfig)
                             .build();
 
@@ -260,7 +255,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(genOptions)
                             .build();
 
@@ -291,7 +285,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(options)
                             .build();
 
@@ -329,7 +322,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(options)
                             .build();
 
@@ -359,7 +351,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(genOptions)
                             .modelExecutionConfig(execConfig)
                             .build();
@@ -396,7 +387,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(options)
                             .build();
 
@@ -419,7 +409,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(options)
                             .build();
 
@@ -440,7 +429,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(null)
                             .build();
 
@@ -464,7 +452,6 @@ class ReActAgentGenerateOptionsTest {
                             .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                             .model(mockModel)
                             .toolkit(mockToolkit)
-                            .memory(memory)
                             .generateOptions(options)
                             .build();
 

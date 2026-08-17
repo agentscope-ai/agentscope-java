@@ -19,8 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Node.js (via NodeSource)
     ca-certificates \
     gnupg \
-    # JDK 17
+    # JDK 17 + Maven (Java build / verify)
     openjdk-17-jdk-headless \
+    maven \
     # Misc utilities
     jq \
     unzip \
@@ -42,6 +43,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
+
+# Python verify/lint/format toolchain (for the verify-changes skill)
+RUN pip3 install --no-cache-dir ruff mypy pytest black
+
+# Node verify/lint/format toolchain, installed globally so `tsc` / `eslint` / `prettier`
+# are on PATH even when a cloned repo does not vendor them locally
+RUN npm install -g typescript eslint prettier
 
 # Create a non-root workspace user
 RUN useradd -m -s /bin/bash agentscope

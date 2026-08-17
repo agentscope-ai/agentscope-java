@@ -19,9 +19,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
-import io.agentscope.dataagent.runtime.channel.ChannelBinding;
-import io.agentscope.dataagent.runtime.channel.ChannelConfig;
-import io.agentscope.dataagent.runtime.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.ChannelBinding;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,7 +32,7 @@ import java.util.Map;
  *
  * <p>Defines routing configuration for a channel adapter. The built-in {@code chatui} channel is
  * automatically created from this entry if no programmatic {@link
- * DataAgentBootstrap.Builder#channel(io.agentscope.dataagent.runtime.channel.Channel...)} registration exists for
+ * DataAgentBootstrap.Builder#channel(io.agentscope.harness.agent.gateway.channel.Channel...)} registration exists for
  * it. For other channel types, this entry provides the {@link ChannelConfig} routing rules that are
  * applied at bootstrap time.
  *
@@ -62,7 +62,7 @@ public class ChannelConfigEntry {
      * {@link ChannelFactory} that builds the channel instance. Built-in types: {@code chatui},
      * {@code dingtalk}, {@code wecom}, {@code feishu}, {@code github}, {@code gitlab}. Optional
      * when the channel is registered programmatically via
-     * {@link DataAgentBootstrap.Builder#channel(io.agentscope.dataagent.runtime.channel.Channel...)}.
+     * {@link DataAgentBootstrap.Builder#channel(io.agentscope.harness.agent.gateway.channel.Channel...)}.
      */
     @JsonProperty("type")
     private String type;
@@ -98,8 +98,8 @@ public class ChannelConfigEntry {
     private Boolean disabled;
 
     /**
-     * Ordered list of {@link io.agentscope.dataagent.runtime.channel.ChannelBinding} routing rules,
-     * evaluated by {@link io.agentscope.dataagent.runtime.channel.ChannelRouter} in priority tiers.
+     * Ordered list of {@link io.agentscope.harness.agent.gateway.channel.ChannelBinding} routing rules,
+     * evaluated by {@link io.agentscope.harness.agent.gateway.channel.ChannelRouter} in priority tiers.
      * First matching binding within the highest-priority tier wins.
      */
     @JsonProperty("bindings")

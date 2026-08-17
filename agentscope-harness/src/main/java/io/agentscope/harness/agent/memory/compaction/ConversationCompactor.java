@@ -23,14 +23,18 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.agent.hook.CompactionHook;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
+import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,7 +55,7 @@ import reactor.core.publisher.Mono;
  * </ol>
  *
  * <p>The caller is responsible for updating both the agent's working memory and the LLM-facing
- * message list (see {@link CompactionHook}).
+ * message list (see {@link CompactionMiddleware}).
  */
 public class ConversationCompactor {
 
@@ -96,8 +100,12 @@ public class ConversationCompactor {
             return Mono.just(Optional.empty());
         }
 
-        // Step 1: Lightweight arg truncation (non-LLM). Runs at a lower threshold than
-        List<Msg> messages = truncateArgs(conversationMessages, config.getTruncateArgsConfig());
+        // Step 1a: Lightweight arg truncation (non-LLM).
+        // Step 1b: Aggregate tool-result pruning (non-LLM).
+        List<Msg> messages =
+                pruneToolResults(
+                        truncateArgs(conversationMessages, config.getTruncateArgsConfig()),
+                        config.getPruneConfig());
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
@@ -110,9 +118,10 @@ public class ConversationCompactor {
             return Mono.just(Optional.empty());
         }
 
-        // Filter previous summary messages from the prefix before offloading to avoid
-        // re-storing already-archived summaries.
-        List<Msg> prefix = filterSummaryMessages(new ArrayList<>(messages.subList(0, cutoff)));
+        // Keep prior summaries in the summarization input so each compaction builds on the
+        // previous one, but exclude them from memory flushing to avoid duplicate extraction.
+        List<Msg> summaryInput = new ArrayList<>(messages.subList(0, cutoff));
+        List<Msg> flushInput = filterSummaryMessages(summaryInput);
         List<Msg> tail = new ArrayList<>(messages.subList(cutoff, messages.size()));
 
         log.info(
@@ -122,14 +131,17 @@ public class ConversationCompactor {
                 cutoff,
                 tail.size());
 
-        // Step 2: Flush long-term memories from the prefix (best-effort).
+        // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
         Mono<Void> flushStep =
                 config.isFlushBeforeCompact()
                         ? flushManager
-                                .flushMemories(rc, prefix)
+                                .flushMemories(rc, flushInput)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
                                 .onErrorResume(
                                         e -> {
+                                            if (containsInterruptedException(e)) {
+                                                return Mono.error(e);
+                                            }
                                             log.warn(
                                                     "Memory flush before compaction failed: {}",
                                                     e.getMessage());
@@ -158,6 +170,9 @@ public class ConversationCompactor {
                                                     path))
                             .onErrorResume(
                                     e -> {
+                                        if (containsInterruptedException(e)) {
+                                            return Mono.error(e);
+                                        }
                                         log.warn(
                                                 "Message offload before compaction failed: {}",
                                                 e.getMessage());
@@ -167,12 +182,12 @@ public class ConversationCompactor {
             offloadStep = Mono.just("");
         }
 
-        // Step 4: LLM summarization of the prefix, combined with the offload result.
+        // Step 4: LLM summarization of prior summaries plus the newly compacted prefix.
         return flushStep
                 .then(offloadStep)
                 .flatMap(
                         offloadPath ->
-                                summarizePrefix(prefix, config)
+                                summarizePrefix(summaryInput, config)
                                         .map(
                                                 summary -> {
                                                     String filePath =
@@ -360,9 +375,24 @@ public class ConversationCompactor {
                 .defaultIfEmpty("(Summary unavailable)")
                 .onErrorResume(
                         e -> {
+                            if (containsInterruptedException(e)) {
+                                return Mono.error(e);
+                            }
                             log.warn("Summarization LLM call failed: {}", e.getMessage());
                             return Mono.just("(Summarization failed: " + e.getMessage() + ")");
                         });
+    }
+
+    private static boolean containsInterruptedException(Throwable error) {
+        IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
+        Throwable current = error;
+        while (current != null && visited.put(current, Boolean.TRUE) == null) {
+            if (current instanceof InterruptedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**
@@ -430,8 +460,8 @@ public class ConversationCompactor {
      * conversation history was offloaded.
      * When null, falls back to the simple "summary to date" format.
      *
-     * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify and
-     * skip summary messages during future flush/offload cycles.
+     * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify generated
+     * summaries, and the stable content-based ID keeps repeated session offloads idempotent.
      */
     private static Msg buildSummaryMessage(String summary, String filePath) {
         String content;
@@ -449,10 +479,16 @@ public class ConversationCompactor {
             content = "Here is a summary of the conversation to date:\n\n" + summary;
         }
         return Msg.builder()
+                .id(buildSummaryMessageId(content))
                 .role(MsgRole.USER)
                 .name(SUMMARY_MSG_NAME)
                 .content(TextBlock.builder().text(content).build())
                 .build();
+    }
+
+    private static String buildSummaryMessageId(String content) {
+        UUID stableId = UUID.nameUUIDFromBytes(content.getBytes(StandardCharsets.UTF_8));
+        return SUMMARY_MSG_NAME + ":" + stableId;
     }
 
     // -------------------------------------------------------------------------
@@ -462,19 +498,119 @@ public class ConversationCompactor {
     /**
      * Removes previously injected summary messages from a list.
      *
-     * <p>During chained summarization the working memory may already contain a summary USER
-     * message from a prior compaction round. We filter these out before offloading to the
-     * backend so the original messages (already stored there) are not duplicated.
+     * <p>Prior summaries remain part of the next summarization input, but memory flushing must
+     * only process the newly compacted raw messages to avoid duplicate extraction.
      */
     static List<Msg> filterSummaryMessages(List<Msg> messages) {
         return messages.stream()
-                .filter(m -> !SUMMARY_MSG_NAME.equals(m.getName()))
+                .filter(message -> !SUMMARY_MSG_NAME.equals(message.getName()))
                 .collect(Collectors.toList());
     }
 
     // -------------------------------------------------------------------------
     // Argument truncation (pre-summarization, non-LLM)
     // -------------------------------------------------------------------------
+
+    /**
+     * Aggregate tool-result pruning: walks backward through TOOL messages, protects the most
+     * recent {@code protectTokens} worth of tool output, then replaces older oversized tool
+     * results with a head+tail preview when the total prunable amount exceeds
+     * {@code minimumTokens}.
+     *
+     * <p>Non-LLM operation. Returns the original list if no pruning occurred.
+     */
+    List<Msg> pruneToolResults(List<Msg> messages, CompactionConfig.PruneConfig pruneConfig) {
+        if (pruneConfig == null || messages == null || messages.isEmpty()) {
+            return messages;
+        }
+
+        int protectBudget = pruneConfig.getProtectTokens();
+        int maxChars = pruneConfig.getMaxOutputChars();
+        Set<String> excluded = pruneConfig.getExcludedTools();
+
+        int protectedTokens = 0;
+        int prunableTokens = 0;
+        List<int[]> toPrune = new ArrayList<>();
+
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg msg = messages.get(i);
+            if (msg.getRole() != MsgRole.TOOL) {
+                continue;
+            }
+            List<ContentBlock> blocks = msg.getContent();
+            if (blocks == null) {
+                continue;
+            }
+            for (int j = blocks.size() - 1; j >= 0; j--) {
+                if (!(blocks.get(j) instanceof ToolResultBlock tr)) {
+                    continue;
+                }
+                if (tr.getName() != null && excluded.contains(tr.getName())) {
+                    continue;
+                }
+                String text = extractToolResultText(tr);
+                if (text.isBlank()) {
+                    continue;
+                }
+                int tokens = TokenCounterUtil.calculateToken(List.of(msg));
+                if (protectedTokens < protectBudget) {
+                    protectedTokens += tokens;
+                    continue;
+                }
+                if (text.length() > maxChars) {
+                    prunableTokens += tokens;
+                    toPrune.add(new int[] {i, j});
+                }
+            }
+        }
+
+        if (prunableTokens < pruneConfig.getMinimumTokens() || toPrune.isEmpty()) {
+            return messages;
+        }
+
+        List<Msg> result = new ArrayList<>(messages);
+        for (int[] pos : toPrune) {
+            int msgIdx = pos[0];
+            int blockIdx = pos[1];
+            Msg msg = result.get(msgIdx);
+            List<ContentBlock> newBlocks = new ArrayList<>(msg.getContent());
+            ToolResultBlock tr = (ToolResultBlock) newBlocks.get(blockIdx);
+            String text = extractToolResultText(tr);
+            String preview = buildPrunePreview(text, maxChars);
+            ToolResultBlock pruned =
+                    ToolResultBlock.builder()
+                            .id(tr.getId())
+                            .name(tr.getName())
+                            .output(List.of(TextBlock.builder().text(preview).build()))
+                            .build();
+            newBlocks.set(blockIdx, pruned);
+            result.set(
+                    msgIdx,
+                    Msg.builder()
+                            .id(msg.getId())
+                            .name(msg.getName())
+                            .role(msg.getRole())
+                            .content(newBlocks)
+                            .metadata(msg.getMetadata())
+                            .timestamp(msg.getTimestamp())
+                            .build());
+        }
+
+        log.info("Pruned {} tool results (~{} tokens freed)", toPrune.size(), prunableTokens);
+        return result;
+    }
+
+    private static String buildPrunePreview(String text, int maxChars) {
+        int half = maxChars / 2;
+        String head = text.substring(0, Math.min(half, text.length()));
+        String tail =
+                text.length() > half ? text.substring(Math.max(text.length() - half, half)) : "";
+        int removed = text.length() - head.length() - tail.length();
+        if (removed <= 0) {
+            return text;
+        }
+        return head + "\n\n...(" + removed + " chars pruned)...\n\n" + tail;
+    }
 
     /**
      * Truncates large {@code ToolUseBlock} argument values in old messages.

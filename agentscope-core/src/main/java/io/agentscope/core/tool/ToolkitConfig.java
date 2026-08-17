@@ -26,8 +26,9 @@ import java.util.concurrent.ExecutorService;
  * - Custom ExecutorService (optional)
  * - Execution configuration for timeout and retry
  *
- * <p>By default, all tool execution is asynchronous using Reactor's Schedulers.
+ * <p>By default, multiple tool calls in one turn run in parallel on Reactor's Schedulers.
  * The default execution config provides 5-minute timeout with no retry (1 attempt).
+ * Pass {@code parallel(false)} to serialize tool execution.
  */
 public class ToolkitConfig {
 
@@ -93,11 +94,10 @@ public class ToolkitConfig {
     /**
      * Get the default tool execution context.
      *
-     * <p>This context is used as the base for all tool calls and can be overridden by
-     * agent-level or call-level contexts.
-     *
      * @return The default context, or null if not configured
+     * @deprecated Use {@link io.agentscope.core.agent.RuntimeContext} instead.
      */
+    @Deprecated
     public ToolExecutionContext getDefaultContext() {
         return defaultContext;
     }
@@ -112,7 +112,7 @@ public class ToolkitConfig {
     }
 
     /**
-     * Get the default configuration (sequential execution using Reactor).
+     * Get the default configuration (parallel execution using Reactor).
      *
      * @return Default ToolkitConfig
      */
@@ -124,7 +124,7 @@ public class ToolkitConfig {
      * Builder for ToolkitConfig.
      */
     public static class Builder {
-        private boolean parallel = false;
+        private boolean parallel = true;
         private ExecutorService executorService;
         private ExecutionConfig executionConfig;
         private boolean allowToolDeletion = true;
@@ -183,12 +183,11 @@ public class ToolkitConfig {
         /**
          * Set the default tool execution context for all tools.
          *
-         * <p>This context will be used as the base for all tool executions and can be
-         * overridden by agent-level or call-level contexts through the merge mechanism.
-         *
          * @param defaultContext The default execution context
          * @return this builder
+         * @deprecated Use {@link io.agentscope.core.agent.RuntimeContext} instead.
          */
+        @Deprecated
         public Builder defaultContext(ToolExecutionContext defaultContext) {
             this.defaultContext = defaultContext;
             return this;

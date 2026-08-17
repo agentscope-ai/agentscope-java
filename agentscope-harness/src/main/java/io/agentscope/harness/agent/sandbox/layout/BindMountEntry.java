@@ -25,7 +25,7 @@ package io.agentscope.harness.agent.sandbox.layout;
  * or on the Kubernetes node (HostPath volume).
  *
  * <p><strong>Backends:</strong> {@link io.agentscope.harness.agent.sandbox.impl.docker.DockerSandbox}
- * passes {@code -v host:container}; {@link io.agentscope.harness.agent.sandbox.impl.kubernetes}
+ * passes {@code -v host:container}; {@code kubernetes}
  * uses a HostPath volume + volumeMount. Cloud sandboxes (Daytona, E2B) ignore this entry at
  * runtime (see logs); use projection or provider-specific mounts there instead.
  *

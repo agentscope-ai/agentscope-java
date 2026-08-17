@@ -136,7 +136,7 @@ public class GitHubApiTool {
      * Resolves the GitHub token from (in priority order):
      *
      * <ol>
-     *   <li>Session extra {@code github_token} (injected by the webhook handler or dispatcher)
+     *   <li>AgentStateStore extra {@code github_token} (injected by the webhook handler or dispatcher)
      *   <li>{@code GITHUB_TOKEN} environment variable
      *   <li>{@code GH_TOKEN} environment variable
      * </ol>

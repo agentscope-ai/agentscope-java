@@ -36,12 +36,14 @@ import reactor.core.publisher.Mono;
  *
  * <ul>
  *   <li>{@code GET  /api/admin/contributions?status=PENDING} — list contributions by status
- *   <li>{@code POST /api/admin/contributions/{id}/approve} — approve + materialize payload
+ *   <li>{@code GET  /api/admin/contributions/{id}} — fetch a single contribution including its
+ *       payload (FileEntry list) and any reviewer-edited {@code approvedPayload}
+ *   <li>{@code POST /api/admin/contributions/{id}/approve} — approve + materialize payload (with
+ *       optional admin edits via {@code approvedPayload})
  *   <li>{@code POST /api/admin/contributions/{id}/reject} — reject with reason
  * </ul>
  *
- * <p>All endpoints require the {@code ADMIN} role; non-admin callers receive {@code 403}. This
- * mirrors the same check used in {@code AdminUserController}.
+ * <p>All endpoints require the {@code ADMIN} role; non-admin callers receive {@code 403}.
  */
 @RestController
 @RequestMapping("/api/admin/contributions")
@@ -69,6 +71,23 @@ public class ContributionApprovalController {
                                 .toList());
     }
 
+    @GetMapping("/{id}")
+    public Mono<ContributionDetailView> get(@PathVariable("id") long id, Authentication auth) {
+        requireAdmin(auth);
+        return Mono.fromCallable(
+                () -> {
+                    try {
+                        ContributionEntity e = service.get(id);
+                        return new ContributionDetailView(
+                                ContributionView.from(e),
+                                service.readOriginalPayload(e),
+                                service.readApprovedPayload(e));
+                    } catch (IllegalArgumentException ex) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage());
+                    }
+                });
+    }
+
     @PostMapping("/{id}/approve")
     public Mono<ContributionView> approve(
             @PathVariable("id") long id, @RequestBody ReviewRequest req, Authentication auth) {
@@ -77,7 +96,8 @@ public class ContributionApprovalController {
         return Mono.fromCallable(
                 () -> {
                     try {
-                        return ContributionView.from(service.approve(id, reviewer, req.note()));
+                        return ContributionView.from(
+                                service.approve(id, reviewer, req.note(), req.approvedPayload()));
                     } catch (IllegalArgumentException e) {
                         throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
                     } catch (IllegalStateException e) {
@@ -113,5 +133,10 @@ public class ContributionApprovalController {
         }
     }
 
-    public record ReviewRequest(String note) {}
+    public record ReviewRequest(String note, List<FileEntry> approvedPayload) {}
+
+    public record ContributionDetailView(
+            ContributionView contribution,
+            List<FileEntry> payload,
+            List<FileEntry> approvedPayload) {}
 }

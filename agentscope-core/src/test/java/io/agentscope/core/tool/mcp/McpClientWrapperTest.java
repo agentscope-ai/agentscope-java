@@ -217,6 +217,12 @@ class McpClientWrapperTest {
         @Override
         public Mono<McpSchema.CallToolResult> callTool(
                 String toolName, Map<String, Object> arguments) {
+            return callTool(toolName, arguments, null);
+        }
+
+        @Override
+        public Mono<McpSchema.CallToolResult> callTool(
+                String toolName, Map<String, Object> arguments, Map<String, Object> meta) {
             if (!initialized) {
                 return Mono.error(new IllegalStateException("Client not initialized: " + name));
             }
@@ -226,7 +232,7 @@ class McpClientWrapperTest {
             }
 
             // Return a simple success result
-            McpSchema.TextContent content = new McpSchema.TextContent("Success");
+            McpSchema.TextContent content = new McpSchema.TextContent(null, "Success", meta);
             return Mono.just(
                     McpSchema.CallToolResult.builder()
                             .content(List.of(content))

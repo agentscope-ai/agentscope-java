@@ -30,7 +30,7 @@ public class ThreadMetadata {
     @JsonProperty("thread_id")
     private String threadId;
 
-    /** Session kind: "coding" or "reviewer". */
+    /** AgentStateStore kind: "coding" or "reviewer". */
     @JsonProperty("kind")
     private String kind;
 

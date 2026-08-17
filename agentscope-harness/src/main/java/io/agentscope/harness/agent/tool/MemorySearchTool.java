@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Uses keyword-based search through all memory files visible via the configured
  * {@link io.agentscope.harness.agent.filesystem.AbstractFilesystem} (works across Local,
- * Sandbox, and Store backends).
+ * Sandbox, and Store stores).
  */
 public class MemorySearchTool {
 
@@ -44,6 +44,7 @@ public class MemorySearchTool {
 
     @Tool(
             name = "memory_search",
+            readOnly = true,
             description =
                     "Search through long-term memory files (MEMORY.md and memory/*.md) for"
                             + " relevant information. Use before answering questions about prior"

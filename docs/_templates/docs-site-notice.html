@@ -4,7 +4,7 @@
 #}
 {% if docs_site_notice is defined and docs_site_notice.get("enabled") and docs_site_notice.get("id") %}
   {% set nid = docs_site_notice.id %}
-  {% set is_zh = pagename is defined and pagename.startswith("zh/") %}
+  {% set is_zh = pagename is defined and "/zh/" in pagename %}
   {% set msg = docs_site_notice.get("message_zh") if is_zh and docs_site_notice.get("message_zh") else docs_site_notice.get("message_en", "") %}
   {% if msg %}
     {% set variant_raw = docs_site_notice.get("variant", "brand") %}

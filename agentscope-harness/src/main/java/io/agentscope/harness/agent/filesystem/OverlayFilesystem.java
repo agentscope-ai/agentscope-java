@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
+import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
@@ -26,6 +27,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,6 +73,66 @@ public class OverlayFilesystem implements AbstractFilesystem {
         }
         this.upper = upper;
         this.lower = lower;
+    }
+
+    /** Returns the upper (writable) layer. */
+    public AbstractFilesystem upper() {
+        return upper;
+    }
+
+    /** Returns the lower (shared) layer. */
+    public AbstractFilesystem lower() {
+        return lower;
+    }
+
+    /**
+     * Builds an overlay that automatically exposes shell execution when {@code upper} supports
+     * it. Returns a {@link AbstractSandboxFilesystem}-implementing subclass when
+     * {@code upper instanceof AbstractSandboxFilesystem}, otherwise a plain
+     * {@link OverlayFilesystem}.
+     *
+     * <p>Use this factory in preference to the constructor when {@code upper} may carry shell
+     * capability (e.g. {@link io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell})
+     * — it lets callers like
+     * {@code ReActAgent.Builder} keep their {@code instanceof AbstractSandboxFilesystem} check
+     * working through the overlay.
+     *
+     * @param upper user-specific layer (read/write); takes precedence on conflicts
+     * @param lower shared layer (read-only from the overlay's perspective)
+     * @return overlay; either plain or shell-aware depending on {@code upper}
+     */
+    public static AbstractFilesystem of(AbstractFilesystem upper, AbstractFilesystem lower) {
+        if (upper instanceof AbstractSandboxFilesystem shellUpper) {
+            return new ShellAwareOverlay(shellUpper, lower);
+        }
+        return new OverlayFilesystem(upper, lower);
+    }
+
+    /**
+     * Overlay subtype that delegates shell {@link #execute} and {@link #id} to a shell-capable
+     * upper store. Filesystem operations inherit the standard overlay semantics from
+     * {@link OverlayFilesystem}.
+     */
+    private static final class ShellAwareOverlay extends OverlayFilesystem
+            implements AbstractSandboxFilesystem {
+
+        private final AbstractSandboxFilesystem shellBackend;
+
+        ShellAwareOverlay(AbstractSandboxFilesystem upper, AbstractFilesystem lower) {
+            super(upper, lower);
+            this.shellBackend = upper;
+        }
+
+        @Override
+        public String id() {
+            return shellBackend.id();
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return shellBackend.execute(runtimeContext, command, timeoutSeconds);
+        }
     }
 
     @Override
@@ -226,5 +288,15 @@ public class OverlayFilesystem implements AbstractFilesystem {
     @Override
     public boolean exists(RuntimeContext runtimeContext, String path) {
         return upper.exists(runtimeContext, path) || lower.exists(runtimeContext, path);
+    }
+
+    /** Returns the user-specific (read/write) layer. */
+    public AbstractFilesystem getUpper() {
+        return upper;
+    }
+
+    /** Returns the shared (read-only-through-this-overlay) layer. */
+    public AbstractFilesystem getLower() {
+        return lower;
     }
 }

@@ -15,9 +15,13 @@
  */
 package io.agentscope.dataagent.web.marketplace;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
 import io.agentscope.dataagent.web.persistence.jpa.ContributionEntity;
 import io.agentscope.dataagent.web.persistence.jpa.ContributionRepository;
+import io.agentscope.dataagent.web.workspace.UserSandboxRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -34,14 +38,18 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Application service backing the user-contribution + admin-approval flow.
  *
- * <p>Users nominate skills / subagents / memory snippets from their isolated workspace; admins
- * approve, and the verbatim snapshot is materialized under
- * {@code ${dataagentHome}/shared/<type>/<path>} so the content becomes immediately visible to
- * every tenant through their composite-FS lower layer.
+ * <p>Users nominate one or more workspace files (skills, sub-agents, memory snippets, AGENTS.md,
+ * knowledge documents) from their isolated workspace; admins approve, and the snapshot is
+ * materialised under {@code ${dataagentHome}/shared/agents/<targetAgentId>/<type>/<path>} so the
+ * content becomes immediately visible to every user of that agent through the sandbox projection.
  *
- * <p>This is deliberately the simplest workable form — no version history, no draft / re-submit,
- * no per-target ACLs. The intent is to land a working flow today; a follow-up phase can replace
- * {@code LocalApprovalMarketplace} with a Git-backed implementation if reviews need to become PRs.
+ * <p>The shared-layer layout is per-agent ({@code shared/agents/<agentId>/}) to mirror the
+ * {@code IsolationScope.AGENT} namespace used by the harness's
+ * {@link io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec}, so user-created agents
+ * do not leak shared content into one another.
+ *
+ * <p>Approval optionally honours an {@code approvedPayload} edited by the reviewer; the original
+ * {@code payload} is always retained for audit.
  */
 @Service
 public class MarketContributionService {
@@ -52,40 +60,61 @@ public class MarketContributionService {
             Set.of(
                     ContributionEntity.TARGET_SKILL,
                     ContributionEntity.TARGET_SUBAGENT,
-                    ContributionEntity.TARGET_MEMORY);
+                    ContributionEntity.TARGET_MEMORY,
+                    ContributionEntity.TARGET_AGENTS_MD,
+                    ContributionEntity.TARGET_KNOWLEDGE);
+
+    private static final TypeReference<List<FileEntry>> FILE_ENTRY_LIST_TYPE =
+            new TypeReference<>() {};
 
     private final ContributionRepository repository;
+    private final UserSandboxRegistry sandboxRegistry;
+    private final ObjectMapper objectMapper;
     private final Path sharedRoot;
 
     public MarketContributionService(
-            ContributionRepository repository, DataAgentBootstrap bootstrap) {
+            ContributionRepository repository,
+            DataAgentBootstrap bootstrap,
+            UserSandboxRegistry sandboxRegistry,
+            ObjectMapper objectMapper) {
         this.repository = Objects.requireNonNull(repository, "repository");
+        this.sandboxRegistry = Objects.requireNonNull(sandboxRegistry, "sandboxRegistry");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.sharedRoot = bootstrap.cwd().resolve("shared");
     }
 
     /**
-     * Records a new pending contribution and returns the persisted row. The payload is taken at
-     * face value — callers (typically {@code MarketContributionController}) are responsible for
-     * having harvested it from the user's own workspace.
+     * Records a new pending contribution. The {@code payload} is taken at face value — callers
+     * are responsible for having harvested file contents from the source user's workspace.
+     *
+     * @param targetAgentId when null/blank, defaults to {@code sourceAgentId}.
      */
     @Transactional
     public ContributionEntity submit(
             String sourceUserId,
             String sourceAgentId,
+            String targetAgentId,
             String targetType,
             String targetPath,
             String rationale,
-            String payload) {
-        validate(sourceUserId, targetType, targetPath, payload);
+            List<FileEntry> payload) {
+        String resolvedTargetAgentId =
+                (targetAgentId == null || targetAgentId.isBlank()) ? sourceAgentId : targetAgentId;
+        validate(sourceUserId, resolvedTargetAgentId, targetType, targetPath, payload);
+        // Probe target resolution at submit time so obviously-invalid paths fail fast instead of
+        // sitting in PENDING until an admin tries to approve them.
+        resolveTargetFiles(resolvedTargetAgentId, targetType, targetPath, payload);
+
         long now = System.currentTimeMillis();
         ContributionEntity entity = new ContributionEntity();
         entity.setStatus(ContributionEntity.STATUS_PENDING);
         entity.setSourceUserId(sourceUserId);
         entity.setSourceAgentId(sourceAgentId);
+        entity.setTargetAgentId(resolvedTargetAgentId);
         entity.setTargetType(targetType);
         entity.setTargetPath(targetPath);
         entity.setRationale(rationale);
-        entity.setPayload(payload);
+        entity.setPayload(serializePayload(payload));
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
         return repository.save(entity);
@@ -102,12 +131,39 @@ public class MarketContributionService {
         return repository.findAllBySourceUserIdOrderByCreatedAtDesc(sourceUserId);
     }
 
+    @Transactional(readOnly = true)
+    public ContributionEntity get(long id) {
+        return repository
+                .findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("contribution not found: " + id));
+    }
+
+    /** Returns the payload (or approvedPayload, when present and non-empty) as a FileEntry list. */
+    public List<FileEntry> readPayload(ContributionEntity entity) {
+        String json = entity.getApprovedPayload();
+        if (json == null || json.isBlank()) {
+            json = entity.getPayload();
+        }
+        return deserializePayload(json);
+    }
+
+    public List<FileEntry> readOriginalPayload(ContributionEntity entity) {
+        return deserializePayload(entity.getPayload());
+    }
+
+    public List<FileEntry> readApprovedPayload(ContributionEntity entity) {
+        String json = entity.getApprovedPayload();
+        return (json == null || json.isBlank()) ? null : deserializePayload(json);
+    }
+
     /**
-     * Approves the contribution, materializes its payload under
-     * {@code ${dataagentHome}/shared/<type>/<path>}, and transitions to {@code APPROVED}.
+     * Approves the contribution, materialises its (possibly admin-edited) payload under
+     * {@code ${dataagentHome}/shared/agents/<targetAgentId>/<type>/<path>}, and transitions to
+     * {@code APPROVED}.
      */
     @Transactional
-    public ContributionEntity approve(long id, String reviewerUserId, String reviewerNote) {
+    public ContributionEntity approve(
+            long id, String reviewerUserId, String reviewerNote, List<FileEntry> approvedPayload) {
         ContributionEntity entity =
                 repository
                         .findById(id)
@@ -119,24 +175,48 @@ public class MarketContributionService {
             throw new IllegalStateException(
                     "contribution " + id + " is not pending (status=" + entity.getStatus() + ")");
         }
-        Path target = resolveTargetPath(entity.getTargetType(), entity.getTargetPath());
+
+        List<FileEntry> toWrite =
+                approvedPayload != null ? approvedPayload : deserializePayload(entity.getPayload());
+        if (toWrite.isEmpty()) {
+            throw new IllegalArgumentException("contribution payload is empty");
+        }
+        List<TargetFile> targets =
+                resolveTargetFiles(
+                        entity.getTargetAgentId(),
+                        entity.getTargetType(),
+                        entity.getTargetPath(),
+                        toWrite);
         try {
-            Files.createDirectories(target.getParent());
-            Files.writeString(target, entity.getPayload(), StandardCharsets.UTF_8);
+            for (TargetFile tf : targets) {
+                Files.createDirectories(tf.path().getParent());
+                Files.writeString(tf.path(), tf.content(), StandardCharsets.UTF_8);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+
         log.info(
-                "Approved contribution id={} ({} -> {}) by reviewer={}",
+                "Approved contribution id={} ({} -> agent={} files={}) by reviewer={}",
                 id,
                 entity.getTargetType(),
-                target,
+                entity.getTargetAgentId(),
+                targets.size(),
                 reviewerUserId);
+
         entity.setStatus(ContributionEntity.STATUS_APPROVED);
         entity.setReviewerUserId(reviewerUserId);
         entity.setReviewerNote(reviewerNote);
+        if (approvedPayload != null) {
+            entity.setApprovedPayload(serializePayload(approvedPayload));
+        }
         entity.setUpdatedAt(System.currentTimeMillis());
-        return repository.save(entity);
+        ContributionEntity saved = repository.save(entity);
+
+        // Force every existing sandbox of the target agent to be torn down so the next borrow
+        // re-creates a container that picks up the new files from the shared projection.
+        sandboxRegistry.invalidate(null, entity.getTargetAgentId());
+        return saved;
     }
 
     /** Rejects the contribution with a reason; no filesystem change. */
@@ -160,34 +240,123 @@ public class MarketContributionService {
         return repository.save(entity);
     }
 
-    private Path resolveTargetPath(String targetType, String targetPath) {
-        Path subdir =
-                switch (targetType) {
-                    case ContributionEntity.TARGET_SKILL -> sharedRoot.resolve("skills");
-                    case ContributionEntity.TARGET_SUBAGENT -> sharedRoot.resolve("subagents");
-                    case ContributionEntity.TARGET_MEMORY -> sharedRoot.resolve("memory");
-                    default ->
-                            throw new IllegalArgumentException(
-                                    "unsupported targetType: " + targetType);
-                };
-        Path resolved = subdir.resolve(targetPath).normalize();
-        if (!resolved.startsWith(subdir.normalize())) {
+    /**
+     * Resolves the on-disk targets for a contribution. Single-file target types
+     * (subagent / memory / agents_md / knowledge) require exactly one FileEntry. Skills allow one
+     * or more entries; an entry with empty {@code relPath} maps to {@code SKILL.md}.
+     */
+    private List<TargetFile> resolveTargetFiles(
+            String targetAgentId, String targetType, String targetPath, List<FileEntry> entries) {
+        Path agentRoot = sharedRoot.resolve("agents").resolve(targetAgentId).normalize();
+        if (!agentRoot.startsWith(sharedRoot.normalize())) {
+            throw new IllegalArgumentException("targetAgentId escapes shared/: " + targetAgentId);
+        }
+        return switch (targetType) {
+            case ContributionEntity.TARGET_SKILL ->
+                    resolveSkillTargets(agentRoot, targetPath, entries);
+            case ContributionEntity.TARGET_SUBAGENT ->
+                    List.of(singleFileTarget(agentRoot.resolve("subagents"), targetPath, entries));
+            case ContributionEntity.TARGET_MEMORY ->
+                    List.of(singleFileTarget(agentRoot.resolve("memory"), targetPath, entries));
+            case ContributionEntity.TARGET_AGENTS_MD ->
+                    List.of(agentsMdTarget(agentRoot, targetPath, entries));
+            case ContributionEntity.TARGET_KNOWLEDGE ->
+                    List.of(singleFileTarget(agentRoot.resolve("knowledge"), targetPath, entries));
+            default -> throw new IllegalArgumentException("unsupported targetType: " + targetType);
+        };
+    }
+
+    private List<TargetFile> resolveSkillTargets(
+            Path agentRoot, String bundleName, List<FileEntry> entries) {
+        Path bundleDir = agentRoot.resolve("skills").resolve(bundleName).normalize();
+        Path skillsRoot = agentRoot.resolve("skills").normalize();
+        if (!bundleDir.startsWith(skillsRoot)) {
+            throw new IllegalArgumentException("skill bundle path escapes skills/: " + bundleName);
+        }
+        java.util.List<TargetFile> out = new java.util.ArrayList<>(entries.size());
+        for (FileEntry fe : entries) {
+            String rel = fe.relPath();
+            if (rel.isEmpty()) {
+                // Default file for bare skill submissions.
+                rel = "SKILL.md";
+            }
+            if (rel.startsWith("/") || rel.contains("..")) {
+                throw new IllegalArgumentException("skill file relPath must be clean: " + rel);
+            }
+            Path resolved = bundleDir.resolve(rel).normalize();
+            if (!resolved.startsWith(bundleDir)) {
+                throw new IllegalArgumentException("skill file relPath escapes bundle dir: " + rel);
+            }
+            out.add(new TargetFile(resolved, fe.content()));
+        }
+        return out;
+    }
+
+    private TargetFile singleFileTarget(Path typeDir, String targetPath, List<FileEntry> entries) {
+        if (entries.size() != 1) {
             throw new IllegalArgumentException(
-                    "targetPath escapes the shared/" + targetType + " directory: " + targetPath);
+                    "single-file target requires exactly one file entry (got "
+                            + entries.size()
+                            + ")");
         }
-        if (ContributionEntity.TARGET_SKILL.equals(targetType)
-                && !targetPath.contains("/")
-                && !targetPath.contains("\\")) {
-            // For a bare skill name, write the canonical SKILL.md inside that directory.
-            return resolved.resolve("SKILL.md");
+        Path normalizedTypeDir = typeDir.normalize();
+        Path resolved = normalizedTypeDir.resolve(targetPath).normalize();
+        if (!resolved.startsWith(normalizedTypeDir)) {
+            throw new IllegalArgumentException(
+                    "targetPath escapes the type directory: " + targetPath);
         }
-        return resolved;
+        return new TargetFile(resolved, entries.get(0).content());
+    }
+
+    private TargetFile agentsMdTarget(Path agentRoot, String targetPath, List<FileEntry> entries) {
+        if (entries.size() != 1) {
+            throw new IllegalArgumentException("AGENTS.md target requires exactly one file entry");
+        }
+        if (!"AGENTS.md".equals(targetPath)) {
+            throw new IllegalArgumentException(
+                    "AGENTS.md target requires targetPath=\"AGENTS.md\" (got " + targetPath + ")");
+        }
+        return new TargetFile(agentRoot.resolve("AGENTS.md"), entries.get(0).content());
+    }
+
+    private String serializePayload(List<FileEntry> payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("failed to serialize payload: " + e.getMessage(), e);
+        }
+    }
+
+    private List<FileEntry> deserializePayload(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, FILE_ENTRY_LIST_TYPE);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(
+                    "failed to deserialize payload (corrupt row?): " + e.getMessage(), e);
+        }
     }
 
     private static void validate(
-            String sourceUserId, String targetType, String targetPath, String payload) {
+            String sourceUserId,
+            String targetAgentId,
+            String targetType,
+            String targetPath,
+            List<FileEntry> payload) {
         if (sourceUserId == null || sourceUserId.isBlank()) {
             throw new IllegalArgumentException("sourceUserId is required");
+        }
+        if (targetAgentId == null || targetAgentId.isBlank()) {
+            throw new IllegalArgumentException(
+                    "targetAgentId is required (and sourceAgentId fallback was also blank)");
+        }
+        if (targetAgentId.contains("/")
+                || targetAgentId.contains("\\")
+                || targetAgentId.contains("..")) {
+            throw new IllegalArgumentException(
+                    "targetAgentId must not contain path separators or '..': " + targetAgentId);
         }
         if (targetType == null || !ALLOWED_TARGETS.contains(targetType)) {
             throw new IllegalArgumentException(
@@ -199,8 +368,18 @@ public class MarketContributionService {
         if (targetPath.startsWith("/") || targetPath.contains("..")) {
             throw new IllegalArgumentException("targetPath must be a clean relative path");
         }
-        if (payload == null || payload.isBlank()) {
-            throw new IllegalArgumentException("payload is required");
+        if (payload == null || payload.isEmpty()) {
+            throw new IllegalArgumentException("payload must contain at least one file entry");
+        }
+        for (FileEntry fe : payload) {
+            if (fe == null) {
+                throw new IllegalArgumentException("payload entries must not be null");
+            }
+            if (fe.content() == null) {
+                throw new IllegalArgumentException("file entry content must not be null");
+            }
         }
     }
+
+    private record TargetFile(Path path, String content) {}
 }

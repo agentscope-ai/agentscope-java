@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<!--
+  Site root redirect (overrides whatever Sphinx generates from `_toc.yml`'s
+  ``root:`` directive). Copied verbatim into ``_build/html/index.html`` via
+  ``html_extra_path``, which fires after the build, so it wins.
+
+  Why hard-coded here:
+  - We want ``/`` to land on v2 (the recommended version) regardless of any
+    drift in jupyter-book / Sphinx defaults across upgrades.
+  - The v1 → v2 legacy redirect stubs at ``/<lang>/...`` paths are produced
+    by ``scripts/generate_v1_redirects.py`` and are NOT touched by this file.
+  - localStorage["preferred-language"] (set by _static/language.js on every
+    docs page) is honored so a returning Chinese reader lands on /v2/zh/.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentScope Java</title>
+  <meta name="robots" content="noindex" />
+  <link rel="canonical" href="https://java.agentscope.io/v2/en/intro.html" />
+  <!-- JS-disabled fallback: meta refresh straight to v2 English intro. -->
+  <meta http-equiv="refresh" content="0; url=v2/en/intro.html" />
+  <script>
+    (function () {
+      try {
+        var languages = ["en", "zh"];
+        var preferred = null;
+        try { preferred = localStorage.getItem("preferred-language"); } catch (e) {}
+        if (!preferred || languages.indexOf(preferred) === -1) {
+          var nav = (navigator.language || navigator.userLanguage || "").toLowerCase();
+          if (nav.indexOf("zh") === 0) {
+            preferred = "zh";
+          }
+        }
+        if (!preferred || languages.indexOf(preferred) === -1) {
+          preferred = "en";
+        }
+        location.replace("v2/" + preferred + "/intro.html");
+      } catch (e) {
+        location.replace("v2/en/intro.html");
+      }
+    })();
+  </script>
+</head>
+<body>
+  <p style="font-family: system-ui, sans-serif; max-width: 32em; margin: 4em auto; padding: 0 1em; color: #444;">
+    Redirecting to <a href="v2/en/intro.html">AgentScope Java 2.0 documentation</a>&hellip;
+  </p>
+</body>
+</html>

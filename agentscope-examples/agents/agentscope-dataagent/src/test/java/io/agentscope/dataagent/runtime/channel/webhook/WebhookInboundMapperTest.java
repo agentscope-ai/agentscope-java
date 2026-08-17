@@ -17,8 +17,8 @@ package io.agentscope.dataagent.runtime.channel.webhook;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.agentscope.dataagent.runtime.channel.InboundMessage;
-import io.agentscope.dataagent.runtime.channel.PeerKind;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.PeerKind;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 

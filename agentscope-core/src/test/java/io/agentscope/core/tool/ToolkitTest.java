@@ -719,7 +719,7 @@ class ToolkitTest {
         class DynamicContextTool {
             @Tool(description = "Tool with dynamic context")
             public ToolResultBlock dynamicContext(@ToolParam(name = "sessionId") String sessionId) {
-                return ToolResultBlock.text("Session ID: " + sessionId);
+                return ToolResultBlock.text("AgentStateStore ID: " + sessionId);
             }
         }
 

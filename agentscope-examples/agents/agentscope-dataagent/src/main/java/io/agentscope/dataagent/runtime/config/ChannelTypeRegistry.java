@@ -15,9 +15,10 @@
  */
 package io.agentscope.dataagent.runtime.config;
 
-import io.agentscope.dataagent.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.dataagent.runtime.channel.dingtalk.DingTalkChannel;
 import io.agentscope.dataagent.runtime.channel.webhook.WebhookChannel;
+import io.agentscope.extensions.channel.dingtalk.DingTalkChannel;
+import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;

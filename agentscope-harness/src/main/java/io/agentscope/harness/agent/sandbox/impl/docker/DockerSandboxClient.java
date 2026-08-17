@@ -22,13 +22,16 @@ import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * {@link SandboxClient} implementation for the Docker sandbox backend.
+ * {@link SandboxClient} implementation for the Docker sandbox store.
  *
  * <p>Creates and manages Docker containers via the {@code docker} CLI. The Docker daemon must
  * be accessible from the host's {@code PATH}.
@@ -129,5 +132,29 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
             throw new SandboxException.SandboxConfigurationException(
                     "Failed to deserialize Docker sandbox state", e);
         }
+    }
+
+    @Override
+    public SandboxState deserializeState(String json, SandboxSnapshotSpec snapshotSpec) {
+        try {
+            SandboxState state = objectMapper.readValue(json, SandboxState.class);
+            rebindRemoteSnapshot(state, snapshotSpec);
+            return state;
+        } catch (Exception e) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "Failed to deserialize Docker sandbox state", e);
+        }
+    }
+
+    private static void rebindRemoteSnapshot(SandboxState state, SandboxSnapshotSpec snapshotSpec) {
+        if (!(snapshotSpec instanceof RemoteSnapshotSpec remoteSnapshotSpec)) {
+            return;
+        }
+        SandboxSnapshot snapshot = state.getSnapshot();
+        if (!(snapshot instanceof RemoteSandboxSnapshot)) {
+            return;
+        }
+        state.setSnapshot(
+                new RemoteSandboxSnapshot(remoteSnapshotSpec.getClient(), snapshot.getId()));
     }
 }

@@ -17,7 +17,7 @@ package io.agentscope.dataagent.runtime.outbound;
 
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import io.agentscope.dataagent.runtime.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.ChannelManager;
 import java.util.Objects;
 
 /**

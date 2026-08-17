@@ -25,7 +25,10 @@ import io.agentscope.core.agent.RuntimeContext;
  * on all registered hooks that implement this interface, and clears it on completion. Hooks may
  * cache the reference in a field, as the same {@link RuntimeContext} instance is mutably shared
  * for cross-hook/tool coordination.
+ *
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 @FunctionalInterface
 public interface RuntimeContextAware {
 

@@ -22,7 +22,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
-import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -51,7 +51,7 @@ class FilesystemGlobTest {
         assertTrue(result.isSuccess());
         Set<String> relPaths =
                 result.matches().stream()
-                        .map(fi -> tmp.relativize(Path.of(fi.path())).toString().replace('\\', '/'))
+                        .map(fi -> fi.path().replace('\\', '/'))
                         .collect(Collectors.toSet());
 
         assertEquals(Set.of("memory/2026-05-13.md", "memory/sub/2026-05-14.md"), relPaths);
@@ -75,5 +75,50 @@ class FilesystemGlobTest {
         assertEquals(
                 Set.of("/agents/demo-session.log.jsonl", "/agents/sub/demo-session.log.jsonl"),
                 paths);
+    }
+
+    @Test
+    void remote_glob_recursivePattern_matchesFilesInSearchRootAndSubdirectories() {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        store.put(ns, "/hello.txt", Map.of("content", "root file"));
+        store.put(ns, "/reports/hello.txt", Map.of("content", "nested file"));
+        store.put(ns, "/hello.md", Map.of("content", "different extension"));
+
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+        GlobResult result = fs.glob(RT, "**/hello.txt", "/");
+
+        assertTrue(result.isSuccess());
+        Set<String> paths =
+                result.matches().stream()
+                        .map(fi -> fi.path().replace('\\', '/'))
+                        .collect(Collectors.toSet());
+        assertEquals(Set.of("/hello.txt", "/reports/hello.txt"), paths);
+
+        GlobResult wildcardResult = fs.glob(RT, "**/*.txt", "/");
+        assertTrue(wildcardResult.isSuccess());
+        Set<String> wildcardPaths =
+                wildcardResult.matches().stream()
+                        .map(fi -> fi.path().replace('\\', '/'))
+                        .collect(Collectors.toSet());
+        assertEquals(Set.of("/hello.txt", "/reports/hello.txt"), wildcardPaths);
+    }
+
+    @Test
+    void remote_glob_doubleStar_matchesFilesInSearchRootAndSubdirectories() {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        store.put(ns, "/root.txt", Map.of("content", "root file"));
+        store.put(ns, "/reports/nested.txt", Map.of("content", "nested file"));
+
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+        GlobResult result = fs.glob(RT, "**", "/");
+
+        assertTrue(result.isSuccess());
+        Set<String> paths =
+                result.matches().stream()
+                        .map(fi -> fi.path().replace('\\', '/'))
+                        .collect(Collectors.toSet());
+        assertEquals(Set.of("/root.txt", "/reports/nested.txt"), paths);
     }
 }

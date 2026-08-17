@@ -17,7 +17,7 @@ package io.agentscope.spring.boot.agui.common;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.state.AgentState;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -60,7 +60,7 @@ public class ThreadSessionManager {
      * Creates a new ThreadSessionManager.
      *
      * @param maxSessions Maximum number of sessions to maintain
-     * @param sessionTimeoutMinutes Session timeout in minutes (0 = no timeout)
+     * @param sessionTimeoutMinutes AgentStateStore timeout in minutes (0 = no timeout)
      */
     public ThreadSessionManager(int maxSessions, int sessionTimeoutMinutes) {
         this.maxSessions = maxSessions;
@@ -128,11 +128,10 @@ public class ThreadSessionManager {
         }
 
         Agent agent = session.getAgent();
-        // Check if the agent has a memory and if it has any messages
-        // ReActAgent is the main agent type that has memory
+        // Check if the agent's AgentState has any context messages.
         if (agent instanceof ReActAgent reactAgent) {
-            Memory memory = reactAgent.getMemory();
-            return memory != null && !memory.getMessages().isEmpty();
+            AgentState state = reactAgent.getAgentState();
+            return state != null && !state.getContext().isEmpty();
         }
 
         return false;

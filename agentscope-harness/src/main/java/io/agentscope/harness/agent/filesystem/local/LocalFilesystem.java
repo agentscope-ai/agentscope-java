@@ -28,8 +28,10 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
-import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -60,8 +62,16 @@ import org.slf4j.LoggerFactory;
 /**
  * {@link AbstractFilesystem} implementation that reads and writes files on the local disk.
  *
- * <p>When {@code virtualMode} is enabled, paths are anchored to {@code rootDir} and traversal is
- * blocked.
+ * <p>Path-resolution behaviour is controlled by the {@link LocalFsMode} passed at construction:
+ *
+ * <ul>
+ *   <li>{@link LocalFsMode#SANDBOXED} — paths anchored to {@code rootDir}, {@code ..} and
+ *       outside-root absolute paths blocked. Equivalent to legacy {@code virtualMode=true}.
+ *   <li>{@link LocalFsMode#ROOTED} — absolute paths accepted only when they fall under one of
+ *       the configured {@link PathPolicy} roots; relative paths anchor to {@code rootDir}.
+ *   <li>{@link LocalFsMode#UNRESTRICTED} — absolute paths pass through; relative paths anchor
+ *       to {@code rootDir}. Equivalent to legacy {@code virtualMode=false}.
+ * </ul>
  */
 public class LocalFilesystem implements AbstractFilesystem {
 
@@ -70,7 +80,8 @@ public class LocalFilesystem implements AbstractFilesystem {
     private static final int DEFAULT_MAX_FILE_SIZE_MB = 10;
 
     private final Path cwd;
-    private final boolean virtualMode;
+    private final LocalFsMode mode;
+    private final PathPolicy pathPolicy;
     private final long maxFileSizeBytes;
     private final NamespaceFactory namespaceFactory;
 
@@ -121,11 +132,9 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     /**
-     * Creates a abstract filesystem with explicit configuration and namespace support.
-     *
-     * <p>When a {@link NamespaceFactory} is provided, all paths are prefixed with the
-     * namespace segments joined as subdirectories. For example, with namespace {@code ["user123"]},
-     * a read of {@code "MEMORY.md"} resolves to {@code {rootDir}/user123/MEMORY.md}.
+     * Legacy constructor: maps {@code virtualMode} to {@link LocalFsMode#SANDBOXED} or
+     * {@link LocalFsMode#UNRESTRICTED} and uses an empty {@link PathPolicy}. Prefer the
+     * mode-aware constructor below when you need {@link LocalFsMode#ROOTED}.
      *
      * @param rootDir root directory for all operations ({@code null} means CWD)
      * @param virtualMode when true, all paths are anchored to rootDir and traversal is blocked
@@ -137,13 +146,12 @@ public class LocalFilesystem implements AbstractFilesystem {
             boolean virtualMode,
             int maxFileSizeMb,
             NamespaceFactory namespaceFactory) {
-        this.cwd =
-                rootDir != null
-                        ? rootDir.toAbsolutePath().normalize()
-                        : Path.of("").toAbsolutePath();
-        this.virtualMode = virtualMode;
-        this.maxFileSizeBytes = (long) maxFileSizeMb * 1024 * 1024;
-        this.namespaceFactory = namespaceFactory;
+        this(
+                rootDir,
+                virtualMode ? LocalFsMode.SANDBOXED : LocalFsMode.UNRESTRICTED,
+                null,
+                maxFileSizeMb,
+                namespaceFactory);
     }
 
     /**
@@ -156,6 +164,38 @@ public class LocalFilesystem implements AbstractFilesystem {
             int maxFileSizeMb,
             NamespaceFactory namespaceFactory) {
         this(rootDirFromString(rootDir), virtualMode, maxFileSizeMb, namespaceFactory);
+    }
+
+    /**
+     * Creates a filesystem with explicit mode and path policy.
+     *
+     * <p>The {@code mode} controls how the agent's absolute paths are validated; see
+     * {@link LocalFsMode} for the three options. In {@link LocalFsMode#ROOTED} mode, an absolute
+     * path is accepted only when it falls under one of the {@code pathPolicy} roots or under
+     * {@code rootDir} itself; in {@link LocalFsMode#SANDBOXED} every path is anchored to
+     * {@code rootDir}; in {@link LocalFsMode#UNRESTRICTED} absolute paths pass through unchanged.
+     *
+     * @param rootDir root directory for relative paths ({@code null} means CWD)
+     * @param mode path-resolution policy ({@code null} defaults to {@link LocalFsMode#UNRESTRICTED})
+     * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
+     *     ({@code null} treated as empty)
+     * @param maxFileSizeMb maximum file size in megabytes for search operations
+     * @param namespaceFactory optional namespace factory for path scoping ({@code null} for none)
+     */
+    public LocalFilesystem(
+            Path rootDir,
+            LocalFsMode mode,
+            PathPolicy pathPolicy,
+            int maxFileSizeMb,
+            NamespaceFactory namespaceFactory) {
+        this.cwd =
+                rootDir != null
+                        ? rootDir.toAbsolutePath().normalize()
+                        : Path.of("").toAbsolutePath();
+        this.mode = mode != null ? mode : LocalFsMode.UNRESTRICTED;
+        this.pathPolicy = pathPolicy != null ? pathPolicy : PathPolicy.empty();
+        this.maxFileSizeBytes = (long) maxFileSizeMb * 1024 * 1024;
+        this.namespaceFactory = namespaceFactory;
     }
 
     /**
@@ -178,6 +218,20 @@ public class LocalFilesystem implements AbstractFilesystem {
      */
     public Path getCwd() {
         return cwd;
+    }
+
+    /** Returns the active path-resolution mode. */
+    public LocalFsMode getMode() {
+        return mode;
+    }
+
+    /**
+     * Returns the configured path policy. Empty when {@link #getMode()} is not
+     * {@link LocalFsMode#ROOTED}; even with an empty policy, {@link LocalFsMode#ROOTED} still
+     * implicitly accepts paths under {@link #getCwd()}.
+     */
+    public PathPolicy getPathPolicy() {
+        return pathPolicy;
     }
 
     @Override
@@ -305,7 +359,10 @@ public class LocalFilesystem implements AbstractFilesystem {
         ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
         lock.lock();
         try {
-            String content = Files.readString(resolved, StandardCharsets.UTF_8);
+            String content =
+                    Files.readString(resolved, StandardCharsets.UTF_8)
+                            .replace("\r\n", "\n")
+                            .replace("\r", "\n");
             String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
             String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
 
@@ -394,14 +451,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                             Path rel = searchPath.relativize(file);
                             if (matcher.matches(rel) || directMatcher.matches(rel)) {
-                                String filePath;
-                                if (virtualMode) {
-                                    filePath = toVirtualPath(file);
-                                } else if (hasNamespace(runtimeContext)) {
-                                    filePath = stripNamespacePrefix(runtimeContext, file);
-                                } else {
-                                    filePath = file.toAbsolutePath().toString();
-                                }
+                                String filePath = resolveEntryPath(runtimeContext, file);
                                 String modifiedAt =
                                         Instant.ofEpochMilli(attrs.lastModifiedTime().toMillis())
                                                 .toString();
@@ -439,7 +489,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                 responses.add(FileUploadResponse.success(filePath));
             } catch (IOException e) {
                 responses.add(FileUploadResponse.fail(filePath, e.getMessage()));
-            } catch (SecurityException e) {
+            } catch (SecurityException | IllegalArgumentException e) {
                 responses.add(FileUploadResponse.fail(filePath, "permission_denied"));
             }
         }
@@ -546,18 +596,86 @@ public class LocalFilesystem implements AbstractFilesystem {
             return cwd;
         }
 
-        if (virtualMode) {
-            String vpath = effectiveKey.startsWith("/") ? effectiveKey : "/" + effectiveKey;
-            if (vpath.contains("..") || vpath.startsWith("~")) {
-                throw new SecurityException("Path traversal not allowed");
+        return switch (mode) {
+            case SANDBOXED -> resolveSandboxed(effectiveKey);
+            case ROOTED -> resolveRooted(effectiveKey);
+            case UNRESTRICTED -> resolveUnrestricted(effectiveKey);
+        };
+    }
+
+    private Path resolveSandboxed(String effectiveKey) {
+        String vpath = effectiveKey.startsWith("/") ? effectiveKey : "/" + effectiveKey;
+        if (vpath.contains("..") || vpath.startsWith("~")) {
+            throw new SecurityException("Path traversal not allowed");
+        }
+        // Strip Windows drive prefix ("C:\" / "C:/") so absolute Windows paths get re-rooted
+        // under the sandbox the same way Unix absolute paths do; no-op on Unix input.
+        Path full = cwd.resolve(stripWindowsDrive(vpath.substring(1))).normalize();
+        if (!full.startsWith(cwd)) {
+            throw new SecurityException("Path " + full + " outside root directory: " + cwd);
+        }
+        return full;
+    }
+
+    private static String stripWindowsDrive(String key) {
+        if (key.length() >= 3
+                && Character.isLetter(key.charAt(0))
+                && key.charAt(1) == ':'
+                && (key.charAt(2) == '\\' || key.charAt(2) == '/')) {
+            return key.substring(3);
+        }
+        return key;
+    }
+
+    private Path resolveRooted(String effectiveKey) {
+        AbstractFilesystem.validatePath(effectiveKey);
+        Path target = Path.of(effectiveKey);
+        if (target.isAbsolute()) {
+            Path normalized = target.normalize();
+            if (normalized.startsWith(cwd) || pathPolicy.isAllowed(normalized)) {
+                return normalized;
             }
-            Path full = cwd.resolve(vpath.substring(1)).normalize();
+            if (Files.exists(normalized)) {
+                throw rootAccessDenied(normalized);
+            }
+            if (!effectiveKey.startsWith("/")) {
+                throw rootAccessDenied(normalized);
+            }
+        }
+
+        if (effectiveKey.startsWith("/")) {
+            String stripped = effectiveKey.substring(1);
+            if (stripped.isEmpty()) {
+                return cwd;
+            }
+            if (stripped.startsWith("~")) {
+                throw new SecurityException("Path traversal not allowed: " + effectiveKey);
+            }
+            Path full = cwd.resolve(stripped).normalize();
             if (!full.startsWith(cwd)) {
                 throw new SecurityException("Path " + full + " outside root directory: " + cwd);
             }
             return full;
         }
 
+        Path full = cwd.resolve(target).normalize();
+        if (!full.startsWith(cwd)) {
+            throw new SecurityException("Path " + full + " outside root directory: " + cwd);
+        }
+        return full;
+    }
+
+    private SecurityException rootAccessDenied(Path normalized) {
+        return new SecurityException(
+                "Absolute path "
+                        + normalized
+                        + " is not within an allowed root. Filesystem root: "
+                        + cwd
+                        + "; additional roots: "
+                        + pathPolicy.roots());
+    }
+
+    private Path resolveUnrestricted(String effectiveKey) {
         Path target = Path.of(effectiveKey);
         if (target.isAbsolute()) {
             return target;
@@ -569,12 +687,40 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (namespaceFactory == null || key == null || key.isBlank()) {
             return key;
         }
+        // Absolute paths identify specific host locations and must not be namespace-scoped.
+        // Prepending a namespace prefix would turn them into relative paths, causing them to
+        // resolve incorrectly under the workspace root (e.g. /abs/path → ns//abs/path).
+        // On Windows, absolute paths start with a drive letter ("C:\") or UNC prefix ("\\"),
+        // not "/", so we must check for those forms explicitly.
+        if (isAbsolutePathString(key)) {
+            return key;
+        }
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             return key;
         }
         String prefix = String.join("/", ns);
         return prefix + "/" + key;
+    }
+
+    /**
+     * Returns {@code true} when {@code key} looks like an absolute path on any supported OS:
+     * Unix ({@code /...}), Windows drive-letter ({@code C:\} or {@code C:/}), or Windows UNC
+     * ({@code \\server\share}).
+     */
+    private static boolean isAbsolutePathString(String key) {
+        if (key.startsWith("/")) {
+            return true;
+        }
+        // Windows drive-letter: "X:\" or "X:/"
+        if (key.length() >= 3
+                && Character.isLetter(key.charAt(0))
+                && key.charAt(1) == ':'
+                && (key.charAt(2) == '\\' || key.charAt(2) == '/')) {
+            return true;
+        }
+        // Windows UNC: "\\server\share"
+        return key.startsWith("\\\\");
     }
 
     protected String toVirtualPath(Path path) {
@@ -596,20 +742,21 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     private String resolveEntryPath(RuntimeContext rc, Path entry) {
-        if (virtualMode) {
+        if (mode == LocalFsMode.SANDBOXED) {
             return toVirtualPath(entry);
         }
         if (hasNamespace(rc)) {
             return stripNamespacePrefix(rc, entry);
         }
-        return entry.toAbsolutePath().toString();
+        return toCwdRelativePath(entry);
+    }
+
+    private String toCwdRelativePath(Path path) {
+        return cwd.relativize(path.toAbsolutePath().normalize()).toString().replace('\\', '/');
     }
 
     private String stripNamespacePrefix(RuntimeContext rc, Path absolutePath) {
-        String relPath =
-                cwd.relativize(absolutePath.toAbsolutePath().normalize())
-                        .toString()
-                        .replace('\\', '/');
+        String relPath = toCwdRelativePath(absolutePath);
         String nsPrefix = String.join("/", namespaceFactory.getNamespace(rc));
         if (relPath.startsWith(nsPrefix + "/")) {
             return relPath.substring(nsPrefix.length() + 1);
@@ -674,14 +821,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             if (pathText == null || lineNumStr == null) {
                 return null;
             }
-            String filePath;
-            if (virtualMode) {
-                filePath = toVirtualPath(Path.of(pathText));
-            } else if (hasNamespace(rc)) {
-                filePath = stripNamespacePrefix(rc, Path.of(pathText));
-            } else {
-                filePath = pathText;
-            }
+            String filePath = resolveEntryPath(rc, Path.of(pathText));
             int lineNum = Integer.parseInt(lineNumStr.trim());
             String text = linesText != null ? linesText.replaceAll("[\r\n]+$", "") : "";
             return new GrepMatch(filePath, lineNum, text);
@@ -764,14 +904,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                                             Files.readAllLines(file, StandardCharsets.UTF_8);
                                     for (int i = 0; i < lines.size(); i++) {
                                         if (compiledPattern.matcher(lines.get(i)).find()) {
-                                            String filePath;
-                                            if (virtualMode) {
-                                                filePath = toVirtualPath(file);
-                                            } else if (hasNamespace(rc)) {
-                                                filePath = stripNamespacePrefix(rc, file);
-                                            } else {
-                                                filePath = file.toAbsolutePath().toString();
-                                            }
+                                            String filePath = resolveEntryPath(rc, file);
                                             matches.add(
                                                     new GrepMatch(filePath, i + 1, lines.get(i)));
                                         }

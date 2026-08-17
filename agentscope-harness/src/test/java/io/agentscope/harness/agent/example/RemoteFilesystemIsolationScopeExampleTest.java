@@ -28,11 +28,11 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -100,7 +100,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
-                        .session(mock(Session.class))
+                        .stateStore(mock(AgentStateStore.class))
                         .build()) {
 
             // Call as session-1 and write MEMORY.md
@@ -141,7 +141,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
-                        .session(mock(Session.class))
+                        .stateStore(mock(AgentStateStore.class))
                         .build()) {
 
             // First call writes MEMORY.md under session-1
@@ -183,7 +183,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
-                        .session(mock(Session.class))
+                        .stateStore(mock(AgentStateStore.class))
                         .build()) {
 
             // Call as alice / session-a and write MEMORY.md
@@ -222,7 +222,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
-                        .session(mock(Session.class))
+                        .stateStore(mock(AgentStateStore.class))
                         .build()) {
 
             agent.call(userMsg("alice writes"), ctx("s1", "alice")).block();
@@ -259,7 +259,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.AGENT))
-                        .session(mock(Session.class))
+                        .stateStore(mock(AgentStateStore.class))
                         .build()) {
 
             // Alice writes

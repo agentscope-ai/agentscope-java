@@ -61,7 +61,11 @@ import reactor.core.publisher.Mono;
  * <ul>
  *   <li>{@code defaultConfig} - Retrieval configuration (limit, score threshold)</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
+ *     layer.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class GenericRAGHook implements Hook {
 
     private static final Logger log = LoggerFactory.getLogger(GenericRAGHook.class);

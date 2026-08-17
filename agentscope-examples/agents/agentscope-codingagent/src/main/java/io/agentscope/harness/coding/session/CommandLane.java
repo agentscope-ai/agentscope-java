@@ -19,7 +19,7 @@ package io.agentscope.harness.coding.session;
  * Scheduling lane for subagent / main work, aligned with OpenClaw gateway {@code CommandLane}
  * semantics.
  *
- * <p>Session serialization (one embedded run at a time per {@code sessionKey}) is implemented
+ * <p>AgentStateStore serialization (one embedded run at a time per {@code sessionKey}) is implemented
  * separately via per-session locks; lanes bound <strong>global</strong> concurrency across sessions
  * (e.g. cap parallel subagent runs process-wide).
  */

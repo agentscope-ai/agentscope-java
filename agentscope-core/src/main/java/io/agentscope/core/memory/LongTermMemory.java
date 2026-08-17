@@ -63,7 +63,11 @@ import reactor.core.publisher.Mono;
  *
  * @see LongTermMemoryMode
  * @see io.agentscope.core.ReActAgent
+ * @deprecated since 2.0.0. Long-term memory is removed; conversation context now lives on
+ *     {@link io.agentscope.core.state.AgentState#getContext()}. Integrate any cross-session
+ *     persistence at the application layer.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface LongTermMemory {
 
     /**

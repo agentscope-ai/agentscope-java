@@ -32,7 +32,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -140,13 +140,13 @@ class HarnessAgentIntegrationExampleTest {
         String combined =
                 captor.getAllValues().stream()
                         .map(HarnessAgentIntegrationExampleTest::joinAllText)
-                        .filter(s -> s.contains("## Session Context"))
+                        .filter(s -> s.contains("## AgentStateStore Context"))
                         .findFirst()
                         .orElse("");
 
         assertTrue(
-                combined.contains("## Session Context"),
-                "Session context should be injected; model saw: "
+                combined.contains("## AgentStateStore Context"),
+                "AgentStateStore context should be injected; model saw: "
                         + captor.getAllValues().stream()
                                 .map(HarnessAgentIntegrationExampleTest::joinAllText)
                                 .toList());
@@ -217,7 +217,7 @@ class HarnessAgentIntegrationExampleTest {
                         .orElseThrow(
                                 () -> new AssertionError("missing subagent entry: " + childId));
 
-        Agent sub = child.factory().create();
+        Agent sub = child.factory().create(RuntimeContext.empty());
         assertInstanceOf(HarnessAgent.class, sub);
         assertEquals(childId, sub.getName());
 

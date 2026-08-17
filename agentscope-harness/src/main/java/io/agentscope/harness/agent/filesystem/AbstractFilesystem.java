@@ -37,7 +37,7 @@ import java.util.Map;
  * constructors that take the workspace root as a {@link String} path (same semantics as
  * {@link java.nio.file.Path}).
  *
- * <p>Every operation accepts a {@link RuntimeContext} so backends can scope work to the current
+ * <p>Every operation accepts a {@link RuntimeContext} so stores can scope work to the current
  * session, user, or sandbox. Callers that are not inside a tool/agent call with a merged context
  * should pass {@link RuntimeContext#empty()}.
  */
@@ -144,7 +144,7 @@ public interface AbstractFilesystem {
     /**
      * Move (rename) a file or directory from {@code fromPath} to {@code toPath}.
      *
-     * <p>Implementations that span multiple backends (e.g. {@code CompositeFilesystem}) may
+     * <p>Implementations that span multiple stores (e.g. {@code CompositeFilesystem}) may
      * fall back to a read + write + delete sequence when source and destination live in
      * different backend filesystems.
      *
@@ -179,8 +179,11 @@ public interface AbstractFilesystem {
         if (path == null || path.isBlank()) {
             throw new IllegalArgumentException("Path must not be null or blank");
         }
-        if (path.contains("..")) {
-            throw new IllegalArgumentException("Path traversal ('..') not allowed: " + path);
+        String portable = path.replace('\\', '/');
+        for (String segment : portable.split("/")) {
+            if ("..".equals(segment)) {
+                throw new IllegalArgumentException("Path traversal ('..') not allowed: " + path);
+            }
         }
     }
 }

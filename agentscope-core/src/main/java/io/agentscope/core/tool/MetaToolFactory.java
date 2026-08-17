@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
@@ -49,18 +50,25 @@ class MetaToolFactory {
 
             @Override
             public String getDescription() {
-                // CRITICAL: Description must clearly explain the tool's functionality
-                return "Reset the equipped tools by activating specified tool groups.\n\n"
+                return "Reset your equipped tools based on your current task requirements. "
+                        + "These tools are organized into different groups, and you can "
+                        + "activate/deactivate them by specifying which groups to keep "
+                        + "active.\n\n"
+                        + "**Important: The input list is the FINAL set of active tool "
+                        + "groups, not incremental changes.** Any group not included in "
+                        + "the list will be deactivated, regardless of its previous "
+                        + "state.\n\n"
+                        + "**Best practice**: Activate only what you need for the current "
+                        + "task, and promptly deactivate groups as soon as they are no "
+                        + "longer needed to conserve context space.\n\n"
                         + groupManager.getNotes();
             }
 
             @Override
             public Map<String, Object> getParameters() {
-                // Build schema dynamically based on available tool groups
                 Map<String, Object> schema = new HashMap<>();
                 schema.put("type", "object");
 
-                // Properties
                 Map<String, Object> properties = new HashMap<>();
                 Map<String, Object> toActivateParam = new HashMap<>();
                 toActivateParam.put("type", "array");
@@ -68,19 +76,21 @@ class MetaToolFactory {
                 Map<String, Object> items = new HashMap<>();
                 items.put("type", "string");
 
-                // Generate enum from available tool groups
-                List<String> availableGroups = new ArrayList<>(groupManager.getToolGroupNames());
+                // Only META-scoped groups appear in the enum
+                List<String> availableGroups = new ArrayList<>(groupManager.getMetaGroupNames());
                 if (!availableGroups.isEmpty()) {
                     items.put("enum", availableGroups);
                 }
 
                 toActivateParam.put("items", items);
-                toActivateParam.put("description", "The list of tool group names to activate.");
+                toActivateParam.put(
+                        "description",
+                        "The FINAL list of tool group names to keep active. "
+                                + "Groups NOT in this list will be deactivated. "
+                                + "Pass an empty list to deactivate all groups.");
 
                 properties.put("to_activate", toActivateParam);
                 schema.put("properties", properties);
-
-                // Required fields
                 schema.put("required", List.of("to_activate"));
 
                 return schema;
@@ -109,36 +119,58 @@ class MetaToolFactory {
     /**
      * Implementation of reset_equipped_tools logic.
      *
-     * CRITICAL SEMANTICS: Only activates specified groups, does NOT deactivate others.
+     * <p>Uses <b>replacement semantics</b>: all META-scoped groups not in the input list are
+     * deactivated. EXTERNAL-scoped groups are unaffected.
      *
-     * @param toActivate List of tool group names to activate
-     * @return Success message describing activated tools
+     * @param toActivate List of tool group names to activate (must all be META scope)
+     * @return Response message describing the resulting state
      * @throws IllegalArgumentException if any group doesn't exist
      */
     private String resetEquippedToolsImpl(List<String> toActivate) {
-        // Validate all groups exist
+        // Validate: all groups must exist and be META scope
         for (String groupName : toActivate) {
             groupManager.validateGroupExists(groupName);
+            ToolGroup group = groupManager.getToolGroup(groupName);
+            if (group.getScope() != ToolGroupScope.META) {
+                return "Error: Group '" + groupName + "' is not manageable by this tool.";
+            }
         }
 
-        // Activate groups (only calls update with active=True)
-        groupManager.updateToolGroups(toActivate, true);
+        // Replace: deactivate all META groups, then activate specified ones
+        groupManager.replaceMetaActiveGroups(toActivate);
 
-        // Build response message
+        // Build response (aligned with Python format)
+        if (toActivate.isEmpty()) {
+            return "All tool groups are currently deactivated.";
+        }
+
+        String groupNames = toActivate.stream().collect(Collectors.joining(", "));
         StringBuilder result = new StringBuilder();
-        result.append("Successfully activated tool groups: ").append(toActivate).append("\n\n");
+        result.append("The currently activated tool group(s): ").append(groupNames).append(".\n");
 
-        // List activated tools
-        result.append("Activated tools:\n");
+        // Collect groups that have descriptions for tool-instructions block
+        List<ToolGroup> activatedGroups = new ArrayList<>();
         for (String groupName : toActivate) {
             ToolGroup group = groupManager.getToolGroup(groupName);
-            result.append(String.format("- Group '%s': %s\n", groupName, group.getDescription()));
-            for (String toolName : group.getTools()) {
-                AgentTool tool = toolRegistry.getTool(toolName);
-                if (tool != null) {
-                    result.append(String.format("  - %s: %s\n", toolName, tool.getDescription()));
+            if (group != null) {
+                activatedGroups.add(group);
+            }
+        }
+
+        boolean hasInstructions =
+                activatedGroups.stream()
+                        .anyMatch(g -> g.getDescription() != null && !g.getDescription().isEmpty());
+        if (hasInstructions) {
+            result.append("<tool-instructions>\n");
+            for (ToolGroup group : activatedGroups) {
+                if (group.getDescription() != null && !group.getDescription().isEmpty()) {
+                    result.append(
+                            String.format(
+                                    "<group name=\"%s\">%s</group>\n",
+                                    group.getName(), group.getDescription()));
                 }
             }
+            result.append("</tool-instructions>");
         }
 
         return result.toString();

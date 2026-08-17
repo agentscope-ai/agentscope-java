@@ -259,6 +259,12 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
+        return callTool(toolName, arguments, null);
+    }
+
+    @Override
+    public Mono<McpSchema.CallToolResult> callTool(
+            String toolName, Map<String, Object> arguments, Map<String, Object> meta) {
         logger.debug(
                 "Calling tool '{}' on Higress MCP client '{}' with arguments: {}",
                 toolName,
@@ -266,7 +272,7 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
                 arguments);
 
         return delegateClient
-                .callTool(toolName, arguments)
+                .callTool(toolName, arguments, meta)
                 .doOnSuccess(
                         result -> {
                             if (Boolean.TRUE.equals(result.isError())) {

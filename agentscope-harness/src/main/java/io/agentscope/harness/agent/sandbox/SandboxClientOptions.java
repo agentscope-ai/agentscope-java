@@ -49,4 +49,16 @@ public abstract class SandboxClientOptions {
      * @return a new client instance ready for use
      */
     public abstract SandboxClient<? extends SandboxClientOptions> createClient();
+
+    /**
+     * Returns the absolute workspace root path inside the sandbox container.
+     *
+     * <p>Defaults to {@code /workspace}. Concrete subclasses override this when the sandbox
+     * backend uses a different root (e.g. AgentRun uses {@code /home/agentscope/workspace}).
+     *
+     * @return workspace root path string
+     */
+    public String getWorkspaceRoot() {
+        return "/workspace";
+    }
 }

@@ -18,43 +18,72 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
+import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
+import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Tests for {@link HarnessAgent} workspace wiring: {@code AGENTS.md} context and subagent
@@ -63,6 +92,24 @@ import reactor.core.publisher.Flux;
 class HarnessAgentTest {
 
     @TempDir Path workspace;
+
+    @AfterEach
+    void cleanupTempDir() {
+        if (workspace != null && Files.exists(workspace)) {
+            try (var files = Files.walk(workspace)) {
+                files.sorted(Comparator.reverseOrder())
+                        .filter(p -> !p.equals(workspace))
+                        .forEach(
+                                p -> {
+                                    try {
+                                        Files.deleteIfExists(p);
+                                    } catch (IOException ignored) {
+                                    }
+                                });
+            } catch (IOException ignored) {
+            }
+        }
+    }
 
     @Test
     void workspaceAgentsMd_readableViaWorkspaceManager() throws Exception {
@@ -104,6 +151,58 @@ class HarnessAgentTest {
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
         assertFalse(toolNames.contains("session_search"));
+    }
+
+    @Test
+    void disableMemoryToolsAndHooks_omitMemoryGuidanceFromSystemPrompt() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("MEMORY.md"), "secret memory marker xyz");
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryTools()
+                        .disableMemoryHooks()
+                        .build();
+
+        WorkspaceContextMiddleware mw =
+                agent.getDelegate().getMiddlewares().stream()
+                        .filter(WorkspaceContextMiddleware.class::isInstance)
+                        .map(WorkspaceContextMiddleware.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        assertNotNull(prompt);
+        assertFalse(prompt.contains("## Memory Recall"));
+        assertFalse(prompt.contains("## Memory Persistence"));
+        assertFalse(prompt.contains("<memory_context>"));
+        assertFalse(prompt.contains("secret memory marker xyz"));
+        assertTrue(mw.isDisableMemoryTools());
+        assertTrue(mw.isDisableMemoryHooks());
+    }
+
+    @Test
+    void clearStateCache_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            ReActAgent delegate = agent.getDelegate();
+            AgentState target = delegate.getAgentState("u1", "sessA");
+            AgentState other = delegate.getAgentState("u1", "sessB");
+
+            agent.clearStateCache(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+            assertNotSame(target, delegate.getAgentState("u1", "sessA"));
+            assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
     }
 
     @Test
@@ -232,6 +331,158 @@ class HarnessAgentTest {
     }
 
     @Test
+    void runtimeContextConcreteFilesystemSurvivesSessionDefaulting() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model model = stubModel("assistant-done");
+        LocalFilesystem agentFilesystem = new LocalFilesystem(workspace);
+        LocalFilesystem customFilesystem = new LocalFilesystem(workspace);
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(agentFilesystem)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build()) {
+            agent.call(
+                            userText("hi"),
+                            RuntimeContext.builder()
+                                    .put(LocalFilesystem.class, customFilesystem)
+                                    .build())
+                    .block();
+        }
+
+        RuntimeContext effective = seen.get();
+        assertNotNull(effective);
+        assertNotNull(effective.getSessionId());
+        assertSame(customFilesystem, effective.get(AbstractFilesystem.class));
+        assertSame(customFilesystem, effective.get(LocalFilesystem.class));
+    }
+
+    @Test
+    void runtimeContextNullInputGetsDefaultSessionAndSandbox() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model model = stubModel("assistant-done");
+        LocalFilesystem agentFilesystem = new LocalFilesystem(workspace);
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(agentFilesystem)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build()) {
+            agent.call(userText("hi"), (RuntimeContext) null).block();
+        }
+
+        RuntimeContext effective = seen.get();
+        assertNotNull(effective);
+        assertEquals("t", effective.getSessionId());
+        assertSame(agentFilesystem, effective.get(AbstractFilesystem.class));
+        assertNull(effective.get(SandboxContext.class));
+        assertNull(effective.getUserId());
+    }
+
+    @Test
+    void runtimeContextAlreadyDefaultedReturnsSourceWhenNothingChanges() throws Exception {
+        Files.createDirectories(workspace);
+
+        Model model = stubModel("assistant-done");
+        LocalFilesystem agentFilesystem = new LocalFilesystem(workspace);
+        SandboxContext sandboxContext =
+                SandboxContext.builder().isolationScope(IsolationScope.USER).build();
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+
+        RuntimeContext source =
+                RuntimeContext.builder()
+                        .sessionId("t")
+                        .put(SandboxContext.class, sandboxContext)
+                        .put(AbstractFilesystem.class, agentFilesystem)
+                        .build();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(agentFilesystem)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build()) {
+            agent.call(userText("hi"), source).block();
+        }
+
+        assertSame(source, seen.get());
+    }
+
+    @Test
+    void runtimeContextSandboxSpecProvidesDefaultSandboxContext() throws Exception {
+        Files.createDirectories(workspace);
+
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        spec.isolationScope(IsolationScope.SESSION);
+        InMemorySandboxClient client = spec.getClient();
+        client.resetCounts();
+        Model model = stubModel("assistant-done");
+        AtomicReference<RuntimeContext> seen = new AtomicReference<>();
+        String sessionId = "sandbox-" + UUID.randomUUID();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
+                        .filesystem(spec)
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                                        seen.set(ctx);
+                                        return Mono.just(currentPrompt);
+                                    }
+                                })
+                        .build()) {
+            agent.call(userText("hi"), RuntimeContext.builder().sessionId(sessionId).build())
+                    .block();
+        }
+
+        RuntimeContext effective = seen.get();
+        assertNotNull(effective);
+        assertNotNull(effective.get(SandboxContext.class));
+        assertEquals(1, client.getCreateCount());
+    }
+
+    @Test
     void subagentMarkdown_registersIdsAndSubagentTools() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
@@ -289,6 +540,111 @@ class HarnessAgentTest {
     }
 
     @Test
+    void staticSubagentsMiddleware_loadsNamespacedMarkdownDeclarations() throws Exception {
+        Files.createDirectories(workspace.resolve("alice/subagents"));
+        Files.writeString(
+                workspace.resolve("alice/subagents/user-helper.md"),
+                """
+                ---
+                description: User-scoped subagent declaration
+                ---
+                You only reply OK.
+                """);
+
+        Model model = stubModel("done");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .disableDynamicSubagents()
+                        .build();
+
+        agent.call(userText("go"), RuntimeContext.builder().userId("alice").sessionId("s2").build())
+                .block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+        String combined =
+                captor.getAllValues().stream()
+                        .map(HarnessAgentTest::joinAllText)
+                        .filter(s -> s.contains("## Subagents"))
+                        .findFirst()
+                        .orElse("");
+        assertTrue(
+                combined.contains("`user-helper`"),
+                "static subagent reload must use the calling user's filesystem namespace");
+    }
+
+    @Test
+    void staticSubagentsMiddleware_keepsNamespacedDeclarationsCallScoped() throws Exception {
+        Files.createDirectories(workspace.resolve("alice/subagents"));
+        Files.createDirectories(workspace.resolve("bob/subagents"));
+        Files.writeString(
+                workspace.resolve("alice/subagents/alice-helper.md"),
+                """
+                ---
+                description: Alice-only subagent
+                ---
+                You only reply ALICE.
+                """);
+        Files.writeString(
+                workspace.resolve("bob/subagents/bob-helper.md"),
+                """
+                ---
+                description: Bob-only subagent
+                ---
+                You only reply BOB.
+                """);
+
+        RecordingModel model = new RecordingModel();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .disableDynamicSubagents()
+                        .build();
+
+        Mono<Msg> aliceCall =
+                agent.getDelegate()
+                        .call(
+                                List.of(userText("request-from-alice")),
+                                RuntimeContext.builder()
+                                        .userId("alice")
+                                        .sessionId("alice-s")
+                                        .build());
+        Mono<Msg> bobCall =
+                agent.getDelegate()
+                        .call(
+                                List.of(userText("request-from-bob")),
+                                RuntimeContext.builder().userId("bob").sessionId("bob-s").build());
+
+        Mono.when(
+                        aliceCall.subscribeOn(Schedulers.parallel()),
+                        bobCall.subscribeOn(Schedulers.parallel()))
+                .block();
+
+        String alicePrompt =
+                model.inputs().stream()
+                        .map(HarnessAgentTest::joinAllText)
+                        .filter(input -> input.contains("request-from-alice"))
+                        .findFirst()
+                        .orElseThrow();
+        String bobPrompt =
+                model.inputs().stream()
+                        .map(HarnessAgentTest::joinAllText)
+                        .filter(input -> input.contains("request-from-bob"))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(alicePrompt.contains("`alice-helper`"));
+        assertFalse(alicePrompt.contains("`bob-helper`"));
+        assertTrue(bobPrompt.contains("`bob-helper`"));
+        assertFalse(bobPrompt.contains("`alice-helper`"));
+    }
+
+    @Test
     void subagentsDir_loadsMarkdownDeclarations() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# w\n");
@@ -321,6 +677,208 @@ class HarnessAgentTest {
     }
 
     @Test
+    void agentSpecLoader_filesystemOverloadsSupportDefaultAndNullContexts() throws Exception {
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Filesystem-loaded helper
+                ---
+                You are a helper.
+                """);
+
+        AbstractFilesystem filesystem = new LocalFilesystem(workspace);
+        assertEquals(
+                List.of("helper"),
+                AgentSpecLoader.loadFromFilesystem(filesystem, workspace).stream()
+                        .map(SubagentDeclaration::getName)
+                        .toList());
+        assertEquals(
+                List.of("helper"),
+                AgentSpecLoader.loadFromFilesystem(filesystem, null, workspace).stream()
+                        .map(SubagentDeclaration::getName)
+                        .toList());
+    }
+
+    @Test
+    void parentMiddleware_propagatesToBuiltinAndMarkdownSubagents() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Markdown child used for middleware propagation regression
+                ---
+                You only reply OK.
+                """);
+
+        AtomicInteger systemPromptHits = new AtomicInteger();
+        Model model = stubModel("done");
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Flux<AgentEvent> onAgent(
+                                            Agent agent,
+                                            RuntimeContext ctx,
+                                            io.agentscope.core.middleware.AgentInput input,
+                                            java.util.function.Function<
+                                                            io.agentscope.core.middleware
+                                                                    .AgentInput,
+                                                            Flux<AgentEvent>>
+                                                    next) {
+                                        systemPromptHits.incrementAndGet();
+                                        return next.apply(input);
+                                    }
+                                });
+
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        RuntimeContext parentContext =
+                RuntimeContext.builder().userId("u").sessionId("parent").build();
+
+        HarnessAgent generalPurpose =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        generalPurpose
+                .call(userText("hi"), RuntimeContext.builder().sessionId("gp").build())
+                .block();
+        assertEquals(
+                1, systemPromptHits.get(), "general-purpose subagent should inherit middleware");
+
+        HarnessAgent markdownChild =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "helper".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        markdownChild
+                .call(userText("hi"), RuntimeContext.builder().sessionId("md").build())
+                .block();
+        assertEquals(
+                2,
+                systemPromptHits.get(),
+                "markdown-declared subagent should inherit parent middleware too");
+    }
+
+    @Test
+    void fromAgent_filtersRuntimeMiddlewareAndStillPropagatesUserMiddleware() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
+        Path subagents = workspace.resolve("subagents");
+        Files.createDirectories(subagents);
+        Files.writeString(
+                subagents.resolve("helper.md"),
+                """
+                ---
+                description: Markdown child used for fromAgent regression
+                ---
+                You only reply OK.
+                """);
+
+        AtomicInteger userMiddlewareHits = new AtomicInteger();
+        MiddlewareBase userMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onAgent(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            io.agentscope.core.middleware.AgentInput input,
+                            java.util.function.Function<
+                                            io.agentscope.core.middleware.AgentInput,
+                                            Flux<AgentEvent>>
+                                    next) {
+                        userMiddlewareHits.incrementAndGet();
+                        return next.apply(input);
+                    }
+                };
+
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("source")
+                        .model(stubModel("done"))
+                        .toolkit(new Toolkit())
+                        .middlewares(List.of(userMiddleware, new AgentTraceMiddleware()))
+                        .build();
+
+        HarnessAgent.Builder builder =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace));
+
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        HarnessAgent child = builder.build();
+
+        long copiedUserMiddlewareCount =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(m -> m == userMiddleware)
+                        .count();
+        long agentTraceMiddlewareCount =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(m -> m instanceof AgentTraceMiddleware)
+                        .count();
+        long gracefulShutdownMiddlewareCount =
+                child.getDelegate().getMiddlewares().stream()
+                        .filter(m -> m instanceof GracefulShutdownMiddleware)
+                        .count();
+        assertEquals(1, copiedUserMiddlewareCount, "user middleware should copy once");
+        assertEquals(
+                1,
+                agentTraceMiddlewareCount,
+                "runtime AgentTraceMiddleware should not be duplicated when cloning");
+        assertEquals(
+                1,
+                gracefulShutdownMiddlewareCount,
+                "system GracefulShutdownMiddleware should not be duplicated when cloning");
+
+        RuntimeContext parentContext = RuntimeContext.builder().sessionId("parent").build();
+        HarnessAgent generalPurpose =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        generalPurpose
+                .call(userText("hi"), RuntimeContext.builder().sessionId("gp").build())
+                .block();
+
+        HarnessAgent markdownChild =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "helper".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(parentContext);
+        markdownChild
+                .call(userText("hi"), RuntimeContext.builder().sessionId("md").build())
+                .block();
+
+        assertEquals(
+                2,
+                userMiddlewareHits.get(),
+                "fromAgent should still propagate user middleware into subagents");
+    }
+
+    @Test
     void remoteFilesystemSpec_sharesMemoryMdInNonsandboxMode() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
@@ -332,7 +890,7 @@ class HarnessAgentTest {
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .filesystem(new RemoteFilesystemSpec(store))
-                        .session(mock(Session.class))
+                        .stateStore(mock(AgentStateStore.class))
                         .build()) {
 
             agent.getWorkspaceManager()
@@ -387,7 +945,7 @@ class HarnessAgentTest {
 
         SubagentEntry entry =
                 entries.stream().filter(e -> "reviewer".equals(e.name())).findFirst().orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
         assertEquals(
                 defWorkspace.normalize(),
@@ -420,7 +978,7 @@ class HarnessAgentTest {
                         .filter(e -> "isolated-auto".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
         Path expected = workspace.resolve("agents/isolated-auto/workspace").normalize();
         assertEquals(
@@ -460,7 +1018,7 @@ class HarnessAgentTest {
                         .filter(e -> "shared-ext".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
         assertEquals(
                 workspace.normalize(),
@@ -493,7 +1051,7 @@ class HarnessAgentTest {
                         .filter(e -> "shared-inline".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
         assertEquals(
                 workspace.normalize(),
@@ -517,12 +1075,102 @@ class HarnessAgentTest {
                         .filter(e -> "general-purpose".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) gp.factory().create();
+        HarnessAgent child = (HarnessAgent) gp.factory().create(RuntimeContext.empty());
 
         assertEquals(
                 workspace.normalize(),
                 child.getWorkspaceManager().getWorkspace().normalize(),
                 "general-purpose must share mainWorkspace");
+    }
+
+    // =========================================================================
+    // declared subagent execution-config inheritance (issue #2230)
+    // =========================================================================
+
+    /**
+     * A declared subagent must inherit the parent agent's {@code toolExecutionConfig} and {@code
+     * modelExecutionConfig}. Before the fix, {@code buildDeclaredFactory} never propagated them, so
+     * a declared subagent silently fell back to {@link ExecutionConfig} defaults (e.g. the
+     * 5-minute tool timeout), ignoring a longer timeout configured on the main agent.
+     */
+    @Test
+    void declaredSubagent_inheritsExecutionConfigsFromParent() throws Exception {
+        Files.createDirectories(workspace);
+
+        ExecutionConfig toolExec =
+                ExecutionConfig.builder().timeout(Duration.ofHours(1)).maxAttempts(2).build();
+        ExecutionConfig modelExec =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(3)).maxAttempts(4).build();
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("worker")
+                        .description("declared worker")
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .toolExecutionConfig(toolExec)
+                        .modelExecutionConfig(modelExec)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry entry =
+                entries.stream().filter(e -> "worker".equals(e.name())).findFirst().orElseThrow();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
+        ReActAgent delegate = child.getDelegate();
+
+        assertSame(
+                toolExec,
+                delegate.getToolExecutionConfig(),
+                "declared subagent must inherit parent toolExecutionConfig");
+        assertSame(
+                modelExec,
+                delegate.getModelExecutionConfig(),
+                "declared subagent must inherit parent modelExecutionConfig");
+    }
+
+    @Test
+    void declaredSubagent_honorsParentMemoryConfig() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("done");
+        MemoryConfig memoryConfig =
+                MemoryConfig.builder().flushTrigger(MemoryConfig.FlushTrigger.never()).build();
+        SubagentDeclaration declaration =
+                SubagentDeclaration.builder()
+                        .name("memory-worker")
+                        .description("declared worker")
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(model)
+                        .workspace(workspace)
+                        .memory(memoryConfig)
+                        .subagent(declaration)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "memory-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        child.call(
+                        userText("Remember this."),
+                        RuntimeContext.builder().userId("user").sessionId("declared").build())
+                .block();
+
+        verify(model, times(1)).stream(anyList(), any(), any());
     }
 
     // =========================================================================
@@ -546,11 +1194,9 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
         List<String> toolNames =
-                child.getDelegate().getToolkit().getToolSchemas().stream()
-                        .map(ToolSchema::getName)
-                        .toList();
+                child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
         assertFalse(toolNames.contains("read_file"), "disableFilesystemTools should be mirrored");
     }
 
@@ -572,8 +1218,39 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
         assertNotNull(child.getCompactionHook(), "CompactionHook should be mirrored to GP child");
+    }
+
+    @Test
+    void generalPurpose_honorsParentMemoryConfig() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("done");
+        MemoryConfig memoryConfig =
+                MemoryConfig.builder().flushTrigger(MemoryConfig.FlushTrigger.never()).build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(model)
+                        .workspace(workspace)
+                        .memory(memoryConfig)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        child.call(
+                        userText("Remember this."),
+                        RuntimeContext.builder().userId("user").sessionId("gp").build())
+                .block();
+
+        verify(model, times(1)).stream(anyList(), any(), any());
     }
 
     // =========================================================================
@@ -617,7 +1294,7 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
         HarnessAgent childB =
                 (HarnessAgent)
                         entries.stream()
@@ -625,7 +1302,7 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
 
         assertEquals(
                 defWorkspace.normalize(), childA.getWorkspaceManager().getWorkspace().normalize());
@@ -670,11 +1347,9 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
         List<String> toolNames =
-                child.getDelegate().getToolkit().getToolSchemas().stream()
-                        .map(ToolSchema::getName)
-                        .toList();
+                child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
         assertTrue(
                 toolNames.contains("parent_allowed"), "allowlisted inherited tool should remain");
         assertFalse(
@@ -686,6 +1361,54 @@ class HarnessAgentTest {
         assertTrue(
                 toolNames.contains("memory_search"),
                 "child-local memory tools should not be filtered by inherited allowlist");
+    }
+
+    // =========================================================================
+    // Skills allowlist
+    // =========================================================================
+
+    @Test
+    void skillsAllowlist_declarationWithSkills_setsSkillFilterOnChild() throws Exception {
+        Files.createDirectories(workspace);
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("narrow-skills")
+                        .description("only allowed skills")
+                        .inlineAgentsBody("Focus on allowed skills.")
+                        .skills(List.of("allowed_skill"))
+                        .build();
+
+        assertEquals(List.of("allowed_skill"), decl.getSkills());
+
+        SkillFilter filter = SkillFilter.only(decl.getSkills().toArray(new String[0]));
+        assertTrue(filter.isAllowed("allowed_skill"), "allowlisted skill should pass");
+        assertFalse(filter.isAllowed("denied_skill"), "non-allowlisted skill should be blocked");
+    }
+
+    @Test
+    void skillsAllowlist_emptyList_defaultsToAll() {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("all-skills")
+                        .description("inherits all skills")
+                        .inlineAgentsBody("Use any skill.")
+                        .build();
+
+        assertTrue(decl.getSkills().isEmpty(), "no skills declared should yield empty list");
+    }
+
+    @Test
+    void skillsAllowlist_nullSkills_defaultsToEmptyList() {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("null-skills")
+                        .description("null skills")
+                        .inlineAgentsBody("body")
+                        .skills(null)
+                        .build();
+
+        assertTrue(decl.getSkills().isEmpty(), "null skills should yield empty list");
     }
 
     // =========================================================================
@@ -717,6 +1440,36 @@ class HarnessAgentTest {
         assertEquals("test-model", decl.getModel());
         assertEquals(7, decl.getMaxIters());
         assertEquals(List.of("read_file", "grep_files"), decl.getTools());
+    }
+
+    @Test
+    void agentSpecLoader_markdownDeclaration_parsesSkillsAllowlist() throws Exception {
+        Files.createDirectories(workspace);
+        String markdown =
+                """
+                ---
+                description: Agent with skills filter
+                tools: [read_file]
+                skills: [weather_lookup, code_review]
+                ---
+                """;
+        SubagentDeclaration decl = AgentSpecLoader.parse(markdown, "filtered-agent", workspace);
+        assertNotNull(decl);
+        assertEquals(List.of("weather_lookup", "code_review"), decl.getSkills());
+    }
+
+    @Test
+    void agentSpecLoader_markdownDeclaration_noSkills_returnsEmptyList() throws Exception {
+        Files.createDirectories(workspace);
+        String markdown =
+                """
+                ---
+                description: Agent without skills
+                ---
+                """;
+        SubagentDeclaration decl = AgentSpecLoader.parse(markdown, "no-skills", workspace);
+        assertNotNull(decl);
+        assertTrue(decl.getSkills().isEmpty(), "no skills declared should yield empty list");
     }
 
     @Test
@@ -814,6 +1567,33 @@ class HarnessAgentTest {
                         "stop");
         when(model.stream(anyList(), any(), any())).thenReturn(Flux.just(chunk));
         return model;
+    }
+
+    private static final class RecordingModel implements Model {
+
+        private final List<List<Msg>> inputs = new CopyOnWriteArrayList<>();
+
+        @Override
+        public String getModelName() {
+            return "recording-model";
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            inputs.add(List.copyOf(messages));
+            return Flux.just(
+                    new ChatResponse(
+                            "recording-model",
+                            List.of(TextBlock.builder().text("done").build()),
+                            null,
+                            Map.of(),
+                            "stop"));
+        }
+
+        List<List<Msg>> inputs() {
+            return inputs;
+        }
     }
 
     private static AgentTool mockAgentTool(String name) {

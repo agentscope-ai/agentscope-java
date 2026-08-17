@@ -22,7 +22,7 @@ import java.util.List;
  * Repository interface for AgentSkill persistence operations.
  *
  * <p>This interface follows the Repository Pattern and Dependency Inversion Principle,
- * allowing different storage backends (filesystem, database, remote APIs, etc.) to be
+ * allowing different storage stores (filesystem, database, remote APIs, etc.) to be
  * used interchangeably.
  *
  * <p>Example usage:
@@ -30,6 +30,7 @@ import java.util.List;
  * AgentSkillRepository repo = new GitHubSkillRepository("owner/repo");
  * AgentSkill skill = repo.getByName("calculate").orElseThrow();
  * }</pre>
+ *
  */
 public interface AgentSkillRepository extends AutoCloseable {
 

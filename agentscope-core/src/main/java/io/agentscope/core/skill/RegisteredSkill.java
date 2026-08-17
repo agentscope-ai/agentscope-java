@@ -20,6 +20,7 @@ package io.agentscope.core.skill;
  *
  * <p>Records skill registration information including skill ID and activation state.
  * The activation state determines whether the skill's associated tools are available to the LLM.
+ *
  */
 class RegisteredSkill {
     private final String skillId;
