@@ -37,11 +37,13 @@ public class AguiAdapterConfig {
     private final boolean emitToolCallArgs;
     private final boolean emitTokenUsage;
     private final boolean enableReasoning;
+    private final boolean emitRunFinishedAfterError;
     private final Duration runTimeout;
     private final String defaultAgentId;
     private final List<AgentEventConverter> eventConverters;
     private final List<AguiEventEnricher> eventEnrichers;
     private final boolean baseEventPropertiesEnricherEnabled;
+    private final boolean emitSubagentEventsAsNative;
 
     private AguiAdapterConfig(Builder builder) {
         this.toolMergeMode = builder.toolMergeMode;
@@ -49,11 +51,13 @@ public class AguiAdapterConfig {
         this.emitToolCallArgs = builder.emitToolCallArgs;
         this.emitTokenUsage = builder.emitTokenUsage;
         this.enableReasoning = builder.enableReasoning;
+        this.emitRunFinishedAfterError = builder.emitRunFinishedAfterError;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
         this.eventConverters = List.copyOf(builder.eventConverters);
         this.eventEnrichers = buildEventEnrichers(builder);
         this.baseEventPropertiesEnricherEnabled = builder.baseEventPropertiesEnricherEnabled;
+        this.emitSubagentEventsAsNative = builder.emitSubagentEventsAsNative;
     }
 
     /**
@@ -109,6 +113,19 @@ public class AguiAdapterConfig {
     }
 
     /**
+     * Check whether {@code RUN_FINISHED} should be emitted after {@code RUN_ERROR}.
+     *
+     * <p>AG-UI treats {@code RUN_ERROR} and {@code RUN_FINISHED} as mutually exclusive terminal
+     * events. Default is {@code false} (standard AG-UI). Set {@code true} only for legacy clients
+     * that still expect a finish event after an error.
+     *
+     * @return true if {@code RUN_FINISHED} should follow {@code RUN_ERROR}
+     */
+    public boolean isEmitRunFinishedAfterError() {
+        return emitRunFinishedAfterError;
+    }
+
+    /**
      * Get the run timeout duration.
      *
      * @return The run timeout
@@ -155,6 +172,17 @@ public class AguiAdapterConfig {
     }
 
     /**
+     * When {@code false} (default), AgentEvents with a non-null {@code source} (subagent events)
+     * are emitted as AG-UI {@code CUSTOM} events under the {@code subagent.*} namespace instead of
+     * native {@code TEXT_MESSAGE_*} / run lifecycle events.
+     *
+     * @return true to keep the legacy native presentation for subagent events
+     */
+    public boolean isEmitSubagentEventsAsNative() {
+        return emitSubagentEventsAsNative;
+    }
+
+    /**
      * Creates a new builder for AguiAdapterConfig.
      *
      * @return A new builder instance
@@ -191,11 +219,13 @@ public class AguiAdapterConfig {
         private boolean emitToolCallArgs = true;
         private boolean emitTokenUsage = false;
         private boolean enableReasoning = false;
+        private boolean emitRunFinishedAfterError = false;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
         private final List<AgentEventConverter> eventConverters = new ArrayList<>();
         private final List<AguiEventEnricher> eventEnrichers = new ArrayList<>();
         private boolean baseEventPropertiesEnricherEnabled = false;
+        private boolean emitSubagentEventsAsNative = false;
 
         /**
          * Set the tool merge mode.
@@ -256,6 +286,22 @@ public class AguiAdapterConfig {
          */
         public Builder enableReasoning(boolean enableReasoning) {
             this.enableReasoning = enableReasoning;
+            return this;
+        }
+
+        /**
+         * Set whether to emit {@code RUN_FINISHED} after {@code RUN_ERROR}.
+         *
+         * <p>Default is {@code false} to match the AG-UI invariant of a single terminal event
+         * ({@code RUN_ERROR} alone). Set {@code true} for legacy clients that expect a finish
+         * event even on failure.
+         *
+         * @param emitRunFinishedAfterError true to emit {@code RUN_FINISHED} after {@code
+         *     RUN_ERROR}
+         * @return This builder
+         */
+        public Builder emitRunFinishedAfterError(boolean emitRunFinishedAfterError) {
+            this.emitRunFinishedAfterError = emitRunFinishedAfterError;
             return this;
         }
 
@@ -343,6 +389,21 @@ public class AguiAdapterConfig {
         public Builder baseEventPropertiesEnricherEnabled(
                 boolean baseEventPropertiesEnricherEnabled) {
             this.baseEventPropertiesEnricherEnabled = baseEventPropertiesEnricherEnabled;
+            return this;
+        }
+
+        /**
+         * Set whether subagent-sourced events should use native AG-UI event types.
+         *
+         * <p>Default is {@code false}: subagent events become {@code CUSTOM} events named {@code
+         * subagent.*}. Set {@code true} to restore the previous behavior where child text and
+         * lifecycle events map to the same AG-UI types as the parent.
+         *
+         * @param emitSubagentEventsAsNative true for legacy native presentation
+         * @return This builder
+         */
+        public Builder emitSubagentEventsAsNative(boolean emitSubagentEventsAsNative) {
+            this.emitSubagentEventsAsNative = emitSubagentEventsAsNative;
             return this;
         }
 

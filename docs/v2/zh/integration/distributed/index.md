@@ -83,3 +83,22 @@ Agent 的对话上下文、压缩摘要、权限规则、Plan Mode 状态等，�
 - [Redis](redis.md) — 最全功能覆盖，多副本生产首选
 - [MySQL / JDBC](mysql.md) — 已有关系型数据库的场景
 - [阿里云 OSS](oss.md) — 对象存储，大容量快照首选
+
+## aistio 托管 Store
+
+若已部署 aistio 控制面，可由控制面托管 `DistributedStore` 的协调类能力（BaseStore、沙箱锁/快照、MessageBus、AsyncToolRegistry、**TaskRepository**、可选 **SessionTurnGate**）。**`AgentStateStore` 仍需自备一个后端**（Redis / MySQL / Postgres / OSS）；core 已提供 `getVersioned` / `saveIfVersion` 乐观并发，但存储不在控制面。
+
+```java
+ControlPlaneStores cp = ControlPlaneStores.fromEnv();
+HarnessAgent.builder()
+    .distributedStore(cp.withAgentStateStore(redis.agentStateStore()))
+    .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
+    .build();
+```
+
+- 控制面开启：`--enable-hosted-store`（生产建议 Postgres）。
+- **`withAgentStateStore` 已包含**托管 `TaskRepository` 与 `SessionTurnGate`。使用 **`SandboxFilesystemSpec` 且需要子 agent 后台任务**时，应走此路径（workspace 版 `TaskRepository` 无法跨副本持久化任务）。
+- **AgentStateStore versioning**：Redis、Postgres、MySQL、InMemory 支持 CAS；JsonFile / OSS / COS / JPA 仍为 last-writer-wins。多副本建议选支持 versioning 的后端。
+- **Turn gate + `ConflictPolicy.FAIL`** 为可选：多副本下减少重复 LLM turn；正确性仍靠 CAS（当后端支持 versioning 时）。
+- 当前鉴权为集群内共享 internal token；租户（`agentName` / `namespace`）取自请求体——**不适用于**同一控制面上互不信任的多租户。
+- `MessageBus.queueDrain` 为 **destructive**（读即 ack）；租户/key 弄错会丢消息。

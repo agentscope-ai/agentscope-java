@@ -57,7 +57,7 @@ ReActAgent agent =
                 .build();
 ```
 
-`middleware(...)`（单数）也可单独追加一个；`middlewares(...)` 接受 `List<? extends MiddlewareBase>`，未实现的位置自动跳过，不产生任何调用开销。
+`middleware(...)`（单数）也可单独添加一个；`middlewares(...)` 接受 `List<? extends MiddlewareBase>`，未实现的位置自动跳过，不产生任何调用开销。
 
 ## 内置 Middleware
 
@@ -218,12 +218,23 @@ public class RequestContextMiddleware implements MiddlewareBase {
 
 ### 执行顺序
 
-Onion 类 hook（`onAgent`、`onReasoning`、`onActing`、`onModelCall`）—— **列表中第一个 middleware 处于最外层**：
+Onion 类 hook（`onAgent`、`onReasoning`、`onActing`、`onModelCall`）按 `MiddlewareBase.order()` 排序——**数值越大越处于最外层**。默认值是 `1`；相同 order 的 middleware 保持其 Builder 注册顺序：
 
 ```
-middlewares = [mw1, mw2]
+middlewares = [mw1(order=2), mw2(order=1)]
 // 调用顺序：
 // mw1 前 → mw2 前 → 内部逻辑 → mw2 后 → mw1 后
+```
+
+自定义 middleware 可覆写 `order()`，改变其相对默认优先级的位置。例如 order 为 `0` 时，会进入所有仍保持默认 order `1` 的 middleware 内层：
+
+```java
+MiddlewareBase lowerPriority = new MiddlewareBase() {
+    @Override
+    public int order() {
+        return 0;
+    }
+};
 ```
 
 对于流式 / 产出事件的 hook，内层 middleware 先看到每一个 emit 出的事件：
