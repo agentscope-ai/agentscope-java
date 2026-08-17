@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agui.processor;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
@@ -85,7 +86,29 @@ public class AguiRequestProcessor {
      * @param agent The resolved agent instance
      * @param events The event stream
      */
-    public record ProcessResult(Agent agent, Flux<AguiEvent> events) {}
+    public record ProcessResult(Agent agent, Flux<AguiEvent> events) {
+
+        /**
+         * Interrupt this request's active session.
+         *
+         * <p>AG-UI uses {@code threadId} as the session id. For a multi-session
+         * {@link ReActAgent}, preserve the caller's user id and target that session instead of
+         * invoking the deprecated no-argument interrupt method, which always targets the default
+         * session.
+         *
+         * @param threadId The AG-UI thread id for this request
+         * @param runtimeContext The caller-provided runtime context, may be null
+         */
+        public void interrupt(String threadId, RuntimeContext runtimeContext) {
+            if (agent instanceof ReActAgent reActAgent) {
+                RuntimeContext interruptContext =
+                        RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
+                reActAgent.interrupt(interruptContext);
+            } else {
+                agent.interrupt();
+            }
+        }
+    }
 
     /**
      * Process an AG-UI request and return the result containing agent and event stream.
