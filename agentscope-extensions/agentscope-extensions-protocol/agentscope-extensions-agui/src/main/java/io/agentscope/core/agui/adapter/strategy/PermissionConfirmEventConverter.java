@@ -26,6 +26,7 @@ import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.util.LinkedHashMap;
@@ -52,6 +53,8 @@ import java.util.Set;
  * non-null. This matters because {@code ReActAgent.applyConfirmResults} fully replaces the stored
  * {@code ToolUseBlock}, and tool-input validation reads {@code content} directly with no fallback to
  * {@code input}; a null content would fail the resume with {@code argument "content" is null}.
+ *
+ * <p>{@link UserConfirmResultEvent} is intentionally registered here as a no-op.
  */
 final class PermissionConfirmEventConverter implements AgentEventConverter {
 
@@ -74,11 +77,14 @@ final class PermissionConfirmEventConverter implements AgentEventConverter {
 
     @Override
     public Set<Class<? extends AgentEvent>> eventTypes() {
-        return Set.of(RequireUserConfirmEvent.class);
+        return Set.of(RequireUserConfirmEvent.class, UserConfirmResultEvent.class);
     }
 
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
+        if (event instanceof UserConfirmResultEvent) {
+            return;
+        }
         RequireUserConfirmEvent confirmEvent = (RequireUserConfirmEvent) event;
         String replyId = confirmEvent.getReplyId();
 

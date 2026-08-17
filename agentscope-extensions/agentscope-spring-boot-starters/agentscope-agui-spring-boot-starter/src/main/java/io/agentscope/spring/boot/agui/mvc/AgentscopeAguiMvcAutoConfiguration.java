@@ -105,6 +105,7 @@ public class AgentscopeAguiMvcAutoConfiguration {
                 .serverSideMemory(props.isServerSideMemory())
                 .agentIdHeader(props.getAgentIdHeader())
                 .sseTimeout(props.getSseTimeout())
+                .interruptOnDisconnect(props.isInterruptOnDisconnect())
                 .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
                 .adapterFactory(adapterFactoryProvider.getIfAvailable())
                 .config(config)
