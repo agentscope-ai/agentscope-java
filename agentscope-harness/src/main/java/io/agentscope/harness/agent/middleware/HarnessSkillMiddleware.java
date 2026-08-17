@@ -208,12 +208,25 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         }
         Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
+            reclaimStagedSkills();
             return;
         }
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
         List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
-        if (!enabled.isEmpty()) {
-            stager.stage(enabled, sourceNamespaces);
+        stager.stage(enabled, sourceNamespaces);
+    }
+
+    /**
+     * Rebuilds the staged white-list from an empty visible set so that orphaned
+     * {@code .skills-cache} directories are reclaimed even when no skill is staged.
+     *
+     * <p>Orphan GC only runs inside {@link MarketplaceStager#stage}, so the empty case must
+     * still reach it: otherwise skills deleted from their repository keep their staged files on
+     * the host workspace and stay visible through sandbox workspace projection.
+     */
+    private void reclaimStagedSkills() {
+        if (stager != null) {
+            stager.stage(List.of(), sourceNamespaces);
         }
     }
 
@@ -227,6 +240,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
 
         Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
+            reclaimStagedSkills();
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
             return Mono.just(currentPrompt);
         }
@@ -234,6 +248,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
         List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
         if (enabled.isEmpty()) {
+            reclaimStagedSkills();
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
             return Mono.just(currentPrompt);
         }
