@@ -20,6 +20,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.sun.net.httpserver.HttpServer;
+import io.agentscope.extensions.sandbox.kubernetes.client.config.DirectConnectionConfig;
 import io.agentscope.extensions.sandbox.kubernetes.client.internal.strategy.ConnectionStrategy;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -66,27 +67,50 @@ class SandboxConnectorRedirectTest {
                     }
                 });
         server.start();
-
-        ConnectionStrategy strategy = mock(ConnectionStrategy.class);
-        when(strategy.connect()).thenReturn("http://127.0.0.1:" + server.getAddress().getPort());
-        when(strategy.shouldInjectRouterHeaders()).thenReturn(false);
-
-        connector = new SandboxConnector(strategy, "sbx-test", "default", 8888);
-        connector.connect();
     }
 
     @AfterEach
     void tearDown() {
-        connector.close();
+        if (connector != null) {
+            connector.close();
+        }
         server.stop(0);
     }
 
     @Test
     void downloadFollowsGatewayRedirect() throws Exception {
-        HttpResponse<byte[]> resp =
-                connector.sendRequestForBytes(
-                        "GET", "download/.agentscope-tmp%2Fws-persist.tar", null, null);
+        ConnectionStrategy strategy = mock(ConnectionStrategy.class);
+        when(strategy.connect()).thenReturn("http://127.0.0.1:" + server.getAddress().getPort());
+        when(strategy.shouldInjectRouterHeaders()).thenReturn(false);
+        connector = new SandboxConnector(strategy, "sbx-test", "default", 8888);
+        connector.connect();
+
+        HttpResponse<byte[]> resp = download();
         assertEquals(200, resp.statusCode());
         assertEquals(TAR_BYTES, new String(resp.body(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void downloadFollowsGatewayRedirect_directConfig() throws Exception {
+        connector =
+                new SandboxConnector(
+                        "sbx-test",
+                        "default",
+                        new DirectConnectionConfig(
+                                "http://127.0.0.1:" + server.getAddress().getPort()),
+                        null,
+                        null,
+                        null,
+                        null);
+        connector.connect();
+
+        HttpResponse<byte[]> resp = download();
+        assertEquals(200, resp.statusCode());
+        assertEquals(TAR_BYTES, new String(resp.body(), StandardCharsets.UTF_8));
+    }
+
+    private HttpResponse<byte[]> download() throws Exception {
+        return connector.sendRequestForBytes(
+                "GET", "download/.agentscope-tmp%2Fws-persist.tar", null, null);
     }
 }
