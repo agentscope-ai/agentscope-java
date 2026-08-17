@@ -96,6 +96,7 @@ public final class SubagentDeclaration {
     private final boolean persistSession;
     private final boolean inheritParentPermissions;
     private final Boolean exposeToUser;
+    private final Integer timeoutSeconds;
     private final List<String> tools;
     private final List<String> skills;
 
@@ -141,6 +142,7 @@ public final class SubagentDeclaration {
         this.persistSession = b.persistSession;
         this.inheritParentPermissions = b.inheritParentPermissions;
         this.exposeToUser = b.exposeToUser;
+        this.timeoutSeconds = b.timeoutSeconds;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
         this.url = b.url;
@@ -301,6 +303,36 @@ public final class SubagentDeclaration {
     }
 
     /**
+     * Optional per-subagent synchronous wait timeout, in seconds.
+     *
+     * <p>When set (non-null), this value takes precedence over the {@code timeout_seconds} argument
+     * the LLM supplies on {@code agent_spawn} / {@code agent_send}, giving the application operator
+     * control over how long the parent waits synchronously for the subagent result before
+     * returning. This is useful when the model cannot reliably estimate the wait for deep,
+     * long-running work and keeps timing out.
+     *
+     * <p>Semantics when set:
+     *
+     * <ul>
+     *   <li>The parent waits synchronously for up to this many seconds, overriding an LLM request
+     *       for background execution ({@code timeout_seconds=0}).
+     *   <li>This bounds the wait, not the subagent's lifetime: when the wait elapses the run is
+     *       promoted to a background task and its {@code task_id} is returned, unless
+     *       {@code AgentSpawnTool#CTX_FORCE_SYNC} is enabled, in which case the subagent is
+     *       interrupted and {@code status: timeout} is returned.
+     *   <li>Values are clamped to the tool's maximum; {@code <= 0} is treated as unset.
+     * </ul>
+     *
+     * <p>{@code null} (default) defers to the per-call {@code RuntimeContext} override and then the
+     * LLM's {@code timeout_seconds} argument. This is overridden at runtime by a
+     * {@code RuntimeContext} value keyed {@code AgentSpawnTool#CTX_TIMEOUT_SECONDS}; see
+     * {@code AgentSpawnTool} for the full resolution precedence.
+     */
+    public Integer getTimeoutSeconds() {
+        return timeoutSeconds;
+    }
+
+    /**
      * Optional tool allowlist. When non-empty, only inherited parent tools whose names are listed
      * remain on the subagent's inherited toolkit. Empty means inherit all parent tools.
      */
@@ -396,6 +428,7 @@ public final class SubagentDeclaration {
         private boolean persistSession = false;
         private boolean inheritParentPermissions = true;
         private Boolean exposeToUser;
+        private Integer timeoutSeconds;
         private List<String> tools;
         private List<String> skills;
         private String url;
@@ -558,6 +591,22 @@ public final class SubagentDeclaration {
          */
         public Builder exposeToUser(Boolean exposeToUser) {
             this.exposeToUser = exposeToUser;
+            return this;
+        }
+
+        /**
+         * Per-subagent synchronous wait timeout in seconds, overriding the LLM's
+         * {@code timeout_seconds} argument.
+         *
+         * <p>Use this when the model cannot reliably estimate the wait for deep, long-running work.
+         * A non-null value makes the parent wait synchronously for up to this many seconds, even if
+         * the model requests background execution. It bounds the wait rather than the subagent's
+         * lifetime: once the wait elapses the run is promoted to a background task unless
+         * force-sync is enabled. {@code null} (default) defers to the {@code RuntimeContext}
+         * override and then the LLM's argument.
+         */
+        public Builder timeoutSeconds(Integer timeoutSeconds) {
+            this.timeoutSeconds = timeoutSeconds;
             return this;
         }
 
