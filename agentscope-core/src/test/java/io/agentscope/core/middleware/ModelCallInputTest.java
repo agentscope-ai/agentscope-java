@@ -15,24 +15,19 @@
  */
 package io.agentscope.core.middleware;
 
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ToolSchema;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.List;
+import org.junit.jupiter.api.Test;
 
-/**
- * Input context for {@link MiddlewareBase#onModelCall}.
- *
- * @param messages the messages to send to the model
- * @param tools    the non-null tool schemas, empty when no tools are available
- * @param options  generation options
- * @param model    the model instance to call
- */
-public record ModelCallInput(
-        List<Msg> messages, List<ToolSchema> tools, GenerateOptions options, Model model) {
+class ModelCallInputTest {
 
-    public ModelCallInput {
-        tools = tools == null ? List.of() : tools;
+    @Test
+    void nullToolsAreNormalizedToEmptyList() {
+        ModelCallInput input = new ModelCallInput(List.of(), null, null, null);
+
+        assertNotNull(input.tools());
+        assertTrue(input.tools().isEmpty());
     }
 }
