@@ -1017,24 +1017,24 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.IsolationScope</span><span class="p">;</span>
 
 <span class="n">AgentRunNasMountConfig</span><span class="w"> </span><span class="n">nas</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunNasMountConfig</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setServerAddr</span><span class="p">(</span><span class="s">&quot;12345abc-xxx.cn-hangzhou.nas.aliyuncs.com&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setMountDir</span><span class="p">(</span><span class="s">&quot;/mnt/nas&quot;</span><span class="p">)</span><span class="w">     </span><span class="c1">// 必须以 /home、/mnt 或 /data 开头</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setRemotePath</span><span class="p">(</span><span class="s">&quot;/&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setServerAddr</span><span class="p">(</span><span class="s">"12345abc-xxx.cn-hangzhou.nas.aliyuncs.com"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setMountDir</span><span class="p">(</span><span class="s">"/mnt/nas"</span><span class="p">)</span><span class="w">     </span><span class="c1">// 必须以 /home、/mnt 或 /data 开头</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setRemotePath</span><span class="p">(</span><span class="s">"/"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">setEnableTLS</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
 
 <span class="n">AgentRunFilesystemSpec</span><span class="w"> </span><span class="n">spec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setApiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AGENTRUN_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setAccountId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIYUN_ACCOUNT_ID&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setRegion</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">&quot;agentscope-default&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setMcpServerUrl</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AGENTRUN_MCP_URL&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 必填,见 §8</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setApiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"AGENTRUN_API_KEY"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setAccountId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"ALIYUN_ACCOUNT_ID"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setRegion</span><span class="p">(</span><span class="s">"cn-hangzhou"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">"agentscope-default"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setMcpServerUrl</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"AGENTRUN_MCP_URL"</span><span class="p">))</span><span class="w">   </span><span class="c1">// 必填,见 §8</span>
 <span class="w">    </span><span class="p">.</span><span class="na">setNasConfig</span><span class="p">(</span><span class="n">nas</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">&quot;/mnt/nas/workspace&quot;</span><span class="p">)</span><span class="w">               </span><span class="c1">// ★ 工作区落在 NAS 内</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">"/mnt/nas/workspace"</span><span class="p">)</span><span class="w">               </span><span class="c1">// ★ 工作区落在 NAS 内</span>
 <span class="w">    </span><span class="p">.</span><span class="na">setSandboxIdleTimeoutSeconds</span><span class="p">(</span><span class="mi">1800</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">);</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1054,10 +1054,10 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentRunFilesystemSpec</span><span class="w"> </span><span class="n">spec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">setApiKey</span><span class="p">(...)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">setAccountId</span><span class="p">(...)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setRegion</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">&quot;agentscope-default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setRegion</span><span class="p">(</span><span class="s">"cn-hangzhou"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">"agentscope-default"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">setMcpServerUrl</span><span class="p">(...)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">&quot;/home/agentscope/workspace&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">"/home/agentscope/workspace"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(...));</span><span class="w">     </span><span class="c1">// ← 必须显式挂 SnapshotSpec</span>
 </pre></div>
 </div>
@@ -1074,15 +1074,15 @@
 <h2>5. 进阶方案 B:NAS 运行时 + OSS Snapshot 冷备<a class="headerlink" href="#b-nas-oss-snapshot" title="Link to this heading">¶</a></h2>
 <p>NAS 提供低延迟的实时读写,但备份/迁移/审计场景里仍可能希望工作区有<strong>版本化、跨集群可携带</strong>的 tar 归档。可以同时配置:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentRunFilesystemSpec</span><span class="w"> </span><span class="n">spec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setApiKey</span><span class="p">(...).</span><span class="na">setAccountId</span><span class="p">(...).</span><span class="na">setRegion</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">&quot;agentscope-default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setApiKey</span><span class="p">(...).</span><span class="na">setAccountId</span><span class="p">(...).</span><span class="na">setRegion</span><span class="p">(</span><span class="s">"cn-hangzhou"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">"agentscope-default"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">setMcpServerUrl</span><span class="p">(...)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">setNasConfig</span><span class="p">(</span><span class="n">nas</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">&quot;/mnt/nas/workspace&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">"/mnt/nas/workspace"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(</span><span class="w">                  </span><span class="c1">// 与 NAS 不同的 bucket / key prefix</span>
 <span class="w">        </span><span class="n">ossClient</span><span class="p">,</span>
-<span class="w">        </span><span class="s">&quot;agentscope-snapshots&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s">&quot;agentrun/workspaces/&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="s">"agentscope-snapshots"</span><span class="p">,</span>
+<span class="w">        </span><span class="s">"agentrun/workspaces/"</span><span class="p">));</span>
 </pre></div>
 </div>
 <p>注意:</p>

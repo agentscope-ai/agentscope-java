@@ -986,10 +986,10 @@
 
 <span class="w">	</span><span class="nd">@Bean</span>
 <span class="w">	</span><span class="kd">public</span><span class="w"> </span><span class="n">Model</span><span class="w"> </span><span class="nf">dashScopeChatModel</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">		</span><span class="n">String</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AI_DASHSCOPE_API_KEY&quot;</span><span class="p">);</span>
+<span class="w">		</span><span class="n">String</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"AI_DASHSCOPE_API_KEY"</span><span class="p">);</span>
 <span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">				</span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-plus"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="w">	</span><span class="p">}</span>
 <span class="p">}</span>
@@ -1017,50 +1017,50 @@
 <span class="nd">@Configuration</span>
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">SequentialPipelineConfig</span><span class="w"> </span><span class="p">{</span>
 
-<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">SQL_GENERATOR_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
-<span class="s">			You are a MySQL database expert. Given the user&#39;s natural language request, output the corresponding SQL statement.</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">SQL_GENERATOR_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
+<span class="s">			You are a MySQL database expert. Given the user's natural language request, output the corresponding SQL statement.</span>
 <span class="s">			Only output valid MySQL SQL. Do not include explanations.</span>
-<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">			"""</span><span class="p">;</span>
 
-<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">SQL_RATER_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
-<span class="s">			You are a SQL quality reviewer. Given the user&#39;s natural language request and the generated SQL,</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">SQL_RATER_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
+<span class="s">			You are a SQL quality reviewer. Given the user's natural language request and the generated SQL,</span>
 <span class="s">			output a single float score between 0 and 1. The score indicates how well the SQL matches the user intent.</span>
 <span class="s">			Output ONLY the number, no other text. Example: 0.85</span>
-<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">			"""</span><span class="p">;</span>
 
-<span class="w">	</span><span class="nd">@Bean</span><span class="p">(</span><span class="s">&quot;sequentialSqlAgent&quot;</span><span class="p">)</span>
+<span class="w">	</span><span class="nd">@Bean</span><span class="p">(</span><span class="s">"sequentialSqlAgent"</span><span class="p">)</span>
 <span class="w">	</span><span class="kd">public</span><span class="w"> </span><span class="n">SequentialAgent</span><span class="w"> </span><span class="nf">sequentialSqlAgent</span><span class="p">(</span><span class="n">Model</span><span class="w"> </span><span class="n">dashScopeChatModel</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">sqlGenBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_generator&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sql_generator"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Converts natural language to MySQL SQL&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Converts natural language to MySQL SQL"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">SQL_GENERATOR_PROMPT</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
 <span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">sqlGenerateAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">sqlGenBuilder</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_generator&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Converts natural language to MySQL SQL&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;{input}&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sql_generator"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Converts natural language to MySQL SQL"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">"{input}"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;sql&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">"sql"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">sqlRaterBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_rater&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sql_rater"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Scores SQL against user intent&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Scores SQL against user intent"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">SQL_RATER_PROMPT</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
 <span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">sqlRatingAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">sqlRaterBuilder</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_rater&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Scores SQL against user intent&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;Here&#39;s the generated SQL:\n {sql}.\n\n Here&#39;s the original user request:\n {input}.&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sql_rater"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Scores SQL against user intent"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">"Here's the generated SQL:\n {sql}.\n\n Here's the original user request:\n {input}."</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;score&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">"score"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="n">SequentialAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sequential_sql_agent&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Natural language to SQL pipeline: generates SQL and scores its quality&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sequential_sql_agent"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Natural language to SQL pipeline: generates SQL and scores its quality"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">subAgents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">sqlGenerateAgent</span><span class="p">,</span><span class="w"> </span><span class="n">sqlRatingAgent</span><span class="p">))</span>
 <span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="w">	</span><span class="p">}</span>
@@ -1094,73 +1094,73 @@
 <span class="nd">@Configuration</span>
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ParallelPipelineConfig</span><span class="w"> </span><span class="p">{</span>
 
-<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">TECH_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">TECH_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
 <span class="s">			You are a technology analyst. Research the given topic from a technology perspective.</span>
 <span class="s">			Provide a concise 2-3 paragraph analysis covering: key technologies, trends, and innovations.</span>
 <span class="s">			Focus on technical aspects only.</span>
-<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">			"""</span><span class="p">;</span>
 
-<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">FINANCE_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">FINANCE_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
 <span class="s">			You are a financial analyst. Research the given topic from a finance and business perspective.</span>
 <span class="s">			Provide a concise 2-3 paragraph analysis covering: market size, investment trends, business models.</span>
 <span class="s">			Focus on financial and business aspects only.</span>
-<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">			"""</span><span class="p">;</span>
 
-<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">MARKET_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">MARKET_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
 <span class="s">			You are a market analyst. Research the given topic from an industry and market perspective.</span>
 <span class="s">			Provide a concise 2-3 paragraph analysis covering: competitive landscape, growth drivers, challenges.</span>
 <span class="s">			Focus on market and industry aspects only.</span>
-<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">			"""</span><span class="p">;</span>
 
-<span class="w">	</span><span class="nd">@Bean</span><span class="p">(</span><span class="s">&quot;parallelResearchAgent&quot;</span><span class="p">)</span>
+<span class="w">	</span><span class="nd">@Bean</span><span class="p">(</span><span class="s">"parallelResearchAgent"</span><span class="p">)</span>
 <span class="w">	</span><span class="kd">public</span><span class="w"> </span><span class="n">ParallelAgent</span><span class="w"> </span><span class="nf">parallelResearchAgent</span><span class="p">(</span><span class="n">Model</span><span class="w"> </span><span class="n">dashScopeChatModel</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">techBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;tech_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"tech_researcher"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from technology perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Researches from technology perspective"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">TECH_RESEARCH_PROMPT</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
 <span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">techResearcher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">techBuilder</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;tech_researcher&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from technology perspective&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;Research the following topic: {input}.&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"tech_researcher"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Researches from technology perspective"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">"Research the following topic: {input}."</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;tech_analysis&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">"tech_analysis"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">financeBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;finance_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"finance_researcher"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from finance perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Researches from finance perspective"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">FINANCE_RESEARCH_PROMPT</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
 <span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">financeResearcher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">financeBuilder</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;finance_researcher&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from finance perspective&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;Research the following topic: {input}.&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"finance_researcher"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Researches from finance perspective"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">"Research the following topic: {input}."</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;finance_analysis&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">"finance_analysis"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">marketBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;market_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"market_researcher"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from market perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Researches from market perspective"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">MARKET_RESEARCH_PROMPT</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
 <span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">marketResearcher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">marketBuilder</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;market_researcher&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from market perspective&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;Research the following topic: {input}.&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;market_analysis&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"market_researcher"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Researches from market perspective"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">"Research the following topic: {input}."</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">"market_analysis"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="n">ParallelAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;parallel_research_agent&quot;</span><span class="p">)</span>
-<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Multi-topic research: analyzes a topic from tech, finance, and market angles in parallel&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"parallel_research_agent"</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Multi-topic research: analyzes a topic from tech, finance, and market angles in parallel"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">subAgents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">techResearcher</span><span class="p">,</span><span class="w"> </span><span class="n">financeResearcher</span><span class="p">,</span><span class="w"> </span><span class="n">marketResearcher</span><span class="p">))</span>
 <span class="w">				</span><span class="p">.</span><span class="na">mergeStrategy</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ParallelAgent</span><span class="p">.</span><span class="na">DefaultMergeStrategy</span><span class="p">())</span>
-<span class="w">				</span><span class="p">.</span><span class="na">mergeOutputKey</span><span class="p">(</span><span class="s">&quot;research_report&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">mergeOutputKey</span><span class="p">(</span><span class="s">"research_report"</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">maxConcurrency</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
 <span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="w">	</span><span class="p">}</span>
@@ -1181,14 +1181,14 @@
 <h3>Implementation<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">LoopPipelineConfig</span></code> builds the same SQL Generator and SQL Rater AgentScopeAgents as <code class="docutils literal notranslate"><span class="pre">SequentialPipelineConfig</span></code> (same prompts, <code class="docutils literal notranslate"><span class="pre">instruction</span></code>, <code class="docutils literal notranslate"><span class="pre">outputKey</span></code>). It then wraps them in a <strong>SequentialAgent</strong> and that in a <strong>LoopAgent</strong> with a condition-based loop strategy:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SequentialAgent</span><span class="w"> </span><span class="n">sqlAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SequentialAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">		</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_agent&quot;</span><span class="p">)</span>
-<span class="w">		</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Generates SQL and scores its quality&quot;</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sql_agent"</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Generates SQL and scores its quality"</span><span class="p">)</span>
 <span class="w">		</span><span class="p">.</span><span class="na">subAgents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">sqlGenerateAgent</span><span class="p">,</span><span class="w"> </span><span class="n">sqlRatingAgent</span><span class="p">))</span>
 <span class="w">		</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="k">return</span><span class="w"> </span><span class="n">LoopAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">		</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;loop_sql_refinement_agent&quot;</span><span class="p">)</span>
-<span class="w">		</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Iteratively refines SQL until quality score exceeds &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">QUALITY_THRESHOLD</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"loop_sql_refinement_agent"</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Iteratively refines SQL until quality score exceeds "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">QUALITY_THRESHOLD</span><span class="p">)</span>
 <span class="w">		</span><span class="p">.</span><span class="na">subAgent</span><span class="p">(</span><span class="n">sqlAgent</span><span class="p">)</span>
 <span class="w">		</span><span class="p">.</span><span class="na">loopStrategy</span><span class="p">(</span><span class="n">LoopMode</span><span class="p">.</span><span class="na">condition</span><span class="p">(</span><span class="n">messages</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">			</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">messages</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">messages</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
@@ -1219,17 +1219,17 @@
 
 <span class="c1">// Sequential: natural language → SQL → score</span>
 <span class="n">PipelineService</span><span class="p">.</span><span class="na">SequentialResult</span><span class="w"> </span><span class="n">seq</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">.</span><span class="na">runSequential</span><span class="p">(</span>
-<span class="w">		</span><span class="s">&quot;List all orders from the last 30 days with total amount greater than 500&quot;</span><span class="p">);</span>
+<span class="w">		</span><span class="s">"List all orders from the last 30 days with total amount greater than 500"</span><span class="p">);</span>
 <span class="c1">// seq.input(), seq.sql(), seq.score()</span>
 
 <span class="c1">// Parallel: one topic → merged research report</span>
 <span class="n">PipelineService</span><span class="p">.</span><span class="na">ParallelResult</span><span class="w"> </span><span class="n">par</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">.</span><span class="na">runParallel</span><span class="p">(</span>
-<span class="w">		</span><span class="s">&quot;AI agents in enterprise software&quot;</span><span class="p">);</span>
+<span class="w">		</span><span class="s">"AI agents in enterprise software"</span><span class="p">);</span>
 <span class="c1">// par.input(), par.researchReport()</span>
 
 <span class="c1">// Loop: SQL refinement until score &gt; 0.5</span>
 <span class="n">PipelineService</span><span class="p">.</span><span class="na">LoopResult</span><span class="w"> </span><span class="n">loop</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">.</span><span class="na">runLoop</span><span class="p">(</span>
-<span class="w">		</span><span class="s">&quot;Find customers who placed more than 3 orders in 2024&quot;</span><span class="p">);</span>
+<span class="w">		</span><span class="s">"Find customers who placed more than 3 orders in 2024"</span><span class="p">);</span>
 <span class="c1">// loop.input(), loop.sql(), loop.score()</span>
 </pre></div>
 </div>
@@ -1276,16 +1276,16 @@
 <h2>Optional demo runner<a class="headerlink" href="#optional-demo-runner" title="Link to this heading">¶</a></h2>
 <p>When <code class="docutils literal notranslate"><span class="pre">pipeline.runner.enabled=true</span></code>, <code class="docutils literal notranslate"><span class="pre">PipelineCommandRunner</span></code> runs a demo for each pipeline on startup with sample inputs and logs the results:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Component</span>
-<span class="nd">@ConditionalOnProperty</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;pipeline.runner.enabled&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">havingValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="p">)</span>
+<span class="nd">@ConditionalOnProperty</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"pipeline.runner.enabled"</span><span class="p">,</span><span class="w"> </span><span class="n">havingValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"true"</span><span class="p">)</span>
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">PipelineCommandRunner</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">ApplicationRunner</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">PipelineService</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">;</span>
 
 <span class="w">	</span><span class="nd">@Override</span>
 <span class="w">	</span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">ApplicationArguments</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
-<span class="w">		</span><span class="n">runSequentialDemo</span><span class="p">();</span><span class="w">  </span><span class="c1">// &quot;List all orders from the last 30 days...&quot;</span>
-<span class="w">		</span><span class="n">runParallelDemo</span><span class="p">();</span><span class="w">    </span><span class="c1">// &quot;AI agents in enterprise software&quot;</span>
-<span class="w">		</span><span class="n">runLoopDemo</span><span class="p">();</span><span class="w">        </span><span class="c1">// &quot;Find customers who placed more than 3 orders in 2024&quot;</span>
+<span class="w">		</span><span class="n">runSequentialDemo</span><span class="p">();</span><span class="w">  </span><span class="c1">// "List all orders from the last 30 days..."</span>
+<span class="w">		</span><span class="n">runParallelDemo</span><span class="p">();</span><span class="w">    </span><span class="c1">// "AI agents in enterprise software"</span>
+<span class="w">		</span><span class="n">runLoopDemo</span><span class="p">();</span><span class="w">        </span><span class="c1">// "Find customers who placed more than 3 orders in 2024"</span>
 <span class="w">	</span><span class="p">}</span>
 <span class="w">	</span><span class="c1">// ...</span>
 <span class="p">}</span>

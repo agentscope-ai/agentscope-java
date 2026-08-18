@@ -990,17 +990,17 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.agent.A2aAgent</span><span class="p">;</span>
 
 <span class="n">AgentCard</span><span class="w"> </span><span class="n">card</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentCard</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote-translator&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;http://other-service:8080&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"remote-translator"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">"http://other-service:8080"</span><span class="p">)</span>
 <span class="w">    </span><span class="c1">// ...</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">A2aAgent</span><span class="w"> </span><span class="n">remote</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote-translator&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"remote-translator"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">agentCard</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">remote</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;Translate to English: 你好&quot;</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">remote</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"Translate to English: 你好"</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1009,13 +1009,13 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.agent.card.WellKnownAgentCardResolver</span><span class="p">;</span>
 
 <span class="n">WellKnownAgentCardResolver</span><span class="w"> </span><span class="n">resolver</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">WellKnownAgentCardResolver</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;http://127.0.0.1:8080&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;/.well-known/agent-card.json&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"http://127.0.0.1:8080"</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"/.well-known/agent-card.json"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">()</span>
 <span class="p">);</span>
 
 <span class="n">A2aAgent</span><span class="w"> </span><span class="n">remote</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"remote"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="n">resolver</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1041,7 +1041,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportProperties</span><span class="p">;</span>
 
 <span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">agentBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;backend-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"backend-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">);</span>
 
 <span class="n">AgentScopeA2aServer</span><span class="w"> </span><span class="n">server</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1052,7 +1052,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 在你的 Web 框架里把请求委托给 transportWrapper</span>
-<span class="n">TransportWrapper</span><span class="w"> </span><span class="n">wrapper</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">server</span><span class="p">.</span><span class="na">getTransportWrapper</span><span class="p">(</span><span class="s">&quot;JSONRPC&quot;</span><span class="p">);</span>
+<span class="n">TransportWrapper</span><span class="w"> </span><span class="n">wrapper</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">server</span><span class="p">.</span><span class="na">getTransportWrapper</span><span class="p">(</span><span class="s">"JSONRPC"</span><span class="p">);</span>
 <span class="c1">// ... Spring/Quarkus controller 转发到 wrapper.handle(...)</span>
 
 <span class="n">server</span><span class="p">.</span><span class="na">postEndpointReady</span><span class="p">();</span><span class="w">   </span><span class="c1">// Web 服务监听端口后再调用，触发注册等动作</span>

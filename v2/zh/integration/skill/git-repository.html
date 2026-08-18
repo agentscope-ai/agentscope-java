@@ -993,7 +993,7 @@
 
 <span class="c1">// 公开仓库 + 默认分支，使用临时目录</span>
 <span class="n">GitSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;https://github.com/agentscope/skills.git&quot;</span>
+<span class="w">    </span><span class="s">"https://github.com/agentscope/skills.git"</span>
 <span class="p">);</span>
 
 <span class="c1">// 取出全部技能注册到 Toolkit</span>
@@ -1008,10 +1008,10 @@
 <section id="id4">
 <h2>选定分支 / 自定义本地路径<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GitSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;https://github.com/agentscope/skills.git&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;develop&quot;</span><span class="p">,</span><span class="w">                   </span><span class="c1">// 分支</span>
-<span class="w">    </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;/var/skills/repo&quot;</span><span class="p">),</span><span class="w"> </span><span class="c1">// 本地路径（null = 临时目录）</span>
-<span class="w">    </span><span class="s">&quot;agentscope-public&quot;</span><span class="p">,</span><span class="w">         </span><span class="c1">// source 标识（在 Toolkit 里能看到）</span>
+<span class="w">    </span><span class="s">"https://github.com/agentscope/skills.git"</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"develop"</span><span class="p">,</span><span class="w">                   </span><span class="c1">// 分支</span>
+<span class="w">    </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"/var/skills/repo"</span><span class="p">),</span><span class="w"> </span><span class="c1">// 本地路径（null = 临时目录）</span>
+<span class="w">    </span><span class="s">"agentscope-public"</span><span class="p">,</span><span class="w">         </span><span class="c1">// source 标识（在 Toolkit 里能看到）</span>
 <span class="w">    </span><span class="kc">true</span><span class="w">                         </span><span class="c1">// autoSync = true，每次读自动检查并 pull</span>
 <span class="p">);</span>
 </pre></div>
@@ -1026,7 +1026,7 @@
 </ul>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// SSH 私有仓库</span>
 <span class="n">GitSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;git@github.com:my-org/private-skills.git&quot;</span>
+<span class="w">    </span><span class="s">"git@github.com:my-org/private-skills.git"</span>
 <span class="p">);</span>
 </pre></div>
 </div>

@@ -1019,7 +1019,7 @@
 </section>
 <section id="conversation-compaction-conversationcompactor">
 <h3>Conversation Compaction (<code class="docutils literal notranslate"><span class="pre">ConversationCompactor</span></code>)<a class="headerlink" href="#conversation-compaction-conversationcompactor" title="Link to this heading">¶</a></h3>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>check thresholds → find cutoff (don&#39;t split ASSISTANT/TOOL pairs)
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>check thresholds → find cutoff (don't split ASSISTANT/TOOL pairs)
         → (optional) flushMemories(prefix)
         → (optional) offloadMessages(messages → sessions/.../&lt;id&gt;.jsonl)
         → LLM distills summary
@@ -1158,7 +1158,7 @@
 <section id="configuration-and-code-examples">
 <h2>Configuration and Code Examples<a class="headerlink" href="#configuration-and-code-examples" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"MyAgent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1171,7 +1171,7 @@
 <span class="c1">// Agent can call memory_search at any time</span>
 <span class="n">MemoryIndex</span><span class="w"> </span><span class="n">index</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MemoryIndex</span><span class="p">(</span><span class="n">workspaceAgentScopeDir</span><span class="p">);</span>
 <span class="n">index</span><span class="p">.</span><span class="na">open</span><span class="p">();</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">MemoryIndex</span><span class="p">.</span><span class="na">SearchHit</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">index</span><span class="p">.</span><span class="na">search</span><span class="p">(</span><span class="s">&quot;database migration&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">MemoryIndex</span><span class="p">.</span><span class="na">SearchHit</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">index</span><span class="p">.</span><span class="na">search</span><span class="p">(</span><span class="s">"database migration"</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span>
 <span class="c1">// hit: { path, lineNumber, content, rank }</span>
 </pre></div>
 </div>

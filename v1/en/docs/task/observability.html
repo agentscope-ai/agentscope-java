@@ -1008,15 +1008,15 @@ as_studio
 
 <span class="c1">// Initialize Studio connection</span>
 <span class="n">StudioManager</span><span class="p">.</span><span class="na">init</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:3000&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">&quot;MyProject&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">&quot;demo_&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">currentTimeMillis</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">"http://localhost:3000"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">"MyProject"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">"demo_"</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">currentTimeMillis</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">initialize</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Create Agent with Hook</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">()))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1041,7 +1041,7 @@ as_studio
 
 <span class="c1">// Create user Agent</span>
 <span class="n">StudioUserAgent</span><span class="w"> </span><span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StudioUserAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;User&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"User"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">studioClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">webSocketClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getWebSocketClient</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1059,7 +1059,7 @@ as_studio
 <span class="w">    </span><span class="c1">// Get user input from Web UI</span>
 <span class="w">    </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">user</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s">&quot;exit&quot;</span><span class="p">.</span><span class="na">equalsIgnoreCase</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s">"exit"</span><span class="p">.</span><span class="na">equalsIgnoreCase</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">break</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
@@ -1085,67 +1085,67 @@ as_studio
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">StudioExample</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">);</span>
 
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Connecting to Studio at http://localhost:3000...&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Connecting to Studio at http://localhost:3000..."</span><span class="p">);</span>
 
 <span class="w">        </span><span class="c1">// Initialize Studio</span>
 <span class="w">        </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">init</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:3000&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">&quot;JavaExamples&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">&quot;studio_demo_&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">currentTimeMillis</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">"http://localhost:3000"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">"JavaExamples"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">"studio_demo_"</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">currentTimeMillis</span><span class="p">())</span>
 <span class="w">            </span><span class="p">.</span><span class="na">initialize</span><span class="p">()</span>
 <span class="w">            </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Connected to Studio\n&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Connected to Studio\n"</span><span class="p">);</span>
 
 <span class="w">        </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="c1">// Create Agent (with Studio Hook)</span>
 <span class="w">            </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful AI assistant.&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a helpful AI assistant."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">)</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen3-max"</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">()))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">            </span><span class="c1">// Create user Agent</span>
 <span class="w">            </span><span class="n">StudioUserAgent</span><span class="w"> </span><span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StudioUserAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;User&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"User"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">studioClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">webSocketClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getWebSocketClient</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">            </span><span class="c1">// Conversation loop</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Starting conversation (type &#39;exit&#39; to quit)&quot;</span><span class="p">);</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Open http://localhost:3000 to interact\n&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Starting conversation (type 'exit' to quit)"</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Open http://localhost:3000 to interact\n"</span><span class="p">);</span>
 
 <span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
 <span class="w">            </span><span class="kt">int</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
 <span class="w">            </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] Waiting for user input...&quot;</span><span class="p">);</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"[Turn "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"] Waiting for user input..."</span><span class="p">);</span>
 <span class="w">                </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">user</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
-<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s">&quot;exit&quot;</span><span class="p">.</span><span class="na">equalsIgnoreCase</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\nConversation ended&quot;</span><span class="p">);</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s">"exit"</span><span class="p">.</span><span class="na">equalsIgnoreCase</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\nConversation ended"</span><span class="p">);</span>
 <span class="w">                    </span><span class="k">break</span><span class="p">;</span>
 <span class="w">                </span><span class="p">}</span>
 
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] User: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"[Turn "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"] User: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 <span class="w">                </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] Agent: &quot;</span>
-<span class="w">                        </span><span class="o">+</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;\n&quot;</span><span class="p">);</span>
+<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"[Turn "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"] Agent: "</span>
+<span class="w">                        </span><span class="o">+</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"\n"</span><span class="p">);</span>
 <span class="w">                </span><span class="p">}</span>
 <span class="w">                </span><span class="n">turn</span><span class="o">++</span><span class="p">;</span>
 <span class="w">            </span><span class="p">}</span>
 
 <span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">finally</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\nShutting down...&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\nShutting down..."</span><span class="p">);</span>
 <span class="w">            </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">shutdown</span><span class="p">();</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Done\n&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Done\n"</span><span class="p">);</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
@@ -1161,7 +1161,7 @@ as_studio
 
 <span class="n">Msg</span><span class="w"> </span><span class="n">customMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">ASSISTANT</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Custom message&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">"Custom message"</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">client</span><span class="p">.</span><span class="na">pushMessage</span><span class="p">(</span><span class="n">customMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
@@ -1172,12 +1172,12 @@ as_studio
 <h4>Multi-Agent Visualization<a class="headerlink" href="#multi-agent-visualization" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Add Hook to each Agent</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Agent1"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">client</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Agent2"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">client</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1200,13 +1200,13 @@ as_studio
 <span class="c1">// Register a TelemetryTracer with an OTLP endpoint</span>
 <span class="n">TracerRegistry</span><span class="p">.</span><span class="na">register</span><span class="p">(</span>
 <span class="w">    </span><span class="n">TelemetryTracer</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;https://your-otlp-endpoint/v1/traces&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">"https://your-otlp-endpoint/v1/traces"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
 <span class="p">);</span>
 
 <span class="c1">// After registration, all agent activities are automatically traced</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1264,15 +1264,15 @@ as_studio
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Base64</span><span class="p">;</span>
 
 <span class="c1">// Encode your Langfuse API key as Base64</span>
-<span class="n">String</span><span class="w"> </span><span class="n">publicKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;pk-lf-xxxxxxxx&quot;</span><span class="p">;</span>
-<span class="n">String</span><span class="w"> </span><span class="n">secretKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;sk-lf-xxxxxxxx&quot;</span><span class="p">;</span>
-<span class="n">String</span><span class="w"> </span><span class="n">encoded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Base64</span><span class="p">.</span><span class="na">getEncoder</span><span class="p">().</span><span class="na">encodeToString</span><span class="p">((</span><span class="n">publicKey</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">secretKey</span><span class="p">).</span><span class="na">getBytes</span><span class="p">());</span>
+<span class="n">String</span><span class="w"> </span><span class="n">publicKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"pk-lf-xxxxxxxx"</span><span class="p">;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">secretKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"sk-lf-xxxxxxxx"</span><span class="p">;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">encoded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Base64</span><span class="p">.</span><span class="na">getEncoder</span><span class="p">().</span><span class="na">encodeToString</span><span class="p">((</span><span class="n">publicKey</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">":"</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">secretKey</span><span class="p">).</span><span class="na">getBytes</span><span class="p">());</span>
 
 <span class="n">TracerRegistry</span><span class="p">.</span><span class="na">register</span><span class="p">(</span>
 <span class="w">    </span><span class="n">TelemetryTracer</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;https://cloud.langfuse.com/api/public/otel/v1/traces&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addHeader</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Basic &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">encoded</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addHeader</span><span class="p">(</span><span class="s">&quot;x-langfuse-ingestion-version&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;4&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">"https://cloud.langfuse.com/api/public/otel/v1/traces"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addHeader</span><span class="p">(</span><span class="s">"Authorization"</span><span class="p">,</span><span class="w"> </span><span class="s">"Basic "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">encoded</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addHeader</span><span class="p">(</span><span class="s">"x-langfuse-ingestion-version"</span><span class="p">,</span><span class="w"> </span><span class="s">"4"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
 <span class="p">);</span>
 </pre></div>
@@ -1287,7 +1287,7 @@ as_studio
 <p>Any platform that supports the OTLP protocol can be used. For example, to send traces to a local Jaeger instance:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">TracerRegistry</span><span class="p">.</span><span class="na">register</span><span class="p">(</span>
 <span class="w">    </span><span class="n">TelemetryTracer</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;http://localhost:4317&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">"http://localhost:4317"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
 <span class="p">);</span>
 </pre></div>

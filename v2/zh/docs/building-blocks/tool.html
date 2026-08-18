@@ -1112,12 +1112,12 @@
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">SimpleTools</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span>
-<span class="w">            </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;get_current_time&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Returns the current time in a given IANA timezone.&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"get_current_time"</span><span class="p">,</span>
+<span class="w">            </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Returns the current time in a given IANA timezone."</span><span class="p">,</span>
 <span class="w">            </span><span class="n">readOnly</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">            </span><span class="n">concurrencySafe</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getCurrentTime</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;timezone&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;IANA timezone, e.g. Asia/Shanghai&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"timezone"</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"IANA timezone, e.g. Asia/Shanghai"</span><span class="p">)</span>
 <span class="w">                    </span><span class="n">String</span><span class="w"> </span><span class="n">timezone</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">LocalDateTime</span><span class="p">.</span><span class="na">now</span><span class="p">(</span><span class="n">ZoneId</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">timezone</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="n">DateTimeFormatter</span><span class="p">.</span><span class="na">ISO_LOCAL_DATE_TIME</span><span class="p">);</span>
@@ -1189,15 +1189,15 @@
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">WebSearchTool</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="kd">super</span><span class="p">(</span>
 <span class="w">                </span><span class="n">ToolBase</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;WebSearch&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Search the web for information on a given query.&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"WebSearch"</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Search the web for information on a given query."</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">inputSchema</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;object&quot;</span><span class="p">,</span>
-<span class="w">                                </span><span class="s">&quot;properties&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                                        </span><span class="s">&quot;query&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                                                </span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;string&quot;</span><span class="p">,</span>
-<span class="w">                                                </span><span class="s">&quot;description&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;The search query.&quot;</span><span class="p">)),</span>
-<span class="w">                                </span><span class="s">&quot;required&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">)))</span>
+<span class="w">                                </span><span class="s">"type"</span><span class="p">,</span><span class="w"> </span><span class="s">"object"</span><span class="p">,</span>
+<span class="w">                                </span><span class="s">"properties"</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                                        </span><span class="s">"query"</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                                                </span><span class="s">"type"</span><span class="p">,</span><span class="w"> </span><span class="s">"string"</span><span class="p">,</span>
+<span class="w">                                                </span><span class="s">"description"</span><span class="p">,</span><span class="w"> </span><span class="s">"The search query."</span><span class="p">)),</span>
+<span class="w">                                </span><span class="s">"required"</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"query"</span><span class="p">)))</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">readOnly</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">concurrencySafe</span><span class="p">(</span><span class="kc">true</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
@@ -1205,12 +1205,12 @@
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">PermissionDecision</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">checkPermissions</span><span class="p">(</span>
 <span class="w">            </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolInput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">allow</span><span class="p">(</span><span class="s">&quot;Web search is read-only.&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">allow</span><span class="p">(</span><span class="s">"Web search is read-only."</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">ToolResultBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">callAsync</span><span class="p">(</span><span class="n">ToolCallParam</span><span class="w"> </span><span class="n">param</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">param</span><span class="p">.</span><span class="na">getInput</span><span class="p">().</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">param</span><span class="p">.</span><span class="na">getInput</span><span class="p">().</span><span class="na">get</span><span class="p">(</span><span class="s">"query"</span><span class="p">);</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">doSearchAsync</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">-&gt;</span>
 <span class="w">                        </span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1240,14 +1240,14 @@
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">HumanApprovalTool</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="kd">super</span><span class="p">(</span>
 <span class="w">                </span><span class="n">ToolBase</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;HumanApproval&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Request human approval for a sensitive operation.&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"HumanApproval"</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Request human approval for a sensitive operation."</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">inputSchema</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;object&quot;</span><span class="p">,</span>
-<span class="w">                                </span><span class="s">&quot;properties&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                                        </span><span class="s">&quot;action&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;string&quot;</span><span class="p">),</span>
-<span class="w">                                        </span><span class="s">&quot;reason&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;string&quot;</span><span class="p">)),</span>
-<span class="w">                                </span><span class="s">&quot;required&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;action&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;reason&quot;</span><span class="p">)))</span>
+<span class="w">                                </span><span class="s">"type"</span><span class="p">,</span><span class="w"> </span><span class="s">"object"</span><span class="p">,</span>
+<span class="w">                                </span><span class="s">"properties"</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                                        </span><span class="s">"action"</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"type"</span><span class="p">,</span><span class="w"> </span><span class="s">"string"</span><span class="p">),</span>
+<span class="w">                                        </span><span class="s">"reason"</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"type"</span><span class="p">,</span><span class="w"> </span><span class="s">"string"</span><span class="p">)),</span>
+<span class="w">                                </span><span class="s">"required"</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"action"</span><span class="p">,</span><span class="w"> </span><span class="s">"reason"</span><span class="p">)))</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">readOnly</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">concurrencySafe</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">externalTool</span><span class="p">(</span><span class="kc">true</span><span class="p">));</span>
@@ -1256,7 +1256,7 @@
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">PermissionDecision</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">checkPermissions</span><span class="p">(</span>
 <span class="w">            </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolInput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">allow</span><span class="p">(</span><span class="s">&quot;External tool dispatch is always allowed.&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">allow</span><span class="p">(</span><span class="s">"External tool dispatch is always allowed."</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -1307,12 +1307,12 @@
 
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">PersonalizedTools</span><span class="w"> </span><span class="p">{</span>
 
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;greet&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Greet the user with a custom greeting&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"greet"</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Greet the user with a custom greeting"</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">greet</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;greeting&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Greeting word, e.g. &#39;Hello&#39;&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"greeting"</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Greeting word, e.g. 'Hello'"</span><span class="p">)</span>
 <span class="w">                    </span><span class="n">String</span><span class="w"> </span><span class="n">greeting</span><span class="p">,</span><span class="w">                  </span><span class="c1">// ← 由模型提供</span>
 <span class="w">            </span><span class="n">UserContext</span><span class="w"> </span><span class="n">userCtx</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">                    </span><span class="c1">// ← 由框架自动注入</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">greeting</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;, &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">(</span><span class="n">userCtx</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">&quot;unknown&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">userCtx</span><span class="p">.</span><span class="na">username</span><span class="p">())</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;!&quot;</span><span class="p">;</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">greeting</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">", "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">(</span><span class="n">userCtx</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"unknown"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">userCtx</span><span class="p">.</span><span class="na">username</span><span class="p">())</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"!"</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -1320,11 +1320,11 @@
 <p>调用方按类型注册同款 POJO 后，每次 <code class="docutils literal notranslate"><span class="pre">call</span></code> 就会自动把对应实例分发到所有需要它的 tool：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">UserContext</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;en&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">UserContext</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"en"</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;Greet me.&quot;</span><span class="p">)),</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"Greet me."</span><span class="p">)),</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 <p>模型不需要把 <code class="docutils literal notranslate"><span class="pre">userCtx</span></code> 写进 JSON 参数——schema 里也不会出现它。完整示例：<code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java</span></code>。</p>
@@ -1382,9 +1382,9 @@ STDIO</label><div class="sd-tab-content docutils">
 
 <span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">filesystem</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">stdio</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;filesystem&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">command</span><span class="p">(</span><span class="s">&quot;mcp-server-filesystem&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">args</span><span class="p">(</span><span class="s">&quot;--root&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/my/project&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"filesystem"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">command</span><span class="p">(</span><span class="s">"mcp-server-filesystem"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">args</span><span class="p">(</span><span class="s">"--root"</span><span class="p">,</span><span class="w"> </span><span class="s">"/my/project"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
@@ -1401,9 +1401,9 @@ Streamable HTTP</label><div class="sd-tab-content docutils">
 
 <span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">weather</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">streamableHttp</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;weather&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://api.weather.com/mcp&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer xxx&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"weather"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">"https://api.weather.com/mcp"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"Authorization"</span><span class="p">,</span><span class="w"> </span><span class="s">"Bearer xxx"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
@@ -1419,8 +1419,8 @@ SSE</label><div class="sd-tab-content docutils">
 
 <span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">search</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">sse</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;search&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://api.search.com/mcp/sse&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"search"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">"https://api.search.com/mcp/sse"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
@@ -1445,10 +1445,10 @@ SSE</label><div class="sd-tab-content docutils">
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;SkillCreator&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"SkillCreator"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">FileSystemSkillRepository</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/path/to/skills&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">FileSystemSkillRepository</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/path/to/skills"</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1487,8 +1487,8 @@ SSE</label><div class="sd-tab-content docutils">
 </div>
 <p>调用示例：</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;load_skill_through_path&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;skillId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pdf-extractor&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SKILL.md&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"load_skill_through_path"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"input"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"skillId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pdf-extractor"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SKILL.md"</span><span class="w"> </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -1515,13 +1515,13 @@ SSE</label><div class="sd-tab-content docutils">
 
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ShellCommandTool</span><span class="p">());</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">(</span><span class="s">&quot;/path/to/base/dir&quot;</span><span class="p">));</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">(</span><span class="s">&quot;/path/to/base/dir&quot;</span><span class="p">));</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">(</span><span class="s">"/path/to/base/dir"</span><span class="p">));</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">(</span><span class="s">"/path/to/base/dir"</span><span class="p">));</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;SkillAgent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"SkillAgent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">skillRepo</span><span class="p">)</span>
@@ -1542,22 +1542,22 @@ SSE</label><div class="sd-tab-content docutils">
 
 <span class="c1">// 1. 创建与 skill 绑定的 tool group（初始不激活）</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">createSkillToolGroup</span><span class="p">(</span>
-<span class="w">        </span><span class="s">&quot;analysis-tools&quot;</span><span class="p">,</span><span class="w">                </span><span class="c1">// group 名</span>
-<span class="w">        </span><span class="s">&quot;Data analysis tools&quot;</span><span class="p">,</span><span class="w">           </span><span class="c1">// 描述</span>
+<span class="w">        </span><span class="s">"analysis-tools"</span><span class="p">,</span><span class="w">                </span><span class="c1">// group 名</span>
+<span class="w">        </span><span class="s">"Data analysis tools"</span><span class="p">,</span><span class="w">           </span><span class="c1">// 描述</span>
 <span class="w">        </span><span class="kc">false</span><span class="p">,</span><span class="w">                           </span><span class="c1">// 初始不激活</span>
-<span class="w">        </span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span><span class="w">                </span><span class="c1">// 绑定的 skill name</span>
+<span class="w">        </span><span class="s">"data-analysis"</span><span class="p">);</span><span class="w">                </span><span class="c1">// 绑定的 skill name</span>
 
 <span class="c1">// 2. 把 tool 注册到该 group</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AnalysisTools</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;analysis-tools&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">"analysis-tools"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="c1">// 3. 构建 agent，启用 meta tool 支持模型主动切换 group</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;AnalysisAgent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"AnalysisAgent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">skillRepo</span><span class="p">)</span>
@@ -1585,29 +1585,29 @@ SSE</label><div class="sd-tab-content docutils">
 
 <span class="n">ToolGroup</span><span class="w"> </span><span class="n">database</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">ToolGroup</span><span class="p">(</span>
-<span class="w">                </span><span class="s">&quot;database&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="s">&quot;Tools for database operations.&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="s">"database"</span><span class="p">,</span>
+<span class="w">                </span><span class="s">"Tools for database operations."</span><span class="p">,</span>
 <span class="w">                </span><span class="n">ToolGroupScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">,</span>
 <span class="w">                </span><span class="cm">/* active = */</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
-<span class="n">database</span><span class="p">.</span><span class="na">addTool</span><span class="p">(</span><span class="s">&quot;db_query&quot;</span><span class="p">);</span>
-<span class="n">database</span><span class="p">.</span><span class="na">addTool</span><span class="p">(</span><span class="s">&quot;db_migrate&quot;</span><span class="p">);</span>
+<span class="n">database</span><span class="p">.</span><span class="na">addTool</span><span class="p">(</span><span class="s">"db_query"</span><span class="p">);</span>
+<span class="n">database</span><span class="p">.</span><span class="na">addTool</span><span class="p">(</span><span class="s">"db_migrate"</span><span class="p">);</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DatabaseTools</span><span class="p">());</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerToolGroup</span><span class="p">(</span><span class="n">database</span><span class="p">);</span>
 
 <span class="n">ToolGroup</span><span class="w"> </span><span class="n">deployment</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">ToolGroup</span><span class="p">(</span>
-<span class="w">                </span><span class="s">&quot;deployment&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="s">&quot;Tools for deploying services.&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="s">"deployment"</span><span class="p">,</span>
+<span class="w">                </span><span class="s">"Tools for deploying services."</span><span class="p">,</span>
 <span class="w">                </span><span class="n">ToolGroupScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">,</span>
 <span class="w">                </span><span class="cm">/* active = */</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
-<span class="n">deployment</span><span class="p">.</span><span class="na">addTool</span><span class="p">(</span><span class="s">&quot;deploy&quot;</span><span class="p">);</span>
-<span class="n">deployment</span><span class="p">.</span><span class="na">addTool</span><span class="p">(</span><span class="s">&quot;rollback&quot;</span><span class="p">);</span>
+<span class="n">deployment</span><span class="p">.</span><span class="na">addTool</span><span class="p">(</span><span class="s">"deploy"</span><span class="p">);</span>
+<span class="n">deployment</span><span class="p">.</span><span class="na">addTool</span><span class="p">(</span><span class="s">"rollback"</span><span class="p">);</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DeploymentTools</span><span class="p">());</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerToolGroup</span><span class="p">(</span><span class="n">deployment</span><span class="p">);</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;router&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"router"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">enableMetaTool</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>

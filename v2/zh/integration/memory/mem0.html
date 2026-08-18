@@ -992,22 +992,22 @@
 
 <span class="c1">// 1. 构造记忆实例（本地无鉴权部署）</span>
 <span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user_123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8000&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"user_123"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">"http://localhost:8000"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">apiType</span><span class="p">(</span><span class="n">Mem0ApiType</span><span class="p">.</span><span class="na">SELF_HOSTED</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 2. 挂到 Agent</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">BOTH</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 3. 正常调用，记忆会自动在 record / retrieve 之间往返</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;我出差喜欢住民宿&quot;</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"我出差喜欢住民宿"</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1042,10 +1042,10 @@
 <h2>多租户隔离<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">agentName</span> <span class="pre">/</span> <span class="pre">userId</span> <span class="pre">/</span> <span class="pre">runName</span></code> 是 Mem0 用来组织记忆的三层 ID：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;travel-bot&quot;</span><span class="p">)</span><span class="w">     </span><span class="c1">// 跨用户共享的 Agent 维度记忆</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// 用户维度（租户）</span>
-<span class="w">    </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">&quot;trip-2026-spring&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// 单次会话维度</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8000&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">"travel-bot"</span><span class="p">)</span><span class="w">     </span><span class="c1">// 跨用户共享的 Agent 维度记忆</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span><span class="w">             </span><span class="c1">// 用户维度（租户）</span>
+<span class="w">    </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">"trip-2026-spring"</span><span class="p">)</span><span class="w"> </span><span class="c1">// 单次会话维度</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">"http://localhost:8000"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1055,14 +1055,14 @@
 <h2>自定义 metadata 过滤<a class="headerlink" href="#metadata" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">metadata(...)</span></code> 同时影响写入和读取：写入时随记忆持久化，检索时作为 filter 注入。</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">tags</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;category&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;travel&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;project_id&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;proj_001&quot;</span>
+<span class="w">    </span><span class="s">"category"</span><span class="p">,</span><span class="w"> </span><span class="s">"travel"</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"project_id"</span><span class="p">,</span><span class="w"> </span><span class="s">"proj_001"</span>
 <span class="p">);</span>
 
 <span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user_123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8000&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"user_123"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">"http://localhost:8000"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">metadata</span><span class="p">(</span><span class="n">tags</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 

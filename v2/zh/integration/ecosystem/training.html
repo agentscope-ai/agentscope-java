@@ -991,8 +991,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.training.strategy.SamplingRateStrategy</span><span class="p">;</span>
 
 <span class="n">TrainingRunner</span><span class="w"> </span><span class="n">runner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TrainingRunner</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">trinityEndpoint</span><span class="p">(</span><span class="s">&quot;http://localhost:8080&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;/path/to/model&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">trinityEndpoint</span><span class="p">(</span><span class="s">"http://localhost:8080"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"/path/to/model"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">selectionStrategy</span><span class="p">(</span><span class="n">SamplingRateStrategy</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="mf">0.1</span><span class="p">))</span><span class="w">   </span><span class="c1">// 10% 流量进训练</span>
 <span class="w">    </span><span class="p">.</span><span class="na">rewardCalculator</span><span class="p">(</span><span class="n">agent</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)</span><span class="w">                    </span><span class="c1">// 自定义奖励</span>
 <span class="w">    </span><span class="p">.</span><span class="na">commitIntervalSeconds</span><span class="p">(</span><span class="mi">300</span><span class="p">)</span><span class="w">                        </span><span class="c1">// 每 5 分钟 commit 一次</span>

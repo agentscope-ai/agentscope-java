@@ -982,21 +982,21 @@
 <span class="c1">// 1. Create components</span>
 <span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 2. Create Session and load existing session</span>
-<span class="n">Path</span><span class="w"> </span><span class="n">sessionPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getProperty</span><span class="p">(</span><span class="s">&quot;user.home&quot;</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;.agentscope&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;sessions&quot;</span><span class="p">);</span>
+<span class="n">Path</span><span class="w"> </span><span class="n">sessionPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getProperty</span><span class="p">(</span><span class="s">"user.home"</span><span class="p">),</span><span class="w"> </span><span class="s">".agentscope"</span><span class="p">,</span><span class="w"> </span><span class="s">"sessions"</span><span class="p">);</span>
 <span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">sessionPath</span><span class="p">);</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;userId&quot;</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"userId"</span><span class="p">);</span>
 
 <span class="c1">// 3. Use Agent</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 4. Save session</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;userId&quot;</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"userId"</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -1030,17 +1030,17 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.JsonSession</span><span class="p">;</span>
 
 <span class="c1">// Create JsonSession</span>
-<span class="n">Path</span><span class="w"> </span><span class="n">sessionPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;/path/to/sessions&quot;</span><span class="p">);</span>
+<span class="n">Path</span><span class="w"> </span><span class="n">sessionPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"/path/to/sessions"</span><span class="p">);</span>
 <span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">sessionPath</span><span class="p">);</span>
 
 <span class="c1">// Save session</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"user123"</span><span class="p">);</span>
 
-<span class="c1">// Load session (silently skip if doesn&#39;t exist)</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+<span class="c1">// Load session (silently skip if doesn't exist)</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"user123"</span><span class="p">);</span>
 
-<span class="c1">// Load session (throw exception if doesn&#39;t exist)</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">loadFrom</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+<span class="c1">// Load session (throw exception if doesn't exist)</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadFrom</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"user123"</span><span class="p">);</span>
 </pre></div>
 </div>
 <p><strong>Features</strong>:</p>
@@ -1063,10 +1063,10 @@
 <span class="n">InMemorySession</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemorySession</span><span class="p">();</span>
 
 <span class="c1">// Save</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"user123"</span><span class="p">);</span>
 
 <span class="c1">// Load</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"user123"</span><span class="p">);</span>
 
 <span class="c1">// Management features</span>
 <span class="n">session</span><span class="p">.</span><span class="na">listSessionKeys</span><span class="p">();</span><span class="w">  </span><span class="c1">// Get all session keys</span>
@@ -1086,17 +1086,17 @@
 <section id="save-operations">
 <h3>Save Operations<a class="headerlink" href="#save-operations" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Save session state</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;sessionId&quot;</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"sessionId"</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
 <section id="load-operations">
 <h3>Load Operations<a class="headerlink" href="#load-operations" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Load session (silently skip if doesn&#39;t exist, returns false)</span>
-<span class="kt">boolean</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;sessionId&quot;</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Load session (silently skip if doesn't exist, returns false)</span>
+<span class="kt">boolean</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"sessionId"</span><span class="p">);</span>
 
-<span class="c1">// Load session (throw exception if doesn&#39;t exist)</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">loadFrom</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;sessionId&quot;</span><span class="p">);</span>
+<span class="c1">// Load session (throw exception if doesn't exist)</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadFrom</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"sessionId"</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -1105,10 +1105,10 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SimpleSessionKey</span><span class="p">;</span>
 
 <span class="c1">// Check if session exists</span>
-<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">SimpleSessionKey</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessionId&quot;</span><span class="p">));</span>
+<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">SimpleSessionKey</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"sessionId"</span><span class="p">));</span>
 
 <span class="c1">// Delete session</span>
-<span class="n">session</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="n">SimpleSessionKey</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessionId&quot;</span><span class="p">));</span>
+<span class="n">session</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="n">SimpleSessionKey</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"sessionId"</span><span class="p">));</span>
 
 <span class="c1">// List all sessions</span>
 <span class="n">Set</span><span class="o">&lt;</span><span class="n">SessionKey</span><span class="o">&gt;</span><span class="w"> </span><span class="n">keys</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">listSessionKeys</span><span class="p">();</span>
@@ -1133,33 +1133,33 @@
 <span class="w">        </span><span class="c1">// Create components</span>
 <span class="w">        </span><span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">        </span><span class="c1">// Set up session</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;user_session_001&quot;</span><span class="p">;</span>
-<span class="w">        </span><span class="n">Path</span><span class="w"> </span><span class="n">sessionPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getProperty</span><span class="p">(</span><span class="s">&quot;user.home&quot;</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;.agentscope&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;sessions&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"user_session_001"</span><span class="p">;</span>
+<span class="w">        </span><span class="n">Path</span><span class="w"> </span><span class="n">sessionPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getProperty</span><span class="p">(</span><span class="s">"user.home"</span><span class="p">),</span><span class="w"> </span><span class="s">".agentscope"</span><span class="p">,</span><span class="w"> </span><span class="s">"sessions"</span><span class="p">);</span>
 <span class="w">        </span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">sessionPath</span><span class="p">);</span>
 
 <span class="w">        </span><span class="c1">// Load existing session (if exists)</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Loaded session: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Loaded session: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
 <span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;New session: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"New session: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
 <span class="w">        </span><span class="p">}</span>
 
 <span class="w">        </span><span class="c1">// Use Agent</span>
 <span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">            </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Hello!&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">"Hello!"</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="w">        </span><span class="c1">// Save session</span>
 <span class="w">        </span><span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Session saved&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Session saved"</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -1224,7 +1224,7 @@
 
 <span class="c1">// Usage</span>
 <span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">DatabaseSession</span><span class="p">(</span><span class="n">dbConnection</span><span class="p">);</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">"user123"</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -1270,14 +1270,14 @@
 </div>
 <p>File content:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;agent&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Assistant&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;iteration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span>
+<span class="w">  </span><span class="nt">"agent"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Assistant"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"iteration"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span>
 <span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">&quot;memory&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">      </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello&quot;</span><span class="p">},</span>
-<span class="w">      </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hi!&quot;</span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"memory"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Hello"</span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assistant"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Hi!"</span><span class="p">}</span>
 <span class="w">    </span><span class="p">]</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
@@ -1293,8 +1293,8 @@
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">memory_messages.jsonl</span></code> content (one message per line):</p>
-<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="s2">&quot;USER&quot;</span><span class="p">,</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="nt">&quot;content&quot;</span><span class="p">:[{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;text&quot;</span><span class="p">,</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="s2">&quot;Hello&quot;</span><span class="p">}]}</span>
-<span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="s2">&quot;ASSISTANT&quot;</span><span class="p">,</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="s2">&quot;Assistant&quot;</span><span class="p">,</span><span class="nt">&quot;content&quot;</span><span class="p">:[{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;text&quot;</span><span class="p">,</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="s2">&quot;Hi!&quot;</span><span class="p">}]}</span>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="s2">"USER"</span><span class="p">,</span><span class="nt">"name"</span><span class="p">:</span><span class="s2">"user"</span><span class="p">,</span><span class="nt">"content"</span><span class="p">:[{</span><span class="nt">"type"</span><span class="p">:</span><span class="s2">"text"</span><span class="p">,</span><span class="nt">"text"</span><span class="p">:</span><span class="s2">"Hello"</span><span class="p">}]}</span>
+<span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="s2">"ASSISTANT"</span><span class="p">,</span><span class="nt">"name"</span><span class="p">:</span><span class="s2">"Assistant"</span><span class="p">,</span><span class="nt">"content"</span><span class="p">:[{</span><span class="nt">"type"</span><span class="p">:</span><span class="s2">"text"</span><span class="p">,</span><span class="nt">"text"</span><span class="p">:</span><span class="s2">"Hi!"</span><span class="p">}]}</span>
 </pre></div>
 </div>
 </section>
@@ -1331,8 +1331,8 @@ rm<span class="w"> </span>-rf<span class="w"> </span>~/.agentscope/sessions/*.js
 <span class="w">        </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">oldData</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mapper</span><span class="p">.</span><span class="na">readValue</span><span class="p">(</span><span class="n">json</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="w">        </span><span class="c1">// 2. Extract message history</span>
-<span class="w">        </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">memoryData</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="n">oldData</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;memory&quot;</span><span class="p">);</span>
-<span class="w">        </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;&gt;</span><span class="p">)</span><span class="w"> </span><span class="n">memoryData</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;messages&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">memoryData</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="n">oldData</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"memory"</span><span class="p">);</span>
+<span class="w">        </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;&gt;</span><span class="p">)</span><span class="w"> </span><span class="n">memoryData</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"messages"</span><span class="p">);</span>
 
 <span class="w">        </span><span class="c1">// 3. Create new Memory and populate data</span>
 <span class="w">        </span><span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
@@ -1344,10 +1344,10 @@ rm<span class="w"> </span>-rf<span class="w"> </span>~/.agentscope/sessions/*.js
 
 <span class="w">        </span><span class="c1">// 4. Save using new API</span>
 <span class="w">        </span><span class="n">JsonSession</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">newSessionDir</span><span class="p">);</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">oldSessionFile</span><span class="p">.</span><span class="na">getFileName</span><span class="p">().</span><span class="na">toString</span><span class="p">().</span><span class="na">replace</span><span class="p">(</span><span class="s">&quot;.json&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">oldSessionFile</span><span class="p">.</span><span class="na">getFileName</span><span class="p">().</span><span class="na">toString</span><span class="p">().</span><span class="na">replace</span><span class="p">(</span><span class="s">".json"</span><span class="p">,</span><span class="w"> </span><span class="s">""</span><span class="p">);</span>
 <span class="w">        </span><span class="n">memory</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
 
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Migration complete: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Migration complete: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="n">Msg</span><span class="w"> </span><span class="nf">convertToMsg</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">msgData</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -1362,7 +1362,7 @@ rm<span class="w"> </span>-rf<span class="w"> </span>~/.agentscope/sessions/*.js
 <h4>Option 3: Dual Version Parallel<a class="headerlink" href="#option-3-dual-version-parallel" title="Link to this heading">¶</a></h4>
 <p>During transition, keep old code for reading historical data while using new API for new sessions:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Check if old format data exists</span>
-<span class="n">Path</span><span class="w"> </span><span class="n">oldFile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sessionPath</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span><span class="n">sessionId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;.json&quot;</span><span class="p">);</span>
+<span class="n">Path</span><span class="w"> </span><span class="n">oldFile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sessionPath</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span><span class="n">sessionId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">".json"</span><span class="p">);</span>
 <span class="n">Path</span><span class="w"> </span><span class="n">newDir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sessionPath</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span><span class="n">sessionId</span><span class="p">);</span>
 
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Files</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">newDir</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
@@ -1446,7 +1446,7 @@ rm<span class="w"> </span>-rf<span class="w"> </span>~/.agentscope/sessions/*.js
 <ol class="arabic simple">
 <li><p><strong>Clear old data</strong> (if not needed):</p></li>
 </ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>redis-cli<span class="w"> </span>KEYS<span class="w"> </span><span class="s2">&quot;agentscope:session:*&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>xargs<span class="w"> </span>redis-cli<span class="w"> </span>DEL
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>redis-cli<span class="w"> </span>KEYS<span class="w"> </span><span class="s2">"agentscope:session:*"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>xargs<span class="w"> </span>redis-cli<span class="w"> </span>DEL
 </pre></div>
 </div>
 <ol class="arabic simple" start="2">

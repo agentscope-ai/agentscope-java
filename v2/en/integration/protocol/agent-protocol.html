@@ -1020,7 +1020,7 @@
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">agentscope</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">agent-protocol</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<span class="w">    </span><span class="c1"># optional — control-plane TaskRecord directory (not an execution agent&#39;s workspace)</span>
+<span class="w">    </span><span class="c1"># optional — control-plane TaskRecord directory (not an execution agent's workspace)</span>
 <span class="w">    </span><span class="c1"># task-store-path: ${user.dir}/.agentscope/agent-protocol</span>
 </pre></div>
 </div>
@@ -1045,8 +1045,8 @@ skills). Multi-agent factories may give each agent a different <code class="docu
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
 <span class="kd">public</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="w"> </span><span class="nf">harnessAgent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;protocol-agent&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"protocol-agent"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"dashscope:qwen-plus"</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="p">}</span>
 </pre></div>
@@ -1060,10 +1060,10 @@ skills). Multi-agent factories may give each agent a different <code class="docu
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
 <span class="n">AgentFactory</span><span class="w"> </span><span class="nf">agentFactory</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">contextString</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">);</span>
-<span class="w">        </span><span class="n">log</span><span class="p">.</span><span class="na">info</span><span class="p">(</span><span class="s">&quot;task {} agent_id={} tenant={} resume={}&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">contextString</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">);</span>
+<span class="w">        </span><span class="n">log</span><span class="p">.</span><span class="na">info</span><span class="p">(</span><span class="s">"task {} agent_id={} tenant={} resume={}"</span><span class="p">,</span>
 <span class="w">                </span><span class="n">request</span><span class="p">.</span><span class="na">taskId</span><span class="p">(),</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">tenant</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">resume</span><span class="p">());</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">getOrDefault</span><span class="p">(</span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">getOrDefault</span><span class="p">(</span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"default"</span><span class="p">));</span>
 <span class="w">    </span><span class="p">};</span>
 <span class="p">}</span>
 </pre></div>
@@ -1109,7 +1109,7 @@ skills). Multi-agent factories may give each agent a different <code class="docu
 <p>Callers pass their own data in <code class="docutils literal notranslate"><span class="pre">context.attributes</span></code>, nested so it never mixes with the protocol’s own context fields. Besides being visible to the <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code>, attributes reach the running agent through its <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>.</p>
 <p>They arrive as <strong>one map under a single namespaced key</strong>, <code class="docutils literal notranslate"><span class="pre">AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY</span></code> (<code class="docutils literal notranslate"><span class="pre">agentprotocol.context.attributes</span></code>):</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ctx</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">AgentProtocolConstants</span><span class="p">.</span><span class="na">RUNTIME_CONTEXT_ATTRIBUTES_KEY</span><span class="p">);</span>
-<span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">attributes</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">attributes</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
 </pre></div>
 </div>
 <p>Attributes are namespaced rather than written as top-level keys because the framework itself reads a few plain runtime-context keys — <code class="docutils literal notranslate"><span class="pre">agentId</span></code> drives async tool wakeup routing, <code class="docutils literal notranslate"><span class="pre">outboundAddress</span></code> carries the gateway reply address. A caller naming an attribute after one of those would otherwise change how the agent behaves. Attributes are never rendered into the system prompt, so they do not affect what the model sees.</p>
@@ -1118,13 +1118,13 @@ skills). Multi-agent factories may give each agent a different <code class="docu
 <p>Register <code class="docutils literal notranslate"><span class="pre">RuntimeContextCustomizer</span></code> beans when a tool expects a plain key such as <code class="docutils literal notranslate"><span class="pre">ctx.get(&quot;tenant&quot;)</span></code>, or to turn attributes into typed values. <code class="docutils literal notranslate"><span class="pre">RuntimeContextCustomizer.flatten</span></code> copies an explicit allow-list, silently skipping framework-reserved names:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
 <span class="n">RuntimeContextCustomizer</span><span class="w"> </span><span class="nf">promoteTenantKeys</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">RuntimeContextCustomizer</span><span class="p">.</span><span class="na">flatten</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ticket_id&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">RuntimeContextCustomizer</span><span class="p">.</span><span class="na">flatten</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">,</span><span class="w"> </span><span class="s">"ticket_id"</span><span class="p">);</span>
 <span class="p">}</span>
 
 <span class="nd">@Bean</span>
 <span class="n">RuntimeContextCustomizer</span><span class="w"> </span><span class="nf">tenantContext</span><span class="p">(</span><span class="n">TenantService</span><span class="w"> </span><span class="n">tenants</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">request</span><span class="p">,</span><span class="w"> </span><span class="n">builder</span><span class="p">)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">attributeString</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">attributeString</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">);</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">tenant</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="n">builder</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">TenantInfo</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">tenants</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="n">tenant</span><span class="p">));</span>
 <span class="w">        </span><span class="p">}</span>
@@ -1139,16 +1139,16 @@ skills). Multi-agent factories may give each agent a different <code class="docu
 <p>A parent agent delegating to a remote subagent supplies attributes in two ways, merged with the per-call ones winning:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Static, per subagent</span>
 <span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;researcher&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Remote researcher&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;http://remote:8080&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">remoteContextAttributes</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;region&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;cn&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"researcher"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Remote researcher"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">"http://remote:8080"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">remoteContextAttributes</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"region"</span><span class="p">,</span><span class="w"> </span><span class="s">"cn"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// Per call, on the parent&#39;s RuntimeContext</span>
+<span class="c1">// Per call, on the parent's RuntimeContext</span>
 <span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;sess-1&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_REMOTE_CONTEXT_ATTRIBUTES</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;acme&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"sess-1"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_REMOTE_CONTEXT_ATTRIBUTES</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">,</span><span class="w"> </span><span class="s">"acme"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1161,24 +1161,24 @@ skills). Multi-agent factories may give each agent a different <code class="docu
 <h3>Submit a task<a class="headerlink" href="#submit-a-task" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks</span></code></p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;task_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;task_123&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;agent_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Summarize the latest release notes&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;context&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u-1&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;parent_session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess-parent&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;stream&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;full&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;deny_rules&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"task_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"task_123"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"agent_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"researcher"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"input"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Summarize the latest release notes"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"context"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"user_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"u-1"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"parent_session_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sess-parent"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"stream"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"detail"</span><span class="p">:</span><span class="w"> </span><span class="s2">"full"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"deny_rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">      </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;tool_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bash&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;behavior&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;DENY&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;parent&quot;</span>
+<span class="w">        </span><span class="nt">"tool_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"bash"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"behavior"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DENY"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"parent"</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">&quot;attributes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;tenant&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;acme&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;ticket_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;INC-1001&quot;</span>
+<span class="w">    </span><span class="nt">"attributes"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"tenant"</span><span class="p">:</span><span class="w"> </span><span class="s2">"acme"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"ticket_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"INC-1001"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
@@ -1303,9 +1303,9 @@ skills). Multi-agent factories may give each agent a different <code class="docu
 <h3>Resume after HITL<a class="headerlink" href="#resume-after-hitl" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks/{taskId}/resume</span></code></p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;decisions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-2&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"decisions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">"toolCallId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"call-1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"approved"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">"toolCallId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"call-2"</span><span class="p">,</span><span class="w"> </span><span class="nt">"approved"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
 </pre></div>

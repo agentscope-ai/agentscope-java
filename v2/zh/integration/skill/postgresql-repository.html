@@ -1003,9 +1003,9 @@
 <section id="builder">
 <h2>使用 Builder<a class="headerlink" href="#builder" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">PostgresSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PostgresSkillRepository</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">ds</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">schemaName</span><span class="p">(</span><span class="s">&quot;my_schema&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">&quot;my_skills&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">resourcesTableName</span><span class="p">(</span><span class="s">&quot;my_resources&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">schemaName</span><span class="p">(</span><span class="s">"my_schema"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">"my_skills"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">resourcesTableName</span><span class="p">(</span><span class="s">"my_resources"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1015,7 +1015,7 @@
 <section id="id4">
 <h2>表结构<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">createIfNotExist=true</span></code> 时自动创建以下两张表（在指定 schema 下）：</p>
-<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="ss">&quot;agentscope&quot;</span><span class="p">.</span><span class="ss">&quot;agentscope_skills&quot;</span><span class="w"> </span><span class="p">(</span>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="ss">"agentscope"</span><span class="p">.</span><span class="ss">"agentscope_skills"</span><span class="w"> </span><span class="p">(</span>
 <span class="w">    </span><span class="n">id</span><span class="w"> </span><span class="n">BIGSERIAL</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
 <span class="w">    </span><span class="n">name</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">255</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">UNIQUE</span><span class="p">,</span>
 <span class="w">    </span><span class="n">description</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
@@ -1026,14 +1026,14 @@
 <span class="w">    </span><span class="n">updated_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span>
 <span class="p">);</span>
 
-<span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="ss">&quot;agentscope&quot;</span><span class="p">.</span><span class="ss">&quot;agentscope_skill_resources&quot;</span><span class="w"> </span><span class="p">(</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="ss">"agentscope"</span><span class="p">.</span><span class="ss">"agentscope_skill_resources"</span><span class="w"> </span><span class="p">(</span>
 <span class="w">    </span><span class="n">id</span><span class="w"> </span><span class="nb">BIGINT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
 <span class="w">    </span><span class="n">resource_path</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
 <span class="w">    </span><span class="n">resource_content</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
 <span class="w">    </span><span class="n">created_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
 <span class="w">    </span><span class="n">updated_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
 <span class="w">    </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">resource_path</span><span class="p">),</span>
-<span class="w">    </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="ss">&quot;agentscope&quot;</span><span class="p">.</span><span class="ss">&quot;agentscope_skills&quot;</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span>
+<span class="w">    </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="ss">"agentscope"</span><span class="p">.</span><span class="ss">"agentscope_skills"</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span>
 <span class="p">);</span>
 </pre></div>
 </div>
@@ -1057,12 +1057,12 @@
 <span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="cm">/* overwrite */</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
 <span class="c1">// 读取</span>
-<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getAllSkillNames</span><span class="p">();</span>
-<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 
 <span class="c1">// 删除</span>
-<span class="n">repo</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="n">repo</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>写入与删除都在事务里执行，资源表的 <code class="docutils literal notranslate"><span class="pre">ON</span> <span class="pre">DELETE</span> <span class="pre">CASCADE</span></code> 保证不会出现孤儿资源。</p>

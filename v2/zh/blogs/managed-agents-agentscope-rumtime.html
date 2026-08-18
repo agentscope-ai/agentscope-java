@@ -1100,35 +1100,35 @@ W –&gt; H[Customer-managed FS / sandbox] –&gt;
 <p>下文假设 Managed Agents 已启动在 <code class="docutils literal notranslate"><span class="pre">http://localhost:8080</span></code>，并已配置模型密钥（如 <code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code>）。</p>
 <p><strong>0. 登录</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">BASE</span><span class="o">=</span>http://localhost:8080
-<span class="nv">TOKEN</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BASE</span><span class="s2">/api/auth/login&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;username&quot;:&quot;admin&quot;,&quot;password&quot;:&quot;admin&quot;}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.token<span class="k">)</span>
+<span class="nv">TOKEN</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$BASE</span><span class="s2">/api/auth/login"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"username":"admin","password":"admin"}'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.token<span class="k">)</span>
 </pre></div>
 </div>
 <p><strong>1. 定义示例 Agent</strong></p>
 <p>我们创建一个「copilot 工作区助手」 Agent：包含简短的系统提示词，配套 read_files、list_fukes、write_files 等工具，便于演示不同工具在不同 worker 模式下的运行情况。</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">AGENT</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BASE</span><span class="s2">/api/agents&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;name&quot;: &quot;Workspace Copilot&quot;,</span>
-<span class="s1">    &quot;description&quot;: &quot;blog demo agent&quot;,</span>
-<span class="s1">    &quot;system&quot;: &quot;You are a workspace copilot. Prefer tools when listing or reading files. Keep answers concise.&quot;,</span>
-<span class="s1">    &quot;tools&quot;: [{</span>
-<span class="s1">      &quot;type&quot;: &quot;agent_toolset&quot;,</span>
-<span class="s1">      &quot;defaultConfig&quot;: {</span>
-<span class="s1">        &quot;enabled&quot;: true,</span>
-<span class="s1">        &quot;permissionPolicy&quot;: { &quot;type&quot;: &quot;always_allow&quot; }</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">AGENT</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$BASE</span><span class="s2">/api/agents"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "name": "Workspace Copilot",</span>
+<span class="s1">    "description": "blog demo agent",</span>
+<span class="s1">    "system": "You are a workspace copilot. Prefer tools when listing or reading files. Keep answers concise.",</span>
+<span class="s1">    "tools": [{</span>
+<span class="s1">      "type": "agent_toolset",</span>
+<span class="s1">      "defaultConfig": {</span>
+<span class="s1">        "enabled": true,</span>
+<span class="s1">        "permissionPolicy": { "type": "always_allow" }</span>
 <span class="s1">      },</span>
-<span class="s1">      &quot;configs&quot;: [</span>
-<span class="s1">        { &quot;name&quot;: &quot;read_file&quot;, &quot;enabled&quot;: true },</span>
-<span class="s1">        { &quot;name&quot;: &quot;list_files&quot;, &quot;enabled&quot;: true },</span>
-<span class="s1">        { &quot;name&quot;: &quot;write_file&quot;, &quot;enabled&quot;: true }</span>
+<span class="s1">      "configs": [</span>
+<span class="s1">        { "name": "read_file", "enabled": true },</span>
+<span class="s1">        { "name": "list_files", "enabled": true },</span>
+<span class="s1">        { "name": "write_file", "enabled": true }</span>
 <span class="s1">      ]</span>
 <span class="s1">    }]</span>
-<span class="s1">  }&#39;</span><span class="k">)</span>
-<span class="nv">AGENT_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$AGENT</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.id<span class="k">)</span>
-<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;AGENT_ID=</span><span class="nv">$AGENT_ID</span><span class="s2">&quot;</span>
+<span class="s1">  }'</span><span class="k">)</span>
+<span class="nv">AGENT_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$AGENT</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.id<span class="k">)</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">"AGENT_ID=</span><span class="nv">$AGENT_ID</span><span class="s2">"</span>
 </pre></div>
 </div>
 <p>接下来是三种 worker 模式的展示，同一个 Agent，同一套 Brain 推理编排执行环境，在三条 Hands 路径上的运行方式：</p>
@@ -1247,95 +1247,95 @@ Brain–&gt;&gt;Client: agent.message + status_idle –&gt;
 </ul>
 <p>拆成三个 Agent 不是为了堆叠角色，而是为了分别约束工作区权限、外部系统接入和汇总职责，这样做的收益是最小权限与独立审计，而不是把所有工具塞进一个超级 Agent 后只靠提示词约束。</p>
 <p>先创建可直接参与 fan-out 的 Ops Publisher。它只生成发布草案，不调用外部系统，因此不会让 <code class="docutils literal notranslate"><span class="pre">/api/multiagent/run</span></code> 卡在人工确认阶段：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">OPS_BODY</span><span class="o">=</span><span class="k">$(</span>jq<span class="w"> </span>-n<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">  name: &quot;Ops Publisher&quot;,</span>
-<span class="s1">  system: &quot;Draft changelogs and ticket outlines. Do not invoke tools or modify external systems.&quot;,</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">OPS_BODY</span><span class="o">=</span><span class="k">$(</span>jq<span class="w"> </span>-n<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">  name: "Ops Publisher",</span>
+<span class="s1">  system: "Draft changelogs and ticket outlines. Do not invoke tools or modify external systems.",</span>
 <span class="s1">  tools: [{</span>
-<span class="s1">    type: &quot;agent_toolset&quot;,</span>
+<span class="s1">    type: "agent_toolset",</span>
 <span class="s1">    defaultConfig: {</span>
 <span class="s1">      enabled: false,</span>
-<span class="s1">      permissionPolicy: {type: &quot;deny&quot;}</span>
+<span class="s1">      permissionPolicy: {type: "deny"}</span>
 <span class="s1">    },</span>
 <span class="s1">    configs: [{</span>
-<span class="s1">      name: &quot;read_file&quot;,</span>
+<span class="s1">      name: "read_file",</span>
 <span class="s1">      enabled: true,</span>
-<span class="s1">      permissionPolicy: {type: &quot;always_allow&quot;}</span>
+<span class="s1">      permissionPolicy: {type: "always_allow"}</span>
 <span class="s1">    }]</span>
 <span class="s1">  }]</span>
-<span class="s1">}&#39;</span><span class="k">)</span>
+<span class="s1">}'</span><span class="k">)</span>
 
 <span class="c1"># 发布规划 Agent：本次只生成文本草案</span>
-<span class="nv">OPS</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BASE</span><span class="s2">/api/agents&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OPS_BODY</span><span class="s2">&quot;</span><span class="k">)</span>
-<span class="nv">OPS_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OPS</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.id<span class="k">)</span>
+<span class="nv">OPS</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$BASE</span><span class="s2">/api/agents"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s2">"</span><span class="nv">$OPS_BODY</span><span class="s2">"</span><span class="k">)</span>
+<span class="nv">OPS_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$OPS</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.id<span class="k">)</span>
 </pre></div>
 </div>
 <p>如果要在生产中接入工单 MCP，可在 Agent body 中增加如下片段；<code class="docutils literal notranslate"><span class="pre">enableTools</span></code> 只暴露明确允许的工具，URL 与工具名必须替换为真实值：</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
-<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ticket-mcp&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://mcp.example.com/tickets&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;transport&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;enableTools&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;draft_ticket&quot;</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ticket-mcp"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://mcp.example.com/tickets"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"transport"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"enableTools"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"draft_ticket"</span><span class="p">]</span>
 <span class="w">  </span><span class="p">}]</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 <p>如需发布 Skill，也可以在确认 Workspace 已安装对应内容后增加 <code class="docutils literal notranslate"><span class="pre">&quot;skills&quot;:</span> <span class="pre">[{&quot;type&quot;:</span> <span class="pre">&quot;workspace&quot;,</span> <span class="pre">&quot;name&quot;:</span> <span class="pre">&quot;release-notes&quot;}]</span></code>。当前 <code class="docutils literal notranslate"><span class="pre">mcp_toolset.defaultConfig.permissionPolicy</span></code> 不会进入 <code class="docutils literal notranslate"><span class="pre">ToolConfirmationMiddleware</span></code>，因此高风险 MCP 写操作还需要在 MCP 网关侧做身份、审批与幂等控制，不能只依赖 Agent body 中的 <code class="docutils literal notranslate"><span class="pre">always_ask</span></code>。随后创建只读访问代码工作区的 Repo Surgeon：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># 操作用户侧资源 —— 例如「代码/仓库」类 Agent：偏 filesystem tools + skills</span>
-<span class="nv">REPO</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BASE</span><span class="s2">/api/agents&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;name&quot;: &quot;Repo Surgeon&quot;,</span>
-<span class="s1">    &quot;system&quot;: &quot;You review the user workspace in read-only mode and report release risks.&quot;,</span>
-<span class="s1">    &quot;tools&quot;: [{</span>
-<span class="s1">      &quot;type&quot;: &quot;agent_toolset&quot;,</span>
-<span class="s1">      &quot;defaultConfig&quot;: { &quot;enabled&quot;: true, &quot;permissionPolicy&quot;: { &quot;type&quot;: &quot;always_allow&quot; } },</span>
-<span class="s1">      &quot;configs&quot;: [</span>
-<span class="s1">        { &quot;name&quot;: &quot;read_file&quot;, &quot;enabled&quot;: true },</span>
-<span class="s1">        { &quot;name&quot;: &quot;grep_files&quot;, &quot;enabled&quot;: true },</span>
-<span class="s1">        { &quot;name&quot;: &quot;list_files&quot;, &quot;enabled&quot;: true }</span>
+<span class="nv">REPO</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$BASE</span><span class="s2">/api/agents"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "name": "Repo Surgeon",</span>
+<span class="s1">    "system": "You review the user workspace in read-only mode and report release risks.",</span>
+<span class="s1">    "tools": [{</span>
+<span class="s1">      "type": "agent_toolset",</span>
+<span class="s1">      "defaultConfig": { "enabled": true, "permissionPolicy": { "type": "always_allow" } },</span>
+<span class="s1">      "configs": [</span>
+<span class="s1">        { "name": "read_file", "enabled": true },</span>
+<span class="s1">        { "name": "grep_files", "enabled": true },</span>
+<span class="s1">        { "name": "list_files", "enabled": true }</span>
 <span class="s1">      ]</span>
 <span class="s1">    }]</span>
-<span class="s1">  }&#39;</span><span class="k">)</span>
-<span class="nv">REPO_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$REPO</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.id<span class="k">)</span>
+<span class="s1">  }'</span><span class="k">)</span>
+<span class="nv">REPO_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$REPO</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.id<span class="k">)</span>
 </pre></div>
 </div>
 <p>如果已安装代码审查 Skill，可再加入 <code class="docutils literal notranslate"><span class="pre">&quot;skills&quot;:</span> <span class="pre">[{&quot;type&quot;:</span> <span class="pre">&quot;workspace&quot;,</span> <span class="pre">&quot;name&quot;:</span> <span class="pre">&quot;code-review&quot;}]</span></code>。最后创建 Team Lead。它保留委派与结果收集工具，并通过真实 <code class="docutils literal notranslate"><span class="pre">MultiagentSpec</span></code> 记录前两个成员；当前运行入口不会仅凭这个字段自动启动成员，实际执行仍由下面的 Harness 委派或平台 fan-out 发起。</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">LEAD_BODY</span><span class="o">=</span><span class="k">$(</span>jq<span class="w"> </span>-n<span class="w"> </span>--arg<span class="w"> </span>repo<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$REPO_ID</span><span class="s2">&quot;</span><span class="w"> </span>--arg<span class="w"> </span>ops<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OPS_ID</span><span class="s2">&quot;</span><span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">  name: &quot;Team Lead&quot;,</span>
-<span class="s1">  system: &quot;You coordinate Repo Surgeon and Ops Publisher. For a direct task, delegate concrete work and collect results. When the prompt already contains member results, do not call tools or spawn sessions; only summarize risks and produce the final checklist. Use sessions_pending_completions for finished child sessions and wait_async_results only for the generic async inbox.&quot;,</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">LEAD_BODY</span><span class="o">=</span><span class="k">$(</span>jq<span class="w"> </span>-n<span class="w"> </span>--arg<span class="w"> </span>repo<span class="w"> </span><span class="s2">"</span><span class="nv">$REPO_ID</span><span class="s2">"</span><span class="w"> </span>--arg<span class="w"> </span>ops<span class="w"> </span><span class="s2">"</span><span class="nv">$OPS_ID</span><span class="s2">"</span><span class="w"> </span><span class="s1">'{</span>
+<span class="s1">  name: "Team Lead",</span>
+<span class="s1">  system: "You coordinate Repo Surgeon and Ops Publisher. For a direct task, delegate concrete work and collect results. When the prompt already contains member results, do not call tools or spawn sessions; only summarize risks and produce the final checklist. Use sessions_pending_completions for finished child sessions and wait_async_results only for the generic async inbox.",</span>
 <span class="s1">  tools: [{</span>
-<span class="s1">    type: &quot;agent_toolset&quot;,</span>
+<span class="s1">    type: "agent_toolset",</span>
 <span class="s1">    defaultConfig: {</span>
 <span class="s1">      enabled: true,</span>
-<span class="s1">      permissionPolicy: {type: &quot;always_allow&quot;}</span>
+<span class="s1">      permissionPolicy: {type: "always_allow"}</span>
 <span class="s1">    },</span>
 <span class="s1">    configs: [</span>
-<span class="s1">      {name: &quot;sessions_spawn&quot;, enabled: true},</span>
-<span class="s1">      {name: &quot;sessions_list&quot;, enabled: true},</span>
-<span class="s1">      {name: &quot;sessions_pending_completions&quot;, enabled: true},</span>
-<span class="s1">      {name: &quot;wait_async_results&quot;, enabled: true}</span>
+<span class="s1">      {name: "sessions_spawn", enabled: true},</span>
+<span class="s1">      {name: "sessions_list", enabled: true},</span>
+<span class="s1">      {name: "sessions_pending_completions", enabled: true},</span>
+<span class="s1">      {name: "wait_async_results", enabled: true}</span>
 <span class="s1">    ]</span>
 <span class="s1">  }],</span>
 <span class="s1">  multiagent: {</span>
-<span class="s1">    type: &quot;agent_team&quot;,</span>
+<span class="s1">    type: "agent_team",</span>
 <span class="s1">    agents: [</span>
-<span class="s1">      {type: &quot;agent&quot;, id: $repo},</span>
-<span class="s1">      {type: &quot;agent&quot;, id: $ops}</span>
+<span class="s1">      {type: "agent", id: $repo},</span>
+<span class="s1">      {type: "agent", id: $ops}</span>
 <span class="s1">    ]</span>
 <span class="s1">  }</span>
-<span class="s1">}&#39;</span><span class="k">)</span>
+<span class="s1">}'</span><span class="k">)</span>
 
-<span class="nv">LEAD</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BASE</span><span class="s2">/api/agents&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$LEAD_BODY</span><span class="s2">&quot;</span><span class="k">)</span>
-<span class="nv">LEAD_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$LEAD</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.id<span class="k">)</span>
-<span class="nb">printf</span><span class="w"> </span><span class="s1">&#39;OPS_ID=%s\nREPO_ID=%s\nLEAD_ID=%s\n&#39;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OPS_ID</span><span class="s2">&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$REPO_ID</span><span class="s2">&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$LEAD_ID</span><span class="s2">&quot;</span>
+<span class="nv">LEAD</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-fsS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$BASE</span><span class="s2">/api/agents"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s2">"</span><span class="nv">$LEAD_BODY</span><span class="s2">"</span><span class="k">)</span>
+<span class="nv">LEAD_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$LEAD</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-er<span class="w"> </span>.id<span class="k">)</span>
+<span class="nb">printf</span><span class="w"> </span><span class="s1">'OPS_ID=%s\nREPO_ID=%s\nLEAD_ID=%s\n'</span><span class="w"> </span><span class="s2">"</span><span class="nv">$OPS_ID</span><span class="s2">"</span><span class="w"> </span><span class="s2">"</span><span class="nv">$REPO_ID</span><span class="s2">"</span><span class="w"> </span><span class="s2">"</span><span class="nv">$LEAD_ID</span><span class="s2">"</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">MultiagentSpec</span></code> 的 wire schema 是 <code class="docutils literal notranslate"><span class="pre">type</span> <span class="pre">+</span> <span class="pre">agents[]</span></code>，成员引用包含 <code class="docutils literal notranslate"><span class="pre">type</span></code>、<code class="docutils literal notranslate"><span class="pre">id</span></code> 和可选 <code class="docutils literal notranslate"><span class="pre">version</span></code>。<code class="docutils literal notranslate"><span class="pre">wait_async_results</span></code> 用于阻塞等待通用异步 inbox；<code class="docutils literal notranslate"><span class="pre">sessions_pending_completions</span></code> 用于枚举已经完成但尚未消费的子 Session 结果。两者服务于不同的异步模式，因此 Team Lead 同时启用它们，但应由 system prompt 明确什么时候使用哪一种。</p>

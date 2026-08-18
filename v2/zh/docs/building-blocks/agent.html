@@ -1043,12 +1043,12 @@
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my_agent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手。&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my_agent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个有帮助的助手。"</span><span class="p">)</span>
 <span class="w">                </span><span class="c1">// 由 ModelRegistry 解析；自动读取 DASHSCOPE_API_KEY</span>
-<span class="w">                </span><span class="c1">// 切换其他厂商时改成 &quot;openai:gpt-5.5&quot; / &quot;anthropic:claude-sonnet-4-5&quot;</span>
-<span class="w">                </span><span class="c1">// / &quot;deepseek:deepseek-v4-flash&quot; / &quot;gemini:gemini-2.0-flash&quot; / &quot;ollama:llama3&quot; 即可。</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="c1">// 切换其他厂商时改成 "openai:gpt-5.5" / "anthropic:claude-sonnet-4-5"</span>
+<span class="w">                </span><span class="c1">// / "deepseek:deepseek-v4-flash" / "gemini:gemini-2.0-flash" / "ollama:llama3" 即可。</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"dashscope:qwen-plus"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1064,12 +1064,12 @@
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my_agent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手。&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my_agent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个有帮助的助手。"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span>
 <span class="w">                        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;YOUR_API_KEY&quot;</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-max&quot;</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"YOUR_API_KEY"</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-max"</span><span class="p">)</span>
 <span class="w">                                </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                                </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span>
 <span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
@@ -1092,16 +1092,16 @@
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">MyCustomTools</span><span class="p">());</span><span class="w">      </span><span class="c1">// 自定义工具类（带 @Tool 注解的方法）</span>
 
 <span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">amap</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">streamableHttp</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;amap&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://mcp.amap.com/mcp?key=&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AMAP_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"amap"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">"https://mcp.amap.com/mcp?key="</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"AMAP_API_KEY"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerMcpClient</span><span class="p">(</span><span class="n">amap</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my_agent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手。&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-max&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my_agent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个有帮助的助手。"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"dashscope:qwen-max"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1195,19 +1195,19 @@
 
 <span class="c1">// 应用启动时创建一个 agent 实例（单例）</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手。&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个有帮助的助手。"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"dashscope:qwen-plus"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonFileAgentStateStore</span><span class="p">(</span>
-<span class="w">                </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getProperty</span><span class="p">(</span><span class="s">&quot;user.home&quot;</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;.agentscope/sessions&quot;</span><span class="p">)))</span>
+<span class="w">                </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getProperty</span><span class="p">(</span><span class="s">"user.home"</span><span class="p">),</span><span class="w"> </span><span class="s">".agentscope/sessions"</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 在 HTTP handler 中——不同请求传入不同 RuntimeContext，各自隔离</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;你好&quot;</span><span class="p">)),</span>
-<span class="w">        </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-1&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"你好"</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"session-1"</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;Hi there&quot;</span><span class="p">)),</span>
-<span class="w">        </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;bob&quot;</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-2&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"Hi there"</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">userId</span><span class="p">(</span><span class="s">"bob"</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"session-2"</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 <p>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 开始时，agent 根据 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 中的 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 自动加载对应的 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>（对话上下文、权限规则等）；call 结束后自动保存。不同 session 的状态完全隔离。</p>
@@ -1224,15 +1224,15 @@
 
 <span class="c1">// 构造标识目标 session 的 RuntimeContext</span>
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">target</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-001&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"session-001"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 中断该 session 正在进行的 call</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="n">target</span><span class="p">);</span>
 
 <span class="c1">// 带消息中断——中断消息会被 LLM 在恢复时看到</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="n">target</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;用户已取消操作&quot;</span><span class="p">));</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="n">target</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"用户已取消操作"</span><span class="p">));</span>
 </pre></div>
 </div>
 <p>中断是 <strong>per-session</strong> 的：只影响指定 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 的 in-flight call，不会波及同一 agent 上其他 session 的并发请求。</p>
@@ -1243,8 +1243,8 @@
 <li><p>对话上下文（AgentState）自动保存——下次对同一 session 发起 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 时从中断点恢复</p></li>
 </ul>
 <p>也可以直接用 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 字符串：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">);</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">interruptMsg</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"session-001"</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"session-001"</span><span class="p">,</span><span class="w"> </span><span class="n">interruptMsg</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -1259,7 +1259,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.UserMessage</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 
-<span class="n">UserMessage</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;当前目录有哪些文件？&quot;</span><span class="p">);</span>
+<span class="n">UserMessage</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"当前目录有哪些文件？"</span><span class="p">);</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">msg</span><span class="p">),</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">empty</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 </pre></div>
@@ -1272,14 +1272,14 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.TextBlockDeltaEvent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.ToolCallStartEvent</span><span class="p">;</span>
 
-<span class="n">agent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;总结一下 README 的内容。&quot;</span><span class="p">))</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"总结一下 README 的内容。"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">TEXT_BLOCK_DELTA</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="c1">// 模型返回的流式文本片段 —— 追加到界面或标准输出</span>
 <span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(((</span><span class="n">TextBlockDeltaEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getDelta</span><span class="p">());</span>
 <span class="w">            </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">TOOL_CALL_START</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="c1">// 智能体即将调用工具 —— 展示调用信息</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n[tool] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">((</span><span class="n">ToolCallStartEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getToolCallName</span><span class="p">());</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\n[tool] "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">((</span><span class="n">ToolCallStartEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getToolCallName</span><span class="p">());</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="c1">// 其他事件：思考块、工具结果、回复结束等</span>
 <span class="w">        </span><span class="p">})</span>
@@ -1338,13 +1338,13 @@
 
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span><span class="w">                           </span><span class="c1">// 可选；null 表示匿名</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-001&quot;</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 选择状态槽位</span>
-<span class="w">                </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;request_id&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;req-abc-123&quot;</span><span class="p">)</span><span class="w">          </span><span class="c1">// 字符串层</span>
-<span class="w">                </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">UserContext</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;en&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// 类型层（业务 POJO）</span>
+<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span><span class="w">                           </span><span class="c1">// 可选；null 表示匿名</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"session-001"</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 选择状态槽位</span>
+<span class="w">                </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">"request_id"</span><span class="p">,</span><span class="w"> </span><span class="s">"req-abc-123"</span><span class="p">)</span><span class="w">          </span><span class="c1">// 字符串层</span>
+<span class="w">                </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">UserContext</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"en"</span><span class="p">))</span><span class="w">  </span><span class="c1">// 类型层（业务 POJO）</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;Hi.&quot;</span><span class="p">)),</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"Hi."</span><span class="p">)),</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 提供 <code class="docutils literal notranslate"><span class="pre">call</span></code> / <code class="docutils literal notranslate"><span class="pre">stream</span></code> 的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 重载；<code class="docutils literal notranslate"><span class="pre">streamEvents</span></code> 未直接重载，需要传 context 时改用 <code class="docutils literal notranslate"><span class="pre">stream(msgs,</span> <span class="pre">options,</span> <span class="pre">ctx)</span></code> 或先在 builder 上配置全局 <code class="docutils literal notranslate"><span class="pre">toolExecutionContext</span></code>。不传 context 时框架使用 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.empty()</span></code>，会话字段为 <code class="docutils literal notranslate"><span class="pre">null</span></code>，属性表为空，此时 agent 回退到 builder 上配置的 <code class="docutils literal notranslate"><span class="pre">defaultSessionId</span></code>。</p>
@@ -1383,8 +1383,8 @@
 <span class="w">        </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">RequireUserConfirmEvent</span><span class="w"> </span><span class="n">confirm</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="n">confirm</span><span class="p">.</span><span class="na">getToolCalls</span><span class="p">().</span><span class="na">forEach</span><span class="p">(</span><span class="n">tc</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;工具: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;, 输入: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getInput</span><span class="p">());</span>
-<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;建议规则: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getSuggestedRules</span><span class="p">());</span>
+<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"工具: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">", 输入: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getInput</span><span class="p">());</span>
+<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"建议规则: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getSuggestedRules</span><span class="p">());</span>
 <span class="w">                </span><span class="p">});</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">        </span><span class="p">})</span>
@@ -1436,7 +1436,7 @@
 <span class="w">        </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">RequireExternalExecutionEvent</span><span class="w"> </span><span class="n">ext</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="n">ext</span><span class="p">.</span><span class="na">getToolCalls</span><span class="p">().</span><span class="na">forEach</span><span class="p">(</span><span class="n">tc</span><span class="w"> </span><span class="o">-&gt;</span>
-<span class="w">                        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;外部执行: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;(&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getInput</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;)&quot;</span><span class="p">));</span>
+<span class="w">                        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"外部执行: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"("</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tc</span><span class="p">.</span><span class="na">getInput</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">")"</span><span class="p">));</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">        </span><span class="p">})</span>
 <span class="w">        </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
@@ -1478,22 +1478,22 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Paths</span><span class="p">;</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my_agent&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手。&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my_agent"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个有帮助的助手。"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonFileAgentStateStore</span><span class="p">(</span>
-<span class="w">                </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getProperty</span><span class="p">(</span><span class="s">&quot;user.home&quot;</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;.agentscope/sessions&quot;</span><span class="p">)))</span>
+<span class="w">                </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getProperty</span><span class="p">(</span><span class="s">"user.home"</span><span class="p">),</span><span class="w"> </span><span class="s">".agentscope/sessions"</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 选定本次会话的槽位；userId 可选（null 表示匿名）</span>
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">rc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user_123&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session_789&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"user_123"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"session_789"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 若 (user_123, session_789) 有历史数据会自动加载；调用结束自动持久化</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;继续之前的任务。&quot;</span><span class="p">)),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"继续之前的任务。"</span><span class="p">)),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 <p>内置与扩展实现：</p>
@@ -1527,7 +1527,7 @@
 </div>
 <p>大多数场景只用一个 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 就够；要按用户分桶就在 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 上同时设置 <code class="docutils literal notranslate"><span class="pre">userId</span></code>，存储会按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 二元组寻址每个槽位。</p>
 <p>通过 <code class="docutils literal notranslate"><span class="pre">agent.getAgentState(userId,</span> <span class="pre">sessionId)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">agent.getAgentState(runtimeContext)</span></code> 可读取指定会话的状态快照：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentState</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getAgentState</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentState</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getAgentState</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"session-001"</span><span class="p">);</span>
 <span class="n">state</span><span class="p">.</span><span class="na">getContext</span><span class="p">().</span><span class="na">size</span><span class="p">();</span><span class="w">                  </span><span class="c1">// 当前对话消息数</span>
 <span class="n">String</span><span class="w"> </span><span class="n">json</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">toJson</span><span class="p">();</span><span class="w">               </span><span class="c1">// 序列化为 JSON</span>
 </pre></div>
@@ -1546,12 +1546,12 @@
 <span class="c1">// 定义输出结构</span>
 <span class="kd">public</span><span class="w"> </span><span class="kd">record</span> <span class="nc">WeatherResponse</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">temperature</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">condition</span><span class="p">)</span><span class="w"> </span><span class="p">{}</span>
 
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;旧金山天气如何？&quot;</span><span class="p">)),</span><span class="w"> </span><span class="n">WeatherResponse</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"旧金山天气如何？"</span><span class="p">)),</span><span class="w"> </span><span class="n">WeatherResponse</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 从结果中取出强类型数据</span>
 <span class="n">WeatherResponse</span><span class="w"> </span><span class="n">weather</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">WeatherResponse</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">weather</span><span class="p">.</span><span class="na">location</span><span class="p">());</span><span class="w">      </span><span class="c1">// &quot;San Francisco&quot;</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">weather</span><span class="p">.</span><span class="na">temperature</span><span class="p">());</span><span class="w">   </span><span class="c1">// &quot;18°C&quot;</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">weather</span><span class="p">.</span><span class="na">location</span><span class="p">());</span><span class="w">      </span><span class="c1">// "San Francisco"</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">weather</span><span class="p">.</span><span class="na">temperature</span><span class="p">());</span><span class="w">   </span><span class="c1">// "18°C"</span>
 </pre></div>
 </div>
 <p>结构化输出与工具可以同时使用——智能体会先调用工具完成任务，最后以指定 schema 输出最终结果。</p>
@@ -1597,8 +1597,8 @@
 <span class="n">WeatherResponse</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">WeatherResponse</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="c1">// 方式二：作为 Map 读取</span>
-<span class="nd">@SuppressWarnings</span><span class="p">(</span><span class="s">&quot;unchecked&quot;</span><span class="p">)</span>
-<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">map</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;_structured_output&quot;</span><span class="p">);</span>
+<span class="nd">@SuppressWarnings</span><span class="p">(</span><span class="s">"unchecked"</span><span class="p">)</span>
+<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">map</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">get</span><span class="p">(</span><span class="s">"_structured_output"</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -1609,18 +1609,18 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">com.fasterxml.jackson.databind.ObjectMapper</span><span class="p">;</span>
 
 <span class="n">ObjectMapper</span><span class="w"> </span><span class="n">om</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ObjectMapper</span><span class="p">();</span>
-<span class="n">JsonNode</span><span class="w"> </span><span class="n">schema</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">om</span><span class="p">.</span><span class="na">readTree</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="n">JsonNode</span><span class="w"> </span><span class="n">schema</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">om</span><span class="p">.</span><span class="na">readTree</span><span class="p">(</span><span class="s">"""</span>
 <span class="s">    {</span>
-<span class="s">      &quot;type&quot;: &quot;object&quot;,</span>
-<span class="s">      &quot;properties&quot;: {</span>
-<span class="s">        &quot;sentiment&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;positive&quot;, &quot;negative&quot;, &quot;neutral&quot;] },</span>
-<span class="s">        &quot;confidence&quot;: { &quot;type&quot;: &quot;number&quot; }</span>
+<span class="s">      "type": "object",</span>
+<span class="s">      "properties": {</span>
+<span class="s">        "sentiment": { "type": "string", "enum": ["positive", "negative", "neutral"] },</span>
+<span class="s">        "confidence": { "type": "number" }</span>
 <span class="s">      },</span>
-<span class="s">      &quot;required&quot;: [&quot;sentiment&quot;, &quot;confidence&quot;]</span>
+<span class="s">      "required": ["sentiment", "confidence"]</span>
 <span class="s">    }</span>
-<span class="s">    &quot;&quot;&quot;</span><span class="p">);</span>
+<span class="s">    """</span><span class="p">);</span>
 
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;分析这段评论的情感&quot;</span><span class="p">)),</span><span class="w"> </span><span class="n">schema</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"分析这段评论的情感"</span><span class="p">)),</span><span class="w"> </span><span class="n">schema</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1631,9 +1631,9 @@
 <section id="id21">
 <h3>模型容错<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"dashscope:qwen-plus"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">maxRetries</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                              </span><span class="c1">// 模型调用失败时自动重试</span>
-<span class="w">        </span><span class="p">.</span><span class="na">fallbackModel</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-max&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// 主模型连续失败后切换到备用模型</span>
+<span class="w">        </span><span class="p">.</span><span class="na">fallbackModel</span><span class="p">(</span><span class="s">"dashscope:qwen-max"</span><span class="p">)</span><span class="w">        </span><span class="c1">// 主模型连续失败后切换到备用模型</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>

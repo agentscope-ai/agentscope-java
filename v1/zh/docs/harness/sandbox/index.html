@@ -1022,18 +1022,18 @@
 <h3>3.1 SESSION — 对话隔离（默认）<a class="headerlink" href="#session" title="Link to this heading">¶</a></h3>
 <p>每条对话独立沙箱，互不影响。适合多用户 SaaS，每个会话的临时工作文件、已安装的依赖互相隔离。</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;code-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"code-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(...)))</span>
 <span class="w">    </span><span class="c1">// isolationScope 默认即 SESSION，此行可省略</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="n">dockerSpec</span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 每次 call 传入不同 sessionId → 独立的沙箱</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msgs</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;user1-session1&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msgs</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;user1-session2&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msgs</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"user1-session1"</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msgs</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"user1-session2"</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1044,25 +1044,25 @@
 <p><strong>Remote 模式 + USER</strong>（无沙箱时的等价方案）：<code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> 用 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 作为 KV 命名空间前缀，所有路由到 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>、<code class="docutils literal notranslate"><span class="pre">memory/</span></code> 等的读写都落在同一 store key 下，从而实现分布式副本之间的记忆共享，而无需快照。</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 沙箱 + USER 隔离：同一用户跨 Pod 共享快照</span>
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(...))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sandboxDistributed</span><span class="p">(</span><span class="n">SandboxDistributedOptions</span><span class="p">.</span><span class="na">oss</span><span class="p">(</span><span class="n">redisSession</span><span class="p">,</span><span class="w"> </span><span class="n">ossSnapshotSpec</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span><span class="w">       </span><span class="c1">// 相同 userId → 相同 state slot → 可恢复同一工作区</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-xyz&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span><span class="w">       </span><span class="c1">// 相同 userId → 相同 state slot → 可恢复同一工作区</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"session-xyz"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msgs</span><span class="p">,</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Remote 模式 + USER 隔离：轻量级分布式记忆共享（无沙箱）</span>
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">(</span><span class="n">redisStore</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
@@ -1097,7 +1097,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;my-session&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"my-session"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">SandboxContext</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">callCtx</span><span class="p">)</span><span class="w">      </span><span class="c1">// 覆盖构建时的 defaultSandboxContext</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1140,7 +1140,7 @@
 <h3>4.2 传入序列化状态（精确恢复特定快照）<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
 <p>若你已持有某次 <code class="docutils literal notranslate"><span class="pre">call</span></code> 后保存的 <code class="docutils literal notranslate"><span class="pre">SandboxState</span></code> 序列化串，可绕过 <code class="docutils literal notranslate"><span class="pre">SandboxStateStore</span></code> 的自动查找，直接指定要恢复的状态：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 从外部获取之前序列化的 state（例如从数据库或请求参数中读取）</span>
-<span class="n">String</span><span class="w"> </span><span class="n">savedStateJson</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">db</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">&quot;checkpoint-2026-04-28&quot;</span><span class="p">);</span>
+<span class="n">String</span><span class="w"> </span><span class="n">savedStateJson</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">db</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">"checkpoint-2026-04-28"</span><span class="p">);</span>
 <span class="n">SandboxState</span><span class="w"> </span><span class="n">savedState</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dockerClient</span><span class="p">.</span><span class="na">deserializeState</span><span class="p">(</span><span class="n">savedStateJson</span><span class="p">);</span>
 
 <span class="n">SandboxContext</span><span class="w"> </span><span class="n">callCtx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SandboxContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1238,7 +1238,7 @@
 <h3>5.5 启用<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <p>与 Docker 相同，在 <strong><code class="docutils literal notranslate"><span class="pre">HarnessAgent.builder()</span></code></strong> 上传入你的 spec：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">MySandboxFilesystemSpec</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span>
@@ -1383,9 +1383,9 @@ knowledge/      ← 领域知识文件
 └── run_tests.sh
 
 agent 思考后调用 shell_execute:
-  &quot;bash /workspace/skills/pytest/run_tests.sh tests/&quot;
+  "bash /workspace/skills/pytest/run_tests.sh tests/"
           ↓
-   ExecResult(exitCode=0, stdout=&quot;5 passed&quot;)
+   ExecResult(exitCode=0, stdout="5 passed")
 </pre></div>
 </div>
 <p><strong>优点</strong>：脚本运行在隔离容器内，pip install、apt-get、rm -rf 等操作只影响沙箱工作区，宿主机无感。沙箱被 snapshot 后，已安装的依赖也会随工作区一起被归档，下次恢复时直接可用（Branch A/B/C），无需重新安装。</p>
@@ -1394,9 +1394,9 @@ agent 思考后调用 shell_execute:
 <h3>7.4 Shell 命令与脚本的状态持久化<a class="headerlink" href="#shell" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">ShellExecuteTool</span></code> 调用 <code class="docutils literal notranslate"><span class="pre">AbstractSandboxFilesystem.execute(cmd,</span> <span class="pre">timeout)</span></code> → <code class="docutils literal notranslate"><span class="pre">Sandbox.exec(cmd,</span> <span class="pre">timeout)</span></code>，在沙箱内执行命令。命令对文件系统的所有更改（新建文件、安装包、写日志等）都保留在沙箱的 overlay/容器内。<code class="docutils literal notranslate"><span class="pre">stop()</span></code> 时这些状态随 tar 快照持久化，下次 <code class="docutils literal notranslate"><span class="pre">start()</span></code> 恢复。</p>
 <p>因此，跨 <code class="docutils literal notranslate"><span class="pre">call</span></code> 的<strong>状态是完整保留的</strong>：</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>call 1: shell_execute(&quot;pip install pandas&quot;)   → pandas 装进沙箱
-call 2: shell_execute(&quot;python analyze.py&quot;)    → 直接可用，无需重装
-call 3: shell_execute(&quot;cat results.csv&quot;)      → 读 call 2 产生的文件
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>call 1: shell_execute("pip install pandas")   → pandas 装进沙箱
+call 2: shell_execute("python analyze.py")    → 直接可用，无需重装
+call 3: shell_execute("cat results.csv")      → 读 call 2 产生的文件
 </pre></div>
 </div>
 </section>
@@ -1472,20 +1472,20 @@ lease.close()          ← 释放执行权，下一个等待方可进入
 <section id="redis">
 <h3>9.3 内置 Redis 实现<a class="headerlink" href="#redis" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code> 使用 Redis <code class="docutils literal notranslate"><span class="pre">SET</span> <span class="pre">NX</span> <span class="pre">PX</span></code> 租约实现分布式互斥，<strong>与 <code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec</span></code> 共用同一 <code class="docutils literal notranslate"><span class="pre">UnifiedJedis</span></code> 实例</strong>，不引入额外依赖。它会把 <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> 一并编码进锁 key，因此 <code class="docutils literal notranslate"><span class="pre">USER</span></code>、<code class="docutils literal notranslate"><span class="pre">AGENT</span></code> 和 <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> 都会落到各自独立的分布式锁上：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">UnifiedJedis</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis-host&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">6379</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">UnifiedJedis</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">"redis-host"</span><span class="p">,</span><span class="w"> </span><span class="mi">6379</span><span class="p">);</span>
 
 <span class="c1">// 与 RedisSnapshotSpec 共用同一 jedis 实例</span>
 <span class="n">SandboxExecutionGuard</span><span class="w"> </span><span class="n">guard</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisSandboxExecutionGuard</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">jedis</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">leaseTtl</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">      </span><span class="c1">// 须大于最坏情况 call 耗时</span>
 <span class="w">    </span><span class="p">.</span><span class="na">retryInterval</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMillis</span><span class="p">(</span><span class="mi">500</span><span class="p">))</span><span class="w"> </span><span class="c1">// 轮询间隔</span>
-<span class="w">    </span><span class="p">.</span><span class="na">keyPrefix</span><span class="p">(</span><span class="s">&quot;myapp:sandbox:lock:&quot;</span><span class="p">)</span><span class="w">      </span><span class="c1">// 可选，多环境隔离时使用</span>
+<span class="w">    </span><span class="p">.</span><span class="na">keyPrefix</span><span class="p">(</span><span class="s">"myapp:sandbox:lock:"</span><span class="p">)</span><span class="w">      </span><span class="c1">// 可选，多环境隔离时使用</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;shared-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"shared-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">AGENT</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RedisSnapshotSpec</span><span class="p">(</span><span class="n">jedis</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="n">guard</span><span class="p">))</span><span class="w">            </span><span class="c1">// ← 串行化 AGENT 维度的并发访问</span>

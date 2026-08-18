@@ -1093,8 +1093,8 @@ Initial config</label><div class="sd-tab-content docutils">
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my_agent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my_agent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">permissionContext</span><span class="p">(</span><span class="n">permCtx</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1112,8 +1112,8 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 <span class="w">        </span><span class="n">PermissionContextState</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">ACCEPT_EDITS</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addWorkingDirectory</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;/my/project&quot;</span><span class="p">,</span>
-<span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">AdditionalWorkingDirectory</span><span class="p">(</span><span class="s">&quot;/my/project&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;userSettings&quot;</span><span class="p">))</span>
+<span class="w">                        </span><span class="s">"/my/project"</span><span class="p">,</span>
+<span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">AdditionalWorkingDirectory</span><span class="p">(</span><span class="s">"/my/project"</span><span class="p">,</span><span class="w"> </span><span class="s">"userSettings"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1142,20 +1142,20 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 <span class="w">        </span><span class="n">PermissionContextState</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">DEFAULT</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addAllowRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;safe_read&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"safe_read"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;safe_read&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;userSettings&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"safe_read"</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">"userSettings"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addAskRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;dangerous_delete&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"dangerous_delete"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;dangerous_delete&quot;</span><span class="p">,</span>
+<span class="w">                                </span><span class="s">"dangerous_delete"</span><span class="p">,</span>
 <span class="w">                                </span><span class="kc">null</span><span class="p">,</span>
 <span class="w">                                </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ASK</span><span class="p">,</span>
-<span class="w">                                </span><span class="s">&quot;userSettings&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"userSettings"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addDenyRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;drop_table&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"drop_table"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;drop_table&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">DENY</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;userSettings&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"drop_table"</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">DENY</span><span class="p">,</span><span class="w"> </span><span class="s">"userSettings"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1190,24 +1190,24 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">MyTool</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="kd">super</span><span class="p">(</span>
 <span class="w">                </span><span class="n">ToolBase</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyTool&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"MyTool"</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">readOnly</span><span class="p">(</span><span class="kc">false</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">PermissionDecision</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">checkPermissions</span><span class="p">(</span>
 <span class="w">            </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolInput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">Object</span><span class="w"> </span><span class="n">target</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolInput</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;target&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">Object</span><span class="w"> </span><span class="n">target</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolInput</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"target"</span><span class="p">);</span>
 
 <span class="w">        </span><span class="c1">// Custom safety check: block production resources.</span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">target</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">s</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="na">startsWith</span><span class="p">(</span><span class="s">&quot;prod-&quot;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">target</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">s</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="na">startsWith</span><span class="p">(</span><span class="s">"prod-"</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span>
-<span class="w">                    </span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">ask</span><span class="p">(</span><span class="s">&quot;Operation targets production resource: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">s</span><span class="p">));</span>
+<span class="w">                    </span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">ask</span><span class="p">(</span><span class="s">"Operation targets production resource: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">s</span><span class="p">));</span>
 <span class="w">        </span><span class="p">}</span>
 
 <span class="w">        </span><span class="c1">// Return PASSTHROUGH to let the engine continue evaluating rules / mode.</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">passthrough</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">passthrough</span><span class="p">(</span><span class="s">"default"</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -1274,26 +1274,26 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 <span class="w">        </span><span class="n">PermissionContextState</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">DEFAULT</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addAllowRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;safe_read&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"safe_read"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;safe_read&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;policy&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"safe_read"</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">"policy"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addAskRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;dangerous_delete&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"dangerous_delete"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;dangerous_delete&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ASK</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;policy&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"dangerous_delete"</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ASK</span><span class="p">,</span><span class="w"> </span><span class="s">"policy"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;GuardedAgent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"GuardedAgent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">permissionContext</span><span class="p">(</span><span class="n">permCtx</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 2. Call the agent</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;Delete /tmp/important.txt&quot;</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"Delete /tmp/important.txt"</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 3. Check whether user confirmation is needed</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getGenerateReason</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">GenerateReason</span><span class="p">.</span><span class="na">PERMISSION_ASKING</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -1306,9 +1306,9 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 <span class="w">                    </span><span class="p">.</span><span class="na">toList</span><span class="p">();</span>
 
 <span class="w">    </span><span class="c1">// Show pending operations to the user</span>
-<span class="w">    </span><span class="n">askingTools</span><span class="p">.</span><span class="na">forEach</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Pending: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getInput</span><span class="p">()));</span>
+<span class="w">    </span><span class="n">askingTools</span><span class="p">.</span><span class="na">forEach</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Pending: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">" "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getInput</span><span class="p">()));</span>
 
-<span class="w">    </span><span class="c1">// 4. Collect the user&#39;s decision, build ConfirmResult, and resume</span>
+<span class="w">    </span><span class="c1">// 4. Collect the user's decision, build ConfirmResult, and resume</span>
 <span class="w">    </span><span class="kt">boolean</span><span class="w"> </span><span class="n">approved</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">askUser</span><span class="p">();</span>
 <span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ConfirmResult</span><span class="o">&gt;</span><span class="w"> </span><span class="n">confirmResults</span><span class="w"> </span><span class="o">=</span>
 <span class="w">            </span><span class="n">askingTools</span><span class="p">.</span><span class="na">stream</span><span class="p">()</span>
@@ -1319,9 +1319,9 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 <span class="w">    </span><span class="n">meta</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">METADATA_CONFIRM_RESULTS</span><span class="p">,</span><span class="w"> </span><span class="n">confirmResults</span><span class="p">);</span>
 <span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">resumeMsg</span><span class="w"> </span><span class="o">=</span>
 <span class="w">            </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"user"</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="n">approved</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">&quot;approved&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">&quot;denied&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="n">approved</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"approved"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">"denied"</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">metadata</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1350,13 +1350,13 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
 
 <span class="c1">// Subscribe to the event stream</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;Delete /tmp/important.txt&quot;</span><span class="p">)))</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"Delete /tmp/important.txt"</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">RequireUserConfirmEvent</span><span class="w"> </span><span class="n">confirmEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="c1">// Get pending ToolUseBlocks directly from the event</span>
 <span class="w">                </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ToolUseBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="n">pending</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">confirmEvent</span><span class="p">.</span><span class="na">getToolCalls</span><span class="p">();</span>
 <span class="w">                </span><span class="n">pending</span><span class="p">.</span><span class="na">forEach</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span>
-<span class="w">                        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Pending: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getInput</span><span class="p">()));</span>
+<span class="w">                        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Pending: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">" "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getInput</span><span class="p">()));</span>
 
 <span class="w">                </span><span class="c1">// Collect user decision, store pending list for the resume call</span>
 <span class="w">            </span><span class="p">}</span>
@@ -1372,9 +1372,9 @@ ACCEPT_EDITS with working dir</label><div class="sd-tab-content docutils">
 <span class="n">meta</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">METADATA_CONFIRM_RESULTS</span><span class="p">,</span><span class="w"> </span><span class="n">confirmResults</span><span class="p">);</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">resumeMsg</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"user"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;approved&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">"approved"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">metadata</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">resumeMsg</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
@@ -1417,9 +1417,9 @@ the confirmations included in that resume call.</p>
 <span class="w">        </span><span class="n">PermissionContextState</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">DONT_ASK</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addAllowRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;safe_read&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"safe_read"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;safe_read&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;policy&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"safe_read"</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">"policy"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="c1">// ASK-rule hits are auto-denied — no blocking wait</span>
 </pre></div>
@@ -1442,8 +1442,8 @@ Read-only exploration</label><div class="sd-tab-content docutils">
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">explorer</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;explorer&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"explorer"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">permissionContext</span><span class="p">(</span><span class="n">explore</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1460,19 +1460,19 @@ Unattended automation</label><div class="sd-tab-content docutils">
 <span class="w">        </span><span class="n">PermissionContextState</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">DONT_ASK</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addAllowRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;deploy&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"deploy"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;deploy&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;staging&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;project&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"deploy"</span><span class="p">,</span><span class="w"> </span><span class="s">"staging"</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">"project"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addAllowRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;git_commit&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"git_commit"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;git_commit&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;project&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"git_commit"</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">ALLOW</span><span class="p">,</span><span class="w"> </span><span class="s">"project"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">ciAgent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;ci_agent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"ci_agent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">permissionContext</span><span class="p">(</span><span class="n">ci</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1487,15 +1487,15 @@ Block dangerous commands</label><div class="sd-tab-content docutils">
 <span class="w">        </span><span class="n">PermissionContextState</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">BYPASS</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addDenyRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;drop_table&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"drop_table"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;drop_table&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">DENY</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;userSettings&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"drop_table"</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">DENY</span><span class="p">,</span><span class="w"> </span><span class="s">"userSettings"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">addDenyRule</span><span class="p">(</span>
-<span class="w">                        </span><span class="s">&quot;force_push&quot;</span><span class="p">,</span>
+<span class="w">                        </span><span class="s">"force_push"</span><span class="p">,</span>
 <span class="w">                        </span><span class="k">new</span><span class="w"> </span><span class="n">PermissionRule</span><span class="p">(</span>
-<span class="w">                                </span><span class="s">&quot;force_push&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">DENY</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;userSettings&quot;</span><span class="p">))</span>
+<span class="w">                                </span><span class="s">"force_push"</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionBehavior</span><span class="p">.</span><span class="na">DENY</span><span class="p">,</span><span class="w"> </span><span class="s">"userSettings"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="c1">// Everything except the explicitly denied tools runs (deny rules can&#39;t be bypassed).</span>
+<span class="c1">// Everything except the explicitly denied tools runs (deny rules can't be bypassed).</span>
 </pre></div>
 </div>
 </div>

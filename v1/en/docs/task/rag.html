@@ -1044,8 +1044,8 @@
 <h4>Generic Mode<a class="headerlink" href="#generic-mode" title="Link to this heading">¶</a></h4>
 <p>In Generic mode, knowledge is automatically retrieved and injected into the user’s message:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant with access to a knowledge base.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a helpful assistant with access to a knowledge base."</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
 <span class="w">    </span><span class="c1">// Enable Generic RAG mode</span>
@@ -1071,9 +1071,9 @@
 <h4>Agentic Mode<a class="headerlink" href="#agentic-mode" title="Link to this heading">¶</a></h4>
 <p>In Agentic mode, the Agent has a <code class="docutils literal notranslate"><span class="pre">retrieve_knowledge</span></code> tool and decides when to use it:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant with a knowledge retrieval tool. &quot;</span><span class="w"> </span><span class="o">+</span>
-<span class="w">               </span><span class="s">&quot;Use the retrieve_knowledge tool when you need information.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Agent"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a helpful assistant with a knowledge retrieval tool. "</span><span class="w"> </span><span class="o">+</span>
+<span class="w">               </span><span class="s">"Use the retrieve_knowledge tool when you need information."</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
 <span class="w">    </span><span class="c1">// Enable Agentic RAG mode</span>
@@ -1104,8 +1104,8 @@
 <h3>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 1. Create knowledge base</span>
 <span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeTextEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;text-embedding-v3&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"text-embedding-v3"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1116,11 +1116,11 @@
 
 <span class="c1">// 2. Add documents</span>
 <span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;Text content...&quot;</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">"Text content..."</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
 <span class="n">knowledge</span><span class="p">.</span><span class="na">addDocuments</span><span class="p">(</span><span class="n">docs</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 3. Retrieve</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">,</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">"query"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1150,8 +1150,8 @@
 
 <span class="c1">// Qdrant (production)</span>
 <span class="n">QdrantStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">&quot;localhost:6334&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">collectionName</span><span class="p">(</span><span class="s">&quot;my_collection&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">"localhost:6334"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">collectionName</span><span class="p">(</span><span class="s">"my_collection"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1165,16 +1165,16 @@
 <h3>Quick Start<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create knowledge base</span>
 <span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"ALIBABA_CLOUD_ACCESS_KEY_ID"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"ALIBABA_CLOUD_ACCESS_KEY_SECRET"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">"llm-xxx"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">"mymxbdxxxx"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Retrieve</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">,</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">"query"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1183,13 +1183,13 @@
 <h3>Advanced Configuration<a class="headerlink" href="#advanced-configuration" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">accessKeyId</span><span class="p">).</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">accessKeySecret</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">).</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">"llm-xxx"</span><span class="p">).</span><span class="na">indexId</span><span class="p">(</span><span class="s">"mymxbdxxxx"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">denseSimilarityTopK</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">).</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">).</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"gte-rerank-hybrid"</span><span class="p">).</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">).</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">modelName</span><span class="p">(</span><span class="s">"conv-rewrite-qwen-1.8b"</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1207,13 +1207,13 @@
 <h3>Complete Configuration Example<a class="headerlink" href="#complete-configuration-example" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="c1">// === Connection Configuration (Required) ===</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Bailian workspace ID</span>
-<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span><span class="w">                     </span><span class="c1">// Knowledge base index ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"ALIBABA_CLOUD_ACCESS_KEY_ID"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"ALIBABA_CLOUD_ACCESS_KEY_SECRET"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">"llm-xxx"</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Bailian workspace ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">"mymxbdxxxx"</span><span class="p">)</span><span class="w">                     </span><span class="c1">// Knowledge base index ID</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="c1">// === Endpoint Configuration (Optional) ===</span>
-<span class="w">    </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;bailian.cn-beijing.aliyuncs.com&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Default value</span>
+<span class="w">    </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">"bailian.cn-beijing.aliyuncs.com"</span><span class="p">)</span><span class="w">  </span><span class="c1">// Default value</span>
 <span class="w">    </span><span class="c1">// Other available endpoints:</span>
 <span class="w">    </span><span class="c1">// - bailian.cn-shanghai-finance-1.aliyuncs.com (Finance Cloud)</span>
 <span class="w">    </span><span class="c1">// - bailian-vpc.cn-beijing.aliyuncs.com (VPC)</span>
@@ -1226,7 +1226,7 @@
 <span class="w">    </span><span class="c1">// === Reranking Configuration (Optional) ===</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                     </span><span class="c1">// Enable reranking, default true</span>
 <span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// Rerank model</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"gte-rerank-hybrid"</span><span class="p">)</span><span class="w">        </span><span class="c1">// Rerank model</span>
 <span class="w">        </span><span class="p">.</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Minimum score threshold</span>
 <span class="w">        </span><span class="p">.</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                         </span><span class="c1">// Number of results to return</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
@@ -1234,11 +1234,11 @@
 <span class="w">    </span><span class="c1">// === Query Rewriting Configuration (Optional, for multi-turn conversations) ===</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                       </span><span class="c1">// Enable query rewriting, default false</span>
 <span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">)</span><span class="w">   </span><span class="c1">// Rewrite model</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"conv-rewrite-qwen-1.8b"</span><span class="p">)</span><span class="w">   </span><span class="c1">// Rewrite model</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="c1">// === Other Configuration (Optional) ===</span>
-<span class="w">    </span><span class="p">.</span><span class="na">searchFilters</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;tag&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)))</span><span class="w">  </span><span class="c1">// Search filters</span>
+<span class="w">    </span><span class="p">.</span><span class="na">searchFilters</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"tag"</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">)))</span><span class="w">  </span><span class="c1">// Search filters</span>
 <span class="w">    </span><span class="p">.</span><span class="na">saveRetrieverHistory</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">               </span><span class="c1">// Save retrieval history, default false</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1252,15 +1252,15 @@
 <section id="id2">
 <h3>Quick Start<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DifyRAGConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyRAGConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DIFY_RAG_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">datasetId</span><span class="p">(</span><span class="s">&quot;your-dataset-id&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DIFY_RAG_API_KEY"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">datasetId</span><span class="p">(</span><span class="s">"your-dataset-id"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">DifyKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">,</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">"query"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1283,12 +1283,12 @@
 <span class="w">    </span><span class="c1">// Reranking</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enableRerank</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">providerName</span><span class="p">(</span><span class="s">&quot;cohere&quot;</span><span class="p">).</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;rerank-english-v2.0&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">providerName</span><span class="p">(</span><span class="s">"cohere"</span><span class="p">).</span><span class="na">modelName</span><span class="p">(</span><span class="s">"rerank-english-v2.0"</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="c1">// Metadata filtering</span>
 <span class="w">    </span><span class="p">.</span><span class="na">metadataFilter</span><span class="p">(</span><span class="n">MetadataFilter</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">logicalOperator</span><span class="p">(</span><span class="s">&quot;AND&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">logicalOperator</span><span class="p">(</span><span class="s">"AND"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addCondition</span><span class="p">(</span><span class="n">MetadataFilterCondition</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;category&quot;</span><span class="p">).</span><span class="na">comparisonOperator</span><span class="p">(</span><span class="s">&quot;=&quot;</span><span class="p">).</span><span class="na">value</span><span class="p">(</span><span class="s">&quot;AI&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"category"</span><span class="p">).</span><span class="na">comparisonOperator</span><span class="p">(</span><span class="s">"="</span><span class="p">).</span><span class="na">value</span><span class="p">(</span><span class="s">"AI"</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1298,12 +1298,12 @@
 <h3>Complete Configuration Example<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DifyRAGConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyRAGConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="c1">// === Connection Configuration (Required) ===</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DIFY_RAG_API_KEY&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// Dataset API Key</span>
-<span class="w">    </span><span class="p">.</span><span class="na">datasetId</span><span class="p">(</span><span class="s">&quot;your-dataset-uuid&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// Dataset ID (UUID format)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DIFY_RAG_API_KEY"</span><span class="p">))</span><span class="w">  </span><span class="c1">// Dataset API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">datasetId</span><span class="p">(</span><span class="s">"your-dataset-uuid"</span><span class="p">)</span><span class="w">             </span><span class="c1">// Dataset ID (UUID format)</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="c1">// === Endpoint Configuration (Optional) ===</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;https://api.dify.ai/v1&quot;</span><span class="p">)</span><span class="w">       </span><span class="c1">// Dify Cloud (default)</span>
-<span class="w">    </span><span class="c1">// .apiBaseUrl(&quot;https://your-dify.com/v1&quot;)  // Self-hosted instance</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">"https://api.dify.ai/v1"</span><span class="p">)</span><span class="w">       </span><span class="c1">// Dify Cloud (default)</span>
+<span class="w">    </span><span class="c1">// .apiBaseUrl("https://your-dify.com/v1")  // Self-hosted instance</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="c1">// === Retrieval Configuration (Optional) ===</span>
 <span class="w">    </span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span><span class="w"> </span><span class="c1">// Retrieval mode, default HYBRID_SEARCH</span>
@@ -1315,18 +1315,18 @@
 <span class="w">    </span><span class="c1">// === Reranking Configuration (Optional) ===</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enableRerank</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                         </span><span class="c1">// Enable reranking, default false</span>
 <span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">providerName</span><span class="p">(</span><span class="s">&quot;cohere&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Rerank model provider</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;rerank-english-v2.0&quot;</span><span class="p">)</span><span class="w">       </span><span class="c1">// Rerank model name</span>
+<span class="w">        </span><span class="p">.</span><span class="na">providerName</span><span class="p">(</span><span class="s">"cohere"</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Rerank model provider</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"rerank-english-v2.0"</span><span class="p">)</span><span class="w">       </span><span class="c1">// Rerank model name</span>
 <span class="w">        </span><span class="p">.</span><span class="na">topN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                                </span><span class="c1">// Number of results after reranking</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="c1">// === Metadata Filtering (Optional) ===</span>
 <span class="w">    </span><span class="p">.</span><span class="na">metadataFilter</span><span class="p">(</span><span class="n">MetadataFilter</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">logicalOperator</span><span class="p">(</span><span class="s">&quot;AND&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Logical operator: AND or OR</span>
+<span class="w">        </span><span class="p">.</span><span class="na">logicalOperator</span><span class="p">(</span><span class="s">"AND"</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Logical operator: AND or OR</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addCondition</span><span class="p">(</span><span class="n">MetadataFilterCondition</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;category&quot;</span><span class="p">)</span><span class="w">                   </span><span class="c1">// Metadata field name</span>
-<span class="w">            </span><span class="p">.</span><span class="na">comparisonOperator</span><span class="p">(</span><span class="s">&quot;=&quot;</span><span class="p">)</span><span class="w">            </span><span class="c1">// Comparison operator</span>
-<span class="w">            </span><span class="p">.</span><span class="na">value</span><span class="p">(</span><span class="s">&quot;documentation&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// Filter value</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"category"</span><span class="p">)</span><span class="w">                   </span><span class="c1">// Metadata field name</span>
+<span class="w">            </span><span class="p">.</span><span class="na">comparisonOperator</span><span class="p">(</span><span class="s">"="</span><span class="p">)</span><span class="w">            </span><span class="c1">// Comparison operator</span>
+<span class="w">            </span><span class="p">.</span><span class="na">value</span><span class="p">(</span><span class="s">"documentation"</span><span class="p">)</span><span class="w">             </span><span class="c1">// Filter value</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span>
@@ -1334,7 +1334,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">connectTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">     </span><span class="c1">// Connection timeout, default 30s</span>
 <span class="w">    </span><span class="p">.</span><span class="na">readTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">60</span><span class="p">))</span><span class="w">        </span><span class="c1">// Read timeout, default 60s</span>
 <span class="w">    </span><span class="p">.</span><span class="na">maxRetries</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                              </span><span class="c1">// Max retries, default 3</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addCustomHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Custom headers</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCustomHeader</span><span class="p">(</span><span class="s">"X-Custom-Header"</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">)</span><span class="w"> </span><span class="c1">// Custom headers</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1354,15 +1354,15 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <section id="id5">
 <h3>Quick Start<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// Required: API Key</span>
-<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://address&quot;</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Required: RAGFlow service address</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-id&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Required: Set at least dataset_ids or document_ids</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"ragflow-your-api-key"</span><span class="p">)</span><span class="w">             </span><span class="c1">// Required: API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">"http://address"</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Required: RAGFlow service address</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">"dataset-id"</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Required: Set at least dataset_ids or document_ids</span>
 <span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">).</span><span class="na">similarityThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">RAGFlowKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">,</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">"query"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1374,26 +1374,26 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 </div></blockquote>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Method 1: Set only datasets (search entire datasets)</span>
 <span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-1&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"ragflow-your-api-key"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">"http://localhost:9380"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">"dataset-1"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">"dataset-2"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Method 2: Set only documents (search specified documents directly, must use same embedding model)</span>
 <span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-1&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"ragflow-your-api-key"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">"http://localhost:9380"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">"doc-id-1"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">"doc-id-2"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Method 3: Set both (search specified documents within datasets)</span>
 <span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-1&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-1&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Limit to specified documents in the dataset</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"ragflow-your-api-key"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">"http://localhost:9380"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">"dataset-1"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">"doc-id-1"</span><span class="p">)</span><span class="w">  </span><span class="c1">// Limit to specified documents in the dataset</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1401,17 +1401,17 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <section id="metadata-filtering">
 <h3>Metadata Filtering<a class="headerlink" href="#metadata-filtering" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">condition</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;logic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;and&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;conditions&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;author&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Toby&quot;</span><span class="p">),</span>
-<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;date&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2024-01-01&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="s">"logic"</span><span class="p">,</span><span class="w"> </span><span class="s">"and"</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"conditions"</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"name"</span><span class="p">,</span><span class="w"> </span><span class="s">"author"</span><span class="p">,</span><span class="w"> </span><span class="s">"comparison_operator"</span><span class="p">,</span><span class="w"> </span><span class="s">"="</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">,</span><span class="w"> </span><span class="s">"Toby"</span><span class="p">),</span>
+<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"name"</span><span class="p">,</span><span class="w"> </span><span class="s">"date"</span><span class="p">,</span><span class="w"> </span><span class="s">"comparison_operator"</span><span class="p">,</span><span class="w"> </span><span class="s">"="</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">,</span><span class="w"> </span><span class="s">"2024-01-01"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">)</span>
 <span class="p">);</span>
 
 <span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-id&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"ragflow-your-api-key"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">"http://localhost:9380"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">"dataset-id"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">metadataCondition</span><span class="p">(</span><span class="n">condition</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1421,19 +1421,19 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <h3>Complete Configuration Example<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="c1">// === Connection Configuration (Required) ===</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// RAGFlow API Key</span>
-<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://address&quot;</span><span class="p">)</span><span class="w">                  </span><span class="c1">// RAGFlow service address (Required)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"ragflow-your-api-key"</span><span class="p">)</span><span class="w">             </span><span class="c1">// RAGFlow API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">"http://address"</span><span class="p">)</span><span class="w">                  </span><span class="c1">// RAGFlow service address (Required)</span>
 
 
 <span class="w">    </span><span class="c1">// === Dataset/Document Configuration (At least one required) ===</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;datasetId1&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;datasetId2&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Supports multiple datasets</span>
-<span class="w">    </span><span class="c1">// Or batch set: .datasetIds(List.of(&quot;id1&quot;, &quot;id2&quot;))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">"datasetId1"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">"datasetId2"</span><span class="p">)</span><span class="w">  </span><span class="c1">// Supports multiple datasets</span>
+<span class="w">    </span><span class="c1">// Or batch set: .datasetIds(List.of("id1", "id2"))</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="c1">// === Document Filtering (Optional, limits search scope) ===</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;documentId1&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;documentId2&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="c1">// Or batch set: .documentIds(List.of(&quot;doc1&quot;, &quot;doc2&quot;))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">"documentId1"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">"documentId2"</span><span class="p">)</span>
+<span class="w">    </span><span class="c1">// Or batch set: .documentIds(List.of("doc1", "doc2"))</span>
 <span class="w">    </span><span class="c1">// Note: If only setting document_ids, ensure all documents use the same embedding model</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="c1">// === Retrieval Configuration (Optional) ===</span>
@@ -1451,22 +1451,22 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <span class="w">    </span><span class="p">.</span><span class="na">rerankId</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w">                                </span><span class="c1">// Rerank model ID</span>
 <span class="w">    </span><span class="p">.</span><span class="na">keyword</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                             </span><span class="c1">// Keyword matching, default false</span>
 <span class="w">    </span><span class="p">.</span><span class="na">highlight</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                           </span><span class="c1">// Highlight matched results, default false</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addCrossLanguage</span><span class="p">(</span><span class="s">&quot;en&quot;</span><span class="p">)</span><span class="w">                     </span><span class="c1">// Add target language</span>
-<span class="w">    </span><span class="c1">// Or batch set: .crossLanguages(List.of(&quot;en&quot;, &quot;zh&quot;, &quot;ja&quot;))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCrossLanguage</span><span class="p">(</span><span class="s">"en"</span><span class="p">)</span><span class="w">                     </span><span class="c1">// Add target language</span>
+<span class="w">    </span><span class="c1">// Or batch set: .crossLanguages(List.of("en", "zh", "ja"))</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="c1">// === Metadata Filtering (Optional) ===</span>
 <span class="w">    </span><span class="p">.</span><span class="na">metadataCondition</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="s">&quot;logic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;and&quot;</span><span class="p">,</span><span class="w">                         </span><span class="c1">// Logical operator: and or or</span>
-<span class="w">        </span><span class="s">&quot;conditions&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="s">"logic"</span><span class="p">,</span><span class="w"> </span><span class="s">"and"</span><span class="p">,</span><span class="w">                         </span><span class="c1">// Logical operator: and or or</span>
+<span class="w">        </span><span class="s">"conditions"</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
 <span class="w">            </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;author&quot;</span><span class="p">,</span><span class="w">               </span><span class="c1">// Metadata field name</span>
-<span class="w">                </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w">     </span><span class="c1">// Comparison operator</span>
-<span class="w">                </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Toby&quot;</span><span class="w">                 </span><span class="c1">// Filter value</span>
+<span class="w">                </span><span class="s">"name"</span><span class="p">,</span><span class="w"> </span><span class="s">"author"</span><span class="p">,</span><span class="w">               </span><span class="c1">// Metadata field name</span>
+<span class="w">                </span><span class="s">"comparison_operator"</span><span class="p">,</span><span class="w"> </span><span class="s">"="</span><span class="p">,</span><span class="w">     </span><span class="c1">// Comparison operator</span>
+<span class="w">                </span><span class="s">"value"</span><span class="p">,</span><span class="w"> </span><span class="s">"Toby"</span><span class="w">                 </span><span class="c1">// Filter value</span>
 <span class="w">            </span><span class="p">),</span>
 <span class="w">            </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;date&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&gt;=&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2024-01-01&quot;</span>
+<span class="w">                </span><span class="s">"name"</span><span class="p">,</span><span class="w"> </span><span class="s">"date"</span><span class="p">,</span>
+<span class="w">                </span><span class="s">"comparison_operator"</span><span class="p">,</span><span class="w"> </span><span class="s">"&gt;="</span><span class="p">,</span>
+<span class="w">                </span><span class="s">"value"</span><span class="p">,</span><span class="w"> </span><span class="s">"2024-01-01"</span>
 <span class="w">            </span><span class="p">)</span>
 <span class="w">        </span><span class="p">)</span>
 <span class="w">    </span><span class="p">))</span>
@@ -1474,7 +1474,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <span class="w">    </span><span class="c1">// === HTTP Configuration (Optional) ===</span>
 <span class="w">    </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">            </span><span class="c1">// HTTP timeout, default 30s</span>
 <span class="w">    </span><span class="p">.</span><span class="na">maxRetries</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                              </span><span class="c1">// Max retries, default 3</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addCustomHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Custom headers</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCustomHeader</span><span class="p">(</span><span class="s">"X-Custom-Header"</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">)</span><span class="w"> </span><span class="c1">// Custom headers</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1534,7 +1534,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getSupportedFormats</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;custom&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fmt&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"custom"</span><span class="p">,</span><span class="w"> </span><span class="s">"fmt"</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">createDocuments</span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">chunks</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>

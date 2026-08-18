@@ -1121,11 +1121,11 @@
 <section id="builder">
 <h2>Builder 配置<a class="headerlink" href="#builder" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"MyAgent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 不传则走下面的默认解析顺序</span>
-<span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">&quot;SOUL.md&quot;</span><span class="p">)</span><span class="w">                </span><span class="c1">// 任意 workspace 相对路径，全文注入</span>
-<span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">&quot;PREFERENCES.md&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">".agentscope/workspace"</span><span class="p">))</span><span class="w">   </span><span class="c1">// 不传则走下面的默认解析顺序</span>
+<span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">"SOUL.md"</span><span class="p">)</span><span class="w">                </span><span class="c1">// 任意 workspace 相对路径，全文注入</span>
+<span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">"PREFERENCES.md"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">maxContextTokens</span><span class="p">(</span><span class="mi">8000</span><span class="p">)</span><span class="w">                          </span><span class="c1">// MEMORY 注入预算</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1280,7 +1280,7 @@
 <h3>两层读架构（filesystem-first + 本地兜底）<a class="headerlink" href="#filesystem-first" title="Link to this heading">¶</a></h3>
 <p>对所有”被注入到 prompt 的关键文件”（<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> / <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/KNOWLEDGE.md</span></code> / <code class="docutils literal notranslate"><span class="pre">additionalContextFile</span></code>），<code class="docutils literal notranslate"><span class="pre">WorkspaceManager.readWithOverride()</span></code> 都走<strong>两层读</strong>：</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>1. 问当前配置的 AbstractFilesystem：有没有这个 relative path？
-   ├─ 有 → 返回该内容（&quot;覆盖&quot;层）
+   ├─ 有 → 返回该内容（"覆盖"层）
    └─ 没有 → 走第 2 步
 2. 读本地磁盘 workspace.resolve(relativePath)
 </pre></div>
@@ -1348,7 +1348,7 @@
 <p>工作区只是”逻辑布局”，物理落点由 <a class="reference internal" href="filesystem.html"><span class="std std-doc">filesystem</span></a> 选择。同一份目录在不同模式下被加载的方式不一样，这里分别举例。</p>
 <p><strong>模式 1 · 共享存储（<code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>）—— 模板 + 远端覆盖</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;store&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"store"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
@@ -1364,11 +1364,11 @@
 </ul>
 <p><strong>模式 2 · 沙箱（<code class="docutils literal notranslate"><span class="pre">DockerFilesystemSpec</span></code> / K8s / E2B / AgentRun）—— Projection + Hydrate</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sandbox&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sandbox"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1381,7 +1381,7 @@
 </ul>
 <p><strong>模式 3 · 本机 + shell（默认 <code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code> 或不配 filesystem）—— 直读直写</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;local&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"local"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="c1">// .filesystem(...) 不配 = 本机 + shell</span>
@@ -1581,20 +1581,20 @@ model: qwen3-max         # 可选；默认继承父
 <p>工作区根目录下的 JSON，框架在 <code class="docutils literal notranslate"><span class="pre">build()</span></code> 时一次性读完：</p>
 <div class="highlight-jsonc notranslate"><div class="highlight"><pre><span></span>{
   // 白名单：非空时只允许列出的工具
-  &quot;allow&quot;: [&quot;read_file&quot;, &quot;grep_files&quot;, &quot;execute&quot;],
+  "allow": ["read_file", "grep_files", "execute"],
   // 黑名单：列出的工具一律不暴露（优先级高于 allow）
-  &quot;deny&quot;:  [&quot;write_file&quot;],
+  "deny":  ["write_file"],
   // MCP server，键是名字，值是连接配置
-  &quot;mcpServers&quot;: {
-    &quot;amap&quot;: {
-      &quot;transport&quot;: &quot;streamableHttp&quot;,
-      &quot;url&quot;: &quot;https://mcp.amap.com/mcp?key=${AMAP_API_KEY}&quot;
+  "mcpServers": {
+    "amap": {
+      "transport": "streamableHttp",
+      "url": "https://mcp.amap.com/mcp?key=${AMAP_API_KEY}"
     },
-    &quot;local-py&quot;: {
-      &quot;transport&quot;: &quot;stdio&quot;,
-      &quot;command&quot;: &quot;python&quot;,
-      &quot;args&quot;: [&quot;mcp_servers/my_server.py&quot;],
-      &quot;env&quot;: {&quot;PYTHONUNBUFFERED&quot;: &quot;1&quot;}
+    "local-py": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["mcp_servers/my_server.py"],
+      "env": {"PYTHONUNBUFFERED": "1"}
     }
   }
 }

@@ -991,7 +991,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
 
 <span class="n">HayStackConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HayStackConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8080&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// your HayStack service</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">"http://localhost:8080"</span><span class="p">)</span><span class="w">  </span><span class="c1">// your HayStack service</span>
 <span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1000,7 +1000,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;What is AI?&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"What is AI?"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">()</span>
 <span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>

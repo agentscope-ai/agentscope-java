@@ -1136,8 +1136,8 @@
 
 <span class="c1">// Jedis Standalone</span>
 <span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">jedisClient</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://localhost:6379&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">keyPrefix</span><span class="p">(</span><span class="s">&quot;myapp:session:&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">jedisClient</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">"redis://localhost:6379"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">keyPrefix</span><span class="p">(</span><span class="s">"myapp:session:"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Lettuce Cluster (better for write-heavy)</span>
@@ -1149,8 +1149,8 @@
 </div>
 <p><strong>Per-tenant isolation.</strong> A bare <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> only covers single-tenant. In production, set both <code class="docutils literal notranslate"><span class="pre">userId</span></code> and <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> on each call’s <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> so multi-tenant calls can’t cross-read — the store addresses each slot by the <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> pair (<code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> folds <code class="docutils literal notranslate"><span class="pre">userId</span></code> into the Redis key; <code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> folds it into the primary key). Compose any other dimensions (tenant, agent) into the <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> string yourself:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="n">tenantId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">userId</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="n">agentId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="n">tenantId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">":"</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">userId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="n">agentId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">":"</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1223,7 +1223,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span>
 <span class="w">            </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">&quot;_default&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// fallback when userId is absent</span>
+<span class="w">            </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">"_default"</span><span class="p">))</span><span class="w">   </span><span class="c1">// fallback when userId is absent</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1262,10 +1262,10 @@
 </div>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Recommended: one-line configuration via DistributedStore</span>
 <span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span>
-<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://prod-redis:6379&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">"redis://prod-redis:6379"</span><span class="p">));</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;multi-tenant-agent&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"multi-tenant-agent"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">           </span><span class="c1">// auto-wires stateStore + baseStore</span>
@@ -1432,10 +1432,10 @@
 </div>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="c1">// ...</span>
-<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">&quot;https://github.com/your-org/team-skills.git&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">"https://github.com/your-org/team-skills.git"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">MysqlSkillRepository</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">dataSource</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">&quot;agentscope&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">"agentscope"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">"skills"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                  </span><span class="c1">// read-only distribution; recommended for production</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
@@ -1497,7 +1497,7 @@
 </table>
 </div>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span>
 </pre></div>
 </div>
@@ -1551,8 +1551,8 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">redisStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
 <span class="n">DistributedStore</span><span class="w"> </span><span class="n">ossStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OssDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span>
 <span class="w">        </span><span class="n">ossClient</span><span class="p">,</span>
-<span class="w">        </span><span class="s">&quot;agentscope-sandbox-snapshots&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s">&quot;prod/&quot;</span><span class="p">);</span><span class="w">                         </span><span class="c1">// key prefix for environment isolation</span>
+<span class="w">        </span><span class="s">"agentscope-sandbox-snapshots"</span><span class="p">,</span>
+<span class="w">        </span><span class="s">"prod/"</span><span class="p">);</span><span class="w">                         </span><span class="c1">// key prefix for environment isolation</span>
 
 <span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DistributedStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">(</span><span class="n">redisStore</span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">())</span>
@@ -1562,12 +1562,12 @@
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coding-agent&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"coding-agent"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12-slim&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"python:3.12-slim"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1603,7 +1603,7 @@
 <span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">GLOBAL</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1612,7 +1612,7 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">GLOBAL</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="n">RedisSandboxExecutionGuard</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">jedis</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">leaseTtl</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span>
@@ -1626,8 +1626,8 @@
 <h3>Workspace projection: pushing seed files into the sandbox<a class="headerlink" href="#workspace-projection-pushing-seed-files-into-the-sandbox" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> projects <code class="docutils literal notranslate"><span class="pre">AGENTS.md,</span> <span class="pre">skills,</span> <span class="pre">subagents,</span> <span class="pre">knowledge,</span> <span class="pre">.skills-cache</span></code> (five roots) into the sandbox at start time by hydrating a content-hashed tar archive (incremental rewrites). Tweak it:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">workspaceProjectionRoots</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;AGENTS.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;skills&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;knowledge&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// drop subagents/.skills-cache</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"..."</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspaceProjectionRoots</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"AGENTS.md"</span><span class="p">,</span><span class="w"> </span><span class="s">"skills"</span><span class="p">,</span><span class="w"> </span><span class="s">"knowledge"</span><span class="p">))</span><span class="w">   </span><span class="c1">// drop subagents/.skills-cache</span>
 <span class="w">        </span><span class="c1">// .workspaceProjectionEnabled(false)   // fully disable</span>
 <span class="p">)</span>
 </pre></div>
@@ -1637,12 +1637,12 @@
 <h3>AgentRun-specific: NAS / OSS mounts<a class="headerlink" href="#agentrun-specific-nas-oss-mounts" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec</span></code> is the only sandbox filesystem that natively supports <strong>multiple sandbox instances mounting the same directory</strong> (via NAS). When the business case is “one user sees the same workspace across different sessions”, AgentRun + NAS is more efficient than re-hydrating snapshots every time:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AGENTRUN_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">accountId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALI_ACCOUNT_ID&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">region</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">templateName</span><span class="p">(</span><span class="s">&quot;python-3.12&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">nasConfig</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunNasMountConfig</span><span class="p">().</span><span class="na">fileSystemId</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">).</span><span class="na">mountTargetDomain</span><span class="p">(</span><span class="s">&quot;...&quot;</span><span class="p">).</span><span class="na">mountDir</span><span class="p">(</span><span class="s">&quot;/workspace&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addOssMount</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunOssMountConfig</span><span class="p">().</span><span class="na">bucketName</span><span class="p">(</span><span class="s">&quot;data&quot;</span><span class="p">).</span><span class="na">mountDir</span><span class="p">(</span><span class="s">&quot;/mnt/oss&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"AGENTRUN_API_KEY"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">accountId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"ALI_ACCOUNT_ID"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">region</span><span class="p">(</span><span class="s">"cn-hangzhou"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">templateName</span><span class="p">(</span><span class="s">"python-3.12"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">nasConfig</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunNasMountConfig</span><span class="p">().</span><span class="na">fileSystemId</span><span class="p">(</span><span class="s">"..."</span><span class="p">).</span><span class="na">mountTargetDomain</span><span class="p">(</span><span class="s">"..."</span><span class="p">).</span><span class="na">mountDir</span><span class="p">(</span><span class="s">"/workspace"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addOssMount</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunOssMountConfig</span><span class="p">().</span><span class="na">bucketName</span><span class="p">(</span><span class="s">"data"</span><span class="p">).</span><span class="na">mountDir</span><span class="p">(</span><span class="s">"/mnt/oss"</span><span class="p">)))</span>
 </pre></div>
 </div>
 <p>Full fields in the <code class="docutils literal notranslate"><span class="pre">AgentRunNasMountConfig</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentRunOssMountConfig</span></code> source.</p>
@@ -1711,18 +1711,18 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">redis.clients.jedis.JedisPooled</span><span class="p">;</span>
 
 <span class="c1">// --- Dependencies (create once at startup) ---</span>
-<span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/var/agentscope/workspace&quot;</span><span class="p">);</span>
-<span class="n">JedisPooled</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;REDIS_URI&quot;</span><span class="p">));</span>
+<span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/var/agentscope/workspace"</span><span class="p">);</span>
+<span class="n">JedisPooled</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"REDIS_URI"</span><span class="p">));</span>
 <span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
 
 <span class="c1">// --- Singleton agent (created once at startup) ---</span>
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coding-assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"coding-assistant"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"dashscope:qwen-plus"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">  </span><span class="c1">// auto-wires stateStore + snapshotSpec + executionGuard</span>
 <span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12-slim&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"python:3.12-slim"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>

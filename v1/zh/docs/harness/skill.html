@@ -976,10 +976,10 @@
 <h2>一个例子<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <p>把团队的 skill 仓库接进来，agent 立刻就能用：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">&quot;https://github.com/your-org/team-skills.git&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">"https://github.com/your-org/team-skills.git"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -998,7 +998,7 @@
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">&quot;https://github.com/your-org/team-skills.git&quot;</span><span class="p">))</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">"https://github.com/your-org/team-skills.git"</span><span class="p">))</span>
 </pre></div>
 </div>
 <p>默认每次读取都会做轻量化的远端检查，HEAD 变了才 pull。仓库里如果有 <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 子目录会优先读它，否则读根目录。想自己控制同步节奏：<code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">GitSkillRepository(url,</span> <span class="pre">false)</span></code>，然后手动 <code class="docutils literal notranslate"><span class="pre">repo.sync()</span></code>。</p>
@@ -1012,7 +1012,7 @@
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">market</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;namespace&quot;</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">market</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">"namespace"</span><span class="p">);</span>
 <span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">market</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1023,9 +1023,9 @@
 <section id="mysql">
 <h3>MySQL<a class="headerlink" href="#mysql" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">MysqlSkillRepository</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">dataSource</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">&quot;agentscope&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">resourcesTableName</span><span class="p">(</span><span class="s">&quot;skill_resources&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">"agentscope"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">"skills"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">resourcesTableName</span><span class="p">(</span><span class="s">"skill_resources"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1045,7 +1045,7 @@
     └── SKILL.md
 </pre></div>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ClasspathSkillRepository</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">))</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ClasspathSkillRepository</span><span class="p">(</span><span class="s">"skills"</span><span class="p">))</span>
 </pre></div>
 </div>
 <p>兼容标准 JAR 和 Spring Boot Fat JAR。</p>

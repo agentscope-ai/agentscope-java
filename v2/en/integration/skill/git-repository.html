@@ -993,7 +993,7 @@
 
 <span class="c1">// Public repo + default branch, temporary local directory</span>
 <span class="n">GitSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;https://github.com/agentscope/skills.git&quot;</span>
+<span class="w">    </span><span class="s">"https://github.com/agentscope/skills.git"</span>
 <span class="p">);</span>
 
 <span class="c1">// Register all skills into a Toolkit</span>
@@ -1008,10 +1008,10 @@
 <section id="pin-branch-use-a-fixed-local-path">
 <h2>Pin branch / use a fixed local path<a class="headerlink" href="#pin-branch-use-a-fixed-local-path" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GitSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;https://github.com/agentscope/skills.git&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;develop&quot;</span><span class="p">,</span><span class="w">                   </span><span class="c1">// branch</span>
-<span class="w">    </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;/var/skills/repo&quot;</span><span class="p">),</span><span class="w"> </span><span class="c1">// local path (null = temp dir)</span>
-<span class="w">    </span><span class="s">&quot;agentscope-public&quot;</span><span class="p">,</span><span class="w">         </span><span class="c1">// source label (visible in Toolkit)</span>
+<span class="w">    </span><span class="s">"https://github.com/agentscope/skills.git"</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"develop"</span><span class="p">,</span><span class="w">                   </span><span class="c1">// branch</span>
+<span class="w">    </span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"/var/skills/repo"</span><span class="p">),</span><span class="w"> </span><span class="c1">// local path (null = temp dir)</span>
+<span class="w">    </span><span class="s">"agentscope-public"</span><span class="p">,</span><span class="w">         </span><span class="c1">// source label (visible in Toolkit)</span>
 <span class="w">    </span><span class="kc">true</span><span class="w">                         </span><span class="c1">// autoSync</span>
 <span class="p">);</span>
 </pre></div>
@@ -1026,7 +1026,7 @@
 </ul>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Private SSH repository</span>
 <span class="n">GitSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;git@github.com:my-org/private-skills.git&quot;</span>
+<span class="w">    </span><span class="s">"git@github.com:my-org/private-skills.git"</span>
 <span class="p">);</span>
 </pre></div>
 </div>

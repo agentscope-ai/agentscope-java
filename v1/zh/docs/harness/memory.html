@@ -1158,7 +1158,7 @@
 <section id="id6">
 <h2>配置与代码示例<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"MyAgent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1171,7 +1171,7 @@
 <span class="c1">// agent 可随时调用 memory_search</span>
 <span class="n">MemoryIndex</span><span class="w"> </span><span class="n">index</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MemoryIndex</span><span class="p">(</span><span class="n">workspaceAgentScopeDir</span><span class="p">);</span>
 <span class="n">index</span><span class="p">.</span><span class="na">open</span><span class="p">();</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">MemoryIndex</span><span class="p">.</span><span class="na">SearchHit</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">index</span><span class="p">.</span><span class="na">search</span><span class="p">(</span><span class="s">&quot;数据库迁移&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">MemoryIndex</span><span class="p">.</span><span class="na">SearchHit</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">index</span><span class="p">.</span><span class="na">search</span><span class="p">(</span><span class="s">"数据库迁移"</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span>
 <span class="c1">// hit: { path, lineNumber, content, rank }</span>
 </pre></div>
 </div>

@@ -973,10 +973,10 @@
 
 <span class="c1">// Create A2A Agent</span>
 <span class="n">A2aAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"remote-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WellKnownAgentCardResolver</span><span class="p">(</span>
-<span class="w">        </span><span class="s">&quot;http://127.0.0.1:8080&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s">&quot;/.well-known/agent-card.json&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">"http://127.0.0.1:8080"</span><span class="p">,</span>
+<span class="w">        </span><span class="s">"/.well-known/agent-card.json"</span><span class="p">,</span>
 <span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">()))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1050,14 +1050,14 @@
 
 <span class="c1">// Set Nacos address</span>
 <span class="n">Properties</span><span class="w"> </span><span class="n">properties</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Properties</span><span class="p">();</span>
-<span class="n">properties</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">PropertyKeyConst</span><span class="p">.</span><span class="na">SERVER_ADDR</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;localhost:8848&quot;</span><span class="p">);</span>
+<span class="n">properties</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">PropertyKeyConst</span><span class="p">.</span><span class="na">SERVER_ADDR</span><span class="p">,</span><span class="w"> </span><span class="s">"localhost:8848"</span><span class="p">);</span>
 <span class="c1">// Create Nacos Client</span>
 <span class="n">AiService</span><span class="w"> </span><span class="n">aiService</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AiFactory</span><span class="p">.</span><span class="na">createAiService</span><span class="p">(</span><span class="n">properties</span><span class="p">);</span>
 <span class="c1">// Create Nacos AgentCardResolver</span>
 <span class="n">NacosAgentCardResolver</span><span class="w"> </span><span class="n">nacosAgentCardResolver</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosAgentCardResolver</span><span class="p">(</span><span class="n">aiService</span><span class="p">);</span>
 <span class="c1">// Create A2A Agent</span>
 <span class="n">A2aAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote-agent&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"remote-agent"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="n">nacosAgentCardResolver</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1109,17 +1109,17 @@
 <span class="c1">// Create A2A Server</span>
 <span class="n">AgentScopeA2aServer</span><span class="w"> </span><span class="n">server</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-assistant&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant&quot;</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my-assistant"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a helpful assistant"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">deploymentProperties</span><span class="p">(</span><span class="n">DeploymentProperties</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">host</span><span class="p">(</span><span class="s">&quot;localhost&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">host</span><span class="p">(</span><span class="s">"localhost"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">port</span><span class="p">(</span><span class="mi">8080</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Get transport handler for web framework</span>
 <span class="n">JsonRpcTransportWrapper</span><span class="w"> </span><span class="n">transport</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="n">server</span><span class="p">.</span><span class="na">getTransportWrapper</span><span class="p">(</span><span class="s">&quot;JSON-RPC&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">JsonRpcTransportWrapper</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="w">    </span><span class="n">server</span><span class="p">.</span><span class="na">getTransportWrapper</span><span class="p">(</span><span class="s">"JSON-RPC"</span><span class="p">,</span><span class="w"> </span><span class="n">JsonRpcTransportWrapper</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="c1">// Call when web service is ready</span>
 <span class="n">server</span><span class="p">.</span><span class="na">postEndpointReady</span><span class="p">();</span>
@@ -1131,12 +1131,12 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.card.ConfigurableAgentCard</span><span class="p">;</span>
 
 <span class="n">ConfigurableAgentCard</span><span class="w"> </span><span class="n">agentCard</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ConfigurableAgentCard</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;My Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Intelligent assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">version</span><span class="p">(</span><span class="s">&quot;1.0.0&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"My Assistant"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Intelligent assistant"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">version</span><span class="p">(</span><span class="s">"1.0.0"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">skills</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;text-generation&quot;</span><span class="p">).</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Text Generation&quot;</span><span class="p">).</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
-<span class="w">        </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;question-answering&quot;</span><span class="p">).</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Q&amp;A&quot;</span><span class="p">).</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">        </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">"text-generation"</span><span class="p">).</span><span class="na">description</span><span class="p">(</span><span class="s">"Text Generation"</span><span class="p">).</span><span class="na">skillContent</span><span class="p">(</span><span class="s">""</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">"question-answering"</span><span class="p">).</span><span class="na">description</span><span class="p">(</span><span class="s">"Q&amp;A"</span><span class="p">).</span><span class="na">skillContent</span><span class="p">(</span><span class="s">""</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">agentBuilder</span><span class="p">)</span>
@@ -1211,16 +1211,16 @@
 
 <span class="c1">// Set Nacos address</span>
 <span class="n">Properties</span><span class="w"> </span><span class="n">properties</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Properties</span><span class="p">();</span>
-<span class="n">properties</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">PropertyKeyConst</span><span class="p">.</span><span class="na">SERVER_ADDR</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;localhost:8848&quot;</span><span class="p">);</span>
+<span class="n">properties</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">PropertyKeyConst</span><span class="p">.</span><span class="na">SERVER_ADDR</span><span class="p">,</span><span class="w"> </span><span class="s">"localhost:8848"</span><span class="p">);</span>
 <span class="c1">// Create Nacos Client</span>
 <span class="n">AiService</span><span class="w"> </span><span class="n">aiService</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AiFactory</span><span class="p">.</span><span class="na">createAiService</span><span class="p">(</span><span class="n">properties</span><span class="p">);</span>
 <span class="c1">// Add Nacos AgentRegistry</span>
 <span class="n">AgentScopeA2aServer</span><span class="w"> </span><span class="n">server</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-assistant&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant&quot;</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my-assistant"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a helpful assistant"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">deploymentProperties</span><span class="p">(</span><span class="n">DeploymentProperties</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">host</span><span class="p">(</span><span class="s">&quot;localhost&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">host</span><span class="p">(</span><span class="s">"localhost"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">port</span><span class="p">(</span><span class="mi">8080</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withAgentRegistry</span><span class="p">(</span><span class="n">NacosAgentRegistry</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">aiService</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
@@ -1232,7 +1232,7 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">NacosA2aRegistryProperties</span><span class="w"> </span><span class="n">registryProperties</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NacosA2aRegistryProperties</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">setAsLatest</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">enabledRegisterEndpoint</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">overwritePreferredTransport</span><span class="p">(</span><span class="s">&quot;http&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">overwritePreferredTransport</span><span class="p">(</span><span class="s">"http"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">NacosAgentRegistry</span><span class="w"> </span><span class="n">agentRegistry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NacosAgentRegistry</span>
@@ -1276,7 +1276,7 @@
 
 <span class="c1">// Interrupt with message</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;User cancelled the operation&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">"User cancelled the operation"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>
 </div>

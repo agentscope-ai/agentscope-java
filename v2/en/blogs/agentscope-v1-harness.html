@@ -1096,9 +1096,9 @@
 <p>Choose a directory on disk as the <code class="docutils literal notranslate"><span class="pre">workspace</span></code>, and create <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> in it. This is not an “optional initialization step,” but Harness’s core entry point — the agent’s persona, memory, skills, and subagent specs all revolve around this directory. A few lines of convention in <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> are enough at first; it evolves with use.</p>
 <p><strong>3. Build <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> and call it</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"my-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">".agentscope/workspace"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span><span class="w">     </span><span class="c1">// recommended to configure from the start to avoid context overflow in production</span>
 <span class="w">        </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
@@ -1106,8 +1106,8 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;user-session-001&quot;</span><span class="p">)</span><span class="w">   </span><span class="c1">// multiple calls with the same sessionId automatically continue context</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// required in multi-user scenarios for namespace isolation</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"user-session-001"</span><span class="p">)</span><span class="w">   </span><span class="c1">// multiple calls with the same sessionId automatically continue context</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span><span class="w">                 </span><span class="c1">// required in multi-user scenarios for namespace isolation</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">Msg</span><span class="w"> </span><span class="n">reply</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMessage</span><span class="p">,</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
@@ -1176,7 +1176,7 @@
 ├── AGENTS.md              ← Agent persona and behavior conventions, automatically injected into system prompt before each reasoning turn
 ├── MEMORY.md              ← Refined long-term memory, maintained automatically by the background process and accumulated with use
 ├── knowledge/             ← Domain knowledge, injected together with AGENTS.md
-├── skills/                ← Reusable skills, automatically assembled into the agent&#39;s tool set
+├── skills/                ← Reusable skills, automatically assembled into the agent's tool set
 ├── subagents/             ← Subagent spec declarations, automatically discovered and loaded
 └── agents/&lt;agentId&gt;/
     ├── context/           ← Session state snapshot (used for recovery after process restart)

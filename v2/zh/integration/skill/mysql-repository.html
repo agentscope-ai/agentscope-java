@@ -991,9 +991,9 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.skill.repository.mysql.MysqlSkillRepository</span><span class="p">;</span>
 
 <span class="n">HikariDataSource</span><span class="w"> </span><span class="n">ds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">HikariDataSource</span><span class="p">();</span>
-<span class="n">ds</span><span class="p">.</span><span class="na">setJdbcUrl</span><span class="p">(</span><span class="s">&quot;jdbc:mysql://localhost:3306/agentscope&quot;</span><span class="p">);</span>
-<span class="n">ds</span><span class="p">.</span><span class="na">setUsername</span><span class="p">(</span><span class="s">&quot;root&quot;</span><span class="p">);</span>
-<span class="n">ds</span><span class="p">.</span><span class="na">setPassword</span><span class="p">(</span><span class="s">&quot;***&quot;</span><span class="p">);</span>
+<span class="n">ds</span><span class="p">.</span><span class="na">setJdbcUrl</span><span class="p">(</span><span class="s">"jdbc:mysql://localhost:3306/agentscope"</span><span class="p">);</span>
+<span class="n">ds</span><span class="p">.</span><span class="na">setUsername</span><span class="p">(</span><span class="s">"root"</span><span class="p">);</span>
+<span class="n">ds</span><span class="p">.</span><span class="na">setPassword</span><span class="p">(</span><span class="s">"***"</span><span class="p">);</span>
 
 <span class="c1">// 第二参数 createIfNotExist=true：自动建库建表</span>
 <span class="n">MysqlSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
@@ -1044,9 +1044,9 @@
 <h2>自定义库名 / 表名<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">MysqlSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">(</span>
 <span class="w">    </span><span class="n">ds</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;skill_center&quot;</span><span class="p">,</span><span class="w">          </span><span class="c1">// 库名</span>
-<span class="w">    </span><span class="s">&quot;ops_skills&quot;</span><span class="p">,</span><span class="w">            </span><span class="c1">// 技能表</span>
-<span class="w">    </span><span class="s">&quot;ops_skill_resources&quot;</span><span class="p">,</span><span class="w">   </span><span class="c1">// 资源表</span>
+<span class="w">    </span><span class="s">"skill_center"</span><span class="p">,</span><span class="w">          </span><span class="c1">// 库名</span>
+<span class="w">    </span><span class="s">"ops_skills"</span><span class="p">,</span><span class="w">            </span><span class="c1">// 技能表</span>
+<span class="w">    </span><span class="s">"ops_skill_resources"</span><span class="p">,</span><span class="w">   </span><span class="c1">// 资源表</span>
 <span class="w">    </span><span class="kc">true</span><span class="w">                     </span><span class="c1">// 自动建库建表</span>
 <span class="p">);</span>
 </pre></div>
@@ -1059,12 +1059,12 @@
 <span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="cm">/* overwrite */</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
 <span class="c1">// 读取</span>
-<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getAllSkillNames</span><span class="p">();</span>
-<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 
 <span class="c1">// 删除</span>
-<span class="n">repo</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="n">repo</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>写入与删除都在事务里执行，资源表的 <code class="docutils literal notranslate"><span class="pre">ON</span> <span class="pre">DELETE</span> <span class="pre">CASCADE</span></code> 保证不会出现孤儿资源。</p>

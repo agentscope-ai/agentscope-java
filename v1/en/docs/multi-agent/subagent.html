@@ -1042,8 +1042,8 @@ You are a codebase exploration specialist. Your job is to explore and analyze co
 <h3>2. API (programmatic)<a class="headerlink" href="#api-programmatic" title="Link to this heading">¶</a></h3>
 <p>For full control, build a <strong>ReActAgent</strong> in Java and register it with the Task tools builder:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">dependencyAnalyzerReAct</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;dependency-analyzer&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Analyzes project dependencies. Use for version conflicts, outdated libs, security.&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"dependency-analyzer"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Analyzes project dependencies. Use for version conflicts, outdated libs, security."</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">DEPENDENCY_ANALYZER_SYSTEM_PROMPT</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">depToolkit</span><span class="p">)</span><span class="w">  </span><span class="c1">// e.g. glob_search, grep_search only</span>
@@ -1053,7 +1053,7 @@ You are a codebase exploration specialist. Your job is to explore and analyze co
 <span class="n">TaskToolsBuilder</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">defaultToolsByName</span><span class="p">(</span><span class="n">defaultToolsByName</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(</span><span class="s">&quot;dependency-analyzer&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dependencyAnalyzerReAct</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(</span><span class="s">"dependency-analyzer"</span><span class="p">,</span><span class="w"> </span><span class="n">dependencyAnalyzerReAct</span><span class="p">)</span>
 <span class="w">        </span><span class="c1">// ... addAgentResource(...) for Markdown specs</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1129,7 +1129,7 @@ Register the Task and TaskOutput tools on the orchestrator’s Toolkit, along wi
 </ul>
 <p><strong>Run interactively</strong>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/subagent<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">&quot;--subagent.run-interactive=true&quot;</span>
+<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">"--subagent.run-interactive=true"</span>
 </pre></div>
 </div>
 <p><strong>Use in code</strong>: Inject <strong>OrchestratorService</strong> and call <code class="docutils literal notranslate"><span class="pre">run(userMessage)</span></code>; the service invokes the graph that runs the orchestrator with the given input.</p>
@@ -1137,7 +1137,7 @@ Register the Task and TaskOutput tools on the orchestrator’s Toolkit, along wi
 <span class="n">OrchestratorService</span><span class="w"> </span><span class="n">orchestratorService</span><span class="p">;</span>
 
 <span class="n">String</span><span class="w"> </span><span class="n">answer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">orchestratorService</span><span class="p">.</span><span class="na">run</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;Analyze this codebase for technical debt and research Spring AI documentation&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="s">"Analyze this codebase for technical debt and research Spring AI documentation"</span><span class="p">);</span>
 </pre></div>
 </div>
 <p><strong>Configuration</strong>: <code class="docutils literal notranslate"><span class="pre">subagent.workspace-path</span></code> (default <code class="docutils literal notranslate"><span class="pre">${user.dir}</span></code>) is the root path for glob_search and grep_search; <code class="docutils literal notranslate"><span class="pre">subagent.run-interactive</span></code> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>) enables the interactive chat runner on startup.</p>

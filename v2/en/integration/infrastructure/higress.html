@@ -992,8 +992,8 @@
 
 <span class="c1">// 1) Create a client against an MCP endpoint published by Higress</span>
 <span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
-<span class="w">    </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;http://gateway/mcp-servers/union-tools-search&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"higress"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">"http://gateway/mcp-servers/union-tools-search"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 2) Register with HigressToolkit (a Toolkit subclass that caches the Higress client)</span>
@@ -1002,7 +1002,7 @@
 
 <span class="c1">// 3) Use it from an Agent</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1014,8 +1014,8 @@
 <p><code class="docutils literal notranslate"><span class="pre">HigressToolkit</span></code> reuses the standard <code class="docutils literal notranslate"><span class="pre">Toolkit</span></code> fluent registration API for finer-grained control by group / allowlist:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">enableTools</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;search-doc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fetch-url&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;knowledge&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableTools</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"search-doc"</span><span class="p">,</span><span class="w"> </span><span class="s">"fetch-url"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">"knowledge"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
 </div>

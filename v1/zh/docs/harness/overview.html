@@ -978,21 +978,21 @@
 
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="c1">// 1. 准备工作区：第一次运行生成 AGENTS.md，后续运行复用</span>
-<span class="w">        </span><span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">".agentscope/workspace"</span><span class="p">);</span>
 <span class="w">        </span><span class="n">initWorkspaceIfAbsent</span><span class="p">(</span><span class="n">workspace</span><span class="p">);</span>
 
 <span class="w">        </span><span class="c1">// 2. 构建模型</span>
 <span class="w">        </span><span class="n">Model</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-max&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-max"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">        </span><span class="c1">// 3. 构建 HarnessAgent：工作区注入、会话持久化、追踪日志默认开启；</span>
 <span class="w">        </span><span class="c1">//    这里显式启用对话压缩</span>
 <span class="w">        </span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;quickstart-agent&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个帮助用户做笔记的助手。&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"quickstart-agent"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个帮助用户做笔记的助手。"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1005,30 +1005,30 @@
 <span class="w">        </span><span class="c1">// 4. 同一个 RuntimeContext 发起两轮对话</span>
 <span class="w">        </span><span class="c1">//    sessionId 相同 → 第二轮自动从 Session 恢复第一轮的状态</span>
 <span class="w">        </span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;demo-session&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"demo-session"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">turn1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span>
 <span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;我叫天宇,今天准备一个关于 ReAct 的技术分享。&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">"我叫天宇,今天准备一个关于 ReAct 的技术分享。"</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
 <span class="w">                </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[turn1] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn1</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"[turn1] "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn1</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 
 <span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">turn2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span>
 <span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;我叫什么?我今天要干什么?&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">"我叫什么?我今天要干什么?"</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
 <span class="w">                </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[turn2] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn2</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"[turn2] "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn2</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">initWorkspaceIfAbsent</span><span class="p">(</span><span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">Files</span><span class="p">.</span><span class="na">createDirectories</span><span class="p">(</span><span class="n">workspace</span><span class="p">);</span>
-<span class="w">        </span><span class="n">Path</span><span class="w"> </span><span class="n">agentsMd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">workspace</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span><span class="s">&quot;AGENTS.md&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">Path</span><span class="w"> </span><span class="n">agentsMd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">workspace</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span><span class="s">"AGENTS.md"</span><span class="p">);</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Files</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">agentsMd</span><span class="p">))</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
-<span class="w">        </span><span class="n">Files</span><span class="p">.</span><span class="na">writeString</span><span class="p">(</span><span class="n">agentsMd</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="n">Files</span><span class="p">.</span><span class="na">writeString</span><span class="p">(</span><span class="n">agentsMd</span><span class="p">,</span><span class="w"> </span><span class="s">"""</span>
 <span class="s">                # 笔记助手</span>
 
 <span class="s">                你是一个帮助用户整理笔记和知识的助手。</span>
@@ -1037,7 +1037,7 @@
 <span class="s">                - 主动记录用户提到的关键事实(姓名、计划、偏好等)</span>
 <span class="s">                - 回答用简洁中文,必要时给出要点列表</span>
 <span class="s">                - 对不确定的内容要主动说明,不要臆造</span>
-<span class="s">                &quot;&quot;&quot;</span><span class="p">);</span>
+<span class="s">                """</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>

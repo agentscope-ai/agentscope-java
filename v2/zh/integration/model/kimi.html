@@ -981,8 +981,8 @@
 <h2>ModelRegistry<a class="headerlink" href="#modelregistry" title="Link to this heading">¶</a></h2>
 <p>设置 <code class="docutils literal notranslate"><span class="pre">MOONSHOT_API_KEY</span></code> 或 <code class="docutils literal notranslate"><span class="pre">KIMI_API_KEY</span></code> 后，使用 <code class="docutils literal notranslate"><span class="pre">kimi:&lt;model&gt;</span></code> 字符串 id：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;kimi:kimi-k3&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// 底层由 ModelRegistry.resolve(modelId) 解析</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"kimi:kimi-k3"</span><span class="p">)</span><span class="w"> </span><span class="c1">// 底层由 ModelRegistry.resolve(modelId) 解析</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -998,12 +998,12 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
 
 <span class="n">Model</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ModelRegistry</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;kimi:kimi-k2.6&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"kimi:kimi-k2.6"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">ModelCreationContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">component</span><span class="p">(</span>
 <span class="w">            </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">class</span><span class="p">,</span>
 <span class="w">            </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="s">&quot;thinking&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;disabled&quot;</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="s">"thinking"</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"type"</span><span class="p">,</span><span class="w"> </span><span class="s">"disabled"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">maxCompletionTokens</span><span class="p">(</span><span class="mi">16000</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>

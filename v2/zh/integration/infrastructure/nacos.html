@@ -1005,7 +1005,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.nacos.a2a.registry.NacosA2aRegistryProperties</span><span class="p">;</span>
 
 <span class="n">Properties</span><span class="w"> </span><span class="n">props</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Properties</span><span class="p">();</span>
-<span class="n">props</span><span class="p">.</span><span class="na">setProperty</span><span class="p">(</span><span class="s">&quot;serverAddr&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;127.0.0.1:8848&quot;</span><span class="p">);</span>
+<span class="n">props</span><span class="p">.</span><span class="na">setProperty</span><span class="p">(</span><span class="s">"serverAddr"</span><span class="p">,</span><span class="w"> </span><span class="s">"127.0.0.1:8848"</span><span class="p">);</span>
 <span class="n">NacosA2aRegistry</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosA2aRegistry</span><span class="p">(</span><span class="n">props</span><span class="p">);</span>
 
 <span class="n">NacosA2aRegistryProperties</span><span class="w"> </span><span class="n">props2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosA2aRegistryProperties</span><span class="p">();</span>
@@ -1019,9 +1019,9 @@
 <h3>客户端：通过 Nacos 拿到远端 AgentCard<a class="headerlink" href="#nacos-agentcard" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.nacos.a2a.discovery.NacosAgentCardResolver</span><span class="p">;</span>
 
-<span class="n">NacosAgentCardResolver</span><span class="w"> </span><span class="n">resolver</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosAgentCardResolver</span><span class="p">(</span><span class="n">props</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;translator-agent&quot;</span><span class="p">);</span>
+<span class="n">NacosAgentCardResolver</span><span class="w"> </span><span class="n">resolver</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosAgentCardResolver</span><span class="p">(</span><span class="n">props</span><span class="p">,</span><span class="w"> </span><span class="s">"translator-agent"</span><span class="p">);</span>
 <span class="n">A2aAgent</span><span class="w"> </span><span class="n">remote</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;translator&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"translator"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="n">resolver</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1047,8 +1047,8 @@
 
 <span class="n">NacosPromptListener</span><span class="w"> </span><span class="n">prompts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosPromptListener</span><span class="p">(</span><span class="n">aiService</span><span class="p">);</span>
 
-<span class="n">String</span><span class="w"> </span><span class="n">tpl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">prompts</span><span class="p">.</span><span class="na">getPrompt</span><span class="p">(</span><span class="s">&quot;system-prompt&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;userName&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Alice&quot;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">tpl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">prompts</span><span class="p">.</span><span class="na">getPrompt</span><span class="p">(</span><span class="s">"system-prompt"</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">    </span><span class="s">"userName"</span><span class="p">,</span><span class="w"> </span><span class="s">"Alice"</span>
 <span class="p">));</span>
 </pre></div>
 </div>
@@ -1068,11 +1068,11 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.nacos.skill.NacosSkillRepository</span><span class="p">;</span>
 
 <span class="n">Properties</span><span class="w"> </span><span class="n">props</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Properties</span><span class="p">();</span>
-<span class="n">props</span><span class="p">.</span><span class="na">setProperty</span><span class="p">(</span><span class="n">NacosSkillRepository</span><span class="p">.</span><span class="na">SKILL_VERSION_PATH</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1.2.0&quot;</span><span class="p">);</span>
-<span class="c1">// 或 SKILL_LABEL_PATH = &quot;stable&quot;</span>
+<span class="n">props</span><span class="p">.</span><span class="na">setProperty</span><span class="p">(</span><span class="n">NacosSkillRepository</span><span class="p">.</span><span class="na">SKILL_VERSION_PATH</span><span class="p">,</span><span class="w"> </span><span class="s">"1.2.0"</span><span class="p">);</span>
+<span class="c1">// 或 SKILL_LABEL_PATH = "stable"</span>
 
-<span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;default-namespace&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">props</span><span class="p">);</span>
-<span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">"default-namespace"</span><span class="p">,</span><span class="w"> </span><span class="n">props</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>版本/标签的解析顺序是：构造时传入的 <code class="docutils literal notranslate"><span class="pre">Properties</span></code> → JVM <code class="docutils literal notranslate"><span class="pre">-D</span></code> 系统属性 → 环境变量。同时设置版本和标签时，<strong>版本优先</strong>，标签不会用于下载。</p>

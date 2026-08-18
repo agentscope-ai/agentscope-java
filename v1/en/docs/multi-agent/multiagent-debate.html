@@ -1001,42 +1001,42 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span><span class="p">;</span>
 
 <span class="c1">// Define the debate topic</span>
-<span class="n">String</span><span class="w"> </span><span class="n">topic</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">topic</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
 <span class="s">    The two circles are externally tangent and there is no relative sliding.</span>
 <span class="s">    The radius of circle A is 1/3 the radius of circle B. Circle A rolls</span>
 <span class="s">    around circle B one trip back to its starting point. How many times will</span>
 <span class="s">    circle A revolve in total?</span>
-<span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">    """</span><span class="p">;</span>
 
 <span class="c1">// Create model with MultiAgentFormatter for multi-agent communication</span>
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen3-max"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiAgentFormatter</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Create debater Alice</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">alice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Alice&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
-<span class="s">            You&#39;re a debater named Alice. Welcome to the debate competition.</span>
-<span class="s">            It&#39;s unnecessary to fully agree with each other&#39;s perspectives,</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Alice"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">"""</span>
+<span class="s">            You're a debater named Alice. Welcome to the debate competition.</span>
+<span class="s">            It's unnecessary to fully agree with each other's perspectives,</span>
 <span class="s">            as our objective is to find the correct answer.</span>
 <span class="s">            The debate topic is: %s</span>
-<span class="s">            &quot;&quot;&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">topic</span><span class="p">))</span>
+<span class="s">            """</span><span class="p">,</span><span class="w"> </span><span class="n">topic</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Create debater Bob</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">bob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Bob&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
-<span class="s">            You&#39;re a debater named Bob. Welcome to the debate competition.</span>
-<span class="s">            It&#39;s unnecessary to fully agree with each other&#39;s perspectives,</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Bob"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">"""</span>
+<span class="s">            You're a debater named Bob. Welcome to the debate competition.</span>
+<span class="s">            It's unnecessary to fully agree with each other's perspectives,</span>
 <span class="s">            as our objective is to find the correct answer.</span>
 <span class="s">            The debate topic is: %s</span>
-<span class="s">            &quot;&quot;&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">topic</span><span class="p">))</span>
+<span class="s">            """</span><span class="p">,</span><span class="w"> </span><span class="n">topic</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1048,17 +1048,17 @@
 <p>The moderator evaluates the debate and decides when a correct answer has been found:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create moderator agent</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">moderator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Moderator&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
-<span class="s">            You&#39;re a moderator. There will be two debaters involved in a debate.</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Moderator"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">"""</span>
+<span class="s">            You're a moderator. There will be two debaters involved in a debate.</span>
 <span class="s">            They will present their answers and discuss their perspectives on the topic:</span>
 <span class="s">            ```</span>
 <span class="s">            %s</span>
 <span class="s">            ```</span>
-<span class="s">            At the end of each round, you will evaluate both sides&#39; answers</span>
+<span class="s">            At the end of each round, you will evaluate both sides' answers</span>
 <span class="s">            and decide which one is correct. If you determine the correct answer,</span>
-<span class="s">            set &#39;finished&#39; to true and provide the &#39;correctAnswer&#39;.</span>
-<span class="s">            &quot;&quot;&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">topic</span><span class="p">))</span>
+<span class="s">            set 'finished' to true and provide the 'correctAnswer'.</span>
+<span class="s">            """</span><span class="p">,</span><span class="w"> </span><span class="n">topic</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1069,7 +1069,7 @@
 <h3>Step 3: Define Structured Output for Judgment<a class="headerlink" href="#step-3-define-structured-output-for-judgment" title="Link to this heading">¶</a></h3>
 <p>Use a structured output class to capture the moderator’s decision:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="cm">/**</span>
-<span class="cm"> * Structured output model for the moderator&#39;s judgment.</span>
+<span class="cm"> * Structured output model for the moderator's judgment.</span>
 <span class="cm"> */</span>
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">JudgeResult</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="cm">/**</span>
@@ -1096,7 +1096,7 @@
 <span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">maxRounds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5</span><span class="p">;</span>
 
 <span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">round</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="n">round</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">maxRounds</span><span class="p">;</span><span class="w"> </span><span class="n">round</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n=== Round &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">round</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; ===\n&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\n=== Round "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">round</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">" ===\n"</span><span class="p">);</span>
 
 <span class="w">        </span><span class="c1">// Debaters discuss within MsgHub</span>
 <span class="w">        </span><span class="c1">// Their messages are automatically broadcast to each other</span>
@@ -1108,33 +1108,33 @@
 
 <span class="w">            </span><span class="c1">// Alice presents her argument (affirmative side)</span>
 <span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">aliceMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">alice</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"user"</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;You are the affirmative side. Please express your viewpoints.&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">"You are the affirmative side. Please express your viewpoints."</span><span class="p">)</span>
 <span class="w">                            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Alice: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">aliceMsg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Alice: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">aliceMsg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 
 <span class="w">            </span><span class="c1">// Bob presents his argument (negative side)</span>
 <span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">bobMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">bob</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"user"</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;You are the negative side. You may disagree. Provide your reason and answer.&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">"You are the negative side. You may disagree. Provide your reason and answer."</span><span class="p">)</span>
 <span class="w">                            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Bob: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">bobMsg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Bob: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">bobMsg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 <span class="w">        </span><span class="p">}</span>
 
-<span class="w">        </span><span class="c1">// Moderator evaluates (outside MsgHub - debaters don&#39;t need to see this)</span>
+<span class="w">        </span><span class="c1">// Moderator evaluates (outside MsgHub - debaters don't need to see this)</span>
 <span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">judgeMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">moderator</span><span class="p">.</span><span class="na">call</span><span class="p">(</span>
 <span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"user"</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Now you have heard the answers from both debaters. &quot;</span><span class="w"> </span><span class="o">+</span>
-<span class="w">                                      </span><span class="s">&quot;Has the debate finished? Can you determine the correct answer?&quot;</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">"Now you have heard the answers from both debaters. "</span><span class="w"> </span><span class="o">+</span>
+<span class="w">                                      </span><span class="s">"Has the debate finished? Can you determine the correct answer?"</span><span class="p">)</span>
 <span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
 <span class="w">                </span><span class="n">JudgeResult</span><span class="p">.</span><span class="na">class</span><span class="w">  </span><span class="c1">// Request structured output</span>
@@ -1144,15 +1144,15 @@
 <span class="w">        </span><span class="n">JudgeResult</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">judgeMsg</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">JudgeResult</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="na">finished</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n=== Debate Concluded ===&quot;</span><span class="p">);</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;The correct answer is: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">correctAnswer</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\n=== Debate Concluded ==="</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"The correct answer is: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">correctAnswer</span><span class="p">);</span>
 <span class="w">            </span><span class="k">return</span><span class="p">;</span>
 <span class="w">        </span><span class="p">}</span>
 
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Moderator: Debate continues to next round...&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Moderator: Debate continues to next round..."</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n=== Max rounds reached without conclusion ===&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\n=== Max rounds reached without conclusion ==="</span><span class="p">);</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -1181,46 +1181,46 @@
 
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="c1">// Topic</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">topic</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">topic</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
 <span class="s">            The two circles are externally tangent and there is no relative sliding.</span>
 <span class="s">            The radius of circle A is 1/3 the radius of circle B. Circle A rolls</span>
 <span class="s">            around circle B one trip back to its starting point. How many times will</span>
 <span class="s">            circle A revolve in total?</span>
-<span class="s">            &quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">            """</span><span class="p">;</span>
 
 <span class="w">        </span><span class="c1">// Create model</span>
 <span class="w">        </span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen3-max"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiAgentFormatter</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">        </span><span class="c1">// Create debaters</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">alice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Alice&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You&#39;re a debater named Alice. Topic: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">topic</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Alice"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You're a debater named Alice. Topic: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">topic</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">bob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Bob&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You&#39;re a debater named Bob. Topic: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">topic</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Bob"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You're a debater named Bob. Topic: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">topic</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">        </span><span class="c1">// Create moderator</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">moderator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Moderator&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You&#39;re a moderator evaluating a debate on: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">topic</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Moderator"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You're a moderator evaluating a debate on: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">topic</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="w">        </span><span class="c1">// Run debate</span>
 <span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">round</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="n">round</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">5</span><span class="p">;</span><span class="w"> </span><span class="n">round</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n=== Round &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">round</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; ===\n&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\n=== Round "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">round</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">" ===\n"</span><span class="p">);</span>
 
 <span class="w">            </span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">MsgHub</span><span class="w"> </span><span class="n">hub</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MsgHub</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">participants</span><span class="p">(</span><span class="n">alice</span><span class="p">,</span><span class="w"> </span><span class="n">bob</span><span class="p">,</span><span class="w"> </span><span class="n">moderator</span><span class="p">)</span>
@@ -1229,31 +1229,31 @@
 <span class="w">                </span><span class="n">hub</span><span class="p">.</span><span class="na">enter</span><span class="p">().</span><span class="na">block</span><span class="p">();</span>
 
 <span class="w">                </span><span class="n">Msg</span><span class="w"> </span><span class="n">aliceMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">alice</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"user"</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Present your argument.&quot;</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">"Present your argument."</span><span class="p">)</span>
 <span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Alice: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">aliceMsg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Alice: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">aliceMsg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 
 <span class="w">                </span><span class="n">Msg</span><span class="w"> </span><span class="n">bobMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">bob</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"user"</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Respond to Alice and present your argument.&quot;</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">"Respond to Alice and present your argument."</span><span class="p">)</span>
 <span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Bob: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">bobMsg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Bob: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">bobMsg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 <span class="w">            </span><span class="p">}</span>
 
 <span class="w">            </span><span class="c1">// Moderator judgment</span>
 <span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">judgeMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">moderator</span><span class="p">.</span><span class="na">call</span><span class="p">(</span>
 <span class="w">                    </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"user"</span><span class="p">)</span>
 <span class="w">                            </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">                            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                    </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Evaluate the debate. Is there a correct answer?&quot;</span><span class="p">)</span>
+<span class="w">                                    </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">"Evaluate the debate. Is there a correct answer?"</span><span class="p">)</span>
 <span class="w">                                    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                            </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
 <span class="w">                    </span><span class="n">JudgeResult</span><span class="p">.</span><span class="na">class</span>
@@ -1262,8 +1262,8 @@
 <span class="w">            </span><span class="n">JudgeResult</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">judgeMsg</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">JudgeResult</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="na">finished</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n=== Debate Concluded ===&quot;</span><span class="p">);</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Answer: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">correctAnswer</span><span class="p">);</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\n=== Debate Concluded ==="</span><span class="p">);</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Answer: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">correctAnswer</span><span class="p">);</span>
 <span class="w">                </span><span class="k">break</span><span class="p">;</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">        </span><span class="p">}</span>
@@ -1307,8 +1307,8 @@
 
 <span class="c1">// Final synthesis</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">synthesizer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Synthesizer&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;Synthesize all perspectives and provide a final answer.&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Synthesizer"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"Synthesize all perspectives and provide a final answer."</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 

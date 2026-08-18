@@ -1252,8 +1252,8 @@ Agent run。默认值为 <code class="docutils literal notranslate"><span class=
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
 <span class="n">AguiRuntimeContextResolver</span><span class="w"> </span><span class="nf">runtimeContextResolver</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;tenantId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">firstHeader</span><span class="p">(</span><span class="s">&quot;X-Tenant-Id&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;traceId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">firstHeader</span><span class="p">(</span><span class="s">&quot;X-Trace-Id&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">"tenantId"</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">firstHeader</span><span class="p">(</span><span class="s">"X-Tenant-Id"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">"traceId"</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">firstHeader</span><span class="p">(</span><span class="s">"X-Trace-Id"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="p">}</span>
 </pre></div>
@@ -1294,32 +1294,32 @@ Agent run。默认值为 <code class="docutils literal notranslate"><span class=
 </ul>
 <p>这两类场景都使用官方 AG-UI <code class="docutils literal notranslate"><span class="pre">reason:</span> <span class="pre">&quot;tool_call&quot;</span></code>，因为 interrupt 绑定到具体 <code class="docutils literal notranslate"><span class="pre">toolCallId</span></code>。不要把这类工具审批写成 <code class="docutils literal notranslate"><span class="pre">reason:</span> <span class="pre">&quot;confirmation&quot;</span></code>。</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RUN_FINISHED&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;interrupt&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;interrupts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"RUN_FINISHED"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"outcome"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"interrupt"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"interrupts"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">      </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1:call-1&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tool_call&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Need approval before running this tool&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;responseSchema&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;boolean&quot;</span><span class="w"> </span><span class="p">},</span>
-<span class="w">            </span><span class="nt">&quot;editedArgs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">              </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="p">,</span>
-<span class="w">              </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Full replacement of the tool args. Not merged.&quot;</span>
+<span class="w">        </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reply-1:call-1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tool_call"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"toolCallId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"call-1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Need approval before running this tool"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"responseSchema"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"object"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"properties"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"approved"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"boolean"</span><span class="w"> </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"editedArgs"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">              </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"object"</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Full replacement of the tool args. Not merged."</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">          </span><span class="p">},</span>
-<span class="w">          </span><span class="nt">&quot;required&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;approved&quot;</span><span class="p">]</span>
+<span class="w">          </span><span class="nt">"required"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"approved"</span><span class="p">]</span>
 <span class="w">        </span><span class="p">},</span>
-<span class="w">        </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;agentscope.interruptKind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;permission_confirm&quot;</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">&quot;toolName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request_approval&quot;</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">&quot;toolInput&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/tmp/report.txt&quot;</span><span class="w"> </span><span class="p">},</span>
-<span class="w">          </span><span class="nt">&quot;toolContent&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;{\&quot;path\&quot;:\&quot;/tmp/report.txt\&quot;}&quot;</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">&quot;replyId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1&quot;</span>
+<span class="w">        </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"agentscope.interruptKind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"permission_confirm"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"toolName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"request_approval"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"toolInput"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/tmp/report.txt"</span><span class="w"> </span><span class="p">},</span>
+<span class="w">          </span><span class="nt">"toolContent"</span><span class="p">:</span><span class="w"> </span><span class="s2">"{\"path\":\"/tmp/report.txt\"}"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"replyId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reply-1"</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">]</span>
@@ -1329,17 +1329,17 @@ Agent run。默认值为 <code class="docutils literal notranslate"><span class=
 </div>
 <p>前端拿到 interrupt 后可以弹出审批或外部执行 UI。用户完成操作后，在同一个 <code class="docutils literal notranslate"><span class="pre">threadId</span></code> 的下一次 <code class="docutils literal notranslate"><span class="pre">runAgent</span></code> 请求中带回官方 <code class="docutils literal notranslate"><span class="pre">resume[]</span></code>：</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;threadId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;thread-1&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;run-2&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
-<span class="w">  </span><span class="nt">&quot;resume&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"threadId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"thread-1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"runId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"run-2"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">  </span><span class="nt">"resume"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;interruptId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reply-1:call-1&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;resolved&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;payload&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;editedArgs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/tmp/reviewed-report.txt&quot;</span>
+<span class="w">      </span><span class="nt">"interruptId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reply-1:call-1"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"resolved"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"payload"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"approved"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"editedArgs"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/tmp/reviewed-report.txt"</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>

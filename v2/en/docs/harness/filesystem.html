@@ -1018,7 +1018,7 @@
 <span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;store-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"store-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
@@ -1099,16 +1099,16 @@
 <h4>Example: multi-replica customer-service agent<a class="headerlink" href="#example-multi-replica-customer-service-agent" title="Link to this heading">¶</a></h4>
 <p>Three pods each running a <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>, sharing one Redis as the <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span>
-<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://shared-redis:6379&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">"redis://shared-redis:6379"</span><span class="p">));</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;customer-service&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"customer-service"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/opt/agent/workspace&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/opt/agent/workspace"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">                  </span><span class="c1">// stateStore + baseStore in one call</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span><span class="w">      </span><span class="c1">// one namespace per user</span>
-<span class="w">        </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">&quot;anonymous&quot;</span><span class="p">))</span><span class="w">            </span><span class="c1">// fallback for unauthenticated callers</span>
+<span class="w">        </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">"anonymous"</span><span class="p">))</span><span class="w">            </span><span class="c1">// fallback for unauthenticated callers</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1150,18 +1150,18 @@
 <section id="docker-sandbox">
 <h4>Docker sandbox<a class="headerlink" href="#docker-sandbox" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sandbox-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sandbox-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memorySizeBytes</span><span class="p">(</span><span class="mi">512</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024L</span><span class="p">)</span><span class="w">   </span><span class="c1">// 512 MB memory limit</span>
 <span class="w">        </span><span class="p">.</span><span class="na">cpuCount</span><span class="p">(</span><span class="mi">2L</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">network</span><span class="p">(</span><span class="s">&quot;host&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">network</span><span class="p">(</span><span class="s">"host"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">exposedPorts</span><span class="p">(</span><span class="mi">8080</span><span class="p">,</span><span class="w"> </span><span class="mi">3000</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">environment</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;NODE_ENV&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;development&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">&quot;/data/snapshots&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">environment</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"NODE_ENV"</span><span class="p">,</span><span class="w"> </span><span class="s">"development"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">"/data/snapshots"</span><span class="p">)))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1239,12 +1239,12 @@
 <h4>Kubernetes sandbox (agent-sandbox)<a class="headerlink" href="#kubernetes-sandbox-agent-sandbox" title="Link to this heading">¶</a></h4>
 <p>The Kubernetes store is fully based on <a class="reference external" href="https://github.com/kubernetes-sigs/agent-sandbox">agent-sandbox</a>: sandbox pods are managed by the agent-sandbox controller in your cluster, and image, resources, and PVCs are all declared cluster-side in a <code class="docutils literal notranslate"><span class="pre">SandboxTemplate</span></code> / <code class="docutils literal notranslate"><span class="pre">SandboxWarmPool</span></code> (not configured from Java). The Java side claims instances from the warm pool via <code class="docutils literal notranslate"><span class="pre">SandboxClaim</span></code>. Install the agent-sandbox controller and create the template and warm pool before use.</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;k8s-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"k8s-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">KubernetesFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">namespace</span><span class="p">(</span><span class="s">&quot;agents&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">warmPoolName</span><span class="p">(</span><span class="s">&quot;agent-pool&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// SandboxWarmPool name</span>
+<span class="w">        </span><span class="p">.</span><span class="na">namespace</span><span class="p">(</span><span class="s">"agents"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">warmPoolName</span><span class="p">(</span><span class="s">"agent-pool"</span><span class="p">)</span><span class="w">        </span><span class="c1">// SandboxWarmPool name</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1303,12 +1303,12 @@
 <section id="e2b-sandbox">
 <h4>E2B sandbox<a class="headerlink" href="#e2b-sandbox" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;e2b-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"e2b-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">E2bFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;${E2B_API_KEY}&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">templateId</span><span class="p">(</span><span class="s">&quot;my-template&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"${E2B_API_KEY}"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">templateId</span><span class="p">(</span><span class="s">"my-template"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sandboxTimeoutSeconds</span><span class="p">(</span><span class="mi">300</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1318,13 +1318,13 @@
 <section id="daytona-sandbox">
 <h4>Daytona sandbox<a class="headerlink" href="#daytona-sandbox" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;daytona-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"daytona-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DaytonaFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;${DAYTONA_API_KEY}&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">controlPlaneBaseUrl</span><span class="p">(</span><span class="s">&quot;https://api.daytona.io&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12-slim&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"${DAYTONA_API_KEY}"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">controlPlaneBaseUrl</span><span class="p">(</span><span class="s">"https://api.daytona.io"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"python:3.12-slim"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">cpu</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span><span class="w">        </span><span class="c1">// GiB</span>
 <span class="w">        </span><span class="p">.</span><span class="na">disk</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">         </span><span class="c1">// GiB</span>
@@ -1336,14 +1336,14 @@
 <section id="agentrun-sandbox-alibaba-cloud">
 <h4>AgentRun sandbox (Alibaba Cloud)<a class="headerlink" href="#agentrun-sandbox-alibaba-cloud" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;agentrun-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"agentrun-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;${AGENTRUN_API_KEY}&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">accountId</span><span class="p">(</span><span class="s">&quot;your-account-id&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">region</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">templateName</span><span class="p">(</span><span class="s">&quot;python3.12&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"${AGENTRUN_API_KEY}"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">accountId</span><span class="p">(</span><span class="s">"your-account-id"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">region</span><span class="p">(</span><span class="s">"cn-hangzhou"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">templateName</span><span class="p">(</span><span class="s">"python3.12"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sandboxIdleTimeoutSeconds</span><span class="p">(</span><span class="mi">600</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1418,26 +1418,26 @@
 <section id="example-coding-assistant-docker-local-snapshots">
 <h4>Example: coding assistant (Docker + local snapshots)<a class="headerlink" href="#example-coding-assistant-docker-local-snapshots" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">codingAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coder&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"coder"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">".agentscope/workspace"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;node:20-slim&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"node:20-slim"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memorySizeBytes</span><span class="p">(</span><span class="mi">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024L</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">&quot;/data/sandbox-snapshots&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">"/data/sandbox-snapshots"</span><span class="p">)))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// Alice&#39;s first call: npm install inside sandbox, snapshot saved afterward</span>
+<span class="c1">// Alice's first call: npm install inside sandbox, snapshot saved afterward</span>
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">rc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;dev-session-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"dev-session-1"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">user</span><span class="p">(</span><span class="s">&quot;npm install &amp;&amp; npm test&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">user</span><span class="p">(</span><span class="s">"npm install &amp;&amp; npm test"</span><span class="p">),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
-<span class="c1">// Alice&#39;s second call: snapshot restored, node_modules still present</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">user</span><span class="p">(</span><span class="s">&quot;npm run build&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="c1">// Alice's second call: snapshot restored, node_modules still present</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">user</span><span class="p">(</span><span class="s">"npm run build"</span><span class="p">),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1459,7 +1459,7 @@
 <h3>Mode 3: local + shell (default)<a class="headerlink" href="#mode-3-local-shell-default" title="Link to this heading">¶</a></h3>
 <p>What you get with no <code class="docutils literal notranslate"><span class="pre">filesystem(...)</span></code> call: workspace lives at <code class="docutils literal notranslate"><span class="pre">${cwd}/.agentscope/workspace/</span></code>, shell runs on the host:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;local-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"local-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="c1">// .filesystem(...) omitted = local + shell</span>
@@ -1471,11 +1471,11 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalFilesystemSpec</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">executeTimeoutSeconds</span><span class="p">(</span><span class="mi">120</span><span class="p">)</span><span class="w">       </span><span class="c1">// shell command timeout</span>
 <span class="w">    </span><span class="p">.</span><span class="na">maxOutputBytes</span><span class="p">(</span><span class="mi">100_000</span><span class="p">)</span><span class="w">          </span><span class="c1">// max output bytes per command</span>
-<span class="w">    </span><span class="p">.</span><span class="na">env</span><span class="p">(</span><span class="s">&quot;MY_VAR&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span><span class="w">          </span><span class="c1">// extra environment variables</span>
+<span class="w">    </span><span class="p">.</span><span class="na">env</span><span class="p">(</span><span class="s">"MY_VAR"</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">)</span><span class="w">          </span><span class="c1">// extra environment variables</span>
 <span class="w">    </span><span class="p">.</span><span class="na">inheritEnv</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                </span><span class="c1">// inherit parent process env</span>
 <span class="w">    </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">LocalFsMode</span><span class="p">.</span><span class="na">ROOTED</span><span class="p">)</span><span class="w">        </span><span class="c1">// path policy</span>
-<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/my/project&quot;</span><span class="p">))</span><span class="w"> </span><span class="c1">// project root (shell cwd + overlay lower)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addRoot</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/extra/dir&quot;</span><span class="p">)))</span><span class="w"> </span><span class="c1">// extra allowed directory</span>
+<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/my/project"</span><span class="p">))</span><span class="w"> </span><span class="c1">// project root (shell cwd + overlay lower)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addRoot</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/extra/dir"</span><span class="p">)))</span><span class="w"> </span><span class="c1">// extra allowed directory</span>
 </pre></div>
 </div>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1593,12 +1593,12 @@
 <section id="example-local-development-assistant">
 <h4>Example: local development assistant<a class="headerlink" href="#example-local-development-assistant" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">devHelper</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;dev-helper&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"dev-helper"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">".agentscope/workspace"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/Users/alice/my-project&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addRoot</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/Users/alice/.config&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/Users/alice/my-project"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addRoot</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/Users/alice/.config"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">LocalFsMode</span><span class="p">.</span><span class="na">ROOTED</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">inheritEnv</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">executeTimeoutSeconds</span><span class="p">(</span><span class="mi">300</span><span class="p">))</span>
@@ -1662,14 +1662,14 @@
 <h3>Example: scope combinations for different business needs<a class="headerlink" href="#example-scope-combinations-for-different-business-needs" title="Link to this heading">¶</a></h3>
 <p><strong>Scenario 1: per-user coding sandbox, preserving installed deps across sessions</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span><span class="w">       </span><span class="c1">// all of Alice&#39;s sessions share one snapshot</span>
-<span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">&quot;/snapshots&quot;</span><span class="p">)))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"python:3.12"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span><span class="w">       </span><span class="c1">// all of Alice's sessions share one snapshot</span>
+<span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">"/snapshots"</span><span class="p">)))</span>
 </pre></div>
 </div>
 <p><strong>Scenario 2: per-conversation disposable sandbox</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span><span class="w">   </span><span class="c1">// each sessionId independent</span>
 </pre></div>
 </div>

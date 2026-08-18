@@ -1042,8 +1042,8 @@ description: 用于快速探索代码库。用于查找文件、搜索代码、�
 <h3>2. API（编程式）<a class="headerlink" href="#api" title="Link to this heading">¶</a></h3>
 <p>需要完全控制时，在 Java 中构建 <strong>ReActAgent</strong> 并注册到 Task 工具构建器：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">dependencyAnalyzerReAct</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;dependency-analyzer&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;分析项目依赖。用于版本冲突、过时库、安全等问题。&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"dependency-analyzer"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"分析项目依赖。用于版本冲突、过时库、安全等问题。"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">DEPENDENCY_ANALYZER_SYSTEM_PROMPT</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">depToolkit</span><span class="p">)</span><span class="w">  </span><span class="c1">// 例如仅 glob_search、grep_search</span>
@@ -1053,7 +1053,7 @@ description: 用于快速探索代码库。用于查找文件、搜索代码、�
 <span class="n">TaskToolsBuilder</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">defaultToolsByName</span><span class="p">(</span><span class="n">defaultToolsByName</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(</span><span class="s">&quot;dependency-analyzer&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dependencyAnalyzerReAct</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(</span><span class="s">"dependency-analyzer"</span><span class="p">,</span><span class="w"> </span><span class="n">dependencyAnalyzerReAct</span><span class="p">)</span>
 <span class="w">        </span><span class="c1">// ... addAgentResource(...) 用于 Markdown 规格</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1129,7 +1129,7 @@ description: 用于快速探索代码库。用于查找文件、搜索代码、�
 </ul>
 <p><strong>交互运行</strong>：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/subagent<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">&quot;--subagent.run-interactive=true&quot;</span>
+<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">"--subagent.run-interactive=true"</span>
 </pre></div>
 </div>
 <p><strong>代码调用</strong>：注入 <strong>OrchestratorService</strong>，调用 <code class="docutils literal notranslate"><span class="pre">run(userMessage)</span></code>；服务会执行调用编排智能体的图。</p>
@@ -1137,7 +1137,7 @@ description: 用于快速探索代码库。用于查找文件、搜索代码、�
 <span class="n">OrchestratorService</span><span class="w"> </span><span class="n">orchestratorService</span><span class="p">;</span>
 
 <span class="n">String</span><span class="w"> </span><span class="n">answer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">orchestratorService</span><span class="p">.</span><span class="na">run</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;分析该代码库的技术债务并调研 Spring AI 文档&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="s">"分析该代码库的技术债务并调研 Spring AI 文档"</span><span class="p">);</span>
 </pre></div>
 </div>
 <p><strong>配置</strong>：<code class="docutils literal notranslate"><span class="pre">subagent.workspace-path</span></code>（默认 <code class="docutils literal notranslate"><span class="pre">${user.dir}</span></code>）为 glob_search、grep_search 的根路径；<code class="docutils literal notranslate"><span class="pre">subagent.run-interactive</span></code>（默认 <code class="docutils literal notranslate"><span class="pre">false</span></code>）用于启动时开启交互式对话。</p>

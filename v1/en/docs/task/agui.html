@@ -988,16 +988,16 @@
 
 <span class="w">    </span><span class="nd">@Bean</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">AguiAgentRegistryCustomizer</span><span class="w"> </span><span class="nf">aguiAgentRegistryCustomizer</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="na">registerFactory</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">this</span><span class="p">::</span><span class="n">createAgent</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="na">registerFactory</span><span class="p">(</span><span class="s">"default"</span><span class="p">,</span><span class="w"> </span><span class="k">this</span><span class="p">::</span><span class="n">createAgent</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">Agent</span><span class="w"> </span><span class="nf">createAgent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a helpful assistant."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen3-max"</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
@@ -1013,14 +1013,14 @@
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">AgentConfiguration</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="nd">@Bean</span>
-<span class="w">    </span><span class="nd">@AguiAgentId</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="nd">@AguiAgentId</span><span class="p">(</span><span class="s">"default"</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Agent</span><span class="w"> </span><span class="nf">agent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a helpful assistant."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen3-max"</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
@@ -1046,8 +1046,8 @@
 <h3>4. Start and Test<a class="headerlink" href="#start-and-test" title="Link to this heading">¶</a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Test after starting the application</span>
 curl<span class="w"> </span>-N<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/agui/run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;threadId&quot;:&quot;t1&quot;,&quot;runId&quot;:&quot;r1&quot;,&quot;messages&quot;:[{&quot;id&quot;:&quot;m1&quot;,&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Hello&quot;}]}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"threadId":"t1","runId":"r1","messages":[{"id":"m1","role":"user","content":"Hello"}]}'</span>
 </pre></div>
 </div>
 </section>
@@ -1058,31 +1058,31 @@ curl<span class="w"> </span>-N<span class="w"> </span>-X<span class="w"> </span>
 <section id="using-ag-ui-client-recommended">
 <h3>Using &#64;ag-ui/client (Recommended)<a class="headerlink" href="#using-ag-ui-client-recommended" title="Link to this heading">¶</a></h3>
 <p>The official AG-UI client library for vanilla JavaScript/TypeScript projects:</p>
-<div class="highlight-html notranslate"><div class="highlight"><pre><span></span><span class="p">&lt;</span><span class="nt">script</span> <span class="na">type</span><span class="o">=</span><span class="s">&quot;module&quot;</span><span class="p">&gt;</span>
-<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">HttpAgent</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;https://esm.sh/@ag-ui/client&#39;</span><span class="p">;</span>
+<div class="highlight-html notranslate"><div class="highlight"><pre><span></span><span class="p">&lt;</span><span class="nt">script</span> <span class="na">type</span><span class="o">=</span><span class="s">"module"</span><span class="p">&gt;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">HttpAgent</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">'https://esm.sh/@ag-ui/client'</span><span class="p">;</span>
 
 <span class="c1">// Create agent instance</span>
 <span class="kd">const</span><span class="w"> </span><span class="nx">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">HttpAgent</span><span class="p">({</span>
-<span class="w">    </span><span class="nx">url</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;http://localhost:8080/agui/run&#39;</span><span class="p">,</span>
-<span class="w">    </span><span class="nx">threadId</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;thread-&#39;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Date</span><span class="p">.</span><span class="nx">now</span><span class="p">()</span>
+<span class="w">    </span><span class="nx">url</span><span class="o">:</span><span class="w"> </span><span class="s1">'http://localhost:8080/agui/run'</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">threadId</span><span class="o">:</span><span class="w"> </span><span class="s1">'thread-'</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Date</span><span class="p">.</span><span class="nx">now</span><span class="p">()</span>
 <span class="p">});</span>
 
 <span class="c1">// Subscribe to message changes</span>
 <span class="nx">agent</span><span class="p">.</span><span class="nx">subscribe</span><span class="p">({</span>
 <span class="w">    </span><span class="nx">onMessagesChanged</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s1">&#39;Messages:&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">messages</span><span class="p">);</span>
+<span class="w">        </span><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s1">'Messages:'</span><span class="p">,</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">messages</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">});</span>
 
 <span class="c1">// Add user message</span>
 <span class="nx">agent</span><span class="p">.</span><span class="nx">addMessage</span><span class="p">({</span>
-<span class="w">    </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;msg-1&#39;</span><span class="p">,</span>
-<span class="w">    </span><span class="nx">role</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;user&#39;</span><span class="p">,</span>
-<span class="w">    </span><span class="nx">content</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;Hello&#39;</span>
+<span class="w">    </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s1">'msg-1'</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">role</span><span class="o">:</span><span class="w"> </span><span class="s1">'user'</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">content</span><span class="o">:</span><span class="w"> </span><span class="s1">'Hello'</span>
 <span class="p">});</span>
 
 <span class="c1">// Run agent</span>
-<span class="k">await</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">runAgent</span><span class="p">({</span><span class="w"> </span><span class="nx">runId</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;run-1&#39;</span><span class="w"> </span><span class="p">});</span>
+<span class="k">await</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">runAgent</span><span class="p">({</span><span class="w"> </span><span class="nx">runId</span><span class="o">:</span><span class="w"> </span><span class="s1">'run-1'</span><span class="w"> </span><span class="p">});</span>
 
 <span class="c1">// Abort run</span>
 <span class="c1">// agent.abortRun();</span>
@@ -1093,11 +1093,11 @@ curl<span class="w"> </span>-N<span class="w"> </span>-X<span class="w"> </span>
 <section id="using-copilotkit">
 <h3>Using CopilotKit<a class="headerlink" href="#using-copilotkit" title="Link to this heading">¶</a></h3>
 <p>For React applications, you can use <a class="reference external" href="https://copilotkit.ai">CopilotKit</a>:</p>
-<div class="highlight-typescript notranslate"><div class="highlight"><pre><span></span><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">CopilotKit</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;@copilotkit/react-core&quot;</span><span class="p">;</span>
+<div class="highlight-typescript notranslate"><div class="highlight"><pre><span></span><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">CopilotKit</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"@copilotkit/react-core"</span><span class="p">;</span>
 
 <span class="kd">function</span><span class="w"> </span><span class="nx">App</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">(</span>
-<span class="w">    </span><span class="o">&lt;</span><span class="nx">CopilotKit</span><span class="w"> </span><span class="nx">runtimeUrl</span><span class="o">=</span><span class="s2">&quot;http://localhost:8080/agui&quot;</span><span class="o">&gt;</span>
+<span class="w">    </span><span class="o">&lt;</span><span class="nx">CopilotKit</span><span class="w"> </span><span class="nx">runtimeUrl</span><span class="o">=</span><span class="s2">"http://localhost:8080/agui"</span><span class="o">&gt;</span>
 <span class="w">      </span><span class="o">&lt;</span><span class="nx">YourApp</span><span class="w"> </span><span class="o">/&gt;</span>
 <span class="w">    </span><span class="o">&lt;</span><span class="err">/CopilotKit&gt;</span>
 <span class="w">  </span><span class="p">);</span>

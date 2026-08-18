@@ -1025,7 +1025,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1036,7 +1036,7 @@
 
 <span class="c1">// 访问历史</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getMemory</span><span class="p">().</span><span class="na">getMessages</span><span class="p">();</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;消息总数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"消息总数: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
@@ -1049,7 +1049,7 @@
 <span class="c1">// 创建 Agent 和 Memory</span>
 <span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1111,14 +1111,14 @@
 
 <span class="c1">// 使用 Platform Mem0（默认，无需指定 apiType）</span>
 <span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-001&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;https://api.mem0.ai&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">"SmartAssistant"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"user-001"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">"https://api.mem0.ai"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"MEM0_API_KEY"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
@@ -1133,15 +1133,15 @@
 
 <span class="c1">// 使用自建 Mem0，需要指定 apiType 为 Mem0ApiType.SELF_HOSTED</span>
 <span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">selfHostedMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-001&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8000&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自建 Mem0 服务地址</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// 可选，取决于自建服务配置</span>
+<span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">"SmartAssistant"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"user-001"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">"http://localhost:8000"</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自建 Mem0 服务地址</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"MEM0_API_KEY"</span><span class="p">))</span><span class="w">  </span><span class="c1">// 可选，取决于自建服务配置</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiType</span><span class="p">(</span><span class="n">Mem0ApiType</span><span class="p">.</span><span class="na">SELF_HOSTED</span><span class="p">)</span><span class="w">  </span><span class="c1">// 指定为自建 Mem0</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">selfHostedMemory</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
@@ -1175,14 +1175,14 @@
 <span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_KEY</span><span class="o">=</span>your_api_key
 <span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_BASE_URL</span><span class="o">=</span>https://api.mem0.ai<span class="w">  </span><span class="c1"># 可选，默认为此值</span>
 <span class="nb">cd</span><span class="w"> </span>agentscope-examples/documentation/advanced
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.Mem0Example&quot;</span>
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">"io.agentscope.examples.advanced.Mem0Example"</span>
 
 <span class="c1"># 自建 Mem0</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_KEY</span><span class="o">=</span>your_api_key<span class="w">  </span><span class="c1"># 可选，取决于服务配置</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_BASE_URL</span><span class="o">=</span>http://localhost:8000
 <span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_TYPE</span><span class="o">=</span>self-hosted
 <span class="nb">cd</span><span class="w"> </span>agentscope-examples/documentation/advanced
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.Mem0Example&quot;</span>
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">"io.agentscope.examples.advanced.Mem0Example"</span>
 </pre></div>
 </div>
 </section>
@@ -1196,12 +1196,12 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.reme.ReMeLongTermMemory</span><span class="p">;</span>
 
 <span class="n">ReMeLongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReMeLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;example_user&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8002&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"example_user"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">"http://localhost:8002"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
@@ -1212,7 +1212,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <p><strong>运行示例</strong>：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># 需要配置 REME_API_BASE_URL 环境变量（可选，默认为 http://localhost:8002）</span>
 <span class="nb">cd</span><span class="w"> </span>examples/advanced
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.ReMeExample&quot;</span>
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">"io.agentscope.examples.advanced.ReMeExample"</span>
 </pre></div>
 </div>
 </section>
@@ -1225,16 +1225,16 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.bailian.BailianLongTermMemory</span><span class="p">;</span>
 
 <span class="n">BailianLongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;your_user_id&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">memoryLibraryId</span><span class="p">(</span><span class="s">&quot;your_memory_library_id&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">projectId</span><span class="p">(</span><span class="s">&quot;your_project_id&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">profileSchema</span><span class="p">(</span><span class="s">&quot;your_profile_schema&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">metadata</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;location_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Beijing&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"your_user_id"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">memoryLibraryId</span><span class="p">(</span><span class="s">"your_memory_library_id"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">projectId</span><span class="p">(</span><span class="s">"your_project_id"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">profileSchema</span><span class="p">(</span><span class="s">"your_profile_schema"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">metadata</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"location_name"</span><span class="p">,</span><span class="w"> </span><span class="s">"Beijing"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
@@ -1258,7 +1258,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_PROFILE_SCHEMA</span><span class="o">=</span>your_profile_schema
 
 <span class="nb">cd</span><span class="w"> </span>agentscope-examples/documentation/advanced
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.BailianMemoryExample&quot;</span>
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">"io.agentscope.examples.advanced.BailianMemoryExample"</span>
 </pre></div>
 </div>
 </section>

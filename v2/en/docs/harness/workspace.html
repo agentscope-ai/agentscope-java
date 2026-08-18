@@ -1098,7 +1098,7 @@
 │   └── &lt;agent-id&gt;.md
 ├── plans/                       ← runtime: plan files written in Plan Mode
 │   └── PLAN.md
-└── agents/&lt;agentId&gt;/            ← runtime: each agent&#39;s runtime root
+└── agents/&lt;agentId&gt;/            ← runtime: each agent's runtime root
     ├── sessions/                ← runtime: session index + never-compacted log
     │   ├── sessions.json
     │   └── &lt;sessionId&gt;.log.jsonl
@@ -1121,11 +1121,11 @@
 <section id="builder-configuration">
 <h2>Builder configuration<a class="headerlink" href="#builder-configuration" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"MyAgent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// omit → see resolution order below</span>
-<span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">&quot;SOUL.md&quot;</span><span class="p">)</span><span class="w">                </span><span class="c1">// any workspace-relative path, inlined in full</span>
-<span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">&quot;PREFERENCES.md&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">".agentscope/workspace"</span><span class="p">))</span><span class="w">   </span><span class="c1">// omit → see resolution order below</span>
+<span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">"SOUL.md"</span><span class="p">)</span><span class="w">                </span><span class="c1">// any workspace-relative path, inlined in full</span>
+<span class="w">    </span><span class="p">.</span><span class="na">additionalContextFile</span><span class="p">(</span><span class="s">"PREFERENCES.md"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">maxContextTokens</span><span class="p">(</span><span class="mi">8000</span><span class="p">)</span><span class="w">                          </span><span class="c1">// MEMORY injection budget</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1283,7 +1283,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <h3>Two-layer reads (filesystem-first + local fallback)<a class="headerlink" href="#two-layer-reads-filesystem-first-local-fallback" title="Link to this heading">¶</a></h3>
 <p>For every “file injected into the prompt” (<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> / <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/KNOWLEDGE.md</span></code> / <code class="docutils literal notranslate"><span class="pre">additionalContextFile</span></code>), <code class="docutils literal notranslate"><span class="pre">WorkspaceManager.readWithOverride()</span></code> does a <strong>two-layer read</strong>:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>1. Ask the configured AbstractFilesystem: do you have this relative path?
-   ├─ yes → return that content (the &quot;override&quot; layer)
+   ├─ yes → return that content (the "override" layer)
    └─ no  → fall through to step 2
 2. Read local disk at workspace.resolve(relativePath)
 </pre></div>
@@ -1351,7 +1351,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <p>The workspace is a logical layout; physical placement is up to <a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a>. The same directory loads differently depending on mode — illustrated below.</p>
 <p><strong>Mode 1 · Shared store (<code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>) — template + remote override</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;store&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"store"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
@@ -1367,11 +1367,11 @@ You are an XX assistant. Follow these behavior guidelines.
 </ul>
 <p><strong>Mode 2 · Sandbox (<code class="docutils literal notranslate"><span class="pre">DockerFilesystemSpec</span></code> / K8s / E2B / AgentRun) — projection + hydrate</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sandbox&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sandbox"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1384,7 +1384,7 @@ You are an XX assistant. Follow these behavior guidelines.
 </ul>
 <p><strong>Mode 3 · Local + shell (default <code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code> or no <code class="docutils literal notranslate"><span class="pre">filesystem(...)</span></code>) — direct read / write</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;local&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"local"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="c1">// omit .filesystem(...) = local + shell</span>
@@ -1584,20 +1584,20 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
 <p>A JSON file at the workspace root, read once during <code class="docutils literal notranslate"><span class="pre">build()</span></code>:</p>
 <div class="highlight-jsonc notranslate"><div class="highlight"><pre><span></span>{
   // allowlist: when non-empty, only listed tools survive
-  &quot;allow&quot;: [&quot;read_file&quot;, &quot;grep_files&quot;, &quot;execute&quot;],
+  "allow": ["read_file", "grep_files", "execute"],
   // denylist: listed tools are always removed (wins over allow)
-  &quot;deny&quot;:  [&quot;write_file&quot;],
+  "deny":  ["write_file"],
   // MCP servers, keyed by name
-  &quot;mcpServers&quot;: {
-    &quot;amap&quot;: {
-      &quot;transport&quot;: &quot;streamableHttp&quot;,
-      &quot;url&quot;: &quot;https://mcp.amap.com/mcp?key=${AMAP_API_KEY}&quot;
+  "mcpServers": {
+    "amap": {
+      "transport": "streamableHttp",
+      "url": "https://mcp.amap.com/mcp?key=${AMAP_API_KEY}"
     },
-    &quot;local-py&quot;: {
-      &quot;transport&quot;: &quot;stdio&quot;,
-      &quot;command&quot;: &quot;python&quot;,
-      &quot;args&quot;: [&quot;mcp_servers/my_server.py&quot;],
-      &quot;env&quot;: {&quot;PYTHONUNBUFFERED&quot;: &quot;1&quot;}
+    "local-py": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["mcp_servers/my_server.py"],
+      "env": {"PYTHONUNBUFFERED": "1"}
     }
   }
 }

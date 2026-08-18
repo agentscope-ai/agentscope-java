@@ -1000,8 +1000,8 @@
 
 <span class="c1">// 创建模型</span>
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-plus"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 创建子智能体的 Provider（工厂）</span>
@@ -1009,16 +1009,16 @@
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Expert&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个领域专家，负责回答专业问题。&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Expert"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个领域专家，负责回答专业问题。"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="c1">// 创建主智能体，配置工具</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">mainAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Coordinator&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个协调员。当遇到专业问题时，调用 call_expert 工具咨询专家。&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Coordinator"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个协调员。当遇到专业问题时，调用 call_expert 工具咨询专家。"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1036,10 +1036,10 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
 
 <span class="n">SubAgentConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SubAgentConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">toolName</span><span class="p">(</span><span class="s">&quot;ask_expert&quot;</span><span class="p">)</span><span class="w">                    </span><span class="c1">// 自定义工具名称</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;向专家咨询问题&quot;</span><span class="p">)</span><span class="w">              </span><span class="c1">// 自定义描述</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolName</span><span class="p">(</span><span class="s">"ask_expert"</span><span class="p">)</span><span class="w">                    </span><span class="c1">// 自定义工具名称</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"向专家咨询问题"</span><span class="p">)</span><span class="w">              </span><span class="c1">// 自定义描述</span>
 <span class="w">        </span><span class="p">.</span><span class="na">forwardEvents</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                       </span><span class="c1">// 转发子智能体事件</span>
-<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span><span class="w">  </span><span class="c1">// 持久化会话</span>
+<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"sessions"</span><span class="p">)))</span><span class="w">  </span><span class="c1">// 持久化会话</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
@@ -1102,7 +1102,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
 
 <span class="n">SubAgentConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SubAgentConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./agent-sessions&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"./agent-sessions"</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
@@ -1116,16 +1116,16 @@
 <section id="id7">
 <h2>工具组支持<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <p>子智能体工具可以像普通工具一样加入工具组：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;experts&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;专家智能体&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">"experts"</span><span class="p">,</span><span class="w"> </span><span class="s">"专家智能体"</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">createLegalExpert</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;experts&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">"experts"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">createTechExpert</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;experts&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">"experts"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
 </div>

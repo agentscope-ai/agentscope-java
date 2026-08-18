@@ -1010,19 +1010,19 @@
 
 <span class="c1">// 图像：Base64 方式（推荐）</span>
 <span class="n">String</span><span class="w"> </span><span class="n">base64Image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Base64</span><span class="p">.</span><span class="na">getEncoder</span><span class="p">().</span><span class="na">encodeToString</span><span class="p">(</span>
-<span class="w">    </span><span class="n">Files</span><span class="p">.</span><span class="na">readAllBytes</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;image.png&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="n">Files</span><span class="p">.</span><span class="na">readAllBytes</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"image.png"</span><span class="p">))</span>
 <span class="p">);</span>
 <span class="n">ImageBlock</span><span class="w"> </span><span class="n">imageBlock</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">Base64Source</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">base64Image</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">&quot;image/png&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">"image/png"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 图像：URL 方式</span>
 <span class="n">ImageBlock</span><span class="w"> </span><span class="n">urlImage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://example.com/image.jpg&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">"https://example.com/image.jpg"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1030,14 +1030,14 @@
 <span class="n">AudioBlock</span><span class="w"> </span><span class="n">audioBlock</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AudioBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">Base64Source</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">base64AudioData</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">&quot;audio/mp3&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">"audio/mp3"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 视频</span>
 <span class="n">VideoBlock</span><span class="w"> </span><span class="n">videoBlock</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">VideoBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://example.com/video.mp4&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">"https://example.com/video.mp4"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1055,7 +1055,7 @@
 <span class="n">Msg</span><span class="w"> </span><span class="n">singleImageMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;这张图片是什么颜色？&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">"这张图片是什么颜色？"</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
 <span class="w">        </span><span class="n">imageBlock</span>
 <span class="w">    </span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1064,7 +1064,7 @@
 <span class="n">Msg</span><span class="w"> </span><span class="n">multiImageMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;比较这两张图片&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">"比较这两张图片"</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
 <span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">base64Source1</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
 <span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">base64Source2</span><span class="p">).</span><span class="na">build</span><span class="p">()</span>
 <span class="w">    </span><span class="p">))</span>
@@ -1079,11 +1079,11 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.model.dashscope.DashScopeChatModel</span><span class="p">;</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;VisionAssistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个具有视觉能力的 AI 助手。&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"VisionAssistant"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个具有视觉能力的 AI 助手。"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-vl-max"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span><span class="w">  </span><span class="c1">// 必需</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
@@ -1117,15 +1117,15 @@
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">VisionExample</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">);</span>
 <span class="w">        </span>
 <span class="w">        </span><span class="c1">// 1. 创建 Vision Agent</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;VisionAssistant&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个具有视觉能力的 AI 助手。&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"VisionAssistant"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是一个具有视觉能力的 AI 助手。"</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-max&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-vl-max"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
@@ -1134,18 +1134,18 @@
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="w">        </span>
 <span class="w">        </span><span class="c1">// 2. 创建多模态消息</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">base64Image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64pa...&quot;</span><span class="p">;</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">base64Image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64pa..."</span><span class="p">;</span>
 <span class="w">        </span>
 <span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">            </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
 <span class="w">                </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;这张图片是什么颜色？&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">"这张图片是什么颜色？"</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
 <span class="w">                </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">Base64Source</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">base64Image</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">&quot;image/png&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">"image/png"</span><span class="p">)</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
 <span class="w">            </span><span class="p">))</span>
@@ -1165,9 +1165,9 @@
 <section id="dashscope">
 <h3>DashScope（阿里云）<a class="headerlink" href="#dashscope" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-max&quot;</span><span class="p">)</span><span class="w">        </span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-plus&quot;</span><span class="p">)</span><span class="w">       </span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-audio-turbo&quot;</span><span class="p">)</span><span class="w">   </span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-vl-max"</span><span class="p">)</span><span class="w">        </span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-vl-plus"</span><span class="p">)</span><span class="w">       </span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-audio-turbo"</span><span class="p">)</span><span class="w">   </span>
 <span class="w">    </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span><span class="w">  </span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1175,15 +1175,15 @@
 </section>
 <section id="openai">
 <h3>OpenAI<a class="headerlink" href="#openai" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span><span class="w">               </span>
-<span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4-vision-preview&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"gpt-4o"</span><span class="p">)</span><span class="w">               </span>
+<span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"gpt-4-vision-preview"</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
 <section id="anthropic">
 <h3>Anthropic<a class="headerlink" href="#anthropic" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;claude-3-opus&quot;</span><span class="p">)</span><span class="w">        </span>
-<span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;claude-3-sonnet&quot;</span><span class="p">)</span><span class="w">      </span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"claude-3-opus"</span><span class="p">)</span><span class="w">        </span>
+<span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"claude-3-sonnet"</span><span class="p">)</span><span class="w">      </span>
 </pre></div>
 </div>
 </section>

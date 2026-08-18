@@ -981,8 +981,8 @@
 <h2>ModelRegistry<a class="headerlink" href="#modelregistry" title="Link to this heading">¶</a></h2>
 <p>Set <code class="docutils literal notranslate"><span class="pre">ZAI_API_KEY</span></code>, <code class="docutils literal notranslate"><span class="pre">GLM_API_KEY</span></code>, or <code class="docutils literal notranslate"><span class="pre">ZHIPUAI_API_KEY</span></code>, then use the <code class="docutils literal notranslate"><span class="pre">glm:&lt;model&gt;</span></code> id:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;glm:glm-5.2&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Resolved internally by ModelRegistry.resolve(modelId)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"glm:glm-5.2"</span><span class="p">)</span><span class="w"> </span><span class="c1">// Resolved internally by ModelRegistry.resolve(modelId)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -998,13 +998,13 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
 
 <span class="n">Model</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ModelRegistry</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;glm:glm-5.2&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"glm:glm-5.2"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">ModelCreationContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">component</span><span class="p">(</span>
 <span class="w">            </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">class</span><span class="p">,</span>
 <span class="w">            </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="s">&quot;thinking&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;disabled&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">reasoningEffort</span><span class="p">(</span><span class="s">&quot;max&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="s">"thinking"</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"type"</span><span class="p">,</span><span class="w"> </span><span class="s">"disabled"</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">reasoningEffort</span><span class="p">(</span><span class="s">"max"</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>

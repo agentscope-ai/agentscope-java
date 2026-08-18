@@ -1043,7 +1043,7 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">TrainingSelectionStrategy</span><span class="w"> </span><span class="n">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExplicitMarkingStrategy</span><span class="p">.</span><span class="na">create</span><span class="p">();</span>
 
 <span class="c1">// In your application code, explicitly mark requests for training</span>
-<span class="n">TrainingContext</span><span class="p">.</span><span class="na">mark</span><span class="p">(</span><span class="s">&quot;high-quality&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user-feedback&quot;</span><span class="p">);</span>
+<span class="n">TrainingContext</span><span class="p">.</span><span class="na">mark</span><span class="p">(</span><span class="s">"high-quality"</span><span class="p">,</span><span class="w"> </span><span class="s">"user-feedback"</span><span class="p">);</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span><span class="w">  </span><span class="c1">// This request will be used for training</span>
 </pre></div>
 </div>
@@ -1069,7 +1069,7 @@
 </ul>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/agentscope-ai/Trinity-RFT
 <span class="nb">cd</span><span class="w"> </span>Trinity-RFT
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[dev]"</span>
 pip<span class="w"> </span>install<span class="w"> </span>flash-attn<span class="o">==</span><span class="m">2</span>.8.1
 </pre></div>
 </div>
@@ -1078,7 +1078,7 @@ pip<span class="w"> </span>install<span class="w"> </span>flash-attn<span class=
 <h4>Configure Training Settings<a class="headerlink" href="#configure-training-settings" title="Link to this heading">¶</a></h4>
 <section id="write-explorer-service-configuration">
 <h5>Write Explorer Service Configuration<a class="headerlink" href="#write-explorer-service-configuration" title="Link to this heading">¶</a></h5>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">serve</span><span class="w">  </span><span class="c1"># set to &#39;serve&#39; for online inference service</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">serve</span><span class="w">  </span><span class="c1"># set to 'serve' for online inference service</span>
 <span class="nt">project</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span><span class="w">  </span><span class="c1"># set your project name</span>
 <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span><span class="w">  </span><span class="c1"># set your experiment name</span>
 <span class="nt">checkpoint_root_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CHECKPOINT_ROOT_DIR</span><span class="w">  </span><span class="c1"># set the root directory for checkpoints, must be an absolute path, and should be on a shared filesystem</span>
@@ -1088,7 +1088,7 @@ pip<span class="w"> </span>install<span class="w"> </span>flash-attn<span class=
 <span class="w">  </span><span class="nt">max_response_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2048</span>
 <span class="w">  </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span>
 <span class="nt">algorithm</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">algorithm_type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ppo&quot;</span><span class="w">  </span><span class="c1"># current version only supports ppo for online training (group is not supported yet)</span>
+<span class="w">  </span><span class="nt">algorithm_type</span><span class="p">:</span><span class="w"> </span><span class="s">"ppo"</span><span class="w">  </span><span class="c1"># current version only supports ppo for online training (group is not supported yet)</span>
 <span class="nt">cluster</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">node_num</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">    </span><span class="nt">gpu_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">  </span><span class="c1"># suppose you have 4 GPUs on the node</span>
@@ -1125,7 +1125,7 @@ pip<span class="w"> </span>install<span class="w"> </span>flash-attn<span class=
 </section>
 <section id="write-trainer-service-configuration">
 <h5>Write Trainer Service Configuration<a class="headerlink" href="#write-trainer-service-configuration" title="Link to this heading">¶</a></h5>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">train</span><span class="w">  </span><span class="c1"># set to &#39;train&#39; for training service</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">train</span><span class="w">  </span><span class="c1"># set to 'train' for training service</span>
 <span class="nt">project</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span><span class="w">  </span><span class="c1"># set your project name, must be the same as in Explorer</span>
 <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span><span class="w">  </span><span class="c1"># set your experiment name, must be the same as in Explorer</span>
 <span class="nt">checkpoint_root_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CHECKPOINT_ROOT_DIR</span><span class="w">  </span><span class="c1"># set the root directory for checkpoints, must be the same as in Explorer</span>
@@ -1135,7 +1135,7 @@ pip<span class="w"> </span>install<span class="w"> </span>flash-attn<span class=
 <span class="w">  </span><span class="nt">max_response_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2048</span><span class="w">  </span><span class="c1"># must be the same as in Explorer</span>
 <span class="w">  </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span><span class="w">  </span><span class="c1"># must be the same as in Explorer</span>
 <span class="nt">algorithm</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">algorithm_type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ppo&quot;</span><span class="w">  </span><span class="c1"># current version only supports ppo for online training (group is not supported yet)</span>
+<span class="w">  </span><span class="nt">algorithm_type</span><span class="p">:</span><span class="w"> </span><span class="s">"ppo"</span><span class="w">  </span><span class="c1"># current version only supports ppo for online training (group is not supported yet)</span>
 <span class="nt">cluster</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">node_num</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">    </span><span class="nt">gpu_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">  </span><span class="c1"># suppose you have 4 GPUs on the node</span>
@@ -1203,8 +1203,8 @@ trinity<span class="w"> </span>run<span class="w"> </span>--config<span class="w
 
 <span class="c1">// 1. Start training runner (no Task ID/Run ID needed!)</span>
 <span class="n">TrainingRunner</span><span class="w"> </span><span class="n">runner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TrainingRunner</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">trinityEndpoint</span><span class="p">(</span><span class="s">&quot;http://trinity-backend:8010&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;/path/to/qwen-model&quot;</span><span class="p">)</span><span class="w">  </span>
+<span class="w">        </span><span class="p">.</span><span class="na">trinityEndpoint</span><span class="p">(</span><span class="s">"http://trinity-backend:8010"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"/path/to/qwen-model"</span><span class="p">)</span><span class="w">  </span>
 <span class="w">        </span><span class="p">.</span><span class="na">selectionStrategy</span><span class="p">(</span><span class="n">SamplingRateStrategy</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="mf">0.1</span><span class="p">))</span><span class="w">  </span><span class="c1">// 10% sampling</span>
 <span class="w">        </span><span class="p">.</span><span class="na">rewardCalculator</span><span class="p">(</span><span class="n">agent</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)</span><span class="w">  </span><span class="c1">// Custom reward calculation logic</span>
 <span class="w">        </span><span class="p">.</span><span class="na">commitIntervalSeconds</span><span class="p">(</span><span class="mi">300</span><span class="p">)</span><span class="w">  </span><span class="c1">// Commit every 5 minutes</span>
@@ -1214,13 +1214,13 @@ trinity<span class="w"> </span>run<span class="w"> </span>--config<span class="w
 
 <span class="c1">// 2. Use your Agent normally - training happens transparently!</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;ProductionAgent&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"ProductionAgent"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">gpt4Model</span><span class="p">)</span><span class="w">  </span><span class="c1">// Production model (GPT-4)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">tools</span><span class="p">(</span><span class="n">tools</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// User requests are processed normally (using GPT-4), 10% automatically sampled for training</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;Search for Python tutorials&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">"Search for Python tutorials"</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 3. Stop when training is complete</span>
 <span class="n">runner</span><span class="p">.</span><span class="na">stop</span><span class="p">();</span>

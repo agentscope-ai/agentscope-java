@@ -990,12 +990,12 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.reme.ReMeLongTermMemory</span><span class="p">;</span>
 
 <span class="n">ReMeLongTermMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReMeLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;task_workspace&quot;</span><span class="p">)</span><span class="w">            </span><span class="c1">// 映射到 ReMe 的 workspace_id</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8002&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// 你的 ReMe Server 地址</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"task_workspace"</span><span class="p">)</span><span class="w">            </span><span class="c1">// 映射到 ReMe 的 workspace_id</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">"http://localhost:8002"</span><span class="p">)</span><span class="w"> </span><span class="c1">// 你的 ReMe Server 地址</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">BOTH</span><span class="p">)</span>

@@ -1103,12 +1103,12 @@
 </tbody>
 </table>
 </div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">&quot;research-analyst&quot;</span>
-            <span class="n">task</span><span class="o">=</span><span class="s2">&quot;research topic X&quot;</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">"research-analyst"</span>
+            <span class="n">task</span><span class="o">=</span><span class="s2">"research topic X"</span>
             <span class="n">timeout_seconds</span><span class="o">=</span><span class="mi">60</span>
 
 <span class="c1"># async</span>
-<span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">&quot;research-analyst&quot;</span> <span class="n">task</span><span class="o">=</span><span class="s2">&quot;full security audit&quot;</span> <span class="n">timeout_seconds</span><span class="o">=</span><span class="mi">0</span>
+<span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">"research-analyst"</span> <span class="n">task</span><span class="o">=</span><span class="s2">"full security audit"</span> <span class="n">timeout_seconds</span><span class="o">=</span><span class="mi">0</span>
 <span class="c1"># → agent_key + task_id</span>
 </pre></div>
 </div>
@@ -1163,9 +1163,9 @@
 <blockquote>
 <div><p><strong>Note</strong>: <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> has no explicit <code class="docutils literal notranslate"><span class="pre">name</span></code> set, so the tool name defaults to the method name, meaning the LLM sees <code class="docutils literal notranslate"><span class="pre">execute</span></code>. A future rename to <code class="docutils literal notranslate"><span class="pre">shell_execute</span></code> is a small refactor — see <a class="reference internal" href="#./roadmap.md"><span class="xref myst">roadmap</span></a>.</p>
 </div></blockquote>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;find . -name &#39;*.java&#39; | wc -l&quot;</span>
-<span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;mvn test&quot;</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span>
-<span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;git status&quot;</span> <span class="n">working_directory</span><span class="o">=</span><span class="s2">&quot;app&quot;</span>   <span class="c1"># becomes: cd app &amp;&amp; git status</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">"find . -name '*.java' | wc -l"</span>
+<span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">"mvn test"</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span>
+<span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">"git status"</span> <span class="n">working_directory</span><span class="o">=</span><span class="s2">"app"</span>   <span class="c1"># becomes: cd app &amp;&amp; git status</span>
 </pre></div>
 </div>
 </section>

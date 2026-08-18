@@ -992,10 +992,10 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
 
 <span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxxxxx&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;kb-xxxxxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"ALIBABA_CLOUD_ACCESS_KEY_ID"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"ALIBABA_CLOUD_ACCESS_KEY_SECRET"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">"llm-xxxxxx"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">"kb-xxxxxx"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1003,7 +1003,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;How do I request an invoice?&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"How do I request an invoice?"</span><span class="p">,</span>
 <span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">).</span><span class="na">build</span><span class="p">()</span>
 <span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1012,7 +1012,7 @@
 <section id="wire-into-an-agent">
 <h2>Wire into an Agent<a class="headerlink" href="#wire-into-an-agent" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">knowledge</span><span class="p">(</span><span class="n">knowledge</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">ragMode</span><span class="p">(</span><span class="n">RAGMode</span><span class="p">.</span><span class="na">AGENTIC</span><span class="p">)</span>
@@ -1031,7 +1031,7 @@
 <p><code class="docutils literal notranslate"><span class="pre">BailianConfig.builder()</span></code> accepts optional <code class="docutils literal notranslate"><span class="pre">rerankConfig(...)</span></code> and <code class="docutils literal notranslate"><span class="pre">rewriteConfig(...)</span></code>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">ak</span><span class="p">).</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">sk</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">).</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;kb-xxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">"llm-xxx"</span><span class="p">).</span><span class="na">indexId</span><span class="p">(</span><span class="s">"kb-xxx"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">enable</span><span class="p">(</span><span class="kc">true</span><span class="p">).</span><span class="na">topN</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">enable</span><span class="p">(</span><span class="kc">true</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>

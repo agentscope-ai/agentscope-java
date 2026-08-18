@@ -988,7 +988,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.AgentStateStore</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.redis.state.RedisAgentStateStore</span><span class="p">;</span>
 
-<span class="n">RedisClient</span><span class="w"> </span><span class="n">redisClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisClient</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;redis://localhost:6379&quot;</span><span class="p">);</span>
+<span class="n">RedisClient</span><span class="w"> </span><span class="n">redisClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisClient</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"redis://localhost:6379"</span><span class="p">);</span>
 
 <span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">lettuceClient</span><span class="p">(</span><span class="n">redisClient</span><span class="p">)</span>
@@ -1002,7 +1002,7 @@
 <h3>Jedis<a class="headerlink" href="#jedis" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">redis.clients.jedis.UnifiedJedis</span><span class="p">;</span>
 
-<span class="n">UnifiedJedis</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">redis</span><span class="p">.</span><span class="na">clients</span><span class="p">.</span><span class="na">jedis</span><span class="p">.</span><span class="na">JedisPooled</span><span class="p">(</span><span class="s">&quot;localhost&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">6379</span><span class="p">);</span>
+<span class="n">UnifiedJedis</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">redis</span><span class="p">.</span><span class="na">clients</span><span class="p">.</span><span class="na">jedis</span><span class="p">.</span><span class="na">JedisPooled</span><span class="p">(</span><span class="s">"localhost"</span><span class="p">,</span><span class="w"> </span><span class="mi">6379</span><span class="p">);</span>
 <span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">jedisClient</span><span class="p">(</span><span class="n">jedis</span><span class="p">)</span><span class="w">   </span><span class="c1">// UnifiedJedis、JedisCluster、JedisSentineled 都可</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1015,7 +1015,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.lettuce.core.RedisURI</span><span class="p">;</span>
 
 <span class="n">RedisClusterClient</span><span class="w"> </span><span class="n">clusterClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisClusterClient</span><span class="p">.</span><span class="na">create</span><span class="p">(</span>
-<span class="w">    </span><span class="n">RedisURI</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;redis://localhost:7000&quot;</span><span class="p">));</span>
+<span class="w">    </span><span class="n">RedisURI</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"redis://localhost:7000"</span><span class="p">));</span>
 
 <span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">lettuceClusterClient</span><span class="p">(</span><span class="n">clusterClient</span><span class="p">)</span>
@@ -1029,7 +1029,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">org.redisson.config.Config</span><span class="p">;</span>
 
 <span class="n">Config</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Config</span><span class="p">();</span>
-<span class="n">config</span><span class="p">.</span><span class="na">useSingleServer</span><span class="p">().</span><span class="na">setAddress</span><span class="p">(</span><span class="s">&quot;redis://localhost:6379&quot;</span><span class="p">);</span>
+<span class="n">config</span><span class="p">.</span><span class="na">useSingleServer</span><span class="p">().</span><span class="na">setAddress</span><span class="p">(</span><span class="s">"redis://localhost:6379"</span><span class="p">);</span>
 <span class="n">RedissonClient</span><span class="w"> </span><span class="n">redisson</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Redisson</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="n">config</span><span class="p">);</span>
 
 <span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1047,7 +1047,7 @@
 <p>默认所有 key 形如 <code class="docutils literal notranslate"><span class="pre">agentscope:session:{userSegment}/{sessionId}:...</span></code>（<code class="docutils literal notranslate"><span class="pre">userSegment</span></code> 即 <code class="docutils literal notranslate"><span class="pre">userId</span></code>，匿名 session 用 <code class="docutils literal notranslate"><span class="pre">__anon__</span></code>）。多个项目共享同一个 Redis 时建议自定义：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">lettuceClient</span><span class="p">(</span><span class="n">redisClient</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">keyPrefix</span><span class="p">(</span><span class="s">&quot;myapp:session:&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">keyPrefix</span><span class="p">(</span><span class="s">"myapp:session:"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1083,7 +1083,7 @@
 <section id="agent">
 <h2>挂载到 Agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="n">stateStore</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1091,8 +1091,8 @@
 </div>
 <p>之后你的 Memory、Workspace、Plan 等组件就会自动通过 Redis 持久化。每次调用读写哪个槽位，由该次调用的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 决定：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">rc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"session-1"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>

@@ -1000,8 +1000,8 @@
 
 <span class="c1">// Create model</span>
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"DASHSCOPE_API_KEY"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-plus"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// Create sub-agent Provider (factory)</span>
@@ -1009,16 +1009,16 @@
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Expert&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a domain expert responsible for answering professional questions.&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Expert"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a domain expert responsible for answering professional questions."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="c1">// Create main agent with toolkit</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">mainAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Coordinator&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a coordinator. When facing professional questions, call the call_expert tool to consult the expert.&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Coordinator"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a coordinator. When facing professional questions, call the call_expert tool to consult the expert."</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1036,10 +1036,10 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
 
 <span class="n">SubAgentConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SubAgentConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">toolName</span><span class="p">(</span><span class="s">&quot;ask_expert&quot;</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Custom tool name</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Consult the expert&quot;</span><span class="p">)</span><span class="w">         </span><span class="c1">// Custom description</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolName</span><span class="p">(</span><span class="s">"ask_expert"</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Custom tool name</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Consult the expert"</span><span class="p">)</span><span class="w">         </span><span class="c1">// Custom description</span>
 <span class="w">        </span><span class="p">.</span><span class="na">forwardEvents</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                       </span><span class="c1">// Forward sub-agent events</span>
-<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span><span class="w">  </span><span class="c1">// Persistent session</span>
+<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"sessions"</span><span class="p">)))</span><span class="w">  </span><span class="c1">// Persistent session</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
@@ -1102,7 +1102,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
 
 <span class="n">SubAgentConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SubAgentConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./agent-sessions&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"./agent-sessions"</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
@@ -1116,16 +1116,16 @@
 <section id="tool-group-support">
 <h2>Tool Group Support<a class="headerlink" href="#tool-group-support" title="Link to this heading">¶</a></h2>
 <p>Sub-agent tools can be added to tool groups like regular tools:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;experts&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Expert Agents&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">"experts"</span><span class="p">,</span><span class="w"> </span><span class="s">"Expert Agents"</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">createLegalExpert</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;experts&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">"experts"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">subAgent</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">createTechExpert</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;experts&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">"experts"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
 </div>

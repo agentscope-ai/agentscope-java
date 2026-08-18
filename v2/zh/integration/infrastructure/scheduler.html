@@ -1024,25 +1024,25 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">AgentConfig</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;DailyReportAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"DailyReportAgent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">modelConfig</span><span class="p">(</span><span class="n">DashScopeModelConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">).</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是日报助手，请每天生成销售汇总&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">).</span><span class="na">modelName</span><span class="p">(</span><span class="s">"qwen-plus"</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"你是日报助手，请每天生成销售汇总"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">ScheduleConfig</span><span class="w"> </span><span class="n">schedule</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ScheduleConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">scheduleMode</span><span class="p">(</span><span class="n">ScheduleMode</span><span class="p">.</span><span class="na">FIXED_RATE</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">fixedRate</span><span class="p">(</span><span class="mi">5_000L</span><span class="p">)</span><span class="w">   </span><span class="c1">// 每 5 秒</span>
-<span class="w">    </span><span class="c1">// 或 .scheduleMode(ScheduleMode.CRON).cron(&quot;0 0 8 * * ?&quot;)</span>
+<span class="w">    </span><span class="c1">// 或 .scheduleMode(ScheduleMode.CRON).cron("0 0 8 * * ?")</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">scheduler</span><span class="p">.</span><span class="na">schedule</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span><span class="w"> </span><span class="n">schedule</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>支持运行时管控：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">scheduler</span><span class="p">.</span><span class="na">pause</span><span class="p">(</span><span class="s">&quot;DailyReportAgent&quot;</span><span class="p">);</span>
-<span class="n">scheduler</span><span class="p">.</span><span class="na">resume</span><span class="p">(</span><span class="s">&quot;DailyReportAgent&quot;</span><span class="p">);</span>
-<span class="n">scheduler</span><span class="p">.</span><span class="na">cancel</span><span class="p">(</span><span class="s">&quot;DailyReportAgent&quot;</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">scheduler</span><span class="p">.</span><span class="na">pause</span><span class="p">(</span><span class="s">"DailyReportAgent"</span><span class="p">);</span>
+<span class="n">scheduler</span><span class="p">.</span><span class="na">resume</span><span class="p">(</span><span class="s">"DailyReportAgent"</span><span class="p">);</span>
+<span class="n">scheduler</span><span class="p">.</span><span class="na">cancel</span><span class="p">(</span><span class="s">"DailyReportAgent"</span><span class="p">);</span>
 <span class="n">scheduler</span><span class="p">.</span><span class="na">shutdown</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1067,9 +1067,9 @@
 
 <span class="c1">// 1) 启动 XXL-Job Executor</span>
 <span class="n">XxlJobSpringExecutor</span><span class="w"> </span><span class="n">executor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">XxlJobSpringExecutor</span><span class="p">();</span>
-<span class="n">executor</span><span class="p">.</span><span class="na">setAdminAddresses</span><span class="p">(</span><span class="s">&quot;http://localhost:8080/xxl-job-admin&quot;</span><span class="p">);</span>
-<span class="n">executor</span><span class="p">.</span><span class="na">setAppname</span><span class="p">(</span><span class="s">&quot;agentscope-demo&quot;</span><span class="p">);</span>
-<span class="n">executor</span><span class="p">.</span><span class="na">setAccessToken</span><span class="p">(</span><span class="s">&quot;xxxxxxxx&quot;</span><span class="p">);</span>
+<span class="n">executor</span><span class="p">.</span><span class="na">setAdminAddresses</span><span class="p">(</span><span class="s">"http://localhost:8080/xxl-job-admin"</span><span class="p">);</span>
+<span class="n">executor</span><span class="p">.</span><span class="na">setAppname</span><span class="p">(</span><span class="s">"agentscope-demo"</span><span class="p">);</span>
+<span class="n">executor</span><span class="p">.</span><span class="na">setAccessToken</span><span class="p">(</span><span class="s">"xxxxxxxx"</span><span class="p">);</span>
 <span class="n">executor</span><span class="p">.</span><span class="na">setPort</span><span class="p">(</span><span class="mi">9999</span><span class="p">);</span>
 <span class="n">executor</span><span class="p">.</span><span class="na">start</span><span class="p">();</span>
 
@@ -1087,9 +1087,9 @@
 <h2>工具绑定<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
 <p>绑定 Toolkit 时使用 <code class="docutils literal notranslate"><span class="pre">RuntimeAgentConfig</span></code>（过渡 API，未来可能调整）：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeAgentConfig</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeAgentConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;OpsAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"OpsAgent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">modelConfig</span><span class="p">(</span><span class="n">modelConfig</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;巡检并发送告警&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"巡检并发送告警"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>

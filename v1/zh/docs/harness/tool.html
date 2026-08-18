@@ -1103,12 +1103,12 @@
 </tbody>
 </table>
 </div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">&quot;research-analyst&quot;</span>
-            <span class="n">task</span><span class="o">=</span><span class="s2">&quot;调研主题 X&quot;</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">"research-analyst"</span>
+            <span class="n">task</span><span class="o">=</span><span class="s2">"调研主题 X"</span>
             <span class="n">timeout_seconds</span><span class="o">=</span><span class="mi">60</span>
 
 <span class="c1"># 异步</span>
-<span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">&quot;research-analyst&quot;</span> <span class="n">task</span><span class="o">=</span><span class="s2">&quot;全库安全审计&quot;</span> <span class="n">timeout_seconds</span><span class="o">=</span><span class="mi">0</span>
+<span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">"research-analyst"</span> <span class="n">task</span><span class="o">=</span><span class="s2">"全库安全审计"</span> <span class="n">timeout_seconds</span><span class="o">=</span><span class="mi">0</span>
 <span class="c1"># → agent_key + task_id</span>
 </pre></div>
 </div>
@@ -1163,9 +1163,9 @@
 <blockquote>
 <div><p><strong>注意</strong>：&#64;Tool 未显式设 <code class="docutils literal notranslate"><span class="pre">name</span></code>，默认取方法名，所以 LLM 看到的工具名是 <code class="docutils literal notranslate"><span class="pre">execute</span></code>。如果后续统一为 <code class="docutils literal notranslate"><span class="pre">shell_execute</span></code> 是个小重构，参见 <a class="reference internal" href="#./roadmap.md"><span class="xref myst">roadmap</span></a>。</p>
 </div></blockquote>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;find . -name &#39;*.java&#39; | wc -l&quot;</span>
-<span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;mvn test&quot;</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span>
-<span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;git status&quot;</span> <span class="n">working_directory</span><span class="o">=</span><span class="s2">&quot;app&quot;</span>   <span class="c1"># 拼为 cd app &amp;&amp; git status</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">"find . -name '*.java' | wc -l"</span>
+<span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">"mvn test"</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span>
+<span class="n">execute</span> <span class="n">command</span><span class="o">=</span><span class="s2">"git status"</span> <span class="n">working_directory</span><span class="o">=</span><span class="s2">"app"</span>   <span class="c1"># 拼为 cd app &amp;&amp; git status</span>
 </pre></div>
 </div>
 </section>

@@ -985,13 +985,13 @@
 <p><strong>像在文件系统里组织 Skill 目录一样组织 Skill 的内容和资源吧!</strong></p>
 <p>以 <a class="reference internal" href="#skill">Skill 结构</a> 为例,这种目录结构的 Skill 在我们的系统中的表现形式就是:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use this skill when analyzing data, calculating statistics, or generating reports&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/api-doc.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# API Reference\n...&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/best-practices.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# Best Practices\n...&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;examples/example1.java&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;public class Example1 {\n...\n}&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;scripts/process.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;def process(data): ...\n&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"data_analysis"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Use this skill when analyzing data, calculating statistics, or generating reports"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">"# Data Analysis\n..."</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">"references/api-doc.md"</span><span class="p">,</span><span class="w"> </span><span class="s">"# API Reference\n..."</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">"references/best-practices.md"</span><span class="p">,</span><span class="w"> </span><span class="s">"# Best Practices\n..."</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">"examples/example1.java"</span><span class="p">,</span><span class="w"> </span><span class="s">"public class Example1 {\n...\n}"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">"scripts/process.py"</span><span class="p">,</span><span class="w"> </span><span class="s">"def process(data): ...\n"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1057,30 +1057,30 @@
 <section id="builder">
 <h4>方式一: 使用 Builder<a class="headerlink" href="#builder" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use when analyzing data...&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">putMetadata</span><span class="p">(</span><span class="s">&quot;homepage&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;https://example.com/docs&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/formulas.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# 常用公式\n...&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="s">&quot;custom&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"data_analysis"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Use when analyzing data..."</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">putMetadata</span><span class="p">(</span><span class="s">"homepage"</span><span class="p">,</span><span class="w"> </span><span class="s">"https://example.com/docs"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">"# Data Analysis\n..."</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">"references/formulas.md"</span><span class="p">,</span><span class="w"> </span><span class="s">"# 常用公式\n..."</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="s">"custom"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="markdown">
 <h4>方式二: 从 Markdown 创建<a class="headerlink" href="#markdown" title="Link to this heading">¶</a></h4>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">String</span><span class="w"> </span><span class="n">skillMd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">String</span><span class="w"> </span><span class="n">skillMd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
 <span class="s">---</span>
 <span class="s">name: data_analysis</span>
 <span class="s">description: Use this skill when analyzing data, calculating statistics, or generating reports</span>
 <span class="s">---</span>
 <span class="s"># 技能名称</span>
 <span class="s">Content...</span>
-<span class="s">&quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">"""</span><span class="p">;</span>
 
 <span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">resources</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;references/formulas.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# 常用公式\n...&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;examples/sample.csv&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;name,value\nA,100\nB,200&quot;</span>
+<span class="w">    </span><span class="s">"references/formulas.md"</span><span class="p">,</span><span class="w"> </span><span class="s">"# 常用公式\n..."</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"examples/sample.csv"</span><span class="p">,</span><span class="w"> </span><span class="s">"name,value\nA,100\nB,200"</span>
 <span class="p">);</span>
 
 <span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SkillUtil</span><span class="p">.</span><span class="na">createFrom</span><span class="p">(</span><span class="n">skillMd</span><span class="p">,</span><span class="w"> </span><span class="n">resources</span><span class="p">);</span>
@@ -1090,9 +1090,9 @@
 <section id="id7">
 <h4>方式三: 直接构造<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;data_analysis&quot;</span><span class="p">,</span><span class="w">                    </span><span class="c1">// name</span>
-<span class="w">    </span><span class="s">&quot;Use when analyzing data...&quot;</span><span class="p">,</span><span class="w">       </span><span class="c1">// description</span>
-<span class="w">    </span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">,</span><span class="w">             </span><span class="c1">// skillContent</span>
+<span class="w">    </span><span class="s">"data_analysis"</span><span class="p">,</span><span class="w">                    </span><span class="c1">// name</span>
+<span class="w">    </span><span class="s">"Use when analyzing data..."</span><span class="p">,</span><span class="w">       </span><span class="c1">// description</span>
+<span class="w">    </span><span class="s">"# Data Analysis\n..."</span><span class="p">,</span><span class="w">             </span><span class="c1">// skillContent</span>
 <span class="w">    </span><span class="n">resources</span><span class="w">                            </span><span class="c1">// resources (可为 null)</span>
 <span class="p">);</span>
 </pre></div>
@@ -1109,7 +1109,7 @@
 <span class="n">skillBox</span><span class="p">.</span><span class="na">registerSkill</span><span class="p">(</span><span class="n">skill1</span><span class="p">);</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;DataAnalyst&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"DataAnalyst"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自动注册 skill 工具和 hook</span>
@@ -1130,7 +1130,7 @@
 <span class="n">skillBox</span><span class="p">.</span><span class="na">registerSkill</span><span class="p">(</span><span class="n">dataSkill</span><span class="p">);</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1148,9 +1148,9 @@
 <span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
 
 <span class="n">AgentSkill</span><span class="w"> </span><span class="n">dataSkill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Comprehensive data analysis capabilities&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"data_analysis"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"Comprehensive data analysis capabilities"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">"# Data Analysis\n..."</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">AgentTool</span><span class="w"> </span><span class="n">loadDataTool</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentTool</span><span class="p">(...);</span>
@@ -1161,7 +1161,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span>
@@ -1195,15 +1195,15 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 指定目录 + 自定义 Shell + 文件过滤</span>
 <span class="n">ShellCommandTool</span><span class="w"> </span><span class="n">customShell</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ShellCommandTool</span><span class="p">(</span>
 <span class="w">    </span><span class="kc">null</span><span class="p">,</span><span class="w">  </span><span class="c1">// baseDir 会被自动覆盖为 workDir</span>
-<span class="w">    </span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;python3&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;node&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;npm&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"python3"</span><span class="p">,</span><span class="w"> </span><span class="s">"node"</span><span class="p">,</span><span class="w"> </span><span class="s">"npm"</span><span class="p">),</span>
 <span class="w">    </span><span class="n">command</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">askUserApproval</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
 <span class="p">);</span>
 
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/data/agent-workspace&quot;</span><span class="p">)</span><span class="w">              </span><span class="c1">// 工作目录</span>
-<span class="w">    </span><span class="p">.</span><span class="na">uploadDir</span><span class="p">(</span><span class="s">&quot;/data/agent-workspace/my-skills&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 可选,默认 workDir/skills</span>
-<span class="w">    </span><span class="p">.</span><span class="na">includeFolders</span><span class="p">(</span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;scripts/&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;data/&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 可选,自定义上传文件夹</span>
-<span class="w">    </span><span class="p">.</span><span class="na">includeExtensions</span><span class="p">(</span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;.json&quot;</span><span class="p">))</span><span class="w">      </span><span class="c1">// 可选,自定义上传扩展名</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">"/data/agent-workspace"</span><span class="p">)</span><span class="w">              </span><span class="c1">// 工作目录</span>
+<span class="w">    </span><span class="p">.</span><span class="na">uploadDir</span><span class="p">(</span><span class="s">"/data/agent-workspace/my-skills"</span><span class="p">)</span><span class="w">  </span><span class="c1">// 可选,默认 workDir/skills</span>
+<span class="w">    </span><span class="p">.</span><span class="na">includeFolders</span><span class="p">(</span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"scripts/"</span><span class="p">,</span><span class="w"> </span><span class="s">"data/"</span><span class="p">))</span><span class="w">   </span><span class="c1">// 可选,自定义上传文件夹</span>
+<span class="w">    </span><span class="p">.</span><span class="na">includeExtensions</span><span class="p">(</span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">".py"</span><span class="p">,</span><span class="w"> </span><span class="s">".json"</span><span class="p">))</span><span class="w">      </span><span class="c1">// 可选,自定义上传扩展名</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">(</span><span class="n">customShell</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
@@ -1211,7 +1211,7 @@
 
 <span class="c1">// 或使用完全自定义的文件过滤器(与 includeFolders/includeExtensions 互斥)</span>
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">fileFilter</span><span class="p">(</span><span class="n">path</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">path</span><span class="p">.</span><span class="na">endsWith</span><span class="p">(</span><span class="s">&quot;.py&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// 或 SkillFileFilter.acceptAll()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">fileFilter</span><span class="p">(</span><span class="n">path</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">path</span><span class="p">.</span><span class="na">endsWith</span><span class="p">(</span><span class="s">".py"</span><span class="p">))</span><span class="w">  </span><span class="c1">// 或 SkillFileFilter.acceptAll()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
@@ -1224,9 +1224,9 @@
 <p>Skills 需要在应用重启后保持可用,或者在不同环境间共享。持久化存储支持:</p>
 <section id="id13">
 <h4>文件系统存储<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h4>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">FileSystemSkillRepository</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./skills&quot;</span><span class="p">));</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">FileSystemSkillRepository</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"./skills"</span><span class="p">));</span>
 <span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
-<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"data_analysis"</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -1238,15 +1238,15 @@
 
 <span class="c1">// 使用Builder进行自定义配置</span>
 <span class="n">MysqlSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">dataSource</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">&quot;my_database&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">&quot;my_skills&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">resourcesTableName</span><span class="p">(</span><span class="s">&quot;my_resources&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">"my_database"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">"my_skills"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">resourcesTableName</span><span class="p">(</span><span class="s">"my_resources"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
-<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"data_analysis"</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -1259,12 +1259,12 @@
 <li><p>可以通过构造函数关闭自动同步，改为手动调用 <code class="docutils literal notranslate"><span class="pre">sync()</span></code> 刷新。</p></li>
 </ul>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;https://github.com/your-org/your-skills-repo.git&quot;</span><span class="p">);</span>
-<span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="s">"https://github.com/your-org/your-skills-repo.git"</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"data-analysis"</span><span class="p">);</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">AgentSkill</span><span class="o">&gt;</span><span class="w"> </span><span class="n">allSkills</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getAllSkills</span><span class="p">();</span>
 
 <span class="n">GitSkillRepository</span><span class="w"> </span><span class="n">manualRepo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;https://github.com/your-org/your-skills-repo.git&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+<span class="w">    </span><span class="s">"https://github.com/your-org/your-skills-repo.git"</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
 <span class="n">manualRepo</span><span class="p">.</span><span class="na">sync</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1273,8 +1273,8 @@
 <section id="classpath">
 <h4>Classpath 仓库 (只读)<a class="headerlink" href="#classpath" title="Link to this heading">¶</a></h4>
 <p>用于从 classpath 资源中加载预打包的 Skills (只读)。自动兼容标准 JAR 和 Spring Boot Fat JAR。</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">ClasspathSkillRepository</span><span class="w"> </span><span class="n">repository</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ClasspathSkillRepository</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">ClasspathSkillRepository</span><span class="w"> </span><span class="n">repository</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ClasspathSkillRepository</span><span class="p">(</span><span class="s">"skills"</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"data-analysis"</span><span class="p">);</span>
 <span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AgentSkill</span><span class="o">&gt;</span><span class="w"> </span><span class="n">allSkills</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">getAllSkills</span><span class="p">();</span>
 <span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="c1">//...</span>
 </pre></div>
@@ -1288,9 +1288,9 @@
 <h4>Nacos 仓库 (只读)<a class="headerlink" href="#nacos" title="Link to this heading">¶</a></h4>
 <p>通过已构建的 <code class="docutils literal notranslate"><span class="pre">AiService</span></code>（或 Nacos 连接配置）从 Nacos 拉取或订阅 Skill，Agent 运行时从 Nacos 实时获取，支持变更订阅与自动感知，适合需要与 Nacos 保持同步的在线场景。</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 使用已构建的 AiService 创建 Nacos 技能仓库</span>
-<span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">repository</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;namespace&quot;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">repository</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">"namespace"</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"data-analysis"</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">"data-analysis"</span><span class="p">);</span>
 <span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="c1">//...</span>
 </pre></div>
 </div>
@@ -1314,10 +1314,10 @@
 <p><code class="docutils literal notranslate"><span class="pre">instruction</span></code> 和 <code class="docutils literal notranslate"><span class="pre">codeExecutionInstruction</span></code> 传 <code class="docutils literal notranslate"><span class="pre">null</span></code> 或空字符串时均使用内置默认值。</p>
 <p><strong>示例代码</strong>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义 instruction 头部</span>
-<span class="n">String</span><span class="w"> </span><span class="n">customInstruction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">customInstruction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"""</span>
 <span class="s">    ## 可用技能</span>
 <span class="s">    当任务匹配某个技能时,使用 load_skill_through_path 加载它。</span>
-<span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
+<span class="s">    """</span><span class="p">;</span>
 
 <span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">,</span><span class="w"> </span><span class="n">customInstruction</span><span class="p">);</span>
 
@@ -1326,12 +1326,12 @@
 
 <span class="c1">// 自定义代码执行说明(开启代码执行后生效)</span>
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/data/workspace&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">codeExecutionInstruction</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">"/data/workspace"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">codeExecutionInstruction</span><span class="p">(</span><span class="s">"""</span>
 <span class="s">        ## 脚本执行</span>
 <span class="s">        技能脚本根目录: %s</span>
 <span class="s">        执行时请使用绝对路径。</span>
-<span class="s">        &quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s">        """</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
 </pre></div>

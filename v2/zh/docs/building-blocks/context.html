@@ -974,8 +974,8 @@
 │  不可变配置: sysPrompt, model, toolkit, middlewares               │
 │                                                                  │
 │  ┌─ state cache ─────────────────────────────────────────────┐   │
-│  │  (&quot;alice&quot;,&quot;s1&quot;) → AgentState  ← call(…, RC(alice,s1))       │
-│  │  (&quot;bob&quot;,&quot;s2&quot;)   → AgentState  ← call(…, RC(bob,s2))        │
+│  │  ("alice","s1") → AgentState  ← call(…, RC(alice,s1))       │
+│  │  ("bob","s2")   → AgentState  ← call(…, RC(bob,s2))        │
 │  └───────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  per-session 门: 同 (uid,sid) 串行, 不同 (uid,sid) 并行           │
@@ -1050,7 +1050,7 @@
   │
   ▼
   保存 AgentState
-  │   stateStore.save(userId, sessionId, &quot;agent_state&quot;, state)
+  │   stateStore.save(userId, sessionId, "agent_state", state)
   │
   ▼
   返回结果
@@ -1095,15 +1095,15 @@
 <p>切换非常简单——只在构造期 <code class="docutils literal notranslate"><span class="pre">.stateStore(...)</span></code> 一次:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 默认(单机):省略 .stateStore(...) 即可,自动用本地 JsonFileAgentStateStore</span>
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"MyAgent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 多副本生产:使用 DistributedStore</span>
-<span class="n">JedisPooled</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://redis.prod:6379&quot;</span><span class="p">);</span>
+<span class="n">JedisPooled</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">"redis://redis.prod:6379"</span><span class="p">);</span>
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"MyAgent"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">(</span><span class="n">jedis</span><span class="p">))</span>
@@ -1124,8 +1124,8 @@
 <span class="w">    </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="n">redisStore</span><span class="p">)</span>
 <span class="w">    </span><span class="cm">/* ... */</span><span class="w"> </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="n">agentA</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;alice-2026-06-02-001&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"alice-2026-06-02-001"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 节点 B:不同物理机,完全独立的 JVM</span>
@@ -1135,8 +1135,8 @@
 
 <span class="c1">// 节点 B 第一次用相同 (userId, sessionId) 的 call() 会自动从 Redis 拉到节点 A 之前留下的 AgentState</span>
 <span class="n">agentB</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">nextMsg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;alice-2026-06-02-001&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"alice-2026-06-02-001"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1156,10 +1156,10 @@
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">userId</span></code></strong> —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见<a class="reference internal" href="../harness/filesystem.html"><span class="std std-doc">文件系统</span></a>。</p></li>
 </ul>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;alice-1&quot;</span><span class="p">).</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"alice-1"</span><span class="p">).</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;bob-1&quot;</span><span class="p">).</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;bob&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"bob-1"</span><span class="p">).</span><span class="na">userId</span><span class="p">(</span><span class="s">"bob"</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 <p>两个用户的对话状态与文件路径互不干扰。生产部署如果想做 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 级别的用户隔离,在 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 上设置 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 即可:存储会按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 寻址每个槽位(配合 <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> 时 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 就是 Redis key 的一部分),而不是依赖文件路径分桶。</p>
@@ -1169,8 +1169,8 @@
 <p>需要旁路操作(例如管理台、审计、批量迁移)时,可以直接拿:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.AgentState</span><span class="p">;</span>
 
-<span class="n">AgentState</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getAgentState</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;messages: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">getContext</span><span class="p">().</span><span class="na">size</span><span class="p">());</span>
+<span class="n">AgentState</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getAgentState</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"session-001"</span><span class="p">);</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"messages: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">getContext</span><span class="p">().</span><span class="na">size</span><span class="p">());</span>
 
 <span class="n">String</span><span class="w"> </span><span class="n">json</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">toJson</span><span class="p">();</span>
 <span class="n">AgentState</span><span class="w"> </span><span class="n">restored</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentState</span><span class="p">.</span><span class="na">fromJsonString</span><span class="p">(</span><span class="n">json</span><span class="p">);</span>
@@ -1205,12 +1205,12 @@
 <p>若要让用户在不创建新会话的情况下开始新话题，可调用 <code class="docutils literal notranslate"><span class="pre">clearContext</span></code>。该方法保留相同的
 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code>，也保留权限、工具、任务和 Plan Mode 等非对话状态；它会清空模型可见的
 消息缓冲和压缩摘要，并在 agent 配置了 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 时立即持久化结果。</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">clearContext</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">clearContext</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"session-001"</span><span class="p">);</span>
 
 <span class="c1">// 也可以传入与调用时相同的 RuntimeContext。</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">clearContext</span><span class="p">(</span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;session-001&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"session-001"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>
 </div>
@@ -1224,10 +1224,10 @@
 <h3>Per-session 中断<a class="headerlink" href="#per-session" title="Link to this heading">¶</a></h3>
 <p>每份 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 都携带一个瞬态的 <code class="docutils literal notranslate"><span class="pre">InterruptControl</span></code>(<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.interruption.InterruptControl</span></code>)——per-session 的中断信号,<strong>永远不会被序列化</strong>到状态存储(<code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 上标记为 <code class="docutils literal notranslate"><span class="pre">&#64;JsonIgnore</span> <span class="pre">transient</span></code>)。这使得可以精确中断某个 session 正在进行的 call,而不影响同一 agent 实例上的其他并发 call。</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 中断指定 session —— 只有该 session 的 call 会收到信号</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">);</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"session-001"</span><span class="p">);</span>
 
 <span class="c1">// 带注入用户消息的中断</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-001&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">userMsg</span><span class="p">(</span><span class="s">&quot;请停下来做个总结。&quot;</span><span class="p">));</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="s">"alice"</span><span class="p">,</span><span class="w"> </span><span class="s">"session-001"</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">userMsg</span><span class="p">(</span><span class="s">"请停下来做个总结。"</span><span class="p">));</span>
 </pre></div>
 </div>
 <p>推理循环在每次迭代前检查 <code class="docutils literal notranslate"><span class="pre">state.interruptControl().isInterrupted()</span></code>。被触发后,循环进入 <code class="docutils literal notranslate"><span class="pre">handleInterrupt</span></code> 路径,保存状态并返回部分结果。</p>
@@ -1241,7 +1241,7 @@
 <h3>并发使用<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <p>由于 agent 是无状态引擎,单个实例天然支持并发请求:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;SharedAssistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"SharedAssistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="n">redisStore</span><span class="p">)</span>
@@ -1249,17 +1249,17 @@
 
 <span class="c1">// 不同用户 —— 完全并行,没有竞争</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">aliceCall</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">aliceMsg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;s1&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"s1"</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bobCall</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">bobMsg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;bob&quot;</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;s2&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"bob"</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"s2"</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
 
 <span class="n">Mono</span><span class="p">.</span><span class="na">zip</span><span class="p">(</span><span class="n">aliceCall</span><span class="p">,</span><span class="w"> </span><span class="n">bobCall</span><span class="p">).</span><span class="na">block</span><span class="p">();</span><span class="w">  </span><span class="c1">// 并行执行</span>
 
 <span class="c1">// 同一用户、同一 session —— 自动串行</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">call1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;s1&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"s1"</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">call2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;s1&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">).</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"s1"</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
 
 <span class="c1">// call2 排在 call1 后面 —— 对话历史始终一致</span>
 <span class="n">Flux</span><span class="p">.</span><span class="na">merge</span><span class="p">(</span><span class="n">call1</span><span class="p">,</span><span class="w"> </span><span class="n">call2</span><span class="p">).</span><span class="na">collectList</span><span class="p">().</span><span class="na">block</span><span class="p">();</span>
@@ -1284,13 +1284,13 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.RuntimeContext</span><span class="p">;</span>
 
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;s-001&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;request_id&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;req-2026-06-01-abc&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">MyTenantInfo</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MyTenantInfo</span><span class="p">(</span><span class="s">&quot;tenant-7&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"s-001"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">"request_id"</span><span class="p">,</span><span class="w"> </span><span class="s">"req-2026-06-01-abc"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">MyTenantInfo</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MyTenantInfo</span><span class="p">(</span><span class="s">"tenant-7"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">&quot;Hi&quot;</span><span class="p">)),</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="s">"Hi"</span><span class="p">)),</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 <p>可用字段:</p>

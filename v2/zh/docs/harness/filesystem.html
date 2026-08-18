@@ -1018,7 +1018,7 @@
 <span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;store-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"store-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
@@ -1099,16 +1099,16 @@
 <h4>示例场景：多副本客服 agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h4>
 <p>三个 pod 各跑一个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>，用同一个 Redis 做 <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code>：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span>
-<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://shared-redis:6379&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">"redis://shared-redis:6379"</span><span class="p">));</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;customer-service&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"customer-service"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/opt/agent/workspace&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/opt/agent/workspace"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">                  </span><span class="c1">// stateStore + baseStore 一键配置</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span><span class="w">      </span><span class="c1">// 每个用户独立命名空间</span>
-<span class="w">        </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">&quot;anonymous&quot;</span><span class="p">))</span><span class="w">            </span><span class="c1">// 未登录用户的兜底</span>
+<span class="w">        </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">"anonymous"</span><span class="p">))</span><span class="w">            </span><span class="c1">// 未登录用户的兜底</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1150,18 +1150,18 @@
 <section id="docker">
 <h4>Docker 沙箱<a class="headerlink" href="#docker" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sandbox-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"sandbox-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memorySizeBytes</span><span class="p">(</span><span class="mi">512</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024L</span><span class="p">)</span><span class="w">   </span><span class="c1">// 512 MB 内存限制</span>
 <span class="w">        </span><span class="p">.</span><span class="na">cpuCount</span><span class="p">(</span><span class="mi">2L</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">network</span><span class="p">(</span><span class="s">&quot;host&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">network</span><span class="p">(</span><span class="s">"host"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">exposedPorts</span><span class="p">(</span><span class="mi">8080</span><span class="p">,</span><span class="w"> </span><span class="mi">3000</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">environment</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;NODE_ENV&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;development&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">&quot;/data/snapshots&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">environment</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"NODE_ENV"</span><span class="p">,</span><span class="w"> </span><span class="s">"development"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">"/data/snapshots"</span><span class="p">)))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1239,12 +1239,12 @@
 <h4>Kubernetes 沙箱（agent-sandbox）<a class="headerlink" href="#kubernetes-agent-sandbox" title="Link to this heading">¶</a></h4>
 <p>Kubernetes 后端完全基于 <a class="reference external" href="https://github.com/kubernetes-sigs/agent-sandbox">agent-sandbox</a>：沙箱 pod 由集群里的 agent-sandbox 控制器管理，镜像、资源、PVC 都声明在集群侧的 <code class="docutils literal notranslate"><span class="pre">SandboxTemplate</span></code> / <code class="docutils literal notranslate"><span class="pre">SandboxWarmPool</span></code> 里（不在 Java 侧配置），Java 侧通过 <code class="docutils literal notranslate"><span class="pre">SandboxClaim</span></code> 从预热池领取实例。使用前需要先安装 agent-sandbox 控制器并创建好模板和预热池。</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;k8s-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"k8s-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">KubernetesFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">namespace</span><span class="p">(</span><span class="s">&quot;agents&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">warmPoolName</span><span class="p">(</span><span class="s">&quot;agent-pool&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// SandboxWarmPool 名称</span>
+<span class="w">        </span><span class="p">.</span><span class="na">namespace</span><span class="p">(</span><span class="s">"agents"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">warmPoolName</span><span class="p">(</span><span class="s">"agent-pool"</span><span class="p">)</span><span class="w">        </span><span class="c1">// SandboxWarmPool 名称</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1303,12 +1303,12 @@
 <section id="e2b">
 <h4>E2B 沙箱<a class="headerlink" href="#e2b" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;e2b-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"e2b-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">E2bFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;${E2B_API_KEY}&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">templateId</span><span class="p">(</span><span class="s">&quot;my-template&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"${E2B_API_KEY}"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">templateId</span><span class="p">(</span><span class="s">"my-template"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sandboxTimeoutSeconds</span><span class="p">(</span><span class="mi">300</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1318,13 +1318,13 @@
 <section id="daytona">
 <h4>Daytona 沙箱<a class="headerlink" href="#daytona" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;daytona-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"daytona-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DaytonaFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;${DAYTONA_API_KEY}&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">controlPlaneBaseUrl</span><span class="p">(</span><span class="s">&quot;https://api.daytona.io&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12-slim&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"${DAYTONA_API_KEY}"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">controlPlaneBaseUrl</span><span class="p">(</span><span class="s">"https://api.daytona.io"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"python:3.12-slim"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">cpu</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span><span class="w">        </span><span class="c1">// GiB</span>
 <span class="w">        </span><span class="p">.</span><span class="na">disk</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">         </span><span class="c1">// GiB</span>
@@ -1336,14 +1336,14 @@
 <section id="agentrun">
 <h4>AgentRun 沙箱（阿里云）<a class="headerlink" href="#agentrun" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;agentrun-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"agentrun-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;${AGENTRUN_API_KEY}&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">accountId</span><span class="p">(</span><span class="s">&quot;your-account-id&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">region</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">templateName</span><span class="p">(</span><span class="s">&quot;python3.12&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">"${AGENTRUN_API_KEY}"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">accountId</span><span class="p">(</span><span class="s">"your-account-id"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">region</span><span class="p">(</span><span class="s">"cn-hangzhou"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">templateName</span><span class="p">(</span><span class="s">"python3.12"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sandboxIdleTimeoutSeconds</span><span class="p">(</span><span class="mi">600</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1418,26 +1418,26 @@
 <section id="id7">
 <h4>示例场景：编程助手（Docker + 本地快照）<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">codingAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coder&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"coder"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">".agentscope/workspace"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;node:20-slim&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"node:20-slim"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memorySizeBytes</span><span class="p">(</span><span class="mi">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024L</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">&quot;/data/sandbox-snapshots&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">"/data/sandbox-snapshots"</span><span class="p">)))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// alice 第一次调用：沙箱里 npm install，装好后快照保存</span>
 <span class="n">RuntimeContext</span><span class="w"> </span><span class="n">rc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;dev-session-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">"alice"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"dev-session-1"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">user</span><span class="p">(</span><span class="s">&quot;npm install &amp;&amp; npm test&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">user</span><span class="p">(</span><span class="s">"npm install &amp;&amp; npm test"</span><span class="p">),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// alice 第二次调用：恢复快照，node_modules 还在，无需重新安装</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">user</span><span class="p">(</span><span class="s">&quot;npm run build&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">user</span><span class="p">(</span><span class="s">"npm run build"</span><span class="p">),</span><span class="w"> </span><span class="n">rc</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1459,7 +1459,7 @@
 <h3>模式 3：本机 + shell（默认）<a class="headerlink" href="#shell" title="Link to this heading">¶</a></h3>
 <p>什么都不写就是这个：工作区落到 <code class="docutils literal notranslate"><span class="pre">${cwd}/.agentscope/workspace/</span></code>，shell 在宿主上跑：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;local-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"local-agent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="c1">// .filesystem(...) 不写 = 本机 + shell</span>
@@ -1471,11 +1471,11 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalFilesystemSpec</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">executeTimeoutSeconds</span><span class="p">(</span><span class="mi">120</span><span class="p">)</span><span class="w">       </span><span class="c1">// shell 命令超时</span>
 <span class="w">    </span><span class="p">.</span><span class="na">maxOutputBytes</span><span class="p">(</span><span class="mi">100_000</span><span class="p">)</span><span class="w">          </span><span class="c1">// 单条命令最大输出字节</span>
-<span class="w">    </span><span class="p">.</span><span class="na">env</span><span class="p">(</span><span class="s">&quot;MY_VAR&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span><span class="w">          </span><span class="c1">// 额外环境变量</span>
+<span class="w">    </span><span class="p">.</span><span class="na">env</span><span class="p">(</span><span class="s">"MY_VAR"</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">)</span><span class="w">          </span><span class="c1">// 额外环境变量</span>
 <span class="w">    </span><span class="p">.</span><span class="na">inheritEnv</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                </span><span class="c1">// 是否继承父进程环境</span>
 <span class="w">    </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">LocalFsMode</span><span class="p">.</span><span class="na">ROOTED</span><span class="p">)</span><span class="w">        </span><span class="c1">// 路径策略</span>
-<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/my/project&quot;</span><span class="p">))</span><span class="w"> </span><span class="c1">// 项目根（shell 的 cwd + overlay 下层）</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addRoot</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/extra/dir&quot;</span><span class="p">)))</span><span class="w"> </span><span class="c1">// 额外可访问目录</span>
+<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/my/project"</span><span class="p">))</span><span class="w"> </span><span class="c1">// 项目根（shell 的 cwd + overlay 下层）</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addRoot</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/extra/dir"</span><span class="p">)))</span><span class="w"> </span><span class="c1">// 额外可访问目录</span>
 </pre></div>
 </div>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1593,12 +1593,12 @@
 <section id="id9">
 <h4>示例场景：本地开发助手<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">devHelper</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;dev-helper&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"dev-helper"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">".agentscope/workspace"</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/Users/alice/my-project&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addRoot</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/Users/alice/.config&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/Users/alice/my-project"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addRoot</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"/Users/alice/.config"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">mode</span><span class="p">(</span><span class="n">LocalFsMode</span><span class="p">.</span><span class="na">ROOTED</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">inheritEnv</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">executeTimeoutSeconds</span><span class="p">(</span><span class="mi">300</span><span class="p">))</span>
@@ -1662,14 +1662,14 @@
 <h3>示例：用 Scope 组合实现不同业务需求<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
 <p><strong>场景 1：每个用户独立的编程沙箱，跨会话保留安装的依赖</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"python:3.12"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span><span class="w">       </span><span class="c1">// alice 的所有会话共享同一沙箱快照</span>
-<span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">&quot;/snapshots&quot;</span><span class="p">)))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LocalSnapshotSpec</span><span class="p">(</span><span class="s">"/snapshots"</span><span class="p">)))</span>
 </pre></div>
 </div>
 <p><strong>场景 2：每个对话独立的一次性沙箱</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">"ubuntu:24.04"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span><span class="w">   </span><span class="c1">// 每个 sessionId 独立，互不影响</span>
 </pre></div>
 </div>

@@ -1012,8 +1012,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.mcp.McpClientWrapper</span><span class="p">;</span>
 
 <span class="c1">// StdIO 传输 - 连接到本地 MCP 服务器</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">mcpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;filesystem-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">mcpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"filesystem-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/tmp"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1036,7 +1036,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span><span class="w">  </span><span class="c1">// MCP 工具现已可用</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
@@ -1051,20 +1051,20 @@
 <h3>StdIO 传输<a class="headerlink" href="#stdio" title="Link to this heading">¶</a></h3>
 <p>用于本地进程通信：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 文件系统服务器</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">fsClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;fs-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/path/to/dir&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">fsClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"fs-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/path/to/dir"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Git 服务器</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">gitClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;git-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;mcp_server_git&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">gitClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"git-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"python"</span><span class="p">,</span><span class="w"> </span><span class="s">"-m"</span><span class="p">,</span><span class="w"> </span><span class="s">"mcp_server_git"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 自定义命令</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">customClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;custom-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;/path/to/executable&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;arg1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;arg2&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">customClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"custom-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"/path/to/executable"</span><span class="p">,</span><span class="w"> </span><span class="s">"arg1"</span><span class="p">,</span><span class="w"> </span><span class="s">"arg2"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1073,10 +1073,10 @@
 <section id="sse">
 <h3>SSE 传输<a class="headerlink" href="#sse" title="Link to this heading">¶</a></h3>
 <p>用于 HTTP Server-Sent Events：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;remote-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">apiToken</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"remote-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"Authorization"</span><span class="p">,</span><span class="w"> </span><span class="s">"Bearer "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">apiToken</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">60</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
@@ -1086,10 +1086,10 @@
 <section id="http">
 <h3>HTTP 传输<a class="headerlink" href="#http" title="Link to this heading">¶</a></h3>
 <p>用于无状态 HTTP：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">httpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;http-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/http&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;X-API-Key&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">apiKey</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">httpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"http-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/http"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"X-API-Key"</span><span class="p">,</span><span class="w"> </span><span class="n">apiKey</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1102,7 +1102,7 @@
 <section id="id8">
 <h3>启用特定工具<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 仅启用特定工具</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"read_file"</span><span class="p">,</span><span class="w"> </span><span class="s">"write_file"</span><span class="p">,</span><span class="w"> </span><span class="s">"list_directory"</span><span class="p">);</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">enableTools</span><span class="p">(</span><span class="n">enableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
@@ -1111,7 +1111,7 @@
 <section id="id9">
 <h3>禁用特定工具<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 启用除黑名单外的所有工具</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;delete_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;move_file&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"delete_file"</span><span class="p">,</span><span class="w"> </span><span class="s">"move_file"</span><span class="p">);</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">disableTools</span><span class="p">(</span><span class="n">disableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
@@ -1120,8 +1120,8 @@
 <section id="id10">
 <h3>同时使用启用和禁用<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 白名单与黑名单结合</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;write_file&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"read_file"</span><span class="p">,</span><span class="w"> </span><span class="s">"list_directory"</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"write_file"</span><span class="p">);</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">enableTools</span><span class="p">(</span><span class="n">enableTools</span><span class="p">).</span><span class="na">disableTools</span><span class="p">(</span><span class="n">disableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
@@ -1133,15 +1133,15 @@
 <p>将 MCP 工具分配到组以进行选择性激活：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 创建工具组并激活</span>
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
-<span class="n">String</span><span class="w"> </span><span class="n">groupName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span><span class="p">;</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="n">groupName</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Tools for operating system files&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+<span class="n">String</span><span class="w"> </span><span class="n">groupName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"filesystem"</span><span class="p">;</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="n">groupName</span><span class="p">,</span><span class="w"> </span><span class="s">"Tools for operating system files"</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
 <span class="c1">// 将 MCP 工具注册到组中</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">group</span><span class="p">(</span><span class="n">groupName</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="c1">// 创建使用工具包的智能体（仅 active 组中的工具可用）</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1154,8 +1154,8 @@
 <h3>超时设置<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
 
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/tmp"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">120</span><span class="p">))</span><span class="w">      </span><span class="c1">// 请求超时</span>
 <span class="w">        </span><span class="p">.</span><span class="na">initializationTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w"> </span><span class="c1">// 初始化超时</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
@@ -1165,11 +1165,11 @@
 </section>
 <section id="id14">
 <h3>HTTP 头<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">token</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;X-Client-Version&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1.0&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"Authorization"</span><span class="p">,</span><span class="w"> </span><span class="s">"Bearer "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">token</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"X-Client-Version"</span><span class="p">,</span><span class="w"> </span><span class="s">"1.0"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"X-Custom-Header"</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1179,24 +1179,24 @@
 <h3>Query 参数<a class="headerlink" href="#query" title="Link to this heading">¶</a></h3>
 <p>为 HTTP 传输添加 URL 查询参数：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 单个参数</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue1&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey2&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue2&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey1"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue1"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey2"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue2"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 批量参数</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/http&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParams</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;queryKey1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryKey2&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue2&quot;</span><span class="p">))</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/http"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParams</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"queryKey1"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue1"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryKey2"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue2"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 与 URL 中已有参数合并（额外参数优先）</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse?version=v1&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 最终: ?version=v1&amp;queryKey=queryValue</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse?version=v1"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue"</span><span class="p">)</span><span class="w">  </span><span class="c1">// 最终: ?version=v1&amp;queryKey=queryValue</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1208,14 +1208,14 @@
 <section id="vs">
 <h3>同步 vs 异步客户端<a class="headerlink" href="#vs" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 异步客户端（推荐）</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">asyncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;async-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">asyncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"async-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/tmp"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 同步客户端（用于阻塞操作）</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">syncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;sync-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">syncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"sync-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/tmp"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildSync</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1224,16 +1224,16 @@
 <h3>elicitation 支持<a class="headerlink" href="#elicitation" title="Link to this heading">¶</a></h3>
 <p>MCP中的 elicitation 功能允许调用 MCP 服务端工具过程中，实现交互式信息补充收集。</p>
 <p>异步客户端示例</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp-async&quot;</span><span class="p">)</span>
-<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;mcp_server&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp-async"</span><span class="p">)</span>
+<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"python"</span><span class="p">,</span><span class="w"> </span><span class="s">"-m"</span><span class="p">,</span><span class="w"> </span><span class="s">"mcp_server"</span><span class="p">)</span>
 <span class="p">.</span><span class="na">asyncElicitation</span><span class="p">(</span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="c1">// 处理 elicitation 请求</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Received elicit request: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Received elicit request: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
 <span class="w">        </span><span class="c1">// 返回 Mono&lt;ElicitResult&gt;</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span>
 <span class="w">            </span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">action</span><span class="p">(</span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">Action</span><span class="p">.</span><span class="na">ACCEPT</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;response&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user input&quot;</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"response"</span><span class="p">,</span><span class="w"> </span><span class="s">"user input"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
 <span class="w">        </span><span class="p">);</span>
 <span class="w">    </span><span class="p">})</span>
@@ -1242,15 +1242,15 @@
 </pre></div>
 </div>
 <p>同步客户端示例</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp-sync&quot;</span><span class="p">)</span>
-<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;mcp_server&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp-sync"</span><span class="p">)</span>
+<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"python"</span><span class="p">,</span><span class="w"> </span><span class="s">"-m"</span><span class="p">,</span><span class="w"> </span><span class="s">"mcp_server"</span><span class="p">)</span>
 <span class="p">.</span><span class="na">syncElicitation</span><span class="p">(</span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="c1">// 处理 elicitation 请求</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Received elicit request: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Received elicit request: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
 <span class="w">        </span><span class="c1">// 直接返回 ElicitResult</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">            </span><span class="p">.</span><span class="na">action</span><span class="p">(</span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">Action</span><span class="p">.</span><span class="na">ACCEPT</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;response&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user input&quot;</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"response"</span><span class="p">,</span><span class="w"> </span><span class="s">"user input"</span><span class="p">))</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="w">    </span><span class="p">})</span>
 <span class="w">    </span><span class="p">.</span><span class="na">buildSync</span><span class="p">();</span>
@@ -1265,16 +1265,16 @@
 <p>默认情况下，MCP 客户端仅支持协议版本 <code class="docutils literal notranslate"><span class="pre">2024-11-05</span></code>。如果 MCP 服务器在初始化时返回不同的协议版本（例如 <code class="docutils literal notranslate"><span class="pre">2025-03-26</span></code>），连接将失败并报错 “Unsupported protocol version”。</p>
 <p>使用 <code class="docutils literal notranslate"><span class="pre">protocolVersions()</span></code> 声明支持的协议版本：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 支持多个协议版本</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;server.py&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">&quot;2024-11-05&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-03-26&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"python"</span><span class="p">,</span><span class="w"> </span><span class="s">"server.py"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">"2024-11-05"</span><span class="p">,</span><span class="w"> </span><span class="s">"2025-03-26"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 适用于任何传输类型</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">&quot;2024-11-05&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-03-26&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-06-18&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">"2024-11-05"</span><span class="p">,</span><span class="w"> </span><span class="s">"2025-03-26"</span><span class="p">,</span><span class="w"> </span><span class="s">"2025-06-18"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1287,14 +1287,14 @@
 <h3>列出 MCP 服务器的工具<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 注册后，工具会出现在工具包中</span>
 <span class="n">Set</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolNames</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolkit</span><span class="p">.</span><span class="na">getToolNames</span><span class="p">();</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;可用工具: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toolNames</span><span class="p">);</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"可用工具: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toolNames</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
 <section id="id18">
 <h3>移除 MCP 客户端<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 移除 MCP 客户端及其所有工具</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">removeMcpClient</span><span class="p">(</span><span class="s">&quot;filesystem-mcp&quot;</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">removeMcpClient</span><span class="p">(</span><span class="s">"filesystem-mcp"</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1320,8 +1320,8 @@
 
 <span class="c1">// 1. 创建 Higress MCP 客户端</span>
 <span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">higressClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
-<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;your higress mcp server endpoint&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"higress"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">"your higress mcp server endpoint"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
@@ -1336,9 +1336,9 @@
 <p>使用 <code class="docutils literal notranslate"><span class="pre">toolSearch()</span></code> 方法启用语义搜索，Higress 会自动选择与查询最相关的工具：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 启用工具搜索，返回最相关的 5 个工具</span>
 <span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">higressClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
-<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;http://your-higress-gateway/mcp-servers/union-tools-search&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">toolSearch</span><span class="p">(</span><span class="s">&quot;查询天气和地图信息&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w">  </span><span class="c1">// query 和 topK</span>
+<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"higress"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">"http://your-higress-gateway/mcp-servers/union-tools-search"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolSearch</span><span class="p">(</span><span class="s">"查询天气和地图信息"</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w">  </span><span class="c1">// query 和 topK</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1360,7 +1360,7 @@
 </ul>
 <p>运行示例：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>agentscope-examples/documentation/quickstart
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.quickstart.McpToolExample&quot;</span>
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">"io.agentscope.examples.quickstart.McpToolExample"</span>
 </pre></div>
 </div>
 </section>

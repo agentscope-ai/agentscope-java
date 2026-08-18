@@ -1044,8 +1044,8 @@ snapshot 用的 <code class="docutils literal notranslate"><span class="pre">Tas
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
 <span class="kd">public</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="w"> </span><span class="nf">harnessAgent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;protocol-agent&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"protocol-agent"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"dashscope:qwen-plus"</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="p">}</span>
 </pre></div>
@@ -1059,10 +1059,10 @@ snapshot 用的 <code class="docutils literal notranslate"><span class="pre">Tas
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
 <span class="n">AgentFactory</span><span class="w"> </span><span class="nf">agentFactory</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">contextString</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">);</span>
-<span class="w">        </span><span class="n">log</span><span class="p">.</span><span class="na">info</span><span class="p">(</span><span class="s">&quot;task {} agent_id={} tenant={} resume={}&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">contextString</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">);</span>
+<span class="w">        </span><span class="n">log</span><span class="p">.</span><span class="na">info</span><span class="p">(</span><span class="s">"task {} agent_id={} tenant={} resume={}"</span><span class="p">,</span>
 <span class="w">                </span><span class="n">request</span><span class="p">.</span><span class="na">taskId</span><span class="p">(),</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">tenant</span><span class="p">,</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">resume</span><span class="p">());</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">getOrDefault</span><span class="p">(</span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">));</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">getOrDefault</span><span class="p">(</span><span class="n">request</span><span class="p">.</span><span class="na">agentId</span><span class="p">(),</span><span class="w"> </span><span class="n">agentsByName</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"default"</span><span class="p">));</span>
 <span class="w">    </span><span class="p">};</span>
 <span class="p">}</span>
 </pre></div>
@@ -1108,7 +1108,7 @@ snapshot 用的 <code class="docutils literal notranslate"><span class="pre">Tas
 <p>调用方的自定义数据放在 <code class="docutils literal notranslate"><span class="pre">context.attributes</span></code> 里，单独嵌一层，不与协议自身的上下文字段混在一起。除了 <code class="docutils literal notranslate"><span class="pre">AgentFactory</span></code> 能读到之外，这些属性还会随 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 进入实际执行的 agent。</p>
 <p>它们<strong>整体挂在一个带命名空间的键下</strong>——<code class="docutils literal notranslate"><span class="pre">AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY</span></code>（<code class="docutils literal notranslate"><span class="pre">agentprotocol.context.attributes</span></code>）：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ctx</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">AgentProtocolConstants</span><span class="p">.</span><span class="na">RUNTIME_CONTEXT_ATTRIBUTES_KEY</span><span class="p">);</span>
-<span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">attributes</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">attributes</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">attributes</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
 </pre></div>
 </div>
 <p>之所以命名空间化而不是平铺成顶层键，是因为框架自身会读少量约定键：<code class="docutils literal notranslate"><span class="pre">agentId</span></code> 决定异步工具的唤醒路由，<code class="docutils literal notranslate"><span class="pre">outboundAddress</span></code> 携带网关回推地址。调用方一旦把属性命名成这些词，就会改变 agent 的行为。属性不会写进系统提示词，因此不影响模型看到的内容。</p>
@@ -1117,13 +1117,13 @@ snapshot 用的 <code class="docutils literal notranslate"><span class="pre">Tas
 <p>当某个工具期望直接读 <code class="docutils literal notranslate"><span class="pre">ctx.get(&quot;tenant&quot;)</span></code>，或需要把属性转成类型化对象时，注册 <code class="docutils literal notranslate"><span class="pre">RuntimeContextCustomizer</span></code> bean。<code class="docutils literal notranslate"><span class="pre">RuntimeContextCustomizer.flatten</span></code> 按显式白名单拷贝，并自动跳过框架保留键：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
 <span class="n">RuntimeContextCustomizer</span><span class="w"> </span><span class="nf">promoteTenantKeys</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">RuntimeContextCustomizer</span><span class="p">.</span><span class="na">flatten</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ticket_id&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">RuntimeContextCustomizer</span><span class="p">.</span><span class="na">flatten</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">,</span><span class="w"> </span><span class="s">"ticket_id"</span><span class="p">);</span>
 <span class="p">}</span>
 
 <span class="nd">@Bean</span>
 <span class="n">RuntimeContextCustomizer</span><span class="w"> </span><span class="nf">tenantContext</span><span class="p">(</span><span class="n">TenantService</span><span class="w"> </span><span class="n">tenants</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">request</span><span class="p">,</span><span class="w"> </span><span class="n">builder</span><span class="p">)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">attributeString</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">tenant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">attributeString</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">);</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">tenant</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="n">builder</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">TenantInfo</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">tenants</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="n">tenant</span><span class="p">));</span>
 <span class="w">        </span><span class="p">}</span>
@@ -1138,16 +1138,16 @@ snapshot 用的 <code class="docutils literal notranslate"><span class="pre">Tas
 <p>父 agent 调用远程子 agent 时有两个来源，二者合并且按调用传入的优先：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 静态：按子 agent 声明</span>
 <span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;researcher&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;远程研究员&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;http://remote:8080&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">remoteContextAttributes</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;region&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;cn&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"researcher"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">"远程研究员"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">"http://remote:8080"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">remoteContextAttributes</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"region"</span><span class="p">,</span><span class="w"> </span><span class="s">"cn"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 动态：按本次调用，挂在父 agent 的 RuntimeContext 上</span>
 <span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;sess-1&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_REMOTE_CONTEXT_ATTRIBUTES</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;tenant&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;acme&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">"sess-1"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_REMOTE_CONTEXT_ATTRIBUTES</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"tenant"</span><span class="p">,</span><span class="w"> </span><span class="s">"acme"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1160,24 +1160,24 @@ snapshot 用的 <code class="docutils literal notranslate"><span class="pre">Tas
 <h3>提交任务<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks</span></code></p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;task_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;task_123&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;agent_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Summarize the latest release notes&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;context&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u-1&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;parent_session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess-parent&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;stream&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;full&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;deny_rules&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"task_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"task_123"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"agent_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"researcher"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"input"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Summarize the latest release notes"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"context"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"user_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"u-1"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"parent_session_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sess-parent"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"stream"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"detail"</span><span class="p">:</span><span class="w"> </span><span class="s2">"full"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"deny_rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">      </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;tool_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bash&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;behavior&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;DENY&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;parent&quot;</span>
+<span class="w">        </span><span class="nt">"tool_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"bash"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"behavior"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DENY"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"parent"</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">&quot;attributes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;tenant&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;acme&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;ticket_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;INC-1001&quot;</span>
+<span class="w">    </span><span class="nt">"attributes"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"tenant"</span><span class="p">:</span><span class="w"> </span><span class="s2">"acme"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"ticket_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"INC-1001"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
@@ -1302,9 +1302,9 @@ snapshot 用的 <code class="docutils literal notranslate"><span class="pre">Tas
 <h3>HITL 恢复<a class="headerlink" href="#hitl" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/tasks/{taskId}/resume</span></code></p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;decisions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;toolCallId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call-2&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;approved&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"decisions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">"toolCallId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"call-1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"approved"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">"toolCallId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"call-2"</span><span class="p">,</span><span class="w"> </span><span class="nt">"approved"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
 </pre></div>

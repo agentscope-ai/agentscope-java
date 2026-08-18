@@ -999,10 +999,10 @@ Steps:
 <h2>A quick example<a class="headerlink" href="#a-quick-example" title="Link to this heading">¶</a></h2>
 <p>Plug in your team’s skill repo and the agent can use it immediately:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">&quot;https://github.com/your-org/team-skills.git&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">"https://github.com/your-org/team-skills.git"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1020,7 +1020,7 @@ Steps:
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">&quot;https://github.com/your-org/team-skills.git&quot;</span><span class="p">))</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">"https://github.com/your-org/team-skills.git"</span><span class="p">))</span>
 </pre></div>
 </div>
 <p>By default, each read does a lightweight remote check, pulling only when HEAD changed. If the repo has a <code class="docutils literal notranslate"><span class="pre">skills/</span></code> subdirectory, that’s the root; otherwise the repo root is. To control sync timing yourself: <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">GitSkillRepository(url,</span> <span class="pre">false)</span></code>, then call <code class="docutils literal notranslate"><span class="pre">repo.sync()</span></code> manually.</p>
@@ -1034,7 +1034,7 @@ Steps:
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">market</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;namespace&quot;</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">market</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">"namespace"</span><span class="p">);</span>
 <span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">market</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1045,8 +1045,8 @@ Steps:
 <section id="mysql">
 <h3>MySQL<a class="headerlink" href="#mysql" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">MysqlSkillRepository</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">dataSource</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">&quot;agentscope&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">"agentscope"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">"skills"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1066,7 +1066,7 @@ Steps:
     └── SKILL.md
 </pre></div>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ClasspathSkillRepository</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">))</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ClasspathSkillRepository</span><span class="p">(</span><span class="s">"skills"</span><span class="p">))</span>
 </pre></div>
 </div>
 <p>Works with both standard JARs and Spring Boot fat JARs.</p>
@@ -1206,10 +1206,10 @@ Steps:
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">enableSkillPromotionGate</span><span class="p">(</span>
 <span class="w">    </span><span class="k">new</span><span class="w"> </span><span class="n">LocalApprovalGate</span><span class="p">(</span><span class="n">LocalApprovalGate</span><span class="p">.</span><span class="na">defaultPrompter</span><span class="p">()),</span><span class="w">    </span><span class="c1">// who reviews</span>
 <span class="w">    </span><span class="k">new</span><span class="w"> </span><span class="n">CompositeFilter</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="w">                                    </span><span class="c1">// how to expose</span>
-<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">EnvironmentFilter</span><span class="p">(</span><span class="s">&quot;prod&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">skillUsageStore</span><span class="p">),</span>
+<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">EnvironmentFilter</span><span class="p">(</span><span class="s">"prod"</span><span class="p">,</span><span class="w"> </span><span class="n">skillUsageStore</span><span class="p">),</span>
 <span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">CanaryFilter</span><span class="p">(</span><span class="mf">0.10</span><span class="p">,</span><span class="w"> </span><span class="n">skillUsageStore</span><span class="p">)</span>
 <span class="w">    </span><span class="p">)))</span>
-<span class="p">.</span><span class="na">environment</span><span class="p">(</span><span class="s">&quot;prod&quot;</span><span class="p">)</span>
+<span class="p">.</span><span class="na">environment</span><span class="p">(</span><span class="s">"prod"</span><span class="p">)</span>
 </pre></div>
 </div>
 <ul class="simple">
@@ -1236,7 +1236,7 @@ Steps:
 <span class="n">agent</span><span class="p">.</span><span class="na">runCuratorOnce</span><span class="p">()</span><span class="w">                                       </span><span class="c1">// run a curation now (bypasses throttle)</span>
 <span class="w">     </span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">report</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">report</span><span class="p">));</span>
 
-<span class="n">agent</span><span class="p">.</span><span class="na">promoteSkill</span><span class="p">(</span><span class="s">&quot;notes-taker&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;alice&quot;</span><span class="p">)</span><span class="w">                   </span><span class="c1">// manually promote a draft</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">promoteSkill</span><span class="p">(</span><span class="s">"notes-taker"</span><span class="p">,</span><span class="w"> </span><span class="s">"alice"</span><span class="p">)</span><span class="w">                   </span><span class="c1">// manually promote a draft</span>
 <span class="w">     </span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">result</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">result</span><span class="p">));</span>
 </pre></div>
 </div>
@@ -1415,7 +1415,7 @@ Steps:
 </table>
 </div>
 <p>So the agent simply issues:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">execute_shell_command</span><span class="p">(</span><span class="s2">&quot;python3 /workspace/skills/code-reviewer/scripts/run-checks.sh &lt;target&gt;&quot;</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">execute_shell_command</span><span class="p">(</span><span class="s2">"python3 /workspace/skills/code-reviewer/scripts/run-checks.sh &lt;target&gt;"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>That command runs in the container and reads exactly the file that was projected in. The agent doesn’t need to know which layer a skill came from — the framework computes the prefix.</p>

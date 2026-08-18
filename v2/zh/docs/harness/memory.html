@@ -1050,7 +1050,7 @@
 <section id="id3">
 <h2>开启压缩<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MyAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"MyAgent"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1113,7 +1113,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">80</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">truncateArgs</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">TruncateArgsConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">maxArgLength</span><span class="p">(</span><span class="mi">2000</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">truncationText</span><span class="p">(</span><span class="s">&quot;... [truncated] ...&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">truncationText</span><span class="p">(</span><span class="s">"... [truncated] ..."</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1155,12 +1155,12 @@
 <section id="prompt">
 <h3>例 3：在默认 prompt 上追加项目规则<a class="headerlink" href="#prompt" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">flushPrompt</span><span class="p">(</span><span class="n">MemoryFlushManager</span><span class="p">.</span><span class="na">DEFAULT_FLUSH_PROMPT</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="p">.</span><span class="na">flushPrompt</span><span class="p">(</span><span class="n">MemoryFlushManager</span><span class="p">.</span><span class="na">DEFAULT_FLUSH_PROMPT</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"""</span>
 
 <span class="s">        Additional project rules:</span>
 <span class="s">        - Never record customer PII (names, emails, phone numbers).</span>
 <span class="s">        - Always use Chinese for project-internal vocabulary.</span>
-<span class="s">        &quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s">        """</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 </pre></div>
 </div>
@@ -1168,11 +1168,11 @@
 <section id="consolidation-prompt">
 <h3>例 4：完全自定义 consolidation prompt<a class="headerlink" href="#consolidation-prompt" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">consolidationPrompt</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="p">.</span><span class="na">consolidationPrompt</span><span class="p">(</span><span class="s">"""</span>
 <span class="s">        You are merging daily memory ledgers into MEMORY.md.</span>
 <span class="s">        Keep within %d tokens (~%d chars). Output the complete file in markdown.</span>
 <span class="s">        ... your custom rules ...</span>
-<span class="s">        &quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s">        """</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 </pre></div>
 </div>
@@ -1195,12 +1195,12 @@
 <h3>例 6：用小模型跑记忆操作<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <p>flush 和 consolidation 不需要主推理模型那么强，用更便宜的模型省成本：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;openai:o3&quot;</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 主推理模型</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"openai:o3"</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 主推理模型</span>
 <span class="w">    </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;openai:gpt-4.1-mini&quot;</span><span class="p">)</span><span class="w">     </span><span class="c1">// 记忆操作用小模型</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"openai:gpt-4.1-mini"</span><span class="p">)</span><span class="w">     </span><span class="c1">// 记忆操作用小模型</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;openai:gpt-4.1-mini&quot;</span><span class="p">)</span><span class="w">     </span><span class="c1">// 压缩摘要也用小模型</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">"openai:gpt-4.1-mini"</span><span class="p">)</span><span class="w">     </span><span class="c1">// 压缩摘要也用小模型</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>

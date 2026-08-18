@@ -991,15 +991,15 @@
 
 <span class="c1">// 1) Initialize Studio connection (HTTP + WebSocket)</span>
 <span class="n">StudioManager</span><span class="p">.</span><span class="na">init</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8000&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">&quot;MyProject&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">&quot;experiment_001&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">"http://localhost:8000"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">"MyProject"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">"experiment_001"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">initialize</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 2) Attach StudioMessageHook so messages are pushed to Studio</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">()))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1053,7 +1053,7 @@
 <h2>When to disable<a class="headerlink" href="#when-to-disable" title="Link to this heading">¶</a></h2>
 <p>In production, you usually don’t want this hook attached (every call writes to Studio). Gate it via Spring profile or <code class="docutils literal notranslate"><span class="pre">&#64;ConditionalOnProperty</span></code>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Bean</span>
-<span class="nd">@ConditionalOnProperty</span><span class="p">(</span><span class="s">&quot;agentscope.studio.enabled&quot;</span><span class="p">)</span>
+<span class="nd">@ConditionalOnProperty</span><span class="p">(</span><span class="s">"agentscope.studio.enabled"</span><span class="p">)</span>
 <span class="n">StudioMessageHook</span><span class="w"> </span><span class="nf">studioHook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">init</span><span class="p">().</span><span class="na">studioUrl</span><span class="p">(</span><span class="n">url</span><span class="p">).</span><span class="na">project</span><span class="p">(</span><span class="n">project</span><span class="p">).</span><span class="na">initialize</span><span class="p">().</span><span class="na">block</span><span class="p">();</span>
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">());</span>

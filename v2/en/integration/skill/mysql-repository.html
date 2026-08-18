@@ -991,9 +991,9 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.skill.repository.mysql.MysqlSkillRepository</span><span class="p">;</span>
 
 <span class="n">HikariDataSource</span><span class="w"> </span><span class="n">ds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">HikariDataSource</span><span class="p">();</span>
-<span class="n">ds</span><span class="p">.</span><span class="na">setJdbcUrl</span><span class="p">(</span><span class="s">&quot;jdbc:mysql://localhost:3306/agentscope&quot;</span><span class="p">);</span>
-<span class="n">ds</span><span class="p">.</span><span class="na">setUsername</span><span class="p">(</span><span class="s">&quot;root&quot;</span><span class="p">);</span>
-<span class="n">ds</span><span class="p">.</span><span class="na">setPassword</span><span class="p">(</span><span class="s">&quot;***&quot;</span><span class="p">);</span>
+<span class="n">ds</span><span class="p">.</span><span class="na">setJdbcUrl</span><span class="p">(</span><span class="s">"jdbc:mysql://localhost:3306/agentscope"</span><span class="p">);</span>
+<span class="n">ds</span><span class="p">.</span><span class="na">setUsername</span><span class="p">(</span><span class="s">"root"</span><span class="p">);</span>
+<span class="n">ds</span><span class="p">.</span><span class="na">setPassword</span><span class="p">(</span><span class="s">"***"</span><span class="p">);</span>
 
 <span class="c1">// Second arg createIfNotExist=true: auto-create database and tables</span>
 <span class="n">MysqlSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
@@ -1044,9 +1044,9 @@
 <h2>Custom database / table names<a class="headerlink" href="#custom-database-table-names" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">MysqlSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">(</span>
 <span class="w">    </span><span class="n">ds</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;skill_center&quot;</span><span class="p">,</span><span class="w">          </span><span class="c1">// database</span>
-<span class="w">    </span><span class="s">&quot;ops_skills&quot;</span><span class="p">,</span><span class="w">            </span><span class="c1">// skill table</span>
-<span class="w">    </span><span class="s">&quot;ops_skill_resources&quot;</span><span class="p">,</span><span class="w">   </span><span class="c1">// resource table</span>
+<span class="w">    </span><span class="s">"skill_center"</span><span class="p">,</span><span class="w">          </span><span class="c1">// database</span>
+<span class="w">    </span><span class="s">"ops_skills"</span><span class="p">,</span><span class="w">            </span><span class="c1">// skill table</span>
+<span class="w">    </span><span class="s">"ops_skill_resources"</span><span class="p">,</span><span class="w">   </span><span class="c1">// resource table</span>
 <span class="w">    </span><span class="kc">true</span><span class="w">                     </span><span class="c1">// auto-create</span>
 <span class="p">);</span>
 </pre></div>
@@ -1059,12 +1059,12 @@
 <span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="cm">/* overwrite */</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
 <span class="c1">// Read</span>
-<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getAllSkillNames</span><span class="p">();</span>
-<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 
 <span class="c1">// Delete</span>
-<span class="n">repo</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="s">&quot;calculator&quot;</span><span class="p">);</span>
+<span class="n">repo</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="s">"calculator"</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Writes and deletes run in transactions; the resource table’s <code class="docutils literal notranslate"><span class="pre">ON</span> <span class="pre">DELETE</span> <span class="pre">CASCADE</span></code> ensures no orphaned resources.</p>

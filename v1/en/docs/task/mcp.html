@@ -1012,8 +1012,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.mcp.McpClientWrapper</span><span class="p">;</span>
 
 <span class="c1">// StdIO transport - connect to local MCP server</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">mcpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;filesystem-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">mcpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"filesystem-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/tmp"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1036,7 +1036,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span><span class="w">  </span><span class="c1">// MCP tools are now available</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
@@ -1051,20 +1051,20 @@
 <h3>StdIO Transport<a class="headerlink" href="#stdio-transport" title="Link to this heading">¶</a></h3>
 <p>For local process communication:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Filesystem server</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">fsClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;fs-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/path/to/dir&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">fsClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"fs-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/path/to/dir"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Git server</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">gitClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;git-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;mcp_server_git&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">gitClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"git-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"python"</span><span class="p">,</span><span class="w"> </span><span class="s">"-m"</span><span class="p">,</span><span class="w"> </span><span class="s">"mcp_server_git"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Custom command</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">customClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;custom-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;/path/to/executable&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;arg1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;arg2&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">customClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"custom-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"/path/to/executable"</span><span class="p">,</span><span class="w"> </span><span class="s">"arg1"</span><span class="p">,</span><span class="w"> </span><span class="s">"arg2"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1073,10 +1073,10 @@
 <section id="sse-transport">
 <h3>SSE Transport<a class="headerlink" href="#sse-transport" title="Link to this heading">¶</a></h3>
 <p>For HTTP Server-Sent Events:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;remote-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">apiToken</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"remote-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"Authorization"</span><span class="p">,</span><span class="w"> </span><span class="s">"Bearer "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">apiToken</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">60</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
@@ -1086,10 +1086,10 @@
 <section id="http-transport">
 <h3>HTTP Transport<a class="headerlink" href="#http-transport" title="Link to this heading">¶</a></h3>
 <p>For stateless HTTP:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">httpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;http-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/http&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;X-API-Key&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">apiKey</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">httpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"http-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/http"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"X-API-Key"</span><span class="p">,</span><span class="w"> </span><span class="n">apiKey</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1102,7 +1102,7 @@
 <section id="enable-specific-tools">
 <h3>Enable Specific Tools<a class="headerlink" href="#enable-specific-tools" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Only enable specific tools</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"read_file"</span><span class="p">,</span><span class="w"> </span><span class="s">"write_file"</span><span class="p">,</span><span class="w"> </span><span class="s">"list_directory"</span><span class="p">);</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">enableTools</span><span class="p">(</span><span class="n">enableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
@@ -1111,7 +1111,7 @@
 <section id="disable-specific-tools">
 <h3>Disable Specific Tools<a class="headerlink" href="#disable-specific-tools" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Enable all except blacklisted tools</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;delete_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;move_file&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"delete_file"</span><span class="p">,</span><span class="w"> </span><span class="s">"move_file"</span><span class="p">);</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">disableTools</span><span class="p">(</span><span class="n">disableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
@@ -1120,8 +1120,8 @@
 <section id="both-enable-and-disable">
 <h3>Both Enable and Disable<a class="headerlink" href="#both-enable-and-disable" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Whitelist with blacklist</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;write_file&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"read_file"</span><span class="p">,</span><span class="w"> </span><span class="s">"list_directory"</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"write_file"</span><span class="p">);</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">enableTools</span><span class="p">(</span><span class="n">enableTools</span><span class="p">).</span><span class="na">disableTools</span><span class="p">(</span><span class="n">disableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
@@ -1133,15 +1133,15 @@
 <p>Assign MCP tools to a group for selective activation:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create tool group and activate</span>
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
-<span class="n">String</span><span class="w"> </span><span class="n">groupName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span><span class="p">;</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="n">groupName</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Tools for operating system files&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+<span class="n">String</span><span class="w"> </span><span class="n">groupName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"filesystem"</span><span class="p">;</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="n">groupName</span><span class="p">,</span><span class="w"> </span><span class="s">"Tools for operating system files"</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
 <span class="c1">// Register MCP tools in a group</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">group</span><span class="p">(</span><span class="n">groupName</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="c1">// Create agent with toolkit (only active group tools available)</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"Assistant"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1154,8 +1154,8 @@
 <h3>Timeouts<a class="headerlink" href="#timeouts" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
 
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/tmp"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">120</span><span class="p">))</span><span class="w">      </span><span class="c1">// Request timeout</span>
 <span class="w">        </span><span class="p">.</span><span class="na">initializationTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w"> </span><span class="c1">// Init timeout</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
@@ -1165,11 +1165,11 @@
 </section>
 <section id="http-headers">
 <h3>HTTP Headers<a class="headerlink" href="#http-headers" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">token</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;X-Client-Version&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1.0&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"Authorization"</span><span class="p">,</span><span class="w"> </span><span class="s">"Bearer "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">token</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"X-Client-Version"</span><span class="p">,</span><span class="w"> </span><span class="s">"1.0"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">"X-Custom-Header"</span><span class="p">,</span><span class="w"> </span><span class="s">"value"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1179,24 +1179,24 @@
 <h3>Query Parameters<a class="headerlink" href="#query-parameters" title="Link to this heading">¶</a></h3>
 <p>Add URL query parameters for HTTP transports:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Single parameter</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue1&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey2&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue2&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey1"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue1"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey2"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue2"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Multiple parameters at once</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/http&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParams</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;queryKey1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryKey2&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue2&quot;</span><span class="p">))</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/http"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParams</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"queryKey1"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue1"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryKey2"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue2"</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Merge with existing URL parameters (additional params take precedence)</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse?version=v1&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">&quot;queryKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;queryValue&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Result: ?version=v1&amp;queryKey=queryValue</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse?version=v1"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">queryParam</span><span class="p">(</span><span class="s">"queryKey"</span><span class="p">,</span><span class="w"> </span><span class="s">"queryValue"</span><span class="p">)</span><span class="w">  </span><span class="c1">// Result: ?version=v1&amp;queryKey=queryValue</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1208,14 +1208,14 @@
 <section id="synchronous-vs-asynchronous-clients">
 <h3>Synchronous vs Asynchronous Clients<a class="headerlink" href="#synchronous-vs-asynchronous-clients" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Asynchronous client (recommended)</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">asyncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;async-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">asyncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"async-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/tmp"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Synchronous client (for blocking operations)</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">syncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;sync-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">syncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"sync-mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"npx"</span><span class="p">,</span><span class="w"> </span><span class="s">"-y"</span><span class="p">,</span><span class="w"> </span><span class="s">"@modelcontextprotocol/server-filesystem"</span><span class="p">,</span><span class="w"> </span><span class="s">"/tmp"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildSync</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1224,16 +1224,16 @@
 <h3>elicitation support<a class="headerlink" href="#elicitation-support" title="Link to this heading">¶</a></h3>
 <p>The elicitation feature in MCP enables interactive information collection during the invocation of MCP server-side tools.</p>
 <p>Asynchronous client example</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp-async&quot;</span><span class="p">)</span>
-<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;mcp_server&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp-async"</span><span class="p">)</span>
+<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"python"</span><span class="p">,</span><span class="w"> </span><span class="s">"-m"</span><span class="p">,</span><span class="w"> </span><span class="s">"mcp_server"</span><span class="p">)</span>
 <span class="p">.</span><span class="na">asyncElicitation</span><span class="p">(</span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="c1">// Handle elicitation request</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Received elicit request: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Received elicit request: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
 <span class="w">        </span><span class="c1">// Return Mono&lt;ElicitResult&gt;</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span>
 <span class="w">            </span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">action</span><span class="p">(</span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">Action</span><span class="p">.</span><span class="na">ACCEPT</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;response&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user input&quot;</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"response"</span><span class="p">,</span><span class="w"> </span><span class="s">"user input"</span><span class="p">))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
 <span class="w">        </span><span class="p">);</span>
 <span class="w">    </span><span class="p">})</span>
@@ -1242,15 +1242,15 @@
 </pre></div>
 </div>
 <p>Synchronous client example</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp-sync&quot;</span><span class="p">)</span>
-<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;mcp_server&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp-sync"</span><span class="p">)</span>
+<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"python"</span><span class="p">,</span><span class="w"> </span><span class="s">"-m"</span><span class="p">,</span><span class="w"> </span><span class="s">"mcp_server"</span><span class="p">)</span>
 <span class="p">.</span><span class="na">syncElicitation</span><span class="p">(</span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="c1">// Handle elicitation request</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Received elicit request: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Received elicit request: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
 <span class="w">        </span><span class="c1">// return ElicitResult directly</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">            </span><span class="p">.</span><span class="na">action</span><span class="p">(</span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">Action</span><span class="p">.</span><span class="na">ACCEPT</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;response&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user input&quot;</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"response"</span><span class="p">,</span><span class="w"> </span><span class="s">"user input"</span><span class="p">))</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 <span class="w">    </span><span class="p">})</span>
 <span class="w">    </span><span class="p">.</span><span class="na">buildSync</span><span class="p">();</span>
@@ -1265,16 +1265,16 @@
 <p>By default, the MCP client only supports protocol version <code class="docutils literal notranslate"><span class="pre">2024-11-05</span></code>. If the MCP server responds with a different protocol version during initialization (e.g., <code class="docutils literal notranslate"><span class="pre">2025-03-26</span></code>), the connection will fail with “Unsupported protocol version”.</p>
 <p>Use <code class="docutils literal notranslate"><span class="pre">protocolVersions()</span></code> to declare support for additional protocol versions:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Support multiple protocol versions</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;server.py&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">&quot;2024-11-05&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-03-26&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">"python"</span><span class="p">,</span><span class="w"> </span><span class="s">"server.py"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">"2024-11-05"</span><span class="p">,</span><span class="w"> </span><span class="s">"2025-03-26"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Works with any transport type</span>
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">&quot;2024-11-05&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-03-26&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-06-18&quot;</span><span class="p">)</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"mcp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">"https://mcp.example.com/sse"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">"2024-11-05"</span><span class="p">,</span><span class="w"> </span><span class="s">"2025-03-26"</span><span class="p">,</span><span class="w"> </span><span class="s">"2025-06-18"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1287,14 +1287,14 @@
 <h3>List Tools from MCP Server<a class="headerlink" href="#list-tools-from-mcp-server" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// After registration, tools appear in toolkit</span>
 <span class="n">Set</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolNames</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolkit</span><span class="p">.</span><span class="na">getToolNames</span><span class="p">();</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Available tools: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toolNames</span><span class="p">);</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"Available tools: "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toolNames</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
 <section id="remove-mcp-client">
 <h3>Remove MCP Client<a class="headerlink" href="#remove-mcp-client" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Remove MCP client and all its tools</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">removeMcpClient</span><span class="p">(</span><span class="s">&quot;filesystem-mcp&quot;</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">removeMcpClient</span><span class="p">(</span><span class="s">"filesystem-mcp"</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1320,8 +1320,8 @@
 
 <span class="c1">// 1. Create Higress MCP client</span>
 <span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">higressClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
-<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;your higress mcp server endpoint&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"higress"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">"your higress mcp server endpoint"</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
@@ -1336,9 +1336,9 @@
 <p>Use the <code class="docutils literal notranslate"><span class="pre">toolSearch()</span></code> method to enable semantic search. Higress will automatically select the most relevant tools for your query:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Enable tool search, return top 5 most relevant tools</span>
 <span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">higressClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
-<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;http://your-higress-gateway/mcp-servers/union-tools-search&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">toolSearch</span><span class="p">(</span><span class="s">&quot;query weather and map information&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w">  </span><span class="c1">// query and topK</span>
+<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">"higress"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">"http://your-higress-gateway/mcp-servers/union-tools-search"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolSearch</span><span class="p">(</span><span class="s">"query weather and map information"</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w">  </span><span class="c1">// query and topK</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
@@ -1360,7 +1360,7 @@
 </ul>
 <p>Run the example:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>agentscope-examples/documentation/quickstart
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.quickstart.McpToolExample&quot;</span>
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">"io.agentscope.examples.quickstart.McpToolExample"</span>
 </pre></div>
 </div>
 </section>
