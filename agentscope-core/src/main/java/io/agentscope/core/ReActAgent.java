@@ -3716,7 +3716,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return false;
             }
 
-            return hasVisibleContent(msg);
+            return hasVisibleText(msg);
         }
 
         /**
@@ -3728,24 +3728,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Check whether the given message carries any user-visible content: any non-thinking
-         * block, where a {@link TextBlock} counts only when its text is non-blank. Blank text,
-         * thinking-only and fully-empty responses carry no visible content; tool-call-only
-         * responses are handled by the caller before this check.
+         * Check whether the given message carries user-visible content: a {@link TextBlock}
+         * with non-blank text. Text is the only channel consumers render as the assistant's
+         * visible reply (thinking never counts; tool calls are handled by the caller before
+         * this check; images and other data enter through tool results, not final responses).
          */
-        private static boolean hasVisibleContent(Msg msg) {
-            return msg.getContent().stream()
+        private static boolean hasVisibleText(Msg msg) {
+            return msg.getContentBlocks(TextBlock.class).stream()
                     .anyMatch(
-                            block -> {
-                                if (block instanceof ThinkingBlock) {
-                                    return false;
-                                }
-                                if (block instanceof TextBlock textBlock) {
-                                    return textBlock.getText() != null
-                                            && !textBlock.getText().isBlank();
-                                }
-                                return true;
-                            });
+                            textBlock ->
+                                    textBlock.getText() != null && !textBlock.getText().isBlank());
         }
 
         /**
