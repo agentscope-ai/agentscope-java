@@ -39,6 +39,7 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -553,6 +554,32 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(summaryTextStart > summaryThinkingEnd);
         assertTrue(summaryTextEnd > summaryTextStart);
         assertTrue(summaryModelEnd > summaryTextEnd);
+    }
+
+    @Test
+    void summaryFailurePreservesMaxIterationsAndMarksFailure() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc", "echo", "x")),
+                                () -> Flux.error(new RuntimeException("summary failed"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .maxIters(1)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        AgentResultEvent resultEvent =
+                (AgentResultEvent) events.get(indexOf(events, AgentResultEvent.class));
+        Msg result = resultEvent.getResult();
+        assertEquals(GenerateReason.MAX_ITERATIONS, result.getGenerateReason());
+        assertEquals(Boolean.TRUE, result.getMetadata().get(MessageMetadataKeys.SUMMARY_FAILED));
+        assertTrue(result.getTextContent().contains("Error generating summary"));
     }
 
     private static int indexOf(List<AgentEvent> events, Class<?> type) {
