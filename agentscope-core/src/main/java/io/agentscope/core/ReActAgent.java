@@ -430,7 +430,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             LegacyStateLoader.LegacyLoadResult legacy =
                     LegacyStateLoader.loadFromLegacySessionWithPresence(
-                            stateStore, userId, sessionId);
+                            stateStore, userId, sessionId, permCtx);
             if (legacy.found()) {
                 // Legacy keys have no version; treat as create-if-absent baseline.
                 long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
