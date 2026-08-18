@@ -46,8 +46,7 @@ class LegacyStateLoaderTest {
                 PermissionContextState.builder().mode(PermissionMode.BYPASS).build();
 
         LegacyStateLoader.LegacyLoadResult result =
-                LegacyStateLoader.loadFromLegacySessionWithPresence(
-                        stateStore, USER, SESSION, ctx);
+                LegacyStateLoader.loadFromLegacySessionWithPresence(stateStore, USER, SESSION, ctx);
 
         assertTrue(result.found());
         assertEquals(PermissionMode.BYPASS, result.state().getPermissionContext().getMode());
@@ -59,8 +58,7 @@ class LegacyStateLoaderTest {
         PermissionContextState ctx =
                 PermissionContextState.builder().mode(PermissionMode.EXPLORE).build();
 
-        AgentState state =
-                LegacyStateLoader.loadFromLegacySession(stateStore, USER, SESSION, ctx);
+        AgentState state = LegacyStateLoader.loadFromLegacySession(stateStore, USER, SESSION, ctx);
 
         assertEquals(PermissionMode.EXPLORE, state.getPermissionContext().getMode());
     }
@@ -79,19 +77,14 @@ class LegacyStateLoaderTest {
 
     @Test
     void legacyContent_isPreservedAlongsidePermissionContext() {
-        Msg legacyMsg =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .textContent("hello from v1")
-                        .build();
+        Msg legacyMsg = Msg.builder().role(MsgRole.USER).textContent("hello from v1").build();
         stateStore.save(USER, SESSION, "memory_messages", List.of(legacyMsg));
         stateStore.save(
                 USER, SESSION, "toolkit_activeGroups", new ToolkitState(List.of("team-alpha")));
         PermissionContextState ctx =
                 PermissionContextState.builder().mode(PermissionMode.BYPASS).build();
 
-        AgentState state =
-                LegacyStateLoader.loadFromLegacySession(stateStore, USER, SESSION, ctx);
+        AgentState state = LegacyStateLoader.loadFromLegacySession(stateStore, USER, SESSION, ctx);
 
         assertEquals(1, state.getContext().size());
         assertEquals(legacyMsg, state.getContext().get(0));
