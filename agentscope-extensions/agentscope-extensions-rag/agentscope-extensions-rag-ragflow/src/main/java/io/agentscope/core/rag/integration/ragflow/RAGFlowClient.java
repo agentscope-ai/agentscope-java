@@ -112,8 +112,9 @@ public class RAGFlowClient {
      *
      * <p>Non-empty request parameters take precedence over values from {@link RAGFlowConfig}.
      * When a request parameter is {@code null} or empty, the corresponding config value is used.
-     * Parameter values are copied when this method is called so that later caller mutations cannot
-     * affect the asynchronous request.
+     * The dataset ID list and top-level metadata condition map are copied when this method is
+     * called. Later changes to the list or top-level map entries therefore cannot affect the
+     * asynchronous request, but nested mutable metadata values are not deep-copied.
      *
      * @param question the query text (required)
      * @param topK the number of documents to retrieve (optional, defaults to config value)

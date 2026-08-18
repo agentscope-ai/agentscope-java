@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.integration.ragflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -287,6 +288,26 @@ class RAGFlowKnowledgeTest {
         assertEquals(Map.of("source", "second"), secondBody.get("metadata_condition"));
         assertEquals(List.of("default-dataset"), fallbackBody.get("dataset_ids"));
         assertEquals(Map.of("source", "default"), fallbackBody.get("metadata_condition"));
+    }
+
+    @Test
+    void testRetrieveWithDocumentOnlyConfigOmitsDatasetIds() throws Exception {
+        mockWebServer.enqueue(createSuccessResponse());
+
+        RAGFlowConfig config =
+                RAGFlowConfig.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockWebServer.url("").toString().replaceAll("/$", ""))
+                        .addDocumentId("document-only")
+                        .maxRetries(0)
+                        .build();
+        RAGFlowKnowledge knowledge = RAGFlowKnowledge.builder().config(config).build();
+
+        knowledge.retrieve("document query", null).block();
+
+        Map<String, Object> requestBody = readRequestBody(mockWebServer.takeRequest());
+        assertFalse(requestBody.containsKey("dataset_ids"));
+        assertEquals(List.of("document-only"), requestBody.get("document_ids"));
     }
 
     private Map<String, Object> readRequestBody(RecordedRequest request) {
