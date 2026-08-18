@@ -131,6 +131,22 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
+    void uploadFiles_rejectsNullContentOnNativeTransferPath() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT, List.of(new AbstractMap.SimpleImmutableEntry<>("agents/a.txt", null)));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("File content must not be null", responses.get(0).error());
+        assertTrue(sandbox.uploaded.isEmpty());
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
     void uploadFiles_fallsBackToHydrationWhenRootUnavailable() throws Exception {
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");

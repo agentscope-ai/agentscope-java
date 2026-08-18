@@ -106,6 +106,10 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         for (Map.Entry<String, byte[]> file : files) {
             String path = file.getKey();
             byte[] content = file.getValue();
+            if (content == null) {
+                results.add(FileUploadResponse.fail(path, "File content must not be null"));
+                continue;
+            }
 
             if (active instanceof SandboxFileTransfer transfer) {
                 String transferPath = null;
