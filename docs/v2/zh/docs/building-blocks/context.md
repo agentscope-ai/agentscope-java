@@ -185,6 +185,24 @@ AgentState restored = AgentState.fromJsonString(json);
 | `setSummary(...)` / `getSummary()` | 自定义压缩摘要(自行实现压缩 middleware 时用) |
 | `toJson()` / `fromJsonString(String)` | 序列化与反序列化 |
 
+### 清空会话对话上下文
+
+若要让用户在不创建新会话的情况下开始新话题，可调用 `clearContext`。该方法保留相同的
+`(userId, sessionId)`，也保留权限、工具、任务和 Plan Mode 等非对话状态；它会清空模型可见的
+消息缓冲和压缩摘要，并在 agent 配置了 `AgentStateStore` 时立即持久化结果。
+
+```java
+agent.clearContext("alice", "session-001");
+
+// 也可以传入与调用时相同的 RuntimeContext。
+agent.clearContext(RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("session-001")
+    .build());
+```
+
+请在该会话当前请求完成后调用。它不会取消正在执行的调用；下一次调用会使用已清空的对话上下文。
+
 :::{note}
 1.0 中的 `Memory` 接口(`InMemoryMemory` / `LongTermMemory` 等)在 2.0 已 `@Deprecated(forRemoval = true)`。新代码请使用 `AgentState.getContext()` + `AgentStateStore` —— `Memory` 仅作为源代码兼容层保留。
 :::

@@ -248,7 +248,6 @@ The framework also auto-bumps a usage counter every time the agent calls `load_s
 ```java
 .enableSkillCurator(SkillCuratorConfig.builder()
     .intervalHours(7 * 24)        // weekly
-    .minIdleHours(2)              // only when call-gap ≥ 2h
     .staleAfterDays(30)
     .archiveAfterDays(90)
     .build())

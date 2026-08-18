@@ -1035,7 +1035,7 @@ class AguiEventTest {
             AguiEvent.MessagesSnapshot event = new AguiEvent.MessagesSnapshot("t1", "r1", msgs);
             assertEquals(AguiEventType.MESSAGES_SNAPSHOT, event.getType());
             assertEquals(1, event.messages().size());
-            assertEquals("hello", event.messages().get(0).getContent());
+            assertEquals("hello", event.messages().get(0).getTextContent());
         }
 
         @Test
