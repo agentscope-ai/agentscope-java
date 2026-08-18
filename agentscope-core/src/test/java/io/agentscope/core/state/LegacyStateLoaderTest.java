@@ -76,6 +76,17 @@ class LegacyStateLoaderTest {
     }
 
     @Test
+    void withPresence_noPermissionContext_keepsDefault() {
+        seedLegacyKeys();
+
+        LegacyStateLoader.LegacyLoadResult result =
+                LegacyStateLoader.loadFromLegacySessionWithPresence(stateStore, USER, SESSION);
+
+        assertTrue(result.found());
+        assertEquals(PermissionMode.DEFAULT, result.state().getPermissionContext().getMode());
+    }
+
+    @Test
     void legacyContent_isPreservedAlongsidePermissionContext() {
         Msg legacyMsg = Msg.builder().role(MsgRole.USER).textContent("hello from v1").build();
         stateStore.save(USER, SESSION, "memory_messages", List.of(legacyMsg));
