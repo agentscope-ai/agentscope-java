@@ -40,6 +40,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     enable-reasoning: false
  *     emit-token-usage: false
  *     emit-run-finished-after-error: false
+ *     interrupt-on-disconnect: true
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -124,6 +125,9 @@ public class AguiProperties {
      * open.
      */
     private long sseTimeout = 600000L;
+
+    /** Whether to interrupt the agent when the client disconnects. */
+    private boolean interruptOnDisconnect = true;
 
     public String getPathPrefix() {
         return pathPrefix;
@@ -259,5 +263,13 @@ public class AguiProperties {
 
     public void setSseTimeout(long sseTimeout) {
         this.sseTimeout = sseTimeout;
+    }
+
+    public boolean isInterruptOnDisconnect() {
+        return interruptOnDisconnect;
+    }
+
+    public void setInterruptOnDisconnect(boolean interruptOnDisconnect) {
+        this.interruptOnDisconnect = interruptOnDisconnect;
     }
 }
