@@ -1136,9 +1136,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @return the ephemeral workspace directory; never {@code null}
      */
     static Path resolveEphemeralWorkspace(String agentId) {
-        String safeAgentId =
-                agentId.replaceAll("[/\\\\\\s\\p{Cntrl}]", "_").replaceAll("^[_\\-\\.]+", "");
-        if (safeAgentId.isBlank()) {
+        String safeAgentId = HarnessAgentBuilderSupport.sanitizeIdentifier(agentId);
+        if (safeAgentId == null || safeAgentId.isBlank()) {
             safeAgentId = "ReActAgent";
         }
         return Paths.get(System.getProperty("java.io.tmpdir"))
@@ -2506,9 +2505,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                                 .resolve(".agentscope/transcripts"));
                     }
                 }
-                if (effectiveTranscriptStore == null) {
-                    // Transcripts simply not recorded in this mode (see warning above).
-                } else {
+                if (effectiveTranscriptStore != null) {
                     inner.middleware(
                             new TranscriptMiddleware(
                                     wsManager, effectiveTranscriptStore, transcriptTenant));
