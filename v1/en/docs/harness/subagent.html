@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagent Streaming" href="streaming.html"><link rel="prev" title="Tooling" href="tool.html">
+    <meta property="article:modified_time" content="2026-08-18T03:57:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagent Streaming" href="streaming.html"><link rel="prev" title="Tooling" href="tool.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -995,7 +995,9 @@ Each subagent is a temporary <code class="docutils literal notranslate"><span cl
 <li><p>Built-in <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code></p></li>
 <li><p>Programmatic declarations: <code class="docutils literal notranslate"><span class="pre">builder.subagent(SubagentDeclaration)</span></code></p></li>
 <li><p>File declarations: <code class="docutils literal notranslate"><span class="pre">workspace/subagents/*.md</span></code> (loaded non-recursively by <code class="docutils literal notranslate"><span class="pre">AgentSpecLoader</span></code>)</p></li>
-<li><p>Custom factories: <code class="docutils literal notranslate"><span class="pre">builder.subagentFactory(name,</span> <span class="pre">factory)</span></code></p></li>
+<li><p>Custom factories: <code class="docutils literal notranslate"><span class="pre">builder.subagentFactory(name,</span> <span class="pre">factory)</span></code> or
+<code class="docutils literal notranslate"><span class="pre">builder.subagentFactory(name,</span> <span class="pre">description,</span> <span class="pre">factory)</span></code> to give the orchestrator a meaningful
+description instead of the bare name (falls back to the name when omitted or blank)</p></li>
 </ol>
 </section>
 <hr class="docutils" />
@@ -1335,7 +1337,7 @@ Its goal is to “mirror the parent agent’s capabilities”:</p>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-18</div>
           </div>
           <div class="right-details">
             <div class="icons">
