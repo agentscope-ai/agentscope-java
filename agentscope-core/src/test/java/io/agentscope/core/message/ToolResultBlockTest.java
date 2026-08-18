@@ -22,11 +22,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ToolResultBlockTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void legacyStateConstructorDefaultsToLocalResult() {
+        ToolResultBlock result =
+                new ToolResultBlock(
+                        "tool-call-0",
+                        "local-tool",
+                        List.of(TextBlock.builder().text("ok").build()),
+                        Map.of(),
+                        ToolResultState.SUCCESS);
+
+        assertFalse(result.isServer());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+    }
 
     @Test
     void errorFactoryCreatesStructuredErrorState() {

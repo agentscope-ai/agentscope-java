@@ -65,6 +65,24 @@ public final class ToolResultBlock extends ContentBlock {
         this.server = server;
     }
 
+    /**
+     * Creates a local tool result block with an explicit execution state.
+     *
+     * @param id Tool call ID
+     * @param name Tool name
+     * @param output Tool output content blocks
+     * @param metadata Tool execution metadata
+     * @param state Tool execution state
+     */
+    public ToolResultBlock(
+            String id,
+            String name,
+            List<ContentBlock> output,
+            Map<String, Object> metadata,
+            ToolResultState state) {
+        this(id, name, output, metadata, state, false);
+    }
+
     public ToolResultBlock(
             String id, String name, List<ContentBlock> output, Map<String, Object> metadata) {
         this(id, name, output, metadata, null, false);
