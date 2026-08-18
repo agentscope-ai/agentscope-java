@@ -7,6 +7,22 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Next
+
+### Added
+
+**Harness / Workspace**
+
+- `HarnessAgent.Builder.disableLocalWorkspace()`: opt a build out of materialising the default
+  local workspace (`${user.dir}/.agentscope/workspace`). Intended for SaaS / containerised
+  deployments where all file IO happens inside a remote sandbox or an in-memory / distributed
+  store. When enabled, the workspace resolves to an ephemeral JVM-temp location, no default
+  local filesystem is created, and missing `.stateStore(...)` / `.taskRepository(...)` fail fast
+  with descriptive errors instead of silently persisting to the working directory or
+  `~/.agentscope/state`. See [Workspace → Disabling the local workspace](../harness/workspace.md#disabling-the-local-workspace).
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05
