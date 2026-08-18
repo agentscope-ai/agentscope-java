@@ -36,7 +36,7 @@
  *   | base name "store"  |   | base name "sessions"   |   | base name "snaps"  |
  *   +--------+-----------+   +----------+-------------+   +--------+-----------+
  *            |                          |                          |
- *            v                          v                          v             <- implements (aggregate implements all table-domain interfaces + SandboxLockStrategy)
+ *            v                          v                          v             &lt;- implements (aggregate implements all table-domain interfaces + SandboxLockStrategy)
  *   +--------+--------------------------+--------------------------+-----------+
  *   | AbstractJdbcDialect  aggregate abstract class                                |
  *   | Implements StoreDialect, SessionStateDialect, SnapshotDialect, SandboxLockStrategy |
@@ -46,7 +46,7 @@
  *   | Final name resolution: override > prefix + base                               |
  *   +--------+--------------------------+--------------------------+-----------+
  *            |                          |                          |
- *            v                          v                          v             <- extends (one class per database — ALL differences in one file)
+ *            v                          v                          v             &lt;- extends (one class per database — ALL differences in one file)
  *
  * (2) dialect.vendor: override only DDL + divergent SQL + lock (if native), inherit ANSI defaults
  *
