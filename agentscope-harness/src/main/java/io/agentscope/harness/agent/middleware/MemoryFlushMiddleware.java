@@ -25,6 +25,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
+import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -149,6 +150,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 .doOnComplete(
                         () ->
                                 doFlush(agent, rc)
+                                        .doOnSubscribe(s -> MemoryBackgroundTasks.begin())
+                                        .doFinally(signal -> MemoryBackgroundTasks.end())
                                         .subscribeOn(Schedulers.boundedElastic())
                                         .subscribe(
                                                 null,

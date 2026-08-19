@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -147,6 +148,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 .doOnComplete(
                         () ->
                                 Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
+                                        .doOnSubscribe(s -> MemoryBackgroundTasks.begin())
+                                        .doFinally(signal -> MemoryBackgroundTasks.end())
                                         .subscribeOn(Schedulers.boundedElastic())
                                         .subscribe(
                                                 null,
