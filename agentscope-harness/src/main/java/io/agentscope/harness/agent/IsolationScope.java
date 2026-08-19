@@ -46,9 +46,14 @@ import java.util.List;
  *   <li>{@link #GLOBAL} – globally shared within the same workspace/store instance.</li>
  * </ul>
  *
- * <p><b>Concurrency note:</b> for sandbox mode this is sequential-reuse sharing, not
- * live-instance sharing. Concurrent calls at the same scope each get their own running container;
- * they converge on the last persisted snapshot at the end of the call.
+ * <p><b>Concurrency note:</b> for sandbox mode this is sequential-reuse sharing, not isolated
+ * concurrent sharing: concurrent calls at the same scope may resume the same live sandbox when
+ * its backing runtime is still alive, and the per-call release stops — and, when the sandbox
+ * owns its runtime, terminates — that sandbox, including underneath another in-flight call. To
+ * run same-scope calls concurrently, either serialise them with an
+ * {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard}, or configure the sandbox
+ * client so release only disconnects (keep the backing runtime alive, e.g. claims the caller
+ * does not own).
  */
 public enum IsolationScope {
 
