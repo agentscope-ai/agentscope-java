@@ -34,6 +34,11 @@ public class KubernetesSandboxState extends SandboxState {
      */
     private String fileApiBaseDir = "/workspace";
 
+    /**
+     * Whether this sandbox owns its {@code SandboxClaim}. When {@code true}, {@code shutdown()}
+     * terminates the claim (deleting the pod); when {@code false}, it only closes the
+     * connection and the caller owns claim deletion.
+     */
     private boolean claimOwned = true;
 
     public String getNamespace() {

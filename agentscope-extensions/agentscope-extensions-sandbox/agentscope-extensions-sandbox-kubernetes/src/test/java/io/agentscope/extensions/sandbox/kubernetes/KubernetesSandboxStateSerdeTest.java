@@ -61,4 +61,24 @@ class KubernetesSandboxStateSerdeTest {
         Assertions.assertEquals("/workspace", k.getFileApiBaseDir());
         Assertions.assertTrue(k.isClaimOwned());
     }
+
+    @Test
+    void roundTripClaimOwnedFalse() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule())
+                        .registerModule(new KubernetesHarnessSandboxJacksonModule());
+
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSessionId("s2");
+        state.setClaimName("claim-2");
+        state.setClaimOwned(false);
+        state.setWorkspaceSpec(new WorkspaceSpec());
+
+        String json = mapper.writeValueAsString(state);
+        KubernetesSandboxState k =
+                (KubernetesSandboxState) mapper.readValue(json, SandboxState.class);
+        Assertions.assertFalse(k.isClaimOwned());
+    }
 }

@@ -175,6 +175,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `gatewayName(String)` / `gatewayNamespace(String)` / `gatewayScheme(String)` | 经 Gateway API 访问沙箱 | 无 |
 | `serverPort(int)` | 运行时 HTTP API 端口 | `8888` |
 | `kubernetesClient(KubernetesClient)` | 自定义 fabric8 客户端 | 自动加载 kubeconfig |
+| `claimOwned(boolean)` | 新建沙箱是否持有自己的 `SandboxClaim`；`false` → 每次调用归还时仅断开连接、Pod 保留，claim 删除改由调用方负责（同 scope 并发调用共享同一活 claim 时需要） | `true` |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略（与 PVC 的取舍见沙箱文档） | `NoopSnapshotSpec` |
 
 `apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足[运行时镜像约束](./sandbox.md#运行时镜像约束)；**工作区持久化依赖模板里的 PVC 配置**，详见[沙箱 - Kubernetes 后端的状态保存](./sandbox.md#kubernetes-后端的状态保存pvc-是第一层)。

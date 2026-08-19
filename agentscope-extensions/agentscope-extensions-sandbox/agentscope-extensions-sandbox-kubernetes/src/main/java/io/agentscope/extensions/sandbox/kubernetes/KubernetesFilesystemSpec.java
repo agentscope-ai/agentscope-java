@@ -86,6 +86,20 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Sets whether created sandboxes own their {@code SandboxClaim}. When {@code false}, the
+     * per-call release only closes the connection instead of terminating the claim, so the pod
+     * stays alive across calls — required when concurrent calls at the same isolation scope
+     * share one live claim; claim deletion is then owned by the caller (e.g. idle eviction).
+     *
+     * @param claimOwned whether created sandboxes own their claim
+     * @return this spec
+     */
+    public KubernetesFilesystemSpec claimOwned(boolean claimOwned) {
+        options.setClaimOwned(claimOwned);
+        return this;
+    }
+
     public KubernetesFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;
