@@ -150,8 +150,6 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 .doOnComplete(
                         () ->
                                 doFlush(agent, rc)
-                                        .doOnSubscribe(s -> MemoryBackgroundTasks.begin())
-                                        .doFinally(signal -> MemoryBackgroundTasks.end())
                                         .subscribeOn(Schedulers.boundedElastic())
                                         .subscribe(
                                                 null,
@@ -179,6 +177,11 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         boolean shouldFlush = shouldFlushNow(rc);
         Mono<Void> flushMono;
         if (shouldFlush) {
+            // Track the in-flight task synchronously, before subscribeOn hands the subscription to
+            // a
+            // background thread. This both skips the counter for no-op flushes and eliminates the
+            // (tiny) race where awaitQuiescence could observe a zero counter before begin() runs.
+            MemoryBackgroundTasks.begin();
             flushMono =
                     flushManager
                             .flushMemories(rc, messages)
@@ -187,7 +190,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                                     e -> {
                                         log.warn("Memory flush failed: {}", e.getMessage());
                                         return Mono.empty();
-                                    });
+                                    })
+                            .doFinally(signal -> MemoryBackgroundTasks.end());
         } else {
             log.debug("Memory flush skipped (trigger={})", flushTrigger);
             flushMono = Mono.empty();
