@@ -41,9 +41,10 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Middleware that performs periodic memory maintenance after each agent call.
  *
- * <p>Fires on the agent invocation completion (via {@code onAgent concatWith}, after
+ * <p>Fires on the agent invocation completion (via {@code onAgent doOnComplete}, after
  * {@link MemoryFlushMiddleware}) and is throttled by a configurable minimum gap so it
- * does not run on every single call.
+ * does not run on every single call. The maintenance is <em>fire-and-forget</em>: the agent
+ * stream completes immediately while the maintenance runs on a background scheduler.
  *
  * <p>Maintenance steps executed in order:
  * <ol>
@@ -140,17 +141,19 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        // Fire-and-forget: the agent stream completes immediately and maintenance runs on a
+        // background scheduler so a slow consolidation never blocks the caller.
         return next.apply(input)
-                .concatWith(
-                        Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn(
-                                                    "Memory maintenance failed: {}",
-                                                    e.getMessage());
-                                            return Mono.empty();
-                                        }));
+                .doOnComplete(
+                        () ->
+                                Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .subscribe(
+                                                null,
+                                                e ->
+                                                        log.warn(
+                                                                "Memory maintenance failed: {}",
+                                                                e.getMessage())));
     }
 
     private void maybeRunMaintenance(RuntimeContext rc) {

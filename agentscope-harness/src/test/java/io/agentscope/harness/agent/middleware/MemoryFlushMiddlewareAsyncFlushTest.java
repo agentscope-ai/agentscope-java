@@ -1,0 +1,103 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.harness.agent.middleware;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+
+/**
+ * Verifies that {@link MemoryFlushMiddleware#onAgent} completes the agent stream before the
+ * memory flush finishes — the flush is fire-and-forget so a slow extraction must never delay
+ * the caller.
+ */
+class MemoryFlushMiddlewareAsyncFlushTest {
+
+    @Test
+    void onCompleteFiresBeforeAsyncFlushCompletes() throws Exception {
+        // A model whose stream never completes: with a blocking flush (concatWith) the agent
+        // stream could never finish; with the fire-and-forget flush it must finish immediately.
+        CountDownLatch flushStarted = new CountDownLatch(1);
+        AtomicReference<List<Msg>> flushedMessages = new AtomicReference<>();
+        Model neverModel =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        flushedMessages.set(messages);
+                        flushStarted.countDown();
+                        return Flux.never();
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "never";
+                    }
+                };
+
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .textContent("remember: deploys happen on Fridays")
+                        .build();
+        AgentState state = AgentState.builder().addMessage(userMsg).build();
+        RuntimeContext rc = RuntimeContext.builder().agentState(state).build();
+        MemoryFlushMiddleware middleware = new MemoryFlushMiddleware(null, neverModel);
+
+        AgentEndEvent event = new AgentEndEvent("reply-1");
+        List<AgentEvent> emitted;
+        try {
+            emitted =
+                    middleware
+                            .onAgent(
+                                    null,
+                                    rc,
+                                    new AgentInput(List.of(userMsg)),
+                                    input -> Flux.just(event))
+                            .collectList()
+                            .block(Duration.ofSeconds(2));
+        } catch (Exception e) {
+            throw new AssertionError(
+                    "agent stream must complete before the (never-finishing) flush does", e);
+        }
+
+        assertEquals(List.of(event), emitted, "agent events must be passed through unchanged");
+        assertTrue(
+                flushStarted.await(5, TimeUnit.SECONDS),
+                "async flush must still be triggered after the stream completes");
+        assertTrue(
+                flushedMessages.get() != null && !flushedMessages.get().isEmpty(),
+                "flush must receive the conversation messages");
+    }
+}

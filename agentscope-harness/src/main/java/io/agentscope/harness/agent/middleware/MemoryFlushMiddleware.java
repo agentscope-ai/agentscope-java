@@ -28,6 +28,7 @@ import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -41,8 +42,10 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Runs in {@link #onAgent}'s {@code doOnComplete} so long-term memories are extracted and
  * persisted after every call, even when conversation compaction was not triggered during that
- * call. When {@link CompactionMiddleware} is active, it handles flush/offload for the messages
- * it summarizes; this middleware covers the remaining tail of messages that were kept verbatim.
+ * call. The flush is <em>fire-and-forget</em>: the agent stream completes immediately while the
+ * extraction runs on a background scheduler. When {@link CompactionMiddleware} is active, it
+ * handles flush/offload for the messages it summarizes; this middleware covers the remaining
+ * tail of messages that were kept verbatim.
  *
  * <p>Flush is gated by a {@link MemoryConfig.FlushTrigger}:
  * <ul>
@@ -140,16 +143,19 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        // Flush is fire-and-forget: the agent stream completes immediately and the (potentially
+        // slow) memory extraction runs on a background scheduler so it never blocks the caller.
         return next.apply(input)
-                .concatWith(
-                        Mono.defer(() -> doFlush(agent, rc))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn("Memory flush failed: {}", e.getMessage());
-                                            return Mono.empty();
-                                        })
-                                .then(Mono.<AgentEvent>empty()));
+                .doOnComplete(
+                        () ->
+                                doFlush(agent, rc)
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .subscribe(
+                                                null,
+                                                e ->
+                                                        log.warn(
+                                                                "Memory flush failed: {}",
+                                                                e.getMessage())));
     }
 
     private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
@@ -157,7 +163,9 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         if (state == null) {
             return Mono.empty();
         }
-        List<Msg> messages = state.getContext();
+        // Snapshot the conversation before handing it to the background flush: the state list is
+        // live and may be cleared/replaced by the next agent call while the flush is still running.
+        List<Msg> messages = new ArrayList<>(state.getContext());
         if (messages.isEmpty()) {
             return Mono.empty();
         }
