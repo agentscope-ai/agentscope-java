@@ -124,6 +124,19 @@ class RAGFlowClientTest {
                 .build();
     }
 
+    private Interceptor getRetryInterceptor(RAGFlowClient client)
+            throws ReflectiveOperationException {
+        Field httpClientField = RAGFlowClient.class.getDeclaredField("httpClient");
+        httpClientField.setAccessible(true);
+        OkHttpClient httpClient = (OkHttpClient) httpClientField.get(client);
+        return httpClient.interceptors().stream()
+                .filter(
+                        interceptor ->
+                                interceptor.getClass().getSimpleName().equals("RetryInterceptor"))
+                .findFirst()
+                .orElseThrow();
+    }
+
     @Test
     void testRetrieveSuccess() throws Exception {
         mockWebServer.enqueue(createSuccessResponse());
@@ -794,20 +807,7 @@ class RAGFlowClientTest {
                         .maxRetries(1)
                         .build();
         RAGFlowClient client = new RAGFlowClient(config);
-
-        Field httpClientField = RAGFlowClient.class.getDeclaredField("httpClient");
-        httpClientField.setAccessible(true);
-        OkHttpClient httpClient = (OkHttpClient) httpClientField.get(client);
-        Interceptor retryInterceptor =
-                httpClient.interceptors().stream()
-                        .filter(
-                                interceptor ->
-                                        interceptor
-                                                .getClass()
-                                                .getSimpleName()
-                                                .equals("RetryInterceptor"))
-                        .findFirst()
-                        .orElseThrow();
+        Interceptor retryInterceptor = getRetryInterceptor(client);
 
         Interceptor.Chain chain = mock(Interceptor.Chain.class);
         Request request = new Request.Builder().url(mockWebServer.url("/api/v1/retrieval")).build();
@@ -829,6 +829,33 @@ class RAGFlowClientTest {
         assertEquals("{\"message\": \"final failure\"}", returned.body().string());
         verify(chain, times(2)).proceed(request);
         verify(finalErrorResponse, never()).close();
+    }
+
+    @Test
+    void testRetryThrowsFinalIOExceptionAfterEarlierIOException() throws Exception {
+        RAGFlowConfig config =
+                RAGFlowConfig.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockWebServer.url("").toString().replaceAll("/$", ""))
+                        .addDatasetId("dataset-123")
+                        .maxRetries(1)
+                        .build();
+        RAGFlowClient client = new RAGFlowClient(config);
+        Interceptor retryInterceptor = getRetryInterceptor(client);
+
+        Interceptor.Chain chain = mock(Interceptor.Chain.class);
+        Request request = new Request.Builder().url(mockWebServer.url("/api/v1/retrieval")).build();
+        IOException firstException = new IOException("first attempt failed");
+        IOException finalException = new IOException("final attempt failed");
+
+        when(chain.request()).thenReturn(request);
+        when(chain.proceed(request)).thenThrow(firstException).thenThrow(finalException);
+
+        IOException thrown =
+                assertThrows(IOException.class, () -> retryInterceptor.intercept(chain));
+
+        assertSame(finalException, thrown);
+        verify(chain, times(2)).proceed(request);
     }
 
     @Test
