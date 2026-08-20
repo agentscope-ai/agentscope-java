@@ -497,7 +497,7 @@ class E2bEnvdProcessClientTest {
         ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
         verify(mockHttp).newCall(requestCaptor.capture());
         String url = requestCaptor.getValue().url().toString();
-        assertTrue(url.startsWith("https://sandbox.e2b.app/files?path="));
+        assertTrue(url.startsWith("https://49983-test-id.e2b.app/files?path="));
         assertTrue(url.contains("path=%2Ftmp%2Ftest.txt"));
         assertTrue(url.contains("username=user"));
         verify(mockCall).execute();
@@ -566,7 +566,7 @@ class E2bEnvdProcessClientTest {
         ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
         verify(mockHttp).newCall(requestCaptor.capture());
         String url = requestCaptor.getValue().url().toString();
-        assertTrue(url.startsWith("https://sandbox.e2b.app/files?path="));
+        assertTrue(url.startsWith("https://49983-test-id.e2b.app/files?path="));
         assertTrue(url.contains("path=%2Ftmp%2Ftest.txt"));
         assertTrue(url.contains("username=user"));
         verify(mockCall).execute();
@@ -724,31 +724,31 @@ class E2bEnvdProcessClientTest {
     // ---- static utility method tests ----
 
     @Test
-    void filesystemHostWithCustomDomain() throws Exception {
+    void envdHostWithCustomDomain() throws Exception {
         Method method =
-                E2bEnvdProcessClient.class.getDeclaredMethod(
-                        "filesystemHost", E2bSandboxState.class);
+                E2bEnvdProcessClient.class.getDeclaredMethod("envdHost", E2bSandboxState.class);
         method.setAccessible(true);
 
         E2bSandboxState state = mock(E2bSandboxState.class);
         when(state.getSandboxDomain()).thenReturn("custom.com");
+        when(state.getSandboxId()).thenReturn("test-id");
 
         String result = (String) method.invoke(null, state);
-        assertEquals("https://sandbox.custom.com", result);
+        assertEquals("https://49983-test-id.custom.com", result);
     }
 
     @Test
-    void filesystemHostWithDefaultDomain() throws Exception {
+    void envdHostWithDefaultDomain() throws Exception {
         Method method =
-                E2bEnvdProcessClient.class.getDeclaredMethod(
-                        "filesystemHost", E2bSandboxState.class);
+                E2bEnvdProcessClient.class.getDeclaredMethod("envdHost", E2bSandboxState.class);
         method.setAccessible(true);
 
         E2bSandboxState state = mock(E2bSandboxState.class);
         when(state.getSandboxDomain()).thenReturn(null);
+        when(state.getSandboxId()).thenReturn("test-id");
 
         String result = (String) method.invoke(null, state);
-        assertEquals("https://sandbox.e2b.app", result);
+        assertEquals("https://49983-test-id.e2b.app", result);
     }
 
     @Test

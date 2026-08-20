@@ -357,7 +357,7 @@ final class E2bEnvdProcessClient {
      * @param data       file content
      */
     public void uploadFile(E2bSandboxState state, String remotePath, byte[] data) throws Exception {
-        String host = filesystemHost(state);
+        String host = envdHost(state);
         String url = host + filesUrl(remotePath);
 
         RequestBody fileBody = RequestBody.create(data, APPLICATION_OCTET_STREAM);
@@ -386,7 +386,7 @@ final class E2bEnvdProcessClient {
      * @return file content
      */
     public byte[] downloadFile(E2bSandboxState state, String remotePath) throws Exception {
-        String host = filesystemHost(state);
+        String host = envdHost(state);
         String url = host + filesUrl(remotePath);
         Request req = buildFilesystemRequest(url, state).get().build();
         try (Response res = http.newCall(req).execute()) {
@@ -441,11 +441,6 @@ final class E2bEnvdProcessClient {
             rb.addHeader("X-Access-Token", state.getEnvdAccessToken());
         }
         return rb;
-    }
-
-    private static String filesystemHost(E2bSandboxState state) {
-        String dom = state.getSandboxDomain();
-        return "https://sandbox." + (dom != null && !dom.isBlank() ? dom : "e2b.app");
     }
 
     private E2bCodec codec() {
