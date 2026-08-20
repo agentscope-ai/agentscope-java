@@ -83,15 +83,18 @@ public class ThreadSessionManager {
     public Agent getOrCreateAgent(String threadId, String agentId, Supplier<Agent> agentFactory) {
         ensureCapacity();
 
+        // Use compute() for atomic check-and-update to avoid race conditions
         ThreadSession session =
                 sessions.compute(
                         threadId,
                         (k, existing) -> {
                             if (existing == null) {
+                                // No existing session, create new one
                                 logger.debug("Creating new session for threadId: {}", threadId);
                                 return new ThreadSession(agentId, agentFactory.get());
                             }
                             if (!existing.getAgentId().equals(agentId)) {
+                                // Agent type changed, create new session
                                 logger.debug(
                                         "Agent type changed for threadId {}: {} -> {}",
                                         threadId,
@@ -103,6 +106,7 @@ public class ThreadSessionManager {
                                 replacement.setArchived(existing.isArchived());
                                 return replacement;
                             }
+                            // Same agent type, update access time and reuse
                             existing.updateLastAccess();
                             return existing;
                         });
@@ -150,10 +154,6 @@ public class ThreadSessionManager {
 
     /**
      * Check if a session exists and has memory for the given threadId.
-     *
-     * <p>AG-UI runs bind conversation state to {@code RuntimeContext.sessionId = threadId}, so
-     * this check must read that slot — not {@link ReActAgent#getAgentState()} which resolves the
-     * agent's default session and would always look empty.
      *
      * @param threadId The thread identifier
      * @return true if the session exists and the agent has non-empty memory
