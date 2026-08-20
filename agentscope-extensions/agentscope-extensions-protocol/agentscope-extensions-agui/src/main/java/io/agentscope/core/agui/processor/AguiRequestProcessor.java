@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agui.processor;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
@@ -23,6 +24,7 @@ import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -84,7 +86,29 @@ public class AguiRequestProcessor {
      * @param agent The resolved agent instance
      * @param events The event stream
      */
-    public record ProcessResult(Agent agent, Flux<AguiEvent> events) {}
+    public record ProcessResult(Agent agent, Flux<AguiEvent> events) {
+
+        /**
+         * Interrupt this request's active session.
+         *
+         * <p>AG-UI uses {@code threadId} as the session id. For a multi-session
+         * {@link ReActAgent}, preserve the caller's user id and target that session instead of
+         * invoking the deprecated no-argument interrupt method, which always targets the default
+         * session.
+         *
+         * @param threadId The AG-UI thread id for this request
+         * @param runtimeContext The caller-provided runtime context, may be null
+         */
+        public void interrupt(String threadId, RuntimeContext runtimeContext) {
+            if (agent instanceof ReActAgent reActAgent) {
+                RuntimeContext interruptContext =
+                        RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
+                reActAgent.interrupt(interruptContext);
+            } else {
+                agent.interrupt();
+            }
+        }
+    }
 
     /**
      * Process an AG-UI request and return the result containing agent and event stream.
@@ -132,7 +156,9 @@ public class AguiRequestProcessor {
                             if (beginResult.isError()) {
                                 return Flux.fromIterable(
                                         resumeCoordinator.contractErrorEvents(
-                                                input, beginResult.message()));
+                                                input,
+                                                beginResult.message(),
+                                                config.isEmitRunFinishedAfterError()));
                             }
 
                             try {
@@ -183,16 +209,20 @@ public class AguiRequestProcessor {
     private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
         String errorMessage =
                 error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
-        return Flux.just(
-                new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input),
+        List<AguiEvent> events = new ArrayList<>();
+        events.add(new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input));
+        events.add(
                 new AguiEvent.RunError(
                         input.getThreadId(),
                         input.getRunId(),
                         errorMessage,
                         mapErrorCode(error),
                         System.currentTimeMillis(),
-                        null),
-                new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+                        null));
+        if (config.isEmitRunFinishedAfterError()) {
+            events.add(new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+        }
+        return Flux.fromIterable(events);
     }
 
     private static String mapErrorCode(Throwable error) {

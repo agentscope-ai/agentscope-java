@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -38,6 +40,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 /** Tests message routing between summarization, memory flushing, and the preserved tail. */
 class ConversationCompactorTest {
@@ -143,6 +146,53 @@ class ConversationCompactorTest {
         assertTrue(fixture.flushInputs.isEmpty());
     }
 
+    /** Verifies that memory-flush fallback does not swallow a user interruption. */
+    @Test
+    void compactIfNeeded_propagatesInterruptedMemoryFlush() {
+        RecordingModel model = new RecordingModel();
+        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
+        when(flushManager.flushMemories(any(RuntimeContext.class), anyList()))
+                .thenReturn(Mono.error(new InterruptedException("interrupted while flushing")));
+        ConversationCompactor compactor = new ConversationCompactor(model, flushManager);
+
+        StepVerifier.create(
+                        compactor.compactIfNeeded(
+                                mock(RuntimeContext.class),
+                                compactableMessages(),
+                                config(true, false),
+                                "agent-id",
+                                "session-id"))
+                .expectError(InterruptedException.class)
+                .verify();
+    }
+
+    /** Verifies that message-offload fallback does not swallow a wrapped interruption. */
+    @Test
+    void compactIfNeeded_propagatesInterruptedMessageOffload() {
+        RecordingModel model = new RecordingModel();
+        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
+        doThrow(
+                        new IllegalStateException(
+                                "offload wrapper",
+                                new InterruptedException("interrupted while offloading")))
+                .when(flushManager)
+                .offloadMessages(any(RuntimeContext.class), anyList(), anyString(), anyString());
+        ConversationCompactor compactor = new ConversationCompactor(model, flushManager);
+
+        StepVerifier.create(
+                        compactor.compactIfNeeded(
+                                mock(RuntimeContext.class),
+                                compactableMessages(),
+                                config(false, true),
+                                "agent-id",
+                                "session-id"))
+                .expectErrorMatches(
+                        error ->
+                                error instanceof IllegalStateException
+                                        && error.getCause() instanceof InterruptedException)
+                .verify();
+    }
+
     /** Creates a regular user message. */
     private static Msg message(String text) {
         return Msg.builder()
@@ -157,6 +207,27 @@ class ConversationCompactorTest {
                 .role(MsgRole.USER)
                 .name(ConversationCompactor.SUMMARY_MSG_NAME)
                 .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    /** Creates an input that always triggers compaction and retains a two-message tail. */
+    private static List<Msg> compactableMessages() {
+        return List.of(message("M1"), message("M2"), message("TAIL_1"), message("TAIL_2"));
+    }
+
+    /** Creates focused compaction configuration for fallback-boundary tests. */
+    private static CompactionConfig config(
+            boolean flushBeforeCompact, boolean offloadBeforeCompact) {
+        return CompactionConfig.builder()
+                .triggerMessages(3)
+                .triggerTokens(0)
+                .keepMessages(2)
+                .keepTokens(0)
+                .summaryPrompt("SUMMARY_INPUT:\n{messages}")
+                .flushBeforeCompact(flushBeforeCompact)
+                .offloadBeforeCompact(offloadBeforeCompact)
+                .truncateArgs(null)
+                .prune(null)
                 .build();
     }
 
@@ -195,18 +266,7 @@ class ConversationCompactorTest {
                                 return Mono.empty();
                             });
             compactor = new ConversationCompactor(model, flushManager);
-            config =
-                    CompactionConfig.builder()
-                            .triggerMessages(3)
-                            .triggerTokens(0)
-                            .keepMessages(2)
-                            .keepTokens(0)
-                            .summaryPrompt("SUMMARY_INPUT:\n{messages}")
-                            .flushBeforeCompact(flushBeforeCompact)
-                            .offloadBeforeCompact(false)
-                            .truncateArgs(null)
-                            .prune(null)
-                            .build();
+            config = config(flushBeforeCompact, false);
         }
 
         /** Runs compaction and requires the supplied input to trigger it. */
