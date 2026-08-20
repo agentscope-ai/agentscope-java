@@ -46,6 +46,36 @@ import reactor.core.publisher.Flux;
 class AguiMvcControllerTest {
 
     @Test
+    void eventStreamSignalsAreForwardedAndEmitterCompletes() throws Exception {
+        ControllerFixture fixture =
+                fixture(true, Flux.just(new AguiEvent.RunFinished("thread-1", "run-1")));
+        try {
+            SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
+
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
+            assertEquals(1, fixture.runCount.get());
+        } finally {
+            fixture.executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void eventStreamErrorCompletesEmitter() throws Exception {
+        ControllerFixture fixture =
+                fixture(true, Flux.error(new IllegalStateException("run failed")));
+        try {
+            SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
+
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
+            assertEquals(1, fixture.runCount.get());
+        } finally {
+            fixture.executor.shutdownNow();
+        }
+    }
+
+    @Test
     void sseErrorCancelsSubscriptionAndReleasesThread() throws Exception {
         ControllerFixture fixture = fixture(true);
         try {
@@ -108,10 +138,16 @@ class AguiMvcControllerTest {
     }
 
     private static ControllerFixture fixture(boolean interruptOnDisconnect) {
+        return fixture(interruptOnDisconnect, Flux.never());
+    }
+
+    private static ControllerFixture fixture(
+            boolean interruptOnDisconnect, Flux<AguiEvent> firstRunEvents) {
         ReActAgent agent = mock(ReActAgent.class);
         AguiAgentRegistry registry = new AguiAgentRegistry();
         registry.register("default", agent);
         CountDownLatch firstRunSubscribed = new CountDownLatch(1);
+        CountDownLatch firstRunTerminated = new CountDownLatch(1);
         AtomicInteger runCount = new AtomicInteger();
         AguiMvcController controller =
                 AguiMvcController.builder()
@@ -123,6 +159,8 @@ class AguiMvcControllerTest {
                                                 resolvedAgent,
                                                 config,
                                                 firstRunSubscribed,
+                                                firstRunTerminated,
+                                                firstRunEvents,
                                                 runCount))
                         .build();
         AguiRequestProcessor processor =
@@ -130,7 +168,13 @@ class AguiMvcControllerTest {
         ExecutorService executor =
                 (ExecutorService) ReflectionTestUtils.getField(controller, "executorService");
         return new ControllerFixture(
-                controller, processor, executor, agent, firstRunSubscribed, runCount);
+                controller,
+                processor,
+                executor,
+                agent,
+                firstRunSubscribed,
+                firstRunTerminated,
+                runCount);
     }
 
     private static void invokeError(SseEmitter emitter) {
@@ -153,20 +197,27 @@ class AguiMvcControllerTest {
             ExecutorService executor,
             ReActAgent agent,
             CountDownLatch firstRunSubscribed,
+            CountDownLatch firstRunTerminated,
             AtomicInteger runCount) {}
 
     private static final class TestAdapter extends AguiAgentAdapter {
 
         private final CountDownLatch firstRunSubscribed;
+        private final CountDownLatch firstRunTerminated;
+        private final Flux<AguiEvent> firstRunEvents;
         private final AtomicInteger runCount;
 
         private TestAdapter(
                 Agent agent,
                 AguiAdapterConfig config,
                 CountDownLatch firstRunSubscribed,
+                CountDownLatch firstRunTerminated,
+                Flux<AguiEvent> firstRunEvents,
                 AtomicInteger runCount) {
             super(agent, config);
             this.firstRunSubscribed = firstRunSubscribed;
+            this.firstRunTerminated = firstRunTerminated;
+            this.firstRunEvents = firstRunEvents;
             this.runCount = runCount;
         }
 
@@ -174,7 +225,7 @@ class AguiMvcControllerTest {
         public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
             if (runCount.incrementAndGet() == 1) {
                 firstRunSubscribed.countDown();
-                return Flux.never();
+                return firstRunEvents.doFinally(signalType -> firstRunTerminated.countDown());
             }
             return Flux.empty();
         }
