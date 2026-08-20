@@ -16,8 +16,8 @@
 
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
-import io.a2a.server.TransportMetadata;
-import io.a2a.spec.TransportProtocol;
+import org.a2aproject.sdk.server.TransportMetadata;
+import org.a2aproject.sdk.spec.TransportProtocol;
 
 /**
  * SPI for JSON-RPC transport metadata.

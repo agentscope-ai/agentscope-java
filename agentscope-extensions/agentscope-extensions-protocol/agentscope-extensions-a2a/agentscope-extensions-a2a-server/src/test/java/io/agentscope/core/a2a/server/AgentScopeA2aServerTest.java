@@ -17,6 +17,7 @@
 package io.agentscope.core.a2a.server;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,24 +26,35 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.a2a.server.auth.A2aAuthErrorCodes;
+import io.agentscope.core.a2a.server.auth.A2aAuthException;
+import io.agentscope.core.a2a.server.auth.A2aAuthResolver;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.hitl.HitlResumeCoordinator;
+import io.agentscope.core.a2a.server.hitl.HitlServerProperties;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
+import java.util.Map;
 import java.util.concurrent.Executor;
+import org.a2aproject.sdk.grpc.utils.JSONRPCUtils;
+import org.a2aproject.sdk.grpc.utils.ProtoUtils;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.TextPart;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -129,6 +141,50 @@ class AgentScopeA2aServerTest {
         }
 
         @Test
+        @DisplayName("Should retain explicitly configured authentication resolver")
+        void testBuildServerWithAuthenticationResolver() {
+            when(deploymentProperties.host()).thenReturn("localhost");
+            when(deploymentProperties.port()).thenReturn(8080);
+            A2aAuthResolver resolver = request -> null;
+
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .authResolver(resolver)
+                            .build();
+
+            assertSame(resolver, server.getAuthResolver());
+        }
+
+        @Test
+        @DisplayName("Should wire authentication resolver into the standard JSON-RPC transport")
+        void testBuildServerWiresResolverIntoJsonRpcTransport() {
+            when(deploymentProperties.host()).thenReturn("localhost");
+            when(deploymentProperties.port()).thenReturn(8080);
+            A2aAuthException rejection = new A2aAuthException(401, A2aAuthErrorCodes.AUTH_REQUIRED);
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .authResolver(
+                                    request -> {
+                                        throw rejection;
+                                    })
+                            .build();
+            JsonRpcTransportWrapper wrapper =
+                    server.getTransportWrapper(
+                            TransportProtocol.JSONRPC.asString(), JsonRpcTransportWrapper.class);
+
+            A2aAuthException actual =
+                    assertThrows(
+                            A2aAuthException.class,
+                            () ->
+                                    wrapper.handleRequest(
+                                            sendMessageRequestBody(), Map.of(), Map.of()));
+
+            assertSame(rejection, actual);
+        }
+
+        @Test
         @DisplayName("Should throw exception when AgentRunner is missing")
         void testBuildWithoutAgentRunner() {
             assertThrows(
@@ -180,6 +236,41 @@ class AgentScopeA2aServerTest {
 
             assertSame(builder, result);
             assertNotNull(builder.build());
+        }
+
+        @Test
+        @DisplayName("Should set HITL coordinator and server properties")
+        void testHitlConfiguration() {
+            HitlResumeCoordinator coordinator = mock(HitlResumeCoordinator.class);
+            HitlServerProperties properties =
+                    HitlServerProperties.builder()
+                            .enabled(true)
+                            .durability(HitlServerProperties.Durability.LOCAL)
+                            .build();
+
+            AgentScopeA2aServer.Builder builder =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties);
+
+            assertSame(builder, builder.hitlResumeCoordinator(coordinator));
+            assertSame(builder, builder.hitlServerProperties(properties));
+            assertNotNull(builder.build());
+        }
+
+        @Test
+        @DisplayName("Should keep HITL admission out of the default request path")
+        void testHitlDisabledByDefault() throws Exception {
+            MockTransportWrapperBuilder.lastRequestHandler = null;
+
+            AgentScopeA2aServer.builder(agentRunner)
+                    .withTransport(TransportProperties.builder("MOCK_SUCCESS").build())
+                    .build();
+
+            RequestHandler requestHandler = MockTransportWrapperBuilder.lastRequestHandler;
+            assertNotNull(requestHandler);
+            var admissionField = requestHandler.getClass().getDeclaredField("hitlTurnAdmission");
+            admissionField.setAccessible(true);
+            assertNull(admissionField.get(requestHandler));
         }
 
         @Test
@@ -268,6 +359,7 @@ class AgentScopeA2aServerTest {
 
             AgentScopeA2aServer.Builder builder =
                     AgentScopeA2aServer.builder(agentRunner)
+                            .withTransport(TransportProperties.builder("MOCK_SUCCESS").build())
                             .deploymentProperties(deploymentProperties);
             AgentScopeA2aServer.Builder result = builder.withAgentRegistry(agentRegistry);
 
@@ -389,6 +481,8 @@ class AgentScopeA2aServerTest {
     public static class MockTransportWrapperBuilder
             implements TransportWrapperBuilder<TransportWrapper> {
 
+        private static volatile RequestHandler lastRequestHandler;
+
         @Override
         public String getTransportType() {
             return "MOCK_SUCCESS";
@@ -400,6 +494,7 @@ class AgentScopeA2aServerTest {
                 RequestHandler requestHandler,
                 Executor executor,
                 AgentCard extendedAgentCard) {
+            lastRequestHandler = requestHandler;
             return mock(TransportWrapper.class);
         }
     }
@@ -419,6 +514,7 @@ class AgentScopeA2aServerTest {
                 RequestHandler requestHandler,
                 Executor executor,
                 AgentCard extendedAgentCard) {
+            MockTransportWrapperBuilder.lastRequestHandler = requestHandler;
             return mock(TransportWrapper.class);
         }
     }
@@ -440,5 +536,18 @@ class AgentScopeA2aServerTest {
                 AgentCard extendedAgentCard) {
             throw new RuntimeException("mock exception");
         }
+    }
+
+    private String sendMessageRequestBody() {
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_USER)
+                        .parts(new TextPart("Hello"))
+                        .messageId("message-1")
+                        .contextId("context-1")
+                        .build();
+        MessageSendParams params = MessageSendParams.builder().message(message).build();
+        return JSONRPCUtils.toJsonRPCRequest(
+                "1", "SendMessage", ProtoUtils.ToProto.sendMessageRequest(params));
     }
 }

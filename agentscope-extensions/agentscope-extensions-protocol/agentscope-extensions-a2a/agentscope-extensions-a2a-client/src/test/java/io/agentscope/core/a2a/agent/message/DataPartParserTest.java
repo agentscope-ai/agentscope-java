@@ -16,17 +16,21 @@
 package io.agentscope.core.a2a.agent.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.a2a.spec.DataPart;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -139,6 +143,57 @@ class DataPartParserTest {
         assertEquals("calculator", toolResultBlock.getName());
         assertEquals("123", toolResultBlock.getId());
         assertEquals(outputList, toolResultBlock.getOutput());
+    }
+
+    @Test
+    @DisplayName("Should restore protobuf-safe tool result content maps and state")
+    void shouldRestoreProtobufSafeToolResultContentMapsAndState() {
+        Map<String, Object> metadata =
+                Map.of(
+                        MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                        MessageConstants.BlockContent.TYPE_TOOL_RESULT,
+                        MessageConstants.TOOL_NAME_METADATA_KEY,
+                        "chart",
+                        MessageConstants.TOOL_CALL_ID_METADATA_KEY,
+                        "call-1",
+                        MessageConstants.TOOL_RESULT_STATE_METADATA_KEY,
+                        "success");
+        Map<String, Object> text = Map.of("type", "text", "text", "created");
+        Map<String, Object> media =
+                Map.of(
+                        "type",
+                        "data",
+                        "id",
+                        "data-1",
+                        "name",
+                        "chart.png",
+                        "source",
+                        Map.of(
+                                "type",
+                                "url",
+                                "url",
+                                "https://example.test/chart.png",
+                                "mime_type",
+                                "image/png"));
+        DataPart part =
+                new DataPart(
+                        Map.of(
+                                MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY,
+                                List.of(text, media)),
+                        metadata);
+
+        ToolResultBlock result = assertInstanceOf(ToolResultBlock.class, parser.parse(part));
+
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertEquals(2, result.getOutput().size());
+        assertEquals(
+                "created", assertInstanceOf(TextBlock.class, result.getOutput().get(0)).getText());
+        DataBlock dataBlock = assertInstanceOf(DataBlock.class, result.getOutput().get(1));
+        assertEquals("data-1", dataBlock.getId());
+        assertEquals("chart.png", dataBlock.getName());
+        assertEquals(
+                "https://example.test/chart.png",
+                assertInstanceOf(URLSource.class, dataBlock.getSource()).getUrl());
     }
 
     @Test

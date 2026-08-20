@@ -123,10 +123,12 @@ import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolConfirmation;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.UserConfirmableTool;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
@@ -1933,18 +1935,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * </ul>
          */
         private void applyConfirmResults(List<ConfirmResult> results) {
-            // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
-            // promote them to ALLOWED. Collect denied ones for separate handling.
+            Map<String, ToolUseBlock> storedAsking =
+                    askingToolCalls().stream()
+                            .collect(Collectors.toMap(ToolUseBlock::getId, Function.identity()));
             List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
             for (ConfirmResult r : results) {
-                ToolUseBlock target = r.getToolCall();
-                if (target == null) {
+                ToolUseBlock supplied = r.getToolCall();
+                if (supplied == null) {
                     continue;
                 }
+                ToolUseBlock stored = storedAsking.get(supplied.getId());
+                if (stored == null) {
+                    continue;
+                }
+                boolean immutablePrepared = isPrepared(stored) && isImmutable(stored);
                 if (r.isConfirmed()) {
-                    replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
-                    if (r.getRules() != null) {
+                    ToolUseBlock approved = immutablePrepared ? stored : supplied;
+                    replacements.put(stored.getId(), approved.withState(ToolCallState.ALLOWED));
+                    if (!immutablePrepared && r.getRules() != null) {
                         for (PermissionRule rule : r.getRules()) {
                             if (rule != null) {
                                 permissionEngine.addRule(rule);
@@ -1952,7 +1961,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         }
                     }
                 } else {
-                    deniedToolCalls.add(target);
+                    deniedToolCalls.add(stored);
                 }
             }
             applyToolUseBlockReplacements(replacements);
@@ -2787,62 +2796,191 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return evaluatePermissions(toolCalls)
                     .flatMapMany(
                             gate -> {
-                                List<ToolUseBlock> pending = gate.pendingAsk();
+                                List<ToolUseBlock> permissionPending = gate.pendingAsk();
                                 Set<String> autoDenied = gate.autoDeniedIds();
 
-                                // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
-                                // calls run immediately; ASKING calls cause the agent to pause and
-                                // return; DENIED calls get DENIED ToolResultBlocks written below.
-                                Map<String, ToolCallState> stateUpdates = new HashMap<>();
-                                for (ToolUseBlock tc : toolCalls) {
-                                    if (autoDenied.contains(tc.getId())) {
-                                        // DENIED tools don't need a state change — they'll get a
-                                        // DENIED ToolResultBlock and won't reappear in pending.
-                                        continue;
-                                    }
-                                    stateUpdates.put(
-                                            tc.getId(),
-                                            pending.stream()
-                                                            .anyMatch(
-                                                                    p ->
-                                                                            p.getId()
-                                                                                    .equals(
-                                                                                            tc
-                                                                                                    .getId()))
-                                                    ? ToolCallState.ASKING
-                                                    : ToolCallState.ALLOWED);
-                                }
-                                updateToolCallStates(stateUpdates);
-
-                                if (pending.isEmpty()) {
-                                    return runToolBatch(
-                                            toolCalls, autoDenied, replyId, resultHolder);
+                                if (!permissionPending.isEmpty()) {
+                                    updatePermissionStates(
+                                            toolCalls, permissionPending, autoDenied);
+                                    return pauseForConfirmation(
+                                            toolCalls,
+                                            permissionPending,
+                                            autoDenied,
+                                            replyId,
+                                            resultHolder,
+                                            "permission asking");
                                 }
 
-                                // Permission HITL: surface the pending tool calls, persist any
-                                // auto-denied results so the second call can identify which ones
-                                // still need confirmation, then signal stop via RequestStopEvent.
-                                // The agent's acting() will see the RequestStopEvent, set the
-                                // GenerateReason to PERMISSION_ASKING, and return.
-                                if (!autoDenied.isEmpty()) {
-                                    // Write DENIED results in-place so they aren't re-evaluated on
-                                    // resume.
-                                    writeAutoDeniedResults(toolCalls, autoDenied);
-                                }
-                                // resultHolder may be inspected by the caller after stream
-                                // completion;
-                                // initialise it to empty since no successful execution happened.
-                                resultHolder.set(List.of());
-                                persistPendingRequestReplyId(
-                                        Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
-                                return Flux.<AgentEvent>just(
-                                        new RequireUserConfirmEvent(replyId, pending),
-                                        new RequestStopEvent(
-                                                "permission asking",
-                                                GenerateReason.PERMISSION_ASKING));
+                                return prepareConfirmableTools(toolCalls, autoDenied)
+                                        .flatMapMany(
+                                                prepared -> {
+                                                    applyToolUseBlockReplacements(
+                                                            prepared.replacements());
+                                                    if (!prepared.pendingConfirmations()
+                                                            .isEmpty()) {
+                                                        return pauseForConfirmation(
+                                                                prepared.toolCalls(),
+                                                                prepared.pendingConfirmations(),
+                                                                autoDenied,
+                                                                replyId,
+                                                                resultHolder,
+                                                                "tool confirmation asking");
+                                                    }
+                                                    return runToolBatch(
+                                                            prepared.toolCalls(),
+                                                            autoDenied,
+                                                            replyId,
+                                                            resultHolder);
+                                                });
                             })
                     .doOnNext(this::publishEvent);
         }
+
+        private void updatePermissionStates(
+                List<ToolUseBlock> toolCalls, List<ToolUseBlock> pending, Set<String> autoDenied) {
+            Set<String> pendingIds =
+                    pending.stream().map(ToolUseBlock::getId).collect(Collectors.toSet());
+            Map<String, ToolCallState> stateUpdates = new HashMap<>();
+            for (ToolUseBlock toolCall : toolCalls) {
+                if (!autoDenied.contains(toolCall.getId())) {
+                    stateUpdates.put(
+                            toolCall.getId(),
+                            pendingIds.contains(toolCall.getId())
+                                    ? ToolCallState.ASKING
+                                    : ToolCallState.ALLOWED);
+                }
+            }
+            updateToolCallStates(stateUpdates);
+        }
+
+        private Flux<AgentEvent> pauseForConfirmation(
+                List<ToolUseBlock> toolCalls,
+                List<ToolUseBlock> pending,
+                Set<String> autoDenied,
+                String replyId,
+                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder,
+                String reason) {
+            if (!autoDenied.isEmpty()) {
+                writeAutoDeniedResults(toolCalls, autoDenied);
+            }
+            resultHolder.set(List.of());
+            persistPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
+            return Flux.just(
+                    new RequireUserConfirmEvent(replyId, pending),
+                    new RequestStopEvent(reason, GenerateReason.PERMISSION_ASKING));
+        }
+
+        private Mono<PreparedToolBatch> prepareConfirmableTools(
+                List<ToolUseBlock> toolCalls, Set<String> autoDenied) {
+            return Flux.fromIterable(toolCalls)
+                    .concatMap(
+                            toolCall -> {
+                                if (autoDenied.contains(toolCall.getId())) {
+                                    return Mono.just(new PreparedToolCall(toolCall, false));
+                                }
+                                if (isPrepared(toolCall)) {
+                                    return Mono.just(
+                                            new PreparedToolCall(
+                                                    toolCall,
+                                                    toolCall.getState() != ToolCallState.ALLOWED
+                                                            && requiresConfirmation(toolCall)));
+                                }
+                                AgentTool tool = toolkit.getTool(toolCall.getName());
+                                if (!(tool instanceof UserConfirmableTool confirmable)) {
+                                    return Mono.just(
+                                            new PreparedToolCall(
+                                                    toolCall.withState(ToolCallState.ALLOWED),
+                                                    false));
+                                }
+                                ToolCallParam param =
+                                        ToolCallParam.builder()
+                                                .toolUseBlock(toolCall)
+                                                .input(toolCall.getInput())
+                                                .agent(ReActAgent.this)
+                                                .runtimeContext(buildMergedRuntimeContext(rc))
+                                                .build();
+                                return confirmable
+                                        .prepareConfirmation(param)
+                                        .switchIfEmpty(
+                                                Mono.error(
+                                                        new IllegalStateException(
+                                                                "Tool confirmation preparation"
+                                                                        + " returned empty: "
+                                                                        + toolCall.getName())))
+                                        .map(
+                                                confirmation ->
+                                                        preparedToolCall(toolCall, confirmation));
+                            })
+                    .collectList()
+                    .map(
+                            preparedCalls -> {
+                                List<ToolUseBlock> prepared =
+                                        preparedCalls.stream()
+                                                .map(PreparedToolCall::toolCall)
+                                                .toList();
+                                List<ToolUseBlock> pending =
+                                        preparedCalls.stream()
+                                                .filter(PreparedToolCall::confirmationRequired)
+                                                .map(PreparedToolCall::toolCall)
+                                                .toList();
+                                Map<String, ToolUseBlock> replacements =
+                                        prepared.stream()
+                                                .filter(
+                                                        toolCall ->
+                                                                !autoDenied.contains(
+                                                                        toolCall.getId()))
+                                                .collect(
+                                                        Collectors.toMap(
+                                                                ToolUseBlock::getId,
+                                                                Function.identity()));
+                                return new PreparedToolBatch(prepared, pending, replacements);
+                            });
+        }
+
+        private PreparedToolCall preparedToolCall(
+                ToolUseBlock original, ToolConfirmation confirmation) {
+            if (confirmation == null) {
+                throw new IllegalStateException(
+                        "Tool confirmation preparation returned null: " + original.getName());
+            }
+            Map<String, Object> metadata = new HashMap<>(original.getMetadata());
+            metadata.put(ToolConfirmation.METADATA_PREPARED, true);
+            metadata.put(ToolConfirmation.METADATA_IMMUTABLE, confirmation.isImmutable());
+            metadata.put(ToolConfirmation.METADATA_REQUIRED, confirmation.isConfirmationRequired());
+            ToolUseBlock prepared =
+                    new ToolUseBlock(
+                            original.getId(),
+                            original.getName(),
+                            confirmation.getPreparedInput(),
+                            confirmation.getPrompt(),
+                            metadata,
+                            confirmation.isConfirmationRequired()
+                                    ? ToolCallState.ASKING
+                                    : ToolCallState.ALLOWED);
+            return new PreparedToolCall(prepared, confirmation.isConfirmationRequired());
+        }
+
+        private boolean isPrepared(ToolUseBlock toolCall) {
+            return Boolean.TRUE.equals(
+                    toolCall.getMetadata().get(ToolConfirmation.METADATA_PREPARED));
+        }
+
+        private boolean isImmutable(ToolUseBlock toolCall) {
+            return Boolean.TRUE.equals(
+                    toolCall.getMetadata().get(ToolConfirmation.METADATA_IMMUTABLE));
+        }
+
+        private boolean requiresConfirmation(ToolUseBlock toolCall) {
+            return Boolean.TRUE.equals(
+                    toolCall.getMetadata().get(ToolConfirmation.METADATA_REQUIRED));
+        }
+
+        private record PreparedToolCall(ToolUseBlock toolCall, boolean confirmationRequired) {}
+
+        private record PreparedToolBatch(
+                List<ToolUseBlock> toolCalls,
+                List<ToolUseBlock> pendingConfirmations,
+                Map<String, ToolUseBlock> replacements) {}
 
         /**
          * Synthesise DENIED ToolResultBlocks for tools that were rejected by deny rules and append

@@ -23,14 +23,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.A2A;
-import io.a2a.spec.Message;
-import io.a2a.spec.SendStreamingMessageResponse;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Collections;
 import java.util.Map;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,8 +35,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for {@link A2aJsonRpcController}.
@@ -102,12 +99,10 @@ class A2aJsonRpcControllerTest {
         }
 
         @Test
-        @DisplayName("Should handle JSON-RPC request and return Flux with JSONRPCResponse")
-        void shouldHandleJsonRpcRequestAndReturnFluxWithJsonRpcResponse() {
+        @DisplayName("Should handle serialized JSON-RPC streaming response")
+        void shouldHandleSerializedJsonRpcStreamingResponse() {
             String requestBody = "{\"method\": \"test\"}";
-
-            Message message = A2A.toAgentMessage("test");
-            SendStreamingMessageResponse response = new SendStreamingMessageResponse(1, message);
+            String response = "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"message\":{}}}";
 
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(Flux.just(response));
@@ -117,12 +112,12 @@ class A2aJsonRpcControllerTest {
             assertTrue(result instanceof Flux);
 
             @SuppressWarnings("unchecked")
-            Flux<Object> fluxResult = (Flux<Object>) result;
+            Flux<ServerSentEvent<String>> fluxResult = (Flux<ServerSentEvent<String>>) result;
 
             // Collect and verify the flux result
-            Mono<Long> countMono = fluxResult.count();
-            Long count = countMono.block();
-            assertEquals(1L, count);
+            ServerSentEvent<String> event = fluxResult.single().block();
+            assertEquals("jsonrpc", event.event());
+            assertEquals(response, event.data());
 
             // Verify interactions
             verify(agentScopeA2aServer)

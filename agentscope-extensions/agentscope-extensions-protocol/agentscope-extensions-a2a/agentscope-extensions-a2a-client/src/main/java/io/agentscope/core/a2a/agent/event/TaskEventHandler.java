@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.client.TaskEvent;
-import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.Msg;
+import org.a2aproject.sdk.client.TaskEvent;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,41 +40,37 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
     public void handle(TaskEvent event, ClientEventContext context) {
         Task task = event.getTask();
         context.setTask(task);
+        TaskState state = task.status() == null ? null : task.status().state();
         LoggerUtil.info(
                 log,
-                "[{}] A2A Task {} with status {}",
+                "[{}] A2A inbound event type={} taskId={} state={} final={}",
                 context.getCurrentRequestId(),
-                task.getId(),
-                task.getStatus());
+                TaskEvent.class.getSimpleName(),
+                task.id(),
+                state,
+                TaskTerminalMessageFactory.isTerminal(state));
 
-        context.publishPreReasoning();
-
-        boolean isFinal =
-                task.getStatus() != null
-                        && task.getStatus().state() != null
-                        && task.getStatus().state().isFinal();
-        if (!isFinal) {
+        if (context.isPriorHandoffSnapshot(task)) {
             LoggerUtil.debug(
                     log,
-                    "[{}] TaskEventHandler: task state {} is not terminal, waiting for more"
-                            + " events.",
-                    context.getCurrentRequestId(),
-                    task.getStatus() != null ? task.getStatus().state() : "null");
+                    "[{}] Ignoring prior input-required Task snapshot for HITL turn.",
+                    context.getCurrentRequestId());
             return;
         }
 
-        Msg msg;
-        if (task.getStatus() != null && task.getStatus().message() != null) {
-            msg =
-                    MessageConvertUtil.convertFromMessage(
-                            task.getStatus().message(), context.getAgent().getName());
-        } else {
-            msg =
-                    MessageConvertUtil.convertFromArtifact(
-                            task.getArtifacts(), context.getAgent().getName());
+        if (TaskTerminalMessageFactory.isAuthenticationRequired(state)) {
+            context.completeExceptionally(TaskTerminalMessageFactory.authenticationRequiredError());
+            return;
         }
-        msg = context.publishPostReasoning(msg);
-        if (!context.complete(msg)) {
+        if (!TaskTerminalMessageFactory.isTerminal(state)) {
+            context.publishPreReasoning();
+            return;
+        }
+
+        Msg result =
+                TaskTerminalMessageFactory.create(
+                        task, task.status(), context.getAgent().getName());
+        if (!context.complete(result)) {
             LoggerUtil.debug(
                     log,
                     "[{}] TaskEventHandler: duplicate terminal event ignored.",

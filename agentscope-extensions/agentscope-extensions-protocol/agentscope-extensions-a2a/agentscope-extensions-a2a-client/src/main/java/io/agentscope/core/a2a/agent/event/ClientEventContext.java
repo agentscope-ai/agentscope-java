@@ -16,20 +16,23 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.A2aAgent;
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 
 /**
- * Context for handler {@link io.a2a.client.ClientEvent}.
+ * Context for handler {@link org.a2aproject.sdk.client.ClientEvent}.
  *
  * <p>One A2A task might respond multiple times, so we need a context to store the response.
  */
@@ -44,6 +47,14 @@ public class ClientEventContext {
     private List<Hook> hooks;
 
     private Task task;
+
+    private String priorHandoffId;
+
+    private String priorHandoffTaskId;
+
+    private String priorHandoffContextId;
+
+    private final AtomicBoolean priorSnapshotWindowOpen = new AtomicBoolean(false);
 
     /**
      * Temporarily store the complete historical dialogue context at the time of this call,
@@ -97,18 +108,80 @@ public class ClientEventContext {
         this.inputMessages = inputMessages;
     }
 
+    /**
+     * Ignore the persisted input-required Task snapshot that the SDK replays before executing a
+     * resume/cancel turn. A later pause has a new handoff id and remains terminal for this turn.
+     */
+    public void ignorePriorHandoffSnapshot(String taskId, String contextId, String handoffId) {
+        this.priorHandoffTaskId = normalized(taskId);
+        this.priorHandoffContextId = normalized(contextId);
+        this.priorHandoffId = normalized(handoffId);
+        priorSnapshotWindowOpen.set(
+                priorHandoffTaskId != null
+                        && priorHandoffContextId != null
+                        && priorHandoffId != null);
+    }
+
+    boolean isPriorHandoffSnapshot(Task candidate) {
+        if (!priorSnapshotWindowOpen.compareAndSet(true, false)
+                || candidate == null
+                || !Objects.equals(priorHandoffTaskId, candidate.id())
+                || !Objects.equals(priorHandoffContextId, candidate.contextId())
+                || candidate.status() == null
+                || candidate.status().state() != TaskState.TASK_STATE_INPUT_REQUIRED) {
+            return false;
+        }
+        if (candidate.status().message() == null
+                || candidate.status().message().metadata() == null) {
+            return true;
+        }
+        return Objects.equals(
+                priorHandoffId,
+                candidate
+                        .status()
+                        .message()
+                        .metadata()
+                        .get(MessageConstants.HANDOFF_ID_METADATA_KEY));
+    }
+
+    private static String normalized(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     public boolean isTerminalDelivered() {
         return terminalDelivered.get();
     }
 
+    /**
+     * Close this turn after downstream cancellation without publishing lifecycle hooks or a sink
+     * terminal. Queued SDK callbacks share the same terminal gate and therefore become no-ops.
+     *
+     * @return {@code true} when cancellation won the terminal race
+     */
+    public boolean abandon() {
+        return terminalDelivered.compareAndSet(false, true);
+    }
+
+    /**
+     * Deliver the first terminal message and trigger post-reasoning exactly once.
+     *
+     * @param msg terminal response
+     * @return {@code true} when this call won the terminal race
+     */
     public boolean complete(Msg msg) {
         if (sink == null || !terminalDelivered.compareAndSet(false, true)) {
             return false;
         }
-        sink.success(msg);
+        try {
+            Msg postHookMessage = publishPostReasoning(msg);
+            sink.success(postHookMessage);
+        } catch (Throwable error) {
+            sink.error(error);
+        }
         return true;
     }
 
+    /** Deliver the first terminal transport error. */
     public void completeExceptionally(Throwable error) {
         if (sink == null || !terminalDelivered.compareAndSet(false, true)) {
             return;
@@ -140,7 +213,7 @@ public class ClientEventContext {
      * Trigger ReasoningChunkEvent (streaming process)
      */
     void publishReasoningChunk(Msg chunkMsg) {
-        if (hooks != null && !hooks.isEmpty()) {
+        if (!terminalDelivered.get() && hooks != null && !hooks.isEmpty()) {
             publishPreReasoning(); // If not sent Pre before, send Pre first
             ReasoningChunkEvent chunkEvent =
                     new ReasoningChunkEvent(agent, "A2A", null, chunkMsg, chunkMsg);

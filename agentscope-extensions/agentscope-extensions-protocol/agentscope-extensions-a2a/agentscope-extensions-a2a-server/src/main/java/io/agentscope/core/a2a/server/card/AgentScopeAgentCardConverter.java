@@ -16,15 +16,17 @@
 
 package io.agentscope.core.a2a.server.card;
 
-import io.a2a.spec.AgentCapabilities;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.a2aproject.sdk.spec.AgentCapabilities;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.Legacy_0_3_AgentInterface;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,13 +73,13 @@ public class AgentScopeAgentCardConverter {
             AgentRunner agentRunner,
             Set<TransportProperties> availableTransports) {
         AgentCapabilities capabilities = createDefaultCapabilities();
-        List<AgentInterface> additionalInterfaces =
+        List<AgentInterface> supportedInterfaces =
                 createAdditionalInterfaces(agentCard, availableTransports);
         AgentInterface preferredTransportInterface =
-                getPreferredTransport(agentCard, additionalInterfaces);
-        AgentCard.Builder agentCardBuilder = new AgentCard.Builder();
+                getPreferredTransport(agentCard, supportedInterfaces);
+        AgentCard.Builder agentCardBuilder = AgentCard.builder();
         if (null != preferredTransportInterface) {
-            agentCardBuilder.preferredTransport(preferredTransportInterface.transport());
+            agentCardBuilder.preferredTransport(preferredTransportInterface.protocolBinding());
             agentCardBuilder.url(preferredTransportInterface.url());
         }
         return agentCardBuilder
@@ -90,20 +92,19 @@ public class AgentScopeAgentCardConverter {
                 .defaultInputModes(getModes(agentCard.getDefaultInputModes()))
                 .defaultOutputModes(getModes(agentCard.getDefaultOutputModes()))
                 .skills(null != agentCard.getSkills() ? agentCard.getSkills() : List.of())
-                .supportsAuthenticatedExtendedCard(false)
                 .securitySchemes(agentCard.getSecuritySchemes())
-                .security(agentCard.getSecurity())
+                .securityRequirements(toSecurityRequirements(agentCard.getSecurity()))
                 .iconUrl(agentCard.getIconUrl())
-                .additionalInterfaces(additionalInterfaces)
-                .protocolVersion("0.3.0")
+                .supportedInterfaces(supportedInterfaces)
+                .additionalInterfaces(toLegacyInterfaces(supportedInterfaces))
                 .build();
     }
 
     private AgentCapabilities createDefaultCapabilities() {
-        return new AgentCapabilities.Builder()
+        return AgentCapabilities.builder()
                 .streaming(true)
                 .pushNotifications(false)
-                .stateTransitionHistory(false)
+                .extendedAgentCard(false)
                 .build();
     }
 
@@ -130,7 +131,7 @@ public class AgentScopeAgentCardConverter {
                                 transport ->
                                         TransportProtocol.JSONRPC
                                                 .asString()
-                                                .equals(transport.transport()))
+                                                .equals(transport.protocolBinding()))
                         .findFirst();
         return result.orElseGet(
                 () -> {
@@ -147,6 +148,26 @@ public class AgentScopeAgentCardConverter {
         int port = getPort(transport);
         String url = String.format(URL_PATTERN, schema, transport.host(), port, path);
         return new AgentInterface(transport.transportType(), url);
+    }
+
+    private List<Legacy_0_3_AgentInterface> toLegacyInterfaces(List<AgentInterface> interfaces) {
+        if (interfaces == null) {
+            return null;
+        }
+        return interfaces.stream()
+                .map(
+                        transport ->
+                                new Legacy_0_3_AgentInterface(
+                                        transport.protocolBinding(), transport.url()))
+                .toList();
+    }
+
+    private List<SecurityRequirement> toSecurityRequirements(
+            List<java.util.Map<String, List<String>>> security) {
+        if (security == null) {
+            return null;
+        }
+        return security.stream().map(SecurityRequirement::new).toList();
     }
 
     private String getPath(TransportProperties transport) {

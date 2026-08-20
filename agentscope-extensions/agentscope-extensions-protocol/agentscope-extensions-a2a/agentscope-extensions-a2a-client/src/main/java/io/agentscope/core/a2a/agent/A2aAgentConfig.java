@@ -16,18 +16,38 @@
 
 package io.agentscope.core.a2a.agent;
 
-import io.a2a.client.config.ClientConfig;
-import io.a2a.client.transport.spi.ClientTransport;
-import io.a2a.client.transport.spi.ClientTransportConfig;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import org.a2aproject.sdk.client.config.ClientConfig;
+import org.a2aproject.sdk.client.transport.spi.ClientTransport;
+import org.a2aproject.sdk.client.transport.spi.ClientTransportConfig;
 
 /**
  * Config of A2A Agent.
  */
 public record A2aAgentConfig(
         @SuppressWarnings("rawtypes") Map<Class, ClientTransportConfig> clientTransports,
-        ClientConfig clientConfig) {
+        ClientConfig clientConfig,
+        Map<String, String> defaultHeaders,
+        Map<String, Object> defaultMetadata) {
+
+    public A2aAgentConfig {
+        defaultHeaders = immutableMap(defaultHeaders);
+        defaultMetadata = immutableMap(defaultMetadata);
+    }
+
+    /**
+     * Create a config using the public constructor shape available before the SDK 1.0 migration.
+     *
+     * @param clientTransports client transport configurations
+     * @param clientConfig SDK client configuration
+     */
+    public A2aAgentConfig(
+            @SuppressWarnings("rawtypes") Map<Class, ClientTransportConfig> clientTransports,
+            ClientConfig clientConfig) {
+        this(clientTransports, clientConfig, Map.of(), Map.of());
+    }
 
     /**
      * Create a new builder instance for A2aAgentConfig.
@@ -45,13 +65,17 @@ public record A2aAgentConfig(
 
         private ClientConfig clientConfig;
 
+        private Map<String, String> defaultHeaders = Map.of();
+
+        private Map<String, Object> defaultMetadata = Map.of();
+
         public A2aAgentConfigBuilder() {
             clientTransports = new HashMap<>();
         }
 
         /**
          * Add client transport configuration which will be used to
-         * {@link io.a2a.client.ClientBuilder#withTransport(Class, ClientTransportConfig)}.
+         * {@link org.a2aproject.sdk.client.ClientBuilder#withTransport(Class, ClientTransportConfig)}.
          *
          * @param clazz  the client transport implementation class
          * @param config the client transport configuration
@@ -75,8 +99,29 @@ public record A2aAgentConfig(
             return this;
         }
 
-        public A2aAgentConfig build() {
-            return new A2aAgentConfig(this.clientTransports, this.clientConfig);
+        public A2aAgentConfigBuilder defaultHeaders(Map<String, String> defaultHeaders) {
+            this.defaultHeaders = defaultHeaders;
+            return this;
         }
+
+        public A2aAgentConfigBuilder defaultMetadata(Map<String, Object> defaultMetadata) {
+            this.defaultMetadata = defaultMetadata;
+            return this;
+        }
+
+        public A2aAgentConfig build() {
+            return new A2aAgentConfig(
+                    this.clientTransports,
+                    this.clientConfig,
+                    this.defaultHeaders,
+                    this.defaultMetadata);
+        }
+    }
+
+    private static <K, V> Map<K, V> immutableMap(Map<K, V> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        return Map.copyOf(new LinkedHashMap<>(source));
     }
 }

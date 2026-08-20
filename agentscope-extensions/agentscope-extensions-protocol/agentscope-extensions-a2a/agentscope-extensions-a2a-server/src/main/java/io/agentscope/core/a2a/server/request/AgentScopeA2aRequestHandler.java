@@ -16,36 +16,145 @@
 
 package io.agentscope.core.a2a.server.request;
 
-import io.a2a.server.agentexecution.AgentExecutor;
-import io.a2a.server.events.InMemoryQueueManager;
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.requesthandlers.DefaultRequestHandler;
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.server.tasks.BasePushNotificationSender;
-import io.a2a.server.tasks.InMemoryPushNotificationConfigStore;
-import io.a2a.server.tasks.InMemoryTaskStore;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStateProvider;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.Task;
+import io.agentscope.core.a2a.agent.message.MessageConstants;
+import io.agentscope.core.a2a.server.hitl.HitlAdmissionTicket;
+import io.agentscope.core.a2a.server.hitl.HitlResumeRejectedException;
+import io.agentscope.core.a2a.server.hitl.HitlTurnAdmission;
 import java.lang.reflect.Field;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
+import org.a2aproject.sdk.server.ServerCallContext;
+import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
+import org.a2aproject.sdk.server.events.InMemoryQueueManager;
+import org.a2aproject.sdk.server.events.MainEventBus;
+import org.a2aproject.sdk.server.events.MainEventBusProcessor;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.requesthandlers.DefaultRequestHandler;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.server.tasks.BasePushNotificationSender;
+import org.a2aproject.sdk.server.tasks.InMemoryPushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStateProvider;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.EventKind;
+import org.a2aproject.sdk.spec.InvalidParamsError;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.StreamingEventKind;
+import org.a2aproject.sdk.spec.Task;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The Wrapper for Default {@link RequestHandler} implementation.
  */
 public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implements RequestHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentScopeA2aRequestHandler.class);
+
+    private static final String HITL_REJECTION_MESSAGE = "A2A HITL resume request was rejected";
+
+    private final HitlTurnAdmission hitlTurnAdmission;
+
     private AgentScopeA2aRequestHandler(
             AgentExecutor agentExecutor,
             TaskStore taskStore,
             QueueManager queueManager,
             PushNotificationConfigStore pushConfigStore,
-            PushNotificationSender pushSender,
-            Executor executor) {
-        super(agentExecutor, taskStore, queueManager, pushConfigStore, pushSender, executor);
+            MainEventBusProcessor mainEventBusProcessor,
+            Executor executor,
+            Executor eventConsumerExecutor,
+            HitlTurnAdmission hitlTurnAdmission) {
+        super(
+                agentExecutor,
+                taskStore,
+                queueManager,
+                pushConfigStore,
+                mainEventBusProcessor,
+                executor,
+                eventConsumerExecutor);
+        this.hitlTurnAdmission = hitlTurnAdmission;
+    }
+
+    @Override
+    public EventKind onMessageSend(MessageSendParams params, ServerCallContext context) {
+        HitlAdmissionTicket ticket = prepareAdmission(params, context);
+        if (ticket == null) {
+            return super.onMessageSend(params, context);
+        }
+        try {
+            return super.onMessageSend(ticket.requestParams(), context);
+        } catch (RuntimeException | Error setupFailure) {
+            ticket.abort();
+            throw setupFailure;
+        }
+    }
+
+    @Override
+    public Flow.Publisher<StreamingEventKind> onMessageSendStream(
+            MessageSendParams params, ServerCallContext context) {
+        HitlAdmissionTicket ticket = prepareAdmission(params, context);
+        if (ticket == null) {
+            return super.onMessageSendStream(params, context);
+        }
+        try {
+            return super.onMessageSendStream(ticket.requestParams(), context);
+        } catch (RuntimeException | Error setupFailure) {
+            ticket.abort();
+            throw setupFailure;
+        }
+    }
+
+    private HitlAdmissionTicket prepareAdmission(
+            MessageSendParams params, ServerCallContext context) {
+        if (hitlTurnAdmission == null) {
+            return null;
+        }
+        HitlAdmissionTicket ticket = null;
+        try {
+            ticket = hitlTurnAdmission.admit(params, context);
+            ticket.attach(context);
+            return ticket;
+        } catch (HitlResumeRejectedException rejected) {
+            if (ticket != null) {
+                ticket.abort();
+            }
+            log.warn(
+                    "HITL admission rejected: reason={}, taskId={}, contextId={}, handoffId={}",
+                    rejected.getMessage(),
+                    safeTaskId(params),
+                    safeContextId(params),
+                    safeHandoffId(params));
+            throw new InvalidParamsError(null, HITL_REJECTION_MESSAGE, null);
+        } catch (RuntimeException | Error setupFailure) {
+            if (ticket != null) {
+                ticket.abort();
+            }
+            throw setupFailure;
+        }
+    }
+
+    private String safeTaskId(MessageSendParams params) {
+        return params == null || params.message() == null ? "" : value(params.message().taskId());
+    }
+
+    private String safeContextId(MessageSendParams params) {
+        return params == null || params.message() == null
+                ? ""
+                : value(params.message().contextId());
+    }
+
+    private String safeHandoffId(MessageSendParams params) {
+        if (params == null || params.message() == null || params.message().metadata() == null) {
+            return "";
+        }
+        return value(params.message().metadata().get(MessageConstants.HANDOFF_ID_METADATA_KEY));
+    }
+
+    private String value(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     public static Builder builder() {
@@ -63,6 +172,12 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
         private PushNotificationConfigStore pushConfigStore;
 
         private PushNotificationSender pushSender;
+
+        private MainEventBus mainEventBus;
+
+        private MainEventBusProcessor mainEventBusProcessor;
+
+        private HitlTurnAdmission hitlTurnAdmission;
 
         public Builder agentExecutor(AgentExecutor agentExecutor) {
             this.agentExecutor = agentExecutor;
@@ -89,6 +204,11 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             return this;
         }
 
+        public Builder hitlTurnAdmission(HitlTurnAdmission hitlTurnAdmission) {
+            this.hitlTurnAdmission = hitlTurnAdmission;
+            return this;
+        }
+
         public AgentScopeA2aRequestHandler build() {
             if (null == agentExecutor) {
                 throw new IllegalArgumentException("AgentExecutor is required.");
@@ -96,38 +216,60 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             if (null == taskStore) {
                 taskStore = new InMemoryTaskStore();
             }
-            if (null == queueManager) {
-                if (taskStore instanceof InMemoryTaskStore inMemoryTaskStore) {
-                    queueManager = new InMemoryQueueManager(inMemoryTaskStore);
-                } else {
-                    queueManager =
-                            new InMemoryQueueManager(new AgentScopeTaskStateProvider(taskStore));
-                }
-            }
             if (null == pushConfigStore) {
                 pushConfigStore = new InMemoryPushNotificationConfigStore();
             }
             if (null == pushSender) {
                 pushSender = new BasePushNotificationSender(pushConfigStore);
             }
+            if (null == mainEventBus) {
+                mainEventBus = new MainEventBus();
+            }
+            if (null == queueManager) {
+                TaskStateProvider taskStateProvider = new AgentScopeTaskStateProvider(taskStore);
+                queueManager = new InMemoryQueueManager(taskStateProvider, mainEventBus);
+            }
+            if (null == mainEventBusProcessor) {
+                mainEventBusProcessor =
+                        new MainEventBusProcessor(
+                                mainEventBus, taskStore, pushSender, queueManager);
+                startMainEventBusProcessor(mainEventBusProcessor);
+            }
+            Executor executor = Executors.newCachedThreadPool();
+            Executor eventConsumerExecutor = Executors.newCachedThreadPool();
             AgentScopeA2aRequestHandler result =
                     new AgentScopeA2aRequestHandler(
                             agentExecutor,
                             taskStore,
                             queueManager,
                             pushConfigStore,
-                            pushSender,
-                            // TODO support custom executor.
-                            Executors.newCachedThreadPool());
+                            mainEventBusProcessor,
+                            executor,
+                            eventConsumerExecutor,
+                            hitlTurnAdmission);
             setTimeoutProperties(result);
             return result;
+        }
+
+        private static void startMainEventBusProcessor(
+                MainEventBusProcessor mainEventBusProcessor) {
+            try {
+                var method = MainEventBusProcessor.class.getDeclaredMethod("start");
+                method.setAccessible(true);
+                method.invoke(mainEventBusProcessor);
+            } catch (Exception e) {
+                log.error("Failed to start A2A main event bus processor.", e);
+                throw new IllegalStateException("Failed to start A2A main event bus processor.", e);
+            }
         }
 
         /**
          * A2A Server Request Handler don't provider configurable way to set timeout. So temp use reflection to do.
          *
          * <p>
-         * If no timeout property setting, the blocking A2A request will return innerError immediately.
+         * This Spring/manual construction path does not run the SDK's MicroProfile Config
+         * initialization. Without non-zero timeout values, blocking A2A requests return an
+         * innerError immediately.
          * </p>
          */
         private static void setTimeoutProperties(DefaultRequestHandler requestHandler) {
@@ -143,7 +285,10 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                                 "consumptionCompletionTimeoutSeconds");
                 field.setAccessible(true);
                 field.set(requestHandler, 10);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.error("Failed to configure A2A blocking request timeouts.", e);
+                throw new IllegalStateException(
+                        "Failed to configure A2A blocking request timeouts.", e);
             }
         }
     }
@@ -157,9 +302,9 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                 return false;
             }
             // Task is active if not in final state
-            return task.getStatus() == null
-                    || task.getStatus().state() == null
-                    || !task.getStatus().state().isFinal();
+            return task.status() == null
+                    || task.status().state() == null
+                    || !task.status().state().isFinal();
         }
 
         @Override
@@ -169,9 +314,9 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                 return false;
             }
             // Task is finalized if in final state (ignores grace period)
-            return task.getStatus() != null
-                    && task.getStatus().state() != null
-                    && task.getStatus().state().isFinal();
+            return task.status() != null
+                    && task.status().state() != null
+                    && task.status().state().isFinal();
         }
     }
 }
