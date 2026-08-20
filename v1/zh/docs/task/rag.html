@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="流式输出（Streaming）" href="streaming.html"><link rel="prev" title="智能体技能包 (Agent Skill)" href="agent-skill.html">
+    <meta property="article:modified_time" content="2026-08-20T08:05:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="流式输出（Streaming）" href="streaming.html"><link rel="prev" title="智能体技能包 (Agent Skill)" href="agent-skill.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/task/rag.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1448,7 +1448,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <span class="w">    </span><span class="c1">// === 高级检索功能（可选）===</span>
 <span class="w">    </span><span class="p">.</span><span class="na">useKg</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                               </span><span class="c1">// 知识图谱多跳查询，默认 false</span>
 <span class="w">    </span><span class="p">.</span><span class="na">tocEnhance</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                          </span><span class="c1">// 目录增强检索，默认 false</span>
-<span class="w">    </span><span class="p">.</span><span class="na">rerankId</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w">                                </span><span class="c1">// 重排序模型 ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankId</span><span class="p">(</span><span class="s">"BAAI/bge-reranker-v2-m3@BAAI"</span><span class="p">)</span><span class="w">   </span><span class="c1">// 重排序模型 ID（模型名或 hex UUID）</span>
 <span class="w">    </span><span class="p">.</span><span class="na">keyword</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                             </span><span class="c1">// 关键词匹配，默认 false</span>
 <span class="w">    </span><span class="p">.</span><span class="na">highlight</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                           </span><span class="c1">// 高亮匹配结果，默认 false</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addCrossLanguage</span><span class="p">(</span><span class="s">"en"</span><span class="p">)</span><span class="w">                     </span><span class="c1">// 添加目标语言</span>
@@ -1634,7 +1634,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-20</div>
           </div>
           <div class="right-details">
             <div class="icons">
