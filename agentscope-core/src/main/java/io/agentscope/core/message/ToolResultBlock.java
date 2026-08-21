@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.tool.ToolSuspendException;
@@ -36,6 +37,13 @@ public final class ToolResultBlock extends ContentBlock {
 
     /** Metadata key indicating this result is suspended for external execution. */
     public static final String METADATA_SUSPENDED = "agentscope_suspended";
+
+    /**
+     * Metadata key marking this result as produced by a provider server tool (Boolean value).
+     * Such results (e.g. Anthropic's web_search_tool_result) are returned by the provider inside
+     * the assistant message rather than produced by local tool execution.
+     */
+    public static final String METADATA_SERVER_TOOL = ToolUseBlock.METADATA_SERVER_TOOL;
 
     private final String id;
     private final String name;
@@ -151,6 +159,16 @@ public final class ToolResultBlock extends ContentBlock {
     @JsonInclude
     public boolean isSuspended() {
         return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
+    }
+
+    /**
+     * Checks whether this result was produced by a provider server tool.
+     *
+     * @return true if this result comes from a server-side tool execution
+     */
+    @JsonIgnore
+    public boolean isServerTool() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_SERVER_TOOL));
     }
 
     /**
