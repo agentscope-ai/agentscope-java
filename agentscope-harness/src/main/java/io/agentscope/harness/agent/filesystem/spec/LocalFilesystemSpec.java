@@ -17,7 +17,7 @@ package io.agentscope.harness.agent.filesystem.spec;
 
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.LocalWorkspaceOverlay;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
@@ -245,7 +245,7 @@ public class LocalFilesystemSpec {
 
     /**
      * Sets the user project root used as the lower layer of the resulting
-     * {@link OverlayFilesystem}. Reads of {@code AGENTS.md}, {@code knowledge/}, {@code skills/}
+     * {@link LocalWorkspaceOverlay}. Reads of {@code AGENTS.md}, {@code knowledge/}, {@code skills/}
      * etc. fall back to this directory when the agent {@code workspace} does not contain them;
      * shell {@code execute()} runs with {@code pwd} set to this directory.
      *
@@ -305,13 +305,18 @@ public class LocalFilesystemSpec {
                         localNamespaceFactory,
                         effectiveProject);
         LocalFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
+        LocalFilesystem sharedWorkspace = new LocalFilesystem(workspace, true, 10, null);
         if (projectWritable) {
             LocalFilesystem projectFs =
                     new LocalFilesystem(
                             effectiveProject, mode, pathPolicy, 10, localNamespaceFactory);
             return new ProjectAwareOverlay(
-                    (AbstractSandboxFilesystem) upper, lower, projectFs, workspace);
+                    (AbstractSandboxFilesystem) upper,
+                    sharedWorkspace,
+                    lower,
+                    projectFs,
+                    workspace);
         }
-        return OverlayFilesystem.of(upper, lower);
+        return new LocalWorkspaceOverlay(upper, sharedWorkspace, lower);
     }
 }
