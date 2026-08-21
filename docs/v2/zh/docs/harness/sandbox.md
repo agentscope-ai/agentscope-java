@@ -70,14 +70,14 @@ agent.call(msg, RuntimeContext.builder()
 |------|------|
 | `NoopSnapshotSpec`（默认） | 不持久化；容器没了就走冷启动 |
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
-| `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
+| `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
 | `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
-    .snapshotSpec(new OssSnapshotSpec(ossClient, "my-bucket", "agentscope/")))
+    .snapshotSpec(new AliyunOssSnapshotSpec(ossClient, "my-bucket", "agentscope/")))
 ```
 
 `AGENTS.md` / `skills/` / `subagents/` / `knowledge/` 等宿主侧的工作区文件会在每次沙箱启动时同步进沙箱（按内容哈希增量）。你改了 `skills/` 里的脚本，下次 `call()` 沙箱里就是新版。

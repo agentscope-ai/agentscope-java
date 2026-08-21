@@ -70,14 +70,14 @@ Where snapshots land is decided by `snapshotSpec`:
 |--------|------|
 | `NoopSnapshotSpec` (default) | No persistence; cold start when the container is gone |
 | `LocalSnapshotSpec` | Host local file (single-machine long-running) |
-| `OssSnapshotSpec` | OSS / S3-compatible (multi-replica) |
+| `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` | OSS / S3-compatible (multi-replica) |
 | `RedisSnapshotSpec` | Redis (low latency, small workspaces) |
 | `JdbcSnapshotSpec` | MySQL / JDBC BLOB (existing relational DB) |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
-    .snapshotSpec(new OssSnapshotSpec(ossClient, "my-bucket", "agentscope/")))
+    .snapshotSpec(new AliyunOssSnapshotSpec(ossClient, "my-bucket", "agentscope/")))
 ```
 
 Host-side workspace files (`AGENTS.md` / `skills/` / `subagents/` / `knowledge/`) are synced into the sandbox at each start, content-hash-gated. So if you edit a script under `skills/`, the next `call()` has the new version inside the sandbox.
