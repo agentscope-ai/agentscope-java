@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,8 @@ public final class SkillFileSystemHelper {
 
     private static final Logger logger = LoggerFactory.getLogger(SkillFileSystemHelper.class);
     private static final String SKILL_FILE_NAME = "SKILL.md";
+    private static final String ENCODED_SKILL_DIR_PREFIX = "__utf8__";
+    private static final Pattern ASCII_SAFE_SKILL_DIR_NAME = Pattern.compile("[A-Za-z0-9._ -]+");
 
     private SkillFileSystemHelper() {}
 
@@ -210,9 +213,13 @@ public final class SkillFileSystemHelper {
         try {
             for (AgentSkill skill : skills) {
                 String skillName = skill.getName();
-                Path skillDir = validateAndResolvePath(baseDir, skillName);
+                validateSkillName(skillName);
+                Optional<Path> existingSkillDir = findSkillDirectoryByName(baseDir, skillName);
+                Path skillDir =
+                        existingSkillDir.orElseGet(
+                                () -> validateAndResolvePath(baseDir, skillName));
 
-                if (Files.exists(skillDir)) {
+                if (existingSkillDir.isPresent() || Files.exists(skillDir)) {
                     if (!force) {
                         logger.info(
                                 "Skill directory already exists and force=false: {}", skillName);
@@ -307,12 +314,10 @@ public final class SkillFileSystemHelper {
      * @throws IllegalArgumentException if the path escapes the base directory
      */
     public static Path validateAndResolvePath(Path baseDir, String skillName) {
-        if (skillName == null || skillName.isEmpty()) {
-            throw new IllegalArgumentException("Skill name cannot be null or empty");
-        }
+        validateSkillName(skillName);
 
         Path absoluteBaseDir = baseDir.toAbsolutePath().normalize();
-        Path resolvedPath = absoluteBaseDir.resolve(skillName).normalize();
+        Path resolvedPath = absoluteBaseDir.resolve(toSkillDirectoryName(skillName)).normalize();
 
         if (!resolvedPath.startsWith(absoluteBaseDir)) {
             throw new IllegalArgumentException(
@@ -322,6 +327,39 @@ public final class SkillFileSystemHelper {
         }
 
         return resolvedPath;
+    }
+
+    private static void validateSkillName(String skillName) {
+        if (skillName == null || skillName.isBlank()) {
+            throw new IllegalArgumentException("Skill name cannot be null or empty");
+        }
+        if (".".equals(skillName) || "..".equals(skillName)) {
+            throw new IllegalArgumentException("Skill name cannot be '.' or '..'");
+        }
+        if (skillName.indexOf('/') >= 0 || skillName.indexOf('\\') >= 0) {
+            throw new IllegalArgumentException("Skill name cannot contain path separators");
+        }
+        for (int i = 0; i < skillName.length(); i++) {
+            if (Character.isISOControl(skillName.charAt(i))) {
+                throw new IllegalArgumentException("Skill name cannot contain control characters");
+            }
+        }
+    }
+
+    private static String toSkillDirectoryName(String skillName) {
+        if (isAsciiSafeSkillDirectoryName(skillName)) {
+            return skillName;
+        }
+        String encoded =
+                Base64.getUrlEncoder()
+                        .withoutPadding()
+                        .encodeToString(skillName.getBytes(StandardCharsets.UTF_8));
+        return ENCODED_SKILL_DIR_PREFIX + encoded;
+    }
+
+    private static boolean isAsciiSafeSkillDirectoryName(String skillName) {
+        return !skillName.startsWith(ENCODED_SKILL_DIR_PREFIX)
+                && ASCII_SAFE_SKILL_DIR_NAME.matcher(skillName).matches();
     }
 
     /**
