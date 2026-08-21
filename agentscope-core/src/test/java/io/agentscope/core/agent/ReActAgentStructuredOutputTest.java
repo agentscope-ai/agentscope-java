@@ -19,9 +19,13 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
@@ -155,6 +159,84 @@ class ReActAgentStructuredOutputTest {
         assertEquals("San Francisco", result.location);
         assertEquals("72°F", result.temperature);
         assertEquals("Sunny", result.condition);
+    }
+
+    @Test
+    void shouldStreamStructuredOutputAsAgentEvents() throws Exception {
+        Map<String, Object> toolInput = Map.of("response", Map.of("answer", "42"));
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
+                            if (hasToolResults) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Done")
+                                                                        .build()))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            ToolUseBlock.builder()
+                                                                    .id("call_structured")
+                                                                    .name("generate_response")
+                                                                    .input(toolInput)
+                                                                    .content(
+                                                                            JsonUtils.getJsonCodec()
+                                                                                    .toJson(
+                                                                                            toolInput))
+                                                                    .build()))
+                                            .build());
+                        });
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("structured-event-agent")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .build();
+        Msg inputMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Return an answer").build())
+                        .build();
+        JsonNode schema =
+                new ObjectMapper()
+                        .readTree(
+                                """
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "answer": { "type": "string" }
+                                  },
+                                  "required": ["answer"]
+                                }
+                                """);
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(inputMsg),
+                                schema,
+                                RuntimeContext.builder()
+                                        .sessionId("structured-event-session")
+                                        .build())
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        Msg result =
+                events.stream()
+                        .filter(AgentResultEvent.class::isInstance)
+                        .map(AgentResultEvent.class::cast)
+                        .map(AgentResultEvent::getResult)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals("42", result.getStructuredData(false).get("answer"));
     }
 
     @Test

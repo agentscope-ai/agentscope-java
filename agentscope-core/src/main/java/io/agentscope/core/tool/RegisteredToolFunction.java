@@ -127,6 +127,11 @@ class RegisteredToolFunction {
         this.presetParameters = normalizePresetParameters(newPresetParameters);
     }
 
+    RegisteredToolFunction copy() {
+        return new RegisteredToolFunction(
+                tool, extendedModel, mcpClientName, getPresetParameters());
+    }
+
     /**
      * Get the extended JSON schema by merging base parameters with extended model.
      *
