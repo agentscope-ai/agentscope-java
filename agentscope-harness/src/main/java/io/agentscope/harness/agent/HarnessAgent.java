@@ -180,6 +180,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillCurator skillCurator;
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
+    private final boolean memoryHooksDisabled;
 
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
@@ -211,6 +212,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SkillCurator skillCurator,
             SkillAuditLog skillAuditLog,
             MemoryConfig memoryConfig,
+            boolean memoryHooksDisabled,
             Object subagentMiddleware,
             DistributedStore distributedStore,
             WorkspacePathNormalizer pathNormalizer) {
@@ -229,6 +231,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.skillCurator = skillCurator;
         this.skillAuditLog = skillAuditLog;
         this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
+        this.memoryHooksDisabled = memoryHooksDisabled;
         this.subagentMiddleware = subagentMiddleware;
         this.distributedStore = distributedStore;
         this.pathNormalizer = pathNormalizer;
@@ -1019,7 +1022,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         ? effective.getSessionId()
                         : "default";
 
-        CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
+        CompactionConfig forceConfig =
+                CompactionConfig.builder()
+                        .triggerMessages(1)
+                        .flushBeforeCompact(!memoryHooksDisabled)
+                        .build();
         String effectiveFlushPrompt =
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
@@ -2103,8 +2110,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
-         * Disables memory flush + background consolidation, and removes the "automatically
-         * extracted" Persistence line from the workspace system prompt. Combined with {@link
+         * Disables memory flush (including normal and emergency compaction flush) + background
+         * consolidation, and removes the "automatically extracted" Persistence line from the
+         * workspace system prompt. Compaction summarization and session JSONL offload remain
+         * independently controlled by {@link #compaction(CompactionConfig)}. Combined with {@link
          * #disableMemoryTools()}, also skips {@code MEMORY.md} injection into
          * {@code <memory_context>}.
          */
@@ -2464,11 +2473,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             CompactionMiddleware compactionHook = null;
             if (!disableCompaction && compactionConfig != null) {
+                CompactionConfig effectiveCompactionConfig =
+                        disableMemoryHooks
+                                ? compactionConfig.withFlushBeforeCompact(false)
+                                : compactionConfig;
                 Model compactionModel =
-                        compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
+                        effectiveCompactionConfig.getModel() != null
+                                ? effectiveCompactionConfig.getModel()
+                                : model;
                 if (compactionModel != null) {
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager, compactionModel, effectiveCompactionConfig);
                     inner.middleware(compactionHook);
                 }
             }
@@ -2824,6 +2840,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pendingSkillCurator,
                     pendingSkillAuditLog,
                     memoryConfig,
+                    disableMemoryHooks,
                     capturedSubagentMw,
                     distributedStore,
                     pathNormalizer);
