@@ -57,7 +57,8 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Workspace Operations</h2>
  * <ul>
- *   <li>Exec: {@code docker exec -w <root> <containerId> sh -c <command>}</li>
+ *   <li>Exec: {@code docker exec -i -w <root> <containerId> sh -s}, with the command sent via
+ *       stdin</li>
  *   <li>PersistWorkspace: {@code docker exec <containerId> tar -cf - -C <root> .}</li>
  *   <li>HydrateWorkspace: {@code docker exec -i <containerId> tar -xf - -C <root>}</li>
  * </ul>
@@ -138,17 +139,7 @@ public class DockerSandbox extends AbstractBaseSandbox {
         String containerId = dockerState.getContainerId();
         String workspaceRoot = dockerState.getWorkspaceRoot();
 
-        List<String> cmd = new ArrayList<>();
-        cmd.add("docker");
-        cmd.add("exec");
-        cmd.add("-w");
-        cmd.add(workspaceRoot);
-        cmd.add(containerId);
-        cmd.add("sh");
-        cmd.add("-c");
-        cmd.add(command);
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
+        ProcessBuilder pb = new ProcessBuilder(buildExecCommand(containerId, workspaceRoot));
         Process process = pb.start();
 
         ExecutorService drainer =
@@ -169,6 +160,14 @@ public class DockerSandbox extends AbstractBaseSandbox {
                 drainer.submit(() -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
         drainer.shutdown();
 
+        try (OutputStream stdin = process.getOutputStream()) {
+            writeShellProgram(stdin, command);
+        } catch (IOException e) {
+            process.destroyForcibly();
+            drainer.shutdownNow();
+            throw e;
+        }
+
         boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
         if (!exited) {
             process.destroyForcibly();
@@ -188,6 +187,14 @@ public class DockerSandbox extends AbstractBaseSandbox {
             throw new SandboxException.ExecException(exitCode, stdout, stderr);
         }
         return result;
+    }
+
+    static List<String> buildExecCommand(String containerId, String workspaceRoot) {
+        return List.of("docker", "exec", "-i", "-w", workspaceRoot, containerId, "sh", "-s");
+    }
+
+    static void writeShellProgram(OutputStream stdin, String command) throws IOException {
+        stdin.write(command.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
