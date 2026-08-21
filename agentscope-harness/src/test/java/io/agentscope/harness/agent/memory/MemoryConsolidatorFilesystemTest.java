@@ -18,8 +18,16 @@ package io.agentscope.harness.agent.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -30,11 +38,11 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import reactor.core.publisher.Flux;
 
 /**
  * Verifies that {@link MemoryConsolidator} reads daily ledgers and writes watermark / MEMORY.md
- * entirely through {@link io.agentscope.harness.agent.filesystem.AbstractFilesystem}, making it
- * backend-agnostic.
+ * through the filesystem layer.
  */
 class MemoryConsolidatorFilesystemTest {
 
@@ -51,10 +59,6 @@ class MemoryConsolidatorFilesystemTest {
         store.put(ns, path, value);
     }
 
-    // ======================================================================
-    // readWatermark: returns EPOCH when state file absent
-    // ======================================================================
-
     @Test
     void readWatermark_returnsEpochWhenStateAbsent(@TempDir Path tmp) throws Exception {
         InMemoryStore store = new InMemoryStore();
@@ -66,10 +70,6 @@ class MemoryConsolidatorFilesystemTest {
             assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
         }
     }
-
-    // ======================================================================
-    // readWatermark / writeWatermark round-trip through filesystem
-    // ======================================================================
 
     @Test
     void watermark_roundTripThroughFilesystem(@TempDir Path tmp) throws Exception {
@@ -86,10 +86,6 @@ class MemoryConsolidatorFilesystemTest {
             assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
         }
     }
-
-    // ======================================================================
-    // readWatermark: no local file is touched — only the filesystem
-    // ======================================================================
 
     @Test
     void watermark_doesNotCreateLocalFile(@TempDir Path tmp) throws Exception {
@@ -114,18 +110,27 @@ class MemoryConsolidatorFilesystemTest {
         }
     }
 
-    // ======================================================================
-    // STATE_FILE constant is preserved
-    // ======================================================================
-
     @Test
     void stateFileRelPath_matchesConstant() {
         assertEquals("memory/" + MemoryConsolidator.STATE_FILE, MemoryConsolidator.STATE_REL_PATH);
     }
 
-    // ======================================================================
-    // Local filesystem (no store) — watermark uses local disk via WorkspaceManager
-    // ======================================================================
+    @Test
+    void consolidate_readsRootDailyLedgerAndWritesMemoryMd(@TempDir Path tmp) throws Exception {
+        LocalFilesystem fs = new LocalFilesystem(tmp);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            Path memoryDir = Files.createDirectories(tmp.resolve("memory"));
+            Files.writeString(memoryDir.resolve("2026-05-20.md"), "root daily entry");
+
+            MemoryConsolidator consolidator =
+                    new MemoryConsolidator(wsm, stubModel("updated memory"));
+
+            consolidator.consolidate(RuntimeContext.empty()).block();
+
+            assertEquals("updated memory", wsm.readMemoryMd(RuntimeContext.empty()));
+            assertTrue(consolidator.readWatermark(RuntimeContext.empty()).isAfter(Instant.EPOCH));
+        }
+    }
 
     @Test
     void watermark_localFallback_whenNoFilesystem(@TempDir Path tmp) throws Exception {
@@ -136,17 +141,29 @@ class MemoryConsolidatorFilesystemTest {
         // No file → EPOCH
         assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
 
-        // Write via WorkspaceManager (falls to local disk)
         Instant ts = Instant.parse("2025-03-10T09:00:00Z");
         wsm.writeUtf8WorkspaceRelative(
                 RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
         assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
 
-        // Verify the local file actually exists
         Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);
         assertTrue(
                 Files.exists(localState),
                 "state file should be written to local disk when no filesystem is configured");
+    }
+
+    private static Model stubModel(String assistantText) {
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub-model");
+        ChatResponse chunk =
+                new ChatResponse(
+                        "stub-id",
+                        List.of(TextBlock.builder().text(assistantText).build()),
+                        null,
+                        Map.of(),
+                        "stop");
+        when(model.stream(anyList(), any(), any())).thenReturn(Flux.just(chunk));
+        return model;
     }
 }
