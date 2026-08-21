@@ -175,6 +175,7 @@ Main `KubernetesFilesystemSpec` options:
 | `gatewayName(String)` / `gatewayNamespace(String)` / `gatewayScheme(String)` | reach the sandbox through the Gateway API | none |
 | `serverPort(int)` | runtime HTTP API port | `8888` |
 | `kubernetesClient(KubernetesClient)` | custom fabric8 client | kubeconfig auto-loaded |
+| `claimOwned(boolean)` | whether created sandboxes own their `SandboxClaim`; `false` → the per-call release only closes the connection and the pod stays alive, claim deletion becomes the caller's job (needed when concurrent same-scope calls share one live claim) | `true` |
 | `snapshotSpec(SandboxSnapshotSpec)` | snapshot strategy (see the sandbox page for the PVC trade-off) | `NoopSnapshotSpec` |
 
 When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](./sandbox.md#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](./sandbox.md#kubernetes-state-persistence-pvc-is-the-first-layer).
