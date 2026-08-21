@@ -43,8 +43,8 @@ Flux<Event> events = agent.stream(msgs, StreamOptions.defaults(), ctx);
 | `TOOL_RESULT` | 每次工具执行完毕后 | `ToolResultBlock`（含工具名、id、输出） |
 | `HINT` | RAG / 记忆检索注入后 | 注入模型的上下文文本 |
 | `SUMMARY` | 达到 `maxIters` 上限时 | 迭代摘要文本 |
-| `AGENT_RESULT` | 最终回复就绪 | 与 `call()` 返回值相同，默认**不在**流中 |
-| `ALL` | 占位符，代表全部（不含 `AGENT_RESULT`） | — |
+| `AGENT_RESULT` | 最终回复就绪 | 与 `call()` 返回值相同 |
+| `ALL` | 占位符，代表全部事件类型 | - |
 
 ### 只订阅指定类型
 
@@ -151,7 +151,7 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message) {
 
 ```java
 StreamOptions options = StreamOptions.builder()
-        // 订阅的事件类型（默认 ALL，不含 AGENT_RESULT）
+        // 订阅的事件类型（默认 ALL）
         .eventTypes(EventType.REASONING, EventType.TOOL_RESULT, EventType.AGENT_RESULT)
 
         // 增量模式（默认 true）
