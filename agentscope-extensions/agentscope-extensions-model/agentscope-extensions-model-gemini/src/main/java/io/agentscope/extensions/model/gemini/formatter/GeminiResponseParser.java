@@ -126,36 +126,41 @@ public class GeminiResponseParser {
     }
 
     /**
-     * Parse Gemini Part objects to AgentScope ContentBlocks.
-     * Order of block types: ThinkingBlock, TextBlock, ToolUseBlock
+     * Parse Gemini Part objects to AgentScope ContentBlocks while preserving Part order.
      *
      * @param parts List of Gemini Part objects
      * @param blocks List to add parsed ContentBlocks to
      */
     protected void parsePartsToBlocks(List<Part> parts, List<ContentBlock> blocks) {
         for (Part part : parts) {
+            Map<String, Object> metadata = GeminiThoughtSignatureUtils.extractMetadata(part);
+
             // Check for thinking content first (parts with thought=true flag)
             if (part.thought().isPresent() && part.thought().get() && part.text().isPresent()) {
                 String thinkingText = part.text().get();
-                if (thinkingText != null && !thinkingText.isEmpty()) {
-                    blocks.add(ThinkingBlock.builder().thinking(thinkingText).build());
+                if (!thinkingText.isEmpty() || metadata != null) {
+                    blocks.add(
+                            ThinkingBlock.builder()
+                                    .thinking(thinkingText)
+                                    .metadata(metadata)
+                                    .build());
                 }
+                continue;
+            }
+
+            // Check for function call (tool use)
+            if (part.functionCall().isPresent()) {
+                FunctionCall functionCall = part.functionCall().get();
+                parseToolCall(functionCall, metadata, blocks);
                 continue;
             }
 
             // Check for text content
             if (part.text().isPresent()) {
                 String text = part.text().get();
-                if (text != null && !text.isEmpty()) {
-                    blocks.add(TextBlock.builder().text(text).build());
+                if (!text.isEmpty() || metadata != null) {
+                    blocks.add(TextBlock.builder().text(text).metadata(metadata).build());
                 }
-            }
-
-            // Check for function call (tool use)
-            if (part.functionCall().isPresent()) {
-                FunctionCall functionCall = part.functionCall().get();
-                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
-                parseToolCall(functionCall, thoughtSignature, blocks);
             }
         }
     }
@@ -164,11 +169,11 @@ public class GeminiResponseParser {
      * Parse Gemini FunctionCall to ToolUseBlock.
      *
      * @param functionCall Gemini FunctionCall object
-     * @param thoughtSignature Thought signature from the Part (may be null)
+     * @param metadata Provider-specific metadata from the Part (may be null)
      * @param blocks List to add parsed ToolUseBlock to
      */
     protected void parseToolCall(
-            FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
+            FunctionCall functionCall, Map<String, Object> metadata, List<ContentBlock> blocks) {
         try {
             String id = functionCall.id().orElse("tool_call_" + System.currentTimeMillis());
             String name = functionCall.name().orElse("");
@@ -193,13 +198,6 @@ public class GeminiResponseParser {
                         log.warn("Failed to serialize function call arguments: {}", e.getMessage());
                     }
                 }
-            }
-
-            // Build metadata with thought signature if present
-            Map<String, Object> metadata = null;
-            if (thoughtSignature != null) {
-                metadata = new HashMap<>();
-                metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
             }
 
             blocks.add(
