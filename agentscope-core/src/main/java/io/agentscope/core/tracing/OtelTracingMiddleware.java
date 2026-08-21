@@ -20,19 +20,36 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.util.JsonUtils;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -72,6 +89,44 @@ import reactor.util.context.ContextView;
 public class OtelTracingMiddleware implements MiddlewareBase {
 
     private static final String INSTRUMENTATION_NAME = "io.agentscope";
+
+    // OpenTelemetry GenAI span semantic convention attributes.
+    // Reference:
+    // https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-spans.md
+    private static final AttributeKey<String> GEN_AI_OPERATION_NAME =
+            AttributeKey.stringKey("gen_ai.operation.name");
+    private static final AttributeKey<String> GEN_AI_REQUEST_MODEL =
+            AttributeKey.stringKey("gen_ai.request.model");
+    private static final AttributeKey<Boolean> GEN_AI_REQUEST_STREAM =
+            AttributeKey.booleanKey("gen_ai.request.stream");
+    private static final AttributeKey<Long> GEN_AI_REQUEST_SEED =
+            AttributeKey.longKey("gen_ai.request.seed");
+    private static final AttributeKey<Long> GEN_AI_REQUEST_TOP_K =
+            AttributeKey.longKey("gen_ai.request.top_k");
+    private static final AttributeKey<Long> GEN_AI_REQUEST_MAX_TOKENS =
+            AttributeKey.longKey("gen_ai.request.max_tokens");
+    private static final AttributeKey<Double> GEN_AI_REQUEST_FREQUENCY_PENALTY =
+            AttributeKey.doubleKey("gen_ai.request.frequency_penalty");
+    private static final AttributeKey<Double> GEN_AI_REQUEST_PRESENCE_PENALTY =
+            AttributeKey.doubleKey("gen_ai.request.presence_penalty");
+    private static final AttributeKey<String> GEN_AI_REQUEST_REASONING_LEVEL =
+            AttributeKey.stringKey("gen_ai.request.reasoning.level");
+    private static final AttributeKey<Double> GEN_AI_REQUEST_TEMPERATURE =
+            AttributeKey.doubleKey("gen_ai.request.temperature");
+    private static final AttributeKey<Double> GEN_AI_REQUEST_TOP_P =
+            AttributeKey.doubleKey("gen_ai.request.top_p");
+    private static final AttributeKey<Long> GEN_AI_USAGE_INPUT_TOKENS =
+            AttributeKey.longKey("gen_ai.usage.input_tokens");
+    private static final AttributeKey<Long> GEN_AI_USAGE_OUTPUT_TOKENS =
+            AttributeKey.longKey("gen_ai.usage.output_tokens");
+    private static final AttributeKey<String> GEN_AI_INPUT_MESSAGES =
+            AttributeKey.stringKey("gen_ai.input.messages");
+    private static final AttributeKey<String> GEN_AI_OUTPUT_MESSAGES =
+            AttributeKey.stringKey("gen_ai.output.messages");
+    private static final AttributeKey<String> GEN_AI_TOOL_DEFINITIONS =
+            AttributeKey.stringKey("gen_ai.tool.definitions");
+
+    private static final String OPERATION_CHAT = "chat";
 
     private static volatile boolean hookRegistered = false;
 
@@ -173,12 +228,12 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                     Context parentContext = resolveOtelContext(ctxView);
                     Model model = input.model();
                     String modelName = model != null ? model.getModelName() : "unknown";
-                    Span span =
+                    SpanBuilder spanBuilder =
                             getTracer()
                                     .spanBuilder("chat " + modelName)
                                     .setParent(parentContext)
-                                    .setAttribute("gen_ai.operation.name", "chat")
-                                    .setAttribute("gen_ai.request.model", modelName)
+                                    .setAttribute(GEN_AI_OPERATION_NAME, OPERATION_CHAT)
+                                    .setAttribute(GEN_AI_REQUEST_MODEL, modelName)
                                     .setAttribute(
                                             "gen_ai.request.messages.count",
                                             (long) input.messages().size())
@@ -186,18 +241,42 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                                             "gen_ai.request.tools.count",
                                             input.tools() != null
                                                     ? (long) input.tools().size()
-                                                    : 0L)
-                                    .startSpan();
+                                                    : 0L);
+                    setModelRequestAttributes(spanBuilder, input);
+                    Span span = spanBuilder.startSpan();
 
                     Context otelCtx = span.storeInContext(parentContext);
                     AtomicReference<Boolean> ended = new AtomicReference<>(false);
+                    StringBuilder completionText = new StringBuilder();
+                    StringBuilder completionReasoning = new StringBuilder();
+                    Map<String, ToolCallAccumulator> toolCallAccumulators = new LinkedHashMap<>();
 
                     return ContextPropagationOperator.runWithContext(
                             next.apply(input)
                                     .doOnNext(
                                             event -> {
-                                                if (event instanceof ModelCallEndEvent mce) {
-                                                    setModelResponseAttributes(span, mce);
+                                                if (event instanceof TextBlockDeltaEvent tde
+                                                        && tde.getDelta() != null) {
+                                                    completionText.append(tde.getDelta());
+                                                } else if (event
+                                                                instanceof
+                                                                ThinkingBlockDeltaEvent tde
+                                                        && tde.getDelta() != null) {
+                                                    completionReasoning.append(tde.getDelta());
+                                                } else if (event
+                                                        instanceof ToolCallDeltaEvent tde) {
+                                                    getToolCallAccumulator(
+                                                                    toolCallAccumulators,
+                                                                    tde.getToolCallId(),
+                                                                    tde.getToolCallName())
+                                                            .append(tde.getDelta());
+                                                } else if (event instanceof ModelCallEndEvent mce) {
+                                                    setModelResponseAttributes(
+                                                            span,
+                                                            mce,
+                                                            completionText.toString(),
+                                                            completionReasoning.toString(),
+                                                            toolCallAccumulators);
                                                 }
                                             })
                                     .doOnComplete(
@@ -334,11 +413,230 @@ public class OtelTracingMiddleware implements MiddlewareBase {
         }
     }
 
-    private void setModelResponseAttributes(Span span, ModelCallEndEvent event) {
-        if (event.getUsage() != null) {
-            var usage = event.getUsage();
-            span.setAttribute("gen_ai.usage.input_tokens", (long) usage.getInputTokens());
-            span.setAttribute("gen_ai.usage.output_tokens", (long) usage.getOutputTokens());
+    private void setModelRequestAttributes(SpanBuilder spanBuilder, ModelCallInput input) {
+        setGenerationOptionAttributes(spanBuilder, input.options());
+
+        String inputMessages = serializeInputMessages(input.messages());
+        if (inputMessages != null) {
+            spanBuilder.setAttribute(GEN_AI_INPUT_MESSAGES, inputMessages);
+        }
+
+        String toolDefinitions = serializeToolDefinitions(input.tools());
+        if (toolDefinitions != null) {
+            spanBuilder.setAttribute(GEN_AI_TOOL_DEFINITIONS, toolDefinitions);
         }
     }
+
+    private void setModelResponseAttributes(
+            Span span,
+            ModelCallEndEvent event,
+            String completionText,
+            String completionReasoning,
+            Map<String, ToolCallAccumulator> toolCallAccumulators) {
+        if (event.getUsage() != null) {
+            var usage = event.getUsage();
+            span.setAttribute(GEN_AI_USAGE_INPUT_TOKENS, (long) usage.getInputTokens());
+            span.setAttribute(GEN_AI_USAGE_OUTPUT_TOKENS, (long) usage.getOutputTokens());
+        }
+
+        String outputMessages =
+                serializeOutputMessages(completionText, completionReasoning, toolCallAccumulators);
+        if (outputMessages != null) {
+            span.setAttribute(GEN_AI_OUTPUT_MESSAGES, outputMessages);
+        }
+    }
+
+    private void setGenerationOptionAttributes(SpanBuilder spanBuilder, GenerateOptions options) {
+        if (options == null) {
+            return;
+        }
+        if (options.getStream() != null) {
+            spanBuilder.setAttribute(GEN_AI_REQUEST_STREAM, options.getStream());
+        }
+        if (options.getTemperature() != null) {
+            spanBuilder.setAttribute(GEN_AI_REQUEST_TEMPERATURE, options.getTemperature());
+        }
+        if (options.getTopP() != null) {
+            spanBuilder.setAttribute(GEN_AI_REQUEST_TOP_P, options.getTopP());
+        }
+        if (options.getTopK() != null) {
+            spanBuilder.setAttribute(GEN_AI_REQUEST_TOP_K, (long) options.getTopK());
+        }
+        if (options.getMaxTokens() != null) {
+            spanBuilder.setAttribute(GEN_AI_REQUEST_MAX_TOKENS, (long) options.getMaxTokens());
+        }
+        if (options.getPresencePenalty() != null) {
+            spanBuilder.setAttribute(GEN_AI_REQUEST_PRESENCE_PENALTY, options.getPresencePenalty());
+        }
+        if (options.getFrequencyPenalty() != null) {
+            spanBuilder.setAttribute(
+                    GEN_AI_REQUEST_FREQUENCY_PENALTY, options.getFrequencyPenalty());
+        }
+        if (options.getSeed() != null) {
+            spanBuilder.setAttribute(GEN_AI_REQUEST_SEED, options.getSeed());
+        }
+        if (options.getReasoningEffort() != null) {
+            spanBuilder.setAttribute(GEN_AI_REQUEST_REASONING_LEVEL, options.getReasoningEffort());
+        }
+    }
+
+    private String serializeInputMessages(List<Msg> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return null;
+        }
+
+        List<InputMessage> serializedMessages = new ArrayList<>(messages.size());
+        for (Msg msg : messages) {
+            if (msg == null) {
+                continue;
+            }
+            serializedMessages.add(
+                    new InputMessage(
+                            msg.getRole() != null ? msg.getRole().name().toLowerCase() : "unknown",
+                            serializeParts(msg.getContent()),
+                            msg.getName()));
+        }
+        return serializedMessages.isEmpty() ? null : serializeToJson(serializedMessages);
+    }
+
+    private String serializeOutputMessages(
+            String completionText,
+            String completionReasoning,
+            Map<String, ToolCallAccumulator> toolCallAccumulators) {
+        List<MessagePart> parts = new ArrayList<>();
+        if (completionReasoning != null && !completionReasoning.isEmpty()) {
+            parts.add(new ReasoningPart(completionReasoning));
+        }
+        if (completionText != null && !completionText.isEmpty()) {
+            parts.add(new TextPart(completionText));
+        }
+        for (ToolCallAccumulator toolCall : toolCallAccumulators.values()) {
+            parts.add(
+                    new ToolCallRequestPart(
+                            toolCall.id, toolCall.name, toolCall.arguments.toString()));
+        }
+        if (parts.isEmpty()) {
+            return null;
+        }
+
+        return serializeToJson(List.of(new OutputMessage("assistant", parts)));
+    }
+
+    private List<MessagePart> serializeParts(List<ContentBlock> content) {
+        if (content == null || content.isEmpty()) {
+            return List.of();
+        }
+        List<MessagePart> parts = new ArrayList<>(content.size());
+        for (ContentBlock block : content) {
+            if (block instanceof TextBlock textBlock) {
+                parts.add(new TextPart(textBlock.getText()));
+            } else if (block instanceof ThinkingBlock thinkingBlock) {
+                parts.add(new ReasoningPart(thinkingBlock.getThinking()));
+            } else if (block instanceof ToolUseBlock toolUseBlock) {
+                parts.add(
+                        new ToolCallRequestPart(
+                                toolUseBlock.getId(),
+                                toolUseBlock.getName(),
+                                toolUseBlock.getInput()));
+            } else if (block instanceof ToolResultBlock toolResultBlock) {
+                parts.add(
+                        new ToolCallResponsePart(
+                                toolResultBlock.getId(), toolResultBlock.getOutput()));
+            }
+        }
+        return parts;
+    }
+
+    private String serializeToolDefinitions(List<ToolSchema> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return null;
+        }
+        List<ToolDefinition> toolDefinitions = new ArrayList<>(tools.size());
+        for (ToolSchema tool : tools) {
+            if (tool == null) {
+                continue;
+            }
+            toolDefinitions.add(
+                    new ToolDefinition(
+                            "function",
+                            tool.getName(),
+                            tool.getDescription(),
+                            tool.getParameters()));
+        }
+        return toolDefinitions.isEmpty() ? null : serializeToJson(toolDefinitions);
+    }
+
+    private ToolCallAccumulator getToolCallAccumulator(
+            Map<String, ToolCallAccumulator> toolCalls, String id, String name) {
+        String key = id != null ? id : name;
+        return toolCalls.computeIfAbsent(key, ignored -> new ToolCallAccumulator(id, name));
+    }
+
+    private String serializeToJson(Object value) {
+        try {
+            return JsonUtils.getJsonCodec().toJson(value);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static final class ToolCallAccumulator {
+        private final String id;
+        private final String name;
+        private final StringBuilder arguments = new StringBuilder();
+
+        private ToolCallAccumulator(String id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+
+        private void append(String delta) {
+            if (delta != null) {
+                arguments.append(delta);
+            }
+        }
+    }
+
+    private record InputMessage(String role, List<MessagePart> parts, String name) {}
+
+    private record OutputMessage(String role, List<MessagePart> parts) {}
+
+    private sealed interface MessagePart
+            permits TextPart, ReasoningPart, ToolCallRequestPart, ToolCallResponsePart {
+
+        String type();
+    }
+
+    private record TextPart(String type, String content) implements MessagePart {
+
+        private TextPart(String content) {
+            this("text", content);
+        }
+    }
+
+    private record ReasoningPart(String type, String content) implements MessagePart {
+
+        private ReasoningPart(String content) {
+            this("reasoning", content);
+        }
+    }
+
+    private record ToolCallRequestPart(String type, String id, String name, Object arguments)
+            implements MessagePart {
+
+        private ToolCallRequestPart(String id, String name, Object arguments) {
+            this("tool_call", id, name, arguments);
+        }
+    }
+
+    private record ToolCallResponsePart(String type, String id, Object response)
+            implements MessagePart {
+
+        private ToolCallResponsePart(String id, Object response) {
+            this("tool_call_response", id, response);
+        }
+    }
+
+    private record ToolDefinition(
+            String type, String name, String description, Map<String, Object> parameters) {}
 }
