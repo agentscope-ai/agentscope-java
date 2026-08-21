@@ -32,6 +32,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
+import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
@@ -175,6 +176,7 @@ class SkillRuntimeTest {
             assertTrue(out.contains("<files-root>/workspace/skills/alpha</files-root>"));
             assertTrue(out.contains("## Code Execution"));
             assertTrue(out.contains("<files-root>"));
+            assertTrue(out.contains("access to the " + ShellExecuteTool.NAME + " tool"));
         }
 
         @Test
