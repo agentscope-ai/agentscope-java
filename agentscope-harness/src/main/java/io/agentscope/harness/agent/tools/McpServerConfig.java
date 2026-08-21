@@ -57,6 +57,10 @@ public class McpServerConfig {
     @JsonProperty("env")
     private Map<String, String> env;
 
+    /** stdio: optional workspace-relative process working directory. */
+    @JsonProperty("cwd")
+    private String cwd;
+
     /** sse / http: server URL. */
     @JsonProperty("url")
     private String url;
@@ -114,6 +118,14 @@ public class McpServerConfig {
 
     public void setEnv(Map<String, String> env) {
         this.env = env;
+    }
+
+    public String getCwd() {
+        return cwd;
+    }
+
+    public void setCwd(String cwd) {
+        this.cwd = cwd;
     }
 
     public String getUrl() {
