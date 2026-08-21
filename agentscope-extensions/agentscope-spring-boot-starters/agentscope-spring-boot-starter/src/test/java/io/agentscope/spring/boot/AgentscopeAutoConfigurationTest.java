@@ -21,11 +21,17 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.spring.boot.tool.ToolBean;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -100,6 +106,87 @@ class AgentscopeAutoConfigurationTest {
                         });
     }
 
+    // ------------------------------------------------------------------
+    // AgentBuilderCustomizer tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void shouldApplyAgentBuilderCustomizer() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class, CustomizerConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getMaxIters()).isEqualTo(99);
+                        });
+    }
+
+    // ------------------------------------------------------------------
+    // Tool auto-registration tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void shouldAutoRegisterToolBeanIntoToolkit() {
+        contextRunner
+                .withUserConfiguration(CustomModelConfiguration.class, ToolBeanConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getToolkit().getToolNames()).contains("test_tool");
+                        });
+    }
+
+    // ------------------------------------------------------------------
+    // Middleware / Hook auto-assembly tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void shouldAutoInjectMiddlewareBeans() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class, MiddlewareConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getMiddlewares())
+                                    .anyMatch(mw -> mw instanceof TestMiddleware);
+                        });
+    }
+
+    // ------------------------------------------------------------------
+    // PermissionContextState auto-injection tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void shouldAutoInjectPermissionContextStateWhenBeanExists() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class, PermissionConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getAgentState().getPermissionContext().getMode())
+                                    .isEqualTo(PermissionMode.ACCEPT_EDITS);
+                        });
+    }
+
+    @Test
+    void shouldNotRequirePermissionContextStateBean() {
+        contextRunner
+                .withUserConfiguration(CustomModelConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getAgentState().getPermissionContext().getMode())
+                                    .isEqualTo(PermissionMode.DEFAULT);
+                        });
+    }
+
+    // ------------------------------------------------------------------
+    // Test configurations
+    // ------------------------------------------------------------------
+
     @Configuration(proxyBeanMethods = false)
     static class CustomModelConfiguration {
 
@@ -131,6 +218,60 @@ class AgentscopeAutoConfigurationTest {
         ReActAgent customAgent(Model model, Toolkit toolkit) {
             return ReActAgent.builder().name("customAgent").model(model).toolkit(toolkit).build();
         }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CustomizerConfiguration {
+
+        @Bean
+        AgentBuilderCustomizer maxItersCustomizer() {
+            return builder -> builder.maxIters(99);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ToolBeanConfiguration {
+
+        @Bean
+        TestTools testTools() {
+            return new TestTools();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MiddlewareConfiguration {
+
+        @Bean
+        TestMiddleware testMiddleware() {
+            return new TestMiddleware();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PermissionConfiguration {
+
+        @Bean
+        PermissionContextState permissionContextState() {
+            return PermissionContextState.builder().mode(PermissionMode.ACCEPT_EDITS).build();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Test beans
+    // ------------------------------------------------------------------
+
+    @ToolBean
+    static class TestTools {
+
+        @Tool(name = "test_tool", description = "A test tool for unit testing")
+        public String testTool(
+                @ToolParam(name = "input", description = "Test input") String input) {
+            return "result: " + input;
+        }
+    }
+
+    static class TestMiddleware implements MiddlewareBase {
+        // All hook methods have default implementations; no override needed.
     }
 
     private static final class TestModel implements Model {
