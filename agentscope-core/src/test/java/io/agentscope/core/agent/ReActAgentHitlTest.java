@@ -26,6 +26,8 @@ import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -215,7 +217,11 @@ class ReActAgentHitlTest {
     }
 
     private static Msg confirmMsg(boolean confirmed, ToolUseBlock toolCall) {
-        return confirmMsg(List.of(new ConfirmResult(confirmed, toolCall, null)));
+        return confirmMsg(new ConfirmResult(confirmed, toolCall));
+    }
+
+    private static Msg confirmMsg(ConfirmResult result) {
+        return confirmMsg(List.of(result));
     }
 
     private static Msg confirmMsg(List<ConfirmResult> confirmResults) {
@@ -227,6 +233,23 @@ class ReActAgentHitlTest {
                 .textContent("[confirm]")
                 .metadata(meta)
                 .build();
+    }
+
+    private static ToolUseBlock pendingAskingTool(ReActAgent agent) {
+        for (int i = agent.getAgentState().getContext().size() - 1; i >= 0; i--) {
+            Msg m = agent.getAgentState().getContext().get(i);
+            if (m.getRole() == MsgRole.ASSISTANT) {
+                return m.getContentBlocks(ToolUseBlock.class).get(0);
+            }
+        }
+        throw new AssertionError("expected an assistant message with a pending tool call");
+    }
+
+    private static String toolResultText(ToolResultBlock block) {
+        return block.getOutput().stream()
+                .filter(b -> b instanceof TextBlock)
+                .map(b -> ((TextBlock) b).getText())
+                .reduce("", String::concat);
     }
 
     @Test
@@ -383,29 +406,130 @@ class ReActAgentHitlTest {
         assertNotNull(first);
         assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
 
-        Msg lastAssistant = null;
-        for (int i = agent.getAgentState().getContext().size() - 1; i >= 0; i--) {
-            Msg m = agent.getAgentState().getContext().get(i);
-            if (m.getRole() == MsgRole.ASSISTANT) {
-                lastAssistant = m;
-                break;
-            }
-        }
-        ToolUseBlock pending = lastAssistant.getContentBlocks(ToolUseBlock.class).get(0);
+        ToolUseBlock pending = pendingAskingTool(agent);
 
         // Second call → deny
         Msg second = agent.call(List.of(confirmMsg(false, pending))).block();
         assertNotNull(second);
 
-        // Context should contain a DENIED ToolResultBlock for tc1
-        boolean foundDenied =
+        // Context should contain a DENIED ToolResultBlock for tc1 with the default message
+        ToolResultBlock denied =
                 agent.getAgentState().getContext().stream()
                         .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
-                        .anyMatch(
-                                tr ->
-                                        "tc1".equals(tr.getId())
-                                                && tr.getState() == ToolResultState.DENIED);
-        assertTrue(foundDenied, "expected a DENIED ToolResultBlock for the rejected tool");
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(denied, "expected a DENIED ToolResultBlock for the rejected tool");
+        assertEquals(ToolResultState.DENIED, denied.getState());
+        assertEquals("Permission denied by user", toolResultText(denied));
+    }
+
+    @Test
+    void askingToolResumeWithCustomDenyMessageUsesConfirmResultMessage() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
+
+        ToolUseBlock pending = pendingAskingTool(agent);
+        String reason = "User rejected: do not delete production data";
+        Msg second =
+                agent.call(List.of(confirmMsg(ConfirmResult.withMessage(false, pending, reason))))
+                        .block();
+        assertNotNull(second);
+
+        ToolResultBlock denied =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(denied);
+        assertEquals(ToolResultState.DENIED, denied.getState());
+        assertEquals(reason, toolResultText(denied));
+    }
+
+    @Test
+    void askingToolResumeWithBlankDenyMessageFallsBackToDefault() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
+
+        ToolUseBlock pending = pendingAskingTool(agent);
+        Msg second =
+                agent.call(List.of(confirmMsg(ConfirmResult.withMessage(false, pending, "   "))))
+                        .block();
+        assertNotNull(second);
+
+        ToolResultBlock denied =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(denied);
+        assertEquals(ToolResultState.DENIED, denied.getState());
+        assertEquals("Permission denied by user", toolResultText(denied));
+    }
+
+    @Test
+    void askingToolResumeWithDenyEmitsToolResultEvents() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        // First stream: pause on ASK
+        List<AgentEvent> firstEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(firstEvents);
+        assertTrue(indexOf(firstEvents, RequireUserConfirmEvent.class) >= 0);
+
+        ToolUseBlock pending = pendingAskingTool(agent);
+        String reason = "blocked by policy";
+
+        // Second stream: deny — should surface the same Start/Delta/End sequence as auto-deny
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(
+                                List.of(
+                                        confirmMsg(
+                                                ConfirmResult.withMessage(false, pending, reason))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        int iStart = indexOf(resumeEvents, ToolResultStartEvent.class);
+        int iDelta = indexOf(resumeEvents, ToolResultTextDeltaEvent.class);
+        int iEnd = indexOf(resumeEvents, ToolResultEndEvent.class);
+        assertTrue(iStart >= 0, "ToolResultStartEvent must be emitted on manual deny");
+        assertTrue(iDelta > iStart, "ToolResultTextDeltaEvent must follow Start");
+        assertTrue(iEnd > iDelta, "ToolResultEndEvent must follow TextDelta");
+
+        ToolResultStartEvent start = (ToolResultStartEvent) resumeEvents.get(iStart);
+        assertEquals("tc1", start.getToolCallId());
+        assertEquals("ask", start.getToolCallName());
+
+        ToolResultTextDeltaEvent delta = (ToolResultTextDeltaEvent) resumeEvents.get(iDelta);
+        assertEquals("tc1", delta.getToolCallId());
+        assertEquals(reason, delta.getDelta());
+
+        ToolResultEndEvent end = (ToolResultEndEvent) resumeEvents.get(iEnd);
+        assertEquals("tc1", end.getToolCallId());
+        assertEquals(ToolResultState.DENIED, end.getState());
     }
 
     @Test

@@ -314,7 +314,10 @@ if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_AS
     // 向用户展示
     askingTools.forEach(t -> System.out.println("Pending: " + t.getName() + " " + t.getInput()));
 
-    // 4. 收集用户决策，构建 ConfirmResult 恢复 agent
+    // 4. 收集用户决策，构建 ConfirmResult 恢复 agent。
+    // 拒绝时可自定义 tool-result 文案：ConfirmResult.withMessage(...) 或 4 参构造
+    // (confirmed, toolCall, rules, message)。message 为 null/空白时回退为
+    // "Permission denied by user"。
     boolean approved = askUser();
     List<ConfirmResult> confirmResults =
             askingTools.stream()
