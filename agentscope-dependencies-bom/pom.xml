@@ -100,6 +100,7 @@
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
+        <mongodb-driver.version>5.3.1</mongodb-driver.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.7</spring.version>
@@ -403,6 +404,13 @@
                 <groupId>io.lettuce</groupId>
                 <artifactId>lettuce-core</artifactId>
                 <version>${lettuce.version}</version>
+            </dependency>
+
+            <!-- MongoDB Java Driver (sync) for MongoDB-based session implementation -->
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>mongodb-driver-sync</artifactId>
+                <version>${mongodb-driver.version}</version>
             </dependency>
 
             <!-- XXL-JOB Core -->
