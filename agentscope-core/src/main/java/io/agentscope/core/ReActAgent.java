@@ -1943,7 +1943,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // promote them to ALLOWED. Collect denied ones for separate handling.
             List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
-            Map<String, ToolCallState> stateUpdates = new HashMap<>();
             for (ConfirmResult r : results) {
                 ToolUseBlock target = r.getToolCall();
                 if (target == null) {
@@ -1951,7 +1950,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
                 if (r.isConfirmed()) {
                     replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
-                    stateUpdates.put(target.getId(), ToolCallState.ALLOWED);
                     if (r.getRules() != null) {
                         for (PermissionRule rule : r.getRules()) {
                             if (rule != null) {
@@ -2042,9 +2040,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     pendingToolCalls.stream().map(ToolUseBlock::getId).toList());
             for (ToolUseBlock toolCall : pendingToolCalls) {
                 ToolResultBlock errorResult =
-                        buildErrorToolResult(
+                        ToolResultBlock.error(
                                 toolCall.getId(),
-                                "[ERROR] Previous tool execution failed or was interrupted. Tool: "
+                                "Previous tool execution failed or was interrupted. Tool: "
                                         + toolCall.getName());
                 Msg toolResultMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
@@ -2078,7 +2076,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             for (ToolUseBlock toolCall : pendingToolCalls) {
                 ToolResultBlock errorResult =
-                        buildErrorToolResult(
+                        ToolResultBlock.error(
                                 toolCall.getId(),
                                 "Tool execution was interrupted before it could run. Tool: "
                                         + toolCall.getName());
@@ -2100,21 +2098,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             } else if (externalEventEmitter != null) {
                 externalEventEmitter.emit(event);
             }
-        }
-
-        /**
-         * Build a {@link ToolResultBlock} representing a tool execution error.
-         *
-         * @param toolId the id of the tool call that failed
-         * @param errorMessage the human-readable error description
-         * @return a {@link ToolResultBlock} containing the formatted error message
-         */
-        private static ToolResultBlock buildErrorToolResult(String toolId, String errorMessage) {
-            return ToolResultBlock.builder()
-                    .id(toolId)
-                    .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
-                    .state(ToolResultState.ERROR)
-                    .build();
         }
 
         /**
@@ -3309,7 +3292,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 .map(
                                                         toolCall -> {
                                                             ToolResultBlock errorResult =
-                                                                    buildErrorToolResult(
+                                                                    ToolResultBlock.error(
                                                                             toolCall.getId(),
                                                                             "Tool execution failed:"
                                                                                     + " "
@@ -3372,7 +3355,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 ToolResultBlock result = byId.get(use.getId());
                                                 if (result == null) {
                                                     return Mono.just(
-                                                            buildErrorToolResult(
+                                                            ToolResultBlock.error(
                                                                     use.getId(),
                                                                     "Internal error: missing tool"
                                                                             + " result for '"
@@ -3393,7 +3376,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     ToolValidator.validateInput(use.getContent(), soTool.getParameters());
             if (validationError != null) {
                 return Mono.just(
-                        buildErrorToolResult(
+                        ToolResultBlock.error(
                                 use.getId(),
                                 "Parameter validation failed for tool '"
                                         + STRUCTURED_OUTPUT_TOOL_NAME
@@ -3453,15 +3436,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             log.debug("Maximum iterations reached. Generating summary...");
 
             // Handle pending tool calls that were not completed before max iterations
-            if (hasPendingToolUse()) {
-                List<ToolUseBlock> pendingTools = extractPendingToolCalls();
+            List<ToolUseBlock> pendingTools = extractPendingToolCalls();
+            if (!pendingTools.isEmpty()) {
                 log.warn(
                         "Max iterations reached with {} pending tool calls. Adding error results.",
                         pendingTools.size());
 
                 for (ToolUseBlock toolUse : pendingTools) {
                     ToolResultBlock errorResult =
-                            buildErrorToolResult(
+                            ToolResultBlock.error(
                                     toolUse.getId(),
                                     "Tool execution cancelled because maximum iterations limit ("
                                             + maxIters
