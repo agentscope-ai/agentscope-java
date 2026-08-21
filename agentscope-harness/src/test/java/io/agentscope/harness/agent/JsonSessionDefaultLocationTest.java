@@ -31,6 +31,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -58,6 +59,15 @@ class JsonSessionDefaultLocationTest {
 
     private String previousStateHome;
 
+    /**
+     * Track every {@link HarnessAgent} created during a test so we can deterministically
+     * {@code close()} them in {@link #restoreStateHome()} BEFORE JUnit's {@code @TempDir}
+     * cleanup runs. Without this, harness resources (WorkspaceTaskRepository shutdown,
+     * WorkspaceIndex SQLite connection, delegate ReActAgent state store) stay bound to the
+     * temp directories while JUnit is trying to delete them.
+     */
+    private final List<HarnessAgent> agents = new ArrayList<>();
+
     @BeforeEach
     void overrideStateHome() {
         previousStateHome = System.getProperty("agentscope.state.home");
@@ -66,11 +76,42 @@ class JsonSessionDefaultLocationTest {
 
     @AfterEach
     void restoreStateHome() {
+        for (HarnessAgent agent : agents) {
+            try {
+                agent.close();
+            } catch (RuntimeException ignored) {
+                // best-effort: a leaking middleware must not fail the test cleanup
+            }
+        }
+        agents.clear();
+
         if (previousStateHome != null) {
             System.setProperty("agentscope.state.home", previousStateHome);
         } else {
             System.clearProperty("agentscope.state.home");
         }
+    }
+
+    /**
+     * Build a {@link HarnessAgent} with all workspace-side async middleware disabled. The
+     * three assertions in this test class only inspect {@code stateHome} — subagent /
+     * memory-hook / compaction background writers add zero test signal and, on CI, race the
+     * {@code @TempDir} cleanup by writing under {@code <workspace>/<userId>/agents/...},
+     * which surfaces as {@code JUnit Failed to close extension context}.
+     */
+    private HarnessAgent buildAgent(String agentName) {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name(agentName)
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .disableSubagents()
+                        .disableMemoryHooks()
+                        .disableCompaction()
+                        .disableWorkspaceContext()
+                        .build();
+        agents.add(agent);
+        return agent;
     }
 
     @Test
@@ -79,12 +120,7 @@ class JsonSessionDefaultLocationTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "assistant-" + UUID.randomUUID();
-        HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name(agentName)
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+        HarnessAgent agent = buildAgent(agentName);
 
         RuntimeContext rc = RuntimeContext.builder().sessionId("s1").sessionId("s1").build();
         agent.call(userMsg("hi"), rc).block();
@@ -127,12 +163,7 @@ class JsonSessionDefaultLocationTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "shared-" + UUID.randomUUID();
-        HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name(agentName)
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+        HarnessAgent agent = buildAgent(agentName);
 
         agent.call(
                         userMsg("alice"),
@@ -166,12 +197,7 @@ class JsonSessionDefaultLocationTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "wipe-" + UUID.randomUUID();
-        HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name(agentName)
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
+        HarnessAgent agent = buildAgent(agentName);
         agent.call(userMsg("hi"), RuntimeContext.builder().sessionId("s1").sessionId("s1").build())
                 .block();
 

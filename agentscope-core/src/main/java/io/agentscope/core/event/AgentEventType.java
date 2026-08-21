@@ -87,6 +87,9 @@ public enum AgentEventType {
 
     HINT_BLOCK("HINT_BLOCK"),
     ALL_TOOLS_DENIED("ALL_TOOLS_DENIED"),
+
+    SUGGESTION_RESULT("SUGGESTION_RESULT"),
+
     CUSTOM("CUSTOM");
 
     private final String value;
