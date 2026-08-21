@@ -71,10 +71,11 @@ public class JdbcStore implements BaseStore {
     }
 
     private void initializeSchema() {
-        String ddl = dialect.storeCreateTableSql();
         try (Connection c = dataSource.getConnection();
                 Statement st = c.createStatement()) {
-            st.executeUpdate(ddl);
+            for (String ddl : dialect.storeCreateTableDdls()) {
+                st.execute(ddl);
+            }
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to initialize JdbcStore schema", e);
         }

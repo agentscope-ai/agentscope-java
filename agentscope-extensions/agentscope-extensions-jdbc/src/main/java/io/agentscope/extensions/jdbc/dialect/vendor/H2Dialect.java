@@ -17,8 +17,10 @@ package io.agentscope.extensions.jdbc.dialect.vendor;
 
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import java.io.InputStream;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -36,17 +38,24 @@ public class H2Dialect extends AbstractJdbcDialect {
     // ------------------------------------------------------------------
 
     @Override
-    public String storeCreateTableSql() {
-        return "CREATE TABLE IF NOT EXISTS "
-                + storeTableName()
-                + " ("
-                + "  namespace_path VARCHAR(2048) NOT NULL,"
-                + "  item_key       VARCHAR(255)  NOT NULL,"
-                + "  value_json     CLOB          NOT NULL,"
-                + "  version        BIGINT        NOT NULL,"
-                + "  updated_at     BIGINT        NOT NULL,"
-                + "  PRIMARY KEY (namespace_path, item_key)"
-                + ")";
+    public List<String> storeCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + storeTableName()
+                        + " ("
+                        + "  namespace_path VARCHAR(2048) NOT NULL,"
+                        + "  item_key       VARCHAR(255)  NOT NULL,"
+                        + "  value_json     CLOB          NOT NULL,"
+                        + "  version        BIGINT        NOT NULL,"
+                        + "  updated_at     BIGINT        NOT NULL,"
+                        + "  PRIMARY KEY (namespace_path, item_key)"
+                        + ")",
+                // H2 cannot express a secondary index inside CREATE TABLE.
+                "CREATE INDEX IF NOT EXISTS "
+                        + storeTableName()
+                        + "_namespace_idx ON "
+                        + storeTableName()
+                        + " (namespace_path)");
     }
 
     @Override
@@ -72,18 +81,25 @@ public class H2Dialect extends AbstractJdbcDialect {
     // ------------------------------------------------------------------
 
     @Override
-    public String sessionStateCreateTableSql() {
-        return "CREATE TABLE IF NOT EXISTS "
-                + sessionStateTableName()
-                + " ("
-                + "  session_id  VARCHAR(255) NOT NULL,"
-                + "  state_key   VARCHAR(255) NOT NULL,"
-                + "  item_index  INT          NOT NULL DEFAULT 0,"
-                + "  state_data  CLOB         NOT NULL,"
-                + "  created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
-                + "  updated_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
-                + "  PRIMARY KEY (session_id, state_key, item_index)"
-                + ")";
+    public List<String> sessionStateCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + sessionStateTableName()
+                        + " ("
+                        + "  session_id  VARCHAR(255) NOT NULL,"
+                        + "  state_key   VARCHAR(255) NOT NULL,"
+                        + "  item_index  INT          NOT NULL DEFAULT 0,"
+                        + "  state_data  CLOB         NOT NULL,"
+                        + "  created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
+                        + "  PRIMARY KEY (session_id, state_key, item_index)"
+                        + ")",
+                // H2 cannot express a secondary index inside CREATE TABLE.
+                "CREATE INDEX IF NOT EXISTS "
+                        + sessionStateTableName()
+                        + "_session_idx ON "
+                        + sessionStateTableName()
+                        + " (session_id)");
     }
 
     @Override
@@ -115,18 +131,19 @@ public class H2Dialect extends AbstractJdbcDialect {
     // ------------------------------------------------------------------
 
     @Override
-    public String snapshotCreateTableSql() {
-        return "CREATE TABLE IF NOT EXISTS "
-                + snapshotTableName()
-                + " ("
-                + "  snapshot_id VARCHAR(512) NOT NULL PRIMARY KEY, "
-                + "  data BLOB NOT NULL, "
-                + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                + ")";
+    public List<String> snapshotCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + snapshotTableName()
+                        + " ("
+                        + "  snapshot_id VARCHAR(512) NOT NULL PRIMARY KEY, "
+                        + "  data BLOB NOT NULL, "
+                        + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + ")");
     }
 
     @Override
-    public BoundSql snapshotUpsert(String snapshotId, byte[] data) {
+    public BoundSql snapshotUpsert(String snapshotId, InputStream data) {
         return new BoundSql(
                 "MERGE INTO "
                         + snapshotTableName()

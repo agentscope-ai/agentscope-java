@@ -17,6 +17,7 @@ package io.agentscope.extensions.jdbc.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.state.State;
@@ -46,6 +47,15 @@ class JdbcAgentStateStoreH2Test {
     void setUp() {
         DataSource ds = H2TestSupport.createDataSource("state_store_test");
         store = new JdbcAgentStateStore(ds, new H2Dialect(), true);
+    }
+
+    @Test
+    @DisplayName("constructor with createIfNotExist=false throws when table is missing")
+    void constructorVerifiesTableExists() {
+        DataSource ds = H2TestSupport.createDataSource("state_verify_test");
+        assertThrows(
+                IllegalStateException.class,
+                () -> new JdbcAgentStateStore(ds, new H2Dialect(), false));
     }
 
     @Test

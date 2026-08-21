@@ -23,6 +23,8 @@ import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
+import java.io.ByteArrayInputStream;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
@@ -118,7 +120,7 @@ class DialectSqlTests {
     @Test
     @DisplayName("MysqlDialect store DDL has LONGTEXT and ENGINE=InnoDB")
     void mysqlStoreDdlHasInnoDB() {
-        String ddl = new MysqlDialect().storeCreateTableSql();
+        String ddl = new MysqlDialect().storeCreateTableDdls().get(0);
         assertTrue(ddl.contains("LONGTEXT"));
         assertTrue(ddl.contains("ENGINE=InnoDB"));
         assertTrue(ddl.contains("utf8mb4"));
@@ -127,7 +129,7 @@ class DialectSqlTests {
     @Test
     @DisplayName("SqliteDialect store DDL uses TEXT and INTEGER")
     void sqliteStoreDdlUsesTextInteger() {
-        String ddl = new SqliteDialect().storeCreateTableSql();
+        String ddl = new SqliteDialect().storeCreateTableDdls().get(0);
         assertTrue(ddl.contains("TEXT"));
         assertTrue(ddl.contains("INTEGER"));
     }
@@ -135,7 +137,55 @@ class DialectSqlTests {
     @Test
     @DisplayName("H2Dialect store DDL uses CLOB")
     void h2StoreDdlUsesClob() {
-        assertTrue(new H2Dialect().storeCreateTableSql().contains("CLOB"));
+        assertTrue(new H2Dialect().storeCreateTableDdls().get(0).contains("CLOB"));
+    }
+
+    // ------------------------------------------------------------------
+    //  Secondary indexes (namespace_path / session_id)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("MysqlDialect inlines the namespace and session indexes in CREATE TABLE")
+    void mysqlDdlInlinesIndexes() {
+        var d = new MysqlDialect();
+        List<String> store = d.storeCreateTableDdls();
+        assertEquals(1, store.size());
+        assertTrue(store.get(0).contains("INDEX idx_namespace (namespace_path)"));
+
+        List<String> session = d.sessionStateCreateTableDdls();
+        assertEquals(1, session.size());
+        assertTrue(session.get(0).contains("INDEX idx_session (session_id)"));
+
+        // MySQL has no CREATE INDEX IF NOT EXISTS, so the three tables stay three DDLs.
+        assertEquals(3, d.createTableDdls().size());
+    }
+
+    @Test
+    @DisplayName("PostgresDialect emits a separate idempotent index DDL after each CREATE TABLE")
+    void postgresIndexDdl() {
+        assertStoreAndSessionIndexes(new PostgresDialect());
+    }
+
+    @Test
+    @DisplayName("H2 and SQLite dialects emit a separate idempotent index DDL")
+    void h2AndSqliteIndexDdl() {
+        for (AbstractJdbcDialect d : List.of(new H2Dialect(), new SqliteDialect())) {
+            assertStoreAndSessionIndexes(d);
+        }
+    }
+
+    private static void assertStoreAndSessionIndexes(AbstractJdbcDialect d) {
+        List<String> store = d.storeCreateTableDdls();
+        assertEquals(2, store.size());
+        assertTrue(store.get(0).startsWith("CREATE TABLE IF NOT EXISTS"));
+        assertTrue(store.get(1).startsWith("CREATE INDEX IF NOT EXISTS"));
+        assertTrue(store.get(1).contains("namespace_path"));
+
+        List<String> session = d.sessionStateCreateTableDdls();
+        assertEquals(2, session.size());
+        assertTrue(session.get(0).startsWith("CREATE TABLE IF NOT EXISTS"));
+        assertTrue(session.get(1).startsWith("CREATE INDEX IF NOT EXISTS"));
+        assertTrue(session.get(1).contains("session_id"));
     }
 
     // ------------------------------------------------------------------
@@ -178,19 +228,20 @@ class DialectSqlTests {
     @Test
     @DisplayName("PostgresDialect snapshot DDL uses BYTEA")
     void postgresSnapshotDdlUsesBytea() {
-        assertTrue(new PostgresDialect().snapshotCreateTableSql().contains("BYTEA"));
+        assertTrue(new PostgresDialect().snapshotCreateTableDdls().get(0).contains("BYTEA"));
     }
 
     @Test
     @DisplayName("MysqlDialect snapshot DDL uses LONGBLOB")
     void mysqlSnapshotDdlUsesLongBlob() {
-        assertTrue(new MysqlDialect().snapshotCreateTableSql().contains("LONGBLOB"));
+        assertTrue(new MysqlDialect().snapshotCreateTableDdls().get(0).contains("LONGBLOB"));
     }
 
     @Test
     @DisplayName("H2Dialect snapshot UPSERT uses full MERGE INTO with created_at update")
     void h2SnapshotUpsertUpdatesCreatedAt() {
-        BoundSql bs = new H2Dialect().snapshotUpsert("snap", new byte[] {1, 2});
+        BoundSql bs =
+                new H2Dialect().snapshotUpsert("snap", new ByteArrayInputStream(new byte[] {1, 2}));
         assertTrue(bs.sql().contains("MERGE INTO"));
         assertTrue(bs.sql().contains("WHEN MATCHED THEN UPDATE SET"));
         assertTrue(bs.sql().contains("created_at = CURRENT_TIMESTAMP"));
@@ -231,7 +282,7 @@ class DialectSqlTests {
     @Test
     @DisplayName("MysqlDialect store PK fits InnoDB utf8mb4 3072-byte limit")
     void mysqlStorePkFitsInnoDbUtf8mb4Limit() {
-        String ddl = new MysqlDialect().storeCreateTableSql();
+        String ddl = new MysqlDialect().storeCreateTableDdls().get(0);
 
         int namespacePathLength = varcharLength(ddl, "namespace_path");
         int itemKeyLength = varcharLength(ddl, "item_key");

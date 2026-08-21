@@ -16,6 +16,8 @@
 package io.agentscope.extensions.jdbc.dialect.table;
 
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import java.io.InputStream;
+import java.util.List;
 
 /**
  * Table-domain dialect interface for the snapshots table.
@@ -38,11 +40,18 @@ public interface SnapshotDialect {
     //  Abstract — must override per database
     // ------------------------------------------------------------------
 
-    /** CREATE TABLE DDL for the snapshots table. Must be idempotent. */
-    String snapshotCreateTableSql();
+    /** DDL statements (one or more) to create the snapshots table. Must be idempotent. */
+    List<String> snapshotCreateTableDdls();
 
-    /** Idempotent UPSERT for uploading a snapshot. */
-    BoundSql snapshotUpsert(String snapshotId, byte[] data);
+    /**
+     * Idempotent UPSERT for uploading a snapshot.
+     *
+     * <p>The {@code data} param is bound as a binary stream via
+     * {@link java.sql.PreparedStatement#setBinaryStream(int, InputStream)} by the client, so
+     * snapshots of arbitrary size are streamed straight to the database without loading the
+     * whole archive into heap memory.
+     */
+    BoundSql snapshotUpsert(String snapshotId, InputStream data);
 
     // ------------------------------------------------------------------
     //  Default — ANSI baseline

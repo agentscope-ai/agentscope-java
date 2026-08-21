@@ -32,6 +32,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Database-agnostic session state store backed by {@link SessionStateDialect}.
@@ -42,6 +44,8 @@ import javax.sql.DataSource;
  * @author shanhongyu
  */
 public class JdbcAgentStateStore implements AgentStateStore {
+
+    private static final Logger LOG = LoggerFactory.getLogger(JdbcAgentStateStore.class);
 
     private static final String HASH_KEY_SUFFIX = ":_hash";
     private static final int SINGLE_STATE_INDEX = 0;
@@ -82,10 +86,11 @@ public class JdbcAgentStateStore implements AgentStateStore {
     // -------------------------------------------------------------------------
 
     private void createTableIfNotExist() {
-        String ddl = dialect.sessionStateCreateTableSql();
         try (Connection conn = dataSource.getConnection();
                 Statement stmt = conn.createStatement()) {
-            stmt.execute(ddl);
+            for (String ddl : dialect.sessionStateCreateTableDdls()) {
+                stmt.execute(ddl);
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to create session table", e);
         }
@@ -162,10 +167,25 @@ public class JdbcAgentStateStore implements AgentStateStore {
                                 ListHashUtil.needsFullRewrite(values, storedHash, existingCount);
 
                         if (needsFullRewrite) {
+                            LOG.debug(
+                                    "List rewrite for key '{}': existing={}, incoming={}",
+                                    key,
+                                    existingCount,
+                                    values.size());
                             deleteListItems(conn, slotId, key);
                             insertItems(conn, slotId, key, values, 0);
                             saveHash(conn, slotId, hashKey, currentHash);
                         } else if (values.size() > existingCount) {
+                            // Incremental append: the stored hash matched the prefix of the
+                            // incoming list, so only the tail is inserted. A hash collision
+                            // here would silently diverge the stored state — logged for
+                            // troubleshooting.
+                            LOG.debug(
+                                    "Incremental append for key '{}': appending {} items after"
+                                            + " existing {}",
+                                    key,
+                                    values.size() - existingCount,
+                                    existingCount);
                             List<? extends State> newItems =
                                     values.subList(existingCount, values.size());
                             insertItems(conn, slotId, key, newItems, existingCount);

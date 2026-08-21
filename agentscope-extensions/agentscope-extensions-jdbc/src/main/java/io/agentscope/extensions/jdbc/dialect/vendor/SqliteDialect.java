@@ -17,8 +17,10 @@ package io.agentscope.extensions.jdbc.dialect.vendor;
 
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import java.io.InputStream;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -37,17 +39,25 @@ public class SqliteDialect extends AbstractJdbcDialect {
     // ------------------------------------------------------------------
 
     @Override
-    public String storeCreateTableSql() {
-        return "CREATE TABLE IF NOT EXISTS "
-                + storeTableName()
-                + " ("
-                + "  namespace_path TEXT    NOT NULL,"
-                + "  item_key       TEXT    NOT NULL,"
-                + "  value_json     TEXT    NOT NULL,"
-                + "  version        INTEGER NOT NULL,"
-                + "  updated_at     INTEGER NOT NULL,"
-                + "  PRIMARY KEY (namespace_path, item_key)"
-                + ")";
+    public List<String> storeCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + storeTableName()
+                        + " ("
+                        + "  namespace_path TEXT    NOT NULL,"
+                        + "  item_key       TEXT    NOT NULL,"
+                        + "  value_json     TEXT    NOT NULL,"
+                        + "  version        INTEGER NOT NULL,"
+                        + "  updated_at     INTEGER NOT NULL,"
+                        + "  PRIMARY KEY (namespace_path, item_key)"
+                        + ")",
+                // SQLite cannot express a secondary index inside CREATE TABLE; without it,
+                // the LIKE prefix search degrades to a full table scan.
+                "CREATE INDEX IF NOT EXISTS "
+                        + storeTableName()
+                        + "_namespace_idx ON "
+                        + storeTableName()
+                        + " (namespace_path)");
     }
 
     @Override
@@ -72,18 +82,24 @@ public class SqliteDialect extends AbstractJdbcDialect {
     // ------------------------------------------------------------------
 
     @Override
-    public String sessionStateCreateTableSql() {
-        return "CREATE TABLE IF NOT EXISTS "
-                + sessionStateTableName()
-                + " ("
-                + "  session_id  TEXT    NOT NULL,"
-                + "  state_key   TEXT    NOT NULL,"
-                + "  item_index  INTEGER NOT NULL DEFAULT 0,"
-                + "  state_data  TEXT    NOT NULL,"
-                + "  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                + "  updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                + "  PRIMARY KEY (session_id, state_key, item_index)"
-                + ")";
+    public List<String> sessionStateCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + sessionStateTableName()
+                        + " ("
+                        + "  session_id  TEXT    NOT NULL,"
+                        + "  state_key   TEXT    NOT NULL,"
+                        + "  item_index  INTEGER NOT NULL DEFAULT 0,"
+                        + "  state_data  TEXT    NOT NULL,"
+                        + "  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  PRIMARY KEY (session_id, state_key, item_index)"
+                        + ")",
+                "CREATE INDEX IF NOT EXISTS "
+                        + sessionStateTableName()
+                        + "_session_idx ON "
+                        + sessionStateTableName()
+                        + " (session_id)");
     }
 
     @Override
@@ -112,18 +128,19 @@ public class SqliteDialect extends AbstractJdbcDialect {
     // ------------------------------------------------------------------
 
     @Override
-    public String snapshotCreateTableSql() {
-        return "CREATE TABLE IF NOT EXISTS "
-                + snapshotTableName()
-                + " ("
-                + "  snapshot_id TEXT NOT NULL PRIMARY KEY, "
-                + "  data BLOB NOT NULL, "
-                + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                + ")";
+    public List<String> snapshotCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + snapshotTableName()
+                        + " ("
+                        + "  snapshot_id TEXT NOT NULL PRIMARY KEY, "
+                        + "  data BLOB NOT NULL, "
+                        + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + ")");
     }
 
     @Override
-    public BoundSql snapshotUpsert(String snapshotId, byte[] data) {
+    public BoundSql snapshotUpsert(String snapshotId, InputStream data) {
         return new BoundSql(
                 "INSERT INTO "
                         + snapshotTableName()

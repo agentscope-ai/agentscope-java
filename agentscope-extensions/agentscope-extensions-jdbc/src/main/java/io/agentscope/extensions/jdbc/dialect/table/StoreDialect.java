@@ -16,17 +16,25 @@
 package io.agentscope.extensions.jdbc.dialect.table;
 
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import java.util.List;
 
 /**
  * Table-domain dialect interface for the KV store table.
  *
- * <p>Defines the create-table DDL (abstract, varies per database) and ANSI-standard
+ * <p>Defines the create-schema DDL (abstract, varies per database) and ANSI-standard
  * business SQL (default methods returning {@link BoundSql}). The aggregate class
  * {@code AbstractJdbcDialect} implements this interface along with the other table-domain
  * interfaces; vendor classes extend the aggregate and override only what differs.
  *
  * <p>Method names are prefixed with {@code store} to avoid collision when the
  * aggregate class implements multiple table-domain interfaces.
+ *
+ * <p>Secondary index: the {@code namespace_path LIKE 'prefix%'} query in
+ * {@link #storeSearch} requires an index on {@code namespace_path} to avoid a full table
+ * scan on large stores. Where the database supports it (MySQL), vendors inline
+ * {@code INDEX idx_namespace (namespace_path)} in the {@code CREATE TABLE} statement;
+ * the others append an idempotent {@code CREATE INDEX IF NOT EXISTS} as a second element
+ * of the {@link #storeCreateTableDdls()} list.
  *
  * @author shanhongyu
  */
@@ -41,8 +49,8 @@ public interface StoreDialect {
     //  Abstract — must override per database
     // ------------------------------------------------------------------
 
-    /** CREATE TABLE DDL for the KV store table. Must be idempotent. */
-    String storeCreateTableSql();
+    /** DDL statements (one or more) to create the KV store table. Must be idempotent. */
+    List<String> storeCreateTableDdls();
 
     /** UPSERT: insert new row with version=1 or update existing row with version+1. */
     BoundSql storeUpsert(String namespacePath, String key, String json, long timestamp);

@@ -16,6 +16,7 @@
 package io.agentscope.extensions.jdbc.dialect.table;
 
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import java.util.List;
 
 /**
  * Table-domain dialect interface for the session-state table.
@@ -25,6 +26,13 @@ import io.agentscope.extensions.jdbc.dialect.BoundSql;
  *
  * <p>Method names are prefixed with {@code sessionState} to avoid collision when
  * the aggregate class implements multiple table-domain interfaces.
+ *
+ * <p>Secondary index: the frequent {@code WHERE session_id = ?} and
+ * {@code session_id LIKE 'prefix%'} queries require an index on {@code session_id}. Where
+ * the database supports it (MySQL), vendors inline {@code INDEX idx_session (session_id)}
+ * in the {@code CREATE TABLE} statement; the others append an idempotent
+ * {@code CREATE INDEX IF NOT EXISTS} as a second element of the
+ * {@link #sessionStateCreateTableDdls()} list.
  *
  * @author shanhongyu
  */
@@ -39,8 +47,8 @@ public interface SessionStateDialect {
     //  Abstract — must override per database
     // ------------------------------------------------------------------
 
-    /** CREATE TABLE DDL for the sessions table. Must be idempotent. */
-    String sessionStateCreateTableSql();
+    /** DDL statements (one or more) to create the sessions table. Must be idempotent. */
+    List<String> sessionStateCreateTableDdls();
 
     /** UPSERT a single state value. On conflict, updates state_data. */
     BoundSql sessionStateUpsert(String sessionId, String stateKey, int itemIndex, String stateData);

@@ -23,13 +23,17 @@ import com.mysql.cj.jdbc.MysqlDataSource;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
+import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
@@ -99,6 +103,20 @@ class MysqlIntegrationTest {
         try (var downloaded = client.download("mysql-snap")) {
             assertEquals(data.length, downloaded.readAllBytes().length);
         }
+    }
+
+    @Test
+    @DisplayName("05: sandbox lock with a >64-char lock name is SHA-256-normalized")
+    void longLockName() throws Exception {
+        var guard = JdbcDistributedStore.create(createDataSource()).sandboxExecutionGuard();
+        // The composed lock name exceeds MySQL's 64-char GET_LOCK limit; the dialect must
+        // normalize it (truncated prefix + SHA-256 digest) so acquisition still works.
+        String longValue = "agent-" + "x".repeat(120);
+        var key = SandboxIsolationKey.resolve(IsolationScope.GLOBAL, null, longValue).orElseThrow();
+
+        SandboxLease lease = guard.tryEnter(key);
+        assertNotNull(lease);
+        lease.close();
     }
 
     private DataSource createDataSource() {

@@ -76,8 +76,12 @@ public abstract class AbstractJdbcDialect
      * {@code CREATE TABLE IF NOT EXISTS} DDL so it runs once per instance instead of on
      * every {@link #tryEnter(String, int)} acquisition. Cannot be static: each instance
      * (and each fresh in-memory database in tests) needs its own idempotent create.
+     *
+     * <p>Volatile so a thread that observes {@code true} is guaranteed to see the DDL
+     * committed by the thread that ran it, avoiding a JMM data race when two threads
+     * acquire locks concurrently.
      */
-    private boolean lockTableEnsured;
+    private volatile boolean lockTableEnsured;
 
     // ------------------------------------------------------------------
     //  Final table-name resolution (override > prefix + base)
@@ -108,16 +112,18 @@ public abstract class AbstractJdbcDialect
     // ------------------------------------------------------------------
 
     /**
-     * Collects create-table DDL for all table-domain interfaces, executed by the builder
-     * in a single connection during {@code build()}.
+     * Collects create-schema DDL for all table-domain interfaces, executed by the builder
+     * in a single connection during {@code build()}. Each table-domain method may return
+     * one or more statements (e.g. {@code CREATE TABLE} plus a secondary {@code CREATE
+     * INDEX}), so no vendor is constrained to a single SQL statement per table.
      *
-     * @return all table DDL statements in registration order
+     * @return all DDL statements, in store → sessions → snapshots order
      */
-    List<String> createTableDdls() {
+    protected List<String> createTableDdls() {
         List<String> ddls = new ArrayList<>();
-        ddls.add(storeCreateTableSql());
-        ddls.add(sessionStateCreateTableSql());
-        ddls.add(snapshotCreateTableSql());
+        ddls.addAll(storeCreateTableDdls());
+        ddls.addAll(sessionStateCreateTableDdls());
+        ddls.addAll(snapshotCreateTableDdls());
         return ddls;
     }
 
@@ -144,9 +150,21 @@ public abstract class AbstractJdbcDialect
     /**
      * Binds the DataSource used for lock acquisition. Called by the builder and
      * {@code JdbcDistributedStore}; not intended for direct application use.
+     *
+     * <p>If a different DataSource was already bound (e.g. the one the dialect was built
+     * with), the replacement is logged so callers notice a mismatched
+     * {@code JdbcDistributedStore.create(dataSource, dialect)}.
      */
     public void bindDataSource(DataSource dataSource) {
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+        Objects.requireNonNull(dataSource, "dataSource");
+        if (this.dataSource != null && this.dataSource != dataSource) {
+            LOG.warn(
+                    "Replacing already-bound DataSource {} with {} — the dialect's lock "
+                            + "strategy will use the new one",
+                    this.dataSource,
+                    dataSource);
+        }
+        this.dataSource = dataSource;
     }
 
     /** Returns the bound DataSource (for vendor lock implementations). */

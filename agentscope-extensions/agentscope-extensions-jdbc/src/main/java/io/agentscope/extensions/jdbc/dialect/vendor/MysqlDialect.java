@@ -18,11 +18,17 @@ package io.agentscope.extensions.jdbc.dialect.vendor;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,26 +47,37 @@ public class MysqlDialect extends AbstractJdbcDialect {
 
     private static final Logger log = LoggerFactory.getLogger(MysqlDialect.class);
 
+    /** MySQL {@code GET_LOCK} name limit (characters, ASCII lock names are 1 byte each). */
     private static final int MAX_LOCK_NAME_LENGTH = 64;
+
+    /**
+     * Hex chars of the SHA-256 digest embedded in a normalized lock name — 32 hex chars = 128
+     * bits, matching the reviewer-recommended collision strength.
+     */
+    private static final int LOCK_NAME_HASH_HEX_LENGTH = 32;
+
+    private static final String SHA_256 = "SHA-256";
 
     // ------------------------------------------------------------------
     //  StoreDialect
     // ------------------------------------------------------------------
 
     @Override
-    public String storeCreateTableSql() {
+    public List<String> storeCreateTableDdls() {
         // Keep composite PK under InnoDB utf8mb4 3072-byte limit:
-        // (512 + 255) * 4 = 3068 bytes.
-        return "CREATE TABLE IF NOT EXISTS "
-                + storeTableName()
-                + " ("
-                + "  namespace_path VARCHAR(512)  NOT NULL,"
-                + "  item_key       VARCHAR(255)  NOT NULL,"
-                + "  value_json     LONGTEXT      NOT NULL,"
-                + "  version        BIGINT        NOT NULL,"
-                + "  updated_at     BIGINT        NOT NULL,"
-                + "  PRIMARY KEY (namespace_path, item_key)"
-                + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+        // (512 + 255) * 4 = 3068 bytes. idx_namespace (512 * 4 = 2048 bytes) also fits.
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + storeTableName()
+                        + " ("
+                        + "  namespace_path VARCHAR(512)  NOT NULL,"
+                        + "  item_key       VARCHAR(255)  NOT NULL,"
+                        + "  value_json     LONGTEXT      NOT NULL,"
+                        + "  version        BIGINT        NOT NULL,"
+                        + "  updated_at     BIGINT        NOT NULL,"
+                        + "  PRIMARY KEY (namespace_path, item_key),"
+                        + "  INDEX idx_namespace (namespace_path)"
+                        + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     }
 
     @Override
@@ -85,19 +102,21 @@ public class MysqlDialect extends AbstractJdbcDialect {
     // ------------------------------------------------------------------
 
     @Override
-    public String sessionStateCreateTableSql() {
-        return """
-        CREATE TABLE IF NOT EXISTS %s (
-          session_id  VARCHAR(255) NOT NULL,
-          state_key   VARCHAR(255) NOT NULL,
-          item_index  INT          NOT NULL DEFAULT 0,
-          state_data  LONGTEXT     NOT NULL,
-          created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
-          updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          PRIMARY KEY (session_id, state_key, item_index)
-        ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci\
-        """
-                .formatted(sessionStateTableName());
+    public List<String> sessionStateCreateTableDdls() {
+        return List.of(
+                """
+                CREATE TABLE IF NOT EXISTS %s (
+                  session_id  VARCHAR(255) NOT NULL,
+                  state_key   VARCHAR(255) NOT NULL,
+                  item_index  INT          NOT NULL DEFAULT 0,
+                  state_data  LONGTEXT     NOT NULL,
+                  created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                  updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  PRIMARY KEY (session_id, state_key, item_index),
+                  INDEX idx_session (session_id)
+                ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci\
+                """
+                        .formatted(sessionStateTableName()));
     }
 
     @Override
@@ -127,18 +146,19 @@ public class MysqlDialect extends AbstractJdbcDialect {
     // ------------------------------------------------------------------
 
     @Override
-    public String snapshotCreateTableSql() {
-        return "CREATE TABLE IF NOT EXISTS "
-                + snapshotTableName()
-                + " ("
-                + "  snapshot_id VARCHAR(512) NOT NULL PRIMARY KEY, "
-                + "  data LONGBLOB NOT NULL, "
-                + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                + ")";
+    public List<String> snapshotCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + snapshotTableName()
+                        + " ("
+                        + "  snapshot_id VARCHAR(512) NOT NULL PRIMARY KEY, "
+                        + "  data LONGBLOB NOT NULL, "
+                        + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + ")");
     }
 
     @Override
-    public BoundSql snapshotUpsert(String snapshotId, byte[] data) {
+    public BoundSql snapshotUpsert(String snapshotId, InputStream data) {
         return new BoundSql(
                 "INSERT INTO "
                         + snapshotTableName()
@@ -192,8 +212,24 @@ public class MysqlDialect extends AbstractJdbcDialect {
         if (lockName.length() <= MAX_LOCK_NAME_LENGTH) {
             return lockName;
         }
-        int hash = lockName.hashCode();
-        return lockName.substring(0, 50) + ":" + Integer.toHexString(hash);
+        // Truncate the prefix and append a SHA-256 digest so that two distinct long lock
+        // names can never map to the same normalized name (String.hashCode is only 32 bits
+        // and collides under high cardinality — a collision would let one agent's
+        // RELEASE_LOCK release another agent's lock).
+        String hash = sha256Hex(lockName);
+        int prefixLength = MAX_LOCK_NAME_LENGTH - 1 - LOCK_NAME_HASH_HEX_LENGTH;
+        return lockName.substring(0, prefixLength)
+                + ":"
+                + hash.substring(0, LOCK_NAME_HASH_HEX_LENGTH);
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance(SHA_256);
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
     }
 
     /** Lease backed by MySQL {@code RELEASE_LOCK()} and connection close. */

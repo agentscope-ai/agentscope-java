@@ -17,11 +17,13 @@ package io.agentscope.extensions.jdbc.snapshot;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.extensions.jdbc.H2TestSupport;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import java.io.ByteArrayInputStream;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,6 +79,12 @@ class JdbcRemoteSnapshotClientH2Test {
     @DisplayName("exists returns false for missing snapshot")
     void existsFalseForMissing() throws Exception {
         assertFalse(client.exists("nonexistent"));
+    }
+
+    @Test
+    @DisplayName("download throws FileNotFoundException for missing snapshot")
+    void downloadMissingThrows() throws Exception {
+        assertThrows(FileNotFoundException.class, () -> client.download("missing"));
     }
 
     @Test

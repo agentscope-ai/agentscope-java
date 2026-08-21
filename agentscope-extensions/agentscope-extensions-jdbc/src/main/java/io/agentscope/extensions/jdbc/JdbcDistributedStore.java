@@ -62,6 +62,15 @@ public class JdbcDistributedStore implements DistributedStore {
     private final DataSource dataSource;
     private final AbstractJdbcDialect dialect;
 
+    // Lazily cached components. The DistributedStore contract does not bound the number of
+    // calls to the accessor methods; building each component eagerly on every call would
+    // re-run CREATE TABLE IF NOT EXISTS DDL and allocate throwaway instances. The first
+    // call creates the component (with schema init) and subsequent calls reuse it. The
+    // volatile write makes the publish safe across threads.
+    private volatile AgentStateStore agentStateStore;
+    private volatile BaseStore baseStore;
+    private volatile SandboxSnapshotSpec sandboxSnapshotSpec;
+
     private JdbcDistributedStore(DataSource dataSource, AbstractJdbcDialect dialect) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
         this.dialect = Objects.requireNonNull(dialect, "dialect");
@@ -92,17 +101,51 @@ public class JdbcDistributedStore implements DistributedStore {
 
     @Override
     public AgentStateStore agentStateStore() {
-        return new JdbcAgentStateStore(dataSource, dialect, true);
+        AgentStateStore store = this.agentStateStore;
+        if (store == null) {
+            synchronized (this) {
+                store = this.agentStateStore;
+                if (store == null) {
+                    store = new JdbcAgentStateStore(dataSource, dialect, true);
+                    this.agentStateStore = store;
+                }
+            }
+        }
+        return store;
     }
 
     @Override
     public BaseStore baseStore() {
-        return JdbcStore.builder(dataSource).dialect(dialect).initializeSchema(true).build();
+        BaseStore store = this.baseStore;
+        if (store == null) {
+            synchronized (this) {
+                store = this.baseStore;
+                if (store == null) {
+                    store =
+                            JdbcStore.builder(dataSource)
+                                    .dialect(dialect)
+                                    .initializeSchema(true)
+                                    .build();
+                    this.baseStore = store;
+                }
+            }
+        }
+        return store;
     }
 
     @Override
     public SandboxSnapshotSpec sandboxSnapshotSpec() {
-        return new JdbcSnapshotSpec(dataSource, dialect, true);
+        SandboxSnapshotSpec spec = this.sandboxSnapshotSpec;
+        if (spec == null) {
+            synchronized (this) {
+                spec = this.sandboxSnapshotSpec;
+                if (spec == null) {
+                    spec = new JdbcSnapshotSpec(dataSource, dialect, true);
+                    this.sandboxSnapshotSpec = spec;
+                }
+            }
+        }
+        return spec;
     }
 
     @Override

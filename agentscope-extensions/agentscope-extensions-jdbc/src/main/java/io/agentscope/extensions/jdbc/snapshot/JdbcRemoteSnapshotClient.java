@@ -28,8 +28,6 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * {@link RemoteSnapshotClient} backed by a JDBC BLOB column, with zero inline SQL.
@@ -40,8 +38,6 @@ import org.slf4j.LoggerFactory;
  * @author shanhongyu
  */
 public class JdbcRemoteSnapshotClient implements RemoteSnapshotClient {
-
-    private static final Logger log = LoggerFactory.getLogger(JdbcRemoteSnapshotClient.class);
 
     private final DataSource dataSource;
     private final SnapshotDialect dialect;
@@ -73,19 +69,20 @@ public class JdbcRemoteSnapshotClient implements RemoteSnapshotClient {
     }
 
     private void initSchema() {
-        String ddl = dialect.snapshotCreateTableSql();
         try (Connection conn = dataSource.getConnection();
                 Statement stmt = conn.createStatement()) {
-            stmt.execute(ddl);
+            for (String ddl : dialect.snapshotCreateTableDdls()) {
+                stmt.execute(ddl);
+            }
         } catch (SQLException e) {
-            log.warn("Failed to initialize snapshot table: {}", e.getMessage());
+            throw new IllegalStateException("Failed to initialize snapshot table", e);
         }
     }
 
     @Override
     public void upload(String snapshotId, InputStream data) throws Exception {
-        byte[] bytes = data.readAllBytes();
-        BoundSql boundSql = dialect.snapshotUpsert(snapshotId, bytes);
+        Objects.requireNonNull(data, "data");
+        BoundSql boundSql = dialect.snapshotUpsert(snapshotId, data);
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement ps = conn.prepareStatement(boundSql.sql())) {
             bindParams(ps, boundSql.params());
@@ -123,7 +120,14 @@ public class JdbcRemoteSnapshotClient implements RemoteSnapshotClient {
 
     private static void bindParams(PreparedStatement ps, List<Object> params) throws SQLException {
         for (int i = 0; i < params.size(); i++) {
-            ps.setObject(i + 1, params.get(i));
+            Object param = params.get(i);
+            if (param instanceof InputStream stream) {
+                // Stream the snapshot BLOB straight from the caller's archive instead of
+                // buffering it in heap memory (see snapshotUpsert javadoc).
+                ps.setBinaryStream(i + 1, stream);
+            } else {
+                ps.setObject(i + 1, param);
+            }
         }
     }
 }

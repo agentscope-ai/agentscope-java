@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.jdbc.sandbox;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.extensions.jdbc.H2TestSupport;
@@ -117,5 +118,32 @@ class JdbcSandboxExecutionGuardH2Test {
         pool.shutdown();
         assertTrue(
                 maxConcurrent.get() == 1, "max concurrent should be 1, got " + maxConcurrent.get());
+    }
+
+    @Test
+    @DisplayName("tryEnter times out with InterruptedException when the lock is held")
+    void tryEnterTimesOutWhenHeld() throws Exception {
+        // Shared DataSource so both guards contend on the same lock table.
+        DataSource ds = H2TestSupport.createDataSource("guard_timeout_test");
+        H2Dialect dialect = new H2Dialect();
+        dialect.bindDataSource(ds);
+        var holder =
+                JdbcSandboxExecutionGuard.builder(dialect)
+                        .lockTimeout(Duration.ofSeconds(5))
+                        .build();
+        var contender =
+                JdbcSandboxExecutionGuard.builder(dialect)
+                        .lockTimeout(Duration.ofSeconds(1))
+                        .build();
+
+        SandboxIsolationKey key =
+                SandboxIsolationKey.resolve(IsolationScope.AGENT, null, "held-agent").orElseThrow();
+
+        SandboxLease held = holder.tryEnter(key);
+        try {
+            assertThrows(InterruptedException.class, () -> contender.tryEnter(key));
+        } finally {
+            held.close();
+        }
     }
 }
