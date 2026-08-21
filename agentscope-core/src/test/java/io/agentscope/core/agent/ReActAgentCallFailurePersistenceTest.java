@@ -144,6 +144,33 @@ class ReActAgentCallFailurePersistenceTest {
     }
 
     @Test
+    @DisplayName("the same call and state-store failure is not self-suppressed")
+    void identicalPersistenceAndModelFailureIsNotSelfSuppressed() {
+        RuntimeException sharedFailure = new RuntimeException("shared failure");
+        InMemoryAgentStateStore store =
+                new InMemoryAgentStateStore() {
+                    @Override
+                    public long saveIfVersion(
+                            String userId,
+                            String sessionId,
+                            String key,
+                            State value,
+                            long expectedVersion) {
+                        throw sharedFailure;
+                    }
+                };
+        ReActAgent agent = agent(new AlwaysFailingModel(sharedFailure), store);
+
+        RuntimeException thrown =
+                assertThrows(
+                        RuntimeException.class,
+                        () -> agent.call(List.of(userMsg("original question")), CONTEXT).block());
+
+        assertSame(sharedFailure, thrown);
+        assertFalse(List.of(thrown.getSuppressed()).contains(sharedFailure));
+    }
+
+    @Test
     @DisplayName("failed structured-output fallback also persists the user input")
     void failedStructuredOutputFallbackPersistsUserInput() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
