@@ -32,14 +32,14 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Tool that blocks until async results arrive, either for a specific task barrier or (legacy)
- * until any message appears in the session inbox.
+ * until any inbox message arrives or any task running at wait start reaches terminal state.
  *
  * <p>Prefer barrier mode ({@code task_ids} or {@code wait_all=true}): when the wait set reaches
  * terminal state, this tool embeds each task's status and result in the tool return so the model
  * can continue reasoning immediately without waiting for push-back delivery.
  *
- * <p>Without {@code task_ids} / {@code wait_all}, this keeps the legacy inbox-any behavior: the
- * tool returns as soon as <em>any</em> inbox message is present — it is not a wait-all barrier.
+ * <p>Without {@code task_ids} / {@code wait_all}, this keeps the legacy ANY-result behavior: the
+ * tool returns for <em>any</em> inbox message or tracked task completion, not a wait-all barrier.
  *
  * <p>Guardrails prevent unbounded blocking:
  * <ul>
@@ -103,9 +103,10 @@ public class WaitAsyncResultsTool {
                             + "wait_all=true waits for the snapshot of currently running tasks "
                             + "(tasks created while waiting are not added) and also returns their "
                             + "results. "
-                            + "Without task_ids and without wait_all, this is legacy inbox-any "
-                            + "mode: returns when ANY inbox message arrives — not wait-all. For "
-                            + "must-collect-all groups use task_ids or wait_all=true. "
+                            + "Without task_ids and without wait_all, this is legacy ANY-result "
+                            + "mode: returns when ANY inbox message arrives or any task running at "
+                            + "wait start becomes terminal — not wait-all. For must-collect-all "
+                            + "groups use task_ids or wait_all=true. "
                             + "Also covers AgentTeams teammate work via the external-work probe. "
                             + "Max timeout is 120 seconds. "
                             + "If you have already waited without results, use task_list or "
@@ -179,9 +180,10 @@ public class WaitAsyncResultsTool {
                     + "blocking.";
         }
 
+        List<String> legacyWaitSet = List.of();
         if (taskRepository != null) {
-            boolean hasNonTerminal =
-                    hasNonTerminalTasks(runtimeContext, sessionId) || hasExternalWork();
+            legacyWaitSet = snapshotNonTerminalTaskIds(runtimeContext, sessionId);
+            boolean hasNonTerminal = !legacyWaitSet.isEmpty() || hasExternalWork();
             if (!hasNonTerminal) {
                 Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
                 if (!Boolean.TRUE.equals(hasMessages)) {
@@ -199,18 +201,14 @@ public class WaitAsyncResultsTool {
         int timeout = normalizeTimeout(timeoutSeconds, sessionId);
 
         log.info(
-                "wait_async_results: waiting up to {}s for any inbox message (legacy inbox-any),"
-                        + " session={}",
+                "wait_async_results: waiting up to {}s for any inbox message or tracked task"
+                        + " completion (legacy ANY-result), session={}",
                 timeout,
                 sessionId);
 
         long deadlineMs = System.currentTimeMillis() + (timeout * 1000L);
 
         while (true) {
-            long remainingMs = deadlineMs - System.currentTimeMillis();
-            if (remainingMs <= 0) {
-                break;
-            }
             Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
             if (Boolean.TRUE.equals(hasMessages)) {
                 log.info("wait_async_results: inbox has messages, session={}", sessionId);
@@ -220,8 +218,22 @@ public class WaitAsyncResultsTool {
                         + "automatically. Prefer wait_async_results(task_ids=...) or "
                         + "wait_all=true when you need every task in a group.";
             }
+            BackgroundTask terminalTask =
+                    findFirstTerminalTrackedTask(runtimeContext, sessionId, legacyWaitSet);
+            if (terminalTask != null) {
+                log.info(
+                        "wait_async_results: tracked task {} is terminal, session={}",
+                        terminalTask.getTaskId(),
+                        sessionId);
+                emptyWaits.set(0);
+                return formatLegacyResult(runtimeContext, sessionId, terminalTask);
+            }
+            long remainingMs = deadlineMs - System.currentTimeMillis();
+            if (remainingMs <= 0) {
+                break;
+            }
             // Cap sleep to the remaining budget so the tool never overshoots the caller's timeout.
-            Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
+            sleepForPollInterval(remainingMs);
         }
 
         int emptyCount = emptyWaits.incrementAndGet();
@@ -364,15 +376,52 @@ public class WaitAsyncResultsTool {
         return formatBarrierResults(runtimeContext, sessionId, terminalTasks);
     }
 
+    private BackgroundTask findFirstTerminalTrackedTask(
+            RuntimeContext runtimeContext, String sessionId, List<String> waitSet) {
+        if (waitSet.isEmpty()) {
+            return null;
+        }
+        Collection<BackgroundTask> currentTasks =
+                taskRepository.listTasks(runtimeContext, sessionId, null);
+        for (String taskId : waitSet) {
+            for (BackgroundTask task : currentTasks) {
+                if (taskId.equals(task.getTaskId()) && task.getTaskStatus().isTerminal()) {
+                    return task;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String formatLegacyResult(
+            RuntimeContext runtimeContext, String sessionId, BackgroundTask task) {
+        return formatTerminalResults(
+                runtimeContext,
+                sessionId,
+                List.of(task),
+                "A tracked background task is terminal. Its result is included below.");
+    }
+
     /**
      * Embeds each terminal task's status/result in the tool return so the parent can continue
      * without waiting for inbox push-back. Marks tasks delivered to avoid duplicate reminders.
      */
     private String formatBarrierResults(
             RuntimeContext runtimeContext, String sessionId, List<BackgroundTask> tasks) {
+        return formatTerminalResults(
+                runtimeContext,
+                sessionId,
+                tasks,
+                "All requested background tasks are terminal. Results are included below.");
+    }
+
+    private String formatTerminalResults(
+            RuntimeContext runtimeContext,
+            String sessionId,
+            List<BackgroundTask> tasks,
+            String heading) {
         StringBuilder sb = new StringBuilder();
-        sb.append("All requested background tasks are terminal. Results are included below.")
-                .append('\n');
+        sb.append(heading).append('\n');
         for (BackgroundTask task : tasks) {
             task.updateLastCheckedAt();
             if (task.isCompleted() && task.getTaskStatus().isTerminal()) {
@@ -471,10 +520,5 @@ public class WaitAsyncResultsTool {
                 .filter(t -> !t.getTaskStatus().isTerminal())
                 .map(BackgroundTask::getTaskId)
                 .toList();
-    }
-
-    private boolean hasNonTerminalTasks(RuntimeContext rc, String sessionId) {
-        Collection<BackgroundTask> tasks = taskRepository.listTasks(rc, sessionId, null);
-        return tasks.stream().anyMatch(t -> !t.getTaskStatus().isTerminal());
     }
 }
