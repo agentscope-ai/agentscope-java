@@ -299,16 +299,16 @@ public class RemoteFilesystem implements AbstractFilesystem {
             }
 
             String content = fileData.content() != null ? fileData.content() : "";
-            Object[] result =
+            FilesystemUtils.ReplacementResult result =
                     FilesystemUtils.performStringReplacement(
                             content, oldString, newString, replaceAll);
 
-            if (result.length == 1) {
-                return EditResult.fail((String) result[0]);
+            if (!result.isSuccess()) {
+                return EditResult.fail(result.error());
             }
 
-            String newContent = (String) result[0];
-            int occurrences = (int) result[1];
+            String newContent = result.content();
+            int occurrences = result.occurrences();
 
             FileData updated = fileData.withContent(newContent);
             boolean ok =

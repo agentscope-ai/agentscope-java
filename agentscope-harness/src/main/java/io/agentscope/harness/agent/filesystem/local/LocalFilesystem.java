@@ -366,16 +366,16 @@ public class LocalFilesystem implements AbstractFilesystem {
             String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
             String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
 
-            Object[] result =
+            FilesystemUtils.ReplacementResult result =
                     FilesystemUtils.performStringReplacement(
                             content, normalizedOld, normalizedNew, replaceAll);
 
-            if (result.length == 1) {
-                return EditResult.fail((String) result[0]);
+            if (!result.isSuccess()) {
+                return EditResult.fail(result.error());
             }
 
-            String newContent = (String) result[0];
-            int occurrences = (int) result[1];
+            String newContent = result.content();
+            int occurrences = result.occurrences();
 
             Files.writeString(resolved, newContent, StandardCharsets.UTF_8);
             return EditResult.ok(filePath, occurrences);
