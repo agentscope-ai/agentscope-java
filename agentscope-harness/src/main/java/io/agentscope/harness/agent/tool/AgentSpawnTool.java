@@ -889,6 +889,8 @@ public class AgentSpawnTool {
             String agentId,
             boolean forceSync) {
 
+        RuntimeContext childContext =
+                RuntimeContext.builder(runtimeContext).sessionId(sessionId).userId(userId).build();
         return Mono.deferContextual(
                 parentCtx ->
                         Mono.<String>create(
@@ -923,7 +925,7 @@ public class AgentSpawnTool {
                                                                 // already-cancelled sink.
                                                                 if (signal == SignalType.CANCEL) {
                                                                     interruptAgent(
-                                                                            agent, runtimeContext);
+                                                                            agent, childContext);
                                                                 }
                                                             });
 
@@ -977,18 +979,25 @@ public class AgentSpawnTool {
      * cancelled. Mirrors the fix in core {@code SubAgentTool.interruptAgent} (commit
      * {@code 029cc55e}, issue #1783) — see issue #2062 for the harness-side equivalent.
      *
-     * <p>Only {@link ReActAgent} exposes {@code interrupt(RuntimeContext)}. Other {@link Agent}
-     * implementations are no-ops here; their inner execution will still be disposed by the caller's
-     * {@code sink.onCancel(innerSub::dispose)}, which is enough for non-looping agents.
+     * <p>{@link HarnessAgent} wraps a {@link ReActAgent}, so cancellation must reach its delegate.
+     * Other {@link Agent} implementations are no-ops here; their inner execution will still be
+     * disposed by the caller's {@code sink.onCancel(innerSub::dispose)}, which is enough for
+     * non-looping agents.
      */
     private void interruptAgent(Agent agent, RuntimeContext ctx) {
-        if (agent instanceof ReActAgent ra) {
-            ra.interrupt(ctx);
+        ReActAgent target = null;
+        if (agent instanceof ReActAgent reactAgent) {
+            target = reactAgent;
+        } else if (agent instanceof HarnessAgent harnessAgent) {
+            target = harnessAgent.getDelegate();
+        }
+        if (target != null) {
+            target.interrupt(ctx);
             log.warn(
                     "Sub-agent '{}' (id={}) was interrupted because its parent tool call"
                             + " subscription was cancelled.",
-                    ra.getName(),
-                    ra.getAgentId());
+                    target.getName(),
+                    target.getAgentId());
         }
     }
 
