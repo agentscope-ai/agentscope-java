@@ -184,9 +184,32 @@ Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it y
 | **Kubernetes** | Self-hosted K8s; fully based on [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) (SandboxClaim / WarmPool), workspace persistence via PVC (see below) |
 | **Daytona** | Generic managed sandbox HTTP API |
 | **E2B** | Generic managed sandbox + native platform snapshots |
+| **OpenSandbox** | Self-hosted or managed OpenSandbox service with lifecycle, command execution, native file transfer, and Harness snapshots |
 | **AgentRun** | Aliyun-managed sandbox (Function Compute FC 3.0); per-instance NAS / OSS auto-mount; mainland-China low latency. Treated as a regular `SandboxFilesystemSpec` — full setup details (templates, RAM permissions, NAS-first config) live in the integration docs |
 
 All stores implement the same interface; agent code, toolkit, and `AGENTS.md` don't change.
+
+### OpenSandbox
+
+Add the standalone extension module:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-sandbox-opensandbox</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+```java
+new OpenSandboxFilesystemSpec()
+        .endpoint("http://localhost:8080")
+        .apiKey(System.getenv("OPEN_SANDBOX_API_KEY"))
+        .image("ubuntu:22.04")
+        .workspaceRoot("/workspace");
+```
+
+Inject the API key from the environment or external configuration; it is never serialized into sandbox state. The OpenSandbox adapter owns sandbox lifecycle, shell commands, and file transfer only. MCP processes and connections remain host-side.
 
 ## Runtime image contract
 
