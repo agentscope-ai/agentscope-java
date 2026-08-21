@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -102,17 +103,67 @@ public class AnthropicResponseParser {
      */
     public static Flux<ChatResponse> parseStreamEvents(
             Flux<RawMessageStreamEvent> eventFlux, Instant startTime) {
-        return eventFlux
-                .flatMap(
-                        event -> {
-                            try {
-                                return Flux.just(parseStreamEvent(event, startTime));
-                            } catch (Exception e) {
-                                log.warn("Error parsing stream event: {}", e.getMessage());
-                                return Flux.empty();
-                            }
-                        })
-                .filter(response -> response != null && !response.getContent().isEmpty());
+        // Anthropic reports input tokens on message_start and output tokens on message_delta, so
+        // the input count has to be carried across the stream. Defer keeps it per-subscription.
+        return Flux.defer(
+                () -> {
+                    AtomicInteger inputTokens = new AtomicInteger();
+                    return eventFlux
+                            .flatMap(
+                                    event -> {
+                                        try {
+                                            recordInputTokens(event, inputTokens);
+                                            return Flux.just(
+                                                    withInputTokens(
+                                                            parseStreamEvent(event, startTime),
+                                                            inputTokens.get()));
+                                        } catch (Exception e) {
+                                            log.warn(
+                                                    "Error parsing stream event: {}",
+                                                    e.getMessage());
+                                            return Flux.empty();
+                                        }
+                                    })
+                            .filter(
+                                    response ->
+                                            response != null
+                                                    && (!response.getContent().isEmpty()
+                                                            || response.getUsage() != null));
+                });
+    }
+
+    /**
+     * Record the input token count carried by a message_start event.
+     */
+    private static void recordInputTokens(RawMessageStreamEvent event, AtomicInteger inputTokens) {
+        if (!event.isMessageStart()) {
+            return;
+        }
+        Message message = event.asMessageStart().message();
+        if (message != null && message.usage() != null) {
+            inputTokens.set((int) message.usage().inputTokens());
+        }
+    }
+
+    /**
+     * Attach the stream's input token count to a response that reports usage.
+     */
+    private static ChatResponse withInputTokens(ChatResponse response, int inputTokens) {
+        ChatUsage usage = response.getUsage();
+        if (usage == null || inputTokens <= 0) {
+            return response;
+        }
+        return ChatResponse.builder()
+                .id(response.getId())
+                .content(response.getContent())
+                .usage(
+                        ChatUsage.builder()
+                                .inputTokens(inputTokens)
+                                .outputTokens(usage.getOutputTokens())
+                                .cachedTokens(usage.getCachedTokens())
+                                .time(usage.getTime())
+                                .build())
+                .build();
     }
 
     /**
