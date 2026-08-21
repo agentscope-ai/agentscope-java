@@ -569,6 +569,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     @Override
+    public String getId() {
+        return delegate.getId();
+    }
+
+    @Override
     public String getDescription() {
         return delegate.getDescription();
     }
@@ -2246,6 +2251,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     agentId != null && !agentId.isBlank()
                             ? agentId
                             : (name != null && !name.isBlank() ? name : "ReActAgent");
+            inner.agentId(resolvedAgentId);
             // ---- DistributedStore auto-wiring ----
             // distributedStore provides storage components; filesystem mode is user's choice.
             // Priority: explicit builder methods > distributedStore > workspace defaults

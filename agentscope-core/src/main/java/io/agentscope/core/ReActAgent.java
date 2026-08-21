@@ -319,7 +319,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     // ==================== Constructor ====================
 
     private ReActAgent(Builder builder, Toolkit agentToolkit) {
-        super(builder.name, builder.description, new ArrayList<>(builder.hooks));
+        super(builder.agentId, builder.name, builder.description, new ArrayList<>(builder.hooks));
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
@@ -4402,6 +4402,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @SuppressWarnings("deprecation")
     public static class Builder {
+        String agentId;
         String name;
         String description;
         String sysPrompt;
@@ -4482,6 +4483,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Path skillWorkDir;
 
         private Builder() {}
+
+        /**
+         * Sets the stable logical identifier for this agent.
+         *
+         * <p>When null or blank, the logical ID falls back to the generated runtime {@link
+         * Agent#getId() instance ID}.
+         *
+         * @param agentId Logical agent ID
+         * @return This builder instance
+         */
+        public Builder agentId(String agentId) {
+            this.agentId = agentId;
+            return this;
+        }
 
         /**
          * Sets the name for this agent.
@@ -5024,6 +5039,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public static Builder fromAgent(ReActAgent agent) {
             Builder b = new Builder();
+            b.agentId = agent.getAgentId();
             b.name = agent.getName();
             b.description = agent.getDescription();
             b.sysPrompt = agent.getSysPrompt();

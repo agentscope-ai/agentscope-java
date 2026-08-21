@@ -51,6 +51,7 @@ docs/_build
 
 # vibe coding
 .claude
+.codex
 openspec
 AGENTS.md
 CLAUDE.md

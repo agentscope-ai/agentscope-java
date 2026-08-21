@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,6 +33,7 @@ import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -139,6 +141,30 @@ class ReActAgentNewLoopBuilderTest {
     private record OrderedMiddleware(int order) implements MiddlewareBase {}
 
     @Test
+    void builderSeparatesLogicalAndRuntimeInstanceIds() {
+        ReActAgent first =
+                ReActAgent.builder()
+                        .agentId("planner")
+                        .name("a")
+                        .model(newFakeModel())
+                        .toolkit(new Toolkit())
+                        .build();
+        ReActAgent second =
+                ReActAgent.builder()
+                        .agentId("planner")
+                        .name("b")
+                        .model(newFakeModel())
+                        .toolkit(new Toolkit())
+                        .build();
+
+        assertEquals("planner", first.getAgentId());
+        assertEquals(first.getAgentId(), second.getAgentId());
+        assertNotEquals(first.getId(), second.getId());
+        UUID.fromString(first.getId());
+        UUID.fromString(second.getId());
+    }
+
+    @Test
     void fromAgentCopiesModelResilienceConfig() {
         ChatModelBase model = newFakeModel();
         ChatModelBase fallback = newFakeModel();
@@ -155,6 +181,8 @@ class ReActAgentNewLoopBuilderTest {
 
         ReActAgent copy = ReActAgent.Builder.fromAgent(source).build();
 
+        assertEquals(source.getAgentId(), copy.getAgentId());
+        assertNotEquals(source.getId(), copy.getId());
         assertNotNull(copy.getModelConfig());
         assertEquals(7, copy.getModelConfig().maxRetries());
         assertSame(fallback, copy.getModelConfig().fallbackModel());
