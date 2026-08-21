@@ -26,7 +26,9 @@ import static org.mockito.Mockito.when;
 
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
+import com.anthropic.models.messages.MessageDeltaUsage;
 import com.anthropic.models.messages.RawContentBlockDeltaEvent;
+import com.anthropic.models.messages.RawMessageDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.Usage;
@@ -64,11 +66,17 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
      */
     private ChatResponse invokeParseStreamEvent(RawMessageStreamEvent event, Instant startTime)
             throws Exception {
+        Class<?> stateClass =
+                Class.forName(AnthropicResponseParser.class.getName() + "$StreamUsageState");
+        var constructor = stateClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object state = constructor.newInstance();
+
         Method method =
                 AnthropicResponseParser.class.getDeclaredMethod(
-                        "parseStreamEvent", RawMessageStreamEvent.class, Instant.class);
+                        "parseStreamEvent", RawMessageStreamEvent.class, Instant.class, stateClass);
         method.setAccessible(true);
-        return (ChatResponse) method.invoke(null, event, startTime);
+        return (ChatResponse) method.invoke(null, event, startTime, state);
     }
 
     @Test
@@ -84,6 +92,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(100L);
         when(usage.outputTokens()).thenReturn(50L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(contentBlock.text()).thenReturn(Optional.of(textBlock));
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
@@ -119,6 +129,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(200L);
         when(usage.outputTokens()).thenReturn(100L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
@@ -156,6 +168,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(150L);
         when(usage.outputTokens()).thenReturn(75L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
@@ -190,6 +204,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(300L);
         when(usage.outputTokens()).thenReturn(150L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         // Text block
         when(textContentBlock.text()).thenReturn(Optional.of(textBlock));
@@ -227,6 +243,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(50L);
         when(usage.outputTokens()).thenReturn(0L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         Instant startTime = Instant.now();
         ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
@@ -249,6 +267,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(100L);
         when(usage.outputTokens()).thenReturn(50L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
@@ -299,11 +319,15 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
         RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
         Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
 
         when(event.isMessageStart()).thenReturn(true);
         when(event.asMessageStart()).thenReturn(messageStart);
         when(messageStart.message()).thenReturn(message);
         when(message.id()).thenReturn("msg_stream_123");
+        when(message.usage()).thenReturn(usage);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(event.isContentBlockDelta()).thenReturn(false);
         when(event.isContentBlockStart()).thenReturn(false);
@@ -402,5 +426,109 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         StepVerifier.create(AnthropicResponseParser.parseStreamEvents(errorFlux, startTime))
                 .expectError(RuntimeException.class)
                 .verify();
+    }
+
+    @Test
+    void testParseMessageWithCachedTokens() {
+        // input_tokens excludes cached tokens in the Anthropic API; the parser adds them back
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        when(message.id()).thenReturn("msg_cached");
+        when(message.content()).thenReturn(List.of());
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(100L);
+        when(usage.outputTokens()).thenReturn(50L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.of(80L));
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.of(20L));
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        ChatUsage responseUsage = response.getUsage();
+        assertNotNull(responseUsage);
+        assertEquals(200, responseUsage.getInputTokens()); // 100 + 80 + 20
+        assertEquals(80, responseUsage.getCachedTokens());
+        assertEquals(50, responseUsage.getOutputTokens());
+    }
+
+    @Test
+    void testParseStreamEventsCombineStartAndDeltaUsage() {
+        // message_start carries prompt usage (input + cached tokens); message_delta carries the
+        // final output tokens. The parser must combine them.
+        RawMessageStreamEvent startEvent = mock(RawMessageStreamEvent.class);
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        Message message = mock(Message.class);
+        Usage startUsage = mock(Usage.class);
+
+        when(startEvent.isMessageStart()).thenReturn(true);
+        when(startEvent.asMessageStart()).thenReturn(messageStart);
+        when(messageStart.message()).thenReturn(message);
+        when(message.id()).thenReturn("msg_stream_cached");
+        when(message.usage()).thenReturn(startUsage);
+        when(startUsage.inputTokens()).thenReturn(100L);
+        when(startUsage.cacheReadInputTokens()).thenReturn(Optional.of(50L));
+        when(startUsage.cacheCreationInputTokens()).thenReturn(Optional.of(30L));
+
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(
+                        Flux.just(startEvent, deltaEvent), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        response -> {
+                            // message_delta: final usage combining the prompt usage recorded
+                            // from message_start
+                            ChatUsage usage = response.getUsage();
+                            assertNotNull(usage);
+                            assertEquals(180, usage.getInputTokens()); // 100 + 50 + 30
+                            assertEquals(50, usage.getCachedTokens());
+                            assertEquals(42, usage.getOutputTokens());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsDeltaCarryingOwnPromptUsage() {
+        // Some responses include prompt usage directly on message_delta; it takes priority over
+        // the values recorded from message_start
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.inputTokens()).thenReturn(Optional.of(100L));
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.of(50L));
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.of(30L));
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(deltaEvent), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        response -> {
+                            ChatUsage usage = response.getUsage();
+                            assertNotNull(usage);
+                            assertEquals(180, usage.getInputTokens()); // 100 + 50 + 30
+                            assertEquals(50, usage.getCachedTokens());
+                            assertEquals(42, usage.getOutputTokens());
+                        })
+                .verifyComplete();
     }
 }
