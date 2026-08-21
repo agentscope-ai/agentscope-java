@@ -5157,12 +5157,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         @SuppressWarnings("deprecation")
         private void configureSkillBox(Toolkit agentToolkit) {
-            skillBox.bindToolkit(agentToolkit);
-            skillBox.registerSkillLoadTool();
-            if (skillBox.isAutoUploadSkill()) {
-                skillBox.uploadSkillFiles();
+            // Copy per agent, mirroring the Toolkit.copy() at the top of build(). A SkillBox
+            // holds a mutable reference to the toolkit it serves, so binding the builder's box
+            // to this agent's toolkit repoints any previously built agent's SkillHook at the
+            // wrong toolkit, and two concurrent build() calls race on that field.
+            SkillBox agentSkillBox = skillBox.copy(agentToolkit);
+            agentSkillBox.registerSkillLoadTool();
+            if (agentSkillBox.isAutoUploadSkill()) {
+                agentSkillBox.uploadSkillFiles();
             }
-            hooks.add(new io.agentscope.core.skill.SkillHook(skillBox));
+            hooks.add(new io.agentscope.core.skill.SkillHook(agentSkillBox));
         }
 
         /**
