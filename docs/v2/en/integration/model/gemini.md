@@ -37,6 +37,39 @@ GeminiChatModel model = GeminiChatModel.builder()
     .build();
 ```
 
+## Server-side tools
+
+Gemini built-in tools run on the model provider instead of through the local AgentScope toolkit.
+Configure them on the explicit model builder:
+
+```java
+import io.agentscope.extensions.model.gemini.GeminiChatModel;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
+import java.util.List;
+
+GeminiChatModel model = GeminiChatModel.builder()
+    .apiKey(System.getenv("GEMINI_API_KEY"))
+    .modelName("gemini-2.0-flash")
+    .serverTools(List.of(
+        GeminiServerTool.googleSearch()
+            .param("excludeDomains", List.of("example.com"))
+            .build(),
+        GeminiServerTool.urlContext().build()
+    ))
+    .build();
+```
+
+| Tool | Configuration and supported parameters |
+| --- | --- |
+| Google Search | `GeminiServerTool.googleSearch()`; `searchTypes`, `blockingConfidence`, `excludeDomains`, `timeRangeFilter` |
+| Google Maps | `GeminiServerTool.googleMap()`; `authConfig`, `enableWidget` |
+| URL Context | `GeminiServerTool.urlContext()`; no parameters |
+| Code Execution | `GeminiServerTool.builder().type(GeminiServerTool.CODE_EXECUTION)`; no parameters |
+
+When at least one server-side tool is configured, AgentScope enables Gemini server-side invocation
+context automatically and preserves returned calls and results in conversation history. Server-side
+tools remain separate from local function tools, so both kinds can be provided in the same request.
+
 ## Spring Boot
 
 Spring Boot applications can use the Gemini starter:

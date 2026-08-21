@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
+import com.google.genai.types.ToolResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -34,6 +35,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -627,17 +629,19 @@ class GeminiMessageConverterTest {
 
         List<Content> result = converter.convertMessages(List.of(msg));
 
-        // Should have 2 Content objects: tool result added first, then text parts
+        // Should have 2 Content objects: the message's own text parts first, then the tool
+        // result content appended after them so the response always follows the call.
         assertEquals(2, result.size());
 
-        // First content should be the tool result (added during block processing)
-        Content toolResultContent = result.get(0);
+        // First content should have text parts before and after
+        Content textContent = result.get(0);
+        assertEquals("user", textContent.role().get());
+        assertEquals(2, textContent.parts().get().size());
+
+        // Second content should be the tool result (appended after the message content)
+        Content toolResultContent = result.get(1);
         assertEquals("user", toolResultContent.role().get());
         assertNotNull(toolResultContent.parts().get().get(0).functionResponse().get());
-
-        // Second content should have text parts before and after
-        Content textContent = result.get(1);
-        assertEquals(2, textContent.parts().get().size());
     }
 
     @Test
@@ -1016,5 +1020,185 @@ class GeminiMessageConverterTest {
         Map<String, Object> args = part.functionCall().get().args().get();
         assertEquals("Tokyo", args.get("city"));
         assertEquals("celsius", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should keep inline server tool call and result in the model message (regression:"
+                    + " previously split and reordered)")
+    void testConvertAssistantMessageWithInlineServerToolResult() {
+        // Blocks exactly as produced by GeminiResponseParser from a response that contains a
+        // server-side tool call with its inline result plus a local function call.
+        ToolUseBlock serverToolUse =
+                ToolUseBlock.builder()
+                        .id("call_277215")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", List.of("southernmost city in China")))
+                        .server(true)
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_277215")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .server(true)
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "server-result-signature".getBytes()))
+                        .output(
+                                TextBlock.builder()
+                                        .text(
+                                                "{\"search_suggestions\":\"southernmost city in"
+                                                        + " China\"}")
+                                        .build())
+                        .build();
+
+        ToolUseBlock localToolUse =
+                ToolUseBlock.builder()
+                        .id("call_277275")
+                        .name("getWeather")
+                        .input(Map.of("location", "Sansha, China"))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolUse, serverToolResult, localToolUse))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        // Format for the next request; must not throw (regression: convertValue(String, Map)
+        // previously raised IllegalArgumentException on the serialized response JSON).
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        // Gemini requires the original candidate content to be circulated as one model message:
+        // toolCall, toolResponse and functionCall stay together and retain their signatures.
+        assertEquals(1, result.size(), "One model content expected");
+
+        Content modelContent = result.get(0);
+        assertEquals("model", modelContent.role().get());
+        List<Part> modelParts = modelContent.parts().get();
+        assertEquals(3, modelParts.size(), "toolCall, toolResponse and functionCall expected");
+
+        Part toolCallPart = modelParts.get(0);
+        assertTrue(toolCallPart.toolCall().isPresent());
+        assertEquals("call_277215", toolCallPart.toolCall().get().id().get());
+        assertEquals(
+                "GOOGLE_SEARCH_WEB", toolCallPart.toolCall().get().toolType().get().toString());
+
+        Part toolResponsePart = modelParts.get(1);
+        assertTrue(toolResponsePart.toolResponse().isPresent());
+        ToolResponse toolResponse = toolResponsePart.toolResponse().get();
+        assertEquals("call_277215", toolResponse.id().get());
+        assertEquals("GOOGLE_SEARCH_WEB", toolResponse.toolType().get().toString());
+        assertArrayEquals(
+                "server-result-signature".getBytes(),
+                toolResponsePart.thoughtSignature().orElseThrow());
+        assertEquals(
+                "southernmost city in China",
+                toolResponse.response().get().get("search_suggestions"));
+
+        Part functionCallPart = modelParts.get(2);
+        assertTrue(functionCallPart.functionCall().isPresent());
+        assertEquals("getWeather", functionCallPart.functionCall().get().name().get());
+    }
+
+    @Test
+    @DisplayName("Should group parallel function responses in one user content")
+    void testConvertParallelFunctionResponsesInOneUserContent() {
+        ToolResultBlock firstResult =
+                ToolResultBlock.builder()
+                        .id("call_weather_1")
+                        .name("getWeather")
+                        .output(TextBlock.builder().text("hot").build())
+                        .build();
+        ToolResultBlock secondResult =
+                ToolResultBlock.builder()
+                        .id("call_weather_2")
+                        .name("getWeather")
+                        .output(TextBlock.builder().text("warm").build())
+                        .build();
+        Msg firstMsg =
+                Msg.builder().name("tool").content(List.of(firstResult)).role(MsgRole.TOOL).build();
+        Msg secondMsg =
+                Msg.builder()
+                        .name("tool")
+                        .content(List.of(secondResult))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(firstMsg, secondMsg));
+
+        assertEquals(1, result.size());
+        Content userContent = result.get(0);
+        assertEquals("user", userContent.role().orElseThrow());
+        List<Part> parts = userContent.parts().orElseThrow();
+        assertEquals(2, parts.size());
+        assertEquals(
+                "call_weather_1", parts.get(0).functionResponse().orElseThrow().id().orElseThrow());
+        assertEquals(
+                "call_weather_2", parts.get(1).functionResponse().orElseThrow().id().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should wrap non-JSON server tool result text under the output key")
+    void testConvertServerToolResultWithNonJsonOutput() {
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_1")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .server(true)
+                        .output(TextBlock.builder().text("plain text result").build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        ToolResponse toolResponse = part.toolResponse().get();
+        assertEquals("plain text result", toolResponse.response().get().get("output"));
+    }
+
+    @Test
+    @DisplayName("Should keep server tool response parseable with realistic Gemini payload")
+    void testConvertServerToolResultWithSearchSuggestionsHtml() {
+        // Mirrors the real GOOGLE_SEARCH_WEB toolResponse payload shape
+        String htmlSuggestions =
+                "<div class=\"container\">\n"
+                        + "  <a class=\"chip\""
+                        + " href=\"https://www.google.com/search?q=southernmost+city+in+China\">"
+                        + "southernmost city in China</a>\n"
+                        + "</div>";
+        String json =
+                JsonUtils.getJsonCodec().toJson(Map.of("search_suggestions", htmlSuggestions));
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_2")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .server(true)
+                        .output(TextBlock.builder().text(json).build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        ToolResponse toolResponse = part.toolResponse().get();
+        assertEquals(htmlSuggestions, toolResponse.response().get().get("search_suggestions"));
     }
 }

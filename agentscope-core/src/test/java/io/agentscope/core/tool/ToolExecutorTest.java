@@ -677,4 +677,133 @@ class ToolExecutorTest {
         if (outputs.isEmpty()) return "";
         return ((TextBlock) outputs.get(0)).getText();
     }
+
+    @Test
+    @DisplayName(
+            "Should never execute server-side tool calls locally even when a same-name tool is"
+                    + " registered")
+    void shouldNotExecuteServerToolLocally() {
+        // Register a local tool sharing the server tool's name to prove it is never invoked
+        AtomicInteger invocationCount = new AtomicInteger();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "GOOGLE_SEARCH_WEB";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Local tool that must never run for server tool calls";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        invocationCount.incrementAndGet();
+                        return Mono.just(ToolResultBlock.text("SHOULD NOT RUN"));
+                    }
+                });
+
+        ToolUseBlock serverCall =
+                ToolUseBlock.builder()
+                        .id("call-server")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test query"))
+                        .server(true)
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(serverCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Should return a response for the server tool call");
+        assertEquals(1, responses.size());
+        ToolResultBlock result = responses.get(0);
+        assertEquals("call-server", result.getId(), "Response should keep tool call id");
+        assertEquals("GOOGLE_SEARCH_WEB", result.getName(), "Response should keep tool name");
+        assertTrue(result.isSuspended(), "Server tool calls should be suspended, not executed");
+        assertEquals(0, invocationCount.get(), "Local tool must never be invoked");
+    }
+
+    @Test
+    @DisplayName("Should suspend server-side tool calls via the single-call API")
+    void shouldSuspendServerToolViaSingleCall() {
+        ToolUseBlock serverCall =
+                ToolUseBlock.builder()
+                        .id("call-server-single")
+                        .name("GOOGLE_MAPS")
+                        .input(Map.of("query", "test"))
+                        .server(true)
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(serverCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Should return a response");
+        assertEquals("call-server-single", result.getId());
+        assertEquals("GOOGLE_MAPS", result.getName());
+        assertTrue(result.isSuspended(), "Server tool calls should be suspended, not executed");
+    }
+
+    @Test
+    @DisplayName("Should skip server-side tool calls when mixed with local tool calls in a batch")
+    void shouldSkipServerToolInMixedBatch() {
+        AtomicInteger localInvocationCount = new AtomicInteger();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "local_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Local tool";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        localInvocationCount.incrementAndGet();
+                        return Mono.just(ToolResultBlock.text("local result"));
+                    }
+                });
+
+        ToolUseBlock serverCall =
+                ToolUseBlock.builder()
+                        .id("call-server-1")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test"))
+                        .server(true)
+                        .build();
+        ToolUseBlock localCall =
+                ToolUseBlock.builder()
+                        .id("call-local-1")
+                        .name("local_tool")
+                        .input(Map.of())
+                        .content(JsonUtils.getJsonCodec().toJson(Map.of()))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(serverCall, localCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Should return responses for both calls");
+        assertEquals(2, responses.size(), "One result per input call (order preserved)");
+
+        ToolResultBlock serverResult = responses.get(0);
+        assertTrue(serverResult.isSuspended(), "Server tool call must not be executed");
+
+        ToolResultBlock localResult = responses.get(1);
+        assertEquals(1, localInvocationCount.get(), "Only the local tool should be invoked");
+        assertEquals("local result", extractFirstText(localResult));
+    }
 }

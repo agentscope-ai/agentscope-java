@@ -19,6 +19,8 @@ import com.google.genai.types.Content;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
+import com.google.genai.types.ToolCall;
+import com.google.genai.types.ToolResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -88,6 +90,7 @@ public class GeminiMessageConverter {
 
         for (Msg msg : msgs) {
             List<Part> parts = new ArrayList<>();
+            List<Part> functionResponseParts = new ArrayList<>();
 
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock tb) {
@@ -113,16 +116,27 @@ public class GeminiMessageConverter {
                         args = tub.getInput();
                     }
 
-                    // Create FunctionCall
-                    FunctionCall functionCall =
-                            FunctionCall.builder()
-                                    .id(tub.getId())
-                                    .name(tub.getName())
-                                    .args(args)
-                                    .build();
-
-                    // Build Part with FunctionCall and optional thought signature
-                    Part.Builder partBuilder = Part.builder().functionCall(functionCall);
+                    // Build Part with FunctionCall or ToolCall and optional thought signature
+                    Part.Builder partBuilder = null;
+                    if (tub.isServer()) {
+                        // Create ToolCall for server-side (built-in) tools
+                        ToolCall toolCall =
+                                ToolCall.builder()
+                                        .id(tub.getId())
+                                        .toolType(tub.getName())
+                                        .args(args)
+                                        .build();
+                        partBuilder = Part.builder().toolCall(toolCall);
+                    } else {
+                        // Create FunctionCall for local function calls
+                        FunctionCall functionCall =
+                                FunctionCall.builder()
+                                        .id(tub.getId())
+                                        .name(tub.getName())
+                                        .args(args)
+                                        .build();
+                        partBuilder = Part.builder().functionCall(functionCall);
+                    }
 
                     // Check for thought signature in metadata
                     Map<String, Object> metadata = tub.getMetadata();
@@ -137,30 +151,59 @@ public class GeminiMessageConverter {
                     parts.add(partBuilder.build());
 
                 } else if (block instanceof ToolResultBlock trb) {
-                    // IMPORTANT: Tool result as independent Content with "user" role
+                    // Server results stay inline in the model Content; local results are queued
+                    // for an independent user Content after the current message.
                     String textOutput = convertToolResultToString(trb.getOutput());
+                    if (trb.isServer()) {
+                        // Create ToolResponse for server-side (built-in) tools, the output is
+                        // placed under the "response" key
+                        Map<String, Object> responseMap;
+                        try {
+                            // The parser serializes the tool response map to a JSON string, so
+                            // parse it back rather than converting the raw string value.
+                            responseMap = JsonUtils.getJsonCodec().fromJson(textOutput, Map.class);
+                        } catch (Exception e) {
+                            log.warn(
+                                    "Failed to parse server tool result as JSON, wrapping raw"
+                                            + " text: {}",
+                                    e.getMessage());
+                            responseMap = Map.of("output", textOutput);
+                        }
 
-                    // Create response map with "output" key
-                    Map<String, Object> responseMap = new HashMap<>();
-                    responseMap.put("output", textOutput);
+                        ToolResponse toolResponse =
+                                ToolResponse.builder()
+                                        .id(trb.getId())
+                                        .toolType(trb.getName())
+                                        .response(responseMap)
+                                        .build();
 
-                    FunctionResponse functionResponse =
-                            FunctionResponse.builder()
-                                    .id(trb.getId())
-                                    .name(trb.getName())
-                                    .response(responseMap)
-                                    .build();
+                        Part.Builder partBuilder = Part.builder().toolResponse(toolResponse);
+                        Map<String, Object> metadata = trb.getMetadata();
+                        if (metadata != null
+                                && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
+                            Object signature =
+                                    metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+                            if (signature instanceof byte[]) {
+                                partBuilder.thoughtSignature((byte[]) signature);
+                            }
+                        }
+                        parts.add(partBuilder.build());
+                    } else {
+                        // Create FunctionResponse for local function calls, the output is
+                        // placed under the "output" key
+                        Map<String, Object> responseMap = new HashMap<>();
+                        responseMap.put("output", textOutput);
 
-                    Part functionResponsePart =
-                            Part.builder().functionResponse(functionResponse).build();
+                        FunctionResponse functionResponse =
+                                FunctionResponse.builder()
+                                        .id(trb.getId())
+                                        .name(trb.getName())
+                                        .response(responseMap)
+                                        .build();
 
-                    Content toolResultContent =
-                            Content.builder()
-                                    .role("user")
-                                    .parts(List.of(functionResponsePart))
-                                    .build();
-
-                    result.add(toolResultContent);
+                        functionResponseParts.add(
+                                Part.builder().functionResponse(functionResponse).build());
+                    }
                     // Skip adding to current message parts
                     continue;
 
@@ -196,9 +239,38 @@ public class GeminiMessageConverter {
                 Content content = Content.builder().role(role).parts(parts).build();
                 result.add(content);
             }
+            if (!functionResponseParts.isEmpty()) {
+                appendFunctionResponses(result, functionResponseParts);
+            }
         }
 
         return result;
+    }
+
+    /**
+     * Append local function responses, merging consecutive result messages into one user turn.
+     *
+     * <p>Gemini requires all responses for parallel function calls to be returned as parts of
+     * the same user Content.
+     */
+    private void appendFunctionResponses(List<Content> result, List<Part> responseParts) {
+        if (!result.isEmpty()) {
+            int lastIndex = result.size() - 1;
+            Content lastContent = result.get(lastIndex);
+            List<Part> lastParts = lastContent.parts().orElse(List.of());
+            boolean lastIsFunctionResponseContent =
+                    "user".equals(lastContent.role().orElse(null))
+                            && !lastParts.isEmpty()
+                            && lastParts.stream()
+                                    .allMatch(part -> part.functionResponse().isPresent());
+            if (lastIsFunctionResponseContent) {
+                List<Part> mergedParts = new ArrayList<>(lastParts);
+                mergedParts.addAll(responseParts);
+                result.set(lastIndex, Content.builder().role("user").parts(mergedParts).build());
+                return;
+            }
+        }
+        result.add(Content.builder().role("user").parts(responseParts).build());
     }
 
     /**

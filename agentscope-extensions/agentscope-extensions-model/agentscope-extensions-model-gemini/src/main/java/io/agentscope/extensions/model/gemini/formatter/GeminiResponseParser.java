@@ -21,10 +21,16 @@ import com.google.genai.types.FunctionCall;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerateContentResponseUsageMetadata;
 import com.google.genai.types.Part;
+import com.google.genai.types.ToolCall;
+import com.google.genai.types.ToolResponse;
+import com.google.genai.types.ToolType;
 import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -46,7 +52,9 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>Text blocks from text parts</li>
  *   <li>Thinking blocks from parts with thought=true flag</li>
- *   <li>Tool use blocks from function_call parts</li>
+ *   <li>Tool use blocks from function_call parts (local function calls)</li>
+ *   <li>Tool use and tool result blocks from tool_call/tool_response parts (server-side
+ *       built-in tools)</li>
  *   <li>Usage metadata with token counts</li>
  * </ul>
  *
@@ -127,7 +135,7 @@ public class GeminiResponseParser {
 
     /**
      * Parse Gemini Part objects to AgentScope ContentBlocks.
-     * Order of block types: ThinkingBlock, TextBlock, ToolUseBlock
+     * Order of block types: ThinkingBlock, TextBlock, ToolUseBlock, ToolResultBlock
      *
      * @param parts List of Gemini Part objects
      * @param blocks List to add parsed ContentBlocks to
@@ -157,15 +165,29 @@ public class GeminiResponseParser {
                 byte[] thoughtSignature = part.thoughtSignature().orElse(null);
                 parseToolCall(functionCall, thoughtSignature, blocks);
             }
+
+            // Check for tool call (server tool use)
+            if (part.toolCall().isPresent()) {
+                ToolCall toolCall = part.toolCall().get();
+                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
+                parseToolCall(toolCall, thoughtSignature, blocks);
+            }
+
+            // Check for tool response (server tool result)
+            if (part.toolResponse().isPresent()) {
+                ToolResponse toolResponse = part.toolResponse().get();
+                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
+                parseToolResponse(toolResponse, thoughtSignature, blocks);
+            }
         }
     }
 
     /**
      * Parse Gemini FunctionCall to ToolUseBlock.
      *
-     * @param functionCall Gemini FunctionCall object
+     * @param functionCall     Gemini FunctionCall object
      * @param thoughtSignature Thought signature from the Part (may be null)
-     * @param blocks List to add parsed ToolUseBlock to
+     * @param blocks           List to add parsed ToolUseBlock to
      */
     protected void parseToolCall(
             FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
@@ -178,21 +200,114 @@ public class GeminiResponseParser {
                 return;
             }
 
-            // Parse arguments
-            Map<String, Object> argsMap = new HashMap<>();
-            String rawContent = null;
+            blocks.add(
+                    convertToolUseBlock(
+                            id,
+                            name,
+                            functionCall.args().orElse(null),
+                            thoughtSignature,
+                            null,
+                            false));
+        } catch (Exception e) {
+            log.warn("Failed to parse function call: {}", e.getMessage(), e);
+        }
+    }
 
-            if (functionCall.args().isPresent()) {
-                Map<String, Object> args = functionCall.args().get();
-                if (args != null && !args.isEmpty()) {
-                    argsMap.putAll(args);
-                    // Convert to JSON string for raw content
-                    try {
-                        rawContent = JsonUtils.getJsonCodec().toJson(args);
-                    } catch (Exception e) {
-                        log.warn("Failed to serialize function call arguments: {}", e.getMessage());
-                    }
-                }
+    /**
+     * Parse Gemini ToolCall to ToolUseBlock for server-side (built-in) tools.
+     *
+     * @param toolCall         Gemini ToolCall object
+     * @param thoughtSignature Thought signature from the Part (may be null)
+     * @param blocks           List to add parsed ToolUseBlock to
+     */
+    protected void parseToolCall(
+            ToolCall toolCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
+        try {
+            String id = toolCall.id().orElse("tool_call_" + System.currentTimeMillis());
+            String name = toolCall.toolType().map(ToolType::toString).orElse("");
+
+            if (name.isEmpty()) {
+                log.warn("ToolCall with empty name, skipping");
+                return;
+            }
+            blocks.add(
+                    convertToolUseBlock(
+                            id,
+                            name,
+                            toolCall.args().orElse(null),
+                            thoughtSignature,
+                            ToolCallState.FINISHED,
+                            true));
+        } catch (Exception e) {
+            log.warn("Failed to parse tool call: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Converts a Gemini tool invocation to a ToolUseBlock.
+     *
+     * @param id               Tool call ID
+     * @param name             Tool name (function name or tool type)
+     * @param args             Tool arguments map (may be null)
+     * @param thoughtSignature Thought signature from the Part (may be null)
+     * @param server           Whether the tool is executed by the model provider server-side
+     * @return A new ToolUseBlock
+     */
+    protected ToolUseBlock convertToolUseBlock(
+            String id,
+            String name,
+            Map<String, Object> args,
+            byte[] thoughtSignature,
+            ToolCallState state,
+            boolean server) {
+        // Parse arguments
+        Map<String, Object> argsMap = new HashMap<>();
+        String rawContent = null;
+
+        if (args != null && !args.isEmpty()) {
+            argsMap.putAll(args);
+            // Convert to JSON string for raw content
+            try {
+                rawContent = JsonUtils.getJsonCodec().toJson(args);
+            } catch (Exception e) {
+                log.warn("Failed to serialize function call arguments: {}", e.getMessage());
+            }
+        }
+
+        // Build metadata with thought signature if present
+        Map<String, Object> metadata = null;
+        if (thoughtSignature != null) {
+            metadata = new HashMap<>();
+            metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+        }
+
+        return ToolUseBlock.builder()
+                .id(id)
+                .server(server)
+                .name(name)
+                .input(argsMap)
+                .content(rawContent)
+                .metadata(metadata)
+                .state(state)
+                .build();
+    }
+
+    /**
+     * Parse Gemini ToolResponse to ToolResultBlock for server-side (built-in) tools.
+     *
+     * @param toolResponse     Gemini ToolResponse object
+     * @param thoughtSignature Thought signature from the Part (may be null)
+     * @param blocks           List to add parsed ToolResultBlock to
+     */
+    protected void parseToolResponse(
+            ToolResponse toolResponse, byte[] thoughtSignature, List<ContentBlock> blocks) {
+        try {
+            String id = toolResponse.id().orElse("tool_call_" + System.currentTimeMillis());
+            String name = toolResponse.toolType().map(ToolType::toString).orElse("");
+
+            if (name.isEmpty()) {
+                log.warn("ToolResponse with empty name, skipping");
+                return;
             }
 
             // Build metadata with thought signature if present
@@ -202,17 +317,26 @@ public class GeminiResponseParser {
                 metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
             }
 
-            blocks.add(
-                    ToolUseBlock.builder()
+            ToolResultBlock.Builder toolResultBuilder =
+                    ToolResultBlock.builder()
                             .id(id)
                             .name(name)
-                            .input(argsMap)
-                            .content(rawContent)
-                            .metadata(metadata)
-                            .build());
+                            .server(true)
+                            .state(ToolResultState.SUCCESS)
+                            .metadata(metadata);
 
+            if (toolResponse.response().isPresent()) {
+                toolResultBuilder.output(
+                        TextBlock.builder()
+                                .text(
+                                        JsonUtils.getJsonCodec()
+                                                .toJson(toolResponse.response().get()))
+                                .build());
+            }
+
+            blocks.add(toolResultBuilder.build());
         } catch (Exception e) {
-            log.warn("Failed to parse function call: {}", e.getMessage(), e);
+            log.warn("Failed to parse tool response: {}", e.getMessage(), e);
         }
     }
 }

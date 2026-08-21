@@ -34,6 +34,8 @@ import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
+import io.agentscope.extensions.model.gemini.formatter.GeminiToolsHelper;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -55,6 +57,8 @@ import reactor.core.scheduler.Schedulers;
  * <ul>
  * <li>Text generation with streaming and non-streaming modes</li>
  * <li>Tool/function calling support</li>
+ * <li>Gemini server-side tools, including Google Search, Google Maps, URL Context, and code
+ *     execution</li>
  * <li>Multi-agent conversation with history merging</li>
  * <li>Vision capabilities (images, audio, video)</li>
  * <li>Thinking mode (extended reasoning)</li>
@@ -77,6 +81,7 @@ public class GeminiChatModel extends ChatModelBase {
     private final GenerateOptions defaultOptions;
     private final Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
             formatter;
+    private final List<GeminiServerTool> serverTools;
 
     /**
      * Creates a new Gemini chat model instance.
@@ -96,6 +101,8 @@ public class GeminiChatModel extends ChatModelBase {
      * @param defaultOptions default generation options
      * @param formatter      the message formatter to use (null for default Gemini
      *                       formatter)
+     * @param serverTools    Gemini built-in tools executed by the model provider; copied
+     *                       defensively, or empty when null
      */
     public GeminiChatModel(
             String apiKey,
@@ -109,7 +116,8 @@ public class GeminiChatModel extends ChatModelBase {
             GoogleCredentials credentials,
             ClientOptions clientOptions,
             GenerateOptions defaultOptions,
-            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter) {
+            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter,
+            List<GeminiServerTool> serverTools) {
         this.apiKey = apiKey;
         this.modelName = Objects.requireNonNull(modelName, "Model name is required");
         this.streamEnabled = streamEnabled;
@@ -122,6 +130,7 @@ public class GeminiChatModel extends ChatModelBase {
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new GeminiChatFormatter();
+        this.serverTools = serverTools != null ? List.copyOf(serverTools) : List.of();
 
         // Initialize Gemini client
         Client.Builder clientBuilder = Client.builder();
@@ -202,7 +211,8 @@ public class GeminiChatModel extends ChatModelBase {
                 credentials,
                 clientOptions,
                 defaultOptions,
-                formatter);
+                formatter,
+                null);
     }
 
     private static HttpOptions resolveHttpOptions(String baseUrl, HttpOptions httpOptions) {
@@ -213,6 +223,27 @@ public class GeminiChatModel extends ChatModelBase {
             return HttpOptions.builder().baseUrl(baseUrl).build();
         }
         return httpOptions.toBuilder().baseUrl(baseUrl).build();
+    }
+
+    /**
+     * Builds the provider request configuration independently from network execution.
+     *
+     * <p>Function tools are formatted first, then Gemini server tools are appended as separate
+     * entries so both tool types can coexist in the same request.
+     */
+    GenerateContentConfig buildGenerateContentConfig(
+            List<ToolSchema> tools, GenerateOptions options) {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+
+        if (tools != null && !tools.isEmpty()) {
+            formatter.applyTools(configBuilder, tools);
+            if (options != null && options.getToolChoice() != null) {
+                formatter.applyToolChoice(configBuilder, options.getToolChoice());
+            }
+        }
+
+        formatter.applyOptions(configBuilder, options, defaultOptions);
+        return GeminiToolsHelper.mergeServerTools(configBuilder.build(), serverTools);
     }
 
     /**
@@ -243,29 +274,12 @@ public class GeminiChatModel extends ChatModelBase {
         return Flux.defer(
                         () -> {
                             try {
-                                // Build generate content config
-                                GenerateContentConfig.Builder configBuilder =
-                                        GenerateContentConfig.builder();
-
                                 // Use formatter to convert Msg to Gemini
                                 // Content
                                 List<Content> formattedMessages = formatter.format(messages);
 
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(configBuilder, tools);
-
-                                    // Apply tool choice if present
-                                    if (options != null && options.getToolChoice() != null) {
-                                        formatter.applyToolChoice(
-                                                configBuilder, options.getToolChoice());
-                                    }
-                                }
-
-                                // Apply generation options via formatter
-                                formatter.applyOptions(configBuilder, options, defaultOptions);
-
-                                GenerateContentConfig config = configBuilder.build();
+                                GenerateContentConfig config =
+                                        buildGenerateContentConfig(tools, options);
 
                                 // Choose API based on streaming flag
                                 if (streamEnabled) {
@@ -362,6 +376,7 @@ public class GeminiChatModel extends ChatModelBase {
         private GenerateOptions defaultOptions;
         private Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
                 formatter;
+        private List<GeminiServerTool> serverTools;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
 
@@ -500,6 +515,22 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets the Gemini built-in tools that are executed by the model provider.
+         *
+         * <p>Server-side tools are added alongside local function declarations. When at least one
+         * server-side tool is configured, server-side tool invocations are included in the model
+         * response so they can be preserved in conversation history.
+         *
+         * @param serverTools Gemini server-side tools; the list is defensively copied when the
+         *     model is built, or treated as empty when null
+         * @return this builder
+         */
+        public Builder serverTools(List<GeminiServerTool> serverTools) {
+            this.serverTools = serverTools;
+            return this;
+        }
+
+        /**
          * Sets the proxy configuration for HTTP traffic.
          *
          * <p><b>Interaction with {@link #clientOptions(ClientOptions)}:</b>
@@ -568,7 +599,8 @@ public class GeminiChatModel extends ChatModelBase {
                             credentials,
                             resolvedClientOptions,
                             defaultOptions,
-                            formatter);
+                            formatter,
+                            serverTools);
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize
