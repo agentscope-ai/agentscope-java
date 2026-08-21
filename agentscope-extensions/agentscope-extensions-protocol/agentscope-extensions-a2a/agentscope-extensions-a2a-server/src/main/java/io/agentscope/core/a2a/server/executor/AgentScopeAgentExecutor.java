@@ -61,6 +61,10 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentExecutor.class);
 
+    private static final String USER_ID_METADATA_KEY = "userId";
+
+    private static final String SESSION_ID_METADATA_KEY = "sessionId";
+
     private final Map<String, Subscription> subscriptions;
 
     private final AgentRunner agentRunner;
@@ -133,15 +137,29 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private String getUserId(Message message) {
-        if (message.getMetadata() != null && message.getMetadata().containsKey("userId")) {
-            return String.valueOf(message.getMetadata().get("userId"));
-        }
-        return "";
+        return getMessageMetadataValue(message, USER_ID_METADATA_KEY);
     }
 
     private String getSessionId(Message message) {
-        if (message.getMetadata() != null && message.getMetadata().containsKey("sessionId")) {
-            return String.valueOf(message.getMetadata().get("sessionId"));
+        return getMessageMetadataValue(message, SESSION_ID_METADATA_KEY);
+    }
+
+    private String getMessageMetadataValue(Message message, String key) {
+        if (null == message || null == message.getMetadata() || message.getMetadata().isEmpty()) {
+            return "";
+        }
+        Object value = message.getMetadata().get(key);
+        if (null != value && !(value instanceof Map<?, ?>)) {
+            return String.valueOf(value);
+        }
+        for (Object metadataEntry : message.getMetadata().values()) {
+            if (!(metadataEntry instanceof Map<?, ?> metadataMap)) {
+                continue;
+            }
+            Object nestedValue = metadataMap.get(key);
+            if (null != nestedValue && !(nestedValue instanceof Map<?, ?>)) {
+                return String.valueOf(nestedValue);
+            }
         }
         return "";
     }
