@@ -105,6 +105,9 @@ public class GeminiResponseParser {
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
+                                // cachedContentTokenCount 返回 Optional<Integer>,orElse(0) 直接是 int,
+                                // 与 Anthropic 侧 Optional<Long> 不同,无需强转
+                                .cachedTokens(metadata.cachedContentTokenCount().orElse(0))
                                 .outputTokens(outputTokens)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
