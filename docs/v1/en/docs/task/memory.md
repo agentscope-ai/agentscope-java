@@ -232,6 +232,8 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 
 Long-term memory implementation based on [ReMe](https://github.com/agentscope-ai/ReMe).
 
+ReMe `0.4.x` uses `session_id`-based jobs instead of the legacy `workspace_id` personal-memory endpoints.
+
 **Usage Example**:
 
 ```java
@@ -240,7 +242,7 @@ import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.reme.ReMeLongTermMemory;
 
 ReMeLongTermMemory longTermMemory = ReMeLongTermMemory.builder()
-        .userId("example_user")
+        .sessionId("example-session")
         .apiBaseUrl("http://localhost:8002")
         .build();
 
@@ -252,15 +254,11 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**Complete Example**: `agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
+`userId(String)` is still accepted for backward compatibility, but it now falls back to `session_id` when `sessionId(String)` is not provided.
 
-**Run Example**:
+ReMe retrieval first uses the server-provided `answer` field when available, otherwise AgentScope-Java joins `metadata.results[].text`.
 
-```bash
-# Requires REME_API_BASE_URL environment variable (optional, defaults to http://localhost:8002)
-cd examples/advanced
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
-```
+There is currently no bundled `ReMeExample.java` example in this repository. Use the snippet above as the reference integration pattern.
 
 ### BailianLongTermMemory
 

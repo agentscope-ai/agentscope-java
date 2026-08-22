@@ -1,12 +1,12 @@
 # ReMe
 
-`agentscope-extensions-reme` integrates with the self-hosted ReMe memory service. Its distinguishing features are **trajectory-based** memory extraction and **workspace-level** isolation.
+`agentscope-extensions-reme` integrates with the self-hosted ReMe memory service. In ReMe `0.4.x`, AgentScope-Java records filtered conversation messages through the `auto_memory` job and retrieves context through the `search` job.
 
 ## When to use
 
-- You want a lightweight self-hosted memory service that's easy to spin up.
-- You care about summarizing whole conversation trajectories rather than individual messages.
-- You can express logical workspaces by `userId` (one workspace per user).
+- You want a lightweight self-hosted memory service that's easy to run locally.
+- You want ReMe to evolve memory from conversation sessions rather than from single isolated facts.
+- You can manage memory scope with a ReMe `session_id` or with deployment-level isolation.
 
 ## Add the dependency
 
@@ -24,37 +24,31 @@
 import io.agentscope.core.memory.reme.ReMeLongTermMemory;
 
 ReMeLongTermMemory memory = ReMeLongTermMemory.builder()
-    .userId("task_workspace")            // Maps to ReMe's workspace_id
-    .apiBaseUrl("http://localhost:8002") // Your ReMe server
-    .build();
-
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .longTermMemory(memory)
-    .longTermMemoryMode(LongTermMemoryMode.BOTH)
+    .sessionId("task-session")
+    .apiBaseUrl("http://localhost:8002")
     .build();
 ```
 
-`userId` is mapped to ReMe's `workspace_id` — the smallest unit of memory partitioning in ReMe.
+`userId(String)` is still accepted for backward compatibility, but in ReMe `0.4.x` it is treated as the `session_id` fallback instead of `workspace_id`.
 
 ## How it works
 
-- **Write (record)**: filtered messages are joined into a single `ReMeTrajectory` and posted to ReMe's `add` endpoint; the server then runs LLM extraction over the trajectory to produce searchable memory snippets.
-- **Retrieve**: the current message is used as the query against ReMe's `search`. The server-aggregated `answer` field is returned when present, otherwise multiple memory snippets are joined.
+- **Write (`record`)**: filtered `USER` and `ASSISTANT` messages are sent to `POST /auto_memory` with `messages` plus `session_id`.
+- **Retrieve (`retrieve`)**: the current message text is sent to `POST /search`. If ReMe returns a non-empty `answer`, AgentScope-Java uses it directly; otherwise it joins `metadata.results[].text`.
 
 Writes use the same filtering as Bailian:
 
 - Only `USER` and `ASSISTANT` messages are kept.
-- Assistant messages containing `ToolUseBlock` (tool-call requests) are skipped.
+- Assistant messages containing `ToolUseBlock` are skipped.
 - Messages containing the `<compressed_history>` marker are skipped.
 
 ## Builder reference
 
 | Method | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `userId(String)` | ✅ | - | Workspace ID (used for both writes and reads) |
-| `apiBaseUrl(String)` | ✅ | - | ReMe service URL, e.g. `http://localhost:8002` |
-| `timeout(Duration)` | ❌ | `60s` | HTTP timeout |
+| `sessionId(String)` | Recommended | - | ReMe `session_id` used for write operations |
+| `userId(String)` | Backward compatible alias | - | Treated as `session_id` when `sessionId` is absent |
+| `apiBaseUrl(String)` | Yes | - | ReMe service URL, e.g. `http://localhost:8002` |
+| `timeout(Duration)` | No | `60s` | HTTP timeout |
 
-> ReMe does not yet expose finer-grained metadata filtering. If you need tag-based segmentation, encode it inside `userId` (e.g. `tenant-a:project-1`).
+> ReMe `0.4.x` no longer exposes the old `workspace_id`-scoped personal-memory API. If you need strict per-user isolation, prefer one ReMe workspace or deployment per logical tenant/user, or encode that boundary into the chosen `session_id`.

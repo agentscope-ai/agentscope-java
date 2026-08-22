@@ -17,28 +17,10 @@ package io.agentscope.core.memory.reme;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Response object from ReMe's add memory API.
- *
- * <p>This response is returned from the {@code POST /summary_personal_memory} endpoint
- * after successfully adding memories. The actual response format is:
- * <pre>{@code
- * {
- *   "answer": "",
- *   "success": true,
- *   "metadata": {
- *     "memory_list": [...],
- *     "deleted_memory_ids": [],
- *     "update_result": {
- *       "deleted_count": 0,
- *       "inserted_count": 1
- *     }
- *   }
- * }
- * }</pre>
+ * Response object from ReMe's {@code auto_memory} job.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ReMeAddResponse {
@@ -94,220 +76,83 @@ public class ReMeAddResponse {
                 + '}';
     }
 
-    /** Metadata object containing memory list and update results. */
+    /** Metadata returned by ReMe's job runtime. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class Metadata {
-        @JsonProperty("memory_list")
-        private List<MemoryItem> memoryList;
+        private String path;
 
-        @JsonProperty("deleted_memory_ids")
-        private List<String> deletedMemoryIds;
+        private Boolean created;
 
-        @JsonProperty("update_result")
-        private UpdateResult updateResult;
+        private Boolean modified;
 
-        public List<MemoryItem> getMemoryList() {
-            return memoryList;
+        @JsonProperty("n_messages")
+        private Integer nMessages;
+
+        @JsonProperty("source_conversation")
+        private String sourceConversation;
+
+        private Map<String, Object> index;
+
+        public String getPath() {
+            return path;
         }
 
-        public void setMemoryList(List<MemoryItem> memoryList) {
-            this.memoryList = memoryList;
+        public void setPath(String path) {
+            this.path = path;
         }
 
-        public List<String> getDeletedMemoryIds() {
-            return deletedMemoryIds;
+        public Boolean getCreated() {
+            return created;
         }
 
-        public void setDeletedMemoryIds(List<String> deletedMemoryIds) {
-            this.deletedMemoryIds = deletedMemoryIds;
+        public void setCreated(Boolean created) {
+            this.created = created;
         }
 
-        public UpdateResult getUpdateResult() {
-            return updateResult;
+        public Boolean getModified() {
+            return modified;
         }
 
-        public void setUpdateResult(UpdateResult updateResult) {
-            this.updateResult = updateResult;
+        public void setModified(Boolean modified) {
+            this.modified = modified;
+        }
+
+        public Integer getNMessages() {
+            return nMessages;
+        }
+
+        public void setNMessages(Integer nMessages) {
+            this.nMessages = nMessages;
+        }
+
+        public String getSourceConversation() {
+            return sourceConversation;
+        }
+
+        public void setSourceConversation(String sourceConversation) {
+            this.sourceConversation = sourceConversation;
+        }
+
+        public Map<String, Object> getIndex() {
+            return index;
+        }
+
+        public void setIndex(Map<String, Object> index) {
+            this.index = index;
         }
 
         @Override
         public String toString() {
             return "Metadata{"
-                    + "memoryList="
-                    + (memoryList != null ? memoryList.size() + " items" : "null")
-                    + ", deletedMemoryIds="
-                    + (deletedMemoryIds != null ? deletedMemoryIds.size() + " items" : "null")
-                    + ", updateResult="
-                    + updateResult
-                    + '}';
-        }
-    }
-
-    /** Represents a single memory item in the response. */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class MemoryItem {
-        @JsonProperty("workspace_id")
-        private String workspaceId;
-
-        @JsonProperty("memory_id")
-        private String memoryId;
-
-        @JsonProperty("memory_type")
-        private String memoryType;
-
-        @JsonProperty("when_to_use")
-        private String whenToUse;
-
-        private String content;
-
-        private Double score;
-
-        @JsonProperty("time_created")
-        private String timeCreated;
-
-        @JsonProperty("time_modified")
-        private String timeModified;
-
-        private String author;
-
-        private Map<String, Object> metadata;
-
-        private String target;
-
-        @JsonProperty("reflection_subject")
-        private String reflectionSubject;
-
-        // Getters and Setters
-
-        public String getWorkspaceId() {
-            return workspaceId;
-        }
-
-        public void setWorkspaceId(String workspaceId) {
-            this.workspaceId = workspaceId;
-        }
-
-        public String getMemoryId() {
-            return memoryId;
-        }
-
-        public void setMemoryId(String memoryId) {
-            this.memoryId = memoryId;
-        }
-
-        public String getMemoryType() {
-            return memoryType;
-        }
-
-        public void setMemoryType(String memoryType) {
-            this.memoryType = memoryType;
-        }
-
-        public String getWhenToUse() {
-            return whenToUse;
-        }
-
-        public void setWhenToUse(String whenToUse) {
-            this.whenToUse = whenToUse;
-        }
-
-        public String getContent() {
-            return content;
-        }
-
-        public void setContent(String content) {
-            this.content = content;
-        }
-
-        public Double getScore() {
-            return score;
-        }
-
-        public void setScore(Double score) {
-            this.score = score;
-        }
-
-        public String getTimeCreated() {
-            return timeCreated;
-        }
-
-        public void setTimeCreated(String timeCreated) {
-            this.timeCreated = timeCreated;
-        }
-
-        public String getTimeModified() {
-            return timeModified;
-        }
-
-        public void setTimeModified(String timeModified) {
-            this.timeModified = timeModified;
-        }
-
-        public String getAuthor() {
-            return author;
-        }
-
-        public void setAuthor(String author) {
-            this.author = author;
-        }
-
-        public Map<String, Object> getMetadata() {
-            return metadata;
-        }
-
-        public void setMetadata(Map<String, Object> metadata) {
-            this.metadata = metadata;
-        }
-
-        public String getTarget() {
-            return target;
-        }
-
-        public void setTarget(String target) {
-            this.target = target;
-        }
-
-        public String getReflectionSubject() {
-            return reflectionSubject;
-        }
-
-        public void setReflectionSubject(String reflectionSubject) {
-            this.reflectionSubject = reflectionSubject;
-        }
-    }
-
-    /** Update result information. */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class UpdateResult {
-        @JsonProperty("deleted_count")
-        private Integer deletedCount;
-
-        @JsonProperty("inserted_count")
-        private Integer insertedCount;
-
-        public Integer getDeletedCount() {
-            return deletedCount;
-        }
-
-        public void setDeletedCount(Integer deletedCount) {
-            this.deletedCount = deletedCount;
-        }
-
-        public Integer getInsertedCount() {
-            return insertedCount;
-        }
-
-        public void setInsertedCount(Integer insertedCount) {
-            this.insertedCount = insertedCount;
-        }
-
-        @Override
-        public String toString() {
-            return "UpdateResult{"
-                    + "deletedCount="
-                    + deletedCount
-                    + ", insertedCount="
-                    + insertedCount
+                    + "path='"
+                    + path
+                    + '\''
+                    + ", created="
+                    + created
+                    + ", modified="
+                    + modified
+                    + ", nMessages="
+                    + nMessages
                     + '}';
         }
     }
