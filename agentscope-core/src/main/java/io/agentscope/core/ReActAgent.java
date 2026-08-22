@@ -318,8 +318,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     // ==================== Constructor ====================
 
-    private ReActAgent(Builder builder, Toolkit agentToolkit) {
-        super(builder.name, builder.description, new ArrayList<>(builder.hooks));
+    private ReActAgent(
+            Builder builder,
+            Toolkit agentToolkit,
+            List<Hook> hooks,
+            List<MiddlewareBase> middlewares) {
+        super(builder.name, builder.description, hooks);
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
@@ -333,7 +337,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
         List<MiddlewareBase> mws = new ArrayList<>();
         mws.add(new GracefulShutdownMiddleware(shutdownManager));
-        mws.addAll(builder.middlewares);
+        mws.addAll(middlewares);
         this.middlewares = List.copyOf(mws);
 
         this.stateStore = builder.stateStore;
@@ -5090,8 +5094,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         @SuppressWarnings("deprecation")
         private void configureLongTermMemory(
-                Toolkit agentToolkit,
-                java.util.concurrent.atomic.AtomicReference<ReActAgent> selfRef) {
+                Toolkit agentToolkit, AtomicReference<ReActAgent> selfRef, List<Hook> buildHooks) {
             if (longTermMemoryMode == LongTermMemoryMode.AGENT_CONTROL
                     || longTermMemoryMode == LongTermMemoryMode.BOTH) {
                 agentToolkit.registerTool(new LongTermMemoryTools(longTermMemory));
@@ -5104,7 +5107,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     ReActAgent a = selfRef.get();
                                     return a == null ? null : a.getAgentState();
                                 });
-                hooks.add(
+                buildHooks.add(
                         new StaticLongTermMemoryHook(
                                 longTermMemory, contextView, longTermMemoryAsyncRecord));
             }
@@ -5114,14 +5117,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Configures RAG (Retrieval-Augmented Generation) based on the selected mode.
          */
         @SuppressWarnings("deprecation")
-        private void configureRAG(Toolkit agentToolkit) {
+        private void configureRAG(Toolkit agentToolkit, List<Hook> buildHooks) {
             Knowledge aggregatedKnowledge =
                     knowledgeBases.size() == 1
                             ? knowledgeBases.iterator().next()
                             : buildAggregatedKnowledge();
 
             switch (ragMode) {
-                case GENERIC -> hooks.add(new GenericRAGHook(aggregatedKnowledge, retrieveConfig));
+                case GENERIC ->
+                        buildHooks.add(new GenericRAGHook(aggregatedKnowledge, retrieveConfig));
                 case AGENTIC ->
                         agentToolkit.registerTool(
                                 new KnowledgeRetrievalTools(aggregatedKnowledge, retrieveConfig));
@@ -5179,9 +5183,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Registers the built-in task-list tool ({@code todo_write}) and a per-turn reminder
          * middleware. Opt-in via {@link #enableTaskList()}.
          */
-        private void configureTodoTools(Toolkit agentToolkit) {
+        private void configureTodoTools(
+                Toolkit agentToolkit, List<MiddlewareBase> buildMiddlewares) {
             agentToolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
-            middlewares.add(new io.agentscope.core.middleware.TaskReminderMiddleware());
+            buildMiddlewares.add(new io.agentscope.core.middleware.TaskReminderMiddleware());
         }
 
         /**
@@ -5189,13 +5194,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * skill files when auto-upload is enabled, and adding the SkillHook to the chain.
          */
         @SuppressWarnings("deprecation")
-        private void configureSkillBox(Toolkit agentToolkit) {
+        private void configureSkillBox(Toolkit agentToolkit, List<Hook> buildHooks) {
             skillBox.bindToolkit(agentToolkit);
             skillBox.registerSkillLoadTool();
             if (skillBox.isAutoUploadSkill()) {
                 skillBox.uploadSkillFiles();
             }
-            hooks.add(new io.agentscope.core.skill.SkillHook(skillBox));
+            buildHooks.add(new io.agentscope.core.skill.SkillHook(skillBox));
         }
 
         /**
@@ -5208,15 +5213,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
+            // Build against per-instance copies so build() never mutates the (possibly shared)
+            // builder's hooks/middlewares. Concurrent build() on a shared builder (e.g. the A2A
+            // server reuses a single builder bean) would otherwise race on the non-thread-safe
+            // sets/lists, and each build would leak fresh hook/middleware instances into them.
+            List<Hook> buildHooks = new ArrayList<>(this.hooks);
+            List<MiddlewareBase> buildMiddlewares = new ArrayList<>(this.middlewares);
+
             // Rebind externally-constructed middleware that holds a reference to the
             // original (pre-copy) toolkit so it uses the agent's actual instance.
-            for (MiddlewareBase mw : middlewares) {
+            for (MiddlewareBase mw : buildMiddlewares) {
                 if (mw instanceof io.agentscope.core.tool.ToolkitAware aware) {
                     aware.rebindToolkit(agentToolkit);
                 }
             }
 
-            registerToolsFromHooks(agentToolkit);
+            // Runs on the copy taken BEFORE the configure* calls below, so hooks installed by
+            // configure* (long-term-memory / RAG / skill-box) never contribute Hook.tools().
+            // This deliberately matches first-build behaviour and stays consistent across
+            // rebuilds of a shared builder (see issue #2539). Do not reorder.
+            registerToolsFromHooks(buildHooks, agentToolkit);
 
             if (enableMetaTool) {
                 agentToolkit.registerMetaTool();
@@ -5227,19 +5243,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
 
             if (longTermMemory != null) {
-                configureLongTermMemory(agentToolkit, selfRef);
+                configureLongTermMemory(agentToolkit, selfRef, buildHooks);
             }
             if (!knowledgeBases.isEmpty()) {
-                configureRAG(agentToolkit);
+                configureRAG(agentToolkit, buildHooks);
             }
             if (taskListEnabled) {
-                configureTodoTools(agentToolkit);
+                configureTodoTools(agentToolkit, buildMiddlewares);
             }
             if (skillBox != null) {
-                configureSkillBox(agentToolkit);
+                configureSkillBox(agentToolkit, buildHooks);
             }
             if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
-                middlewares.add(
+                buildMiddlewares.add(
                         new DynamicSkillMiddleware(
                                 List.copyOf(skillRepositories),
                                 agentToolkit,
@@ -5249,9 +5265,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             // List.sort is stable: middlewares with equal order retain their registration order.
-            middlewares.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
+            // Sort applies to the per-build copy so build() never mutates the (possibly shared)
+            // builder's middlewares field.
+            buildMiddlewares.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
 
-            ReActAgent agent = new ReActAgent(this, agentToolkit);
+            ReActAgent agent = new ReActAgent(this, agentToolkit, buildHooks, buildMiddlewares);
             selfRef.set(agent);
 
             return agent;
@@ -5263,8 +5281,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * <p>Runs after {@link Toolkit#copy()} so hook-supplied tools are scoped to this agent
          * instance without modifying the builder's original toolkit.
          */
-        private void registerToolsFromHooks(Toolkit agentToolkit) {
-            for (Hook hook : hooks) {
+        private void registerToolsFromHooks(List<Hook> buildHooks, Toolkit agentToolkit) {
+            for (Hook hook : buildHooks) {
                 List<Object> toolObjects = hook.tools();
                 if (toolObjects == null || toolObjects.isEmpty()) {
                     continue;
