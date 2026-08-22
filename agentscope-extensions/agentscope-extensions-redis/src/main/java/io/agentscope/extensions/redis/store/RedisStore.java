@@ -33,14 +33,23 @@ import redis.clients.jedis.UnifiedJedis;
  * <p>For each item with namespace {@code [a, b, c]} and key {@code k}, two Redis keys are used:
  *
  * <ul>
- *   <li><b>Item hash</b> {@code <prefix>item:<ns>\0<k>} — a Redis hash with fields {@code value}
+ *   <li><b>Item hash</b> {@code <prefix>item:{<ns>}\0<k>} — a Redis hash with fields {@code value}
  *       (JSON-encoded {@code Map<String,Object>}) and {@code version} (a stringified long).
- *   <li><b>Namespace index</b> {@code <prefix>idx:<ns>} — a sorted set (all scores {@code 0})
+ *   <li><b>Namespace index</b> {@code <prefix>idx:{<ns>}} — a sorted set (all scores {@code 0})
  *       holding every {@code k} written under that exact namespace, enabling lexicographic
  *       {@link #search} via {@code ZRANGEBYLEX} without scanning the keyspace.
  * </ul>
  *
  * <p>{@code <ns>} is the namespace components joined with {@code "\0"}.
+ *
+ * <p>The {@code {<ns>}} wrapper is a Redis Cluster hash tag: it forces the item hash and the
+ * namespace index into the same slot, which is required by the multi-key {@code EVAL} scripts
+ * below in cluster mode. An empty namespace is mapped to {@code {_root_}} because Redis ignores
+ * an empty tag. Namespace segments must not contain {@code { } }.
+ *
+ * <p><strong>Breaking change:</strong> the namespace is wrapped in a Redis Cluster hash tag
+ * ({@code {<ns>}}); data written with the previous, un-tagged key layout is not readable and
+ * must be migrated.
  *
  * <h2>Concurrency</h2>
  *
@@ -231,12 +240,33 @@ public class RedisStore implements BaseStore {
         }
     }
 
+    /**
+     * Tag content used when the namespace is empty. Redis ignores an empty {@code {}}
+     * tag (treating the whole key as the hash input), which would split itemKey and
+     * indexKey across slots; a non-empty placeholder keeps them together.
+     */
+    private static final String EMPTY_NAMESPACE_TAG = "_root_";
+
+    /** Build the Redis Cluster hash tag for a namespace, mapping empty to a placeholder. */
+    private String hashTag(List<String> namespace) {
+        String ns = namespacePath(namespace);
+        return "{" + (ns.isEmpty() ? EMPTY_NAMESPACE_TAG : ns) + "}";
+    }
+
+    /** Reject characters that would prematurely terminate a Redis Cluster hash tag. */
+    private static void rejectBraces(String value, String name) {
+        if (value.indexOf('{') >= 0 || value.indexOf('}') >= 0) {
+            throw new IllegalArgumentException(
+                    name + " must not contain '{' or '}' (reserved for Redis Cluster hash tags)");
+        }
+    }
+
     private String itemKey(List<String> namespace, String key) {
-        return keyPrefix + "item:" + namespacePath(namespace) + NS_SEPARATOR + key;
+        return keyPrefix + "item:" + hashTag(namespace) + NS_SEPARATOR + key;
     }
 
     private String indexKey(List<String> namespace) {
-        return keyPrefix + "idx:" + namespacePath(namespace);
+        return keyPrefix + "idx:" + hashTag(namespace);
     }
 
     private static String namespacePath(List<String> namespace) {
@@ -247,6 +277,7 @@ public class RedisStore implements BaseStore {
             if (segment == null) {
                 throw new IllegalArgumentException("namespace segment must not be null");
             }
+            rejectBraces(segment, "namespace segment");
             if (i > 0) {
                 sb.append(NS_SEPARATOR);
             }
