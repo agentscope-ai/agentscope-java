@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
+import io.agentscope.core.tool.Toolkit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,6 +57,13 @@ public class RuntimeContext {
 
     private final ToolExecutionContext toolExecutionContext;
 
+    /**
+     * Per-call toolkit override. When non-null, the agent's execution engine uses this toolkit for
+     * the duration of the call instead of the agent's shared {@code toolkit} field. {@code null}
+     * means fall back to the shared field.
+     */
+    private Toolkit toolkit;
+
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
         this.userId = builder.userId;
@@ -63,6 +71,7 @@ public class RuntimeContext {
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
         this.agentState = builder.agentState;
+        this.toolkit = builder.toolkit;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
@@ -140,6 +149,23 @@ public class RuntimeContext {
      */
     public ToolExecutionContext getToolExecutionContext() {
         return toolExecutionContext;
+    }
+
+    /**
+     * Returns the per-call toolkit override, or {@code null} when none was provided (the execution
+     * engine then falls back to the agent's shared toolkit field).
+     */
+    public Toolkit getToolkit() {
+        return toolkit;
+    }
+
+    /**
+     * Installs the per-call toolkit override. Intended for callers that need to vary the toolkit
+     * per call without mutating the agent's shared field (concurrency-safe). Set to {@code null} to
+     * fall back to the shared field.
+     */
+    public void setToolkit(Toolkit toolkit) {
+        this.toolkit = toolkit;
     }
 
     @SuppressWarnings("unchecked")
@@ -329,6 +355,7 @@ public class RuntimeContext {
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
         private AgentState agentState;
+        private Toolkit toolkit;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -384,6 +411,7 @@ public class RuntimeContext {
             this.userId = source.userId;
             this.agentState = source.agentState;
             this.toolExecutionContext = source.toolExecutionContext;
+            this.toolkit = source.toolkit;
             if (!source.stringAttributes.isEmpty()) {
                 this.stringExtras = new ConcurrentHashMap<>(source.stringAttributes);
             }
@@ -403,6 +431,16 @@ public class RuntimeContext {
          */
         public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
             this.toolExecutionContext = toolExecutionContext;
+            return this;
+        }
+
+        /**
+         * Installs a per-call toolkit override. When set, the agent's execution engine uses this
+         * toolkit for the duration of the call instead of the agent's shared {@code toolkit} field
+         * (concurrency-safe). {@code null} (the default) means fall back to the shared field.
+         */
+        public Builder toolkit(Toolkit toolkit) {
+            this.toolkit = toolkit;
             return this;
         }
 
