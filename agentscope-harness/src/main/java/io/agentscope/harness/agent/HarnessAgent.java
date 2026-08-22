@@ -364,6 +364,35 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
+     * Clears all locally cached per-session state and permission engines held by the wrapped
+     * {@link ReActAgent}. Persisted state in the configured {@link AgentStateStore} is preserved.
+     */
+    public void clearStateCache() {
+        delegate.clearStateCache();
+    }
+
+    /**
+     * Clears the locally cached state and permission engine for the session identified by
+     * {@code ctx}. Persisted state in the configured {@link AgentStateStore} is preserved.
+     *
+     * @param ctx runtime context identifying the session
+     */
+    public void clearStateCache(RuntimeContext ctx) {
+        delegate.clearStateCache(ctx);
+    }
+
+    /**
+     * Clears the locally cached state and permission engine for one {@code (userId, sessionId)}
+     * slot. Persisted state in the configured {@link AgentStateStore} is preserved.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearStateCache(String userId, String sessionId) {
+        delegate.clearStateCache(userId, sessionId);
+    }
+
+    /**
      * Enters plan mode for the given {@code (userId, sessionId)} session, independent of which slot
      * is currently active. The change is persisted so the next {@code call} on that session sees
      * it.
@@ -1819,8 +1848,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         /** Adds a fully custom subagent factory for a given agent id. */
         public Builder subagentFactory(String name, Function<String, Agent> factory) {
+            return subagentFactory(name, null, factory);
+        }
+
+        /**
+         * Adds a fully custom subagent factory for a given agent id, with a description shown to
+         * the orchestrator. When {@code description} is null or blank, the name is used.
+         */
+        public Builder subagentFactory(
+                String name, String description, Function<String, Agent> factory) {
             this.customSubagentFactories.add(
-                    new HarnessAgentBuilderSupport.SubagentFactoryEntry(name, factory));
+                    new HarnessAgentBuilderSupport.SubagentFactoryEntry(
+                            name, description, factory));
             return this;
         }
 

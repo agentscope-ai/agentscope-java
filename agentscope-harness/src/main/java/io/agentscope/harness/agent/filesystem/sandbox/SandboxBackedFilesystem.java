@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
@@ -24,11 +25,19 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
+import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,44 +106,43 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         for (Map.Entry<String, byte[]> file : files) {
             String path = file.getKey();
             byte[] content = file.getValue();
-
-            if (active instanceof SandboxFileTransfer transfer
-                    && transfer.supportsFileTransfer(path)) {
-                try {
-                    transfer.uploadFile(path, content);
-                    results.add(FileUploadResponse.success(path));
-                } catch (Exception e) {
-                    log.warn("[sandbox-fs] native upload failed for path: {}", path, e);
-                    results.add(FileUploadResponse.fail(path, e.getMessage()));
-                }
+            if (content == null) {
+                results.add(FileUploadResponse.fail(path, "File content must not be null"));
                 continue;
             }
 
-            try {
-                String base64Content = Base64.getEncoder().encodeToString(content);
-                String escapedPath = shellSingleQuote(path);
-                String cmd =
-                        "mkdir -p $(dirname "
-                                + escapedPath
-                                + ") && "
-                                + "printf '%s' '"
-                                + base64Content
-                                + "' | base64 -d > "
-                                + escapedPath;
-
-                ExecResult result = active.exec(runtimeContext, cmd, null);
-                if (result.ok()) {
-                    results.add(FileUploadResponse.success(path));
-                } else {
-                    results.add(FileUploadResponse.fail(path, result.combinedOutput()));
+            if (active instanceof SandboxFileTransfer transfer) {
+                String transferPath = null;
+                try {
+                    transferPath = resolveTransferPath(active, path);
+                } catch (IllegalArgumentException e) {
+                    // Same contract as the archive fallback: an invalid path fails this file.
+                    log.warn("[sandbox-fs] uploadFiles failed for path: {}", path, e);
+                    results.add(FileUploadResponse.fail(path, e.getMessage()));
+                    continue;
+                } catch (IOException e) {
+                    log.debug(
+                            "[sandbox-fs] Workspace root unavailable, keeping archive fallback: {}",
+                            path);
                 }
-            } catch (SandboxException.ExecException e) {
-                String combined =
-                        (e.getStdout() != null ? e.getStdout() : "")
-                                + (e.getStderr() != null && !e.getStderr().isBlank()
-                                        ? "\n" + e.getStderr()
-                                        : "");
-                results.add(FileUploadResponse.fail(path, combined));
+                if (transferPath != null && transfer.supportsFileTransfer(transferPath)) {
+                    try {
+                        transfer.uploadFile(transferPath, content);
+                        results.add(FileUploadResponse.success(path));
+                    } catch (Exception e) {
+                        log.warn("[sandbox-fs] native upload failed for path: {}", path, e);
+                        results.add(FileUploadResponse.fail(path, e.getMessage()));
+                    }
+                    continue;
+                }
+            }
+
+            try {
+                byte[] archive = buildSingleFileArchive(active, path, content);
+                try (InputStream archiveStream = new ByteArrayInputStream(archive)) {
+                    active.hydrateWorkspace(archiveStream);
+                }
+                results.add(FileUploadResponse.success(path));
             } catch (Exception e) {
                 log.warn("[sandbox-fs] uploadFiles failed for path: {}", path, e);
                 results.add(FileUploadResponse.fail(path, e.getMessage()));
@@ -151,6 +159,8 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 
         for (String path : paths) {
+            // Reads keep the raw-path probe, unlike uploads: no shared temp state to race on,
+            // and the exec fallback below stays a single round trip.
             if (active instanceof SandboxFileTransfer transfer
                     && transfer.supportsFileTransfer(path)) {
                 try {
@@ -203,5 +213,90 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
     private String shellSingleQuote(String s) {
         return "'" + s.replace("'", "'\\''") + "'";
+    }
+
+    /** Builds a single-file tar archive relative to the workspace root. */
+    private byte[] buildSingleFileArchive(Sandbox active, String path, byte[] content)
+            throws IOException {
+        if (content == null) {
+            throw new IOException("File content must not be null");
+        }
+
+        String archivePath = resolveArchivePath(active, path);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(output)) {
+            tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
+            TarArchiveEntry entry = new TarArchiveEntry(archivePath);
+            entry.setSize(content.length);
+            tar.putArchiveEntry(entry);
+            tar.write(content);
+            tar.closeArchiveEntry();
+            tar.finish();
+        }
+        return output.toByteArray();
+    }
+
+    /** Constrains an upload path to the workspace and converts it to an archive path. */
+    private String resolveArchivePath(Sandbox active, String path) throws IOException {
+        AbstractFilesystem.validatePath(path);
+        String normalized = normalizeUploadPath(path);
+
+        if (normalized.startsWith("/")) {
+            String workspaceRoot = resolveWorkspaceRoot(active);
+            String rootPrefix = "/".equals(workspaceRoot) ? "/" : workspaceRoot + "/";
+            if (!normalized.startsWith(rootPrefix)) {
+                throw new IOException("Upload path is outside the sandbox workspace: " + path);
+            }
+            normalized = normalized.substring(rootPrefix.length());
+        }
+
+        if (normalized.isBlank()) {
+            throw new IOException("Upload path must identify a file: " + path);
+        }
+        return normalized;
+    }
+
+    /**
+     * Normalizes an upload path and resolves it to its sandbox-absolute form so
+     * workspace-relative paths can ride the native single-file transfer
+     * ({@link SandboxFileTransfer#uploadFile}) instead of the archive-hydrate fallback. Throws
+     * {@link IllegalArgumentException} for invalid paths — the caller fails just that file,
+     * matching the archive fallback's validation contract.
+     */
+    private String resolveTransferPath(Sandbox active, String path) throws IOException {
+        AbstractFilesystem.validatePath(path);
+        String normalized = normalizeUploadPath(path);
+        if (normalized.startsWith("/")) {
+            return normalized;
+        }
+        return resolveWorkspaceRoot(active) + "/" + normalized;
+    }
+
+    /** Normalizes separators and strips leading {@code ./} segments. */
+    private static String normalizeUploadPath(String path) {
+        String normalized = path.replace('\\', '/');
+        while (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
+        }
+        return normalized;
+    }
+
+    /** Resolves the normalized workspace root used to convert absolute upload paths. */
+    private String resolveWorkspaceRoot(Sandbox active) throws IOException {
+        SandboxState state = active.getState();
+        WorkspaceSpec workspaceSpec = state != null ? state.getWorkspaceSpec() : null;
+        String root = workspaceSpec != null ? workspaceSpec.getRoot() : null;
+        if (root == null || root.isBlank()) {
+            throw new IOException("Sandbox workspace root is unavailable");
+        }
+
+        String normalized = root.replace('\\', '/');
+        while (normalized.endsWith("/") && normalized.length() > 1) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (!normalized.startsWith("/")) {
+            throw new IOException("Sandbox workspace root must be absolute: " + root);
+        }
+        return normalized;
     }
 }
