@@ -162,29 +162,24 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      */
     private Flux<AgentEvent> streamAgentEvents(
             List<Msg> inputMessages, AgentRequestOptions requestOptions) {
-        // The default implementation is the compatibility marker. Do not use an emitted
-        // UnsupportedOperationException as the marker: that exception may be raised by the
-        // actual runner and retrying through the legacy path would execute the agent twice.
-        if (!overridesFineGrainedStream()) {
-            log.debug(
-                    "Falling back to legacy AgentRunner.stream() for task {}",
-                    requestOptions.getTaskId());
-            return streamLegacyEvents(inputMessages, requestOptions);
-        }
-        return agentRunner.streamEvents(inputMessages, requestOptions);
-    }
-
-    private boolean overridesFineGrainedStream() {
-        try {
-            return agentRunner
-                            .getClass()
-                            .getMethod("streamEvents", List.class, AgentRequestOptions.class)
-                            .getDeclaringClass()
-                    != AgentRunner.class;
-        } catch (NoSuchMethodException e) {
-            // AgentRunner declares this method, so this can only happen for an invalid proxy.
-            return false;
-        }
+        // Catch only a synchronous UnsupportedOperationException from the compatibility default.
+        // An exception emitted by the returned Flux must propagate; falling back then could execute
+        // the agent twice.
+        return Flux.defer(
+                () -> {
+                    try {
+                        Flux<AgentEvent> fineGrainedStream =
+                                agentRunner.streamEvents(inputMessages, requestOptions);
+                        return fineGrainedStream == null
+                                ? streamLegacyEvents(inputMessages, requestOptions)
+                                : fineGrainedStream;
+                    } catch (UnsupportedOperationException error) {
+                        log.debug(
+                                "Falling back to legacy AgentRunner.stream() for task {}",
+                                requestOptions.getTaskId());
+                        return streamLegacyEvents(inputMessages, requestOptions);
+                    }
+                });
     }
 
     private Flux<AgentEvent> streamLegacyEvents(
