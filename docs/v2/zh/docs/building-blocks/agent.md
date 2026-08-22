@@ -220,6 +220,28 @@ agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", interruptMsg);
 ```
 
+### HarnessAgent：定位活跃调用
+
+对于 [`HarnessAgent`](../harness/architecture.md)，无上下文的 `interrupt()` / `interrupt(Msg)` 重载会**优先路由到活跃调用（active call）的 `RuntimeContext`**——即当前正在该 agent 上运行的会话；只有当没有调用在飞时才回退到 builder 上配置的默认会话。因此，通过 `streamEvents(msgs, ctx)` 以自定义 `sessionId` 启动的流现在可以被正确取消（参见 issue #2610）。
+
+当同一 `HarnessAgent` 上有多个会话并发运行时，请使用带 `RuntimeContext` 的重载精确命中目标会话——每个调用者自己指定要取消的会话，因此在并发下是安全的：
+
+```java
+HarnessAgent agent = ...;  // streamEvents(msgs, ctx) 与 interrupt(RuntimeContext[, Msg]) 是 HarnessAgent 特有 API
+
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("conversation-123")
+        .build();
+
+// 以自定义 sessionId 启动流
+agent.streamEvents(List.of(new UserMessage("你好")), ctx).subscribe(...);
+
+// 之后从任意线程：
+agent.interrupt(ctx);                                      // 只取消该流
+agent.interrupt(ctx, new UserMessage("用户取消了操作"));   // 带注入消息
+```
+
 ## 运行智能体
 
 `call` 和 `streamEvents` 都接受相同的输入消息列表，驱动相同的推理-行动循环，区别在于结果的交付方式。
