@@ -53,10 +53,10 @@ import io.agentscope.core.message.ToolResultBlock;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -184,9 +184,11 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                                                 return Flux.error(error);
                                             }
                                             log.debug(
-                                                    "Falling back to legacy AgentRunner.stream() for task {}",
+                                                    "Falling back to legacy AgentRunner.stream()"
+                                                            + " for task {}",
                                                     requestOptions.getTaskId());
-                                            return streamLegacyEvents(inputMessages, requestOptions);
+                                            return streamLegacyEvents(
+                                                    inputMessages, requestOptions);
                                         });
                     } catch (UnsupportedOperationException error) {
                         log.debug(
