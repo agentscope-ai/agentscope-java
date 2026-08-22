@@ -233,13 +233,8 @@ public class GeminiChatModel extends ChatModelBase {
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        return applyExecutionConfig(doStream0(messages, tools, options), options);
-    }
-
-    private Flux<ChatResponse> applyExecutionConfig(
-            Flux<ChatResponse> responseFlux, GenerateOptions options) {
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "gemini");
+                doStream0(messages, tools, options), options, defaultOptions, modelName, "gemini");
     }
 
     protected Flux<ChatResponse> doStream0(
@@ -579,7 +574,7 @@ public class GeminiChatModel extends ChatModelBase {
                             httpOptions,
                             credentials,
                             resolvedClientOptions,
-                            defaultOptions,
+                            ModelUtils.ensureDefaultExecutionConfig(defaultOptions),
                             formatter);
             model.setContextWindowSize(
                     contextWindowSize >= 0
