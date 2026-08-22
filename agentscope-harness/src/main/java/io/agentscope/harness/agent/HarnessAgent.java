@@ -71,6 +71,8 @@ import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
 import io.agentscope.harness.agent.middleware.HarnessRuntimeMiddleware;
 import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
+import io.agentscope.harness.agent.middleware.HistoricalMediaRecoveryConfig;
+import io.agentscope.harness.agent.middleware.HistoricalMediaRecoveryMiddleware;
 import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
 import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware;
@@ -668,7 +670,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs) {
-        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs));
+        RuntimeContext effective = ensureSessionDefaults(RuntimeContext.empty());
+        return wrappedCall(msgs, effective, () -> delegate.call(msgs, effective));
     }
 
     /**
@@ -677,8 +680,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
-        return wrappedCall(
-                msgs, RuntimeContext.empty(), () -> delegate.call(msgs, structuredModel));
+        RuntimeContext effective = ensureSessionDefaults(RuntimeContext.empty());
+        return wrappedCall(msgs, effective, () -> delegate.call(msgs, structuredModel, effective));
     }
 
     /**
@@ -687,7 +690,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs, schema));
+        RuntimeContext effective = ensureSessionDefaults(RuntimeContext.empty());
+        return wrappedCall(msgs, effective, () -> delegate.call(msgs, schema, effective));
     }
 
     public Mono<Msg> call(Msg msg, RuntimeContext ctx) {
@@ -730,7 +734,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
-        return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options));
+        RuntimeContext effective = ensureSessionDefaults(RuntimeContext.empty());
+        return wrappedStream(effective, () -> delegate.stream(msgs, options, effective));
     }
 
     /**
@@ -740,8 +745,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
+        RuntimeContext effective = ensureSessionDefaults(RuntimeContext.empty());
         return wrappedStream(
-                RuntimeContext.empty(), () -> delegate.stream(msgs, options, structuredModel));
+                effective, () -> delegate.stream(msgs, options, structuredModel, effective));
     }
 
     /**
@@ -751,7 +757,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
-        return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options, schema));
+        RuntimeContext effective = ensureSessionDefaults(RuntimeContext.empty());
+        return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
     }
 
     /**
@@ -1177,8 +1184,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
         CompactionConfig compactionConfig = CompactionConfig.builder().build();
         MemoryConfig memoryConfig = MemoryConfig.defaults();
         ToolResultEvictionConfig toolResultEvictionConfig = ToolResultEvictionConfig.defaults();
+        HistoricalMediaRecoveryConfig historicalMediaRecoveryConfig =
+                HistoricalMediaRecoveryConfig.defaults();
         boolean disableCompaction = false;
         boolean disableToolResultEviction = false;
+        boolean disableHistoricalMediaRecovery = false;
 
         final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
         final List<HarnessAgentBuilderSupport.SubagentFactoryEntry> customSubagentFactories =
@@ -1795,6 +1805,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Disables the {@link CompactionMiddleware} entirely. */
         public Builder disableCompaction() {
             this.disableCompaction = true;
+            return this;
+        }
+
+        /**
+         * Overrides the default historical-media recovery configuration. Recovery is enabled by
+         * default and retries once after replacing unavailable URL-backed media in historical
+         * messages. Pass {@code null}, or call {@link #disableHistoricalMediaRecovery()}, to turn
+         * it off.
+         */
+        public Builder historicalMediaRecovery(HistoricalMediaRecoveryConfig config) {
+            this.historicalMediaRecoveryConfig = config;
+            this.disableHistoricalMediaRecovery = (config == null);
+            return this;
+        }
+
+        /** Disables historical-media recovery entirely. */
+        public Builder disableHistoricalMediaRecovery() {
+            this.disableHistoricalMediaRecovery = true;
             return this;
         }
 
@@ -2461,6 +2489,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 memoryConfig.consolidationMinGap(),
                                 effectiveIsolationScope,
                                 periodicGate));
+            }
+            if (!disableHistoricalMediaRecovery && historicalMediaRecoveryConfig != null) {
+                // Register before compaction so recovery wraps compaction fallback and the normal
+                // downstream model call.
+                inner.middleware(
+                        new HistoricalMediaRecoveryMiddleware(historicalMediaRecoveryConfig));
             }
             CompactionMiddleware compactionHook = null;
             if (!disableCompaction && compactionConfig != null) {
