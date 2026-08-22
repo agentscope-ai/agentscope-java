@@ -162,23 +162,29 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      */
     private Flux<AgentEvent> streamAgentEvents(
             List<Msg> inputMessages, AgentRequestOptions requestOptions) {
-        return Flux.defer(
-                        () -> {
-                            Flux<AgentEvent> fineGrainedStream =
-                                    agentRunner.streamEvents(inputMessages, requestOptions);
-                            if (fineGrainedStream == null) {
-                                return streamLegacyEvents(inputMessages, requestOptions);
-                            }
-                            return fineGrainedStream;
-                        })
-                .onErrorResume(
-                        UnsupportedOperationException.class,
-                        error -> {
-                            log.debug(
-                                    "Falling back to legacy AgentRunner.stream() for task {}",
-                                    requestOptions.getTaskId());
-                            return streamLegacyEvents(inputMessages, requestOptions);
-                        });
+        // The default implementation is the compatibility marker. Do not use an emitted
+        // UnsupportedOperationException as the marker: that exception may be raised by the
+        // actual runner and retrying through the legacy path would execute the agent twice.
+        if (!overridesFineGrainedStream()) {
+            log.debug(
+                    "Falling back to legacy AgentRunner.stream() for task {}",
+                    requestOptions.getTaskId());
+            return streamLegacyEvents(inputMessages, requestOptions);
+        }
+        return agentRunner.streamEvents(inputMessages, requestOptions);
+    }
+
+    private boolean overridesFineGrainedStream() {
+        try {
+            return agentRunner
+                            .getClass()
+                            .getMethod("streamEvents", List.class, AgentRequestOptions.class)
+                            .getDeclaringClass()
+                    != AgentRunner.class;
+        } catch (NoSuchMethodException e) {
+            // AgentRunner declares this method, so this can only happen for an invalid proxy.
+            return false;
+        }
     }
 
     private Flux<AgentEvent> streamLegacyEvents(
