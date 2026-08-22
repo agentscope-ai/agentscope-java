@@ -182,6 +182,13 @@ public class AnthropicToolsHelper {
             builder.maxTokens(maxTokens);
         }
 
+        // Extended thinking
+        Integer thinkingBudget =
+                getOption(options, defaultOptions, GenerateOptions::getThinkingBudget);
+        if (thinkingBudget != null) {
+            builder.enabledThinking(thinkingBudget);
+        }
+
         // Apply additional parameters (merge defaultOptions first, then options to override)
         // Apply additional headers
         applyAdditionalHeaders(builder, defaultOptions);
