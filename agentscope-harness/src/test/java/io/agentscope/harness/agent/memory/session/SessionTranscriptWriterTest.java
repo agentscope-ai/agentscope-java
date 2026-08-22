@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ImageBlock;
@@ -28,6 +29,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.transcript.FilesystemTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
@@ -176,6 +178,28 @@ class SessionTranscriptWriterTest {
             }
         }
         assertTrue(totalLines >= 2, "segments should contain both entries across flushes");
+    }
+
+    @Test
+    void resolveContextPath_omitsHostPathForSandboxFilesystem() {
+        AbstractSandboxFilesystem filesystem = mock(AbstractSandboxFilesystem.class);
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, filesystem)) {
+            SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
+
+            assertEquals(
+                    "", writer.resolveContextPath(RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveContextPath_keepsReachablePathForLocalFilesystem() {
+        try (WorkspaceManager wm = new WorkspaceManager(workspace)) {
+            SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
+
+            assertEquals(
+                    "agents/agent-a/sessions/session-1.jsonl",
+                    writer.resolveContextPath(RuntimeContext.empty(), "agent-a", "session-1"));
+        }
     }
 
     private static Msg text(String id, MsgRole role, String text) {
