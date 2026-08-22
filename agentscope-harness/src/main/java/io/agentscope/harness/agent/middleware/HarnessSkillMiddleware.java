@@ -176,7 +176,8 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         this.frozenSkills =
                 freezeRepositories
                         ? Collections.unmodifiableMap(
-                                new LinkedHashMap<>(mergeRepositories(RuntimeContext.empty())))
+                                new LinkedHashMap<>(
+                                        mergeRepositories(RuntimeContext.empty()).skills()))
                         : null;
         this.runtime.prepareToolkit(toolkit);
     }
@@ -195,7 +196,8 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * Pre-stages marketplace skill resources to {@code .skills-cache/} on the host workspace.
      * Intended to be called <em>before</em> sandbox start so that workspace projection picks up
      * the staged content in the same call. Safe to call multiple times — staging is idempotent
-     * (content-hash guarded).
+     * (content-hash guarded). When no skill survives merging/filtering, orphan GC runs with an
+     * empty retained white-list so stale cache content is not projected into the sandbox.
      *
      * @param ctx the per-call runtime context
      */
@@ -206,15 +208,19 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         if (ctx == null) {
             ctx = RuntimeContext.empty();
         }
-        Map<String, RepoBound> merged = skillsForCall(ctx);
+        MergeResult merge = skillsForCall(ctx);
+        Map<String, RepoBound> merged = merge.skills();
         if (merged.isEmpty()) {
+            stageEmptyRetainedIfSafe(merge.loadFailed());
             return;
         }
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
         List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
-        if (!enabled.isEmpty()) {
-            stager.stage(enabled, sourceNamespaces);
+        if (enabled.isEmpty()) {
+            stageEmptyRetainedIfSafe(merge.loadFailed());
+            return;
         }
+        stager.stage(enabled, sourceNamespaces);
     }
 
     @Override
@@ -225,8 +231,10 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
 
         Toolkit agentToolkit = agent != null ? agent.getToolkit() : null;
 
-        Map<String, RepoBound> merged = skillsForCall(ctx);
+        MergeResult merge = skillsForCall(ctx);
+        Map<String, RepoBound> merged = merge.skills();
         if (merged.isEmpty()) {
+            stageEmptyRetainedIfSafe(merge.loadFailed());
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
             return Mono.just(currentPrompt);
         }
@@ -234,6 +242,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
         List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
         if (enabled.isEmpty()) {
+            stageEmptyRetainedIfSafe(merge.loadFailed());
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
             return Mono.just(currentPrompt);
         }
@@ -275,8 +284,19 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
     //  Internals
     // ---------------------------------------------------------------------
 
-    private Map<String, RepoBound> skillsForCall(RuntimeContext ctx) {
-        return frozenSkills != null ? frozenSkills : mergeRepositories(ctx);
+    private MergeResult skillsForCall(RuntimeContext ctx) {
+        return frozenSkills != null ? new MergeResult(frozenSkills, false) : mergeRepositories(ctx);
+    }
+
+    /**
+     * Runs orphan GC with an empty retained white-list so stale {@code .skills-cache} content
+     * is removed when no skill survives merging/filtering. Skipped when a repository failed to
+     * load — an empty result caused by an error must not wipe the cache (outage protection).
+     */
+    private void stageEmptyRetainedIfSafe(boolean loadFailed) {
+        if (stager != null && !loadFailed) {
+            stager.stage(List.of(), sourceNamespaces);
+        }
     }
 
     private SkillFilter effectiveFilter(RuntimeContext ctx) {
@@ -298,13 +318,17 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         return out;
     }
 
+    /** Outcome of {@link #mergeRepositories}: merged skills plus any-load-failure flag. */
+    private record MergeResult(Map<String, RepoBound> skills, boolean loadFailed) {}
+
     /**
      * Merge skills from every repository, in compose order. Later entries with the same
      * {@code AgentSkill.name} win. Also remembers the source repository per winning skill so
      * subsequent steps (lazy resources, marketplace stage) can act on it.
      */
-    private LinkedHashMap<String, RepoBound> mergeRepositories(RuntimeContext ctx) {
+    private MergeResult mergeRepositories(RuntimeContext ctx) {
         LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>();
+        boolean loadFailed = false;
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
             try {
@@ -313,6 +337,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
                                 ? contextRepository.getAllSkills(ctx)
                                 : repo.getAllSkills();
             } catch (Exception e) {
+                loadFailed = true;
                 log.warn(
                         "Skill repository {} failed to load: {}",
                         repo.getClass().getSimpleName(),
@@ -329,7 +354,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
                 merged.put(skill.getName(), new RepoBound(skill, repo));
             }
         }
-        return merged;
+        return new MergeResult(merged, loadFailed);
     }
 
     private List<RepoBound> applyVisibility(
