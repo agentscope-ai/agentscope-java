@@ -35,7 +35,7 @@ import reactor.core.publisher.Flux;
 
 /**
  * Mock Model implementation for testing.
- *
+ * <p>
  * This mock provides configurable responses and allows tests to verify
  * model interactions without making actual API calls.
  */
@@ -49,6 +49,12 @@ public class MockModel implements Model {
     private GenerateOptions lastOptions;
     private boolean shouldThrowError = false;
     private String errorMessage = "Mock error";
+
+    /**
+     * Whether this mock reports {@code ToolChoice.Specific} support. Defaults to {@code true}
+     * since most models support it; only the few providers that don't override it to {@code false}.
+     */
+    private boolean supportsToolChoiceSpecific = true;
 
     /**
      * Create a mock model with a simple text response.
@@ -191,6 +197,17 @@ public class MockModel implements Model {
     @Override
     public String getModelName() {
         return "mock-model";
+    }
+
+    /** Getter (interface override — cannot take a {@code get} prefix, see {@link Model}). */
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return supportsToolChoiceSpecific;
+    }
+
+    /** Sets whether this mock reports {@code ToolChoice.Specific} support. */
+    public void setSupportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {
+        this.supportsToolChoiceSpecific = supportsToolChoiceSpecific;
     }
 
     // Helper methods to create responses
