@@ -313,6 +313,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private static final String EVENT_SINK_KEY = "io.agentscope.core.ReActAgent.eventSink";
 
+    /**
+     * Default tool-result text for a manual denial when the {@link ConfirmResult} carries no
+     * custom {@link ConfirmResult#getReason() reason}.
+     */
+    private static final String DEFAULT_USER_DENY_REASON = "Permission denied by user";
+
     @SuppressWarnings("deprecation")
     private final LegacyHookDispatcher hookDispatcher;
 
@@ -1929,13 +1935,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
          *       register any attached {@link PermissionRule}s with the engine.</li>
          *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
-         *       the tool will no longer be pending on resume.</li>
+         *       the tool will no longer be pending on resume, using the user-supplied
+         *       {@link ConfirmResult#getReason() reason} when present, and emit the same
+         *       {@link ToolResultStartEvent} → {@link ToolResultTextDeltaEvent} →
+         *       {@link ToolResultEndEvent} triple that the rule-based auto-deny path emits, so
+         *       event consumers observe manual denials too (issue #2492).</li>
          * </ul>
          */
         private void applyConfirmResults(List<ConfirmResult> results) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
             // promote them to ALLOWED. Collect denied ones for separate handling.
-            List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+            List<Map.Entry<ToolUseBlock, String>> deniedToolCalls = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
             for (ConfirmResult r : results) {
                 ToolUseBlock target = r.getToolCall();
@@ -1952,19 +1962,35 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         }
                     }
                 } else {
-                    deniedToolCalls.add(target);
+                    String reason = r.getReason();
+                    deniedToolCalls.add(
+                            Map.entry(
+                                    target,
+                                    reason == null || reason.isBlank()
+                                            ? DEFAULT_USER_DENY_REASON
+                                            : reason));
                 }
             }
             applyToolUseBlockReplacements(replacements);
-            for (ToolUseBlock denied : deniedToolCalls) {
+            String replyId = UUID.randomUUID().toString().replace("-", "");
+            for (Map.Entry<ToolUseBlock, String> entry : deniedToolCalls) {
+                ToolUseBlock denied = entry.getKey();
+                String reasonText = entry.getValue();
                 ToolResultBlock deniedResult =
-                        ToolResultBlock.text("Permission denied by user")
+                        ToolResultBlock.text(reasonText)
                                 .withIdAndName(denied.getId(), denied.getName())
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
                                 deniedResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
+                publishEvent(new ToolResultStartEvent(replyId, denied.getId(), denied.getName()));
+                publishEvent(
+                        new ToolResultTextDeltaEvent(
+                                replyId, denied.getId(), denied.getName(), reasonText));
+                publishEvent(
+                        new ToolResultEndEvent(
+                                replyId, denied.getId(), denied.getName(), ToolResultState.DENIED));
             }
         }
 
