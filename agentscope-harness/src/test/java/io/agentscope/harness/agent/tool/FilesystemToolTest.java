@@ -23,6 +23,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
@@ -31,6 +34,7 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,14 +52,23 @@ class FilesystemToolTest {
         tool = new FilesystemTool(filesystem);
     }
 
+    /** Extracts the concatenated text output of a tool result. */
+    private static String textOf(ToolResultBlock result) {
+        return result.getOutput().stream()
+                .filter(b -> b instanceof TextBlock)
+                .map(b -> ((TextBlock) b).getText())
+                .collect(Collectors.joining());
+    }
+
     @Test
     void editFile_omittedReplaceAll_defaultsToFalse() {
         when(filesystem.edit(eq(RT), eq("f.txt"), eq("old"), eq("new"), eq(false)))
                 .thenReturn(EditResult.ok("f.txt", 1));
 
-        String result = tool.editFile(RT, "f.txt", "old", "new", null);
+        ToolResultBlock result = tool.editFile(RT, "f.txt", "old", "new", null);
 
-        assertTrue(result.startsWith("Edited "));
+        assertTrue(textOf(result).startsWith("Edited "));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         verify(filesystem).edit(RT, "f.txt", "old", "new", false);
     }
 
@@ -64,9 +77,10 @@ class FilesystemToolTest {
         when(filesystem.edit(eq(RT), eq("f.txt"), eq("old"), eq("new"), eq(true)))
                 .thenReturn(EditResult.ok("f.txt", 2));
 
-        String result = tool.editFile(RT, "f.txt", "old", "new", true);
+        ToolResultBlock result = tool.editFile(RT, "f.txt", "old", "new", true);
 
-        assertTrue(result.contains("2 replacement"));
+        assertTrue(textOf(result).contains("2 replacement"));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         verify(filesystem).edit(RT, "f.txt", "old", "new", true);
     }
 
@@ -80,12 +94,13 @@ class FilesystemToolTest {
         when(filesystem.ls(RT, "memory"))
                 .thenReturn(LsResult.success(List.of(FileInfo.ofDir("memory", ""))));
 
-        String result =
+        ToolResultBlock result =
                 tool.listFiles(
                         RT,
                         "D:\\workspace\\my-learn\\agentscope-v2\\.agentscope\\workspace\\memory");
 
-        assertTrue(result.contains("[DIR]"));
+        assertTrue(textOf(result).contains("[DIR]"));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         verify(filesystem).ls(RT, "memory");
     }
 
@@ -94,9 +109,10 @@ class FilesystemToolTest {
         when(filesystem.read(eq(RT), eq("f.txt"), eq(0), eq(0)))
                 .thenReturn(ReadResult.success(new FileData("hello", "utf-8")));
 
-        String result = tool.readFile(RT, "f.txt", null, null);
+        ToolResultBlock result = tool.readFile(RT, "f.txt", null, null);
 
-        assertEquals("hello", result);
+        assertEquals("hello", textOf(result));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         verify(filesystem).read(RT, "f.txt", 0, 0);
     }
 
@@ -105,9 +121,34 @@ class FilesystemToolTest {
         when(filesystem.read(eq(RT), eq("f.txt"), eq(2), eq(5)))
                 .thenReturn(ReadResult.success(new FileData("world", "utf-8")));
 
-        String result = tool.readFile(RT, "f.txt", 2, 5);
+        ToolResultBlock result = tool.readFile(RT, "f.txt", 2, 5);
 
-        assertEquals("world", result);
+        assertEquals("world", textOf(result));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         verify(filesystem).read(RT, "f.txt", 2, 5);
+    }
+
+    @Test
+    void readFile_contentLookingLikeAnError_isStillSuccess() {
+        // Regression for the textual-prefix heuristic: successfully reading a log file whose
+        // content begins with "Error: " must not be reported as a failed tool call.
+        when(filesystem.read(eq(RT), eq("app.log"), eq(0), eq(0)))
+                .thenReturn(ReadResult.success(new FileData("Error: connection refused", "utf-8")));
+
+        ToolResultBlock result = tool.readFile(RT, "app.log", null, null);
+
+        assertEquals("Error: connection refused", textOf(result));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+    }
+
+    @Test
+    void readFile_failure_reportsErrorState() {
+        when(filesystem.read(eq(RT), eq("missing.txt"), eq(0), eq(0)))
+                .thenReturn(ReadResult.fail("no such file"));
+
+        ToolResultBlock result = tool.readFile(RT, "missing.txt", null, null);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertTrue(textOf(result).contains("no such file"));
     }
 }

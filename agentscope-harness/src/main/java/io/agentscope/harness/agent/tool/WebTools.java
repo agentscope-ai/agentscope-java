@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.tool;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.net.URI;
@@ -44,7 +45,7 @@ public final class WebTools {
                 readOnly = true,
                 description =
                         "Fetch content from an HTTP(S) URL and return a truncated text preview.")
-        public String webFetch(
+        public ToolResultBlock webFetch(
                 @ToolParam(name = "url", description = "HTTP or HTTPS URL to fetch") String url,
                 @ToolParam(
                                 name = "max_chars",
@@ -52,11 +53,11 @@ public final class WebTools {
                                 required = false)
                         Integer maxChars) {
             if (url == null || url.isBlank()) {
-                return "Error: url is required";
+                return ToolResultBlock.error("url is required");
             }
             String trimmed = url.strip();
             if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-                return "Error: only http/https URLs are allowed";
+                return ToolResultBlock.error("only http/https URLs are allowed");
             }
             int limit = maxChars != null && maxChars > 0 ? Math.min(maxChars, 100_000) : 20_000;
             try {
@@ -73,9 +74,9 @@ public final class WebTools {
                 if (body.length() > limit) {
                     body = body.substring(0, limit) + "\n...[truncated]";
                 }
-                return "status=" + response.statusCode() + "\n\n" + body;
+                return ToolResultBlock.success("status=" + response.statusCode() + "\n\n" + body);
             } catch (Exception e) {
-                return "Error: web_fetch failed: " + e.getMessage();
+                return ToolResultBlock.error("web_fetch failed: " + e.getMessage());
             }
         }
     }
@@ -92,7 +93,7 @@ public final class WebTools {
                 description =
                         "Search the web for information. Requires TAVILY_API_KEY. Returns titles,"
                                 + " URLs and snippets.")
-        public String webSearch(
+        public ToolResultBlock webSearch(
                 @ToolParam(name = "query", description = "Search query") String query,
                 @ToolParam(
                                 name = "max_results",
@@ -100,12 +101,13 @@ public final class WebTools {
                                 required = false)
                         Integer maxResults) {
             if (query == null || query.isBlank()) {
-                return "Error: query is required";
+                return ToolResultBlock.error("query is required");
             }
             String apiKey = System.getenv("TAVILY_API_KEY");
             if (apiKey == null || apiKey.isBlank()) {
-                return "Error: TAVILY_API_KEY is not set. Configure the key via Environment vault"
-                        + " credentials or process env to enable web_search.";
+                return ToolResultBlock.error(
+                        "TAVILY_API_KEY is not set. Configure the key via Environment vault"
+                                + " credentials or process env to enable web_search.");
             }
             int limit = maxResults != null && maxResults > 0 ? Math.min(maxResults, 10) : 5;
             String body =
@@ -126,12 +128,12 @@ public final class WebTools {
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() != 200) {
-                    return "Error: Tavily API returned " + response.statusCode();
+                    return ToolResultBlock.error("Tavily API returned " + response.statusCode());
                 }
                 JsonNode root = mapper.readTree(response.body());
                 JsonNode results = root.path("results");
                 if (!results.isArray() || results.isEmpty()) {
-                    return "No results.";
+                    return ToolResultBlock.success("No results.");
                 }
                 StringBuilder sb = new StringBuilder();
                 int i = 1;
@@ -145,9 +147,9 @@ public final class WebTools {
                             .append(r.path("content").asText(""))
                             .append("\n\n");
                 }
-                return sb.toString().strip();
+                return ToolResultBlock.success(sb.toString().strip());
             } catch (Exception e) {
-                return "Error: web_search failed: " + e.getMessage();
+                return ToolResultBlock.error("web_search failed: " + e.getMessage());
             }
         }
     }
