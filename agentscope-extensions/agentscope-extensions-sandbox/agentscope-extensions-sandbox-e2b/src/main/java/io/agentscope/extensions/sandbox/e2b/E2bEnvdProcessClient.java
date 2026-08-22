@@ -204,10 +204,8 @@ final class E2bEnvdProcessClient {
                     DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
                     Descriptors.FieldDescriptor ec =
                             end.getDescriptorForType().findFieldByName("exit_code");
-                    if (end.hasField(ec)) {
-                        Object v = end.getField(ec);
-                        exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
-                    }
+                    Object v = end.getField(ec);
+                    exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
                 }
             } catch (IOException e) {
                 continue;
@@ -342,10 +340,11 @@ final class E2bEnvdProcessClient {
             DynamicMessage.Builder endBuilder = DynamicMessage.newBuilder(endDesc);
             Descriptors.FieldDescriptor exitCodeField = endDesc.findFieldByName("exit_code");
             JsonNode exitCodeNode = endNode.path("exitCode");
-            if (exitCodeNode.canConvertToInt()) {
+            boolean hasExitCode = exitCodeNode.canConvertToInt();
+            if (hasExitCode) {
                 endBuilder.setField(exitCodeField, exitCodeNode.intValue());
             }
-            if (!endBuilder.getAllFields().isEmpty()) {
+            if (hasExitCode || !endBuilder.getAllFields().isEmpty()) {
                 event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
             }
         }
