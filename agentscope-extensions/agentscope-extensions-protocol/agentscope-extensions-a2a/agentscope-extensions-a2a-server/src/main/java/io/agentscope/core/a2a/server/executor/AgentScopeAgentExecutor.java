@@ -53,6 +53,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -170,9 +171,23 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                     try {
                         Flux<AgentEvent> fineGrainedStream =
                                 agentRunner.streamEvents(inputMessages, requestOptions);
-                        return fineGrainedStream == null
-                                ? streamLegacyEvents(inputMessages, requestOptions)
-                                : fineGrainedStream;
+                        if (fineGrainedStream == null) {
+                            return streamLegacyEvents(inputMessages, requestOptions);
+                        }
+                        AtomicBoolean emitted = new AtomicBoolean();
+                        return fineGrainedStream
+                                .doOnNext(event -> emitted.set(true))
+                                .onErrorResume(
+                                        UnsupportedOperationException.class,
+                                        error -> {
+                                            if (emitted.get()) {
+                                                return Flux.error(error);
+                                            }
+                                            log.debug(
+                                                    "Falling back to legacy AgentRunner.stream() for task {}",
+                                                    requestOptions.getTaskId());
+                                            return streamLegacyEvents(inputMessages, requestOptions);
+                                        });
                     } catch (UnsupportedOperationException error) {
                         log.debug(
                                 "Falling back to legacy AgentRunner.stream() for task {}",
