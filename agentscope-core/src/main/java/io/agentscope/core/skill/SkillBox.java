@@ -22,6 +22,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
+import io.agentscope.core.util.StripedLocks;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,7 +32,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +55,9 @@ public class SkillBox {
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
 
-    private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
+    // Striped locks keyed by target path hash: file paths come from model output, so a per-path
+    // lock map would grow without bound over the JVM lifetime (see issue #2486).
+    private static final StripedLocks FILE_LOCKS = new StripedLocks(64);
 
     public SkillBox(Toolkit toolkit) {
         this(toolkit, null);
@@ -830,9 +833,9 @@ public class SkillBox {
                         Files.createDirectories(targetPath.getParent());
                     }
 
-                    Object lock =
-                            FILE_LOCKS.computeIfAbsent(targetPath.toString(), k -> new Object());
-                    synchronized (lock) {
+                    ReentrantLock lock = FILE_LOCKS.get(targetPath.toString());
+                    lock.lock();
+                    try {
                         if (content.startsWith(BASE64_PREFIX)) {
                             String encoded = content.substring(BASE64_PREFIX.length());
                             byte[] decoded = Base64.getDecoder().decode(encoded);
@@ -840,6 +843,8 @@ public class SkillBox {
                         } else {
                             Files.writeString(targetPath, content, StandardCharsets.UTF_8);
                         }
+                    } finally {
+                        lock.unlock();
                     }
 
                     logger.debug("Uploaded file: {}", targetPath);
