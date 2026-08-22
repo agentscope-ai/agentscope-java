@@ -440,12 +440,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return new VersionedState<>(fresh, version);
         } catch (Exception e) {
             log.warn(
-                    "Failed to load AgentState for slot (userId={}, sessionId={}): {}",
+                    "Failed to load AgentState for slot (userId={}, sessionId={})",
                     userId,
                     sessionId,
-                    e.getMessage());
-            long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
-            return new VersionedState<>(fresh, version);
+                    e);
+            throw e;
         }
     }
 
