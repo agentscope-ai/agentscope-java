@@ -216,6 +216,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =
             GracefulShutdownManager.getInstance();
+    private static final int MAX_CONFIRM_REASON_CODE_POINTS = 500;
 
     /** Tool name used for the per-call structured-output {@code generate_response} tool. */
     public static final String STRUCTURED_OUTPUT_TOOL_NAME = "generate_response";
@@ -1973,8 +1974,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private void applyConfirmResults(List<ConfirmResult> results) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
-            // promote them to ALLOWED. Collect denied ones for separate handling.
-            List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+            // promote them to ALLOWED. Collect denied results for separate handling so any
+            // user-supplied reason can be included in the denied tool result.
+            List<ConfirmResult> deniedResults = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
             for (ConfirmResult r : results) {
                 ToolUseBlock target = r.getToolCall();
@@ -1991,18 +1993,32 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         }
                     }
                 } else {
-                    deniedToolCalls.add(target);
+                    deniedResults.add(r);
                 }
             }
             applyToolUseBlockReplacements(replacements);
-            for (ToolUseBlock denied : deniedToolCalls) {
-                ToolResultBlock deniedResult =
-                        ToolResultBlock.text("Permission denied by user")
+            for (ConfirmResult deniedResult : deniedResults) {
+                ToolUseBlock denied = deniedResult.getToolCall();
+                String reason = deniedResult.getReason();
+                String normalizedReason = reason == null ? "" : reason.strip();
+                if (normalizedReason.codePointCount(0, normalizedReason.length())
+                        > MAX_CONFIRM_REASON_CODE_POINTS) {
+                    int endIndex =
+                            normalizedReason.offsetByCodePoints(0, MAX_CONFIRM_REASON_CODE_POINTS);
+                    normalizedReason = normalizedReason.substring(0, endIndex) + " <truncated>";
+                }
+                String message =
+                        normalizedReason.isEmpty()
+                                ? "Permission denied by user"
+                                : "Permission denied by user. User-provided reason: "
+                                        + normalizedReason;
+                ToolResultBlock deniedToolResult =
+                        ToolResultBlock.text(message)
                                 .withIdAndName(denied.getId(), denied.getName())
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
-                                deniedResult, denied, getName());
+                                deniedToolResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
             }
         }
