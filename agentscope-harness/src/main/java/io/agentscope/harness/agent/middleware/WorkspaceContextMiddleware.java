@@ -23,6 +23,9 @@ import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAware;
+import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -340,7 +343,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append("Shell commands run with `pwd` set to the project directory.\n");
         } else if (fs instanceof AbstractSandboxFilesystem sandbox
                 && !(fs instanceof OverlayFilesystem)) {
-            sb.append("Sandbox root: /workspace (container id: ")
+            sb.append("Sandbox root: ")
+                    .append(resolveSandboxRoot(fs))
+                    .append(" (container id: ")
                     .append(sandbox.id())
                     .append(")\n");
             sb.append(
@@ -367,6 +372,30 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                 "AGENTS.md defines persona and local conventions — honor them when consistent"
                         + " with safety and policy.\n");
         return sb.toString();
+    }
+
+    /**
+     * Resolves the sandbox workspace root from the active sandbox's persisted state.
+     *
+     * <p>The workspace root is written into each sandbox backend's state object when the sandbox
+     * is created (e.g. {@code DockerSandboxState}, {@code E2bSandboxState}), and is the
+     * authoritative source for the path the container exposes to the model. This method
+     * reads it via the base-class accessor {@link SandboxState#getWorkspaceRoot()} introduced
+     * for this purpose.
+     *
+     * <p>Falls back to {@code /workspace} when the filesystem is not sandbox-aware, no sandbox
+     * is attached, or the state has not yet been initialised.
+     */
+    private static String resolveSandboxRoot(AbstractFilesystem fs) {
+        if (fs instanceof SandboxAware aware) {
+            Sandbox sandbox = aware.getSandbox();
+            SandboxState state = sandbox != null ? sandbox.getState() : null;
+            String root = state != null ? state.getWorkspaceRoot() : null;
+            if (root != null && !root.isBlank()) {
+                return root;
+            }
+        }
+        return "/workspace";
     }
 
     /**
