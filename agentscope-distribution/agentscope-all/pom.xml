@@ -381,6 +381,13 @@
             <optional>true</optional>
         </dependency>
 
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-kotlin</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Model Context Protocol (MCP) SDK -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
