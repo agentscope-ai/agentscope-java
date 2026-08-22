@@ -496,6 +496,45 @@ At load time:
 
 This "details on disk, index in the prompt" pattern keeps token budget bounded even with a large knowledge base.
 
+## Disabling the local workspace
+
+When your agents run in a SaaS / containerised deployment and all file IO happens inside a remote
+sandbox or an in-memory / distributed store, a local workspace under the working directory
+(`${user.dir}/.agentscope/workspace`) is pure dead weight — it appears in the application's
+working directory even when the filesystem tools are disabled.
+
+`HarnessAgent.Builder.disableLocalWorkspace()` opts a single build out of materialising the default
+local workspace:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("chat-agent")
+    .model(model)
+    .stateStore(redisStateStore)          // required — no default JsonFileAgentStateStore
+    .taskRepository(myTaskRepository)     // required when subagents are enabled
+    .disableFilesystemTools()             // recommended — no local file tools either
+    .disableLocalWorkspace()
+    .build();
+```
+
+What changes:
+
+| Aspect | Default | With `disableLocalWorkspace()` |
+|--------|---------|-------------------------------|
+| Workspace location (when `workspace(...)` unset) | `${user.dir}/.agentscope/workspace` | `${java.io.tmpdir}/agentscope-workspace/<agentId>` — ephemeral, never the working directory |
+| Default filesystem | Overlay of `${user.dir}` + workspace | none — no local `AbstractFilesystem` is created |
+| Default `AgentStateStore` | `JsonFileAgentStateStore` at `~/.agentscope/state/<agentId>` | build fails fast — pass `.stateStore(...)` |
+| Default `TaskRepository` | `WorkspaceTaskRepository` under `agents/<agentId>/tasks` | build fails fast — pass `.taskRepository(...)` |
+| `MessageBus` / async-tool registry | Workspace-backed | skipped (no local filesystem) |
+| Transcripts | persisted under the workspace | skipped with a warning unless a `.transcriptStore(...)` is supplied |
+| Skills staging (`.skills-cache`) | materialised in the workspace | not staged |
+
+> The flag relocates / disables *local* workspace materialisation. Subsystems that are left
+> enabled (memory hooks, plan mode, …) read and write the ephemeral temp workspace instead of the
+> working directory. For a fully stateless build, combine it with the `disable*` opt-outs for the
+> workspace-local subsystems you do not use (`disableMemoryTools()`, `disableMemoryHooks()`,
+> `disableDynamicSkills()`, `disableDefaultWorkspaceSkills()`, `disableTranscript()`, …).
+
 ## Safety rules for writing to the workspace
 
 `additionalContextFile`, `writeUtf8WorkspaceRelative`, `memory_get`, and friends accept **workspace-relative paths**. The framework does basic path-traversal validation (refusing `../../etc/passwd` and similar escapes).

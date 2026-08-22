@@ -493,6 +493,37 @@ knowledge/
 
 这种"目录里全是细节，prompt 里只放索引"的模式，避免把整个知识库塞进 token 预算。
 
+## 禁用本地工作区
+
+当你的智能体跑在 SaaS / 容器化部署里，所有文件 IO 都在远程沙箱或内存 / 分布式存储中完成时，工作目录下的本地工作区（`${user.dir}/.agentscope/workspace`）纯粹是负担——即使禁用了文件系统工具，它还是会出现在应用的工作目录里。
+
+`HarnessAgent.Builder.disableLocalWorkspace()` 让单个 build 不再落地默认的本地工作区：
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("chat-agent")
+    .model(model)
+    .stateStore(redisStateStore)          // 必填——不再使用默认 JsonFileAgentStateStore
+    .taskRepository(myTaskRepository)     // 启用子 Agent 时必填
+    .disableFilesystemTools()             // 建议——文件工具也不再注册
+    .disableLocalWorkspace()
+    .build();
+```
+
+行为变化：
+
+| 方面 | 默认行为 | 启用 `disableLocalWorkspace()` 后 |
+|------|---------|-----------------------------------|
+| 工作区位置（未显式 `workspace(...)`） | `${user.dir}/.agentscope/workspace` | `${java.io.tmpdir}/agentscope-workspace/<agentId>` —— 临时目录，绝不落在工作目录 |
+| 默认文件系统 | `${user.dir}` 与工作区的 Overlay | 无——不创建任何本地 `AbstractFilesystem` |
+| 默认 `AgentStateStore` | `~/.agentscope/state/<agentId>` 下的 `JsonFileAgentStateStore` | 构建直接报错——需要传 `.stateStore(...)` |
+| 默认 `TaskRepository` | `agents/<agentId>/tasks` 下的 `WorkspaceTaskRepository` | 构建直接报错——需要传 `.taskRepository(...)` |
+| `MessageBus` / 异步工具注册表 | workspace 版 | 跳过（没有本地文件系统） |
+| Transcript（会话记录） | 持久化在工作区内 | 未提供 `.transcriptStore(...)` 时跳过并输出告警 |
+| 技能 staging（`.skills-cache`） | 落到工作区 | 不再 staging |
+
+> 该开关只重定向 / 禁用**本地**工作区的落盘。仍然开启的子系统（记忆钩子、Plan Mode 等）会读写临时工作区而不是你的工作目录。想要完全无状态构建，请组合使用你不需要的那些 workspace 本地子系统的 `disable*` 开关（`disableMemoryTools()`、`disableMemoryHooks()`、`disableDynamicSkills()`、`disableDefaultWorkspaceSkills()`、`disableTranscript()` 等）。
+
 ## 写入工作区的安全规则
 
 `additionalContextFile`、`writeUtf8WorkspaceRelative`、`memory_get` 这些接口接受**工作区相对路径**。框架做基本的 path-traversal 校验（拒绝 `../../etc/passwd` 这种逃出工作区的写法）。
