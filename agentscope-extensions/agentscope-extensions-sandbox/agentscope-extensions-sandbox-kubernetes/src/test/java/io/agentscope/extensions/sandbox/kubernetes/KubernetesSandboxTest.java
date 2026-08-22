@@ -107,6 +107,43 @@ class KubernetesSandboxTest {
     }
 
     @Test
+    void hydrateUsesUniqueTempArchivePerCall() throws Exception {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "", 0));
+
+        sandbox.doHydrateWorkspace(new ByteArrayInputStream("tar-one".getBytes()));
+        sandbox.doHydrateWorkspace(new ByteArrayInputStream("tar-two".getBytes()));
+
+        // Concurrent transfers must never share a temp archive: a deterministic name lets
+        // one call's rm -f cleanup delete another call's archive before tar -xf runs.
+        ArgumentCaptor<String> path = ArgumentCaptor.forClass(String.class);
+        verify(files, org.mockito.Mockito.times(2)).write(path.capture(), any(byte[].class));
+        String first = path.getAllValues().get(0);
+        String second = path.getAllValues().get(1);
+        assertTrue(first.startsWith(".agentscope-tmp/ws-hydrate-"));
+        assertTrue(second.startsWith(".agentscope-tmp/ws-hydrate-"));
+        assertTrue(!first.equals(second));
+    }
+
+    @Test
+    void persistUsesUniqueTempArchivePerCall() throws Exception {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "", 0));
+        when(files.read(startsWith(".agentscope-tmp/ws-persist-")))
+                .thenReturn("fake-tar".getBytes());
+
+        sandbox.doPersistWorkspace();
+        sandbox.doPersistWorkspace();
+
+        // Same uniqueness contract as hydrate: concurrent persists must not share a
+        // temp archive, even if a future refactor splits the naming method.
+        ArgumentCaptor<String> path = ArgumentCaptor.forClass(String.class);
+        verify(files, org.mockito.Mockito.times(2)).read(path.capture());
+        String first = path.getAllValues().get(0);
+        String second = path.getAllValues().get(1);
+        assertTrue(first.startsWith(".agentscope-tmp/ws-persist-"));
+        assertTrue(!first.equals(second));
+    }
+
+    @Test
     void persistUsesFileApiWhenConfigured() throws Exception {
         when(commands.run(anyString())).thenReturn(new ExecutionResult("", "", 0));
         byte[] tar = "fake-tar".getBytes();
