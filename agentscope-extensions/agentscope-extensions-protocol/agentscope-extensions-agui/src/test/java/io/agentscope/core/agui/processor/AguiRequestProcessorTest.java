@@ -50,36 +50,34 @@ import reactor.core.publisher.Flux;
 class AguiRequestProcessorTest {
 
     @Test
-    void extractLatestUserMessagePreservesFullRunInputMetadata() {
+    void processForwardsFullInputWithoutDroppingEarlierMessages() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
+        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(agent.streamEvents(msgsCaptor.capture(), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
         AguiRequestProcessor processor =
-                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
-        AguiMessage firstUser = AguiMessage.userMessage("msg-1", "first");
-        AguiMessage lastUser = AguiMessage.userMessage("msg-3", "last");
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
         RunAgentInput input =
                 RunAgentInput.builder()
                         .threadId("thread-1")
                         .runId("run-1")
                         .messages(
                                 List.of(
-                                        firstUser,
+                                        AguiMessage.userMessage("msg-1", "first"),
                                         AguiMessage.assistantMessage("msg-2", "ok"),
-                                        lastUser))
-                        .state(Map.of("cursor", 8))
-                        .forwardedProps(Map.of("agentId", "agent-a"))
-                        .resume(
-                                List.of(
-                                        new AguiResume(
-                                                "int-1",
-                                                AguiResume.STATUS_RESOLVED,
-                                                Map.of("approved", true))))
+                                        AguiMessage.userMessage("msg-3", "last")))
                         .build();
 
-        RunAgentInput extracted = processor.extractLatestUserMessage(input);
+        processor.process(input, null, null).events().collectList().block();
 
-        assertEquals(List.of(lastUser), extracted.getMessages());
-        assertEquals(input.getState(), extracted.getState());
-        assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
-        assertEquals(input.getResume(), extracted.getResume());
+        // All three messages reach the agent — none are filtered out by the processor.
+        List<Msg> forwarded = msgsCaptor.getValue();
+        assertEquals(3, forwarded.size());
+        assertEquals("msg-1", forwarded.get(0).getId());
+        assertEquals("msg-2", forwarded.get(1).getId());
+        assertEquals("msg-3", forwarded.get(2).getId());
     }
 
     @Test
@@ -121,7 +119,6 @@ class AguiRequestProcessorTest {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
         when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
-        when(resolver.hasMemory("thread-1")).thenReturn(false);
         ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
         when(agent.streamEvents(msgsCaptor.capture(), any(RuntimeContext.class)))
                 .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
