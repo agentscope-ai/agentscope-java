@@ -2435,10 +2435,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // Empty final response: no tool calls and no visible content
                                 // (e.g. a reasoning model that wrote its whole answer into the
                                 // reasoning channel and left the content channel empty). Loop
-                                // back to reasoning with a synthetic reminder — mirroring the
-                                // "Tool not found" feedback given for hallucinated tool calls —
-                                // bounded by maxIters, instead of silently finishing with an
-                                // empty reply (#2750).
+                                // back to reasoning with a synthetic reminder.
                                 if (!hasToolCalls(eventMsg)) {
                                     log.warn(
                                             "Final response has no visible content (empty reply),"
@@ -3698,8 +3695,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Check if the ReAct loop should terminate.
          *
-         * <p>A response with tool calls (even non-existent ones) continues to the acting phase
-         * where ToolExecutor returns "Tool not found" for the model to see. A tool-free response
+         * <p>A response with tool calls continues to the acting phase. A tool-free response
          * finishes only when it carries visible content: empty or thinking-only responses (the
          * entire answer in the reasoning channel) loop back to reasoning, bounded by {@code
          * maxIters}, instead of silently ending the agent with an empty reply.
@@ -3716,28 +3712,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return false;
             }
 
-            return hasVisibleText(msg);
-        }
-
-        /**
-         * Check whether the given message requests tool execution. Shared by {@link #isFinished}
-         * and the empty-final-response guard so both derive "tool-free" from one place.
-         */
-        private static boolean hasToolCalls(Msg msg) {
-            return !msg.getContentBlocks(ToolUseBlock.class).isEmpty();
-        }
-
-        /**
-         * Check whether the given message carries user-visible content: a {@link TextBlock}
-         * with non-blank text. Text is the only channel consumers render as the assistant's
-         * visible reply (thinking never counts; tool calls are handled by the caller before
-         * this check; images and other data enter through tool results, not final responses).
-         */
-        private static boolean hasVisibleText(Msg msg) {
             return msg.getContentBlocks(TextBlock.class).stream()
                     .anyMatch(
                             textBlock ->
                                     textBlock.getText() != null && !textBlock.getText().isBlank());
+        }
+
+        private static boolean hasToolCalls(Msg msg) {
+            return !msg.getContentBlocks(ToolUseBlock.class).isEmpty();
         }
 
         /**
