@@ -504,8 +504,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Persist the safe conversation state accumulated before a failed call and rethrow the original
      * failure. Incomplete model chunks are only held by the per-iteration accumulator, so they are
      * deliberately not added to {@link AgentState} or persisted here.
+     *
+     * <p>{@link InterruptedException} is intentionally skipped: an interrupt is already handled end
+     * to end by {@link #handleInterrupt}, which first reconciles any dangling tool_use produced
+     * during reasoning (synthesizing error results for pending tool calls) and only then persists.
+     * Saving here would race ahead of that reconciliation and persist an inconsistent intermediate
+     * state (a tool_use with no matching tool result), so the interrupt is allowed to propagate
+     * untouched.
      */
     private <T> Mono<T> saveStateAfterCallFailure(CallExecution scope, Throwable callFailure) {
+        if (ExceptionUtils.containsInterruptedException(callFailure)) {
+            return Mono.error(callFailure);
+        }
         return saveStateToSession(scope)
                 .onErrorResume(
                         saveFailure -> {
