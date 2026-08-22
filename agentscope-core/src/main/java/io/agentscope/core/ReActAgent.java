@@ -203,12 +203,13 @@ import reactor.core.scheduler.Schedulers;
  *     .build()).block();
  * }</pre>
  *
- * <p><b>Thread Safety:</b> {@code ReActAgent} is <em>not</em> thread-safe. A single instance
- * processes exactly one {@code call()} at a time; a concurrent invocation on the same instance
- * throws {@link IllegalStateException}. For web services or other concurrent scenarios, create
- * one agent instance per request via a factory method. {@link io.agentscope.core.model.Model},
- * {@link io.agentscope.core.tool.Toolkit} (as a template — {@code build()} deep-copies it), and
- * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
+ * <p><b>Thread Safety:</b> A single instance supports concurrent {@code call()} invocations on
+ * <em>distinct</em> {@code (userId, sessionId)} slots (calls sharing a slot are serialized FIFO).
+ * Per-call state — including the active {@link RuntimeContext} — is tracked in a runId-indexed
+ * registry (see {@link #getRuntimeContext(String)}), so concurrent sessions no longer overwrite
+ * each other. {@link io.agentscope.core.model.Model}, {@link io.agentscope.core.tool.Toolkit} (as a
+ * template — {@code build()} deep-copies it), and {@link io.agentscope.core.state.AgentStateStore}
+ * are all safe to share across instances.
  */
 @SuppressWarnings("deprecation")
 public class ReActAgent extends AgentBase implements AutoCloseable {
@@ -277,9 +278,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final PermissionContextState initialPermissionContext;
 
     // ==================== 2.0 Core Fields ====================
-
-    /** Active per-call RuntimeContext, set during call lifecycle only. */
-    private volatile RuntimeContext activeRc;
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
     private final ConcurrentHashMap<String, AgentState> stateCache = new ConcurrentHashMap<>();
@@ -717,7 +715,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
-        this.activeRc = ctx;
         bindRuntimeContextToHooks(ctx);
         // Seed per-call state onto the active execution scope. The system message is initialised
         // by consumeSystemMsgAfterPreCall; the event sink (if any) is bound in doCall() from the
@@ -731,8 +728,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected Mono<Msg> seedSystemMsg(Object callExectution) {
-        RuntimeContext rc =
-                callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
+        RuntimeContext rc = callExectution instanceof CallExecution ce ? ce.rc : null;
         String base = sysPrompt != null ? sysPrompt.trim() : "";
         return applySystemPromptMiddlewares(base, rc)
                 .filter(prompt -> !prompt.isEmpty())
@@ -787,12 +783,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         CallExecution ce = (CallExecution) callScope;
         ce.systemMsg = systemMsg;
         syncToolkitToState(ce.state);
-    }
-
-    @Override
-    protected void afterAgentExecution() {
-        this.activeRc = null;
-        unbindRuntimeContextFromHooks();
     }
 
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
@@ -1021,7 +1011,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                     // Call runLifecycle directly — NOT call() — to avoid the
                                     // onAgent chain being applied a second time.
-                                    Mono<Msg> lifecycle = runLifecycle(input.msgs(), doCallFn);
+                                    Mono<Msg> lifecycle =
+                                            runLifecycle(input.msgs(), context, doCallFn);
                                     if (context != null) {
                                         lifecycle =
                                                 lifecycle.contextWrite(
@@ -1187,7 +1178,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 .ifPresent(ae -> scope.externalEventEmitter = ae);
                     }
                     return scope.doCallInner(msgs)
-                            .flatMap(result -> saveStateToSession(scope).thenReturn(result));
+                            .flatMap(result -> saveStateToSession(scope).thenReturn(result))
+                            .doFinally(s -> activeContexts.remove(scope.runId));
                 });
     }
 
@@ -1290,7 +1282,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             ctx.remove(ctx.size() - 1);
                                         }
                                         scope.nativeResponseFormat = null;
-                                    });
+                                    })
+                            .doFinally(s -> activeContexts.remove(scope.runId));
                 });
     }
 
@@ -1342,7 +1335,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             scope.state.contextMutable().add(out);
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
-                                    });
+                                    })
+                            .doFinally(s -> activeContexts.remove(scope.runId));
                 });
     }
 
@@ -1608,6 +1602,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState state;
         PermissionEngine permissionEngine;
         String slotKey;
+
+        /** Per-call runId, captured at registration for reliable cleanup via doFinally. */
+        String runId;
 
         /**
          * Store version observed when this call loaded {@link #state}. Used for CAS on save.
@@ -4014,11 +4011,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     public AgentState getAgentState() {
         return getAgentState(null, defaultSessionId);
-    }
-
-    @Override
-    public RuntimeContext getRuntimeContext() {
-        return activeRc;
     }
 
     /**

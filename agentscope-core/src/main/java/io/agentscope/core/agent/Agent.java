@@ -111,4 +111,28 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
     default Toolkit getToolkit() {
         return null;
     }
+
+    /**
+     * Returns the active {@link RuntimeContext} for the given runId, or {@code null} if no such
+     * call is currently in flight. Use {@link RuntimeContext#getRunId()} to obtain the key.
+     *
+     * <p>The base implementation returns {@code null}; agents that track per-call contexts (e.g.
+     * {@code ReActAgent}) override this to look up the runId in their active-context registry.
+     *
+     * @param runId the per-call run id
+     * @return the matching in-flight context, or {@code null}
+     */
+    default RuntimeContext getRuntimeContext(String runId) {
+        return null;
+    }
+
+    /**
+     * Returns a read-only snapshot of all currently in-flight {@link RuntimeContext}s on this agent
+     * instance. The base implementation returns an empty list.
+     *
+     * @return unmodifiable list of active contexts (may be empty)
+     */
+    default java.util.List<RuntimeContext> getActiveRuntimeContexts() {
+        return java.util.List.of();
+    }
 }
