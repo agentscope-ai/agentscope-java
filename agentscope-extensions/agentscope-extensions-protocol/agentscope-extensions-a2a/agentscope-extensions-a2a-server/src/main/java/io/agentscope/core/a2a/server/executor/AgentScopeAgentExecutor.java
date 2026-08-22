@@ -35,8 +35,21 @@ import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
 import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -98,7 +111,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             List<Msg> inputMessages =
                     MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
             AgentRequestOptions requestOptions = buildAgentRequestOptions(context);
-            Flux<Event> resultFlux = agentRunner.stream(inputMessages, requestOptions);
+            Flux<AgentEvent> resultFlux = streamAgentEvents(inputMessages, requestOptions);
 
             Task task = context.getTask();
             if (task == null) {
@@ -139,6 +152,73 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         return "";
     }
 
+    /**
+     * Prefer the fine-grained event stream while keeping custom legacy runners source-compatible.
+     *
+     * <p>{@link AgentRunner#streamEvents(List, AgentRequestOptions)} has a default unsupported
+     * implementation, so the fallback is only selected when a runner has not migrated yet. The
+     * legacy events are wrapped as {@link AgentEvent}s before they reach the handlers, which keeps
+     * the A2A processing path on one event model.
+     */
+    private Flux<AgentEvent> streamAgentEvents(
+            List<Msg> inputMessages, AgentRequestOptions requestOptions) {
+        // Catch only a synchronous UnsupportedOperationException from the compatibility default.
+        // An exception emitted by the returned Flux must propagate; falling back then could execute
+        // the agent twice.
+        return Flux.defer(
+                () -> {
+                    try {
+                        Flux<AgentEvent> fineGrainedStream =
+                                agentRunner.streamEvents(inputMessages, requestOptions);
+                        if (fineGrainedStream == null) {
+                            return streamLegacyEvents(inputMessages, requestOptions);
+                        }
+                        AtomicBoolean emitted = new AtomicBoolean();
+                        return fineGrainedStream
+                                .doOnNext(event -> emitted.set(true))
+                                .onErrorResume(
+                                        UnsupportedOperationException.class,
+                                        error -> {
+                                            if (emitted.get()) {
+                                                return Flux.error(error);
+                                            }
+                                            log.debug(
+                                                    "Falling back to legacy AgentRunner.stream()"
+                                                            + " for task {}",
+                                                    requestOptions.getTaskId());
+                                            return streamLegacyEvents(
+                                                    inputMessages, requestOptions);
+                                        });
+                    } catch (UnsupportedOperationException error) {
+                        log.debug(
+                                "Falling back to legacy AgentRunner.stream() for task {}",
+                                requestOptions.getTaskId());
+                        return streamLegacyEvents(inputMessages, requestOptions);
+                    }
+                });
+    }
+
+    private Flux<AgentEvent> streamLegacyEvents(
+            List<Msg> inputMessages, AgentRequestOptions requestOptions) {
+        return agentRunner.stream(inputMessages, requestOptions)
+                .flatMapIterable(AgentScopeAgentExecutor::adaptLegacyEvent);
+    }
+
+    private static List<AgentEvent> adaptLegacyEvent(Event event) {
+        if (event == null || event.getType() == null || event.getMessage() == null) {
+            return List.of();
+        }
+        AgentEventType eventType =
+                switch (event.getType()) {
+                    case REASONING, SUMMARY -> AgentEventType.TEXT_BLOCK_DELTA;
+                    case TOOL_RESULT -> AgentEventType.TOOL_RESULT_TEXT_DELTA;
+                    case HINT -> AgentEventType.HINT_BLOCK;
+                    case AGENT_RESULT -> AgentEventType.AGENT_RESULT;
+                    default -> null;
+                };
+        return eventType == null ? List.of() : List.of(new LegacyAgentEvent(event, eventType));
+    }
+
     private String getSessionId(Message message) {
         if (message.getMetadata() != null && message.getMetadata().containsKey("sessionId")) {
             return String.valueOf(message.getMetadata().get("sessionId"));
@@ -175,7 +255,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private void processTaskBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
+            RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
         BlockingFluxEventHandler eventHandler =
                 new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
@@ -189,7 +269,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private void processTaskNonBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
+            RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
         TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
         try {
             eventQueue.enqueueEvent(task);
@@ -215,7 +295,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      * Process streaming output data
      */
     private void processStreamingOutput(
-            Flux<Event> resultFlux, TaskUpdater taskUpdater, RequestContext context) {
+            Flux<AgentEvent> resultFlux, TaskUpdater taskUpdater, RequestContext context) {
         StreamingFluxEventHandler eventHandler =
                 new StreamingFluxEventHandler(context, agentExecuteProperties, taskUpdater);
         resultFlux
@@ -249,9 +329,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         protected final AgentExecuteProperties executeProperties;
 
-        private final Set<EventType> requiredEventTypes;
+        private final Set<AgentEventType> requiredEventTypes;
 
-        private String lastEventMsgId;
+        private String lastLegacyEventMsgId;
 
         private BaseFluxEventHandler(
                 RequestContext context, AgentExecuteProperties executeProperties) {
@@ -261,16 +341,17 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             this.requiredEventTypes = generateRequiredEventTypes(executeProperties);
         }
 
-        private Set<EventType> generateRequiredEventTypes(
+        private Set<AgentEventType> generateRequiredEventTypes(
                 AgentExecuteProperties executeProperties) {
             if (executeProperties.isRequireInnerMessage()) {
                 return Set.of(
-                        EventType.REASONING,
-                        EventType.TOOL_RESULT,
-                        EventType.HINT,
-                        EventType.SUMMARY);
+                        AgentEventType.TEXT_BLOCK_DELTA,
+                        AgentEventType.THINKING_BLOCK_DELTA,
+                        AgentEventType.TOOL_RESULT_TEXT_DELTA,
+                        AgentEventType.TOOL_RESULT_DATA_DELTA,
+                        AgentEventType.HINT_BLOCK);
             }
-            return Set.of(EventType.REASONING, EventType.SUMMARY);
+            return Set.of(AgentEventType.TEXT_BLOCK_DELTA, AgentEventType.THINKING_BLOCK_DELTA);
         }
 
         /**
@@ -278,12 +359,14 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          *
          * @param output output event from agent stream execute.
          */
-        void doOnNext(Event output) {
+        void doOnNext(AgentEvent output) {
             LoggerUtil.debug(log, "[{}] Handle Agent execute outputs: ", context.getTaskId());
-            LoggerUtil.logAgentEventDetail(log, output);
+            LoggerUtil.debug(log, "[{}] Agent event: {}", context.getTaskId(), output);
             appendToAccumulatedOutput(output);
             handleEvent(output);
-            lastEventMsgId = output.getMessageId();
+            if (output instanceof LegacyAgentEvent legacyEvent) {
+                lastLegacyEventMsgId = legacyEvent.legacyEvent.getMessageId();
+            }
         }
 
         /**
@@ -304,11 +387,14 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                             errorMessage, context.getContextId(), context.getTaskId()));
         }
 
-        private void appendToAccumulatedOutput(Event output) {
+        private void appendToAccumulatedOutput(AgentEvent output) {
             if (isNoResponseEvent(output)) {
                 return;
             }
-            accumulatedOutput.add(output.getMessage());
+            Msg outputMessage = convertToMsg(output);
+            if (outputMessage != null) {
+                accumulatedOutput.add(outputMessage);
+            }
         }
 
         /**
@@ -320,21 +406,21 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          *
          * <ul>
          *     <li>The event type is not in the required event set that is generated from properties.</li>
-         *     <li>The event is the last event ({@link Event#isLast()} is {@code true}) and the
-         *         {@code messageId} of the event is the same as the previous last event.</li>
+         *     <li>The event is not one of the response-bearing fine-grained event types.</li>
          * </ul>
          *
          * @param output agent output event
          * @return {@code true} if the event should not be responded to, otherwise {@code false}.
          */
-        protected boolean isNoResponseEvent(Event output) {
+        protected boolean isNoResponseEvent(AgentEvent output) {
             if (!requiredEventTypes.contains(output.getType())) {
                 return true;
             }
-            if (!output.isLast()) {
+            if (!(output instanceof LegacyAgentEvent legacyEvent)
+                    || !legacyEvent.legacyEvent.isLast()) {
                 return false;
             }
-            return Objects.equals(lastEventMsgId, output.getMessageId());
+            return Objects.equals(lastLegacyEventMsgId, legacyEvent.legacyEvent.getMessageId());
         }
 
         /**
@@ -342,7 +428,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          *
          * @param output output event from agent stream execute.
          */
-        protected abstract void handleEvent(Event output);
+        protected abstract void handleEvent(AgentEvent output);
 
         /**
          * Send error message to A2A Client.
@@ -383,13 +469,16 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         @Override
-        protected void handleEvent(Event output) {
-            if (!EventType.AGENT_RESULT.equals(output.getType())) {
+        protected void handleEvent(AgentEvent output) {
+            if (!AgentEventType.AGENT_RESULT.equals(output.getType())) {
                 // Non-AGENT_RESULT messages should be ignored and saved into accumulatedOutput
                 // according to properties.
                 return;
             }
-            Msg outputMessage = output.getMessage();
+            Msg outputMessage = convertToMsg(output);
+            if (outputMessage == null) {
+                return;
+            }
             Message message =
                     MessageConvertUtil.convertFromMsgToMessage(
                             outputMessage, context.getTaskId(), context.getContextId());
@@ -436,13 +525,17 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         @Override
-        protected void handleEvent(Event output) {
+        protected void handleEvent(AgentEvent output) {
             if (isNoResponseEvent(output)) {
                 return;
             }
-            Msg outputMessage = output.getMessage();
+            Msg outputMessage = convertToMsg(output);
+            if (outputMessage == null) {
+                return;
+            }
             List<Part<?>> responseParts =
-                    MessageConvertUtil.convertFromContentBlocks(outputMessage, !output.isLast());
+                    MessageConvertUtil.convertFromContentBlocks(
+                            outputMessage, isStreamingChunk(output));
             taskUpdater.addArtifact(
                     responseParts,
                     artifactId,
@@ -455,6 +548,88 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         @Override
         protected void sendErrorMessage(Message errorMessage) {
             taskUpdater.fail(errorMessage);
+        }
+    }
+
+    private static boolean isStreamingChunk(AgentEvent output) {
+        if (output instanceof LegacyAgentEvent legacyEvent) {
+            return !legacyEvent.legacyEvent.isLast();
+        }
+        return !AgentEventType.AGENT_RESULT.equals(output.getType());
+    }
+
+    private static Msg convertToMsg(AgentEvent output) {
+        if (output instanceof LegacyAgentEvent legacyEvent) {
+            return legacyEvent.legacyEvent.getMessage();
+        }
+        if (output instanceof AgentResultEvent resultEvent) {
+            return resultEvent.getResult();
+        }
+        if (output instanceof TextBlockDeltaEvent textDeltaEvent) {
+            return messageWithContent(
+                    textDeltaEvent.getReplyId(),
+                    MsgRole.ASSISTANT,
+                    TextBlock.builder().text(textDeltaEvent.getDelta()).build());
+        }
+        if (output instanceof ThinkingBlockDeltaEvent thinkingDeltaEvent) {
+            return messageWithContent(
+                    thinkingDeltaEvent.getReplyId(),
+                    MsgRole.ASSISTANT,
+                    ThinkingBlock.builder().thinking(thinkingDeltaEvent.getDelta()).build());
+        }
+        if (output instanceof HintBlockEvent hintBlockEvent) {
+            return messageWithContent(
+                    hintBlockEvent.getReplyId(),
+                    MsgRole.USER,
+                    new HintBlock(
+                            hintBlockEvent.getBlockId(),
+                            hintBlockEvent.getHint(),
+                            hintBlockEvent.getHintSource()));
+        }
+        if (output instanceof ToolResultTextDeltaEvent toolTextDeltaEvent) {
+            return messageWithContent(
+                    toolTextDeltaEvent.getReplyId(),
+                    MsgRole.TOOL,
+                    ToolResultBlock.of(
+                            toolTextDeltaEvent.getToolCallId(),
+                            toolTextDeltaEvent.getToolCallName(),
+                            TextBlock.builder().text(toolTextDeltaEvent.getDelta()).build()));
+        }
+        if (output instanceof ToolResultDataDeltaEvent toolDataDeltaEvent) {
+            ContentBlock data = toolDataDeltaEvent.getData();
+            if (data == null) {
+                return null;
+            }
+            return messageWithContent(
+                    toolDataDeltaEvent.getReplyId(),
+                    MsgRole.TOOL,
+                    ToolResultBlock.of(
+                            toolDataDeltaEvent.getToolCallId(),
+                            toolDataDeltaEvent.getToolCallName(),
+                            data));
+        }
+        return null;
+    }
+
+    private static Msg messageWithContent(String id, MsgRole role, ContentBlock content) {
+        return Msg.builder().id(id).role(role).content(content).build();
+    }
+
+    /** Adapter that lets legacy custom runners use the AgentEvent-only handler path. */
+    private static final class LegacyAgentEvent extends AgentEvent {
+
+        private final Event legacyEvent;
+
+        private final AgentEventType type;
+
+        private LegacyAgentEvent(Event legacyEvent, AgentEventType type) {
+            this.legacyEvent = legacyEvent;
+            this.type = type;
+        }
+
+        @Override
+        public AgentEventType getType() {
+            return type;
         }
     }
 }
