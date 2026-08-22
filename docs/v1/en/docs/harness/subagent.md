@@ -35,7 +35,9 @@ On every `PreReasoningEvent` turn, `SubagentsHook` injects into SYSTEM:
 1. Built-in `general-purpose`
 2. Programmatic declarations: `builder.subagent(SubagentDeclaration)`
 3. File declarations: `workspace/subagents/*.md` (loaded non-recursively by `AgentSpecLoader`)
-4. Custom factories: `builder.subagentFactory(name, factory)`
+4. Custom factories: `builder.subagentFactory(name, factory)` or
+   `builder.subagentFactory(name, description, factory)` to give the orchestrator a meaningful
+   description instead of the bare name (falls back to the name when omitted or blank)
 
 ---
 
