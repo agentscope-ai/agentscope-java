@@ -154,6 +154,13 @@ final class AgentRunDataPlaneHttp {
         if (s == null) {
             return null;
         }
+        JsonNode data = s.get("data");
+        if (data != null) {
+            JsonNode st = data.get("status");
+            if (st != null && st.isTextual()) {
+                return st.asText();
+            }
+        }
         JsonNode st = s.get("status");
         if (st != null && st.isTextual()) {
             return st.asText();
