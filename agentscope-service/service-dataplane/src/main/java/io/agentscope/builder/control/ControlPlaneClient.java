@@ -22,6 +22,8 @@ import io.agentscope.builder.web.managed.EnvironmentDto;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +47,19 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class ControlPlaneClient {
+
+    /**
+     * Dedicated pool for {@link #verifyEnvironmentKey}: it is invoked from the reactive security
+     * filter chain, so the blocking verification HTTP call must not run on a NonBlocking thread.
+     */
+    private final ExecutorService envKeyVerifyPool =
+            Executors.newFixedThreadPool(
+                    4,
+                    r -> {
+                        Thread t = new Thread(r, "env-key-verify");
+                        t.setDaemon(true);
+                        return t;
+                    });
 
     private static final Logger log = LoggerFactory.getLogger(ControlPlaneClient.class);
 
@@ -329,6 +344,17 @@ public class ControlPlaneClient {
      * so the auth filter can fall through without 5xx.
      */
     public boolean verifyEnvironmentKey(String environmentId, String plaintextKey) {
+        try {
+            return envKeyVerifyPool
+                    .submit(() -> doVerifyEnvironmentKey(environmentId, plaintextKey))
+                    .get();
+        } catch (Exception ex) {
+            log.debug("verifyEnvironmentKey failed for {}: {}", environmentId, ex.getMessage());
+            return false;
+        }
+    }
+
+    private boolean doVerifyEnvironmentKey(String environmentId, String plaintextKey) {
         try {
             Map<String, Object> body = Map.of("key", plaintextKey);
             Map<?, ?> resp =
