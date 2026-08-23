@@ -153,6 +153,9 @@ class E2bEnvdProcessClientTest {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
 
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exit =
                 drainStartStream(client, connectFrame(responseJson(null, null, 0)), stdout, stderr);
 

@@ -204,8 +204,9 @@ final class E2bEnvdProcessClient {
                     DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
                     Descriptors.FieldDescriptor ec =
                             end.getDescriptorForType().findFieldByName("exit_code");
-                    Object v = end.getField(ec);
-                    exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
+                    if (ec != null) {
+                        exit = ((Number) end.getField(ec)).intValue();
+                    }
                 }
             } catch (IOException e) {
                 continue;

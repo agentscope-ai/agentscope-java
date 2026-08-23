@@ -106,17 +106,35 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         for (Map.Entry<String, byte[]> file : files) {
             String path = file.getKey();
             byte[] content = file.getValue();
-
-            if (active instanceof SandboxFileTransfer transfer
-                    && transfer.supportsFileTransfer(path)) {
-                try {
-                    transfer.uploadFile(path, content);
-                    results.add(FileUploadResponse.success(path));
-                } catch (Exception e) {
-                    log.warn("[sandbox-fs] native upload failed for path: {}", path, e);
-                    results.add(FileUploadResponse.fail(path, e.getMessage()));
-                }
+            if (content == null) {
+                results.add(FileUploadResponse.fail(path, "File content must not be null"));
                 continue;
+            }
+
+            if (active instanceof SandboxFileTransfer transfer) {
+                String transferPath = null;
+                try {
+                    transferPath = resolveTransferPath(active, path);
+                } catch (IllegalArgumentException e) {
+                    // Same contract as the archive fallback: an invalid path fails this file.
+                    log.warn("[sandbox-fs] uploadFiles failed for path: {}", path, e);
+                    results.add(FileUploadResponse.fail(path, e.getMessage()));
+                    continue;
+                } catch (IOException e) {
+                    log.debug(
+                            "[sandbox-fs] Workspace root unavailable, keeping archive fallback: {}",
+                            path);
+                }
+                if (transferPath != null && transfer.supportsFileTransfer(transferPath)) {
+                    try {
+                        transfer.uploadFile(transferPath, content);
+                        results.add(FileUploadResponse.success(path));
+                    } catch (Exception e) {
+                        log.warn("[sandbox-fs] native upload failed for path: {}", path, e);
+                        results.add(FileUploadResponse.fail(path, e.getMessage()));
+                    }
+                    continue;
+                }
             }
 
             try {
@@ -141,6 +159,8 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 
         for (String path : paths) {
+            // Reads keep the raw-path probe, unlike uploads: no shared temp state to race on,
+            // and the exec fallback below stays a single round trip.
             if (active instanceof SandboxFileTransfer transfer
                     && transfer.supportsFileTransfer(path)) {
                 try {
@@ -219,10 +239,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     /** Constrains an upload path to the workspace and converts it to an archive path. */
     private String resolveArchivePath(Sandbox active, String path) throws IOException {
         AbstractFilesystem.validatePath(path);
-        String normalized = path.replace('\\', '/');
-        while (normalized.startsWith("./")) {
-            normalized = normalized.substring(2);
-        }
+        String normalized = normalizeUploadPath(path);
 
         if (normalized.startsWith("/")) {
             String workspaceRoot = resolveWorkspaceRoot(active);
@@ -235,6 +252,31 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
         if (normalized.isBlank()) {
             throw new IOException("Upload path must identify a file: " + path);
+        }
+        return normalized;
+    }
+
+    /**
+     * Normalizes an upload path and resolves it to its sandbox-absolute form so
+     * workspace-relative paths can ride the native single-file transfer
+     * ({@link SandboxFileTransfer#uploadFile}) instead of the archive-hydrate fallback. Throws
+     * {@link IllegalArgumentException} for invalid paths — the caller fails just that file,
+     * matching the archive fallback's validation contract.
+     */
+    private String resolveTransferPath(Sandbox active, String path) throws IOException {
+        AbstractFilesystem.validatePath(path);
+        String normalized = normalizeUploadPath(path);
+        if (normalized.startsWith("/")) {
+            return normalized;
+        }
+        return resolveWorkspaceRoot(active) + "/" + normalized;
+    }
+
+    /** Normalizes separators and strips leading {@code ./} segments. */
+    private static String normalizeUploadPath(String path) {
+        String normalized = path.replace('\\', '/');
+        while (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
         }
         return normalized;
     }
