@@ -97,9 +97,6 @@ class E2bEnvdProcessClientTest {
 
     @Test
     void jsonCodecSkipsMalformedBase64AndKeepsStreaming() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
-        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exit =
                 drainStartStream(
                         client,
