@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.util.JsonException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -30,8 +29,7 @@ class AguiRestControllerTest {
 
     @Test
     void shouldReturnBadRequestSseForParseErrors() {
-        AguiRestController controller =
-                new AguiRestController(null, "/agui", true, new AguiRequestBodyParser());
+        AguiRestController controller = new AguiRestController(null, "/agui", true);
 
         ResponseEntity<String> response =
                 controller.handleParseError(new JsonException("bad json"));

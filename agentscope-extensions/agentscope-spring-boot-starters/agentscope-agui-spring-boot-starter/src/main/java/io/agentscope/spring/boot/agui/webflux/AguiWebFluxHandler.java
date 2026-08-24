@@ -15,6 +15,7 @@
  */
 package io.agentscope.spring.boot.agui.webflux;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -23,9 +24,9 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
-import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
-import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
+import io.agentscope.spring.boot.agui.common.AguiRequestBodyParser;
+import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
+import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import java.util.LinkedHashMap;
@@ -78,9 +79,9 @@ public class AguiWebFluxHandler {
 
     private final AguiRequestProcessor processor;
     private final AguiEventEncoder encoder;
-    private final AguiRequestBodyParser requestBodyParser;
     private final String agentIdHeader;
     private final boolean interruptOnDisconnect;
+    private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiWebFluxHandler(Builder builder) {
         this.processor =
@@ -96,16 +97,12 @@ public class AguiWebFluxHandler {
                                         ? builder.config
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
-                        .runtimeContextResolver(builder.runtimeContextResolver)
                         .build();
         this.encoder = new AguiEventEncoder();
-        this.requestBodyParser =
-                builder.requestBodyParser != null
-                        ? builder.requestBodyParser
-                        : new AguiRequestBodyParser();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
         this.interruptOnDisconnect = builder.interruptOnDisconnect;
+        this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
     /**
@@ -119,7 +116,7 @@ public class AguiWebFluxHandler {
      */
     public Mono<ServerResponse> handle(ServerRequest request) {
         return request.bodyToMono(String.class)
-                .map(requestBodyParser::parse)
+                .map(AguiRequestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, null))
                 .onErrorResume(this::handleParseError);
     }
@@ -136,7 +133,7 @@ public class AguiWebFluxHandler {
     public Mono<ServerResponse> handleWithAgentId(ServerRequest request) {
         String pathAgentId = request.pathVariable(AGENT_ID_PATH_VARIABLE);
         return request.bodyToMono(String.class)
-                .map(requestBodyParser::parse)
+                .map(AguiRequestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, pathAgentId))
                 .onErrorResume(this::handleParseError);
     }
@@ -149,11 +146,12 @@ public class AguiWebFluxHandler {
         try {
             // Get header agent ID
             String headerAgentId = request.headers().firstHeader(agentIdHeader);
+            RuntimeContext runtimeContext =
+                    resolveRuntimeContext(input, headerAgentId, pathAgentId, request);
 
             // Process request - returns both agent and event stream
             AguiRequestProcessor.ProcessResult result =
-                    processor.process(
-                            runtimeContextRequest(input, headerAgentId, pathAgentId, request));
+                    processor.process(input, headerAgentId, pathAgentId, runtimeContext);
 
             // Create SSE stream using ServerSentEvent for proper streaming behavior
             Flux<AguiEvent> events =
@@ -174,7 +172,7 @@ public class AguiWebFluxHandler {
                                                     "SSE stream cancelled for run {}, interrupting"
                                                             + " agent",
                                                     runId);
-                                            result.interrupt(threadId);
+                                            result.interrupt(threadId, runtimeContext);
                                         } else {
                                             logger.info(
                                                     "SSE stream cancelled for run {}, agent"
@@ -196,9 +194,17 @@ public class AguiWebFluxHandler {
         }
     }
 
-    private AguiRuntimeContextRequest<ServerRequest> runtimeContextRequest(
+    private RuntimeContext resolveRuntimeContext(
             RunAgentInput input, String headerAgentId, String pathAgentId, ServerRequest request) {
-        return AguiRuntimeContextRequest.<ServerRequest>builder()
+        return runtimeContextResolver != null
+                ? runtimeContextResolver.resolve(
+                        runtimeContextRequest(input, headerAgentId, pathAgentId, request))
+                : null;
+    }
+
+    private AguiRuntimeContextRequest runtimeContextRequest(
+            RunAgentInput input, String headerAgentId, String pathAgentId, ServerRequest request) {
+        return AguiRuntimeContextRequest.builder()
                 .input(input)
                 .headerAgentId(headerAgentId)
                 .pathAgentId(pathAgentId)
@@ -291,7 +297,6 @@ public class AguiWebFluxHandler {
         private boolean interruptOnDisconnect = true;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
-        private AguiRequestBodyParser requestBodyParser;
 
         /**
          * Set the agent registry.
@@ -378,17 +383,6 @@ public class AguiWebFluxHandler {
          */
         public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
             this.adapterFactory = adapterFactory;
-            return this;
-        }
-
-        /**
-         * Set the request body parser.
-         *
-         * @param requestBodyParser The parser used to decode request bodies
-         * @return This builder
-         */
-        public Builder requestBodyParser(AguiRequestBodyParser requestBodyParser) {
-            this.requestBodyParser = requestBodyParser;
             return this;
         }
 

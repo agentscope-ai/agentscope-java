@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.agui.runtime;
+package io.agentscope.spring.boot.agui.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -25,8 +25,6 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import org.junit.jupiter.api.Test;
 
 class AguiRequestBodyParserTest {
-
-    private final AguiRequestBodyParser parser = new AguiRequestBodyParser();
 
     @Test
     void shouldParseTextContentWithAgentScopeCodec() {
@@ -41,7 +39,7 @@ class AguiRequestBodyParserTest {
                 }
                 """;
 
-        RunAgentInput input = parser.parse(body);
+        RunAgentInput input = AguiRequestBodyParser.parse(body);
 
         assertEquals("Hello!", input.getMessages().get(0).getTextContent());
     }
@@ -72,7 +70,7 @@ class AguiRequestBodyParserTest {
                 }
                 """;
 
-        RunAgentInput input = parser.parse(body);
+        RunAgentInput input = AguiRequestBodyParser.parse(body);
         MessageContent.Blocks content =
                 assertInstanceOf(
                         MessageContent.Blocks.class, input.getMessages().get(0).getContent());
@@ -83,6 +81,6 @@ class AguiRequestBodyParserTest {
 
     @Test
     void shouldRejectNullBody() {
-        assertThrows(NullPointerException.class, () -> parser.parse(null));
+        assertThrows(NullPointerException.class, () -> AguiRequestBodyParser.parse(null));
     }
 }

@@ -30,8 +30,6 @@ import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
-import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
@@ -273,7 +271,7 @@ class AguiAdapterConfigAutoConfigurationTest {
     @Test
     @DisplayName("Should expose servlet request context to MVC runtime context resolver")
     void testMvcRuntimeContextResolverReceivesServletRequestContext() {
-        AtomicReference<AguiRuntimeContextRequest<?>> seenRequest = new AtomicReference<>();
+        AtomicReference<AguiRuntimeContextRequest> seenRequest = new AtomicReference<>();
         AguiRuntimeContextResolver resolver =
                 request -> {
                     seenRequest.set(request);
@@ -292,17 +290,16 @@ class AguiAdapterConfigAutoConfigurationTest {
         request.addParameter("debug", "true");
         RunAgentInput input = input();
 
-        AguiRuntimeContextRequest<?> contextRequest =
+        RuntimeContext context =
                 ReflectionTestUtils.invokeMethod(
                         controller,
-                        "runtimeContextRequest",
+                        "resolveRuntimeContext",
                         input,
                         "header-agent",
                         "path-agent",
                         request);
-        RuntimeContext context = resolver.resolve(contextRequest);
 
-        AguiRuntimeContextRequest<?> seen = seenRequest.get();
+        AguiRuntimeContextRequest seen = seenRequest.get();
         assertEquals("tenant-a", context.get("tenant"));
         assertEquals("true", context.get("debug"));
         assertSame(input, seen.getInput());
@@ -313,13 +310,13 @@ class AguiAdapterConfigAutoConfigurationTest {
         assertEquals("/agui/run/path-agent", seen.getPath());
         assertEquals("tenant-a", seen.firstHeader("x-tenant"));
         assertEquals("true", seen.firstQueryParam("debug"));
-        assertSame(request, seen.getNativeRequest());
+        assertSame(request, seen.getNativeRequest(MockHttpServletRequest.class));
     }
 
     @Test
     @DisplayName("Should expose server request context to WebFlux runtime context resolver")
     void testWebFluxRuntimeContextResolverReceivesServerRequestContext() {
-        AtomicReference<AguiRuntimeContextRequest<?>> seenRequest = new AtomicReference<>();
+        AtomicReference<AguiRuntimeContextRequest> seenRequest = new AtomicReference<>();
         AguiRuntimeContextResolver resolver =
                 request -> {
                     seenRequest.set(request);
@@ -342,17 +339,16 @@ class AguiAdapterConfigAutoConfigurationTest {
                         .build();
         RunAgentInput input = input();
 
-        AguiRuntimeContextRequest<?> contextRequest =
+        RuntimeContext context =
                 ReflectionTestUtils.invokeMethod(
                         handler,
-                        "runtimeContextRequest",
+                        "resolveRuntimeContext",
                         input,
                         "header-agent",
                         "path-agent",
                         request);
-        RuntimeContext context = resolver.resolve(contextRequest);
 
-        AguiRuntimeContextRequest<?> seen = seenRequest.get();
+        AguiRuntimeContextRequest seen = seenRequest.get();
         assertEquals("tenant-a", context.get("tenant"));
         assertEquals("true", context.get("debug"));
         assertSame(input, seen.getInput());
@@ -363,13 +359,13 @@ class AguiAdapterConfigAutoConfigurationTest {
         assertEquals("/agui/run/path-agent", seen.getPath());
         assertEquals("tenant-a", seen.firstHeader("x-tenant"));
         assertEquals("true", seen.firstQueryParam("debug"));
-        assertSame(request, seen.getNativeRequest());
+        assertSame(request, seen.getNativeRequest(MockServerRequest.class));
     }
 
     @Test
     @DisplayName("Should expose immutable request headers and query params")
     void testRuntimeContextRequestHelpers() {
-        AguiRuntimeContextRequest<?> request =
+        AguiRuntimeContextRequest request =
                 AguiRuntimeContextRequest.builder()
                         .input(input())
                         .headers(Map.of("X-Tenant", List.of("tenant-a")))
@@ -395,16 +391,14 @@ class AguiAdapterConfigAutoConfigurationTest {
 
     private static AguiRuntimeContextResolver mvcRuntimeContextResolver(
             AguiMvcController controller) {
-        Object processor = ReflectionTestUtils.getField(controller, "processor");
         return (AguiRuntimeContextResolver)
-                ReflectionTestUtils.getField(processor, "runtimeContextResolver");
+                ReflectionTestUtils.getField(controller, "runtimeContextResolver");
     }
 
     private static AguiRuntimeContextResolver webFluxRuntimeContextResolver(
             AguiWebFluxHandler handler) {
-        Object processor = ReflectionTestUtils.getField(handler, "processor");
         return (AguiRuntimeContextResolver)
-                ReflectionTestUtils.getField(processor, "runtimeContextResolver");
+                ReflectionTestUtils.getField(handler, "runtimeContextResolver");
     }
 
     private static boolean interruptOnDisconnect(Object handler) {

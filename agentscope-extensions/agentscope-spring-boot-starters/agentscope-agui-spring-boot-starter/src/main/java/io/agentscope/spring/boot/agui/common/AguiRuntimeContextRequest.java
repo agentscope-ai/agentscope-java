@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.agui.runtime;
+package io.agentscope.spring.boot.agui.common;
 
 import io.agentscope.core.agui.model.RunAgentInput;
 import java.util.ArrayList;
@@ -26,12 +26,8 @@ import java.util.Objects;
 /**
  * Request-scoped data available when resolving an AG-UI {@link
  * io.agentscope.core.agent.RuntimeContext}.
- *
- * @param <T> the native request type (e.g. {@code HttpServletRequest} under Spring MVC,
- *            {@code ServerRequest} under WebFlux, or {@code Object} when there is no
- *            transport-specific native request)
  */
-public final class AguiRuntimeContextRequest<T> {
+public final class AguiRuntimeContextRequest {
 
     /** Transport that received the AG-UI request. */
     public enum Transport {
@@ -48,9 +44,9 @@ public final class AguiRuntimeContextRequest<T> {
     private final String path;
     private final Map<String, List<String>> headers;
     private final Map<String, List<String>> queryParams;
-    private final T nativeRequest;
+    private final Object nativeRequest;
 
-    private AguiRuntimeContextRequest(Builder<T> builder) {
+    private AguiRuntimeContextRequest(Builder builder) {
         this.input = Objects.requireNonNull(builder.input, "input cannot be null");
         this.headerAgentId = builder.headerAgentId;
         this.pathAgentId = builder.pathAgentId;
@@ -102,12 +98,19 @@ public final class AguiRuntimeContextRequest<T> {
         return firstValue(queryParams, name, false);
     }
 
-    public T getNativeRequest() {
+    public Object getNativeRequest() {
         return nativeRequest;
     }
 
-    public static <T> Builder<T> builder() {
-        return new Builder<>();
+    public <T> T getNativeRequest(Class<T> type) {
+        if (type == null || !type.isInstance(nativeRequest)) {
+            return null;
+        }
+        return type.cast(nativeRequest);
+    }
+
+    public static Builder builder() {
+        return new Builder();
     }
 
     private static String firstValue(
@@ -143,7 +146,7 @@ public final class AguiRuntimeContextRequest<T> {
     }
 
     /** Builder for {@link AguiRuntimeContextRequest}. */
-    public static final class Builder<T> {
+    public static final class Builder {
 
         private RunAgentInput input;
         private String headerAgentId;
@@ -153,55 +156,55 @@ public final class AguiRuntimeContextRequest<T> {
         private String path;
         private Map<String, List<String>> headers;
         private Map<String, List<String>> queryParams;
-        private T nativeRequest;
+        private Object nativeRequest;
 
-        public Builder<T> input(RunAgentInput input) {
+        public Builder input(RunAgentInput input) {
             this.input = input;
             return this;
         }
 
-        public Builder<T> headerAgentId(String headerAgentId) {
+        public Builder headerAgentId(String headerAgentId) {
             this.headerAgentId = headerAgentId;
             return this;
         }
 
-        public Builder<T> pathAgentId(String pathAgentId) {
+        public Builder pathAgentId(String pathAgentId) {
             this.pathAgentId = pathAgentId;
             return this;
         }
 
-        public Builder<T> transport(Transport transport) {
+        public Builder transport(Transport transport) {
             this.transport = transport;
             return this;
         }
 
-        public Builder<T> method(String method) {
+        public Builder method(String method) {
             this.method = method;
             return this;
         }
 
-        public Builder<T> path(String path) {
+        public Builder path(String path) {
             this.path = path;
             return this;
         }
 
-        public Builder<T> headers(Map<String, List<String>> headers) {
+        public Builder headers(Map<String, List<String>> headers) {
             this.headers = headers;
             return this;
         }
 
-        public Builder<T> queryParams(Map<String, List<String>> queryParams) {
+        public Builder queryParams(Map<String, List<String>> queryParams) {
             this.queryParams = queryParams;
             return this;
         }
 
-        public Builder<T> nativeRequest(T nativeRequest) {
+        public Builder nativeRequest(Object nativeRequest) {
             this.nativeRequest = nativeRequest;
             return this;
         }
 
-        public AguiRuntimeContextRequest<T> build() {
-            return new AguiRuntimeContextRequest<>(this);
+        public AguiRuntimeContextRequest build() {
+            return new AguiRuntimeContextRequest(this);
         }
     }
 }
