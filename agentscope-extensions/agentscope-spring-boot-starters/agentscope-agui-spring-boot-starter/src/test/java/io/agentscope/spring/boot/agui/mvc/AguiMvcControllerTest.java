@@ -226,8 +226,9 @@ class AguiMvcControllerTest {
         @Override
         public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
             if (runCount.incrementAndGet() == 1) {
-                firstRunSubscribed.countDown();
-                return firstRunEvents.doFinally(signalType -> firstRunTerminated.countDown());
+                return firstRunEvents
+                        .doOnRequest(ignored -> firstRunSubscribed.countDown())
+                        .doFinally(signalType -> firstRunTerminated.countDown());
             }
             return Flux.empty();
         }
