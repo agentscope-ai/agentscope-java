@@ -141,7 +141,7 @@ PermissionContextState permCtx =
 
 - **`toolName` · `String` · *required*** — 规则适用的 tool 名：内置 `todo_write`，或任意自定义 tool 名。
 
-- **`ruleContent` · `String | null` · *required*** — 匹配模式 —— 语义随 `toolName` 变化，由该 tool 的 `matchRule()` 方法解释。`null` 表示对该 tool 的所有调用均匹配。
+- **`ruleContent` · `String | null` · *optional*** — 匹配模式 —— 语义随 `toolName` 变化，由该 tool 的 `matchRule()` 方法解释。`null` 表示对该 tool 的所有调用均匹配。
 
 - **`behavior` · `PermissionBehavior` · *required*** — `ALLOW`、`DENY`、`ASK` 或 `PASSTHROUGH`
 
@@ -388,6 +388,10 @@ Msg resumeMsg =
                 .build();
 agent.call(List.of(resumeMsg)).block();
 ```
+
+如果使用 `streamEvents(List.of(resumeMsg))` 发起恢复，事件流会在恢复执行工具之前包含
+`UserConfirmResultEvent`。使用它的 `replyId` 将本次接受的确认结果关联到之前的
+`RequireUserConfirmEvent`；该事件只包含本次恢复消息携带的确认结果。
 
 两种模式的区别：
 

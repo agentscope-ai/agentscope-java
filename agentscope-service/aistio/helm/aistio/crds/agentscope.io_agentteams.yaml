@@ -1,0 +1,351 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: agentteams.agentscope.io
+spec:
+  group: agentscope.io
+  names:
+    kind: AgentTeam
+    listKind: AgentTeamList
+    plural: agentteams
+    shortNames:
+    - at
+    singular: agentteam
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.lead.agentRef.name
+      name: Lead
+      type: string
+    - jsonPath: .status.tasks.total
+      name: Members
+      priority: 1
+      type: integer
+    - jsonPath: .status.tasks.completed
+      name: Tasks
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AgentTeam represents a collaborative team of agents.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AgentTeamSpec defines the desired state of AgentTeam.
+            properties:
+              config:
+                description: TeamConfig defines team-level configuration.
+                properties:
+                  shutdownPolicy:
+                    default: lead-decides
+                    enum:
+                    - lead-decides
+                    - all-complete
+                    - timeout
+                    type: string
+                  taskClaimStrategy:
+                    default: self-claim
+                    enum:
+                    - self-claim
+                    - lead-assign
+                    type: string
+                type: object
+              dynamicMembers:
+                description: Dynamic membership policy.
+                properties:
+                  allowedAgentRefs:
+                    items:
+                      description: ObjectReference refers to a Kubernetes object.
+                      properties:
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  enabled:
+                    type: boolean
+                  maxTotal:
+                    format: int32
+                    maximum: 32
+                    minimum: 1
+                    type: integer
+                required:
+                - enabled
+                type: object
+              lead:
+                description: TeamLeadSpec defines the team lead.
+                properties:
+                  agentRef:
+                    description: ObjectReference refers to a Kubernetes object.
+                    properties:
+                      kind:
+                        type: string
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  prompt:
+                    type: string
+                required:
+                - agentRef
+                type: object
+              lifecycle:
+                description: TeamLifecycle defines team lifecycle limits.
+                properties:
+                  maxDuration:
+                    type: string
+                  ttlAfterCompleted:
+                    type: string
+                  ttlAfterFailed:
+                    type: string
+                type: object
+              members:
+                description: Static members, spawned at team creation.
+                items:
+                  description: TeamMemberSpec defines a static team member.
+                  properties:
+                    agentRef:
+                      description: ObjectReference refers to a Kubernetes object.
+                      properties:
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    name:
+                      minLength: 1
+                      type: string
+                    planApproval:
+                      type: boolean
+                    prompt:
+                      type: string
+                  required:
+                  - agentRef
+                  - name
+                  type: object
+                type: array
+              objective:
+                description: Objective is the team goal, injected into all members'
+                  system prompts.
+                maxLength: 4096
+                minLength: 1
+                type: string
+              recovery:
+                description: RecoverySpec defines fault recovery policy.
+                properties:
+                  graceWindow:
+                    type: string
+                  maxRestarts:
+                    default: 3
+                    format: int32
+                    maximum: 10
+                    minimum: 0
+                    type: integer
+                  reschedulePolicy:
+                    default: Auto
+                    enum:
+                    - Auto
+                    - Manual
+                    - None
+                    type: string
+                  restartBackoff:
+                    type: string
+                type: object
+              sharedContext:
+                description: SharedContextSpec defines shared context accessible to
+                  all members.
+                properties:
+                  configMapRef:
+                    type: string
+                type: object
+            required:
+            - lead
+            - objective
+            type: object
+          status:
+            description: AgentTeamStatus defines the observed state of AgentTeam.
+            properties:
+              conditions:
+                items:
+                  description: Condition represents a status condition.
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      description: ConditionType defines the type of condition.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              lead:
+                description: TeamMemberStatus represents the runtime state of a team
+                  member.
+                properties:
+                  addedAt:
+                    type: string
+                  agentRef:
+                    type: string
+                  currentTask:
+                    type: string
+                  instanceRef:
+                    type: string
+                  lastRestartAt:
+                    type: string
+                  lastRestartReason:
+                    type: string
+                  name:
+                    type: string
+                  origin:
+                    description: MemberOrigin indicates how a member was added to
+                      the team.
+                    enum:
+                    - static
+                    - dynamic
+                    type: string
+                  phase:
+                    description: MemberPhase represents the state of a team member.
+                    enum:
+                    - Joining
+                    - Working
+                    - Idle
+                    - Lost
+                    - Failed
+                    - Shutdown
+                    type: string
+                  restartCount:
+                    format: int32
+                    type: integer
+                  sessionId:
+                    type: string
+                required:
+                - name
+                type: object
+              members:
+                items:
+                  description: TeamMemberStatus represents the runtime state of a
+                    team member.
+                  properties:
+                    addedAt:
+                      type: string
+                    agentRef:
+                      type: string
+                    currentTask:
+                      type: string
+                    instanceRef:
+                      type: string
+                    lastRestartAt:
+                      type: string
+                    lastRestartReason:
+                      type: string
+                    name:
+                      type: string
+                    origin:
+                      description: MemberOrigin indicates how a member was added to
+                        the team.
+                      enum:
+                      - static
+                      - dynamic
+                      type: string
+                    phase:
+                      description: MemberPhase represents the state of a team member.
+                      enum:
+                      - Joining
+                      - Working
+                      - Idle
+                      - Lost
+                      - Failed
+                      - Shutdown
+                      type: string
+                    restartCount:
+                      format: int32
+                      type: integer
+                    sessionId:
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              phase:
+                description: TeamPhase represents the lifecycle phase of a team.
+                enum:
+                - Pending
+                - Running
+                - Completed
+                - Failed
+                type: string
+              startedAt:
+                type: string
+              tasks:
+                description: TeamTaskSummary holds aggregate task counts.
+                properties:
+                  completed:
+                    format: int32
+                    type: integer
+                  inProgress:
+                    format: int32
+                    type: integer
+                  pending:
+                    format: int32
+                    type: integer
+                  total:
+                    format: int32
+                    type: integer
+                required:
+                - completed
+                - inProgress
+                - pending
+                - total
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

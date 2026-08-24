@@ -44,7 +44,7 @@ class AguiModelTest {
 
             assertEquals("msg-1", msg.getId());
             assertEquals("user", msg.getRole());
-            assertEquals("Hello world", msg.getContent());
+            assertEquals("Hello world", msg.getTextContent());
             assertTrue(msg.isUserMessage());
             assertFalse(msg.isAssistantMessage());
         }
@@ -79,11 +79,36 @@ class AguiModelTest {
         }
 
         @Test
+        void testRoleHelpersAreCaseInsensitive() {
+            AguiMessage user =
+                    new AguiMessage("msg-1", "USER", new MessageContent.Text("Hello"), null, null);
+            AguiMessage assistant =
+                    new AguiMessage(
+                            "msg-2", "ASSISTANT", new MessageContent.Text("Hello"), null, null);
+            AguiMessage system =
+                    new AguiMessage(
+                            "msg-3", "SYSTEM", new MessageContent.Text("Hello"), null, null);
+            AguiMessage tool =
+                    new AguiMessage(
+                            "msg-4", "TOOL", new MessageContent.Text("Hello"), null, "tc-1");
+
+            assertTrue(user.isUserMessage());
+            assertTrue(assistant.isAssistantMessage());
+            assertTrue(system.isSystemMessage());
+            assertTrue(tool.isToolMessage());
+        }
+
+        @Test
         void testMessageWithToolCalls() {
             AguiFunctionCall function = new AguiFunctionCall("get_weather", "{\"city\":\"NYC\"}");
             AguiToolCall toolCall = new AguiToolCall("tc-1", function);
             AguiMessage msg =
-                    new AguiMessage("msg-5", "assistant", "Let me check", List.of(toolCall), null);
+                    new AguiMessage(
+                            "msg-5",
+                            "assistant",
+                            new MessageContent.Text("Let me check"),
+                            List.of(toolCall),
+                            null);
 
             assertTrue(msg.hasToolCalls());
             assertEquals(1, msg.getToolCalls().size());
@@ -117,14 +142,18 @@ class AguiModelTest {
         void testNullIdThrows() {
             assertThrows(
                     NullPointerException.class,
-                    () -> new AguiMessage(null, "user", "content", null, null));
+                    () ->
+                            new AguiMessage(
+                                    null, "user", new MessageContent.Text("content"), null, null));
         }
 
         @Test
         void testNullRoleThrows() {
             assertThrows(
                     NullPointerException.class,
-                    () -> new AguiMessage("id", null, "content", null, null));
+                    () ->
+                            new AguiMessage(
+                                    "id", null, new MessageContent.Text("content"), null, null));
         }
 
         @Test
@@ -164,10 +193,12 @@ class AguiModelTest {
             String json = JsonUtils.getJsonCodec().toJson(msg);
             assertTrue(json.contains("\"id\":\"msg-1\""));
             assertTrue(json.contains("\"role\":\"assistant\""));
+            assertTrue(json.contains("\"content\":\"Hello\""));
 
             AguiMessage deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
             assertEquals(msg.getId(), deserialized.getId());
             assertEquals(msg.getRole(), deserialized.getRole());
+            assertEquals("Hello", deserialized.getTextContent());
         }
 
         @Test
@@ -175,6 +206,103 @@ class AguiModelTest {
             AguiMessage msg = new AguiMessage("msg-1", "user", null, null, null);
 
             assertNull(msg.getContent());
+            assertNull(msg.getTextContent());
+            assertFalse(msg.hasBlocks());
+        }
+
+        @Test
+        void testMessageWithBlocksContent() {
+            List<InputContent> parts =
+                    List.of(
+                            new TextInputContent("Describe this"),
+                            new ImageInputContent(
+                                    new InputContentUrlSource("https://example.com/img.png"),
+                                    null));
+            AguiMessage msg = AguiMessage.userMessage("msg-blocks", parts);
+
+            assertTrue(msg.hasBlocks());
+            assertNull(msg.getTextContent());
+            assertNotNull(msg.getContent());
+        }
+
+        @Test
+        void testJsonSerializationWithBlocks() throws JsonProcessingException {
+            List<InputContent> parts =
+                    List.of(
+                            new TextInputContent("Hello"),
+                            new ImageInputContent(
+                                    new InputContentUrlSource("https://example.com/img.png"),
+                                    null));
+            AguiMessage msg = AguiMessage.userMessage("msg-1", parts);
+
+            String json = JsonUtils.getJsonCodec().toJson(msg);
+            assertTrue(json.contains("\"content\":["));
+            assertTrue(json.contains("\"type\":\"text\""));
+            assertTrue(json.contains("\"type\":\"image\""));
+
+            AguiMessage deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+            assertEquals(msg.getId(), deserialized.getId());
+            assertTrue(deserialized.hasBlocks());
+        }
+
+        @Test
+        void testJsonDeserializationStringContent() throws JsonProcessingException {
+            String json =
+                    """
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": "plain text",
+                      "toolCalls": [],
+                      "toolCallId": null
+                    }
+                    """;
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertEquals("m1", msg.getId());
+            assertEquals("plain text", msg.getTextContent());
+            assertFalse(msg.hasBlocks());
+        }
+
+        @Test
+        void testJsonDeserializationArrayContent() throws JsonProcessingException {
+            String json =
+                    """
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "hi"
+                        }
+                      ]
+                    }
+                    """;
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertEquals("m1", msg.getId());
+            assertTrue(msg.hasBlocks());
+            assertNull(msg.getTextContent());
+        }
+
+        @Test
+        void testJsonDeserializationNullContent() throws JsonProcessingException {
+            String json =
+                    """
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": null
+                    }
+                    """;
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertNull(msg.getContent());
+            assertNull(msg.getTextContent());
         }
     }
 

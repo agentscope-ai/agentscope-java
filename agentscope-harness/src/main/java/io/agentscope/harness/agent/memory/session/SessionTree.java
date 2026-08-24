@@ -19,10 +19,13 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.transcript.TranscriptRef;
+import io.agentscope.harness.agent.transcript.TranscriptStore;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,8 +37,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,11 +59,13 @@ import org.slf4j.LoggerFactory;
  * </pre>
  *
  * <h2>Persistence model</h2>
- * The local file is the working copy; the remote {@link AbstractFilesystem} (when configured) is
- * the cross-replica mirror. On every {@link #load()}, remote content is fetched and union-merged
- * with the local file so that entries written on another machine are visible to the current one.
- * On every {@link #flush()}, pending entries are appended to the local files synchronously and
- * then mirrored to the remote filesystem asynchronously (fire-and-forget, best-effort).
+ * The local file is the working copy. Cross-replica durability uses one of:
+ * <ul>
+ *   <li>{@link TranscriptStore} (preferred) — each flush writes an <em>immutable segment</em>;
+ *       concurrent writers never overwrite each other.</li>
+ *   <li>{@link AbstractFilesystem} full-file mirror (legacy) — O(N²) uploads and last-writer-wins
+ *       across replicas; kept for backward compatibility when no {@link TranscriptStore} is set.</li>
+ * </ul>
  *
  * <h2>Deferred persistence</h2>
  * Entries are buffered in memory and only flushed to disk on the first call to {@link #flush()}
@@ -88,6 +95,31 @@ public class SessionTree {
                         return t;
                     });
 
+    /**
+     * Blocks until all remote-mirror tasks submitted before this call have finished.
+     *
+     * <p>The mirror executor is single-threaded and serial, so waiting on a sentinel task
+     * guarantees that every previously scheduled mirror upload has completed. Intended for
+     * graceful shutdown ({@code HarnessAgent.close()}) so asynchronous transcript/session
+     * mirrors do not race with resource cleanup (e.g., temp workspace deletion).
+     *
+     * @param timeout maximum time to wait
+     * @param unit time unit of {@code timeout}
+     * @return {@code true} if the mirrors quiesced within the timeout
+     */
+    public static boolean awaitMirrorQuiescence(long timeout, TimeUnit unit) {
+        try {
+            MIRROR_EXECUTOR.submit(() -> {}).get(timeout, unit);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            log.debug("awaitMirrorQuiescence did not complete cleanly: {}", e.getMessage());
+            return false;
+        }
+    }
+
     private final Path contextFile;
     private final Path logFile;
     private final Path workspaceRoot;
@@ -95,6 +127,10 @@ public class SessionTree {
     private final WorkspaceIndex index;
     private final String contextRelativePath;
     private final String logRelativePath;
+    private final String writerId = UUID.randomUUID().toString().substring(0, 8);
+
+    private TranscriptStore transcriptStore;
+    private TranscriptRef transcriptRef;
 
     private final Map<String, SessionEntry> entriesById = new LinkedHashMap<>();
     private final List<SessionEntry> appendOrder = new ArrayList<>();
@@ -177,6 +213,21 @@ public class SessionTree {
     }
 
     /**
+     * Binds a {@link TranscriptStore} for segmented remote persistence. When set, {@link #flush()}
+     * writes immutable segments instead of full-file mirrors, and {@link #syncFromRemote()} merges
+     * from listed segments.
+     *
+     * @param store segment store; {@code null} reverts to legacy full-file mirror
+     * @param ref   transcript identity; required when {@code store} is non-null
+     * @return this tree, for fluent chaining
+     */
+    public SessionTree setTranscriptStore(TranscriptStore store, TranscriptRef ref) {
+        this.transcriptStore = store;
+        this.transcriptRef = store == null ? null : ref;
+        return this;
+    }
+
+    /**
      * Loads existing entries from the local context file into the in-memory tree.
      *
      * <p>This is a <b>local-only, zero-network</b> operation. If the local file is absent, the
@@ -210,24 +261,18 @@ public class SessionTree {
     }
 
     /**
-     * Pulls the remote context file and union-merges any entries not yet present locally.
+     * Pulls remote entries and union-merges any not yet present locally.
      *
-     * <p>Remote is treated as the authoritative base: remote entries come first, followed by any
-     * local-only entries (written but not yet mirrored). If the remote has entries the local file
-     * does not, the local file is overwritten with the merged content and the new entries are
-     * appended to the local log file.
-     *
-     * <p>This is a <b>network operation</b> — call it only when cross-machine consistency is
-     * required (typically in write paths such as
-     * {@link io.agentscope.harness.agent.memory.MemoryFlushManager}). Read-only tools should use
-     * {@link #load()} alone to keep queries fast and local.
-     *
-     * <p>No-op if no filesystem is configured or the remote read fails (failures are logged as
-     * warnings).
+     * <p>When a {@link TranscriptStore} is bound, reads immutable segments (no whole-file
+     * overwrite race). Otherwise falls back to the legacy full-file remote mirror.
      *
      * <p>{@link #load()} must be called before this method.
      */
     public void syncFromRemote() {
+        if (transcriptStore != null && transcriptRef != null) {
+            syncFromTranscriptStore();
+            return;
+        }
         if (filesystem == null || workspaceRoot == null) {
             return;
         }
@@ -236,49 +281,15 @@ public class SessionTree {
         if (remoteEntries.isEmpty()) {
             return;
         }
-
-        Set<String> localIds =
-                appendOrder.stream().map(SessionEntry::getId).collect(Collectors.toSet());
-
-        List<SessionEntry> remoteNewEntries =
-                remoteEntries.stream().filter(re -> !localIds.contains(re.getId())).toList();
-        if (remoteNewEntries.isEmpty()) {
-            return;
+        int before = appendOrder.size();
+        mergeRemoteEntries(remoteEntries);
+        int added = appendOrder.size() - before;
+        if (added > 0) {
+            log.info(
+                    "syncFromRemote: merged {} new remote entries into local session file {}",
+                    added,
+                    contextFile.getFileName());
         }
-
-        // Rebuild merged list: remote base + local-only extras at the end.
-        Set<String> remoteIds =
-                remoteEntries.stream()
-                        .map(SessionEntry::getId)
-                        .collect(Collectors.toCollection(LinkedHashSet::new));
-        List<SessionEntry> merged = new ArrayList<>(remoteEntries);
-        for (SessionEntry e : appendOrder) {
-            if (!remoteIds.contains(e.getId())) {
-                merged.add(e);
-            }
-        }
-
-        overwriteFile(contextFile, merged);
-        appendToFile(logFile, remoteNewEntries);
-
-        // Update in-memory state with the newly discovered remote entries.
-        for (SessionEntry entry : remoteNewEntries) {
-            entriesById.put(entry.getId(), entry);
-        }
-        // Re-build appendOrder to match the merged order (remote base first).
-        appendOrder.clear();
-        appendOrder.addAll(merged);
-        for (SessionEntry entry : remoteNewEntries) {
-            if (entry instanceof SessionEntry.CompactionEntry ce) {
-                lastCompactionFirstKeptId = ce.getFirstKeptEntryId();
-                lastSummaryEntryId = ce.getSummaryEntryId();
-            }
-        }
-
-        log.info(
-                "syncFromRemote: merged {} new remote entries into local session file {}",
-                remoteNewEntries.size(),
-                contextFile.getFileName());
     }
 
     /**
@@ -301,8 +312,8 @@ public class SessionTree {
     }
 
     /**
-     * Flushes all pending entries to both the local context file and the local log file
-     * synchronously, then schedules an asynchronous best-effort mirror to the remote filesystem.
+     * Flushes pending entries to the local context and log files, then schedules an asynchronous
+     * remote mirror (segmented {@link TranscriptStore} when bound, else legacy full-file upload).
      *
      * <p>The remote mirror is fire-and-forget: failures are logged as warnings and do not affect
      * the return of this method. The local write is always the primary guarantee.
@@ -316,9 +327,17 @@ public class SessionTree {
         List<SessionEntry> toWrite = new ArrayList<>(pendingWrites);
         pendingWrites.clear();
 
+        long seqEnd = appendOrder.size() - 1L;
+        long seqStart = seqEnd - toWrite.size() + 1L;
+
         appendToFile(contextFile, toWrite);
         appendToFile(logFile, toWrite);
-        scheduleMirror();
+
+        if (transcriptStore != null && transcriptRef != null) {
+            scheduleSegmentMirror(toWrite, seqStart, seqEnd);
+        } else {
+            scheduleMirror();
+        }
     }
 
     /**
@@ -450,6 +469,101 @@ public class SessionTree {
     // -------------------------------------------------------------------------
     //  Private helpers
     // -------------------------------------------------------------------------
+
+    private void syncFromTranscriptStore() {
+        try {
+            TranscriptStore scopedStore = transcriptStore.withRuntimeContext(fsRc);
+            List<TranscriptStore.SegmentInfo> segments = scopedStore.listSegments(transcriptRef);
+            if (segments.isEmpty()) {
+                return;
+            }
+            List<SessionEntry> remoteEntries = new ArrayList<>();
+            Set<String> seen = new LinkedHashSet<>();
+            for (TranscriptStore.SegmentInfo seg : segments) {
+                try (InputStream in = scopedStore.readSegment(seg.key())) {
+                    String content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                    for (SessionEntry e : parseJsonlEntries(content)) {
+                        if (seen.add(e.getId())) {
+                            remoteEntries.add(e);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to read transcript segment {}: {}", seg.key(), e.getMessage());
+                }
+            }
+            if (!remoteEntries.isEmpty()) {
+                mergeRemoteEntries(remoteEntries);
+            }
+        } catch (Exception e) {
+            log.warn("syncFromTranscriptStore failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Union-merges remote entries into local state: remote base first, then local-only extras.
+     * New remote-only entries are appended to the local log; context file is rewritten.
+     */
+    private void mergeRemoteEntries(List<SessionEntry> remoteEntries) {
+        Set<String> localIds =
+                appendOrder.stream().map(SessionEntry::getId).collect(Collectors.toSet());
+
+        List<SessionEntry> remoteNewEntries =
+                remoteEntries.stream().filter(re -> !localIds.contains(re.getId())).toList();
+        if (remoteNewEntries.isEmpty()) {
+            return;
+        }
+
+        Set<String> remoteIds =
+                remoteEntries.stream()
+                        .map(SessionEntry::getId)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<SessionEntry> merged = new ArrayList<>(remoteEntries);
+        for (SessionEntry e : appendOrder) {
+            if (!remoteIds.contains(e.getId())) {
+                merged.add(e);
+            }
+        }
+
+        overwriteFile(contextFile, merged);
+        appendToFile(logFile, remoteNewEntries);
+
+        for (SessionEntry entry : remoteNewEntries) {
+            entriesById.put(entry.getId(), entry);
+        }
+        appendOrder.clear();
+        appendOrder.addAll(merged);
+        for (SessionEntry entry : remoteNewEntries) {
+            if (entry instanceof SessionEntry.CompactionEntry ce) {
+                lastCompactionFirstKeptId = ce.getFirstKeptEntryId();
+                lastSummaryEntryId = ce.getSummaryEntryId();
+            }
+        }
+    }
+
+    private void scheduleSegmentMirror(List<SessionEntry> entries, long seqStart, long seqEnd) {
+        final TranscriptStore store = transcriptStore.withRuntimeContext(fsRc);
+        final TranscriptRef ref = transcriptRef;
+        if (store == null || ref == null || entries.isEmpty()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (SessionEntry entry : entries) {
+            sb.append(JsonUtils.getJsonCodec().toJson(entry)).append('\n');
+        }
+        byte[] payload = sb.toString().getBytes(StandardCharsets.UTF_8);
+        String wid = writerId;
+        MIRROR_EXECUTOR.execute(
+                () -> {
+                    try {
+                        store.appendSegment(ref, seqStart, seqEnd, wid, payload);
+                    } catch (Exception e) {
+                        log.warn(
+                                "Failed to append transcript segment for {}: {}",
+                                ref.prefix(),
+                                e.getMessage());
+                    }
+                });
+    }
 
     /**
      * Schedules an asynchronous, best-effort mirror of both session files to the remote

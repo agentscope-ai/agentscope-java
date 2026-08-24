@@ -24,6 +24,7 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.AguiRequestBodyParser;
 import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
 import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
@@ -79,6 +80,7 @@ public class AguiWebFluxHandler {
     private final AguiRequestProcessor processor;
     private final AguiEventEncoder encoder;
     private final String agentIdHeader;
+    private final boolean interruptOnDisconnect;
     private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiWebFluxHandler(Builder builder) {
@@ -99,6 +101,7 @@ public class AguiWebFluxHandler {
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
+        this.interruptOnDisconnect = builder.interruptOnDisconnect;
         this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
@@ -112,7 +115,8 @@ public class AguiWebFluxHandler {
      * @return A Mono containing the server response with SSE stream
      */
     public Mono<ServerResponse> handle(ServerRequest request) {
-        return request.bodyToMono(RunAgentInput.class)
+        return request.bodyToMono(String.class)
+                .map(AguiRequestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, null))
                 .onErrorResume(this::handleParseError);
     }
@@ -128,7 +132,8 @@ public class AguiWebFluxHandler {
      */
     public Mono<ServerResponse> handleWithAgentId(ServerRequest request) {
         String pathAgentId = request.pathVariable(AGENT_ID_PATH_VARIABLE);
-        return request.bodyToMono(RunAgentInput.class)
+        return request.bodyToMono(String.class)
+                .map(AguiRequestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, pathAgentId))
                 .onErrorResume(this::handleParseError);
     }
@@ -141,31 +146,39 @@ public class AguiWebFluxHandler {
         try {
             // Get header agent ID
             String headerAgentId = request.headers().firstHeader(agentIdHeader);
+            RuntimeContext runtimeContext =
+                    resolveRuntimeContext(input, headerAgentId, pathAgentId, request);
 
             // Process request - returns both agent and event stream
             AguiRequestProcessor.ProcessResult result =
-                    processor.process(
-                            input,
-                            headerAgentId,
-                            pathAgentId,
-                            resolveRuntimeContext(input, headerAgentId, pathAgentId, request));
+                    processor.process(input, headerAgentId, pathAgentId, runtimeContext);
 
             // Create SSE stream using ServerSentEvent for proper streaming behavior
+            Flux<AguiEvent> events =
+                    interruptOnDisconnect
+                            ? result.events()
+                            : result.events().publish().autoConnect(1);
             Flux<ServerSentEvent<String>> sseStream =
-                    result.events()
-                            .map(
+                    events.map(
                                     event ->
                                             ServerSentEvent.<String>builder()
                                                     .data(encoder.encodeToJson(event).trim())
                                                     .build())
-                            // When client closes connection (cancels stream), interrupt the agent
+                            // When the client closes the connection, optionally interrupt the agent
                             .doOnCancel(
                                     () -> {
-                                        logger.info(
-                                                "SSE stream cancelled for run {}, interrupting"
-                                                        + " agent",
-                                                runId);
-                                        result.agent().interrupt();
+                                        if (interruptOnDisconnect) {
+                                            logger.info(
+                                                    "SSE stream cancelled for run {}, interrupting"
+                                                            + " agent",
+                                                    runId);
+                                            result.interrupt(threadId, runtimeContext);
+                                        } else {
+                                            logger.info(
+                                                    "SSE stream cancelled for run {}, agent"
+                                                            + " continues running",
+                                                    runId);
+                                        }
                                     });
 
             return ServerResponse.ok()
@@ -281,6 +294,7 @@ public class AguiWebFluxHandler {
         private AguiAdapterConfig config;
         private boolean serverSideMemory = false;
         private String agentIdHeader;
+        private boolean interruptOnDisconnect = true;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
 
@@ -336,6 +350,17 @@ public class AguiWebFluxHandler {
          */
         public Builder agentIdHeader(String agentIdHeader) {
             this.agentIdHeader = agentIdHeader;
+            return this;
+        }
+
+        /**
+         * Set whether to interrupt the agent when the client disconnects.
+         *
+         * @param interruptOnDisconnect whether to interrupt the agent
+         * @return This builder
+         */
+        public Builder interruptOnDisconnect(boolean interruptOnDisconnect) {
+            this.interruptOnDisconnect = interruptOnDisconnect;
             return this;
         }
 
