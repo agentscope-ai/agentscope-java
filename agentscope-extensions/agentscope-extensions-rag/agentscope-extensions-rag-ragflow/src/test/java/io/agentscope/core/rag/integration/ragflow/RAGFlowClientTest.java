@@ -564,7 +564,7 @@ class RAGFlowClientTest {
                         .apiKey("test-api-key")
                         .baseUrl(mockWebServer.url("").toString().replaceAll("/$", ""))
                         .addDatasetId("dataset-123")
-                        .rerankId(42)
+                        .rerankId("BAAI/bge-reranker-v2-m3@BAAI")
                         .maxRetries(0)
                         .build();
 
@@ -577,7 +577,7 @@ class RAGFlowClientTest {
                 JsonUtils.getJsonCodec()
                         .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
-        assertEquals(42, parsed.get("rerank_id"));
+        assertEquals("BAAI/bge-reranker-v2-m3@BAAI", parsed.get("rerank_id"));
     }
 
     @Test
@@ -968,7 +968,7 @@ class RAGFlowClientTest {
                         .pageSize(50)
                         .useKg(true)
                         .tocEnhance(true)
-                        .rerankId(10)
+                        .rerankId("b2a62730759d11ef987d0242ac120004")
                         .keyword(true)
                         .highlight(true)
                         .addCrossLanguage("en")
@@ -1006,7 +1006,7 @@ class RAGFlowClientTest {
         assertEquals(50, parsed.get("page_size"));
         assertEquals(true, parsed.get("use_kg"));
         assertEquals(true, parsed.get("toc_enhance"));
-        assertEquals(10, parsed.get("rerank_id"));
+        assertEquals("b2a62730759d11ef987d0242ac120004", parsed.get("rerank_id"));
         assertEquals(true, parsed.get("keyword"));
         assertEquals(true, parsed.get("highlight"));
 
