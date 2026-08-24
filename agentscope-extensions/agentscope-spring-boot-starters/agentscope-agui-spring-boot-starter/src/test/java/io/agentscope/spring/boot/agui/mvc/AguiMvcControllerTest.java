@@ -32,6 +32,7 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -84,7 +85,11 @@ class AguiMvcControllerTest {
 
             invokeError(emitter);
 
-            fixture.processor.process(input("run-2"), null, null).events().collectList().block();
+            fixture.processor
+                    .process(AguiRuntimeContextRequest.builder().input(input("run-2")).build())
+                    .events()
+                    .collectList()
+                    .block();
 
             assertEquals(2, fixture.runCount.get());
             verify(fixture.agent).interrupt(any(RuntimeContext.class));
@@ -104,7 +109,10 @@ class AguiMvcControllerTest {
 
             List<AguiEvent> events =
                     fixture.processor
-                            .process(input("run-2"), null, null)
+                            .process(
+                                    AguiRuntimeContextRequest.builder()
+                                            .input(input("run-2"))
+                                            .build())
                             .events()
                             .collectList()
                             .block();
@@ -128,7 +136,11 @@ class AguiMvcControllerTest {
             Object timeoutCallback = ReflectionTestUtils.getField(emitter, "timeoutCallback");
             ReflectionTestUtils.invokeMethod(timeoutCallback, "run");
 
-            fixture.processor.process(input("run-2"), null, null).events().collectList().block();
+            fixture.processor
+                    .process(AguiRuntimeContextRequest.builder().input(input("run-2")).build())
+                    .events()
+                    .collectList()
+                    .block();
 
             assertEquals(2, fixture.runCount.get());
             verify(fixture.agent).interrupt(any(RuntimeContext.class));

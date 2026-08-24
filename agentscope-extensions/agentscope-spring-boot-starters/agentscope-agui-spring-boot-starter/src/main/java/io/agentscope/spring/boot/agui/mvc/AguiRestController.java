@@ -18,8 +18,8 @@ package io.agentscope.spring.boot.agui.mvc;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.util.JsonException;
-import io.agentscope.spring.boot.agui.common.AguiRequestBodyParser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.MediaType;
@@ -43,6 +43,7 @@ public class AguiRestController {
 
     private final AguiMvcController aguiMvcController;
     private final AguiEventEncoder encoder = new AguiEventEncoder();
+    private final AguiRequestBodyParser requestBodyParser;
     private final String pathPrefix;
     private final boolean enablePathRouting;
 
@@ -52,12 +53,17 @@ public class AguiRestController {
      * @param aguiMvcController The AG-UI MVC controller
      * @param pathPrefix The path prefix for endpoints
      * @param enablePathRouting Whether to enable path variable routing
+     * @param requestBodyParser The parser used to decode request bodies
      */
     public AguiRestController(
-            AguiMvcController aguiMvcController, String pathPrefix, boolean enablePathRouting) {
+            AguiMvcController aguiMvcController,
+            String pathPrefix,
+            boolean enablePathRouting,
+            AguiRequestBodyParser requestBodyParser) {
         this.aguiMvcController = aguiMvcController;
         this.pathPrefix = pathPrefix;
         this.enablePathRouting = enablePathRouting;
+        this.requestBodyParser = requestBodyParser;
     }
 
     /**
@@ -86,7 +92,7 @@ public class AguiRestController {
                             required = false)
                     String agentIdHeader,
             HttpServletRequest request) {
-        RunAgentInput input = AguiRequestBodyParser.parse(body);
+        RunAgentInput input = requestBodyParser.parse(body);
         return aguiMvcController.handle(input, agentIdHeader, request);
     }
 
@@ -112,7 +118,7 @@ public class AguiRestController {
                             required = false)
                     String agentIdHeader,
             HttpServletRequest request) {
-        RunAgentInput input = AguiRequestBodyParser.parse(body);
+        RunAgentInput input = requestBodyParser.parse(body);
         return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId, request);
     }
 
