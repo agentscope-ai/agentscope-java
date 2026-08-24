@@ -491,7 +491,7 @@ class ReActAgentNewLoopE2ETest {
     }
 
     @Test
-    void doesNotRetryAfterModelReturnsOnlyThinking() {
+    void retriesAfterModelReturnsOnlyThinking() {
         ChatResponse thinkingResponse =
                 ChatResponse.builder()
                         .content(
@@ -502,7 +502,12 @@ class ReActAgentNewLoopE2ETest {
                         .build();
         ScriptedModel model = new ScriptedModel(List.of(() -> Flux.just(thinkingResponse)));
         ReActAgent agent =
-                ReActAgent.builder().name("asst").sysPrompt("you are helpful").model(model).build();
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .maxIters(2)
+                        .build();
 
         List<AgentEvent> events =
                 agent.streamEvents(
@@ -515,7 +520,9 @@ class ReActAgentNewLoopE2ETest {
                         .block();
 
         assertNotNull(events);
-        assertEquals(1, model.calls.get());
+        // Main treats a thinking-only response as an empty final response. Two reasoning attempts
+        // are followed by one bounded summary call instead of silently completing with no reply.
+        assertEquals(3, model.calls.get());
     }
 
     @Test
