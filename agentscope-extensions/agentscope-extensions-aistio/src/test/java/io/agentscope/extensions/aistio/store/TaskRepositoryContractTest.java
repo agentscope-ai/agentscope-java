@@ -289,6 +289,7 @@ class TaskRepositoryContractTest {
     @Test
     void localHandle_isRegisteredBeforeSupplierCanCancelItself() throws Exception {
         AtomicInteger cancelActions = new AtomicInteger();
+        CountDownLatch cancelInvoked = new CountDownLatch(1);
         cpRepoA.putTask(
                 RuntimeContext.empty(),
                 "t-register-first",
@@ -301,9 +302,15 @@ class TaskRepositoryContractTest {
                                             RuntimeContext.empty(), SESSION, "t-register-first"));
                             return "ignored";
                         },
-                        cancelActions::incrementAndGet));
+                        () -> {
+                            cancelActions.incrementAndGet();
+                            cancelInvoked.countDown();
+                        }));
 
         awaitStatus(Backend.CONTROL_PLANE, "t-register-first", TaskStatus.CANCELLED);
+        assertTrue(
+                cancelInvoked.await(5, TimeUnit.SECONDS),
+                "registered local cancel action must be invoked");
         assertEquals(1, cancelActions.get());
     }
 
