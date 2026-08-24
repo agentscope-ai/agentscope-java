@@ -197,31 +197,26 @@ public class McpTool extends ToolBase {
      * <p>Transport-level failures stay as reactive error signals so the executor can apply its
      * retry policy. Protocol-level business errors ({@code isError=true}) remain completed error
      * results and are never retried.
+     *
+     * @param param The tool call parameters containing toolUseBlock, input, and agent
+     * @return a Mono that emits the tool result, or signals an error on failure
      */
     @Override
     public Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
         Objects.requireNonNull(param, "param must not be null");
-        // Mono.defer re-runs the whole attempt per subscription so each retry is a fresh attempt
-        return Mono.defer(
-                () -> {
-                    logger.debug(
-                            "Calling MCP tool '{}' with input: {}", getName(), param.getInput());
+        logger.debug("Calling MCP tool '{}' with input: {}", getName(), param.getInput());
 
-                    // Merge preset arguments with input arguments
-                    Map<String, Object> mergedArgs = mergeArguments(param.getInput());
+        // Merge preset arguments with input arguments
+        Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
-                    // Extract MCP meta from ContextStore by McpMeta type namespace
-                    Map<String, Object> metaMap = extractMcpMeta(param);
+        // Extract MCP meta from ContextStore by McpMeta type namespace
+        Map<String, Object> metaMap = extractMcpMeta(param);
 
-                    return clientWrapper
-                            .callTool(getName(), mergedArgs, metaMap)
-                            .map(McpContentConverter::convertCallToolResult)
-                            .doOnSuccess(
-                                    result ->
-                                            logger.debug(
-                                                    "MCP tool '{}' completed successfully",
-                                                    getName()));
-                });
+        return clientWrapper
+                .callTool(getName(), mergedArgs, metaMap)
+                .map(McpContentConverter::convertCallToolResult)
+                .doOnSuccess(
+                        result -> logger.debug("MCP tool '{}' completed successfully", getName()));
     }
 
     /**

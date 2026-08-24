@@ -1126,6 +1126,157 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should not retry Mono tools that suspend via ToolSuspendException")
+    void shouldNotRetryMonoToolSuspension() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "suspend_mono", description = "Mono tool that suspends")
+                    public Mono<String> suspend() {
+                        calls.incrementAndGet();
+                        return Mono.error(new ToolSuspendException("awaiting external execution"));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-suspend-mono", "suspend_mono")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertTrue(responses.get(0).isSuspended());
+    }
+
+    @Test
+    @DisplayName("Should not retry CompletableFuture tools that suspend via ToolSuspendException")
+    void shouldNotRetryFutureToolSuspension() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "suspend_future", description = "Future tool that suspends")
+                    public CompletableFuture<String> suspend() {
+                        calls.incrementAndGet();
+                        return CompletableFuture.failedFuture(
+                                new ToolSuspendException("awaiting external execution"));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-suspend-future", "suspend_future")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertTrue(responses.get(0).isSuspended());
+    }
+
+    @Test
+    @DisplayName("Should not retry ToolSuspendException wrapped in a non-standard exception")
+    void shouldNotRetryWrappedToolSuspension() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "wrapped_suspend";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that suspends behind a custom wrapper";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.just(ToolResultBlock.error("unused"));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.error(
+                                new IllegalStateException(
+                                        "wrapped",
+                                        new ToolSuspendException("awaiting external execution")));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-wrapped-suspend", "wrapped_suspend")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertTrue(responses.get(0).isSuspended());
+    }
+
+    @Test
+    @DisplayName("Should not retry deterministic failures with the retryable-errors predicate")
+    void shouldNotRetryDeterministicFailureWithRetryableErrors() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "misconfigured_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that fails deterministically";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.error(new IllegalStateException("Not initialized"));
+                    }
+                });
+
+        ExecutionConfig config =
+                ExecutionConfig.builder()
+                        .maxAttempts(3)
+                        .initialBackoff(Duration.ofMillis(1))
+                        .maxBackoff(Duration.ofMillis(10))
+                        .retryOn(ExecutionConfig.RETRYABLE_ERRORS)
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-misconfigured", "misconfigured_tool")),
+                                config,
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertEquals(ToolResultState.ERROR, responses.get(0).getState());
+    }
+
+    @Test
     @DisplayName("Should keep the callAsync error-result contract on direct calls")
     void shouldKeepCallAsyncContractOnDirectCalls() {
         // Custom tool failing with an error signal: direct calls still receive an error result

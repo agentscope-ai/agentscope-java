@@ -160,10 +160,9 @@ public class ExecutionConfig {
      *   <li>Max attempts: 1 (no retry)
      * </ul>
      *
-     * <p><b>Tool retry semantics:</b> when {@code maxAttempts} is greater than 1, failures that
-     * surface as reactive error signals (tool or transport exceptions, timeouts) are retried as
-     * decided by {@link #getRetryOn()}. Failures reported as completed {@code ToolResultBlock}
-     * error results (e.g. MCP {@code isError=true}) are never retried.
+     * <p>When {@code maxAttempts} is greater than 1, failures that surface as reactive error
+     * signals are retried (every failure when no retry predicate is configured); failures
+     * reported as completed {@code ToolResultBlock} error results are never retried.
      */
     public static final ExecutionConfig TOOL_DEFAULTS =
             builder().timeout(Duration.ofMinutes(5)).maxAttempts(1).build();

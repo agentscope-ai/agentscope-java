@@ -191,7 +191,7 @@ class ToolExecutor {
      * @param useExecutionPath whether to use the raw execution channel
      *     ({@link AgentTool#callAsyncForExecution(ToolCallParam)}) instead of the compatibility
      *     channel ({@link AgentTool#callAsync(ToolCallParam)})
-     * @return Mono containing execution result
+     * @return Mono containing execution result, or signalling an error on failure
      */
     private Mono<ToolResultBlock> executeWithTracing(
             ToolCallParam param, boolean useExecutionPath) {
@@ -307,17 +307,22 @@ class ToolExecutor {
             invocation = tool.callAsync(executionParam);
         }
 
-        // Suspension is not a failure: convert to a suspended result
         Mono<ToolResultBlock> chain =
                 invocation.onErrorResume(
-                        ToolSuspendException.class,
                         e -> {
-                            // Convert ToolSuspendException to suspended result
-                            logger.debug(
-                                    "Tool '{}' suspended: {}",
-                                    toolCall.getName(),
-                                    e.getReason() != null ? e.getReason() : "no reason");
-                            return Mono.just(ToolResultBlock.suspended(toolCall, e));
+                            // Convert any wrapped ToolSuspendException to a suspended result
+                            ToolSuspendException suspended =
+                                    ExceptionUtils.findToolSuspendException(e);
+                            if (suspended != null) {
+                                logger.debug(
+                                        "Tool '{}' suspended: {}",
+                                        toolCall.getName(),
+                                        suspended.getReason() != null
+                                                ? suspended.getReason()
+                                                : "no reason");
+                                return Mono.just(ToolResultBlock.suspended(toolCall, suspended));
+                            }
+                            return Mono.error(e);
                         });
         if (!useExecutionPath) {
             chain = chain.onErrorResume(e -> Mono.just(buildToolErrorResult(e)));
