@@ -128,8 +128,17 @@ final class HarnessAgentBuilderSupport {
         return base.isEmpty() ? SUBAGENT_CONTEXT_SECTION : base + "\n\n" + SUBAGENT_CONTEXT_SECTION;
     }
 
-    /** Custom-supplied subagent factory entry: name + factory function from name to Agent. */
-    record SubagentFactoryEntry(String name, Function<String, Agent> factory) {}
+    /**
+     * Custom-supplied subagent factory entry: name + optional description + factory function from
+     * name to Agent.
+     */
+    record SubagentFactoryEntry(String name, String description, Function<String, Agent> factory) {
+
+        /** Description shown to the orchestrator, falling back to the name when unset. */
+        String displayDescription() {
+            return description != null && !description.isBlank() ? description : name;
+        }
+    }
 
     // -----------------------------------------------------------------
     //  Filesystem
@@ -220,7 +229,7 @@ final class HarnessAgentBuilderSupport {
             entries.add(
                     new SubagentEntry(
                             custom.name(),
-                            custom.name(),
+                            custom.displayDescription(),
                             // custom factory uses Function<String, Agent> — pre-B-0 signature
                             // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
                             // that need parent-aware isolation should register a programmatic
@@ -263,7 +272,7 @@ final class HarnessAgentBuilderSupport {
             entries.add(
                     new SubagentEntry(
                             custom.name(),
-                            custom.name(),
+                            custom.displayDescription(),
                             // custom factory uses Function<String, Agent> — pre-B-0 signature
                             // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
                             // that need parent-aware isolation should register a programmatic

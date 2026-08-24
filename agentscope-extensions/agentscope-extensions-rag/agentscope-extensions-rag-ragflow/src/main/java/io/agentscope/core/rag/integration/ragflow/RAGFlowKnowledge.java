@@ -116,7 +116,6 @@ public class RAGFlowKnowledge implements Knowledge {
      *
      * <ul>
      *   <li>❌ Conversation history for context-aware retrieval
-     *   <li>❌ Built-in reranking
      * </ul>
      *
      * @param query the query text (required)
