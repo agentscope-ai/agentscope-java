@@ -155,6 +155,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.context.Context;
 
@@ -476,24 +477,52 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (stateStore == null) {
             return Mono.empty();
         }
+        return Mono.<Void>fromRunnable(() -> persistState(scope))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private void persistState(CallExecution scope) {
         syncToolkitToState(scope.state);
         SlotRef ref = SlotRef.parse(scope.slotKey);
-        AgentState toSave = scope.state;
-        return Mono.<Void>fromRunnable(
-                        () -> {
-                            long newVersion =
-                                    persistAgentStateCas(
-                                            ref.userId,
-                                            ref.sessionId,
-                                            scope.slotKey,
-                                            toSave,
-                                            scope.loadedVersion,
-                                            scope.loadedContextSize);
-                            if (newVersion != AgentStateStore.UNVERSIONED) {
-                                scope.loadedVersion = newVersion;
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
+        long newVersion =
+                persistAgentStateCas(
+                        ref.userId,
+                        ref.sessionId,
+                        scope.slotKey,
+                        scope.state,
+                        scope.loadedVersion,
+                        scope.loadedContextSize);
+        if (newVersion != AgentStateStore.UNVERSIONED) {
+            scope.loadedVersion = newVersion;
+        }
+    }
+
+    private void prepareStateForAbnormalSave(CallExecution scope) {
+        try {
+            scope.dropUncommittedToolCallsFromCurrentCall();
+        } catch (RuntimeException repairError) {
+            log.warn("Failed to repair agent state before saving", repairError);
+        }
+    }
+
+    private void saveStateAfterCancellation(CallExecution scope) {
+        prepareStateForAbnormalSave(scope);
+        try {
+            if (stateStore != null) {
+                persistState(scope);
+            }
+        } catch (RuntimeException saveError) {
+            log.warn("Failed to save agent state after cancellation", saveError);
+        }
+    }
+
+    private <T> Mono<T> checkpointOnCancellation(CallExecution scope, Mono<T> execution) {
+        return execution.doFinally(
+                signal -> {
+                    if (signal == SignalType.CANCEL) {
+                        saveStateAfterCancellation(scope);
+                    }
+                });
     }
 
     /**
@@ -512,6 +541,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (ExceptionUtils.containsInterruptedException(callFailure)) {
             return Mono.error(callFailure);
         }
+        prepareStateForAbnormalSave(scope);
         return saveStateToSession(scope)
                 .onErrorResume(
                         saveFailure -> {
@@ -1213,7 +1243,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         AgentEventEmitter.fromForwardingContext(cv)
                                 .ifPresent(ae -> scope.externalEventEmitter = ae);
                     }
-                    return scope.doCallInner(msgs)
+                    return checkpointOnCancellation(scope, scope.doCallInner(msgs))
                             .onErrorResume(error -> saveStateAfterCallFailure(scope, error))
                             .flatMap(result -> saveStateToSession(scope).thenReturn(result));
                 });
@@ -1305,7 +1335,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                     int contextSizeBefore = scope.state.contextMutable().size();
 
-                    return scope.doCallInner(msgs)
+                    return checkpointOnCancellation(scope, scope.doCallInner(msgs))
                             .flatMap(
                                     result -> {
                                         Msg out = wrapNativeStructuredResult(result);
@@ -1348,7 +1378,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                     scope.soTool = createStructuredOutputTool(jsonSchema);
 
-                    return scope.doCallInner(msgs)
+                    return checkpointOnCancellation(scope, scope.doCallInner(msgs))
                             .onErrorResume(error -> saveStateAfterCallFailure(scope, error))
                             .flatMap(
                                     result -> {
@@ -2111,6 +2141,42 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         "Synthesized interrupted-result for pending tool call: {} ({})",
                         toolCall.getName(),
                         toolCall.getId());
+            }
+        }
+
+        /** Remove current-call PENDING or ALLOWED tool calls that never produced results. */
+        private void dropUncommittedToolCallsFromCurrentCall() {
+            Set<String> pendingIds = getPendingToolUseIds();
+            if (pendingIds.isEmpty()) {
+                return;
+            }
+            List<Msg> context = state.contextMutable();
+            for (int i = context.size() - 1; i >= loadedContextSize; i--) {
+                Msg message = context.get(i);
+                if (message.getRole() != MsgRole.ASSISTANT
+                        || !message.hasContentBlocks(ToolUseBlock.class)) {
+                    continue;
+                }
+                List<ContentBlock> retained =
+                        message.getContent().stream()
+                                .filter(
+                                        block ->
+                                                !(block instanceof ToolUseBlock toolUse)
+                                                        || (toolUse.getState()
+                                                                        != ToolCallState.PENDING
+                                                                && toolUse.getState()
+                                                                        != ToolCallState.ALLOWED)
+                                                        || !pendingIds.contains(toolUse.getId()))
+                                .toList();
+                if (retained.size() == message.getContent().size()) {
+                    return;
+                }
+                if (retained.isEmpty()) {
+                    context.remove(i);
+                } else {
+                    context.set(i, message.withContent(retained));
+                }
+                return;
             }
         }
 
