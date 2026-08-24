@@ -46,6 +46,10 @@ class ToolMethodInvoker {
     /**
      * Invoke tool method asynchronously with custom converter support.
      *
+     * <p>Failures are converted into {@link ToolResultBlock} error results, so this entry point
+     * never signals an error to its caller. Direct callers of {@code AgentTool.callAsync} rely on
+     * this contract.
+     *
      * @param toolObject the object containing the method
      * @param method the method to invoke
      * @param param the tool call parameters containing input, toolUseBlock, agent, and context
@@ -53,6 +57,31 @@ class ToolMethodInvoker {
      * @return Mono containing ToolResultBlock
      */
     Mono<ToolResultBlock> invokeAsync(
+            Object toolObject,
+            Method method,
+            ToolCallParam param,
+            ToolResultConverter customConverter) {
+        return invokeRawAsync(toolObject, method, param, customConverter)
+                .onErrorResume(this::handleError);
+    }
+
+    /**
+     * Invoke tool method asynchronously while keeping failures as reactive error signals.
+     *
+     * <p>This is the raw channel used by {@link ToolExecutor}'s execution infrastructure: errors
+     * stay as error signals so the timeout, retry and graceful-shutdown layers can act on them,
+     * and the executor converts them into {@link ToolResultBlock} error results only after the
+     * retry decision has been made. Parameter injection, argument conversion, reflection
+     * invocation, {@link CompletableFuture}/{@link Mono} adaptation and result conversion behave
+     * identically to {@link #invokeAsync}; only the error-to-result conversion is omitted.
+     *
+     * @param toolObject the object containing the method
+     * @param method the method to invoke
+     * @param param the tool call parameters containing input, toolUseBlock, agent, and context
+     * @param customConverter custom converter for this invocation (null to use default)
+     * @return Mono containing ToolResultBlock, or signalling an error on failure
+     */
+    Mono<ToolResultBlock> invokeRawAsync(
             Object toolObject,
             Method method,
             ToolCallParam param,
@@ -87,9 +116,8 @@ class ToolMethodInvoker {
                                             .map(
                                                     r ->
                                                             converter.convert(
-                                                                    r, extractGenericType(method)))
-                                            .onErrorResume(this::handleError))
-                    .onErrorResume(this::handleError);
+                                                                    r,
+                                                                    extractGenericType(method))));
 
         } else if (returnType == Mono.class) {
             // Async method returning Mono: invoke and flatMap
@@ -105,22 +133,19 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(r -> converter.convert(r, extractGenericType(method)))
-                                            .onErrorResume(this::handleError))
-                    .onErrorResume(this::handleError);
+                                    mono.map(
+                                            r -> converter.convert(r, extractGenericType(method))));
 
         } else {
             // Sync method: wrap in Mono.fromCallable
             return Mono.fromCallable(
-                            () -> {
-                                method.setAccessible(true);
-                                Object[] args =
-                                        convertParameters(
-                                                method, input, agent, runtimeContext, emitter);
-                                Object result = method.invoke(toolObject, args);
-                                return converter.convert(result, method.getGenericReturnType());
-                            })
-                    .onErrorResume(this::handleError);
+                    () -> {
+                        method.setAccessible(true);
+                        Object[] args =
+                                convertParameters(method, input, agent, runtimeContext, emitter);
+                        Object result = method.invoke(toolObject, args);
+                        return converter.convert(result, method.getGenericReturnType());
+                    });
         }
     }
 

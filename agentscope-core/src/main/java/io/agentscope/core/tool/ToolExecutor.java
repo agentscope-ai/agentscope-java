@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
@@ -159,13 +160,47 @@ class ToolExecutor {
     // ==================== Single Tool Execution ====================
 
     /**
-     * Execute a single tool call with full infrastructure support.
+     * Execute a single tool call without the infrastructure layers (scheduling, timeout, retry,
+     * shutdown guard).
+     *
+     * <p>This is the compatibility entry point used by {@link Toolkit#callTool(ToolCallParam)}: it
+     * keeps the {@link AgentTool#callAsync(ToolCallParam)} contract that failures surface as
+     * {@link ToolResultBlock} error results instead of reactive error signals.
      *
      * @param param Tool call parameters
      * @return Mono containing execution result
      */
     Mono<ToolResultBlock> execute(ToolCallParam param) {
-        return TracerRegistry.get().callTool(this.toolkit, param, () -> executeCore(param));
+        return executeWithTracing(param, false)
+                .onErrorResume(e -> Mono.just(buildToolErrorResult(e)));
+    }
+
+    /**
+     * Execute a single tool call through the raw execution channel, keeping failures as reactive
+     * error signals for the infrastructure layers (scheduling, timeout, retry, shutdown guard) to
+     * act on. Used only by {@link #executeWithInfrastructure}.
+     *
+     * @param param Tool call parameters
+     * @return Mono containing execution result, or signalling an error on failure
+     */
+    private Mono<ToolResultBlock> executeRaw(ToolCallParam param) {
+        return executeWithTracing(param, true);
+    }
+
+    /**
+     * Run the traced core execution for the given tool call.
+     *
+     * @param param Tool call parameters
+     * @param useExecutionPath whether to use the raw execution channel
+     *     ({@link AgentTool#callAsyncForExecution(ToolCallParam)}) that keeps failures as error
+     *     signals, or the compatibility channel ({@link AgentTool#callAsync(ToolCallParam)}) that
+     *     converts failures into error results
+     * @return Mono containing execution result
+     */
+    private Mono<ToolResultBlock> executeWithTracing(
+            ToolCallParam param, boolean useExecutionPath) {
+        return TracerRegistry.get()
+                .callTool(this.toolkit, param, () -> executeCore(param, useExecutionPath));
     }
 
     /**
@@ -181,7 +216,7 @@ class ToolExecutor {
      *   <li>Actual tool invocation</li>
      * </ul>
      */
-    private Mono<ToolResultBlock> executeCore(ToolCallParam param) {
+    private Mono<ToolResultBlock> executeCore(ToolCallParam param, boolean useExecutionPath) {
         ToolUseBlock toolCall = param.getToolUseBlock();
         AgentTool tool = toolRegistry.getTool(toolCall.getName());
 
@@ -263,8 +298,34 @@ class ToolExecutor {
                         .emitter(toolEmitter)
                         .build();
 
-        return tool.callAsync(executionParam)
-                .onErrorResume(
+        // Invoke the tool through the selected channel.
+        //
+        // Compatibility channel (useExecutionPath=false): failures are converted into
+        // ToolResultBlock error results right here, preserving the AgentTool contract for callers
+        // that execute tools directly without infrastructure.
+        //
+        // Execution channel (useExecutionPath=true): failures stay as reactive error signals and
+        // flow through the timeout/retry/shutdown layers applied by executeWithInfrastructure,
+        // which converts them into ToolResultBlock error results only after retries are
+        // exhausted. Mono.defer re-invokes callAsyncForExecution on every subscription so each
+        // retry attempt rebuilds and re-runs the tool call instead of resubscribing to the same
+        // pre-assembled publisher.
+        Mono<ToolResultBlock> invocation;
+        if (useExecutionPath) {
+            invocation =
+                    Mono.defer(() -> tool.callAsyncForExecution(executionParam))
+                            // Unwrap reflection/future wrappers so the retry predicate sees the
+                            // original exception (IOException, transport errors, ...) instead of
+                            // InvocationTargetException or ExecutionException.
+                            .onErrorMap(ExceptionUtils::unwrapExecutionWrapper);
+        } else {
+            invocation = tool.callAsync(executionParam);
+        }
+
+        // ToolSuspendException is business-level suspension, not a failure: both channels convert
+        // it to a suspended result without retrying.
+        Mono<ToolResultBlock> chain =
+                invocation.onErrorResume(
                         ToolSuspendException.class,
                         e -> {
                             // Convert ToolSuspendException to suspended result
@@ -273,21 +334,23 @@ class ToolExecutor {
                                     toolCall.getName(),
                                     e.getReason() != null ? e.getReason() : "no reason");
                             return Mono.just(ToolResultBlock.suspended(toolCall, e));
-                        })
-                .onErrorResume(
-                        e -> {
-                            String errorMsg =
-                                    e.getMessage() != null
-                                            ? e.getMessage()
-                                            : e.getClass().getSimpleName();
-                            return Mono.just(
-                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
-                        })
-                .switchIfEmpty(
-                        Mono.just(
-                                ToolResultBlock.error(
-                                        "Tool execution failed: Tool completed without returning a"
-                                                + " result")));
+                        });
+        if (!useExecutionPath) {
+            chain = chain.onErrorResume(e -> Mono.just(buildToolErrorResult(e)));
+        }
+        return chain.switchIfEmpty(
+                Mono.just(
+                        ToolResultBlock.error(
+                                "Tool execution failed: Tool completed without returning a"
+                                        + " result")));
+    }
+
+    /**
+     * Build the standard {@link ToolResultBlock} error result for a failed tool call.
+     */
+    private ToolResultBlock buildToolErrorResult(Throwable e) {
+        String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        return ToolResultBlock.error("Tool execution failed: " + errorMsg);
     }
 
     // ==================== Batch Tool Execution ====================
@@ -384,8 +447,10 @@ class ToolExecutor {
                         .runtimeContext(agentRuntimeContext)
                         .build();
 
-        // Get core execution
-        Mono<ToolResultBlock> execution = execute(param);
+        // Use the raw execution channel so tool failures remain reactive error signals while
+        // the timeout/retry/shutdown layers below run; this final onErrorResume converts the
+        // error that remains after retries are exhausted into a ToolResultBlock error result.
+        Mono<ToolResultBlock> execution = executeRaw(param);
 
         // Apply infrastructure layers
         execution = applyScheduling(execution);
@@ -424,9 +489,11 @@ class ToolExecutor {
         Duration timeout = config.getTimeout();
         logger.debug("Applied timeout: {} for tool: {}", timeout, toolCall.getName());
 
+        // TimeoutException (rather than a bare RuntimeException) so that
+        // ExecutionConfig.RETRYABLE_ERRORS recognizes tool timeouts as retryable.
         return execution.timeout(
                 timeout,
-                Mono.error(new RuntimeException("Tool execution timeout after " + timeout)));
+                Mono.error(new TimeoutException("Tool execution timeout after " + timeout)));
     }
 
     private Mono<ToolResultBlock> applyRetry(
@@ -450,6 +517,10 @@ class ToolExecutor {
                         .maxBackoff(maxBackoff)
                         .jitter(0.5)
                         .filter(retryOn)
+                        // On exhaustion, propagate the last failure itself instead of Reactor's
+                        // RetryExhaustedException wrapper so the error result surfaces the real
+                        // failure message (e.g. the timeout or the tool exception).
+                        .onRetryExhaustedThrow((spec, signal) -> signal.failure())
                         .doBeforeRetry(
                                 signal ->
                                         logger.warn(

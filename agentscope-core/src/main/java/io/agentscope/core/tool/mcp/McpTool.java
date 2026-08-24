@@ -178,19 +178,7 @@ public class McpTool extends ToolBase {
      */
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        logger.debug("Calling MCP tool '{}' with input: {}", getName(), param.getInput());
-
-        // Merge preset arguments with input arguments
-        Map<String, Object> mergedArgs = mergeArguments(param.getInput());
-
-        // Extract MCP meta from ContextStore by McpMeta type namespace
-        Map<String, Object> metaMap = extractMcpMeta(param);
-
-        return clientWrapper
-                .callTool(getName(), mergedArgs, metaMap)
-                .map(McpContentConverter::convertCallToolResult)
-                .doOnSuccess(
-                        result -> logger.debug("MCP tool '{}' completed successfully", getName()))
+        return callAsyncForExecution(param)
                 .onErrorResume(
                         e -> {
                             logger.error(
@@ -201,6 +189,44 @@ public class McpTool extends ToolBase {
                                             : e.getClass().getSimpleName();
                             return Mono.just(ToolResultBlock.error("MCP tool error: " + errorMsg));
                         });
+    }
+
+    /**
+     * Executes this MCP tool through the framework's execution infrastructure.
+     *
+     * <p>Transport-level failures (connection loss, network interruption, timeout, client
+     * exceptions) stay as reactive error signals so {@link io.agentscope.core.tool.ToolExecutor}
+     * can apply the configured retry policy. Protocol-level business errors (the MCP server
+     * completing the call with {@code isError=true}) remain {@link ToolResultBlock} error results
+     * and are never retried, since replaying a completed non-idempotent call is unsafe.
+     */
+    @Override
+    public Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
+        // Keep the historical contract that invoking with a null param fails fast.
+        Objects.requireNonNull(param, "param must not be null");
+        // Mono.defer re-creates the whole attempt (argument merging, meta extraction and the
+        // remote call) for every subscription, so each retry runs a fresh attempt and synchronous
+        // failures during preparation also surface as reactive errors.
+        return Mono.defer(
+                () -> {
+                    logger.debug(
+                            "Calling MCP tool '{}' with input: {}", getName(), param.getInput());
+
+                    // Merge preset arguments with input arguments
+                    Map<String, Object> mergedArgs = mergeArguments(param.getInput());
+
+                    // Extract MCP meta from ContextStore by McpMeta type namespace
+                    Map<String, Object> metaMap = extractMcpMeta(param);
+
+                    return clientWrapper
+                            .callTool(getName(), mergedArgs, metaMap)
+                            .map(McpContentConverter::convertCallToolResult)
+                            .doOnSuccess(
+                                    result ->
+                                            logger.debug(
+                                                    "MCP tool '{}' completed successfully",
+                                                    getName()));
+                });
     }
 
     /**

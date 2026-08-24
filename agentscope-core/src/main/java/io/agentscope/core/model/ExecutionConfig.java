@@ -159,6 +159,13 @@ public class ExecutionConfig {
      *   <li>Timeout: 5 minutes
      *   <li>Max attempts: 1 (no retry)
      * </ul>
+     *
+     * <p><b>Tool retry semantics:</b> when {@code maxAttempts} is greater than 1, failures that
+     * surface as reactive error signals — such as exceptions thrown by the tool or its transport,
+     * and timeouts — are retried as decided by {@link #getRetryOn()}. Failures that a tool
+     * reports as a completed {@code ToolResultBlock} error result (for example MCP protocol-level
+     * {@code isError=true} responses or deliberately returned business errors) are never retried,
+     * since replaying a completed call may be unsafe for non-idempotent operations.
      */
     public static final ExecutionConfig TOOL_DEFAULTS =
             builder().timeout(Duration.ofMinutes(5)).maxAttempts(1).build();

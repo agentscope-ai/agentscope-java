@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.util;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.IdentityHashMap;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Utility methods for exception handling.
@@ -78,5 +81,30 @@ public final class ExceptionUtils {
             current = current.getCause();
         }
         return false;
+    }
+
+    /**
+     * Unwraps reflective and future execution wrappers to expose the original failure.
+     *
+     * <p>{@code method.invoke} wraps business exceptions in {@link InvocationTargetException},
+     * and failed {@link java.util.concurrent.CompletableFuture}s surface as {@link
+     * ExecutionException} or {@link CompletionException}. This method walks those wrappers (whose
+     * cause chains cannot cycle) so retry predicates such as {@code
+     * ExecutionConfig.RETRYABLE_ERRORS} can inspect the original {@code IOException}, {@code
+     * HttpTransportException} or domain exception.
+     *
+     * @param error the throwable to unwrap (may be {@code null})
+     * @return the innermost non-wrapper throwable, or {@code null} if the input is {@code null}
+     */
+    public static Throwable unwrapExecutionWrapper(Throwable error) {
+        Throwable current = error;
+        while (current != null
+                && (current instanceof InvocationTargetException
+                        || current instanceof ExecutionException
+                        || current instanceof CompletionException)
+                && current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
     }
 }
