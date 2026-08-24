@@ -46,6 +46,8 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -58,6 +60,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -553,6 +557,47 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(summaryTextStart > summaryThinkingEnd);
         assertTrue(summaryTextEnd > summaryTextStart);
         assertTrue(summaryModelEnd > summaryTextEnd);
+    }
+
+    @Test
+    void summaryModelCallExposesEmptyToolsToMiddleware() {
+        AtomicInteger modelCallCount = new AtomicInteger();
+        AtomicReference<List<ToolSchema>> summaryTools = new AtomicReference<>();
+        MiddlewareBase middleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        if (modelCallCount.incrementAndGet() == 2) {
+                            summaryTools.set(List.copyOf(input.tools()));
+                        }
+                        return next.apply(input);
+                    }
+                };
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc", "echo", "x")),
+                                () -> Flux.just(textResponse("summary"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .middlewares(List.of(middleware))
+                        .maxIters(1)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(List.of(), summaryTools.get());
+        AgentResultEvent resultEvent =
+                (AgentResultEvent) events.get(indexOf(events, AgentResultEvent.class));
+        assertEquals("summary", resultEvent.getResult().getTextContent());
     }
 
     private static int indexOf(List<AgentEvent> events, Class<?> type) {

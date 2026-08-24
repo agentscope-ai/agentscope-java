@@ -19,6 +19,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.state.AgentState;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -79,14 +81,7 @@ public class ThreadSessionManager {
      * @return The agent for this thread
      */
     public Agent getOrCreateAgent(String threadId, String agentId, Supplier<Agent> agentFactory) {
-        // Clean up if we're at capacity
-        if (sessions.size() >= maxSessions) {
-            cleanupExpiredSessions();
-            // If still at capacity, remove oldest session
-            if (sessions.size() >= maxSessions) {
-                removeOldestSession();
-            }
-        }
+        ensureCapacity();
 
         // Use compute() for atomic check-and-update to avoid race conditions
         ThreadSession session =
@@ -105,7 +100,11 @@ public class ThreadSessionManager {
                                         threadId,
                                         existing.getAgentId(),
                                         agentId);
-                                return new ThreadSession(agentId, agentFactory.get());
+                                ThreadSession replacement =
+                                        new ThreadSession(agentId, agentFactory.get());
+                                replacement.setName(existing.getName());
+                                replacement.setArchived(existing.isArchived());
+                                return replacement;
                             }
                             // Same agent type, update access time and reuse
                             existing.updateLastAccess();
@@ -113,6 +112,44 @@ public class ThreadSessionManager {
                         });
 
         return session.getAgent();
+    }
+
+    /**
+     * Ensure a session exists for the given threadId, creating one if needed.
+     *
+     * @param threadId The thread identifier
+     * @param agentId The agent type identifier
+     * @param name Display name for the thread (may be null)
+     * @param agentFactory Factory to create new agents if needed
+     * @return The session for this thread
+     */
+    public ThreadSession ensureSession(
+            String threadId, String agentId, String name, Supplier<Agent> agentFactory) {
+        ensureCapacity();
+
+        return sessions.compute(
+                threadId,
+                (k, existing) -> {
+                    if (existing == null) {
+                        ThreadSession created = new ThreadSession(agentId, agentFactory.get());
+                        if (name != null && !name.isBlank()) {
+                            created.setName(name);
+                        }
+                        return created;
+                    }
+                    if (!existing.getAgentId().equals(agentId)) {
+                        ThreadSession replacement = new ThreadSession(agentId, agentFactory.get());
+                        replacement.setName(
+                                name != null && !name.isBlank() ? name : existing.getName());
+                        replacement.setArchived(existing.isArchived());
+                        return replacement;
+                    }
+                    if (name != null && !name.isBlank()) {
+                        existing.setName(name);
+                    }
+                    existing.updateLastAccess();
+                    return existing;
+                });
     }
 
     /**
@@ -128,9 +165,8 @@ public class ThreadSessionManager {
         }
 
         Agent agent = session.getAgent();
-        // Check if the agent's AgentState has any context messages.
         if (agent instanceof ReActAgent reactAgent) {
-            AgentState state = reactAgent.getAgentState();
+            AgentState state = reactAgent.getAgentState(null, threadId);
             return state != null && !state.getContext().isEmpty();
         }
 
@@ -145,6 +181,15 @@ public class ThreadSessionManager {
      */
     public Optional<ThreadSession> getSession(String threadId) {
         return Optional.ofNullable(sessions.get(threadId));
+    }
+
+    /**
+     * Returns an unmodifiable snapshot of all sessions keyed by threadId.
+     *
+     * @return session snapshot
+     */
+    public Map<String, ThreadSession> getSessions() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(sessions));
     }
 
     /**
@@ -177,6 +222,15 @@ public class ThreadSessionManager {
 
         if (removed > 0) {
             logger.debug("Cleaned up {} expired sessions", removed);
+        }
+    }
+
+    private void ensureCapacity() {
+        if (sessions.size() >= maxSessions) {
+            cleanupExpiredSessions();
+            if (sessions.size() >= maxSessions) {
+                removeOldestSession();
+            }
         }
     }
 
@@ -217,12 +271,17 @@ public class ThreadSessionManager {
 
         private final String agentId;
         private final Agent agent;
+        private final Instant createdAt;
         private Instant lastAccess;
+        private volatile String name;
+        private volatile boolean archived;
 
         ThreadSession(String agentId, Agent agent) {
             this.agentId = agentId;
             this.agent = agent;
-            this.lastAccess = Instant.now();
+            Instant now = Instant.now();
+            this.createdAt = now;
+            this.lastAccess = now;
         }
 
         public String getAgentId() {
@@ -233,11 +292,31 @@ public class ThreadSessionManager {
             return agent;
         }
 
+        public Instant getCreatedAt() {
+            return createdAt;
+        }
+
         public Instant getLastAccess() {
             return lastAccess;
         }
 
-        void updateLastAccess() {
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public boolean isArchived() {
+            return archived;
+        }
+
+        public void setArchived(boolean archived) {
+            this.archived = archived;
+        }
+
+        public void updateLastAccess() {
             this.lastAccess = Instant.now();
         }
     }

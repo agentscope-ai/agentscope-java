@@ -85,7 +85,32 @@ class AguiAdapterConfigAutoConfigurationTest {
                     assertFalse(config.isBaseEventPropertiesEnricherEnabled());
                     assertTrue(config.getEventConverters().isEmpty());
                     assertTrue(config.getEventEnrichers().isEmpty());
+                    assertTrue(interruptOnDisconnect(ctx.getBean(AguiMvcController.class)));
                 });
+    }
+
+    @Test
+    @DisplayName("Should bind interrupt-on-disconnect property for MVC")
+    void testMvcInterruptOnDisconnectProperty() {
+        mvcContextRunner
+                .withPropertyValues("agentscope.agui.interrupt-on-disconnect=false")
+                .run(
+                        ctx ->
+                                assertFalse(
+                                        interruptOnDisconnect(
+                                                ctx.getBean(AguiMvcController.class))));
+    }
+
+    @Test
+    @DisplayName("Should bind interrupt-on-disconnect property for WebFlux")
+    void testWebFluxInterruptOnDisconnectProperty() {
+        webFluxContextRunner
+                .withPropertyValues("agentscope.agui.interrupt-on-disconnect=false")
+                .run(
+                        ctx ->
+                                assertFalse(
+                                        interruptOnDisconnect(
+                                                ctx.getBean(AguiWebFluxHandler.class))));
     }
 
     @Test
@@ -374,6 +399,10 @@ class AguiAdapterConfigAutoConfigurationTest {
             AguiWebFluxHandler handler) {
         return (AguiRuntimeContextResolver)
                 ReflectionTestUtils.getField(handler, "runtimeContextResolver");
+    }
+
+    private static boolean interruptOnDisconnect(Object handler) {
+        return (boolean) ReflectionTestUtils.getField(handler, "interruptOnDisconnect");
     }
 
     private static AguiAgentAdapterFactory mvcAdapterFactory(AguiMvcController controller) {
