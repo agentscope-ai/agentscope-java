@@ -18,8 +18,10 @@ package io.agentscope.extensions.aistio.store;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
@@ -78,6 +80,9 @@ class TaskRepositoryContractTest {
     private String baseUrl;
     private final ConcurrentHashMap<String, StubTask> stubTasks = new ConcurrentHashMap<>();
     private final AtomicBoolean cancelReturnsNotFound = new AtomicBoolean();
+    private final AtomicInteger remoteSubmissions = new AtomicInteger();
+    private final AtomicInteger remoteStatusReads = new AtomicInteger();
+    private final AtomicInteger remoteResultReads = new AtomicInteger();
     private ControlPlaneTaskRepository cpRepoA;
     private ControlPlaneTaskRepository cpRepoB;
 
@@ -88,6 +93,7 @@ class TaskRepositoryContractTest {
 
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/v1/dp/tasks", this::handleTasks);
+        server.createContext("/tasks", this::handleRemoteTasks);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
@@ -234,6 +240,72 @@ class TaskRepositoryContractTest {
         assertEquals(1, cancelActions.get());
         assertTrue(adopted.isCancelled());
         assertEquals(0, callbacks.get(), "cancelled adopted future must not publish FAILED");
+    }
+
+    @Test
+    void adoptedFailure_unwrapsCause_andPublishesFailure() throws Exception {
+        CompletableFuture<String> adopted = new CompletableFuture<>();
+        AtomicInteger callbacks = new AtomicInteger();
+        cpRepoA.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, result) -> {
+                    assertEquals("t-adopted-failure", taskId);
+                    assertNull(result);
+                    callbacks.incrementAndGet();
+                });
+
+        cpRepoA.putTask(
+                RuntimeContext.empty(),
+                "t-adopted-failure",
+                "sub-a",
+                SESSION,
+                new TaskRunSpec.AdoptedTaskRunSpec(adopted));
+        adopted.completeExceptionally(
+                new java.util.concurrent.CompletionException(
+                        new IllegalStateException("adopted boom")));
+
+        awaitStatus(Backend.CONTROL_PLANE, "t-adopted-failure", TaskStatus.FAILED);
+        assertEquals(
+                "adopted boom", stubTasks.get(taskKey(SESSION, "t-adopted-failure")).errorMessage);
+        assertEquals(1, callbacks.get());
+    }
+
+    @Test
+    void remoteTask_submitsAndPersistsSuccessfulResult() throws Exception {
+        cpRepoA.putTask(
+                RuntimeContext.empty(),
+                "t-remote-success",
+                "remote-agent",
+                SESSION,
+                new TaskRunSpec.RemoteTaskRunSpec(
+                        baseUrl, Map.of("X-Remote-Token", "remote-token"), "remote-agent", "work"));
+
+        awaitStatus(Backend.CONTROL_PLANE, "t-remote-success", TaskStatus.COMPLETED);
+        assertEquals("remote result", stubTasks.get(taskKey(SESSION, "t-remote-success")).result);
+        assertEquals(1, remoteSubmissions.get());
+        assertTrue(remoteStatusReads.get() >= 1);
+        assertEquals(1, remoteResultReads.get());
+    }
+
+    @Test
+    void getTask_resumesPersistedRemoteExecutionWithoutResubmitting() throws Exception {
+        TaskRecord persisted =
+                new TaskRecord("t-remote-resume", "remote-agent", AGENT, SESSION, "remote-session");
+        persisted.setStatus(TaskStatus.RUNNING);
+        persisted.setTransportType("agent-protocol");
+        persisted.setRemoteBaseUrl(baseUrl);
+        persisted.setRemoteHeaders(Map.of("X-Remote-Token", "remote-token"));
+        stubUpsert("t-remote-resume", persisted);
+
+        BackgroundTask resumed =
+                cpRepoA.getTask(RuntimeContext.empty(), SESSION, "t-remote-resume");
+
+        assertNotNull(resumed);
+        awaitStatus(Backend.CONTROL_PLANE, "t-remote-resume", TaskStatus.COMPLETED);
+        assertTrue(resumed.waitForCompletion(TimeUnit.SECONDS.toMillis(5)));
+        assertEquals("remote result", resumed.getResult());
+        assertEquals(0, remoteSubmissions.get());
+        assertTrue(remoteStatusReads.get() >= 1);
+        assertEquals(1, remoteResultReads.get());
     }
 
     @Test
@@ -457,6 +529,9 @@ class TaskRepositoryContractTest {
         t.result = record.getResult();
         t.errorMessage = record.getErrorMessage();
         t.cancelRequested = record.isCancelRequested();
+        t.transportType = record.getTransportType();
+        t.remoteBaseUrl = record.getRemoteBaseUrl();
+        t.remoteHeaders = record.getRemoteHeaders();
         t.lastUpdatedAt = Instant.now();
         if (t.createdAt == null) {
             t.createdAt = Instant.now();
@@ -528,6 +603,18 @@ class TaskRepositoryContractTest {
                 t.errorMessage = body.path("errorMessage").asText();
             }
             t.cancelRequested = body.path("cancelRequested").asBoolean(false);
+            if (body.hasNonNull("transportType")) {
+                t.transportType = body.path("transportType").asText();
+            }
+            if (body.hasNonNull("remoteBaseUrl")) {
+                t.remoteBaseUrl = body.path("remoteBaseUrl").asText();
+            }
+            if (body.hasNonNull("remoteHeaders")) {
+                t.remoteHeaders =
+                        MAPPER.convertValue(
+                                body.path("remoteHeaders"),
+                                new TypeReference<Map<String, String>>() {});
+            }
             t.lastUpdatedAt = Instant.now();
             if (t.createdAt == null) {
                 t.createdAt = Instant.now();
@@ -602,6 +689,35 @@ class TaskRepositoryContractTest {
         write(ex, 405, Map.of("error", "method not allowed"));
     }
 
+    private void handleRemoteTasks(HttpExchange ex) throws IOException {
+        if (!"remote-token".equals(ex.getRequestHeaders().getFirst("X-Remote-Token"))) {
+            write(ex, 401, Map.of("error", "unauthorized"));
+            return;
+        }
+        String method = ex.getRequestMethod();
+        String path = ex.getRequestURI().getPath();
+        if ("POST".equals(method) && "/tasks".equals(path)) {
+            JsonNode body = MAPPER.readTree(ex.getRequestBody());
+            assertEquals("t-remote-success", body.path("task_id").asText());
+            assertEquals("remote-agent", body.path("agent_id").asText());
+            assertEquals("work", body.path("input").asText());
+            remoteSubmissions.incrementAndGet();
+            write(ex, 202, Map.of("accepted", true));
+            return;
+        }
+        if ("GET".equals(method) && path.endsWith("/wait")) {
+            remoteResultReads.incrementAndGet();
+            write(ex, 200, Map.of("result", "remote result"));
+            return;
+        }
+        if ("GET".equals(method) && path.startsWith("/tasks/")) {
+            remoteStatusReads.incrementAndGet();
+            write(ex, 200, Map.of("status", "success"));
+            return;
+        }
+        write(ex, 405, Map.of("error", "method not allowed"));
+    }
+
     private void handlePendingDeliveries(HttpExchange ex) throws IOException {
         Map<String, List<String>> q = parseQuery(ex.getRequestURI().getRawQuery());
         String sid = first(q, "parentSessionId");
@@ -665,6 +781,9 @@ class TaskRepositoryContractTest {
         String result;
         String errorMessage;
         boolean cancelRequested;
+        String transportType;
+        String remoteBaseUrl;
+        Map<String, String> remoteHeaders;
         Instant createdAt;
         Instant lastUpdatedAt;
         Instant deliveredAt;
@@ -679,6 +798,9 @@ class TaskRepositoryContractTest {
             m.put("result", result);
             m.put("errorMessage", errorMessage);
             m.put("cancelRequested", cancelRequested);
+            m.put("transportType", transportType);
+            m.put("remoteBaseUrl", remoteBaseUrl);
+            m.put("remoteHeaders", remoteHeaders);
             if (createdAt != null) {
                 m.put("createdAt", createdAt.toString());
             }
