@@ -57,6 +57,7 @@ class JsonSessionDefaultLocationTest {
     @TempDir Path workspace;
 
     private String previousStateHome;
+    private HarnessAgent agent;
 
     @BeforeEach
     void overrideStateHome() {
@@ -66,10 +67,16 @@ class JsonSessionDefaultLocationTest {
 
     @AfterEach
     void restoreStateHome() {
-        if (previousStateHome != null) {
-            System.setProperty("agentscope.state.home", previousStateHome);
-        } else {
-            System.clearProperty("agentscope.state.home");
+        try {
+            if (agent != null) {
+                agent.close();
+            }
+        } finally {
+            if (previousStateHome != null) {
+                System.setProperty("agentscope.state.home", previousStateHome);
+            } else {
+                System.clearProperty("agentscope.state.home");
+            }
         }
     }
 
@@ -79,7 +86,7 @@ class JsonSessionDefaultLocationTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "assistant-" + UUID.randomUUID();
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name(agentName)
                         .model(stubModel("done"))
@@ -127,7 +134,7 @@ class JsonSessionDefaultLocationTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "shared-" + UUID.randomUUID();
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name(agentName)
                         .model(stubModel("done"))
@@ -166,7 +173,7 @@ class JsonSessionDefaultLocationTest {
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "wipe-" + UUID.randomUUID();
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name(agentName)
                         .model(stubModel("done"))
