@@ -83,6 +83,7 @@ class AguiMvcControllerTest {
             assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
 
             invokeError(emitter);
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
 
             fixture.processor.process(input("run-2"), null, null).events().collectList().block();
 
@@ -127,6 +128,7 @@ class AguiMvcControllerTest {
 
             Object timeoutCallback = ReflectionTestUtils.getField(emitter, "timeoutCallback");
             ReflectionTestUtils.invokeMethod(timeoutCallback, "run");
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
 
             fixture.processor.process(input("run-2"), null, null).events().collectList().block();
 
