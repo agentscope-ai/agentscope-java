@@ -39,6 +39,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -85,13 +86,7 @@ class AguiMvcControllerTest {
 
             invokeError(emitter);
 
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
-
-            fixture.processor
-                    .process(AguiRuntimeContextRequest.builder().input(input("run-2")).build())
-                    .events()
-                    .collectList()
-                    .block();
+            awaitSecondRunAccepted(fixture);
 
             assertEquals(2, fixture.runCount.get());
             verify(fixture.agent).interrupt(any(RuntimeContext.class));
@@ -138,13 +133,7 @@ class AguiMvcControllerTest {
             Object timeoutCallback = ReflectionTestUtils.getField(emitter, "timeoutCallback");
             ReflectionTestUtils.invokeMethod(timeoutCallback, "run");
 
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
-
-            fixture.processor
-                    .process(AguiRuntimeContextRequest.builder().input(input("run-2")).build())
-                    .events()
-                    .collectList()
-                    .block();
+            awaitSecondRunAccepted(fixture);
 
             assertEquals(2, fixture.runCount.get());
             verify(fixture.agent).interrupt(any(RuntimeContext.class));
@@ -197,6 +186,27 @@ class AguiMvcControllerTest {
         Object errorCallback = ReflectionTestUtils.getField(emitter, "errorCallback");
         ReflectionTestUtils.invokeMethod(
                 errorCallback, "accept", new IOException("client disconnected"));
+    }
+
+    /**
+     * Submits run-2 until it is accepted by the processor.
+     *
+     * <p>On disconnect the controller cancels run-1's subscription. Reactor's {@code doFinally}
+     * fires inner callbacks before outer ones on cancel, so the adapter's own teardown (which
+     * counts down {@code firstRunTerminated}) completes <em>before</em> {@code
+     * AguiResumeCoordinator.finishRun} releases the thread. Retrying run-2 therefore waits
+     * deterministically for the thread to actually become free instead of racing it.
+     */
+    private static void awaitSecondRunAccepted(ControllerFixture fixture) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (fixture.runCount.get() < 2 && System.nanoTime() < deadline) {
+            fixture.processor
+                    .process(AguiRuntimeContextRequest.builder().input(input("run-2")).build())
+                    .events()
+                    .collectList()
+                    .block();
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
+        }
     }
 
     private static RunAgentInput input(String runId) {
