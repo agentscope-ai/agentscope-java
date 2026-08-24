@@ -39,6 +39,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -70,6 +71,7 @@ class HarnessAgentSubagentStreamTest {
     @TempDir Path stateHome;
 
     private String previousStateHome;
+    private final List<HarnessAgent> agents = new ArrayList<>();
 
     @BeforeEach
     void overrideStateHome() {
@@ -79,6 +81,8 @@ class HarnessAgentSubagentStreamTest {
 
     @AfterEach
     void restoreStateHome() {
+        agents.forEach(HarnessAgent::close);
+        agents.clear();
         if (previousStateHome != null) {
             System.setProperty("agentscope.state.home", previousStateHome);
         } else {
@@ -183,6 +187,7 @@ class HarnessAgentSubagentStreamTest {
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
+        agents.add(parent);
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-stream").build();
 
@@ -280,6 +285,7 @@ class HarnessAgentSubagentStreamTest {
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
+        agents.add(parent);
 
         List<Event> events =
                 parent.stream(
@@ -364,6 +370,7 @@ class HarnessAgentSubagentStreamTest {
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
+        agents.add(parent);
 
         Msg reply =
                 parent.call(
@@ -457,6 +464,7 @@ class HarnessAgentSubagentStreamTest {
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
+        agents.add(agent);
 
         // After the HarnessAgent → ReActAgent unification the inner agent is exposed via
         // getDelegate(); toolkit is reachable through the public getToolkit() accessor.
