@@ -292,15 +292,35 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (messageBus == null) {
             return this;
         }
+        wireTaskRepositoryMessageBus(taskRepository, messageBus, agentId);
+        return this;
+    }
+
+    /**
+     * Registers the shared background-task completion callback used by static and dynamic
+     * subagent middleware.
+     *
+     * <p>The progress suffix is a best-effort snapshot of all tracked tasks in the callback's
+     * session. If the repository cannot provide that snapshot, the completion notification is
+     * still delivered without progress information.
+     */
+    static void wireTaskRepositoryMessageBus(
+            TaskRepository taskRepository,
+            io.agentscope.harness.agent.bus.MessageBus messageBus,
+            String agentId) {
         taskRepository.setCompletionCallback(
                 (rc, taskId, subAgentId, sessionId, result) -> {
                     String userId = rc != null ? rc.getUserId() : null;
+                    String progress = buildTaskProgress(taskRepository, rc, sessionId);
                     String hintContent =
                             String.format(
                                     "<system-notification>Background subagent task '%s'"
-                                            + " (agent=%s) has completed.\n\nResult:\n\n%s"
+                                            + " (agent=%s) has completed%s.\n\nResult:\n\n%s"
                                             + "</system-notification>",
-                                    taskId, subAgentId, result != null ? result : "(no output)");
+                                    taskId,
+                                    subAgentId,
+                                    progress,
+                                    result != null ? result : "(no output)");
                     String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
                     java.util.Map<String, Object> hintPayload =
                             java.util.Map.of(
@@ -332,7 +352,25 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                             taskId,
                             sessionId);
                 });
-        return this;
+    }
+
+    private static String buildTaskProgress(
+            TaskRepository taskRepository, RuntimeContext rc, String sessionId) {
+        try {
+            Collection<BackgroundTask> tasks = taskRepository.listTasks(rc, sessionId, null);
+            if (tasks == null || tasks.isEmpty()) {
+                return "";
+            }
+            long terminalCount =
+                    tasks.stream().filter(task -> task.getTaskStatus().isTerminal()).count();
+            return String.format(" [%d/%d tasks terminal]", terminalCount, tasks.size());
+        } catch (Exception e) {
+            log.warn(
+                    "Failed to compute background task progress for session {}: {}",
+                    sessionId,
+                    e.getMessage());
+            return "";
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -142,6 +143,21 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
 
     public TaskRepository getTaskRepository() {
         return taskRepository;
+    }
+
+    /**
+     * Wires a {@link MessageBus} so background task completions are pushed to the session inbox
+     * and enqueue a wakeup signal.
+     *
+     * @param messageBus the application message bus
+     * @param agentId the parent agent id used for wakeup routing
+     * @return this middleware for chaining
+     */
+    public DynamicSubagentsMiddleware wireMessageBus(MessageBus messageBus, String agentId) {
+        if (messageBus != null) {
+            SubagentsMiddleware.wireTaskRepositoryMessageBus(taskRepository, messageBus, agentId);
+        }
+        return this;
     }
 
     @Override
