@@ -18,6 +18,9 @@ package io.agentscope.harness.agent.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -125,6 +128,7 @@ class AgentSpawnToolCancelEndEventTest {
                 "parent cancel must still close the child's event stream — an AgentStartEvent"
                         + " without a matching AgentEndEvent leaves consumers rendering the"
                         + " subagent as running forever (doOnTerminate does not fire on cancel)");
+        verify(delegate).interrupt(eq("parent-user"), startsWith("sub-"));
     }
 
     @Test

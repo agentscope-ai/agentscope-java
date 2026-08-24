@@ -923,7 +923,8 @@ public class AgentSpawnTool {
                                                                 // already-cancelled sink.
                                                                 if (signal == SignalType.CANCEL) {
                                                                     interruptAgent(
-                                                                            agent, runtimeContext);
+                                                                            agent, userId,
+                                                                            sessionId);
                                                                 }
                                                             });
 
@@ -977,18 +978,28 @@ public class AgentSpawnTool {
      * cancelled. Mirrors the fix in core {@code SubAgentTool.interruptAgent} (commit
      * {@code 029cc55e}, issue #1783) — see issue #2062 for the harness-side equivalent.
      *
-     * <p>Only {@link ReActAgent} exposes {@code interrupt(RuntimeContext)}. Other {@link Agent}
-     * implementations are no-ops here; their inner execution will still be disposed by the caller's
-     * {@code sink.onCancel(innerSub::dispose)}, which is enough for non-looping agents.
+     * <p>The child runs under its own {@code (userId, sessionId)} slot, not the parent's session
+     * carried by the tool-call {@link RuntimeContext}. Targeting that exact child slot is important:
+     * a parent agent and its children may share the same {@link ReActAgent} engine while their calls
+     * remain isolated by session. {@link HarnessAgent} is unwrapped so its delegate receives the
+     * same session-scoped interrupt. Other {@link Agent} implementations fall back to their generic
+     * interrupt contract.
      */
-    private void interruptAgent(Agent agent, RuntimeContext ctx) {
-        if (agent instanceof ReActAgent ra) {
-            ra.interrupt(ctx);
+    private void interruptAgent(Agent agent, String userId, String sessionId) {
+        ReActAgent react =
+                agent instanceof ReActAgent ra
+                        ? ra
+                        : agent instanceof HarnessAgent harness ? harness.getDelegate() : null;
+        if (react != null) {
+            react.interrupt(userId, sessionId);
             log.warn(
-                    "Sub-agent '{}' (id={}) was interrupted because its parent tool call"
-                            + " subscription was cancelled.",
-                    ra.getName(),
-                    ra.getAgentId());
+                    "Sub-agent '{}' (id={}, session={}) was interrupted because its parent tool"
+                            + " call subscription was cancelled.",
+                    react.getName(),
+                    react.getAgentId(),
+                    sessionId);
+        } else {
+            agent.interrupt();
         }
     }
 
@@ -1031,7 +1042,11 @@ public class AgentSpawnTool {
                     taskId,
                     agentId,
                     parentSessionId,
-                    new TaskRunSpec.AdoptedTaskRunSpec(textFuture));
+                    // The adopted future observes the already-running inner subscription; it does
+                    // not own the executor thread that started it. Preserve that exact subscription
+                    // as the task-specific cancellation handle so task_cancel cannot orphan the
+                    // promoted child or interrupt an unrelated run sharing the same child session.
+                    new TaskRunSpec.AdoptedTaskRunSpec(textFuture, innerSub::dispose));
             log.info(
                     "agent_spawn sync timeout after {}ms, promoted to async: agentId={}, taskId={}",
                     timeoutMs,

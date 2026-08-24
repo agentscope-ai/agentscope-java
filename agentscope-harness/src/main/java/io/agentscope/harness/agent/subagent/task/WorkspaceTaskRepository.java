@@ -30,10 +30,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -285,16 +287,24 @@ public class WorkspaceTaskRepository implements TaskRepository {
         persistRecord(capturedRc, sessionId, record);
 
         String localKey = localKey(sessionId, taskId);
-        CompletableFuture<String> future;
 
         if (spec instanceof TaskRunSpec.AdoptedTaskRunSpec adopted) {
             // The future is already running (promoted from a timed-out sync execution).
             // Skip executor submission; just wire up status-tracking callbacks.
-            future = adopted.future();
+            CompletableFuture<String> future = adopted.future();
+            BackgroundTask bgTask =
+                    new BackgroundTask(taskId, subAgentId, future, adopted.cancelAction());
+            registerLocalTask(localKey, sessionId, capturedRc, bgTask);
             updateStatus(capturedRc, sessionId, taskId, TaskStatus.RUNNING, null, null);
             final String sid = sessionId;
             future.whenComplete(
                     (result, err) -> {
+                        if (bgTask.isCancellationRequested()
+                                || isCancellation(err)
+                                || cancellationRequested(capturedRc, sid, taskId)) {
+                            markCancelled(capturedRc, sid, taskId);
+                            return;
+                        }
                         if (err != null) {
                             Throwable cause =
                                     err instanceof java.util.concurrent.CompletionException
@@ -314,38 +324,72 @@ public class WorkspaceTaskRepository implements TaskRepository {
                             fireCompletionCallback(capturedRc, taskId, subAgentId, sid, result);
                         }
                     });
+            return bgTask;
         } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
-            future =
-                    CompletableFuture.supplyAsync(
-                            () ->
-                                    runLocalSupplier(
-                                            capturedRc,
-                                            sessionId,
-                                            taskId,
-                                            subAgentId,
-                                            local.execution()),
-                            executor);
+            CompletableFuture<String> future = new CompletableFuture<>();
+            BackgroundTask bgTask =
+                    new BackgroundTask(taskId, subAgentId, future, local.cancelAction());
+            // Register before submission so an immediate cancel can see and claim this task.
+            registerLocalTask(localKey, sessionId, capturedRc, bgTask);
+            Future<?> runner =
+                    executor.submit(
+                            () -> {
+                                if (bgTask.isCancellationRequested()) {
+                                    markCancelled(capturedRc, sessionId, taskId);
+                                    return;
+                                }
+                                try {
+                                    future.complete(
+                                            runLocalSupplier(
+                                                    capturedRc,
+                                                    sessionId,
+                                                    taskId,
+                                                    subAgentId,
+                                                    local.execution(),
+                                                    bgTask));
+                                } catch (Throwable error) {
+                                    future.completeExceptionally(error);
+                                }
+                            });
+            bgTask.attachExecutionFuture(runner);
+            return bgTask;
         } else if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
-            future =
-                    CompletableFuture.supplyAsync(
-                            () ->
-                                    runRemoteTask(
-                                            capturedRc,
-                                            sessionId,
-                                            taskId,
-                                            subAgentId,
-                                            remote,
-                                            true),
-                            executor);
+            CompletableFuture<String> future = new CompletableFuture<>();
+            BackgroundTask bgTask = new BackgroundTask(taskId, subAgentId, future);
+            registerLocalTask(localKey, sessionId, capturedRc, bgTask);
+            Future<?> runner =
+                    executor.submit(
+                            () -> {
+                                if (bgTask.isCancellationRequested()) {
+                                    markCancelled(capturedRc, sessionId, taskId);
+                                    return;
+                                }
+                                try {
+                                    future.complete(
+                                            runRemoteTask(
+                                                    capturedRc,
+                                                    sessionId,
+                                                    taskId,
+                                                    subAgentId,
+                                                    remote,
+                                                    true,
+                                                    bgTask));
+                                } catch (Throwable error) {
+                                    future.completeExceptionally(error);
+                                }
+                            });
+            bgTask.attachExecutionFuture(runner);
+            return bgTask;
         } else {
             throw new IllegalArgumentException("Unsupported TaskRunSpec: " + spec.getClass());
         }
+    }
 
-        BackgroundTask bgTask = new BackgroundTask(taskId, subAgentId, future);
-        localTasks.put(localKey, bgTask);
-        localTaskSessionIds.put(localKey, sessionId != null ? sessionId : "");
-        localTaskContexts.put(localKey, capturedRc);
-        return bgTask;
+    private void registerLocalTask(
+            String key, String sessionId, RuntimeContext rc, BackgroundTask task) {
+        localTasks.put(key, task);
+        localTaskSessionIds.put(key, sessionId != null ? sessionId : "");
+        localTaskContexts.put(key, rc);
     }
 
     private String runLocalSupplier(
@@ -353,10 +397,12 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String sessionId,
             String taskId,
             String subAgentId,
-            Supplier<String> taskExecution) {
+            Supplier<String> taskExecution,
+            BackgroundTask task) {
         Optional<TaskRecord> latest =
                 workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
-        if (latest.isPresent() && latest.get().isCancelRequested()) {
+        if ((task != null && task.isCancellationRequested())
+                || (latest.isPresent() && latest.get().isCancelRequested())) {
             markCancelled(rc, sessionId, taskId);
             return null;
         }
@@ -366,7 +412,8 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String result = taskExecution.get();
             Optional<TaskRecord> afterRun =
                     workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
-            if (afterRun.isPresent() && afterRun.get().isCancelRequested()) {
+            if ((task != null && task.isCancellationRequested())
+                    || (afterRun.isPresent() && afterRun.get().isCancelRequested())) {
                 markCancelled(rc, sessionId, taskId);
                 return null;
             }
@@ -374,6 +421,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
             fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
             return result;
         } catch (Exception e) {
+            if ((task != null && task.isCancellationRequested())
+                    || cancellationRequested(rc, sessionId, taskId)) {
+                markCancelled(rc, sessionId, taskId);
+                return null;
+            }
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
             fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
@@ -387,12 +439,14 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String taskId,
             String subAgentId,
             TaskRunSpec.RemoteTaskRunSpec remote,
-            boolean submitRemote) {
+            boolean submitRemote,
+            BackgroundTask task) {
         RemoteTarget target = new RemoteTarget(remote.baseUrl(), remote.headers());
         try {
             Optional<TaskRecord> latest =
                     workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
-            if (latest.isPresent() && latest.get().isCancelRequested()) {
+            if ((task != null && task.isCancellationRequested())
+                    || (latest.isPresent() && latest.get().isCancelRequested())) {
                 markCancelled(rc, sessionId, taskId);
                 return null;
             }
@@ -402,12 +456,17 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 transport.submit(target, taskId, subAgentId, remote.input(), context);
                 updateStatus(rc, sessionId, taskId, TaskStatus.RUNNING, null, null);
             }
-            String result = pollRemoteUntilDone(rc, sessionId, taskId, target);
+            String result = pollRemoteUntilDone(rc, sessionId, taskId, target, task);
             if (result != null) {
                 fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
             }
             return result;
         } catch (Exception e) {
+            if ((task != null && task.isCancellationRequested())
+                    || cancellationRequested(rc, sessionId, taskId)) {
+                markCancelled(rc, sessionId, taskId);
+                return null;
+            }
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
             fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
@@ -416,14 +475,19 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     private String pollRemoteUntilDone(
-            RuntimeContext rc, String sessionId, String taskId, RemoteTarget target)
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            RemoteTarget target,
+            BackgroundTask task)
             throws Exception {
         int attempt = 0;
         boolean wasAwaitingConfirm = false;
         while (!Thread.currentThread().isInterrupted()) {
             Optional<TaskRecord> wr =
                     workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
-            if (wr.isPresent() && wr.get().isCancelRequested()) {
+            if ((task != null && task.isCancellationRequested())
+                    || (wr.isPresent() && wr.get().isCancelRequested())) {
                 try {
                     transport.cancel(target, taskId);
                 } catch (Exception ex) {
@@ -553,19 +617,24 @@ public class WorkspaceTaskRepository implements TaskRepository {
     @Override
     public boolean cancelTask(RuntimeContext rc, String sessionId, String taskId) {
         RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
-        boolean found = false;
-
         BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
-        if (local != null) {
-            local.cancel(true);
-            found = true;
-        }
 
-        // Always write cancelRequested flag to workspace for cross-node coordination
+        // Persist first: the supplier may return immediately after its cooperative cancel action,
+        // and must observe CANCELLED before it can publish completion.
         Optional<TaskRecord> existing =
                 workspaceManager.readTaskRecord(effRc, parentAgentId, sessionId, taskId);
         if (existing.isPresent()) {
             TaskRecord snapshot = existing.get();
+            if (snapshot.getStatus() != null && snapshot.getStatus().isTerminal()) {
+                if (local != null && snapshot.getStatus() == TaskStatus.CANCELLED) {
+                    local.cancel(true);
+                }
+                if (snapshot.getStatus() == TaskStatus.CANCELLED && !snapshot.isDelivered()) {
+                    snapshot.setDeliveredAt(Instant.now());
+                    persistRecord(effRc, sessionId, snapshot);
+                }
+                return true;
+            }
             boolean agentProtocol =
                     snapshot.isAgentProtocolTransport() && snapshot.getRemoteBaseUrl() != null;
 
@@ -574,7 +643,15 @@ public class WorkspaceTaskRepository implements TaskRepository {
             if (!record.getStatus().isTerminal()) {
                 record.setStatus(TaskStatus.CANCELLED);
             }
+            // Explicit task_cancel already returns a result to its caller. Mark the cancellation
+            // delivered in the same durable write so it cannot later create an inbox reminder or
+            // wakeup turn.
+            record.setDeliveredAt(Instant.now());
             persistRecord(effRc, sessionId, record);
+
+            if (local != null) {
+                local.cancel(true);
+            }
 
             if (agentProtocol) {
                 try {
@@ -589,7 +666,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
             return true;
         }
 
-        return found;
+        if (local != null) {
+            local.cancel(true);
+            return true;
+        }
+        return false;
     }
 
     // ---- Phase B-3 push delivery -----------------------------------------------------------
@@ -697,7 +778,15 @@ public class WorkspaceTaskRepository implements TaskRepository {
                             rc = RuntimeContext.empty();
                         }
                         try {
-                            updateStatus(rc, sid, task.getTaskId(), TaskStatus.RUNNING, null, null);
+                            Optional<TaskRecord> record =
+                                    workspaceManager.readTaskRecord(
+                                            rc, parentAgentId, sid, task.getTaskId());
+                            if (record.map(TaskRecord::isCancelRequested).orElse(false)) {
+                                task.cancel(true);
+                            } else {
+                                updateStatus(
+                                        rc, sid, task.getTaskId(), TaskStatus.RUNNING, null, null);
+                            }
                         } catch (Exception e) {
                             log.debug(
                                     "Heartbeat update failed for task {}: {}",
@@ -879,6 +968,24 @@ public class WorkspaceTaskRepository implements TaskRepository {
         updateStatus(rc, sessionId, taskId, TaskStatus.CANCELLED, null, null);
     }
 
+    private boolean cancellationRequested(RuntimeContext rc, String sessionId, String taskId) {
+        return workspaceManager
+                .readTaskRecord(rc, parentAgentId, sessionId, taskId)
+                .map(TaskRecord::isCancelRequested)
+                .orElse(false);
+    }
+
+    private static boolean isCancellation(Throwable error) {
+        if (error == null) {
+            return false;
+        }
+        Throwable cause =
+                error instanceof java.util.concurrent.CompletionException
+                        ? error.getCause()
+                        : error;
+        return cause instanceof CancellationException;
+    }
+
     /**
      * Creates a synthetic {@link BackgroundTask} from a persisted {@link TaskRecord}. The future
      * is already-completed (or failed/cancelled) to reflect the stored terminal status.
@@ -934,7 +1041,8 @@ public class WorkspaceTaskRepository implements TaskRepository {
                                                                                 record
                                                                                         .getSubAgentId(),
                                                                                 ""),
-                                                                        false),
+                                                                        false,
+                                                                        null),
                                                         executor);
                                         return new BackgroundTask(
                                                 record.getTaskId(), record.getSubAgentId(), f);

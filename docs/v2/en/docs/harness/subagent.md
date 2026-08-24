@@ -386,7 +386,10 @@ Background task state is written by default to `workspace/agents/<parentAgentId>
 
 - In shared-store mode (multi-replica) any node can read task state;
 - Task execution **pins to the creating node**, but any node can read the result and push it back to the parent;
-- Cancel from any node via `task_cancel` — the executing node polls the cancel flag and aborts.
+- `task_cancel` on the executing node cancels the exact local task immediately. A cancellation
+  issued from another node is persisted in shared storage and picked up by the executing node's
+  task heartbeat as a fallback (currently every 30 seconds), so cross-node cancellation may take up
+  to roughly one heartbeat interval to reach the running task.
 
 ## Delegating during Plan Mode
 

@@ -45,6 +45,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -188,65 +189,136 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
         persistRecord(capturedRc, sessionId, record);
 
         String localKey = localKey(sessionId, taskId);
-        CompletableFuture<String> future;
 
         if (spec instanceof TaskRunSpec.AdoptedTaskRunSpec adopted) {
-            future = adopted.future();
+            CompletableFuture<String> future = adopted.future();
+            BackgroundTask bgTask =
+                    registerLocalTask(
+                            localKey,
+                            sessionId,
+                            capturedRc,
+                            new BackgroundTask(taskId, subAgentId, future, adopted.cancelAction()));
             updateStatus(capturedRc, sessionId, taskId, TaskStatus.RUNNING, null, null);
             final String sid = sessionId;
             future.whenComplete(
                     (result, err) -> {
-                        if (err != null) {
-                            Throwable cause =
-                                    err instanceof java.util.concurrent.CompletionException
-                                            ? err.getCause()
-                                            : err;
-                            String errMsg =
-                                    cause != null && cause.getMessage() != null
-                                            ? cause.getMessage()
-                                            : (cause != null
-                                                    ? cause.getClass().getSimpleName()
-                                                    : err.getClass().getSimpleName());
-                            updateStatus(capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
-                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, null);
-                        } else {
-                            updateStatus(
-                                    capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
-                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, result);
+                        try {
+                            if (isCancellationRequested(bgTask, capturedRc, sid, taskId)) {
+                                markCancelled(capturedRc, sid, taskId);
+                                return;
+                            }
+                            if (err != null) {
+                                Throwable cause =
+                                        err instanceof java.util.concurrent.CompletionException
+                                                ? err.getCause()
+                                                : err;
+                                String errMsg =
+                                        cause != null && cause.getMessage() != null
+                                                ? cause.getMessage()
+                                                : (cause != null
+                                                        ? cause.getClass().getSimpleName()
+                                                        : err.getClass().getSimpleName());
+                                updateStatus(
+                                        capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
+                                if (!isCancellationRequested(bgTask, capturedRc, sid, taskId)) {
+                                    fireCompletionCallback(
+                                            capturedRc, taskId, subAgentId, sid, null);
+                                }
+                            } else {
+                                updateStatus(
+                                        capturedRc,
+                                        sid,
+                                        taskId,
+                                        TaskStatus.COMPLETED,
+                                        result,
+                                        null);
+                                if (!isCancellationRequested(bgTask, capturedRc, sid, taskId)) {
+                                    fireCompletionCallback(
+                                            capturedRc, taskId, subAgentId, sid, result);
+                                }
+                            }
+                        } finally {
+                            releaseLocalTask(localKey, bgTask);
                         }
                     });
+            return bgTask;
         } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
-            future =
-                    CompletableFuture.supplyAsync(
-                            () ->
-                                    runLocalSupplier(
-                                            capturedRc,
-                                            sessionId,
-                                            taskId,
-                                            subAgentId,
-                                            local.execution()),
-                            executor);
+            CompletableFuture<String> future = new CompletableFuture<>();
+            BackgroundTask bgTask =
+                    registerLocalTask(
+                            localKey,
+                            sessionId,
+                            capturedRc,
+                            new BackgroundTask(taskId, subAgentId, future, local.cancelAction()));
+            Future<?> runner =
+                    executor.submit(
+                            () -> {
+                                try {
+                                    String result =
+                                            runLocalSupplier(
+                                                    capturedRc,
+                                                    sessionId,
+                                                    taskId,
+                                                    subAgentId,
+                                                    local.execution(),
+                                                    bgTask);
+                                    future.complete(result);
+                                } catch (Throwable e) {
+                                    future.completeExceptionally(e);
+                                } finally {
+                                    releaseLocalTask(localKey, bgTask);
+                                }
+                            });
+            bgTask.attachExecutionFuture(runner);
+            return bgTask;
         } else if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
-            future =
-                    CompletableFuture.supplyAsync(
-                            () ->
-                                    runRemoteTask(
-                                            capturedRc,
-                                            sessionId,
-                                            taskId,
-                                            subAgentId,
-                                            remote,
-                                            true),
-                            executor);
+            CompletableFuture<String> future = new CompletableFuture<>();
+            BackgroundTask bgTask =
+                    registerLocalTask(
+                            localKey,
+                            sessionId,
+                            capturedRc,
+                            new BackgroundTask(taskId, subAgentId, future));
+            Future<?> runner =
+                    executor.submit(
+                            () -> {
+                                try {
+                                    String result =
+                                            runRemoteTask(
+                                                    capturedRc,
+                                                    sessionId,
+                                                    taskId,
+                                                    subAgentId,
+                                                    remote,
+                                                    true,
+                                                    bgTask);
+                                    future.complete(result);
+                                } catch (Throwable e) {
+                                    future.completeExceptionally(e);
+                                } finally {
+                                    releaseLocalTask(localKey, bgTask);
+                                }
+                            });
+            bgTask.attachExecutionFuture(runner);
+            return bgTask;
         } else {
             throw new IllegalArgumentException("Unsupported TaskRunSpec: " + spec.getClass());
         }
+    }
 
-        BackgroundTask bgTask = new BackgroundTask(taskId, subAgentId, future);
-        localTasks.put(localKey, bgTask);
+    private BackgroundTask registerLocalTask(
+            String localKey, String sessionId, RuntimeContext capturedRc, BackgroundTask task) {
+        localTasks.put(localKey, task);
         localTaskSessionIds.put(localKey, sessionId != null ? sessionId : "");
         localTaskContexts.put(localKey, capturedRc);
-        return bgTask;
+        return task;
+    }
+
+    private void releaseLocalTask(String localKey, BackgroundTask task) {
+        if (localTasks.remove(localKey, task)) {
+            localTaskSessionIds.remove(localKey);
+            localTaskContexts.remove(localKey);
+        }
     }
 
     @Override
@@ -285,13 +357,11 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
     @Override
     public boolean cancelTask(RuntimeContext rc, String sessionId, String taskId) {
         RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
-        boolean found = false;
-
-        BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
-        if (local != null) {
-            local.cancel(true);
-            found = true;
-        }
+        String key = localKey(sessionId, taskId);
+        BackgroundTask local = localTasks.get(key);
+        boolean found = local != null;
+        TaskRecord persistedSnapshot = null;
+        boolean suppressCancellationDelivery = false;
 
         Optional<TaskRecord> existing = readRecord(effRc, sessionId, taskId);
         if (existing.isPresent()) {
@@ -300,24 +370,52 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
                 body.put("parentSessionId", sessionId);
                 ControlPlaneHttpClient.Response resp =
                         http.send("POST", "/api/v1/dp/tasks/" + encPath(taskId) + "/cancel", body);
-                if (resp.status() == 404) {
-                    return found;
+                if (resp.status() != 404) {
+                    requireOk(resp, "cancel");
+                } else {
+                    log.debug(
+                            "Control-plane task {} disappeared while cancellation was being"
+                                    + " persisted",
+                            taskId);
                 }
-                requireOk(resp, "cancel");
             } catch (IOException | InterruptedException e) {
                 rethrow(e);
             }
+            persistedSnapshot = existing.get();
+            suppressCancellationDelivery =
+                    persistedSnapshot.getStatus() == TaskStatus.CANCELLED
+                            || (persistedSnapshot.getStatus() != null
+                                    && !persistedSnapshot.getStatus().isTerminal());
+            found = true;
+        }
 
-            TaskRecord snapshot = existing.get();
-            if (snapshot.isAgentProtocolTransport() && snapshot.getRemoteBaseUrl() != null) {
-                try {
-                    protocolClient.cancelTask(
-                            snapshot.getRemoteBaseUrl(), snapshot.getRemoteHeaders(), taskId);
-                } catch (Exception e) {
-                    log.warn("Remote cancel failed for task {}: {}", taskId, e.getMessage());
-                }
+        if (suppressCancellationDelivery) {
+            // task_cancel itself is the caller-visible acknowledgement. Suppress a later synthetic
+            // completion reminder/wakeup for this explicitly cancelled task.
+            markDelivered(effRc, sessionId, taskId);
+        }
+
+        // Persist cancellation in the control plane before signalling the local execution. This
+        // ensures any completion racing with cancel observes the authoritative CANCELLED state and
+        // cannot publish a COMPLETED/FAILED callback first.
+        if (local != null) {
+            local.cancel(true);
+            releaseLocalTask(key, local);
+        }
+
+        // Remote cancellation is best-effort and deliberately follows the exact local handle so a
+        // slow transport cannot delay stopping the in-process execution.
+        if (persistedSnapshot != null
+                && persistedSnapshot.isAgentProtocolTransport()
+                && persistedSnapshot.getRemoteBaseUrl() != null) {
+            try {
+                protocolClient.cancelTask(
+                        persistedSnapshot.getRemoteBaseUrl(),
+                        persistedSnapshot.getRemoteHeaders(),
+                        taskId);
+            } catch (Exception e) {
+                log.warn("Remote cancel failed for task {}: {}", taskId, e.getMessage());
             }
-            return true;
         }
 
         return found;
@@ -426,6 +524,29 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
                         if (sid == null) {
                             return;
                         }
+                        RuntimeContext rc =
+                                localTaskContexts.getOrDefault(key, RuntimeContext.empty());
+                        Optional<TaskRecord> record;
+                        try {
+                            record = readRecord(rc, sid, task.getTaskId());
+                        } catch (RuntimeException e) {
+                            log.debug(
+                                    "Failed to inspect task {} for cancellation during heartbeat:"
+                                            + " {}",
+                                    task.getTaskId(),
+                                    e.getMessage());
+                            record = Optional.empty();
+                        }
+                        if (record.isPresent()
+                                && (record.get().isCancelRequested()
+                                        || record.get().getStatus() == TaskStatus.CANCELLED)) {
+                            // Cancellation may have been requested through another repository/node.
+                            // Trigger the exact local execution handle instead of merely observing
+                            // the durable flag at the supplier boundary.
+                            task.cancel(true);
+                            releaseLocalTask(key, task);
+                            return;
+                        }
                         Map<String, String> ref = new LinkedHashMap<>();
                         ref.put("parentSessionId", sid);
                         ref.put("taskId", task.getTaskId());
@@ -461,9 +582,11 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
             String sessionId,
             String taskId,
             String subAgentId,
-            Supplier<String> taskExecution) {
+            Supplier<String> taskExecution,
+            BackgroundTask task) {
         Optional<TaskRecord> latest = readRecord(rc, sessionId, taskId);
-        if (latest.isPresent() && latest.get().isCancelRequested()) {
+        if (task.isCancellationRequested()
+                || (latest.isPresent() && latest.get().isCancelRequested())) {
             markCancelled(rc, sessionId, taskId);
             return null;
         }
@@ -472,17 +595,26 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
         try {
             String result = taskExecution.get();
             Optional<TaskRecord> afterRun = readRecord(rc, sessionId, taskId);
-            if (afterRun.isPresent() && afterRun.get().isCancelRequested()) {
+            if (task.isCancellationRequested()
+                    || (afterRun.isPresent() && afterRun.get().isCancelRequested())) {
                 markCancelled(rc, sessionId, taskId);
                 return null;
             }
             updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
-            fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
+            if (!isCancellationRequested(task, rc, sessionId, taskId)) {
+                fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
+            }
             return result;
         } catch (Exception e) {
+            if (isCancellationRequested(task, rc, sessionId, taskId)) {
+                markCancelled(rc, sessionId, taskId);
+                return null;
+            }
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
-            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
+            if (!isCancellationRequested(task, rc, sessionId, taskId)) {
+                fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
+            }
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
@@ -493,10 +625,12 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
             String taskId,
             String subAgentId,
             TaskRunSpec.RemoteTaskRunSpec remote,
-            boolean submitRemote) {
+            boolean submitRemote,
+            BackgroundTask task) {
         try {
             Optional<TaskRecord> latest = readRecord(rc, sessionId, taskId);
-            if (latest.isPresent() && latest.get().isCancelRequested()) {
+            if (task.isCancellationRequested()
+                    || (latest.isPresent() && latest.get().isCancelRequested())) {
                 markCancelled(rc, sessionId, taskId);
                 return null;
             }
@@ -505,8 +639,13 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
                         remote.baseUrl(), remote.headers(), taskId, subAgentId, remote.input());
                 updateStatus(rc, sessionId, taskId, TaskStatus.RUNNING, null, null);
             }
-            return pollRemoteUntilDone(rc, sessionId, taskId, remote.baseUrl(), remote.headers());
+            return pollRemoteUntilDone(
+                    rc, sessionId, taskId, remote.baseUrl(), remote.headers(), task);
         } catch (Exception e) {
+            if (isCancellationRequested(task, rc, sessionId, taskId)) {
+                markCancelled(rc, sessionId, taskId);
+                return null;
+            }
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
@@ -518,12 +657,14 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
             String sessionId,
             String taskId,
             String baseUrl,
-            Map<String, String> headers)
+            Map<String, String> headers,
+            BackgroundTask task)
             throws Exception {
         int attempt = 0;
         while (!Thread.currentThread().isInterrupted()) {
             Optional<TaskRecord> wr = readRecord(rc, sessionId, taskId);
-            if (wr.isPresent() && wr.get().isCancelRequested()) {
+            if (task.isCancellationRequested()
+                    || (wr.isPresent() && wr.get().isCancelRequested())) {
                 try {
                     protocolClient.cancelTask(baseUrl, headers, taskId);
                 } catch (Exception ex) {
@@ -559,6 +700,16 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
         Thread.currentThread().interrupt();
         markCancelled(rc, sessionId, taskId);
         return null;
+    }
+
+    private boolean isCancellationRequested(
+            BackgroundTask task, RuntimeContext rc, String sessionId, String taskId) {
+        if (task.isCancellationRequested()) {
+            return true;
+        }
+        return readRecord(rc, sessionId, taskId)
+                .map(r -> r.isCancelRequested() || r.getStatus() == TaskStatus.CANCELLED)
+                .orElse(false);
     }
 
     private Optional<TaskRecord> readRecord(RuntimeContext rc, String sessionId, String taskId) {
@@ -688,39 +839,52 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
                             record.getParentSessionId() != null ? record.getParentSessionId() : "";
                     String lk = localKey(sid, record.getTaskId());
                     RuntimeContext capturedRc = rc != null ? rc : RuntimeContext.empty();
-                    BackgroundTask cached =
-                            localTasks.computeIfAbsent(
-                                    lk,
-                                    k -> {
-                                        CompletableFuture<String> f =
-                                                CompletableFuture.supplyAsync(
-                                                        () ->
-                                                                runRemoteTask(
-                                                                        capturedRc,
-                                                                        sid,
-                                                                        record.getTaskId(),
-                                                                        record.getSubAgentId(),
-                                                                        new TaskRunSpec
-                                                                                .RemoteTaskRunSpec(
-                                                                                record
-                                                                                        .getRemoteBaseUrl(),
-                                                                                record
-                                                                                                        .getRemoteHeaders()
-                                                                                                != null
-                                                                                        ? record
-                                                                                                .getRemoteHeaders()
-                                                                                        : Map.of(),
-                                                                                record
-                                                                                        .getSubAgentId(),
-                                                                                ""),
-                                                                        false),
-                                                        executor);
-                                        return new BackgroundTask(
-                                                record.getTaskId(), record.getSubAgentId(), f);
+                    BackgroundTask cached = localTasks.get(lk);
+                    if (cached != null) {
+                        return cached;
+                    }
+
+                    CompletableFuture<String> completion = new CompletableFuture<>();
+                    BackgroundTask candidate =
+                            new BackgroundTask(
+                                    record.getTaskId(), record.getSubAgentId(), completion);
+                    BackgroundTask raced = localTasks.putIfAbsent(lk, candidate);
+                    if (raced != null) {
+                        return raced;
+                    }
+                    localTaskSessionIds.put(lk, sid);
+                    localTaskContexts.put(lk, capturedRc);
+
+                    TaskRunSpec.RemoteTaskRunSpec remote =
+                            new TaskRunSpec.RemoteTaskRunSpec(
+                                    record.getRemoteBaseUrl(),
+                                    record.getRemoteHeaders() != null
+                                            ? record.getRemoteHeaders()
+                                            : Map.of(),
+                                    record.getSubAgentId(),
+                                    "");
+                    Future<?> runner =
+                            executor.submit(
+                                    () -> {
+                                        try {
+                                            String result =
+                                                    runRemoteTask(
+                                                            capturedRc,
+                                                            sid,
+                                                            record.getTaskId(),
+                                                            record.getSubAgentId(),
+                                                            remote,
+                                                            false,
+                                                            candidate);
+                                            completion.complete(result);
+                                        } catch (Throwable e) {
+                                            completion.completeExceptionally(e);
+                                        } finally {
+                                            releaseLocalTask(lk, candidate);
+                                        }
                                     });
-                    localTaskSessionIds.putIfAbsent(lk, sid);
-                    localTaskContexts.putIfAbsent(lk, capturedRc);
-                    return cached;
+                    candidate.attachExecutionFuture(runner);
+                    return candidate;
                 } else {
                     future = new CompletableFuture<>();
                 }
