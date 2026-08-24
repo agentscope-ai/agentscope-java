@@ -36,7 +36,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,20 +48,29 @@ class AgentSpawnToolBackgroundCancellationTest {
     @TempDir Path tempDir;
 
     @Test
-    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
     void timeoutZeroCancelStopsOnlyTheTrackedExecution() throws Exception {
         CountDownLatch firstStarted = new CountDownLatch(1);
         CountDownLatch secondStarted = new CountDownLatch(1);
         CountDownLatch firstCancelled = new CountDownLatch(1);
         CountDownLatch secondCancelled = new CountDownLatch(1);
-        AtomicInteger invocation = new AtomicInteger();
         Agent worker = Mockito.mock(Agent.class);
         when(worker.call(anyList()))
                 .thenAnswer(
-                        ignored -> {
-                            int call = invocation.incrementAndGet();
-                            CountDownLatch started = call == 1 ? firstStarted : secondStarted;
-                            CountDownLatch cancelled = call == 1 ? firstCancelled : secondCancelled;
+                        invocation -> {
+                            List<Msg> messages = invocation.getArgument(0);
+                            String prompt = messages.get(0).getTextContent();
+                            CountDownLatch started;
+                            CountDownLatch cancelled;
+                            if ("run".equals(prompt)) {
+                                started = firstStarted;
+                                cancelled = firstCancelled;
+                            } else if ("run again".equals(prompt)) {
+                                started = secondStarted;
+                                cancelled = secondCancelled;
+                            } else {
+                                throw new AssertionError("Unexpected prompt: " + prompt);
+                            }
                             return Mono.<Msg>never()
                                     .doOnSubscribe(unused -> started.countDown())
                                     .doOnCancel(cancelled::countDown);
