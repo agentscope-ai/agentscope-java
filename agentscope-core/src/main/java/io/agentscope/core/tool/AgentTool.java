@@ -131,18 +131,12 @@ public interface AgentTool {
     /**
      * Executes the tool through the framework's execution infrastructure.
      *
-     * <p>This method is the channel used by {@link ToolExecutor} when running a tool call through
-     * the infrastructure layers (scheduling, timeout, retry, graceful-shutdown guard). Unlike
-     * {@link #callAsync(ToolCallParam)}, which converts failures into {@link ToolResultBlock}
-     * error results, this channel may surface failures as reactive error signals so that the
-     * infrastructure can decide whether to retry them; once retries are exhausted, the executor
-     * converts the final error into a {@link ToolResultBlock} error result.
-     *
-     * <p>The default implementation delegates to {@link #callAsync(ToolCallParam)}, so existing
-     * implementations remain compatible without any changes. Built-in tools whose failures should
-     * be retryable (for example annotation-based tools and MCP tools) override this method to keep
-     * exceptions as error signals. Tools that deliberately report failures as
-     * {@link ToolResultBlock} error results keep them as completed results and are never retried.
+     * <p>Used by {@link ToolExecutor} when running a tool call through the scheduling, timeout,
+     * retry and shutdown layers. Unlike {@link #callAsync(ToolCallParam)}, failures stay as
+     * reactive error signals so they can be retried; the executor converts the final error into
+     * an error result once retries are exhausted. The default implementation delegates to
+     * {@link #callAsync(ToolCallParam)}; built-in tools override it to keep exceptions as error
+     * signals.
      *
      * @param param The tool call parameters
      * @return Mono containing ToolResultBlock, or signalling an error on failure

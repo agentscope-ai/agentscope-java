@@ -194,19 +194,14 @@ public class McpTool extends ToolBase {
     /**
      * Executes this MCP tool through the framework's execution infrastructure.
      *
-     * <p>Transport-level failures (connection loss, network interruption, timeout, client
-     * exceptions) stay as reactive error signals so {@link io.agentscope.core.tool.ToolExecutor}
-     * can apply the configured retry policy. Protocol-level business errors (the MCP server
-     * completing the call with {@code isError=true}) remain {@link ToolResultBlock} error results
-     * and are never retried, since replaying a completed non-idempotent call is unsafe.
+     * <p>Transport-level failures stay as reactive error signals so the executor can apply its
+     * retry policy. Protocol-level business errors ({@code isError=true}) remain completed error
+     * results and are never retried.
      */
     @Override
     public Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
-        // Keep the historical contract that invoking with a null param fails fast.
         Objects.requireNonNull(param, "param must not be null");
-        // Mono.defer re-creates the whole attempt (argument merging, meta extraction and the
-        // remote call) for every subscription, so each retry runs a fresh attempt and synchronous
-        // failures during preparation also surface as reactive errors.
+        // Mono.defer re-runs the whole attempt per subscription so each retry is a fresh attempt
         return Mono.defer(
                 () -> {
                     logger.debug(

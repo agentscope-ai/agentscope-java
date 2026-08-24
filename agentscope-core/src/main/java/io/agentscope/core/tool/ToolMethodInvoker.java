@@ -46,9 +46,7 @@ class ToolMethodInvoker {
     /**
      * Invoke tool method asynchronously with custom converter support.
      *
-     * <p>Failures are converted into {@link ToolResultBlock} error results, so this entry point
-     * never signals an error to its caller. Direct callers of {@code AgentTool.callAsync} rely on
-     * this contract.
+     * <p>Failures are converted into {@link ToolResultBlock} error results.
      *
      * @param toolObject the object containing the method
      * @param method the method to invoke
@@ -68,12 +66,9 @@ class ToolMethodInvoker {
     /**
      * Invoke tool method asynchronously while keeping failures as reactive error signals.
      *
-     * <p>This is the raw channel used by {@link ToolExecutor}'s execution infrastructure: errors
-     * stay as error signals so the timeout, retry and graceful-shutdown layers can act on them,
-     * and the executor converts them into {@link ToolResultBlock} error results only after the
-     * retry decision has been made. Parameter injection, argument conversion, reflection
-     * invocation, {@link CompletableFuture}/{@link Mono} adaptation and result conversion behave
-     * identically to {@link #invokeAsync}; only the error-to-result conversion is omitted.
+     * <p>Raw channel used by {@link ToolExecutor}'s execution infrastructure: only the
+     * error-to-result conversion of {@link #invokeAsync} is omitted, so the timeout and retry
+     * layers can act on failures.
      *
      * @param toolObject the object containing the method
      * @param method the method to invoke

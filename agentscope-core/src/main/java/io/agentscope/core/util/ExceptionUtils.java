@@ -84,26 +84,22 @@ public final class ExceptionUtils {
     }
 
     /**
-     * Unwraps reflective and future execution wrappers to expose the original failure.
-     *
-     * <p>{@code method.invoke} wraps business exceptions in {@link InvocationTargetException},
-     * and failed {@link java.util.concurrent.CompletableFuture}s surface as {@link
-     * ExecutionException} or {@link CompletionException}. This method walks those wrappers (whose
-     * cause chains cannot cycle) so retry predicates such as {@code
-     * ExecutionConfig.RETRYABLE_ERRORS} can inspect the original {@code IOException}, {@code
-     * HttpTransportException} or domain exception.
+     * Unwraps {@link InvocationTargetException}, {@link ExecutionException} and
+     * {@link CompletionException} wrappers to expose the original failure.
      *
      * @param error the throwable to unwrap (may be {@code null})
      * @return the innermost non-wrapper throwable, or {@code null} if the input is {@code null}
      */
     public static Throwable unwrapExecutionWrapper(Throwable error) {
         Throwable current = error;
-        while (current != null
-                && (current instanceof InvocationTargetException
-                        || current instanceof ExecutionException
-                        || current instanceof CompletionException)
-                && current.getCause() != null) {
-            current = current.getCause();
+        while (current instanceof InvocationTargetException
+                || current instanceof ExecutionException
+                || current instanceof CompletionException) {
+            Throwable cause = current.getCause();
+            if (cause == null) {
+                break;
+            }
+            current = cause;
         }
         return current;
     }
