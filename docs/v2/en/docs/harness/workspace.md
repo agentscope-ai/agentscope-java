@@ -161,8 +161,8 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | Method | What it disables |
 |--------|------------------|
 | `disableWorkspaceContext()` | system-prompt injection (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
-| `disableMemoryHooks()` | memory flush + background maintenance |
-| `disableMemoryTools()` | `memory_search` / `memory_get` / `session_search` tools |
+| `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips `<memory_context>` (`MEMORY.md`) injection |
+| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
@@ -179,11 +179,11 @@ Before every reasoning step, `WorkspaceContextMiddleware` (`io.agentscope.harnes
 | Section | Source | Budgeted |
 |---------|--------|----------|
 | `## Session Context` | Template (today's date, OS, workspace absolute path, temp dir, current `sessionId`) | no |
-| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` guidance | Built-in templates (teach the model how to use memory + navigate knowledge) | no |
+| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` guidance | Built-in templates (teach the model how to use memory + navigate knowledge). Memory sections are omitted / trimmed when `disableMemoryTools()` / `disableMemoryHooks()` are set | no |
 | `## Workspace` section | Template, **branches per filesystem mode** (see below) — tells the model whether it runs locally / sandboxed / on a remote store | no |
 | `## Workspace Files (Injected)` notice | Framework auto-loads the following files from the workspace into a `<loaded_context>` XML block | see below |
 | `<agents_context>` | Full `AGENTS.md` | unlimited |
-| `<memory_context>` | `MEMORY.md`, char-truncated when over the remaining budget with a "use memory_search for older entries" note | `maxContextTokens`, default 8000 |
+| `<memory_context>` | `MEMORY.md`, char-truncated when over the remaining budget with a "use memory_search for older entries" note (plain truncate note when tools are disabled; omitted entirely when both memory tools and hooks are disabled) | `maxContextTokens`, default 8000 |
 | `<domain_knowledge_context>` | Full `knowledge/KNOWLEDGE.md` + listing of every file under `knowledge/` | unlimited (filenames only as the catalog) |
 | `<x_md>` / `<y_md>` | Anything you added with `additionalContextFile("X.md")` | unlimited |
 

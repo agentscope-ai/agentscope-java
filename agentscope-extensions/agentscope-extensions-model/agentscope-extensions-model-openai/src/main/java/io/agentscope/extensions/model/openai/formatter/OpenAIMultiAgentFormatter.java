@@ -73,7 +73,7 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
             switch (group.type) {
                 case SYSTEM -> {
                     Msg systemMsg = group.messages.get(0);
-                    result.add(messageConverter.convertToMessage(systemMsg, false));
+                    result.add(convertMessage(systemMsg, false));
                 }
                 case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
                 case AGENT_CONVERSATION -> {
@@ -85,9 +85,7 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
                 }
                 case BYPASS -> {
                     Msg bypassMsg = group.messages.get(0);
-                    result.add(
-                            messageConverter.convertToMessage(
-                                    bypassMsg, hasMediaContent(bypassMsg)));
+                    result.add(convertMessage(bypassMsg, hasMediaContent(bypassMsg)));
                 }
             }
         }
@@ -160,7 +158,7 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
 
         for (Msg msg : msgs) {
             if (msg.getRole() == MsgRole.ASSISTANT || msg.getRole() == MsgRole.TOOL) {
-                result.add(messageConverter.convertToMessage(msg, hasMediaContent(msg)));
+                result.add(convertMessage(msg, hasMediaContent(msg)));
             }
         }
 

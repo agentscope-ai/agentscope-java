@@ -86,20 +86,15 @@ public class AnthropicResponseParser {
                                                     .build()));
         }
 
-        // Parse usage. Anthropic reports input_tokens EXCLUDING cached tokens, while ChatUsage
-        // defines cachedTokens as a subset of inputTokens, so cache read/creation tokens are
-        // added back to inputTokens to keep the invariant.
-        long cacheReadTokens = message.usage().cacheReadInputTokens().orElse(0L);
-        long cacheCreationTokens = message.usage().cacheCreationInputTokens().orElse(0L);
+        // Parse usage
+        long baseInput = message.usage().inputTokens();
+        long cacheRead = message.usage().cacheReadInputTokens().orElse(0L);
+        long cacheCreate = message.usage().cacheCreationInputTokens().orElse(0L);
         ChatUsage usage =
                 ChatUsage.builder()
-                        .inputTokens(
-                                (int)
-                                        (message.usage().inputTokens()
-                                                + cacheReadTokens
-                                                + cacheCreationTokens))
+                        .inputTokens((int) (baseInput + cacheRead + cacheCreate))
                         .outputTokens((int) message.usage().outputTokens())
-                        .cachedTokens((int) cacheReadTokens)
+                        .cachedTokens((int) cacheRead)
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 

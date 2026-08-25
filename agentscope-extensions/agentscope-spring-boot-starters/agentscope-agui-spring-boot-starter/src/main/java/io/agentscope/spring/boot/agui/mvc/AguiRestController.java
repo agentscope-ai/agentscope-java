@@ -15,8 +15,16 @@
  */
 package io.agentscope.spring.boot.agui.mvc;
 
+import io.agentscope.core.agui.encoder.AguiEventEncoder;
+import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
+import io.agentscope.core.util.JsonException;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,6 +42,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class AguiRestController {
 
     private final AguiMvcController aguiMvcController;
+    private final AguiEventEncoder encoder = new AguiEventEncoder();
+    private final AguiRequestBodyParser requestBodyParser;
     private final String pathPrefix;
     private final boolean enablePathRouting;
 
@@ -43,12 +53,17 @@ public class AguiRestController {
      * @param aguiMvcController The AG-UI MVC controller
      * @param pathPrefix The path prefix for endpoints
      * @param enablePathRouting Whether to enable path variable routing
+     * @param requestBodyParser The parser used to decode request bodies
      */
     public AguiRestController(
-            AguiMvcController aguiMvcController, String pathPrefix, boolean enablePathRouting) {
+            AguiMvcController aguiMvcController,
+            String pathPrefix,
+            boolean enablePathRouting,
+            AguiRequestBodyParser requestBodyParser) {
         this.aguiMvcController = aguiMvcController;
         this.pathPrefix = pathPrefix;
         this.enablePathRouting = enablePathRouting;
+        this.requestBodyParser = requestBodyParser;
     }
 
     /**
@@ -62,7 +77,7 @@ public class AguiRestController {
      *   <li>"default"</li>
      * </ol>
      *
-     * @param input The run agent input
+     * @param body The raw run agent input JSON
      * @param agentIdHeader The agent ID from HTTP header (optional)
      * @return An SseEmitter for streaming AG-UI events
      */
@@ -71,12 +86,14 @@ public class AguiRestController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter run(
-            @RequestBody RunAgentInput input,
+            @RequestBody String body,
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
-                    String agentIdHeader) {
-        return aguiMvcController.handle(input, agentIdHeader);
+                    String agentIdHeader,
+            HttpServletRequest request) {
+        RunAgentInput input = requestBodyParser.parse(body);
+        return aguiMvcController.handle(input, agentIdHeader, request);
     }
 
     /**
@@ -85,7 +102,7 @@ public class AguiRestController {
      * <p>The path variable takes highest priority for agent resolution.
      *
      * @param agentId The agent ID from path variable
-     * @param input The run agent input
+     * @param body The raw run agent input JSON
      * @param agentIdHeader The agent ID from HTTP header (optional)
      * @return An SseEmitter for streaming AG-UI events
      */
@@ -95,11 +112,37 @@ public class AguiRestController {
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter runWithAgentId(
             @PathVariable String agentId,
-            @RequestBody RunAgentInput input,
+            @RequestBody String body,
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
-                    String agentIdHeader) {
-        return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId);
+                    String agentIdHeader,
+            HttpServletRequest request) {
+        RunAgentInput input = requestBodyParser.parse(body);
+        return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId, request);
+    }
+
+    /**
+     * Return HTTP 400 for AG-UI request body parsing failures.
+     *
+     * @param error the JSON parse failure
+     * @return an SSE-compatible bad request response
+     */
+    @ExceptionHandler(JsonException.class)
+    public ResponseEntity<String> handleParseError(JsonException error) {
+        String errorEvent =
+                encoder.encodeToJson(
+                                new AguiEvent.Raw(
+                                        "unknown",
+                                        "unknown",
+                                        Map.of(
+                                                "error",
+                                                "Failed to parse request: " + error.getMessage())))
+                        .trim();
+        String finishEvent =
+                encoder.encodeToJson(new AguiEvent.RunFinished("unknown", "unknown")).trim();
+        return ResponseEntity.badRequest()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .body("data: " + errorEvent + "\n\n" + "data: " + finishEvent + "\n\n");
     }
 }

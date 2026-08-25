@@ -38,6 +38,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     agent-id-header: X-Agent-Id
  *     enable-path-routing: true
  *     enable-reasoning: false
+ *     emit-token-usage: false
+ *     emit-run-finished-after-error: false
+ *     interrupt-on-disconnect: true
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -64,6 +67,9 @@ public class AguiProperties {
     /** Whether to emit tool call argument events. */
     private boolean emitToolCallArgs = true;
 
+    /** Whether to emit token usage events. */
+    private boolean emitTokenUsage = false;
+
     /**
      * Whether to enable reasoning/thinking content output.
      *
@@ -72,6 +78,14 @@ public class AguiProperties {
      * backward compatibility and privacy compliance.
      */
     private boolean enableReasoning = false;
+
+    /**
+     * Whether to emit {@code RUN_FINISHED} after {@code RUN_ERROR}.
+     *
+     * <p>Default is {@code false} (standard AG-UI). Set {@code true} for legacy clients that expect
+     * a finish event after an error.
+     */
+    private boolean emitRunFinishedAfterError = false;
 
     /** Default agent ID to use when not specified in the request. */
     private String defaultAgentId = "default";
@@ -111,6 +125,9 @@ public class AguiProperties {
      * open.
      */
     private long sseTimeout = 600000L;
+
+    /** Whether to interrupt the agent when the client disconnects. */
+    private boolean interruptOnDisconnect = true;
 
     public String getPathPrefix() {
         return pathPrefix;
@@ -168,12 +185,28 @@ public class AguiProperties {
         this.emitToolCallArgs = emitToolCallArgs;
     }
 
+    public boolean isEmitTokenUsage() {
+        return emitTokenUsage;
+    }
+
+    public void setEmitTokenUsage(boolean emitTokenUsage) {
+        this.emitTokenUsage = emitTokenUsage;
+    }
+
     public boolean isEnableReasoning() {
         return enableReasoning;
     }
 
     public void setEnableReasoning(boolean enableReasoning) {
         this.enableReasoning = enableReasoning;
+    }
+
+    public boolean isEmitRunFinishedAfterError() {
+        return emitRunFinishedAfterError;
+    }
+
+    public void setEmitRunFinishedAfterError(boolean emitRunFinishedAfterError) {
+        this.emitRunFinishedAfterError = emitRunFinishedAfterError;
     }
 
     public String getDefaultAgentId() {
@@ -230,5 +263,13 @@ public class AguiProperties {
 
     public void setSseTimeout(long sseTimeout) {
         this.sseTimeout = sseTimeout;
+    }
+
+    public boolean isInterruptOnDisconnect() {
+        return interruptOnDisconnect;
+    }
+
+    public void setInterruptOnDisconnect(boolean interruptOnDisconnect) {
+        this.interruptOnDisconnect = interruptOnDisconnect;
     }
 }

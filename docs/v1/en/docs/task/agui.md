@@ -149,11 +149,11 @@ function App() {
 
 ## Example Project
 
-See complete example at [agentscope-examples/integration/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/integration/agui):
+See complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui):
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/integration/agui
+cd agentscope-examples/agui
 mvn spring-boot:run
 ```
 
