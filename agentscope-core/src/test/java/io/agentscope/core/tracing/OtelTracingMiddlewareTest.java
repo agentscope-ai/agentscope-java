@@ -143,7 +143,12 @@ class OtelTracingMiddlewareTest {
         AgentStartEvent childStart = new AgentStartEvent("sess-1", "child-reply", "child");
         childStart.withSource("parent/child");
 
-        middleware.onAgent(agent, null, new AgentInput(List.of()), in -> Flux.just(parentStart, childStart))
+        middleware
+                .onAgent(
+                        agent,
+                        null,
+                        new AgentInput(List.of()),
+                        in -> Flux.just(parentStart, childStart))
                 .collectList()
                 .block();
 
