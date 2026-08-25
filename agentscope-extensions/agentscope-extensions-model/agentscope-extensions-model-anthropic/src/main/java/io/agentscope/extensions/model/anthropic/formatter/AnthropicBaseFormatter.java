@@ -85,7 +85,7 @@ public abstract class AnthropicBaseFormatter
 
         // Use saved options to apply tools with tool choice
         GenerateOptions options = currentOptions.get();
-        AnthropicToolsHelper.applyTools(paramsBuilder, tools, options);
+        AnthropicToolsHelper.applyTools(paramsBuilder, tools, options, this.cacheTtl);
 
         // Clean up thread-local storage
         currentOptions.remove();
@@ -130,7 +130,7 @@ public abstract class AnthropicBaseFormatter
                     List.of(
                             TextBlockParam.builder()
                                     .text(systemMessage)
-                                    .cacheControl(EPHEMERAL_CACHE_CONTROL)
+                                    .cacheControl(buildCacheControl(this.cacheTtl))
                                     .build()));
         } else {
             paramsBuilder.system(systemMessage);
@@ -140,6 +140,25 @@ public abstract class AnthropicBaseFormatter
     /** Shared ephemeral cache control marker for prompt caching. */
     static final CacheControlEphemeral EPHEMERAL_CACHE_CONTROL =
             CacheControlEphemeral.builder().build();
+
+    /** TTL for ephemeral cache control, set once at model construction. */
+    private String cacheTtl;
+
+    /** Configure the TTL applied to prompt-caching markers (e.g. {@code "1h"}). */
+    public void cacheTtl(String cacheTtl) {
+        this.cacheTtl = cacheTtl;
+    }
+
+    /**
+     * Build a {@link CacheControlEphemeral} applying the configured TTL. When no TTL is set
+     * the shared default ephemeral marker is returned.
+     */
+    static CacheControlEphemeral buildCacheControl(String cacheTtl) {
+        if (cacheTtl == null || cacheTtl.isEmpty()) {
+            return EPHEMERAL_CACHE_CONTROL;
+        }
+        return CacheControlEphemeral.builder().ttl(CacheControlEphemeral.Ttl.of(cacheTtl)).build();
+    }
 
     /**
      * Apply the automatic cache control strategy to formatted messages.
@@ -158,7 +177,8 @@ public abstract class AnthropicBaseFormatter
 
         int lastIdx = formattedMessages.size() - 1;
         MessageParam last = formattedMessages.get(lastIdx);
-        MessageParam marked = markLastCacheableBlock(last);
+        CacheControlEphemeral cacheControl = buildCacheControl(this.cacheTtl);
+        MessageParam marked = markLastCacheableBlock(last, cacheControl);
         if (marked == last) {
             return formattedMessages;
         }
@@ -173,14 +193,15 @@ public abstract class AnthropicBaseFormatter
      * cache_control. String content is converted to a single text block so cache_control can be
      * attached. Returns the original instance when nothing can be marked.
      */
-    private static MessageParam markLastCacheableBlock(MessageParam message) {
+    private static MessageParam markLastCacheableBlock(
+            MessageParam message, CacheControlEphemeral cacheControl) {
         MessageParam.Content content = message.content();
 
         if (content.isString()) {
             TextBlockParam text =
                     TextBlockParam.builder()
                             .text(content.asString())
-                            .cacheControl(EPHEMERAL_CACHE_CONTROL)
+                            .cacheControl(cacheControl)
                             .build();
             return message.toBuilder()
                     .content(
@@ -192,7 +213,7 @@ public abstract class AnthropicBaseFormatter
         if (content.isBlockParams()) {
             List<ContentBlockParam> blocks = new ArrayList<>(content.asBlockParams());
             for (int i = blocks.size() - 1; i >= 0; i--) {
-                ContentBlockParam marked = withCacheControl(blocks.get(i));
+                ContentBlockParam marked = withCacheControl(blocks.get(i), cacheControl);
                 if (marked == null) {
                     continue;
                 }
@@ -210,22 +231,23 @@ public abstract class AnthropicBaseFormatter
      * Return a copy of the block with ephemeral cache_control attached, or {@code null} when the
      * block type does not support cache_control (e.g. thinking blocks).
      */
-    private static ContentBlockParam withCacheControl(ContentBlockParam block) {
+    private static ContentBlockParam withCacheControl(
+            ContentBlockParam block, CacheControlEphemeral cacheControl) {
         if (block.isText()) {
             return ContentBlockParam.ofText(
-                    block.asText().toBuilder().cacheControl(EPHEMERAL_CACHE_CONTROL).build());
+                    block.asText().toBuilder().cacheControl(cacheControl).build());
         }
         if (block.isImage()) {
             return ContentBlockParam.ofImage(
-                    block.asImage().toBuilder().cacheControl(EPHEMERAL_CACHE_CONTROL).build());
+                    block.asImage().toBuilder().cacheControl(cacheControl).build());
         }
         if (block.isToolUse()) {
             return ContentBlockParam.ofToolUse(
-                    block.asToolUse().toBuilder().cacheControl(EPHEMERAL_CACHE_CONTROL).build());
+                    block.asToolUse().toBuilder().cacheControl(cacheControl).build());
         }
         if (block.isToolResult()) {
             return ContentBlockParam.ofToolResult(
-                    block.asToolResult().toBuilder().cacheControl(EPHEMERAL_CACHE_CONTROL).build());
+                    block.asToolResult().toBuilder().cacheControl(cacheControl).build());
         }
         return null;
     }

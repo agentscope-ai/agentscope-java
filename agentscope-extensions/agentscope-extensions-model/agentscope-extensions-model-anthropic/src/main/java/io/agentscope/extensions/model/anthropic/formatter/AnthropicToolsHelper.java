@@ -53,6 +53,22 @@ public class AnthropicToolsHelper {
      */
     public static void applyTools(
             MessageCreateParams.Builder builder, List<ToolSchema> tools, GenerateOptions options) {
+        applyTools(builder, tools, options, null);
+    }
+
+    /**
+     * Apply tools to the message create params builder with an optional cache TTL.
+     *
+     * @param builder The message create params builder
+     * @param tools List of tool schemas
+     * @param options Generate options containing tool choice
+     * @param cacheTtl TTL for ephemeral cache control (null/empty for default 5m)
+     */
+    public static void applyTools(
+            MessageCreateParams.Builder builder,
+            List<ToolSchema> tools,
+            GenerateOptions options,
+            String cacheTtl) {
         if (tools == null || tools.isEmpty()) {
             return;
         }
@@ -72,7 +88,7 @@ public class AnthropicToolsHelper {
                             .inputSchema(convertToJsonValue(schema.getParameters()));
 
             if (cacheControlEnabled && i == tools.size() - 1) {
-                toolBuilder.cacheControl(AnthropicBaseFormatter.EPHEMERAL_CACHE_CONTROL);
+                toolBuilder.cacheControl(AnthropicBaseFormatter.buildCacheControl(cacheTtl));
             }
 
             builder.addTool(toolBuilder.build());

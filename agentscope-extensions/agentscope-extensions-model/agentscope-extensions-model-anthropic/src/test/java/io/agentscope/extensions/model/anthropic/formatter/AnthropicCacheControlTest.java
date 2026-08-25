@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.core.JsonValue;
+import com.anthropic.models.messages.CacheControlEphemeral;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
@@ -344,6 +345,80 @@ class AnthropicCacheControlTest {
             var tools = params.tools().get();
             assertFalse(tools.get(0).asTool().cacheControl().isPresent());
             assertFalse(tools.get(1).asTool().cacheControl().isPresent());
+        }
+    }
+
+    @Nested
+    @DisplayName("cacheTtl configuration")
+    class CacheTtlTest {
+
+        private static Msg systemMsg() {
+            return Msg.builder().role(MsgRole.SYSTEM).textContent("You are helpful.").build();
+        }
+
+        @Test
+        @DisplayName("system prompt cache_control carries configured ttl")
+        void systemCacheTtlApplied() {
+            formatter.cacheTtl("1h");
+            MessageCreateParams.Builder builder = createBuilder();
+
+            formatter.applySystemMessage(builder, List.of(systemMsg()), true);
+
+            MessageCreateParams params = builder.build();
+            List<TextBlockParam> blocks = params.system().get().asTextBlockParams();
+            assertTrue(blocks.get(0).cacheControl().isPresent());
+            assertTrue(blocks.get(0).cacheControl().get().ttl().isPresent());
+            assertEquals("1h", blocks.get(0).cacheControl().get().ttl().get().asString());
+        }
+
+        @Test
+        @DisplayName("message cache_control carries configured ttl")
+        void messageCacheTtlApplied() {
+            formatter.cacheTtl("1h");
+            List<MessageParam> formatted = formatter.format(List.of(userMsg("Hello")));
+
+            List<MessageParam> result = formatter.applyCacheControl(formatted);
+
+            List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+            ContentBlockParam lastBlock = blocks.get(blocks.size() - 1);
+            CacheControlEphemeral cc = lastBlock.asText().cacheControl().get();
+            assertTrue(cc.ttl().isPresent());
+            assertEquals("1h", cc.ttl().get().asString());
+        }
+
+        @Test
+        @DisplayName("tool cache_control carries configured ttl via formatter")
+        void toolCacheTtlAppliedViaFormatter() {
+            formatter.cacheTtl("1h");
+            MessageCreateParams.Builder builder = createBuilder();
+            GenerateOptions options = GenerateOptions.builder().cacheControl(true).build();
+            formatter.applyOptions(builder, options, null);
+            formatter.applyTools(
+                    builder,
+                    List.of(
+                            ToolSchema.builder()
+                                    .name("tool1")
+                                    .description("Tool 1")
+                                    .parameters(Map.of("type", "object"))
+                                    .build()));
+
+            MessageCreateParams params = builder.build();
+            var tools = params.tools().get();
+            CacheControlEphemeral cc = tools.get(0).asTool().cacheControl().get();
+            assertTrue(cc.ttl().isPresent());
+            assertEquals("1h", cc.ttl().get().asString());
+        }
+
+        @Test
+        @DisplayName("default cache_control has no ttl (5m ephemeral)")
+        void defaultNoTtl() {
+            MessageCreateParams.Builder builder = createBuilder();
+            formatter.applySystemMessage(builder, List.of(systemMsg()), true);
+
+            MessageCreateParams params = builder.build();
+            List<TextBlockParam> blocks = params.system().get().asTextBlockParams();
+            assertTrue(blocks.get(0).cacheControl().isPresent());
+            assertFalse(blocks.get(0).cacheControl().get().ttl().isPresent());
         }
     }
 }
