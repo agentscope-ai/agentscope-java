@@ -111,7 +111,11 @@ class AgentProtocolTaskStoreHitlTest {
 
         store.resume("hitl-1", List.of(new RemoteConfirmDecision("tc-ask", false)));
 
-        awaitCondition(() -> "success".equals(store.snapshot("hitl-1").get("status")), 5_000);
+        awaitCondition(
+                () ->
+                        "success".equals(store.snapshot("hitl-1").get("status"))
+                                && !store.hasSubmitContext("hitl-1"),
+                5_000);
 
         Map<String, Object> done = store.snapshot("hitl-1");
         assertEquals("success", done.get("status"));
@@ -130,7 +134,11 @@ class AgentProtocolTaskStoreHitlTest {
                                 new AgentEndEvent(null)));
 
         store.submit("ok-1", "worker", "hello", Map.of("user_id", "u1", "detail", "status"));
-        awaitCondition(() -> "success".equals(store.snapshot("ok-1").get("status")), 5_000);
+        awaitCondition(
+                () ->
+                        "success".equals(store.snapshot("ok-1").get("status"))
+                                && !store.hasSubmitContext("ok-1"),
+                5_000);
         assertFalse(store.hasSubmitContext("ok-1"));
     }
 
