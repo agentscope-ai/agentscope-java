@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.memory.session.SessionEntry;
@@ -55,7 +56,7 @@ public class SessionSearchTool {
             description =
                     "Search past session transcripts for a keyword or phrase."
                             + " Returns matching entries with session context.")
-    public String sessionSearch(
+    public ToolResultBlock sessionSearch(
             RuntimeContext runtimeContext,
             @ToolParam(name = "query", description = "Search query (keyword or phrase)")
                     String query,
@@ -70,7 +71,7 @@ public class SessionSearchTool {
                             required = false)
                     Integer maxResults) {
         if (query == null || query.isBlank()) {
-            return "Error: query is required";
+            return ToolResultBlock.error("query is required");
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
@@ -89,7 +90,7 @@ public class SessionSearchTool {
         }
 
         if (results.isEmpty()) {
-            return "No matches found for: " + query;
+            return ToolResultBlock.success("No matches found for: " + query);
         }
 
         StringBuilder sb = new StringBuilder();
@@ -97,19 +98,19 @@ public class SessionSearchTool {
         for (String result : results) {
             sb.append(result).append("\n");
         }
-        return sb.toString();
+        return ToolResultBlock.success(sb.toString());
     }
 
     @Tool(
             name = "session_list",
             readOnly = true,
             description = "List available sessions for an agent, showing session IDs and metadata.")
-    public String sessionList(
+    public ToolResultBlock sessionList(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID to list sessions for")
                     String agentId) {
         if (agentId == null || agentId.isBlank()) {
-            return "Error: agentId is required";
+            return ToolResultBlock.error("agentId is required");
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
@@ -126,13 +127,13 @@ public class SessionSearchTool {
                                 + "/"
                                 + WorkspaceConstants.SESSIONS_STORE);
         if (!storeContent.isBlank()) {
-            return storeContent;
+            return ToolResultBlock.success(storeContent);
         }
 
         // List sessions from local cache only — remote sync is handled at write time.
         Path sessionDir = workspaceManager.getSessionDir(rc, agentId);
         if (!Files.isDirectory(sessionDir)) {
-            return "No sessions found for agent: " + agentId;
+            return ToolResultBlock.success("No sessions found for agent: " + agentId);
         }
 
         List<Path> sessionFiles = new ArrayList<>();
@@ -149,7 +150,7 @@ public class SessionSearchTool {
         }
 
         if (sessionFiles.isEmpty()) {
-            return "No sessions found for agent: " + agentId;
+            return ToolResultBlock.success("No sessions found for agent: " + agentId);
         }
 
         StringBuilder sb = new StringBuilder();
@@ -159,7 +160,7 @@ public class SessionSearchTool {
             String sessionId = name.replace(WorkspaceConstants.SESSION_CONTEXT_EXT, "");
             sb.append("  - ").append(sessionId).append("\n");
         }
-        return sb.toString();
+        return ToolResultBlock.success(sb.toString());
     }
 
     @Tool(
@@ -168,7 +169,7 @@ public class SessionSearchTool {
             description =
                     "Get the conversation history for a specific session."
                             + " Returns the messages in the session.")
-    public String sessionHistory(
+    public ToolResultBlock sessionHistory(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID") String agentId,
             @ToolParam(name = "sessionId", description = "AgentStateStore Session ID")
@@ -179,7 +180,7 @@ public class SessionSearchTool {
                             required = false)
                     Integer lastN) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
-            return "Error: agentId and sessionId are required";
+            return ToolResultBlock.error("agentId and sessionId are required");
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
@@ -191,9 +192,9 @@ public class SessionSearchTool {
             Path legacyFile = workspaceManager.resolveSessionFile(rc, agentId, sessionId);
             if (Files.isRegularFile(legacyFile)) {
                 log.debug("Falling back to legacy .json session file for {}", sessionId);
-                return readLegacySession(legacyFile, limit);
+                return ToolResultBlock.success(readLegacySession(legacyFile, limit));
             }
-            return "AgentStateStore not found: " + sessionId;
+            return ToolResultBlock.error("AgentStateStore not found: " + sessionId);
         }
 
         SessionTree tree = new SessionTree(contextFile, workspaceManager.getWorkspace(), null);
@@ -215,7 +216,7 @@ public class SessionSearchTool {
             }
             sb.append(String.format("[%s]: %s\n", msg.getRole(), content));
         }
-        return sb.toString();
+        return ToolResultBlock.success(sb.toString());
     }
 
     // -------------------------------------------------------------------------

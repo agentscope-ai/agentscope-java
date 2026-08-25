@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
@@ -62,7 +63,7 @@ public class TaskTool {
                         + " tasks later with block=false. Do NOT call this immediately after"
                         + " launching a task — the task status in conversation history is stale;"
                         + " always call task_output or task_list to get the current state.")
-    public String taskOutput(
+    public ToolResultBlock taskOutput(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "task_id",
@@ -85,15 +86,16 @@ public class TaskTool {
                     Long timeout) {
 
         if (taskId == null || taskId.isBlank()) {
-            return "Error: task_id is required";
+            return ToolResultBlock.error("task_id is required");
         }
 
         String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         BackgroundTask bgTask = taskRepository.getTask(runtimeContext, sessionId, taskId);
         if (bgTask == null) {
-            return "Error: No background task found with ID: "
-                    + taskId
-                    + ". Use task_list() to see all known tasks for this session.";
+            return ToolResultBlock.error(
+                    "No background task found with ID: "
+                            + taskId
+                            + ". Use task_list() to see all known tasks for this session.");
         }
 
         bgTask.updateLastCheckedAt();
@@ -110,15 +112,16 @@ public class TaskTool {
                     bgTask.waitForCompletion(timeoutMs);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    return "Error: Wait for task interrupted";
+                    return ToolResultBlock.error("Wait for task interrupted");
                 }
                 // After waiting, if still not complete it may be running on another node
                 if (!bgTask.isCompleted()) {
-                    return "task_id: "
-                            + taskId
-                            + "\nstatus: running"
-                            + "\nnote: Task is running (possibly on another node)."
-                            + " Use task_output(block=false) to poll for completion.";
+                    return ToolResultBlock.success(
+                            "task_id: "
+                                    + taskId
+                                    + "\nstatus: running"
+                                    + "\nnote: Task is running (possibly on another node)."
+                                    + " Use task_output(block=false) to poll for completion.");
                 }
             }
         }
@@ -133,7 +136,7 @@ public class TaskTool {
                 // Marking is best-effort; failure just risks a redundant push, never wrong data.
             }
         }
-        return formatTaskDetail(bgTask);
+        return ToolResultBlock.success(formatTaskDetail(bgTask));
     }
 
     @Tool(
@@ -141,31 +144,33 @@ public class TaskTool {
             description =
                     "Cancel a running background task. Use to stop a task that is no longer"
                             + " needed. Has no effect on already-completed tasks.")
-    public String taskCancel(
+    public ToolResultBlock taskCancel(
             RuntimeContext runtimeContext,
             @ToolParam(name = "task_id", description = "The task_id to cancel") String taskId) {
 
         if (taskId == null || taskId.isBlank()) {
-            return "Error: task_id is required";
+            return ToolResultBlock.error("task_id is required");
         }
 
         String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         BackgroundTask bgTask = taskRepository.getTask(runtimeContext, sessionId, taskId);
         if (bgTask == null) {
-            return "Error: No background task found with ID: " + taskId;
+            return ToolResultBlock.error("No background task found with ID: " + taskId);
         }
 
         TaskStatus currentStatus = bgTask.getTaskStatus();
         if (currentStatus.isTerminal()) {
-            return "task_id: "
-                    + taskId
-                    + "\nstatus: "
-                    + currentStatus.name().toLowerCase()
-                    + "\nnote: Task already in terminal state, cannot cancel.";
+            return ToolResultBlock.success(
+                    "task_id: "
+                            + taskId
+                            + "\nstatus: "
+                            + currentStatus.name().toLowerCase()
+                            + "\nnote: Task already in terminal state, cannot cancel.");
         }
 
         taskRepository.cancelTask(runtimeContext, sessionId, taskId);
-        return "task_id: " + taskId + "\nstatus: cancelled\nCancellation requested successfully.";
+        return ToolResultBlock.success(
+                "task_id: " + taskId + "\nstatus: cancelled\nCancellation requested successfully.");
     }
 
     @Tool(
@@ -176,7 +181,7 @@ public class TaskTool {
                         + " conversation compaction or node migration. Optionally filter by status"
                         + " (running, completed, failed, cancelled). Use this to recover task IDs"
                         + " and state after compaction.")
-    public String taskList(
+    public ToolResultBlock taskList(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "status_filter",
@@ -194,7 +199,7 @@ public class TaskTool {
         if (tasks.isEmpty()) {
             String filterDesc =
                     filter != null ? " with status '" + filter.name().toLowerCase() + "'" : "";
-            return "No background tasks tracked" + filterDesc + ".";
+            return ToolResultBlock.success("No background tasks tracked" + filterDesc + ".");
         }
 
         StringBuilder sb = new StringBuilder();
@@ -208,7 +213,7 @@ public class TaskTool {
             sb.append("  created: ").append(ISO_FORMATTER.format(task.getCreatedAt()));
             sb.append('\n');
         }
-        return sb.toString().trim();
+        return ToolResultBlock.success(sb.toString().trim());
     }
 
     private static TaskStatus parseStatusFilter(String filter) {

@@ -19,9 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import java.nio.file.Path;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -39,32 +43,51 @@ class ShellExecuteToolTest {
         tool = new ShellExecuteTool(sandbox);
     }
 
+    /** Extracts the concatenated text output of a tool result. */
+    private static String textOf(ToolResultBlock result) {
+        return result.getOutput().stream()
+                .filter(b -> b instanceof TextBlock)
+                .map(b -> ((TextBlock) b).getText())
+                .collect(Collectors.joining());
+    }
+
     @Test
     void execute_omittedTimeout_defaultsTo30() {
-        String result = tool.execute(RT, "ls", null, null);
+        ToolResultBlock result = tool.execute(RT, "ls", null, null);
 
-        assertTrue(result.contains("Exit code: 0"));
+        assertTrue(textOf(result).contains("Exit code: 0"));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         assertEquals("ls", sandbox.command);
         assertEquals(30, sandbox.timeoutSeconds);
     }
 
     @Test
     void execute_explicitTimeout_isPassedThrough() {
-        String result = tool.execute(RT, "ls", null, 90);
+        ToolResultBlock result = tool.execute(RT, "ls", null, 90);
 
-        assertTrue(result.contains("Exit code: 0"));
+        assertTrue(textOf(result).contains("Exit code: 0"));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         assertEquals("ls", sandbox.command);
         assertEquals(90, sandbox.timeoutSeconds);
     }
 
     @Test
     void execute_withWorkingDirectory_prefixesCd() {
-        String result = tool.execute(RT, "ls", "sub", null);
+        ToolResultBlock result = tool.execute(RT, "ls", "sub", null);
 
-        assertTrue(result.contains("Exit code: 0"));
+        assertTrue(textOf(result).contains("Exit code: 0"));
+        assertEquals(ToolResultState.SUCCESS, result.getState());
         assertTrue(sandbox.command.startsWith("cd "));
         assertTrue(sandbox.command.endsWith(" && ls"));
         assertEquals(30, sandbox.timeoutSeconds);
+    }
+
+    @Test
+    void execute_rejectsAbsoluteWorkingDirectory() {
+        ToolResultBlock result = tool.execute(RT, "ls", "/etc", null);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertTrue(textOf(result).contains("must be a relative path"));
     }
 
     @Test
