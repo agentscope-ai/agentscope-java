@@ -15,7 +15,6 @@
  */
 package io.agentscope.spring.boot.agui.mvc;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -24,8 +23,8 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import jakarta.servlet.http.HttpServletRequest;
@@ -79,7 +78,6 @@ public class AguiMvcController {
     private final long sseTimeout;
     private final boolean interruptOnDisconnect;
     private final ExecutorService executorService;
-    private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiMvcController(Builder builder) {
         this.processor =
@@ -95,6 +93,7 @@ public class AguiMvcController {
                                         ? builder.config
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
+                        .runtimeContextResolver(builder.runtimeContextResolver)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
@@ -102,7 +101,6 @@ public class AguiMvcController {
         this.sseTimeout = builder.sseTimeout > 0 ? builder.sseTimeout : 600000L;
         this.interruptOnDisconnect = builder.interruptOnDisconnect;
         this.executorService = Executors.newCachedThreadPool();
-        this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
     /**
@@ -172,11 +170,10 @@ public class AguiMvcController {
                 () -> {
                     try {
                         // Process request - returns both agent and event stream
-                        RuntimeContext runtimeContext =
-                                resolveRuntimeContext(input, headerAgentId, pathAgentId, request);
                         AguiRequestProcessor.ProcessResult result =
                                 processor.process(
-                                        input, headerAgentId, pathAgentId, runtimeContext);
+                                        runtimeContextRequest(
+                                                input, headerAgentId, pathAgentId, request));
                         BaseSubscriber<AguiEvent> subscription =
                                 new BaseSubscriber<>() {
                                     @Override
@@ -214,8 +211,7 @@ public class AguiMvcController {
                                                 "SSE connection timed out for run {}, interrupting"
                                                         + " agent",
                                                 runId);
-                                        interruptAndCancel(
-                                                result, threadId, runtimeContext, subscription);
+                                        interruptAndCancel(result, threadId, subscription);
                                     } else {
                                         logger.info(
                                                 "SSE connection timed out for run {}, agent"
@@ -231,8 +227,7 @@ public class AguiMvcController {
                                                         + " agent",
                                                 runId,
                                                 ex.getMessage());
-                                        interruptAndCancel(
-                                                result, threadId, runtimeContext, subscription);
+                                        interruptAndCancel(result, threadId, subscription);
                                     } else {
                                         logger.info(
                                                 "SSE connection error for run {}: {}, agent"
@@ -260,34 +255,20 @@ public class AguiMvcController {
     }
 
     private static void interruptAndCancel(
-            AguiRequestProcessor.ProcessResult result,
-            String threadId,
-            RuntimeContext runtimeContext,
-            Disposable subscription) {
+            AguiRequestProcessor.ProcessResult result, String threadId, Disposable subscription) {
         try {
-            result.interrupt(threadId, runtimeContext);
+            result.interrupt(threadId);
         } finally {
             subscription.dispose();
         }
     }
 
-    private RuntimeContext resolveRuntimeContext(
+    private AguiRuntimeContextRequest<HttpServletRequest> runtimeContextRequest(
             RunAgentInput input,
             String headerAgentId,
             String pathAgentId,
             HttpServletRequest request) {
-        return runtimeContextResolver != null
-                ? runtimeContextResolver.resolve(
-                        runtimeContextRequest(input, headerAgentId, pathAgentId, request))
-                : null;
-    }
-
-    private AguiRuntimeContextRequest runtimeContextRequest(
-            RunAgentInput input,
-            String headerAgentId,
-            String pathAgentId,
-            HttpServletRequest request) {
-        return AguiRuntimeContextRequest.builder()
+        return AguiRuntimeContextRequest.<HttpServletRequest>builder()
                 .input(input)
                 .headerAgentId(headerAgentId)
                 .pathAgentId(pathAgentId)
