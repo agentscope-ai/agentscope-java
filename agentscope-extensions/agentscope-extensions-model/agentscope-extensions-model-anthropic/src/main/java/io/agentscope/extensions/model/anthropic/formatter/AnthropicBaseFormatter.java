@@ -326,4 +326,3 @@ public abstract class AnthropicBaseFormatter
     /** Provider-ready messages and tool cache decision for one request. */
     public record PromptCachePlan(List<MessageParam> messages) {}
 }
-

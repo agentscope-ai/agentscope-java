@@ -596,4 +596,3 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 .verifyComplete();
     }
 }
-

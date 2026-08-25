@@ -505,4 +505,3 @@ class AnthropicChatModelTest {
                 .verify(Duration.ofSeconds(60));
     }
 }
-
