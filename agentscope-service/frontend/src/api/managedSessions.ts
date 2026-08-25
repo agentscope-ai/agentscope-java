@@ -204,67 +204,93 @@ export interface EventStreamHandle {
   close: () => void;
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
- * Subscribes to session events over SSE. Uses fetch (not native EventSource) so JWT Bearer auth works.
+ * Subscribes to session events over SSE. Uses fetch (not native EventSource) so JWT Bearer auth
+ * works. Reconnects automatically when the stream ends or fails, resuming from the last seen
+ * sequence via {@code getAfter} so no events are lost across plane restarts or network drops.
  */
 export function streamEvents(
   sessionId: string,
   onEvent: (event: SessionEvent) => void,
   onError?: (err: Error) => void,
-  options?: { eventDeltas?: string[]; after?: number },
+  options?: {
+    eventDeltas?: string[];
+    after?: number;
+    /** Called before each (re)connect to compute the resume cursor. */
+    getAfter?: () => number | undefined;
+    /** Base reconnect delay; doubles up to {@link maxRetryMs} and resets on progress. */
+    retryMs?: number;
+    maxRetryMs?: number;
+  },
 ): EventStreamHandle {
   const token = getToken();
   const controller = new AbortController();
   let closed = false;
+  let backoffMs = Math.max(500, options?.retryMs ?? 2000);
+  const maxRetryMs = options?.maxRetryMs ?? 30000;
 
-  (async () => {
-    try {
-      const params = new URLSearchParams();
-      if (options?.after != null && options.after > 0) {
-        params.set('after', String(options.after));
-      }
-      for (const t of options?.eventDeltas ?? []) {
-        params.append('event_deltas', t);
-      }
-      const qs = params.toString();
-      const res = await fetch(
-        `/api/sessions/${encodeURIComponent(sessionId)}/events/stream${qs ? `?${qs}` : ''}`,
-        {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          signal: controller.signal,
-        },
-      );
-      if (!res.ok || !res.body) {
-        throw new Error(`Event stream failed: ${res.status}`);
-      }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (!closed) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let idx;
-        while ((idx = buf.indexOf('\n\n')) >= 0) {
-          const block = buf.slice(0, idx);
-          buf = buf.slice(idx + 2);
-          const lines = block.split('\n');
-          let data = '';
-          for (const ln of lines) {
-            if (ln.startsWith('data:')) data += ln.slice(5).trim();
-          }
-          if (!data) continue;
-          try {
-            onEvent(JSON.parse(data) as SessionEvent);
-          } catch {
-            // ignore malformed frames
-          }
+  async function connect(): Promise<void> {
+    const after = options?.getAfter ? options.getAfter() : options?.after;
+    const params = new URLSearchParams();
+    if (after != null && after > 0) {
+      params.set('after', String(after));
+    }
+    for (const t of options?.eventDeltas ?? []) {
+      params.append('event_deltas', t);
+    }
+    const qs = params.toString();
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(sessionId)}/events/stream${qs ? `?${qs}` : ''}`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: controller.signal,
+      },
+    );
+    if (!res.ok || !res.body) {
+      throw new Error(`Event stream failed: ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (!closed) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let data = '';
+        for (const ln of block.split('\n')) {
+          if (ln.startsWith('data:')) data += ln.slice(5).trim();
+        }
+        if (!data) continue;
+        try {
+          onEvent(JSON.parse(data) as SessionEvent);
+          // Any delivered event means the connection is healthy; reset backoff.
+          backoffMs = Math.max(500, options?.retryMs ?? 2000);
+        } catch {
+          // ignore malformed frames
         }
       }
-    } catch (e: unknown) {
+    }
+  }
+
+  (async () => {
+    while (!closed) {
+      try {
+        await connect();
+      } catch (e: unknown) {
+        if (closed) return;
+        if (e instanceof Error && e.name === 'AbortError') return;
+        onError?.(e instanceof Error ? e : new Error(String(e)));
+      }
       if (closed) return;
-      if (e instanceof Error && e.name === 'AbortError') return;
-      onError?.(e instanceof Error ? e : new Error(String(e)));
+      const delayMs = backoffMs;
+      backoffMs = Math.min(maxRetryMs, backoffMs * 2);
+      await sleep(delayMs);
     }
   })();
 

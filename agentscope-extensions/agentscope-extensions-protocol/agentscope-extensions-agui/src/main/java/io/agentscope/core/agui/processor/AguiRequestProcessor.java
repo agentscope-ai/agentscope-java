@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agui.processor;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
@@ -23,6 +24,8 @@ import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -52,9 +55,11 @@ import reactor.core.publisher.Flux;
  *     .config(AguiAdapterConfig.defaultConfig())
  *     .build();
  *
- * ProcessResult result = processor.process(input, headerAgentId, pathAgentId);
+ * AguiRuntimeContextRequest<?> request = AguiRuntimeContextRequest.builder()
+ *         .input(input)
+ *         .build();
+ * ProcessResult result = processor.process(request);
  * Flux<AguiEvent> events = result.events();
- * Agent agent = result.agent(); // For interrupt handling
  * }</pre>
  */
 public class AguiRequestProcessor {
@@ -65,6 +70,7 @@ public class AguiRequestProcessor {
     private final AguiAdapterConfig config;
     private final AguiAgentAdapterFactory adapterFactory;
     private final AguiResumeCoordinator resumeCoordinator;
+    private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
@@ -75,6 +81,7 @@ public class AguiRequestProcessor {
                         ? builder.adapterFactory
                         : AguiAgentAdapterFactory.defaultFactory();
         this.resumeCoordinator = new AguiResumeCoordinator();
+        this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
     /**
@@ -84,38 +91,51 @@ public class AguiRequestProcessor {
      *
      * @param agent The resolved agent instance
      * @param events The event stream
+     * @param runtimeContext The resolved caller-provided runtime context, may be null
      */
-    public record ProcessResult(Agent agent, Flux<AguiEvent> events) {}
+    public record ProcessResult(
+            Agent agent, Flux<AguiEvent> events, RuntimeContext runtimeContext) {
+
+        /**
+         * Interrupt this request's active session.
+         *
+         * <p>AG-UI uses {@code threadId} as the session id. For a multi-session
+         * {@link ReActAgent}, preserve the caller's user id and target that session instead of
+         * invoking the deprecated no-argument interrupt method, which always targets the default
+         * session.
+         *
+         * @param threadId The AG-UI thread id for this request
+         */
+        public void interrupt(String threadId) {
+            if (agent instanceof ReActAgent reActAgent) {
+                RuntimeContext interruptContext =
+                        RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
+                reActAgent.interrupt(interruptContext);
+            } else {
+                agent.interrupt();
+            }
+        }
+    }
 
     /**
      * Process an AG-UI request and return the result containing agent and event stream.
      *
-     * @param input The run agent input
-     * @param headerAgentId The agent ID from HTTP header (may be null)
-     * @param pathAgentId The agent ID from URL path variable (may be null)
+     * <p>The {@link AguiRuntimeContextResolver} (if configured on this processor) is invoked with
+     * the given request to obtain a caller-provided {@link RuntimeContext}. That context is copied
+     * and enriched by {@link AguiAgentAdapter}, so callers can provide custom attributes without
+     * replacing the standard AG-UI metadata.
+     *
+     * @param request The AG-UI request context carrying input, agent IDs, transport details and the
+     *     native request
      * @return A ProcessResult containing the agent and event stream
      */
-    public ProcessResult process(RunAgentInput input, String headerAgentId, String pathAgentId) {
-        return process(input, headerAgentId, pathAgentId, null);
-    }
+    public ProcessResult process(AguiRuntimeContextRequest<?> request) {
+        RunAgentInput input = request.getInput();
+        String headerAgentId = request.getHeaderAgentId();
+        String pathAgentId = request.getPathAgentId();
+        RuntimeContext runtimeContext =
+                runtimeContextResolver != null ? runtimeContextResolver.resolve(request) : null;
 
-    /**
-     * Process an AG-UI request with caller-provided runtime context and return the result.
-     *
-     * <p>The runtime context is copied and enriched by {@link AguiAgentAdapter}; callers can
-     * provide custom attributes without replacing the standard AG-UI metadata.
-     *
-     * @param input The run agent input
-     * @param headerAgentId The agent ID from HTTP header (may be null)
-     * @param pathAgentId The agent ID from URL path variable (may be null)
-     * @param runtimeContext Optional caller-provided runtime context
-     * @return A ProcessResult containing the agent and event stream
-     */
-    public ProcessResult process(
-            RunAgentInput input,
-            String headerAgentId,
-            String pathAgentId,
-            RuntimeContext runtimeContext) {
         String threadId = input.getThreadId();
         String runId = input.getRunId();
 
@@ -180,7 +200,7 @@ public class AguiRequestProcessor {
                                 return processorErrorEvents(input, error);
                             }
                         });
-        return new ProcessResult(agent, events);
+        return new ProcessResult(agent, events, runtimeContext);
     }
 
     private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
@@ -321,6 +341,7 @@ public class AguiRequestProcessor {
         private AgentResolver agentResolver;
         private AguiAdapterConfig config;
         private AguiAgentAdapterFactory adapterFactory;
+        private AguiRuntimeContextResolver runtimeContextResolver;
 
         /**
          * Set the agent resolver.
@@ -352,6 +373,18 @@ public class AguiRequestProcessor {
          */
         public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
             this.adapterFactory = adapterFactory;
+            return this;
+        }
+
+        /**
+         * Set the runtime context resolver invoked for each request to produce a caller-provided
+         * {@link RuntimeContext}. Optional; when null, no caller context is attached.
+         *
+         * @param runtimeContextResolver The resolver used for each request
+         * @return This builder
+         */
+        public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
+            this.runtimeContextResolver = runtimeContextResolver;
             return this;
         }
 
