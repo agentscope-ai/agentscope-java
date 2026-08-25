@@ -113,10 +113,11 @@ public final class MessageMetadataKeys {
      * {"type": "ephemeral"}</code> to this message during formatting. This allows users to manually
      * mark specific
      * messages for caching, independent of the automatic cache control strategy configured via
-     * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()}.
+     * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()}. Explicit markers remain
+     * effective when automatic cache control is disabled or unset.
      *
      * <p>Manually marked messages take priority over the automatic strategy — they will not be
-     * overwritten.
+     * overwritten. A request may contain at most four explicitly marked cache breakpoints.
      *
      * <p><b>Type:</b> Boolean
      * <p><b>Example:</b>

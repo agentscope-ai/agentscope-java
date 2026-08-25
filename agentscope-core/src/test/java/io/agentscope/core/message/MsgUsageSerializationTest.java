@@ -50,7 +50,12 @@ class MsgUsageSerializationTest {
     @Test
     void cachedTokensRoundTripViaJson() {
         ChatUsage usage =
-                ChatUsage.builder().inputTokens(100).outputTokens(50).cachedTokens(30).build();
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .cachedTokens(30)
+                        .cacheCreationInputTokens(20)
+                        .build();
         Msg msg =
                 Msg.builder()
                         .name("assistant")
@@ -68,12 +73,34 @@ class MsgUsageSerializationTest {
         assertEquals(100, deserialized.getUsage().getInputTokens());
         assertEquals(50, deserialized.getUsage().getOutputTokens());
         assertEquals(30, deserialized.getUsage().getCachedTokens());
+        assertEquals(20, deserialized.getUsage().getCacheCreationInputTokens());
     }
 
     @Test
     void cachedTokensDefaultsToZeroForLegacyConstructor() {
         ChatUsage usage = new ChatUsage(100, 50, 1.5);
         assertEquals(0, usage.getCachedTokens());
+        assertEquals(0, usage.getCacheCreationInputTokens());
+    }
+
+    @Test
+    void cacheCreationTokensDefaultToZeroForFourArgumentConstructor() {
+        ChatUsage usage = new ChatUsage(100, 50, 30, 1.5);
+
+        assertEquals(30, usage.getCachedTokens());
+        assertEquals(0, usage.getCacheCreationInputTokens());
+    }
+
+    @Test
+    void legacyUsageJsonDefaultsCacheCreationTokensToZero() {
+        String json = "{\"inputTokens\":100,\"outputTokens\":50,\"cachedTokens\":30,\"time\":1.5}";
+
+        ChatUsage usage = JsonUtils.getJsonCodec().fromJson(json, ChatUsage.class);
+
+        assertEquals(100, usage.getInputTokens());
+        assertEquals(50, usage.getOutputTokens());
+        assertEquals(30, usage.getCachedTokens());
+        assertEquals(0, usage.getCacheCreationInputTokens());
     }
 
     @Test
