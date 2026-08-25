@@ -141,6 +141,24 @@ class GeminiChatFormatterTest {
     }
 
     @Test
+    void testRequestCachedContentShortCircuitsInvalidDefaults() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions defaults =
+                GenerateOptions.builder()
+                        .additionalBodyParam("cachedContent", "cachedContents/default-one")
+                        .additionalBodyParam("cached_content", "cachedContents/default-two")
+                        .build();
+        GenerateOptions request =
+                GenerateOptions.builder()
+                        .additionalBodyParam("cachedContent", "cachedContents/request")
+                        .build();
+
+        formatter.applyOptions(configBuilder, request, defaults);
+
+        assertEquals("cachedContents/request", configBuilder.build().cachedContent().orElseThrow());
+    }
+
+    @Test
     void testRejectConflictingCachedContentAliases() {
         GenerateOptions options =
                 GenerateOptions.builder()

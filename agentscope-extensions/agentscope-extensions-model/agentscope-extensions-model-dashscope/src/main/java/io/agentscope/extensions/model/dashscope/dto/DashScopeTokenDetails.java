@@ -28,6 +28,9 @@ public class DashScopeTokenDetails {
     @JsonProperty("cache_creation_input_tokens")
     private Integer cacheCreationInputTokens;
 
+    @JsonProperty("cache_creation")
+    private CacheCreationDetails cacheCreation;
+
     public Integer getCachedTokens() {
         return cachedTokens;
     }
@@ -37,10 +40,54 @@ public class DashScopeTokenDetails {
     }
 
     public Integer getCacheCreationInputTokens() {
-        return cacheCreationInputTokens;
+        if (cacheCreationInputTokens != null) {
+            return cacheCreationInputTokens;
+        }
+        return cacheCreation != null ? cacheCreation.getInputTokens() : null;
     }
 
     public void setCacheCreationInputTokens(Integer cacheCreationInputTokens) {
         this.cacheCreationInputTokens = cacheCreationInputTokens;
+    }
+
+    public CacheCreationDetails getCacheCreation() {
+        return cacheCreation;
+    }
+
+    public void setCacheCreation(CacheCreationDetails cacheCreation) {
+        this.cacheCreation = cacheCreation;
+    }
+
+    /** Current nested DashScope explicit-cache creation details. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CacheCreationDetails {
+
+        @JsonProperty("cache_creation_input_tokens")
+        private Integer cacheCreationInputTokens;
+
+        @JsonProperty("ephemeral_5m_input_tokens")
+        private Integer ephemeral5mInputTokens;
+
+        public Integer getCacheCreationInputTokens() {
+            return cacheCreationInputTokens;
+        }
+
+        public void setCacheCreationInputTokens(Integer cacheCreationInputTokens) {
+            this.cacheCreationInputTokens = cacheCreationInputTokens;
+        }
+
+        public Integer getEphemeral5mInputTokens() {
+            return ephemeral5mInputTokens;
+        }
+
+        public void setEphemeral5mInputTokens(Integer ephemeral5mInputTokens) {
+            this.ephemeral5mInputTokens = ephemeral5mInputTokens;
+        }
+
+        Integer getInputTokens() {
+            return cacheCreationInputTokens != null
+                    ? cacheCreationInputTokens
+                    : ephemeral5mInputTokens;
+        }
     }
 }

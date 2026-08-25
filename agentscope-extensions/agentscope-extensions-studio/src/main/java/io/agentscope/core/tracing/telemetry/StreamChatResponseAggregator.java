@@ -43,6 +43,8 @@ final class StreamChatResponseAggregator {
     // Usage: take the max value from all chunks, since providers report cumulative totals
     private int inputTokens;
     private int outputTokens;
+    private int cachedTokens;
+    private int cacheCreationInputTokens;
     private double time;
 
     private String finishReason;
@@ -74,6 +76,9 @@ final class StreamChatResponseAggregator {
         if (usage != null) {
             inputTokens = Math.max(inputTokens, usage.getInputTokens());
             outputTokens = Math.max(outputTokens, usage.getOutputTokens());
+            cachedTokens = Math.max(cachedTokens, usage.getCachedTokens());
+            cacheCreationInputTokens =
+                    Math.max(cacheCreationInputTokens, usage.getCacheCreationInputTokens());
             time = usage.getTime();
         }
 
@@ -96,6 +101,8 @@ final class StreamChatResponseAggregator {
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
+                                .cachedTokens(cachedTokens)
+                                .cacheCreationInputTokens(cacheCreationInputTokens)
                                 .time(time)
                                 .build())
                 .finishReason(finishReason)

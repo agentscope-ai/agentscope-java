@@ -294,7 +294,11 @@ public class ReasoningContext {
      * @return ChatUsage with accumulated tokens, or null if no usage data
      */
     public ChatUsage getChatUsage() {
-        if (inputTokens > 0 || outputTokens > 0 || time > 0) {
+        if (inputTokens > 0
+                || outputTokens > 0
+                || cachedTokens > 0
+                || cacheCreationInputTokens > 0
+                || time > 0) {
             return ChatUsage.builder()
                     .inputTokens(inputTokens)
                     .outputTokens(outputTokens)

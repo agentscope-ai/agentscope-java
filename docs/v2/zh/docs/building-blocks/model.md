@@ -59,6 +59,34 @@ CredentialBase/
 </dependency>
 ```
 
+## Prompt 缓存
+
+Prompt 缓存是模型提供商专属能力。`GenerateOptions.cacheControl(true)` 会请求支持该能力的适配器使用自动策略；`MessageMetadataKeys.CACHE_CONTROL` 用于手动标记缓存边界。即使自动策略未设置或已关闭，手动边界仍然生效。
+
+```java
+GenerateOptions automaticCache =
+        GenerateOptions.builder().cacheControl(true).build();
+
+Msg stableContext =
+        Msg.builder()
+                .role(MsgRole.USER)
+                .textContent("需要缓存的稳定上下文")
+                .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                .build();
+```
+
+同一选项在不同提供商的线上协议含义不完全相同：
+
+| 提供商 | 自动/服务端管理行为 | 显式行为 |
+|----------|----------------------|----------|
+| OpenAI | 受支持的模型会自动缓存符合条件的前缀；`cacheControl(true)` 不会人为新增断点。 | 官方 OpenAI 端点会把已标记的 `Msg` 转成 OpenAI 原生显式断点协议；未知 OpenAI-compatible 端点会移除内部标记。 |
+| DashScope | `cacheControl(true)` 会标记第一条 system 消息和最后一条可缓存对话消息。 | 在 DashScope 原生端点和已识别的 DashScope-compatible 端点上，已标记 `Msg` 会转成内容块缓存标记。 |
+| Anthropic | `cacheControl(true)` 启用 Anthropic 自动 prompt 缓存。 | 已标记 `Msg` 会转成 Anthropic 内容块断点；自动缓存会占用提供商最多四个断点中的一个。 |
+| Gemini | Gemini 2.5+ 由服务端管理隐式缓存，布尔选项不会创建缓存资源。 | 通过 `additionalBodyParam("cachedContent", resourceName)` 引用已存在的显式资源；资源 CRUD 和 TTL 由 Google SDK 管理，消息标记不会创建资源。 |
+| Ollama | 当前适配器未暴露 prompt 缓存请求或 usage 协议。 | 不支持。 |
+
+设置 `cacheControl(false)` 只会关闭 AgentScope 的自动策略，无法关闭提供商管理的隐式缓存。`ChatUsage.inputTokens` 是输入 token 总数，`cachedTokens` 和 `cacheCreationInputTokens` 是其子集，计算总 token 时不能重复相加。
+
 ## 选择模型创建方式
 
 ### 字符串 model id

@@ -111,6 +111,12 @@ public class OpenAIUsage {
         @JsonProperty("cache_write_tokens")
         private Integer cacheWriteTokens;
 
+        @JsonProperty("cache_creation_input_tokens")
+        private Integer cacheCreationInputTokens;
+
+        @JsonProperty("cache_creation")
+        private CacheCreationDetails cacheCreation;
+
         public Integer getCachedTokens() {
             return cachedTokens;
         }
@@ -133,6 +139,66 @@ public class OpenAIUsage {
 
         public void setCacheWriteTokens(Integer cacheWriteTokens) {
             this.cacheWriteTokens = cacheWriteTokens;
+        }
+
+        public Integer getCacheCreationInputTokens() {
+            return cacheCreationInputTokens;
+        }
+
+        /** Returns prompt-cache creation tokens across OpenAI and compatible response shapes. */
+        public Integer resolveCacheCreationInputTokens() {
+            if (cacheWriteTokens != null) {
+                return cacheWriteTokens;
+            }
+            if (cacheCreationInputTokens != null) {
+                return cacheCreationInputTokens;
+            }
+            return cacheCreation != null ? cacheCreation.getInputTokens() : null;
+        }
+
+        public void setCacheCreationInputTokens(Integer cacheCreationInputTokens) {
+            this.cacheCreationInputTokens = cacheCreationInputTokens;
+        }
+
+        public CacheCreationDetails getCacheCreation() {
+            return cacheCreation;
+        }
+
+        public void setCacheCreation(CacheCreationDetails cacheCreation) {
+            this.cacheCreation = cacheCreation;
+        }
+
+        /** Nested explicit-cache creation details returned by compatible providers. */
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class CacheCreationDetails {
+
+            @JsonProperty("cache_creation_input_tokens")
+            private Integer cacheCreationInputTokens;
+
+            @JsonProperty("ephemeral_5m_input_tokens")
+            private Integer ephemeral5mInputTokens;
+
+            public Integer getCacheCreationInputTokens() {
+                return cacheCreationInputTokens;
+            }
+
+            public void setCacheCreationInputTokens(Integer cacheCreationInputTokens) {
+                this.cacheCreationInputTokens = cacheCreationInputTokens;
+            }
+
+            public Integer getEphemeral5mInputTokens() {
+                return ephemeral5mInputTokens;
+            }
+
+            public void setEphemeral5mInputTokens(Integer ephemeral5mInputTokens) {
+                this.ephemeral5mInputTokens = ephemeral5mInputTokens;
+            }
+
+            Integer getInputTokens() {
+                return cacheCreationInputTokens != null
+                        ? cacheCreationInputTokens
+                        : ephemeral5mInputTokens;
+            }
         }
     }
 

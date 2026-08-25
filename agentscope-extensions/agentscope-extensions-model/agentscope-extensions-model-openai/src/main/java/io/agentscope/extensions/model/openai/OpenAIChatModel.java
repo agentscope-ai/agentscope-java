@@ -236,7 +236,12 @@ public class OpenAIChatModel extends ChatModelBase {
         }
         try {
             String host = URI.create(baseUrl).getHost();
-            return host != null && host.equalsIgnoreCase("api.openai.com");
+            if (host == null) {
+                return false;
+            }
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            return normalizedHost.equals("api.openai.com")
+                    || normalizedHost.endsWith(".api.openai.com");
         } catch (IllegalArgumentException e) {
             return false;
         }

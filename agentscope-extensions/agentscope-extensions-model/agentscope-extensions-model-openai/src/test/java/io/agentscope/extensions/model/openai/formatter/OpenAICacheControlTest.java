@@ -323,14 +323,14 @@ class OpenAICacheControlTest {
                             .messages(List.of(message))
                             .extraParam(
                                     "prompt_cache_options",
-                                    Map.of("mode", "automatic", "ttl", "24h"))
+                                    Map.of("mode", "implicit", "ttl", "30m"))
                             .build();
 
             formatter.applyOpenAIPromptCache(request);
 
             JsonNode json = toJsonTree(request);
             assertEquals("explicit", json.path("prompt_cache_options").path("mode").asText());
-            assertEquals("24h", json.path("prompt_cache_options").path("ttl").asText());
+            assertEquals("30m", json.path("prompt_cache_options").path("ttl").asText());
         }
 
         @Test

@@ -108,6 +108,21 @@ class ReasoningContextTest {
     }
 
     @Test
+    @DisplayName("Should retain cache-only usage")
+    void testCacheOnlyUsage() {
+        ChatUsage usage = ChatUsage.builder().cachedTokens(80).cacheCreationInputTokens(15).build();
+        ChatResponse chunk =
+                ChatResponse.builder().id("msg-cache-only").content(List.of()).usage(usage).build();
+
+        context.processChunk(chunk);
+
+        ChatUsage resultUsage = context.getChatUsage();
+        assertNotNull(resultUsage);
+        assertEquals(80, resultUsage.getCachedTokens());
+        assertEquals(15, resultUsage.getCacheCreationInputTokens());
+    }
+
+    @Test
     @DisplayName("Should accumulate ChatUsage from multiple chunks")
     void testMultipleChunksUsageAccumulation() {
         // First chunk

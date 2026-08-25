@@ -144,8 +144,10 @@ public class GeminiChatFormatter
 
     private String resolveCachedContent(GenerateOptions options, GenerateOptions defaultOptions) {
         CacheReference requestReference = cacheReference(options);
-        CacheReference defaultReference = cacheReference(defaultOptions);
-        Object value = requestReference.present ? requestReference.value : defaultReference.value;
+        Object value =
+                requestReference.present
+                        ? requestReference.value
+                        : cacheReference(defaultOptions).value;
 
         if (value == null) {
             return null;

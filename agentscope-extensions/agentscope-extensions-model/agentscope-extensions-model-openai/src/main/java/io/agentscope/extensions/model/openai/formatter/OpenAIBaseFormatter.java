@@ -174,14 +174,18 @@ public abstract class OpenAIBaseFormatter
     }
 
     /**
-     * Apply cache control to OpenAI messages.
+     * Apply legacy message-level cache control.
      *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
-     * marking) will not be overwritten.
+     * <p>This method emits the provider-specific {@code cache_control} field used by older
+     * OpenAI-compatible integrations. The official OpenAI request path does not call it: OpenAI
+     * automatic caching is provider-managed, while explicit AgentScope markers are normalized to
+     * {@code prompt_cache_breakpoint} by {@link #applyOpenAIPromptCache(OpenAIRequest)}.
      *
      * @param messages the list of formatted OpenAI messages
+     * @deprecated use the model request path so the selected endpoint can apply its native cache
+     *     protocol
      */
+    @Deprecated(since = "2.0.3", forRemoval = false)
     public void applyCacheControl(List<OpenAIMessage> messages) {
         if (messages == null || messages.isEmpty()) {
             return;

@@ -135,6 +135,14 @@ class OpenAIChatModelTest {
         assertTrue(OpenAIChatModel.isOfficialOpenAIBaseUrl(null));
         assertTrue(OpenAIChatModel.isOfficialOpenAIBaseUrl(""));
         assertTrue(OpenAIChatModel.isOfficialOpenAIBaseUrl("https://api.openai.com/v1"));
+        for (String region : List.of("us", "eu", "au", "ca", "jp", "in", "sg", "kr", "gb", "ae")) {
+            assertTrue(
+                    OpenAIChatModel.isOfficialOpenAIBaseUrl(
+                            "https://" + region + ".api.openai.com/v1"),
+                    region);
+        }
+        assertFalse(
+                OpenAIChatModel.isOfficialOpenAIBaseUrl("https://api.openai.com.evil.example/v1"));
         assertFalse(
                 OpenAIChatModel.isOfficialOpenAIBaseUrl("https://gateway.example.com/openai/v1"));
     }

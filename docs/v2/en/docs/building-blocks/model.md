@@ -59,6 +59,34 @@ Other provider artifacts follow the same pattern: `agentscope-extensions-model-o
 </dependency>
 ```
 
+## Prompt caching
+
+Prompt caching is provider-specific. `GenerateOptions.cacheControl(true)` asks a supporting adapter to use its automatic strategy, while `MessageMetadataKeys.CACHE_CONTROL` marks a manual cache boundary. A manual boundary remains effective when the automatic strategy is disabled or unset.
+
+```java
+GenerateOptions automaticCache =
+        GenerateOptions.builder().cacheControl(true).build();
+
+Msg stableContext =
+        Msg.builder()
+                .role(MsgRole.USER)
+                .textContent("Stable context to cache")
+                .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                .build();
+```
+
+The same option does not have identical wire semantics for every provider:
+
+| Provider | Automatic/provider-managed behavior | Explicit behavior |
+|----------|-------------------------------------|-------------------|
+| OpenAI | Supported models cache eligible prefixes automatically. `cacheControl(true)` does not add an artificial breakpoint. | A marked `Msg` is converted to OpenAI's native explicit breakpoint protocol on official OpenAI endpoints. Internal markers are removed for unknown OpenAI-compatible endpoints. |
+| DashScope | `cacheControl(true)` marks the first system message and the last cacheable conversation message. | A marked `Msg` becomes a native content-block cache marker on DashScope native and recognized DashScope-compatible endpoints. |
+| Anthropic | `cacheControl(true)` enables Anthropic automatic prompt caching. | A marked `Msg` becomes an Anthropic content-block breakpoint. Automatic caching consumes one of the provider's four available breakpoints. |
+| Gemini | Gemini 2.5+ manages implicit caching. The boolean option does not create a cache resource. | Reference an existing explicit resource with `additionalBodyParam("cachedContent", resourceName)`; resource CRUD and TTL remain in the Google SDK. Message markers do not create resources. |
+| Ollama | No prompt-cache request or usage protocol is exposed by this adapter. | Not supported. |
+
+Setting `cacheControl(false)` only disables an AgentScope automatic strategy; it cannot disable provider-managed implicit caching. `ChatUsage.inputTokens` is the total input count. `cachedTokens` and `cacheCreationInputTokens` are subsets of that input count and must not be added again when computing total tokens.
+
 ## Choose a creation path
 
 ### String model id

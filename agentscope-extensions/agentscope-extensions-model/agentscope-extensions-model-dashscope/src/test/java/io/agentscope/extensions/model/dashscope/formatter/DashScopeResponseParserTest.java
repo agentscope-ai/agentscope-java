@@ -217,6 +217,31 @@ class DashScopeResponseParserTest {
     }
 
     @Test
+    void testParseNestedPromptCacheCreationUsageDetails() {
+        DashScopeTokenDetails.CacheCreationDetails cacheCreation =
+                new DashScopeTokenDetails.CacheCreationDetails();
+        cacheCreation.setEphemeral5mInputTokens(35);
+        DashScopeTokenDetails details = new DashScopeTokenDetails();
+        details.setCachedTokens(55);
+        details.setCacheCreation(cacheCreation);
+
+        DashScopeUsage usage = new DashScopeUsage();
+        usage.setInputTokens(100);
+        usage.setOutputTokens(20);
+        usage.setPromptTokensDetails(details);
+
+        DashScopeResponse response = new DashScopeResponse();
+        response.setRequestId("req-nested-cache-usage");
+        response.setUsage(usage);
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(55, chatResponse.getUsage().getCachedTokens());
+        assertEquals(35, chatResponse.getUsage().getCacheCreationInputTokens());
+    }
+
+    @Test
     void testParseLegacyTopLevelCacheUsage() {
         DashScopeUsage usage = new DashScopeUsage();
         usage.setInputTokens(100);
