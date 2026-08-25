@@ -26,6 +26,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoWriteException;
 import com.mongodb.ServerAddress;
 import com.mongodb.WriteError;
@@ -50,6 +51,7 @@ import org.bson.conversions.Bson;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.Mockito;
@@ -168,6 +170,60 @@ class MongoAgentStateStoreTest {
     void saveListState() {
         store.save("user", "session", "list", List.of(new TestState("a"), new TestState("b")));
         verify(collection).updateOne(any(Bson.class), any(Bson.class), any());
+    }
+
+    @Test
+    void saveListAppendOnNewSessionIncludesSetOnInsert() {
+        // Brand-new session (no existing document) whose first write is a non-empty list:
+        // needsFullRewrite(values, null, 0) returns false, so the append branch runs. Its
+        // upsert must carry $setOnInsert(user_id, session_id), otherwise the session document
+        // is created without them and listSessionIds can never see it — the blocker from the
+        // code review.
+        store.save("user", "session", "list", List.of(new TestState("a")));
+
+        ArgumentCaptor<Bson> updateCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).updateOne(any(Bson.class), updateCaptor.capture(), any());
+
+        BsonDocument updateDoc =
+                updateCaptor
+                        .getValue()
+                        .toBsonDocument(
+                                BsonDocument.class, MongoClientSettings.getDefaultCodecRegistry());
+        assertTrue(updateDoc.containsKey("$push"), "expected the append branch ($push)");
+
+        BsonDocument setOnInsert = updateDoc.getDocument("$setOnInsert");
+        assertEquals("user", setOnInsert.getString("user_id").getValue());
+        assertEquals("session", setOnInsert.getString("session_id").getValue());
+    }
+
+    @Test
+    void saveListFullRewriteIncludesSetOnInsert() {
+        // Existing document whose stored list shrinks — full-rewrite branch. Its upsert must
+        // also carry $setOnInsert so a rewrite that happens to be the first write on a slot
+        // still records the session identifiers.
+        List<Document> existingList =
+                List.of(
+                        Document.parse("{\"value\":\"a\"}"),
+                        Document.parse("{\"value\":\"b\"}"),
+                        Document.parse("{\"value\":\"c\"}"));
+        Document existingDoc = new Document("list:list", existingList);
+        when(findIterable.first()).thenReturn(existingDoc);
+
+        store.save("user", "session", "list", List.of(new TestState("x")));
+
+        ArgumentCaptor<Bson> updateCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).updateOne(any(Bson.class), updateCaptor.capture(), any());
+
+        BsonDocument updateDoc =
+                updateCaptor
+                        .getValue()
+                        .toBsonDocument(
+                                BsonDocument.class, MongoClientSettings.getDefaultCodecRegistry());
+        assertTrue(updateDoc.containsKey("$set"), "expected the rewrite branch ($set)");
+
+        BsonDocument setOnInsert = updateDoc.getDocument("$setOnInsert");
+        assertEquals("user", setOnInsert.getString("user_id").getValue());
+        assertEquals("session", setOnInsert.getString("session_id").getValue());
     }
 
     @Test

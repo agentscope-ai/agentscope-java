@@ -108,7 +108,7 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
 
     /**
      * Creates a MongoDB distributed store from a connection string. A new {@link MongoClient} is
-     * created internally. The caller is responsible for closing the client when done.
+     * created internally and owned by the store; {@link #close()} will close it.
      *
      * @param connectionString the MongoDB connection string
      * @return a new MongoDB distributed store

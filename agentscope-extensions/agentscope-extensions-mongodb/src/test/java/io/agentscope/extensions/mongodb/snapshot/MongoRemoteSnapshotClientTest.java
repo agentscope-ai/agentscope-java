@@ -23,13 +23,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoCommandException;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import java.io.ByteArrayInputStream;
@@ -179,6 +182,33 @@ class MongoRemoteSnapshotClientTest {
         when(findIterable.first()).thenReturn(null);
 
         assertThrows(FileNotFoundException.class, () -> client.download("missing-snap"));
+    }
+
+    @Test
+    void downloadThrowsFileNotFoundWhenDataFieldMissing() {
+        // Document exists but carries no data field — must surface as FileNotFoundException
+        // (same as a missing snapshot), not as an NPE.
+        Document docWithoutData = new Document("_id", "snap-1");
+        when(findIterable.first()).thenReturn(docWithoutData);
+
+        assertThrows(FileNotFoundException.class, () -> client.download("snap-1"));
+    }
+
+    @Test
+    void initSchemaMigratesConflictingTtlIndex() {
+        // Simulate an existing collection whose createdAt TTL index still has the old 7-day
+        // expireAfterSeconds: createIndex then fails with IndexOptionsConflict (error 85) and
+        // must trigger drop + recreate instead of silently keeping the stale TTL.
+        MongoCommandException conflict = mock(MongoCommandException.class);
+        when(conflict.getErrorCode()).thenReturn(85);
+        when(collection.createIndex(any(Bson.class), any(IndexOptions.class)))
+                .thenThrow(conflict)
+                .thenReturn("createdAt_1");
+
+        new MongoRemoteSnapshotClient(mongoClient, "testdb", "snap_migrate", true);
+
+        verify(collection).dropIndex("createdAt_1");
+        verify(collection, times(2)).createIndex(any(Bson.class), any(IndexOptions.class));
     }
 
     @Test

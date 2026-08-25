@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.mongodb.snapshot;
 
+import com.mongodb.MongoCommandException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
@@ -42,6 +43,11 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Stores sandbox workspace tar archives as BSON Binary in a collection with documents of the
  * form {@code {_id: snapshotId, data: Binary, createdAt: Date}}.
+ *
+ * <p>The collection carries a TTL index on {@code createdAt} with a 30-day expiry, aligned with
+ * the 30-day session TTL of {@code MongoAgentStateStore}. The snapshot of a session must not be
+ * reclaimed while the session itself is still alive; otherwise resuming the sandbox would fail
+ * with {@link FileNotFoundException} and appear as lost workspace data.
  */
 public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
 
@@ -50,6 +56,9 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
     private static final String DEFAULT_COLLECTION = "agentscope_snapshots";
     private static final String FIELD_DATA = "data";
     private static final String FIELD_CREATED_AT = "createdAt";
+    // Aligned with the session TTL in MongoAgentStateStore (30 days on _updated_at): a snapshot
+    // must live at least as long as the session that can resume it.
+    private static final long SNAPSHOT_TTL_SECONDS = 30L * 24 * 3600;
     // MongoDB BSON document size limit is 16 MB; cap at 15 MB to leave headroom for
     // metadata. For larger snapshots, use GridFS (not yet implemented).
     private static final int MAX_SNAPSHOT_BYTES = 15 * 1024 * 1024; // 15 MB
@@ -75,10 +84,38 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
         try {
             collection.createIndex(
                     Indexes.ascending(FIELD_CREATED_AT),
-                    new IndexOptions().expireAfter(7 * 24 * 3600L, TimeUnit.SECONDS));
+                    new IndexOptions().expireAfter(SNAPSHOT_TTL_SECONDS, TimeUnit.SECONDS));
+        } catch (MongoCommandException e) {
+            // IndexOptionsConflict
+            if (e.getErrorCode() == 85) {
+                // A TTL index on createdAt exists with different options, and createIndex
+                // cannot change options in place. Drop and recreate so the TTL actually
+                // takes effect — otherwise this best-effort initialization would only warn
+                // and silently keep the stale TTL. This keeps future TTL adjustments safe.
+                migrateTtlIndex();
+            } else {
+                log.warn(
+                        "Failed to initialize snapshot collection index '{}': {}",
+                        collection.getNamespace(),
+                        e.getMessage());
+            }
         } catch (Exception e) {
             log.warn(
                     "Failed to initialize snapshot collection index '{}': {}",
+                    collection.getNamespace(),
+                    e.getMessage());
+        }
+    }
+
+    private void migrateTtlIndex() {
+        try {
+            collection.dropIndex(FIELD_CREATED_AT + "_1");
+            collection.createIndex(
+                    Indexes.ascending(FIELD_CREATED_AT),
+                    new IndexOptions().expireAfter(SNAPSHOT_TTL_SECONDS, TimeUnit.SECONDS));
+        } catch (Exception e) {
+            log.warn(
+                    "Failed to migrate snapshot TTL index '{}': {}",
                     collection.getNamespace(),
                     e.getMessage());
         }
@@ -106,6 +143,12 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
             throw new FileNotFoundException("Snapshot not found in MongoDB: " + snapshotId);
         }
         Binary binary = doc.get(FIELD_DATA, Binary.class);
+        if (binary == null) {
+            // Document exists but carries no data (e.g. corrupted or manually edited). Treat
+            // it the same as a missing snapshot instead of failing with an NPE.
+            throw new FileNotFoundException(
+                    "Snapshot document has no data field in MongoDB: " + snapshotId);
+        }
         return new ByteArrayInputStream(binary.getData());
     }
 

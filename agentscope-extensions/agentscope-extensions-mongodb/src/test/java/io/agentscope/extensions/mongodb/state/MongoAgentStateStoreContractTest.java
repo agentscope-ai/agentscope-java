@@ -24,6 +24,7 @@ import com.mongodb.client.MongoClients;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -214,6 +215,41 @@ class MongoAgentStateStoreContractTest {
         assertEquals(1, successes.get());
         assertEquals(
                 2L, store.getVersioned(USER, SESSION, "agent_state", TestState.class).version());
+    }
+
+    @Test
+    @Order(7)
+    @DisplayName("session first saved as a non-empty list is visible to listSessionIds")
+    void listFirstSave_sessionVisibleToListSessionIds() {
+        // Regression for the review blocker: a brand-new session whose first write hits the
+        // incremental-append branch used to be upserted without user_id/session_id fields,
+        // making the session permanently invisible to listSessionIds.
+        String listFirstSession = "list-first-session";
+        try {
+            store.save(
+                    USER,
+                    listFirstSession,
+                    "memory_messages",
+                    List.of(new TestState("m1"), new TestState("m2")));
+
+            assertTrue(
+                    store.listSessionIds(USER).contains(listFirstSession),
+                    "session first saved via list append must be visible to listSessionIds");
+            assertEquals(
+                    2,
+                    store.getList(USER, listFirstSession, "memory_messages", TestState.class)
+                            .size());
+
+            // A later full rewrite (list shrinks) must not lose visibility either
+            store.save(USER, listFirstSession, "memory_messages", List.of(new TestState("m3")));
+            assertTrue(store.listSessionIds(USER).contains(listFirstSession));
+            assertEquals(
+                    1,
+                    store.getList(USER, listFirstSession, "memory_messages", TestState.class)
+                            .size());
+        } finally {
+            store.delete(USER, listFirstSession);
+        }
     }
 
     record TestState(String value) implements State {}

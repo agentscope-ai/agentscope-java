@@ -182,10 +182,12 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
      * Saves a list of state values with incremental-append optimization.
      *
      * <p><b>Concurrency note:</b> this method performs a read-then-write to decide between
-     * incremental append and full replacement. It is NOT atomic — concurrent calls for the same
-     * {@code (userId, sessionId, key)} may interleave reads and writes, causing lost appends or
-     * stale hash comparisons. Callers that require strict consistency should synchronize externally
-     * (e.g. via {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard}).
+     * incremental append and full replacement, so it is intentionally NOT atomic: concurrent
+     * writers for the same {@code (userId, sessionId, key)} may interleave reads and writes,
+     * causing duplicated or lost appends. This matches the harness execution model, where a
+     * {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard} serialises calls per
+     * isolation slot, so each session normally has at most one writer at a time. Callers that
+     * write the same list concurrently from outside the harness must synchronise externally.
      */
     @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
@@ -229,11 +231,18 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         } else if (values.size() > existingCount) {
             List<? extends State> newItems = values.subList(existingCount, values.size());
             List<Document> newDocs = toDocumentList(newItems);
+            // $setOnInsert is required here as well: a brand-new session whose first write is
+            // a non-empty list lands in this append branch (needsFullRewrite returns false for
+            // an absent document), so without it the upserted document would carry no
+            // user_id/session_id fields and listSessionIds could never see it — not even after
+            // later full-rewrite saves, since $setOnInsert only fires on the initial insert.
             Bson update =
                     Updates.combine(
                             Updates.pushEach(listKey, newDocs),
                             Updates.set(hashField, currentHash),
-                            Updates.set(FIELD_UPDATED_AT, new Date()));
+                            Updates.set(FIELD_UPDATED_AT, new Date()),
+                            Updates.setOnInsert(FIELD_USER_ID, normalizeUser(userId)),
+                            Updates.setOnInsert(FIELD_SESSION_ID, sessionId));
             collection.updateOne(Filters.eq(slotId), update, upsert());
         } else {
             // Hash unchanged but size decreased (elements removed) — force full rewrite.
@@ -434,6 +443,11 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         return normalizeUser(userId) + ":" + sessionId;
     }
 
+    /**
+     * Validates a top-level state key as a MongoDB field name. Nested field names inside values
+     * are deliberately not validated or rewritten: MongoDB 5.0+ stores them verbatim, and renaming
+     * them would break deserialization back into the original {@link State} type.
+     */
     private static void validateKey(String key) {
         if (key == null || key.isBlank()) {
             throw new IllegalArgumentException("key must not be blank");

@@ -242,8 +242,8 @@ class MongoIndexLifecycleContractTest {
 
     @Test
     @Order(7)
-    @DisplayName("RemoteSnapshotClient: TTL index on createdAt with 7-day expiry")
-    void snapshotClient_ttlIndex_7days() {
+    @DisplayName("RemoteSnapshotClient: TTL index on createdAt with 30-day expiry")
+    void snapshotClient_ttlIndex_30days() {
         new MongoRemoteSnapshotClient(client, dbName, "idx_snapshots", true);
 
         Map<String, Document> indexes = indexMap(dbName, "idx_snapshots");
@@ -260,9 +260,51 @@ class MongoIndexLifecycleContractTest {
 
         assertNotNull(ttlIndex, "TTL index on 'createdAt' must exist");
         assertEquals(
-                SEVEN_DAYS_SECONDS,
+                THIRTY_DAYS_SECONDS,
                 ((Number) ttlIndex.get("expireAfterSeconds")).longValue(),
-                "Snapshot TTL must be 7 days (604800s)");
+                "Snapshot TTL must be 30 days (2592000s), aligned with the session TTL —"
+                        + " a snapshot must not be reclaimed while its session is still alive");
+    }
+
+    @Test
+    @Order(8)
+    @DisplayName("RemoteSnapshotClient: upgrade from old 7-day TTL index does not throw")
+    void snapshotClient_ttlUpgrade_fromSevenDays() {
+        String upgradeDb = "test_idx_snap_upgrade_" + System.currentTimeMillis();
+        String collName = "upgrade_snapshots";
+
+        // Phase 1: simulate old code — create TTL index with the previous 7-day expiry
+        MongoDatabase upgradeDbRef = client.getDatabase(upgradeDb);
+        upgradeDbRef
+                .getCollection(collName)
+                .createIndex(
+                        new org.bson.Document("createdAt", 1),
+                        new com.mongodb.client.model.IndexOptions()
+                                .expireAfter(
+                                        SEVEN_DAYS_SECONDS, java.util.concurrent.TimeUnit.SECONDS));
+
+        // Phase 2: new code constructor runs initSchema() — must not throw error 85
+        new MongoRemoteSnapshotClient(client, upgradeDb, collName, true);
+
+        // Phase 3: verify index was upgraded to 30 days
+        Map<String, Document> indexes = indexMap(upgradeDb, collName);
+        Document ttlIndex =
+                indexes.values().stream()
+                        .filter(
+                                i -> {
+                                    Object key = i.get("key");
+                                    return key instanceof Document d && d.containsKey("createdAt");
+                                })
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(ttlIndex);
+        assertEquals(
+                THIRTY_DAYS_SECONDS,
+                ((Number) ttlIndex.get("expireAfterSeconds")).longValue(),
+                "After upgrade, snapshot TTL must be 30 days");
+
+        // Cleanup
+        upgradeDbRef.drop();
     }
 
     // ────────────────── Helpers ──────────────────
