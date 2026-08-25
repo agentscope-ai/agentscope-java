@@ -87,13 +87,14 @@ public class AnthropicResponseParser {
         }
 
         // Parse usage
+        long baseInput = message.usage().inputTokens();
+        long cacheRead = message.usage().cacheReadInputTokens().orElse(0L);
+        long cacheCreate = message.usage().cacheCreationInputTokens().orElse(0L);
         ChatUsage usage =
                 ChatUsage.builder()
-                        .inputTokens((int) message.usage().inputTokens())
+                        .inputTokens((int) (baseInput + cacheRead + cacheCreate))
                         .outputTokens((int) message.usage().outputTokens())
-                        // cacheReadInputTokens 返回 Optional<Long>,orElse(0L) 返回 Long 对象,
-                        // (int) Long 在 Java 中非法(只能窄化基本类型 long),必须走 intValue()
-                        .cachedTokens(message.usage().cacheReadInputTokens().orElse(0L).intValue())
+                        .cachedTokens((int) cacheRead)
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 

@@ -107,8 +107,6 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
     @Test
     void testParseMessageReadsCacheReadInputTokens() {
-        // Anthropic 报告的 cache_read_input_tokens 必须透传到 ChatUsage.cachedTokens,
-        // 否则下游记账无法识别缓存命中、定价会按全量 input 估算。
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
@@ -119,6 +117,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(usage.inputTokens()).thenReturn(1000L);
         when(usage.outputTokens()).thenReturn(50L);
         when(usage.cacheReadInputTokens()).thenReturn(Optional.of(500L));
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.of(200L));
 
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
@@ -130,6 +129,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertNotNull(response.getUsage());
         assertEquals(500, response.getUsage().getCachedTokens());
+        assertEquals(1700, response.getUsage().getInputTokens());
     }
 
     @Test
