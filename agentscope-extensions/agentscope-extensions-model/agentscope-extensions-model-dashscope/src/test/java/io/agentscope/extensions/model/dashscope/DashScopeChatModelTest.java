@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -34,6 +36,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeSearchOptions;
@@ -975,12 +978,53 @@ class DashScopeChatModelTest {
 
         RecordedRequest recorded = mockServer.takeRequest();
         String body = recorded.getBody().readUtf8();
-        assertTrue(
-                body.contains("\"cache_control\""),
-                "Request body should contain cache_control: " + body);
-        assertTrue(
-                body.contains("\"ephemeral\""),
-                "Request body should contain ephemeral cache type: " + body);
+        JsonNode tree = JsonUtils.getJsonCodec().fromJson(body, JsonNode.class);
+        JsonNode system = tree.at("/input/messages/0");
+        JsonNode user = tree.at("/input/messages/1");
+        assertFalse(system.has("cache_control"), body);
+        assertFalse(user.has("cache_control"), body);
+        assertTrue(system.get("content").isArray(), body);
+        assertTrue(user.get("content").isArray(), body);
+        assertEquals("text", system.at("/content/0/type").asText());
+        assertEquals("ephemeral", system.at("/content/0/cache_control/type").asText());
+        assertEquals("ephemeral", user.at("/content/0/cache_control/type").asText());
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("Should preserve explicit cache metadata when automatic cache control is disabled")
+    void testExplicitCacheControlAppliedWithoutAutomaticOption() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+        Msg explicit =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .textContent("stable context")
+                        .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                        .build();
+
+        chatModel
+                .doStream(List.of(explicit), List.of(), GenerateOptions.builder().build())
+                .blockLast();
+
+        JsonNode tree =
+                JsonUtils.getJsonCodec()
+                        .fromJson(mockServer.takeRequest().getBody().readUtf8(), JsonNode.class);
+        JsonNode message = tree.at("/input/messages/0");
+        assertFalse(message.has("cache_control"));
+        assertEquals("ephemeral", message.at("/content/0/cache_control/type").asText());
 
         mockServer.shutdown();
     }

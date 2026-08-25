@@ -16,11 +16,16 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openai.dto.OpenAIContentPart;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -236,6 +241,113 @@ class OpenAICacheControlTest {
             assertEquals(2, result.size());
             assertEquals(EPHEMERAL, result.get(0).getCacheControl());
             assertNull(result.get(1).getCacheControl());
+        }
+    }
+
+    @Nested
+    @DisplayName("DashScope-compatible cache_control")
+    class DashScopeCompatibleTest {
+
+        @Test
+        @DisplayName("should serialize markers on content blocks using shared strategy")
+        void exactContentBlockJson() {
+            List<OpenAIMessage> messages =
+                    new ArrayList<>(
+                            List.of(
+                                    OpenAIMessage.builder()
+                                            .role("system")
+                                            .content("System 1")
+                                            .build(),
+                                    OpenAIMessage.builder()
+                                            .role("system")
+                                            .content("System 2")
+                                            .build(),
+                                    OpenAIMessage.builder()
+                                            .role("user")
+                                            .content("Question")
+                                            .build()));
+
+            formatter.applyDashScopeCacheControl(messages, true);
+
+            JsonNode first = toJsonTree(messages.get(0));
+            JsonNode second = toJsonTree(messages.get(1));
+            JsonNode last = toJsonTree(messages.get(2));
+            assertFalse(first.has("cache_control"));
+            assertEquals("text", first.path("content").get(0).path("type").asText());
+            assertEquals(
+                    "ephemeral",
+                    first.path("content").get(0).path("cache_control").path("type").asText());
+            assertFalse(second.has("cache_control"));
+            assertEquals("System 2", second.path("content").asText());
+            assertEquals(
+                    "ephemeral",
+                    last.path("content").get(0).path("cache_control").path("type").asText());
+        }
+
+        @Test
+        @DisplayName("should retain explicit metadata marker when automatic strategy is disabled")
+        void explicitMetadataWithoutAutomaticStrategy() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Pinned context")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                            .build();
+            List<OpenAIMessage> messages = formatter.format(List.of(msg));
+
+            formatter.applyDashScopeCacheControl(messages, false);
+
+            assertNull(messages.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, messages.get(0).getContentAsList().get(0).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should place multimodal marker on the final content block")
+        void multimodalFinalBlock() {
+            OpenAIMessage message =
+                    OpenAIMessage.builder()
+                            .role("user")
+                            .content(
+                                    new ArrayList<>(
+                                            List.of(
+                                                    OpenAIContentPart.text("Look"),
+                                                    OpenAIContentPart.imageUrl(
+                                                            "https://example.com/image.png"))))
+                            .build();
+
+            formatter.applyDashScopeCacheControl(List.of(message), true);
+
+            assertNull(message.getContentAsList().get(0).getCacheControl());
+            assertEquals(EPHEMERAL, message.getContentAsList().get(1).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should reject more than four explicit content-block markers")
+        void tooManyExplicitMarkers() {
+            List<OpenAIMessage> messages = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                messages.add(
+                        OpenAIMessage.builder()
+                                .role("user")
+                                .content(
+                                        new ArrayList<>(
+                                                List.of(
+                                                        OpenAIContentPart.builder()
+                                                                .type("text")
+                                                                .text("Context " + i)
+                                                                .cacheControl(EPHEMERAL)
+                                                                .build())))
+                                .build());
+            }
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> formatter.applyDashScopeCacheControl(messages, false));
+        }
+
+        private JsonNode toJsonTree(OpenAIMessage message) {
+            return JsonUtils.getJsonCodec()
+                    .fromJson(JsonUtils.getJsonCodec().toJson(message), JsonNode.class);
         }
     }
 }

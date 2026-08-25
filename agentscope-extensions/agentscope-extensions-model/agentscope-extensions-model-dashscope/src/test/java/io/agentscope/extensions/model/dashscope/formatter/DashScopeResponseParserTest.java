@@ -30,6 +30,7 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeFunction;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeOutput;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeTokenDetails;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeToolCall;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeUsage;
 import java.time.Instant;
@@ -189,6 +190,48 @@ class DashScopeResponseParserTest {
         assertNotNull(chatResponse.getUsage());
         assertEquals(10, chatResponse.getUsage().getInputTokens());
         assertEquals(5, chatResponse.getUsage().getOutputTokens());
+    }
+
+    @Test
+    void testParsePromptCacheUsageDetails() {
+        DashScopeTokenDetails details = new DashScopeTokenDetails();
+        details.setCachedTokens(60);
+        details.setCacheCreationInputTokens(30);
+
+        DashScopeUsage usage = new DashScopeUsage();
+        usage.setInputTokens(100);
+        usage.setOutputTokens(20);
+        usage.setPromptTokensDetails(details);
+
+        DashScopeResponse response = new DashScopeResponse();
+        response.setRequestId("req-cache-usage");
+        response.setUsage(usage);
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(100, chatResponse.getUsage().getInputTokens());
+        assertEquals(20, chatResponse.getUsage().getOutputTokens());
+        assertEquals(60, chatResponse.getUsage().getCachedTokens());
+        assertEquals(30, chatResponse.getUsage().getCacheCreationInputTokens());
+    }
+
+    @Test
+    void testParseLegacyTopLevelCacheUsage() {
+        DashScopeUsage usage = new DashScopeUsage();
+        usage.setInputTokens(100);
+        usage.setOutputTokens(20);
+        usage.setCachedTokens(40);
+        usage.setCacheCreationInputTokens(25);
+
+        DashScopeResponse response = new DashScopeResponse();
+        response.setRequestId("req-legacy-cache-usage");
+        response.setUsage(usage);
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertEquals(40, chatResponse.getUsage().getCachedTokens());
+        assertEquals(25, chatResponse.getUsage().getCacheCreationInputTokens());
     }
 
     @Test

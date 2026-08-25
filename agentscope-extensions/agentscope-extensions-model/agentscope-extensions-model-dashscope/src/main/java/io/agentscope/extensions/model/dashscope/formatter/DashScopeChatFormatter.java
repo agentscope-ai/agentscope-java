@@ -21,6 +21,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeInput;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
@@ -172,28 +173,126 @@ public class DashScopeChatFormatter
         return request;
     }
 
-    /**
-     * Apply cache control to DashScope messages.
-     *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
-     * marking) will not be overwritten.
-     *
-     * @param messages the list of formatted DashScope messages
-     */
+    /** Apply automatic prompt cache control to DashScope messages. */
     public void applyCacheControl(List<DashScopeMessage> messages) {
+        applyCacheControl(messages, true);
+    }
+
+    /**
+     * Normalize explicit prompt cache markers and optionally apply the automatic strategy.
+     *
+     * <p>DashScope requires {@code cache_control} inside a content block. Legacy message-level
+     * markers are migrated to the last content block and removed from the message before
+     * serialization.
+     *
+     * @param messages formatted DashScope messages
+     * @param automatic whether to add automatic breakpoints
+     */
+    public void applyCacheControl(List<DashScopeMessage> messages, boolean automatic) {
         if (messages == null || messages.isEmpty()) {
             return;
         }
-        for (DashScopeMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
-                msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+
+        List<DashScopeMessage> selected =
+                selectPromptCacheBreakpoints(
+                        messages,
+                        automatic,
+                        DashScopeChatFormatter::hasExplicitCacheControl,
+                        message -> "system".equals(message.getRole()),
+                        DashScopeChatFormatter::isCacheable);
+
+        for (DashScopeMessage message : selected) {
+            applyCacheControlToContentBlock(message);
+        }
+        for (DashScopeMessage message : messages) {
+            message.setCacheControl(null);
+        }
+
+        int markerCount = countCacheControlMarkers(messages);
+        if (markerCount > MAX_PROMPT_CACHE_BREAKPOINTS) {
+            throw new IllegalArgumentException(
+                    "DashScope supports at most "
+                            + MAX_PROMPT_CACHE_BREAKPOINTS
+                            + " cache_control markers, but got "
+                            + markerCount);
+        }
+    }
+
+    static void applyCacheControlToContentBlock(DashScopeMessage message) {
+        if (hasContentBlockCacheControl(message)) {
+            message.setCacheControl(null);
+            return;
+        }
+
+        List<DashScopeContentPart> parts = ensureContentArray(message);
+        if (parts.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Cannot apply cache_control to a message without cacheable content");
+        }
+
+        DashScopeContentPart lastPart = parts.get(parts.size() - 1);
+        if (lastPart.getType() == null && lastPart.getText() != null) {
+            lastPart.setType("text");
+        }
+        Map<String, String> cacheControl =
+                message.getCacheControl() != null
+                        ? message.getCacheControl()
+                        : EPHEMERAL_CACHE_CONTROL;
+        lastPart.setCacheControl(cacheControl);
+        message.setCacheControl(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    static List<DashScopeContentPart> ensureContentArray(DashScopeMessage message) {
+        Object content = message.getContent();
+        if (content instanceof List<?>) {
+            return (List<DashScopeContentPart>) content;
+        }
+        if (content instanceof String text) {
+            List<DashScopeContentPart> parts =
+                    new ArrayList<>(
+                            List.of(
+                                    DashScopeContentPart.builder()
+                                            .type("text")
+                                            .text(text)
+                                            .build()));
+            message.setContent(parts);
+            return parts;
+        }
+        return List.of();
+    }
+
+    static boolean isCacheable(DashScopeMessage message) {
+        if (!("system".equals(message.getRole())
+                || "user".equals(message.getRole())
+                || "assistant".equals(message.getRole())
+                || "tool".equals(message.getRole()))) {
+            return false;
+        }
+        Object content = message.getContent();
+        return (content instanceof String text && !text.isEmpty())
+                || (content instanceof List<?> parts && !parts.isEmpty());
+    }
+
+    static boolean hasExplicitCacheControl(DashScopeMessage message) {
+        return message.getCacheControl() != null || hasContentBlockCacheControl(message);
+    }
+
+    static boolean hasContentBlockCacheControl(DashScopeMessage message) {
+        List<DashScopeContentPart> parts = message.getContentAsList();
+        return parts != null && parts.stream().anyMatch(part -> part.getCacheControl() != null);
+    }
+
+    static int countCacheControlMarkers(List<DashScopeMessage> messages) {
+        int count = 0;
+        for (DashScopeMessage message : messages) {
+            List<DashScopeContentPart> parts = message.getContentAsList();
+            if (parts != null) {
+                count +=
+                        (int) parts.stream().filter(part -> part.getCacheControl() != null).count();
             }
         }
-        DashScopeMessage lastMsg = messages.get(messages.size() - 1);
-        if (lastMsg.getCacheControl() == null) {
-            lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
-        }
+        return count;
     }
 
     /**

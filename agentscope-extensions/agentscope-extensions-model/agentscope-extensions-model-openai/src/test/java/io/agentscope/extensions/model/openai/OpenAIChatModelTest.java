@@ -114,6 +114,26 @@ class OpenAIChatModelTest {
     }
 
     @Test
+    @DisplayName("Should recognize Alibaba OpenAI-compatible endpoints")
+    void testDashScopeCompatibleBaseUrlDetection() {
+        assertTrue(
+                OpenAIChatModel.isDashScopeCompatibleBaseUrl(
+                        "https://dashscope.aliyuncs.com/compatible-mode/v1"));
+        assertTrue(
+                OpenAIChatModel.isDashScopeCompatibleBaseUrl(
+                        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"));
+        assertTrue(
+                OpenAIChatModel.isDashScopeCompatibleBaseUrl(
+                        "https://dashscope-us.aliyuncs.com/compatible-mode/v1"));
+        assertTrue(
+                OpenAIChatModel.isDashScopeCompatibleBaseUrl(
+                        "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"));
+        assertFalse(OpenAIChatModel.isDashScopeCompatibleBaseUrl("https://api.openai.com/v1"));
+        assertFalse(OpenAIChatModel.isDashScopeCompatibleBaseUrl(null));
+        assertFalse(OpenAIChatModel.isDashScopeCompatibleBaseUrl("not a valid URL"));
+    }
+
+    @Test
     @DisplayName("Should make non-streaming call successfully")
     void testNonStreamingCall() throws Exception {
         String responseJson =

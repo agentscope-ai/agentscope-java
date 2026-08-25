@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.dashscope.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DashScope content part DTO for multimodal messages.
@@ -42,6 +43,10 @@ import java.util.List;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class DashScopeContentPart {
+
+    /** Content type. Explicitly cached text blocks use {@code text}. */
+    @JsonProperty("type")
+    private String type;
 
     /** Text content. */
     @JsonProperty("text")
@@ -79,7 +84,19 @@ public class DashScopeContentPart {
     @JsonProperty("total_pixels")
     private Integer totalPixels;
 
+    /** Prompt cache control marker. */
+    @JsonProperty("cache_control")
+    private Map<String, String> cacheControl;
+
     public DashScopeContentPart() {}
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
 
     public String getText() {
         return text;
@@ -151,6 +168,14 @@ public class DashScopeContentPart {
 
     public void setTotalPixels(Integer totalPixels) {
         this.totalPixels = totalPixels;
+    }
+
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
     }
 
     /**
@@ -245,6 +270,11 @@ public class DashScopeContentPart {
     public static class Builder {
         private final DashScopeContentPart part = new DashScopeContentPart();
 
+        public Builder type(String type) {
+            part.setType(type);
+            return this;
+        }
+
         public Builder text(String text) {
             part.setText(text);
             return this;
@@ -287,6 +317,11 @@ public class DashScopeContentPart {
 
         public Builder totalPixels(Integer totalPixels) {
             part.setTotalPixels(totalPixels);
+            return this;
+        }
+
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            part.setCacheControl(cacheControl);
             return this;
         }
 

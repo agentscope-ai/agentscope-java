@@ -279,7 +279,7 @@ public class DashScopeMessageConverter {
         }
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
-            result.setCacheControl(DashScopeChatFormatter.getEphemeralCacheControl());
+            DashScopeChatFormatter.applyCacheControlToContentBlock(result);
         }
     }
 

@@ -20,10 +20,12 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.openai.dto.OpenAIContentPart;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -191,6 +193,110 @@ public abstract class OpenAIBaseFormatter
         if (lastMsg.getCacheControl() == null) {
             lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
         }
+    }
+
+    /**
+     * Apply DashScope-compatible content-block cache control.
+     *
+     * <p>Legacy message-level markers are migrated to the last content block. Automatic
+     * breakpoints use the shared first-system and last-conversation strategy.
+     *
+     * @param messages formatted OpenAI-compatible messages
+     * @param automatic whether to add automatic breakpoints
+     */
+    public void applyDashScopeCacheControl(List<OpenAIMessage> messages, boolean automatic) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+
+        List<OpenAIMessage> selected =
+                selectPromptCacheBreakpoints(
+                        messages,
+                        automatic,
+                        OpenAIBaseFormatter::hasExplicitCacheControl,
+                        message -> "system".equals(message.getRole()),
+                        OpenAIBaseFormatter::isCacheable);
+        for (OpenAIMessage message : selected) {
+            applyDashScopeCacheControlToContentBlock(message);
+        }
+        for (OpenAIMessage message : messages) {
+            message.setCacheControl(null);
+        }
+
+        int markerCount = countContentBlockCacheMarkers(messages);
+        if (markerCount > MAX_PROMPT_CACHE_BREAKPOINTS) {
+            throw new IllegalArgumentException(
+                    "DashScope supports at most "
+                            + MAX_PROMPT_CACHE_BREAKPOINTS
+                            + " cache_control markers, but got "
+                            + markerCount);
+        }
+    }
+
+    static void applyDashScopeCacheControlToContentBlock(OpenAIMessage message) {
+        if (hasContentBlockCacheControl(message)) {
+            message.setCacheControl(null);
+            return;
+        }
+
+        List<OpenAIContentPart> parts = ensureContentArray(message);
+        if (parts.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Cannot apply cache_control to a message without cacheable content");
+        }
+        Map<String, String> cacheControl =
+                message.getCacheControl() != null
+                        ? message.getCacheControl()
+                        : EPHEMERAL_CACHE_CONTROL;
+        parts.get(parts.size() - 1).setCacheControl(cacheControl);
+        message.setCacheControl(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    static List<OpenAIContentPart> ensureContentArray(OpenAIMessage message) {
+        Object content = message.getContent();
+        if (content instanceof List<?>) {
+            return (List<OpenAIContentPart>) content;
+        }
+        if (content instanceof String text) {
+            List<OpenAIContentPart> parts = new ArrayList<>(List.of(OpenAIContentPart.text(text)));
+            message.setContent(parts);
+            return parts;
+        }
+        return List.of();
+    }
+
+    private static boolean isCacheable(OpenAIMessage message) {
+        if (!("system".equals(message.getRole())
+                || "user".equals(message.getRole())
+                || "assistant".equals(message.getRole())
+                || "tool".equals(message.getRole()))) {
+            return false;
+        }
+        Object content = message.getContent();
+        return (content instanceof String text && !text.isEmpty())
+                || (content instanceof List<?> parts && !parts.isEmpty());
+    }
+
+    private static boolean hasExplicitCacheControl(OpenAIMessage message) {
+        return message.getCacheControl() != null || hasContentBlockCacheControl(message);
+    }
+
+    private static boolean hasContentBlockCacheControl(OpenAIMessage message) {
+        List<OpenAIContentPart> parts = message.getContentAsList();
+        return parts != null && parts.stream().anyMatch(part -> part.getCacheControl() != null);
+    }
+
+    private static int countContentBlockCacheMarkers(List<OpenAIMessage> messages) {
+        int count = 0;
+        for (OpenAIMessage message : messages) {
+            List<OpenAIContentPart> parts = message.getContentAsList();
+            if (parts != null) {
+                count +=
+                        (int) parts.stream().filter(part -> part.getCacheControl() != null).count();
+            }
+        }
+        return count;
     }
 
     /**

@@ -101,6 +101,11 @@ public class DashScopeResponseParser {
                         ChatUsage.builder()
                                 .inputTokens(u.getInputTokens() != null ? u.getInputTokens() : 0)
                                 .outputTokens(u.getOutputTokens() != null ? u.getOutputTokens() : 0)
+                                .cachedTokens(u.getCachedTokens() != null ? u.getCachedTokens() : 0)
+                                .cacheCreationInputTokens(
+                                        u.getCacheCreationInputTokens() != null
+                                                ? u.getCacheCreationInputTokens()
+                                                : 0)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
