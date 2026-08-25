@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.gemini.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.Content;
@@ -92,6 +93,79 @@ class GeminiChatFormatterTest {
 
         assertTrue(config.presencePenalty().isPresent());
         assertEquals(0.3f, config.presencePenalty().get(), 0.001f);
+    }
+
+    @Test
+    void testApplyCachedContentFromCanonicalParameter() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("cachedContent", "cachedContents/cache-123")
+                        .build();
+
+        formatter.applyOptions(configBuilder, options, null);
+
+        assertEquals(
+                "cachedContents/cache-123", configBuilder.build().cachedContent().orElseThrow());
+    }
+
+    @Test
+    void testApplyCachedContentFromSnakeCaseAlias() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("cached_content", "cachedContents/cache-123")
+                        .build();
+
+        formatter.applyOptions(configBuilder, options, null);
+
+        assertEquals(
+                "cachedContents/cache-123", configBuilder.build().cachedContent().orElseThrow());
+    }
+
+    @Test
+    void testRequestCachedContentOverridesDefaultAlias() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions defaults =
+                GenerateOptions.builder()
+                        .additionalBodyParam("cached_content", "cachedContents/default")
+                        .build();
+        GenerateOptions request =
+                GenerateOptions.builder()
+                        .additionalBodyParam("cachedContent", "cachedContents/request")
+                        .build();
+
+        formatter.applyOptions(configBuilder, request, defaults);
+
+        assertEquals("cachedContents/request", configBuilder.build().cachedContent().orElseThrow());
+    }
+
+    @Test
+    void testRejectConflictingCachedContentAliases() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("cachedContent", "cachedContents/one")
+                        .additionalBodyParam("cached_content", "cachedContents/two")
+                        .build();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> formatter.applyOptions(GenerateContentConfig.builder(), options, null));
+    }
+
+    @Test
+    void testRejectInvalidCachedContentReference() {
+        GenerateOptions blank =
+                GenerateOptions.builder().additionalBodyParam("cachedContent", "  ").build();
+        GenerateOptions nonString =
+                GenerateOptions.builder().additionalBodyParam("cachedContent", 123).build();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> formatter.applyOptions(GenerateContentConfig.builder(), blank, null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> formatter.applyOptions(GenerateContentConfig.builder(), nonString, null));
     }
 
     @Test

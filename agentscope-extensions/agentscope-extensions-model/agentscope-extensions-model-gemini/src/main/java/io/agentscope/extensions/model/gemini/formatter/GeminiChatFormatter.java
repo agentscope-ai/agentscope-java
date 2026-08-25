@@ -29,6 +29,8 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -52,6 +54,12 @@ import java.util.function.Function;
 public class GeminiChatFormatter
         extends AbstractBaseFormatter<
                 Content, GenerateContentResponse, GenerateContentConfig.Builder> {
+
+    /** Canonical additional body parameter for referencing a Gemini cached content resource. */
+    public static final String CACHED_CONTENT_PARAM = "cachedContent";
+
+    /** Snake-case alias accepted for consistency with other Google Gen AI client conventions. */
+    public static final String CACHED_CONTENT_PARAM_ALIAS = "cached_content";
 
     private final GeminiMessageConverter messageConverter;
     private final GeminiResponseParser responseParser;
@@ -126,6 +134,56 @@ public class GeminiChatFormatter
             thinkingConfigBuilder.includeThoughts(true);
             thinkingConfigBuilder.thinkingBudget(thinkingBudget);
             configBuilder.thinkingConfig(thinkingConfigBuilder.build());
+        }
+
+        String cachedContent = resolveCachedContent(options, defaultOptions);
+        if (cachedContent != null) {
+            configBuilder.cachedContent(cachedContent);
+        }
+    }
+
+    private String resolveCachedContent(GenerateOptions options, GenerateOptions defaultOptions) {
+        CacheReference requestReference = cacheReference(options);
+        CacheReference defaultReference = cacheReference(defaultOptions);
+        Object value = requestReference.present ? requestReference.value : defaultReference.value;
+
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof String cacheName) || cacheName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Gemini cachedContent must be a non-blank String resource name");
+        }
+        return cacheName;
+    }
+
+    private CacheReference cacheReference(GenerateOptions options) {
+        if (options == null) {
+            return CacheReference.absent();
+        }
+
+        Map<String, Object> params = options.getAdditionalBodyParams();
+        boolean hasCanonical = params.containsKey(CACHED_CONTENT_PARAM);
+        boolean hasAlias = params.containsKey(CACHED_CONTENT_PARAM_ALIAS);
+        Object canonical = params.get(CACHED_CONTENT_PARAM);
+        Object alias = params.get(CACHED_CONTENT_PARAM_ALIAS);
+
+        if (hasCanonical && hasAlias && !Objects.equals(canonical, alias)) {
+            throw new IllegalArgumentException(
+                    "Gemini cachedContent and cached_content must not specify different values");
+        }
+        if (hasCanonical) {
+            return new CacheReference(true, canonical);
+        }
+        if (hasAlias) {
+            return new CacheReference(true, alias);
+        }
+        return CacheReference.absent();
+    }
+
+    private record CacheReference(boolean present, Object value) {
+        private static CacheReference absent() {
+            return new CacheReference(false, null);
         }
     }
 

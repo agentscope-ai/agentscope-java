@@ -1132,14 +1132,15 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             config,
-                            new ModelCallEndEvent("reply-usage", new ChatUsage(100, 20, 40, 0.8)));
+                            new ModelCallEndEvent(
+                                    "reply-usage", new ChatUsage(100, 20, 40, 25, 0.8)));
 
             assertEquals(List.of(AguiEventType.CUSTOM), types(events));
             AguiEvent.Custom usageEvent = assertCustomEvent(events.get(0), "token_usage");
             Map<String, Object> value = customValue(usageEvent);
 
-            assertUsage(value.get("delta"), 100L, 20L, 40L, 120L, 0.8);
-            assertUsage(value.get("cumulative"), 100L, 20L, 40L, 120L, 0.8);
+            assertUsage(value.get("delta"), 100L, 20L, 40L, 25L, 120L, 0.8);
+            assertUsage(value.get("cumulative"), 100L, 20L, 40L, 25L, 120L, 0.8);
             assertEquals(Map.of("replyId", "reply-usage"), value.get("modelCall"));
         }
 
@@ -1149,8 +1150,8 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             config,
-                            new ModelCallEndEvent("reply-1", new ChatUsage(100, 20, 40, 0.8)),
-                            new ModelCallEndEvent("reply-2", new ChatUsage(50, 30, 10, 1.2)));
+                            new ModelCallEndEvent("reply-1", new ChatUsage(100, 20, 40, 25, 0.8)),
+                            new ModelCallEndEvent("reply-2", new ChatUsage(50, 30, 10, 15, 1.2)));
 
             assertEquals(List.of(AguiEventType.CUSTOM, AguiEventType.CUSTOM), types(events));
 
@@ -1158,9 +1159,9 @@ class AguiAgentAdapterV2Test {
                     customValue(assertCustomEvent(events.get(0), "token_usage"));
             Map<String, Object> secondValue =
                     customValue(assertCustomEvent(events.get(1), "token_usage"));
-            assertUsage(firstValue.get("cumulative"), 100L, 20L, 40L, 120L, 0.8);
-            assertUsage(secondValue.get("delta"), 50L, 30L, 10L, 80L, 1.2);
-            assertUsage(secondValue.get("cumulative"), 150L, 50L, 50L, 200L, 2.0);
+            assertUsage(firstValue.get("cumulative"), 100L, 20L, 40L, 25L, 120L, 0.8);
+            assertUsage(secondValue.get("delta"), 50L, 30L, 10L, 15L, 80L, 1.2);
+            assertUsage(secondValue.get("cumulative"), 150L, 50L, 50L, 40L, 200L, 2.0);
             assertEquals(Map.of("replyId", "reply-2"), secondValue.get("modelCall"));
         }
 
@@ -1927,6 +1928,7 @@ class AguiAgentAdapterV2Test {
             long inputTokens,
             long outputTokens,
             long cachedTokens,
+            long cacheCreationInputTokens,
             long totalTokens,
             double time) {
         assertInstanceOf(Map.class, value);
@@ -1934,6 +1936,7 @@ class AguiAgentAdapterV2Test {
         assertEquals(inputTokens, usage.get("inputTokens"));
         assertEquals(outputTokens, usage.get("outputTokens"));
         assertEquals(cachedTokens, usage.get("cachedTokens"));
+        assertEquals(cacheCreationInputTokens, usage.get("cacheCreationInputTokens"));
         assertEquals(totalTokens, usage.get("totalTokens"));
         assertEquals(time, (Double) usage.get("time"), 0.000001);
     }

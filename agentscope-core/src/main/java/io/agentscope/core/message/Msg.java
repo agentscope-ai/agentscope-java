@@ -590,6 +590,8 @@ public class Msg implements State {
                     ChatUsage.builder()
                             .inputTokens(toInt(map.get("inputTokens")))
                             .outputTokens(toInt(map.get("outputTokens")))
+                            .cachedTokens(toInt(map.get("cachedTokens")))
+                            .cacheCreationInputTokens(toInt(map.get("cacheCreationInputTokens")))
                             .time(toDouble(map.get("time")))
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);

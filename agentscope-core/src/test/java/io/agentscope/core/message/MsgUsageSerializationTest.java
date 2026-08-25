@@ -145,6 +145,34 @@ class MsgUsageSerializationTest {
     }
 
     @Test
+    void getChatUsageMapFallbackPreservesPromptCacheUsage() {
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("reply")
+                        .metadata(
+                                java.util.Map.of(
+                                        MessageMetadataKeys.CHAT_USAGE,
+                                        java.util.Map.of(
+                                                "inputTokens", 300,
+                                                "outputTokens", 150,
+                                                "cachedTokens", 120,
+                                                "cacheCreationInputTokens", 30,
+                                                "time", 3.0)))
+                        .build();
+
+        ChatUsage retrieved = msg.getChatUsage();
+
+        assertNotNull(retrieved);
+        assertEquals(300, retrieved.getInputTokens());
+        assertEquals(150, retrieved.getOutputTokens());
+        assertEquals(120, retrieved.getCachedTokens());
+        assertEquals(30, retrieved.getCacheCreationInputTokens());
+        assertEquals(3.0, retrieved.getTime());
+    }
+
+    @Test
     void usageDeserializesFromJsonWithoutField() {
         String json =
                 "{\"id\":\"test-1\",\"name\":\"user\",\"role\":\"USER\","
