@@ -30,22 +30,25 @@ ReActAgent agent = ReActAgent.builder()
 ```java
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
+import java.util.Map;
 
 AnthropicChatModel model = AnthropicChatModel.builder()
     .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-4-6")
     .stream(true)
     .defaultOptions(GenerateOptions.builder()
         .maxTokens(4096)
-        .thinkingBudget(2048)
+        .additionalBodyParam("thinking", Map.of("type", "adaptive"))
         .build())
     .build();
 ```
 
-设置 `thinkingBudget` 会启用 Anthropic extended thinking，并映射为对应的
-`budget_tokens`。对于支持手动 thinking budget 的模型，该值通常必须小于 `maxTokens`；
-使用工具的 interleaved thinking 是例外。Anthropic extended thinking 不兼容自定义
-`temperature`、`topK` 和强制 tool choice；不同模型的具体要求请参考 Anthropic 模型文档。
+对于支持 adaptive thinking 的当前 Claude 模型，推荐使用 adaptive 模式。对于要求 manual
+extended thinking 的旧模型，可以改为设置 `thinkingBudget(2048)`；AgentScope 会将其映射为
+`thinking: {"type": "enabled", "budget_tokens": 2048}`。Manual thinking budget 在 Claude
+4.6 上已弃用，在 Claude 4.7 及更高版本会被拒绝。不要同时设置 `thinkingBudget` 和显式的
+`thinking` additional body parameter。不同模型版本的能力不同，选择模式前请查阅 Anthropic
+模型文档。
 
 ## Spring Boot
 
