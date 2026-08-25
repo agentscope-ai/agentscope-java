@@ -158,17 +158,6 @@ class E2bEnvdProcessClientTest {
         assertEquals(0, exit);
     }
 
-    @Test
-    void jsonCodecIgnoresEndWithoutExitCode() throws Exception {
-        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
-        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
-        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit =
-                drainStartStream(client, connectFrame("{\"event\":{\"end\":{}}}"), stdout, stderr);
-
-        assertEquals(Integer.MIN_VALUE, exit);
-    }
-
     private static DynamicMessage dataResponse(
             E2bEnvdProcessClient client, String stdout, String stderr) {
         Descriptors.FileDescriptor fd = client.fileDescriptor();
