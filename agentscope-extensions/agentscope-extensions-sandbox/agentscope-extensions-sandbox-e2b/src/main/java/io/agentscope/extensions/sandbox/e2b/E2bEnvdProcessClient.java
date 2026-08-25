@@ -345,9 +345,7 @@ final class E2bEnvdProcessClient {
             if (hasExitCode) {
                 endBuilder.setField(exitCodeField, exitCodeNode.intValue());
             }
-            if (hasExitCode || !endBuilder.getAllFields().isEmpty()) {
-                event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
-            }
+            event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
         }
 
         if (!event.getAllFields().isEmpty()) {
