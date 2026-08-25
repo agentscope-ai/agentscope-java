@@ -87,10 +87,14 @@ public class AnthropicResponseParser {
         }
 
         // Parse usage
+        long baseInput = message.usage().inputTokens();
+        long cacheRead = message.usage().cacheReadInputTokens().orElse(0L);
+        long cacheCreate = message.usage().cacheCreationInputTokens().orElse(0L);
         ChatUsage usage =
                 ChatUsage.builder()
-                        .inputTokens((int) message.usage().inputTokens())
+                        .inputTokens((int) (baseInput + cacheRead + cacheCreate))
                         .outputTokens((int) message.usage().outputTokens())
+                        .cachedTokens((int) cacheRead)
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 
