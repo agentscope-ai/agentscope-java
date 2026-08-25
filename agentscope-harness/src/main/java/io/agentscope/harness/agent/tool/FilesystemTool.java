@@ -140,7 +140,9 @@ public class FilesystemTool {
                     String glob,
             @ToolParam(
                             name = "limit",
-                            description = "Maximum matches to return (default: 100, maximum: 1000)",
+                            description =
+                                    "Maximum matches to return (default/recommended: 100; hard"
+                                            + " maximum: 1000)",
                             required = false)
                     Integer limit) {
         int effectiveLimit = effectiveLimit(limit, DEFAULT_GREP_LIMIT);
@@ -160,7 +162,7 @@ public class FilesystemTool {
                         .limit(effectiveLimit)
                         .map(m -> m.path() + ":" + m.line() + ":" + m.text())
                         .collect(Collectors.joining("\n"));
-        return appendTruncationNotice(output, matches.size(), effectiveLimit);
+        return appendTruncationNotice(output, matches.size(), effectiveLimit, "matches");
     }
 
     /** Backward-compatible overload for direct Java callers. */
@@ -173,7 +175,7 @@ public class FilesystemTool {
             name = "glob_files",
             readOnly = true,
             description =
-                    "Find files matching a glob pattern. Returns at most 200 matches by default to"
+                    "Find files matching a glob pattern. Returns at most 200 files by default to"
                             + " keep tool output bounded.")
     public String globFiles(
             RuntimeContext runtimeContext,
@@ -186,7 +188,9 @@ public class FilesystemTool {
                     String path,
             @ToolParam(
                             name = "limit",
-                            description = "Maximum matches to return (default: 200, maximum: 1000)",
+                            description =
+                                    "Maximum files to return (default/recommended: 200; hard"
+                                            + " maximum: 1000)",
                             required = false)
                     Integer limit) {
         int effectiveLimit = effectiveLimit(limit, DEFAULT_GLOB_LIMIT);
@@ -206,7 +210,7 @@ public class FilesystemTool {
                         .limit(effectiveLimit)
                         .map(f -> f.path() + (f.isDirectory() ? "/" : " (" + f.size() + " bytes)"))
                         .collect(Collectors.joining("\n"));
-        return appendTruncationNotice(output, files.size(), effectiveLimit);
+        return appendTruncationNotice(output, files.size(), effectiveLimit, "files");
     }
 
     /** Backward-compatible overload for direct Java callers. */
@@ -221,18 +225,30 @@ public class FilesystemTool {
         return Math.min(requestedLimit, MAX_SEARCH_LIMIT);
     }
 
-    private static String appendTruncationNotice(String output, int total, int limit) {
+    private static String appendTruncationNotice(
+            String output, int total, int limit, String resultLabel) {
         if (total <= limit) {
             return output;
         }
+        String guidance =
+                limit < MAX_SEARCH_LIMIT
+                        ? "Narrow the path/pattern or increase limit (hard maximum: "
+                                + MAX_SEARCH_LIMIT
+                                + ")."
+                        : "Hard maximum of "
+                                + MAX_SEARCH_LIMIT
+                                + " reached; narrow the path/pattern to retrieve more targeted"
+                                + " results.";
         return output
                 + "\n[Results truncated: showing "
                 + limit
                 + " of "
                 + total
-                + " matches. Narrow the path/pattern or increase limit (maximum: "
-                + MAX_SEARCH_LIMIT
-                + ").]";
+                + " "
+                + resultLabel
+                + ". "
+                + guidance
+                + "]";
     }
 
     @Tool(

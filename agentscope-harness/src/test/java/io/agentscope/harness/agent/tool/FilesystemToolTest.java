@@ -153,6 +153,8 @@ class FilesystemToolTest {
 
         assertFalse(result.contains("file-1000.txt:1001:match-1000"));
         assertTrue(result.contains("showing 1000 of 1001 matches"));
+        assertTrue(result.contains("Hard maximum of 1000 reached"));
+        assertFalse(result.contains("increase limit"));
     }
 
     @Test
@@ -172,7 +174,7 @@ class FilesystemToolTest {
 
         assertTrue(result.contains("file-199.txt (199 bytes)"));
         assertFalse(result.contains("file-200.txt (200 bytes)"));
-        assertTrue(result.contains("showing 200 of 201 matches"));
+        assertTrue(result.contains("showing 200 of 201 files"));
     }
 
     @Test
