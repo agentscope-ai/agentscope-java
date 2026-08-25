@@ -3742,21 +3742,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (msg == null) {
                 return true;
             }
-
-            if (hasToolCalls(msg)) {
-                return false;
-            }
-
-            return msg.getContentBlocks(TextBlock.class).stream()
-                    .anyMatch(
-                            textBlock ->
-                                    textBlock.getText() != null && !textBlock.getText().isBlank());
-        }
-
-        private static boolean hasToolCalls(Msg msg) {
-            return !msg.getContentBlocks(ToolUseBlock.class).isEmpty();
-        }
-
+            List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
             // No tool calls - finished
             // If there are tool calls (even non-existent ones), continue to acting phase
             // where ToolExecutor will return "Tool not found" error for the model to see
@@ -3778,6 +3764,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             toolCall ->
                                     toolCall.isServerTool()
                                             && inlineResultIds.contains(toolCall.getId()));
+
+        }
+
+        private static boolean hasToolCalls(Msg msg) {
+            return !msg.getContentBlocks(ToolUseBlock.class).isEmpty();
+        }
+
         /**
          * Build the synthetic {@code system} reminder injected before looping back to reasoning
          * after an empty final response.
