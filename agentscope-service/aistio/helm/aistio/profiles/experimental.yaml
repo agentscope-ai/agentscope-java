@@ -1,0 +1,5 @@
+# "experimental" profile: enables not-yet-production features
+# (ASDP gRPC coordination, distributed AgentTeam, sandbox provisioning).
+# Usage: helm install aistio ./helm/aistio -f profiles/experimental.yaml
+experimental:
+  enabled: true
