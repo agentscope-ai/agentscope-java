@@ -106,6 +106,15 @@ public class AnthropicResponseParser {
     }
 
     /**
+     * Mutable holder for prompt token counts observed on the message_start event, so the final
+     * usage emitted on message_delta can include input and cached token counts.
+     */
+    private static class StreamUsageState {
+        int inputTokens;
+        int cachedTokens;
+    }
+
+    /**
      * Parse streaming Anthropic events to ChatResponse Flux.
      */
     public static Flux<ChatResponse> parseStreamEvents(
@@ -146,7 +155,8 @@ public class AnthropicResponseParser {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
 
-        // Message start
+        // Message start - record prompt usage (input tokens and cache read/creation tokens) so
+        // the final usage emitted on message_delta can include it
         if (event.isMessageStart()) {
             Message message = event.asMessageStart().message();
             state.messageId = message.id();
@@ -216,7 +226,8 @@ public class AnthropicResponseParser {
                             });
         }
 
-        // Message delta - usage information
+        // Message delta - final usage information; combine the cumulative output tokens with
+        // the prompt usage captured on message_start
         if (event.isMessageDelta()) {
             var messageDelta = event.asMessageDelta();
             messageDelta.usage().inputTokens().ifPresent(value -> state.inputTokens = value);

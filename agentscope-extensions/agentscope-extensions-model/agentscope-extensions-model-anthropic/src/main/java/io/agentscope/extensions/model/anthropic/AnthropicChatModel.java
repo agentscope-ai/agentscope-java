@@ -85,6 +85,7 @@ public class AnthropicChatModel extends ChatModelBase {
      * @param formatter      the message formatter to use (null for default
      *                       Anthropic formatter)
      * @param proxyConfig    the proxy configuration (null for no proxy)
+     * @param cacheTtl       the TTL for prompt-caching markers (null for default 5m)
      */
     public AnthropicChatModel(
             String baseUrl,
@@ -93,7 +94,8 @@ public class AnthropicChatModel extends ChatModelBase {
             boolean streamEnabled,
             GenerateOptions defaultOptions,
             AnthropicBaseFormatter formatter,
-            ProxyConfig proxyConfig) {
+            ProxyConfig proxyConfig,
+            String cacheTtl) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -101,6 +103,7 @@ public class AnthropicChatModel extends ChatModelBase {
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new AnthropicChatFormatter();
+        this.formatter.cacheTtl(cacheTtl);
 
         // Initialize Anthropic client
         AnthropicOkHttpClient.Builder clientBuilder = AnthropicOkHttpClient.builder();
@@ -271,6 +274,7 @@ public class AnthropicChatModel extends ChatModelBase {
         private AnthropicBaseFormatter formatter;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private String cacheTtl;
 
         /**
          * Sets the base URL for the Anthropic API.
@@ -353,6 +357,17 @@ public class AnthropicChatModel extends ChatModelBase {
             return this;
         }
 
+        /**
+         * Sets the TTL for prompt-caching markers (e.g. {@code "1h"}).
+         *
+         * @param cacheTtl the cache TTL string (null for default 5m ephemeral)
+         * @return this builder
+         */
+        public Builder cacheTtl(String cacheTtl) {
+            this.cacheTtl = cacheTtl;
+            return this;
+        }
+
         public Builder contextWindowSize(int contextWindowSize) {
             this.contextWindowSize = contextWindowSize;
             return this;
@@ -372,7 +387,8 @@ public class AnthropicChatModel extends ChatModelBase {
                             streamEnabled,
                             defaultOptions,
                             formatter,
-                            proxyConfig);
+                            proxyConfig,
+                            cacheTtl);
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize
