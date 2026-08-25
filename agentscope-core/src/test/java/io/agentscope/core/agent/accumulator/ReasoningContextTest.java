@@ -82,6 +82,7 @@ class ReasoningContextTest {
                         .inputTokens(100)
                         .outputTokens(50)
                         .cachedTokens(80)
+                        .cacheCreationInputTokens(15)
                         .time(1.5)
                         .build();
 
@@ -98,10 +99,12 @@ class ReasoningContextTest {
         assertNotNull(msg);
         assertNotNull(msg.getChatUsage());
         assertEquals(80, msg.getChatUsage().getCachedTokens());
+        assertEquals(15, msg.getChatUsage().getCacheCreationInputTokens());
 
         ChatUsage resultUsage = context.getChatUsage();
         assertNotNull(resultUsage);
         assertEquals(80, resultUsage.getCachedTokens());
+        assertEquals(15, resultUsage.getCacheCreationInputTokens());
     }
 
     @Test

@@ -27,6 +27,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIContentPart;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
+import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -245,6 +246,161 @@ class OpenAICacheControlTest {
     }
 
     @Nested
+    @DisplayName("Official OpenAI prompt caching")
+    class OfficialOpenAITest {
+
+        @Test
+        @DisplayName("should serialize explicit metadata using the official protocol")
+        void exactExplicitProtocolJson() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Pinned context")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                            .build();
+            OpenAIRequest request =
+                    OpenAIRequest.builder()
+                            .model("gpt-5.6")
+                            .messages(formatter.format(List.of(msg)))
+                            .stream(false)
+                            .build();
+
+            formatter.applyOpenAIPromptCache(request);
+
+            JsonNode json = toJsonTree(request);
+            JsonNode message = json.path("messages").get(0);
+            assertFalse(message.has("cache_control"));
+            assertEquals(
+                    "explicit",
+                    message.path("content")
+                            .get(0)
+                            .path("prompt_cache_breakpoint")
+                            .path("mode")
+                            .asText());
+            assertFalse(message.path("content").get(0).has("cache_control"));
+            assertEquals("explicit", json.path("prompt_cache_options").path("mode").asText());
+        }
+
+        @Test
+        @DisplayName("should rely on server automatic caching when there is no explicit marker")
+        void noInventedAutomaticMarkers() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder()
+                            .model("gpt-5.6")
+                            .messages(
+                                    new ArrayList<>(
+                                            List.of(
+                                                    OpenAIMessage.builder()
+                                                            .role("system")
+                                                            .content("System")
+                                                            .build(),
+                                                    OpenAIMessage.builder()
+                                                            .role("user")
+                                                            .content("Question")
+                                                            .build())))
+                            .build();
+
+            formatter.applyOpenAIPromptCache(request);
+
+            JsonNode json = toJsonTree(request);
+            assertFalse(json.has("prompt_cache_options"));
+            assertFalse(json.toString().contains("prompt_cache_breakpoint"));
+            assertFalse(json.toString().contains("cache_control"));
+        }
+
+        @Test
+        @DisplayName("should preserve other prompt cache options and force explicit mode")
+        void mergesConfiguredPromptCacheOptions() {
+            OpenAIMessage message =
+                    OpenAIMessage.builder()
+                            .role("user")
+                            .content("Context")
+                            .cacheControl(EPHEMERAL)
+                            .build();
+            OpenAIRequest request =
+                    OpenAIRequest.builder()
+                            .model("gpt-5.6")
+                            .messages(List.of(message))
+                            .extraParam(
+                                    "prompt_cache_options",
+                                    Map.of("mode", "automatic", "ttl", "24h"))
+                            .build();
+
+            formatter.applyOpenAIPromptCache(request);
+
+            JsonNode json = toJsonTree(request);
+            assertEquals("explicit", json.path("prompt_cache_options").path("mode").asText());
+            assertEquals("24h", json.path("prompt_cache_options").path("ttl").asText());
+        }
+
+        @Test
+        @DisplayName("should place a multimodal breakpoint on the final content part")
+        void multimodalFinalPart() {
+            OpenAIMessage message =
+                    OpenAIMessage.builder()
+                            .role("user")
+                            .content(
+                                    new ArrayList<>(
+                                            List.of(
+                                                    OpenAIContentPart.text("Look"),
+                                                    OpenAIContentPart.imageUrl(
+                                                            "https://example.com/image.png"))))
+                            .cacheControl(EPHEMERAL)
+                            .build();
+            OpenAIRequest request = OpenAIRequest.builder().messages(List.of(message)).build();
+
+            formatter.applyOpenAIPromptCache(request);
+
+            assertNull(message.getContentAsList().get(0).getPromptCacheBreakpoint());
+            assertEquals(
+                    Map.of("mode", "explicit"),
+                    message.getContentAsList().get(1).getPromptCacheBreakpoint());
+        }
+
+        @Test
+        @DisplayName("should reject more than four explicit breakpoints")
+        void tooManyBreakpoints() {
+            List<OpenAIMessage> messages = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                messages.add(
+                        OpenAIMessage.builder()
+                                .role("user")
+                                .content("Context " + i)
+                                .cacheControl(EPHEMERAL)
+                                .build());
+            }
+            OpenAIRequest request = OpenAIRequest.builder().messages(messages).build();
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> formatter.applyOpenAIPromptCache(request));
+        }
+
+        @Test
+        @DisplayName("should clear legacy fields for unknown compatible providers")
+        void clearUnknownCompatibleMarkers() {
+            OpenAIContentPart part =
+                    OpenAIContentPart.builder()
+                            .type("text")
+                            .text("Context")
+                            .cacheControl(EPHEMERAL)
+                            .build();
+            OpenAIMessage message =
+                    OpenAIMessage.builder()
+                            .role("user")
+                            .content(List.of(part))
+                            .cacheControl(EPHEMERAL)
+                            .build();
+
+            formatter.clearLegacyCacheControl(List.of(message));
+
+            JsonNode json = toJsonTree(message);
+            assertFalse(json.toString().contains("cache_control"));
+            assertFalse(json.toString().contains("prompt_cache_breakpoint"));
+        }
+    }
+
+    @Nested
     @DisplayName("DashScope-compatible cache_control")
     class DashScopeCompatibleTest {
 
@@ -349,5 +505,10 @@ class OpenAICacheControlTest {
             return JsonUtils.getJsonCodec()
                     .fromJson(JsonUtils.getJsonCodec().toJson(message), JsonNode.class);
         }
+    }
+
+    private JsonNode toJsonTree(Object value) {
+        return JsonUtils.getJsonCodec()
+                .fromJson(JsonUtils.getJsonCodec().toJson(value), JsonNode.class);
     }
 }

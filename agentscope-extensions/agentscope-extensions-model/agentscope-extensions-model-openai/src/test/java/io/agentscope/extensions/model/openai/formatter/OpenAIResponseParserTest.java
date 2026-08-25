@@ -937,6 +937,7 @@ class OpenAIResponseParserTest {
             usage.setCompletionTokens(20);
             OpenAIUsage.PromptTokensDetails details = new OpenAIUsage.PromptTokensDetails();
             details.setCachedTokens(80);
+            details.setCacheWriteTokens(12);
             usage.setPromptTokensDetails(details);
             response.setUsage(usage);
 
@@ -958,6 +959,7 @@ class OpenAIResponseParserTest {
             assertEquals(100, result.getUsage().getInputTokens());
             assertEquals(20, result.getUsage().getOutputTokens());
             assertEquals(80, result.getUsage().getCachedTokens());
+            assertEquals(12, result.getUsage().getCacheCreationInputTokens());
         }
 
         @Test
@@ -1032,6 +1034,7 @@ class OpenAIResponseParserTest {
             usage.setCompletionTokens(50);
             OpenAIUsage.PromptTokensDetails details = new OpenAIUsage.PromptTokensDetails();
             details.setCachedTokens(64);
+            details.setCacheWriteTokens(7);
             usage.setPromptTokensDetails(details);
             response.setUsage(usage);
 
@@ -1053,6 +1056,7 @@ class OpenAIResponseParserTest {
             assertEquals(100, result.getUsage().getInputTokens());
             assertEquals(50, result.getUsage().getOutputTokens());
             assertEquals(64, result.getUsage().getCachedTokens());
+            assertEquals(7, result.getUsage().getCacheCreationInputTokens());
         }
 
         @Test

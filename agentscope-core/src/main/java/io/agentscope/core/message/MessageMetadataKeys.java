@@ -109,10 +109,9 @@ public final class MessageMetadataKeys {
     /**
      * Metadata key to mark a message for prompt caching.
      *
-     * <p>When set to {@code true}, the formatter will add <code>cache_control:
-     * {"type": "ephemeral"}</code> to this message during formatting. This allows users to manually
-     * mark specific
-     * messages for caching, independent of the automatic cache control strategy configured via
+     * <p>When set to {@code true}, a supporting formatter encodes a provider-specific cache
+     * breakpoint at this message. This allows users to manually mark specific messages for caching,
+     * independent of the automatic cache control strategy configured via
      * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()}. Explicit markers remain
      * effective when automatic cache control is disabled or unset.
      *

@@ -70,6 +70,10 @@ public class OpenAIContentPart {
     @JsonProperty("cache_control")
     private Map<String, String> cacheControl;
 
+    /** Explicit prompt cache breakpoint used by the official OpenAI API. */
+    @JsonProperty("prompt_cache_breakpoint")
+    private Map<String, String> promptCacheBreakpoint;
+
     public OpenAIContentPart() {}
 
     public String getType() {
@@ -118,6 +122,14 @@ public class OpenAIContentPart {
 
     public void setCacheControl(Map<String, String> cacheControl) {
         this.cacheControl = cacheControl;
+    }
+
+    public Map<String, String> getPromptCacheBreakpoint() {
+        return promptCacheBreakpoint;
+    }
+
+    public void setPromptCacheBreakpoint(Map<String, String> promptCacheBreakpoint) {
+        this.promptCacheBreakpoint = promptCacheBreakpoint;
     }
 
     /**
@@ -221,6 +233,11 @@ public class OpenAIContentPart {
 
         public Builder cacheControl(Map<String, String> cacheControl) {
             part.setCacheControl(cacheControl);
+            return this;
+        }
+
+        public Builder promptCacheBreakpoint(Map<String, String> promptCacheBreakpoint) {
+            part.setPromptCacheBreakpoint(promptCacheBreakpoint);
             return this;
         }
 

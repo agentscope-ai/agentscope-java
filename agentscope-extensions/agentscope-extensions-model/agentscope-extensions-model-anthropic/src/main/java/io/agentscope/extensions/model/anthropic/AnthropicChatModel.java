@@ -22,6 +22,7 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -158,14 +159,28 @@ public class AnthropicChatModel extends ChatModelBase {
                                                 .model(modelName)
                                                 .maxTokens(4096);
 
-                                // Extract and apply system message
-                                // (Anthropic-specific requirement)
-                                formatter.applySystemMessage(paramsBuilder, messages);
-
                                 // Use formatter to convert Msg to Anthropic
                                 // MessageParam
-                                List<MessageParam> formattedMessages = formatter.format(messages);
-                                for (MessageParam param : formattedMessages) {
+                                List<Msg> providerMessages =
+                                        messages != null
+                                                        && !messages.isEmpty()
+                                                        && messages.get(0).getRole()
+                                                                == MsgRole.SYSTEM
+                                                ? messages.subList(1, messages.size())
+                                                : messages;
+                                List<MessageParam> formattedMessages =
+                                        formatter.format(providerMessages);
+                                GenerateOptions effectiveOptions =
+                                        GenerateOptions.mergeOptions(options, defaultOptions);
+                                boolean automaticCache =
+                                        Boolean.TRUE.equals(effectiveOptions.getCacheControl());
+                                AnthropicBaseFormatter.PromptCachePlan cachePlan =
+                                        formatter.applyPromptCache(
+                                                paramsBuilder,
+                                                messages,
+                                                formattedMessages,
+                                                automaticCache);
+                                for (MessageParam param : cachePlan.messages()) {
                                     paramsBuilder.addMessage(param);
                                 }
 

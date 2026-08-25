@@ -309,9 +309,9 @@ public class GenerateOptions {
     /**
      * Gets whether cache control is enabled for prompt caching.
      *
-     * <p>When true, a supporting formatter automatically selects the first cacheable system message
-     * and the last cacheable non-system message as prompt cache breakpoints. Provider-specific
-     * formatters are responsible for encoding the selected breakpoints in the protocol they support.
+     * <p>When true, a supporting provider enables its automatic prompt-caching strategy. Some
+     * providers select request breakpoints in the formatter, while others expose a provider-native
+     * automatic caching mode.
      *
      * <p>Users can also manually mark individual messages for caching via {@link
      * io.agentscope.core.message.MessageMetadataKeys#CACHE_CONTROL} metadata. Manually marked
@@ -779,8 +779,8 @@ public class GenerateOptions {
         /**
          * Sets whether cache control is enabled for prompt caching.
          *
-         * <p>When true, the formatter will automatically add <code>cache_control:
-         * {"type": "ephemeral"}</code> to system messages and the last message in the request.
+         * <p>When true, a supporting provider enables its automatic prompt-caching strategy using
+         * the request shape defined by that provider.
          *
          * @param cacheControl true to enable cache control, false to disable
          * @return this builder instance

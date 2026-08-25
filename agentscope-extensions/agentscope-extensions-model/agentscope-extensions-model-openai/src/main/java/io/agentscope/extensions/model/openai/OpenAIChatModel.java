@@ -164,8 +164,12 @@ public class OpenAIChatModel extends ChatModelBase {
             if (isDashScopeCompatibleBaseUrl(baseUrl)) {
                 openAIFormatter.applyDashScopeCacheControl(
                         request.getMessages(), automaticCacheControl);
-            } else if (automaticCacheControl) {
-                openAIFormatter.applyCacheControl(request.getMessages());
+            } else if (isOfficialOpenAIBaseUrl(baseUrl)) {
+                openAIFormatter.applyOpenAIPromptCache(request);
+            } else {
+                // The OpenAI-compatible surface does not imply a provider's cache protocol.
+                // Never leak AgentScope's internal legacy marker to an unknown endpoint.
+                openAIFormatter.clearLegacyCacheControl(request.getMessages());
             }
         }
 
@@ -221,6 +225,18 @@ public class OpenAIChatModel extends ChatModelBase {
                             && normalizedHost.endsWith(".aliyuncs.com"))
                     || normalizedHost.endsWith(".dashscope.aliyuncs.com")
                     || normalizedHost.endsWith(".maas.aliyuncs.com");
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    static boolean isOfficialOpenAIBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return true;
+        }
+        try {
+            String host = URI.create(baseUrl).getHost();
+            return host != null && host.equalsIgnoreCase("api.openai.com");
         } catch (IllegalArgumentException e) {
             return false;
         }

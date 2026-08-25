@@ -90,6 +90,14 @@ public class OpenAIResponseParser {
         return cachedTokens != null ? cachedTokens : 0;
     }
 
+    private long getSafeCacheWriteTokens(OpenAIUsage usage) {
+        if (usage == null || usage.getPromptTokensDetails() == null) {
+            return 0;
+        }
+        Integer cacheWriteTokens = usage.getPromptTokensDetails().getCacheWriteTokens();
+        return cacheWriteTokens != null ? cacheWriteTokens : 0;
+    }
+
     public OpenAIResponseParser() {}
 
     /**
@@ -128,6 +136,8 @@ public class OpenAIResponseParser {
                                 .inputTokens((int) getSafePromptTokens(openAIUsage))
                                 .outputTokens((int) getSafeCompletionTokens(openAIUsage))
                                 .cachedTokens((int) getSafeCachedTokens(openAIUsage))
+                                .cacheCreationInputTokens(
+                                        (int) getSafeCacheWriteTokens(openAIUsage))
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
@@ -372,6 +382,8 @@ public class OpenAIResponseParser {
                                                 ? openAIUsage.getCompletionTokens()
                                                 : 0)
                                 .cachedTokens((int) getSafeCachedTokens(openAIUsage))
+                                .cacheCreationInputTokens(
+                                        (int) getSafeCacheWriteTokens(openAIUsage))
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)

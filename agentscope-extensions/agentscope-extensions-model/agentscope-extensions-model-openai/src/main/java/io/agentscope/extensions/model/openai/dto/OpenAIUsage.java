@@ -108,6 +108,9 @@ public class OpenAIUsage {
         @JsonProperty("audio_tokens")
         private Integer audioTokens;
 
+        @JsonProperty("cache_write_tokens")
+        private Integer cacheWriteTokens;
+
         public Integer getCachedTokens() {
             return cachedTokens;
         }
@@ -122,6 +125,14 @@ public class OpenAIUsage {
 
         public void setAudioTokens(Integer audioTokens) {
             this.audioTokens = audioTokens;
+        }
+
+        public Integer getCacheWriteTokens() {
+            return cacheWriteTokens;
+        }
+
+        public void setCacheWriteTokens(Integer cacheWriteTokens) {
+            this.cacheWriteTokens = cacheWriteTokens;
         }
     }
 

@@ -19,6 +19,7 @@ import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStreamEvent;
+import com.anthropic.models.messages.Usage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -87,14 +88,17 @@ public class AnthropicResponseParser {
         }
 
         // Parse usage
-        long baseInput = message.usage().inputTokens();
-        long cacheRead = message.usage().cacheReadInputTokens().orElse(0L);
-        long cacheCreate = message.usage().cacheCreationInputTokens().orElse(0L);
+        Usage anthropicUsage = message.usage();
+        long cacheRead = anthropicUsage.cacheReadInputTokens().orElse(0L);
+        long cacheCreation = anthropicUsage.cacheCreationInputTokens().orElse(0L);
         ChatUsage usage =
                 ChatUsage.builder()
-                        .inputTokens((int) (baseInput + cacheRead + cacheCreate))
-                        .outputTokens((int) message.usage().outputTokens())
-                        .cachedTokens((int) cacheRead)
+                        .inputTokens(
+                                Math.toIntExact(
+                                        anthropicUsage.inputTokens() + cacheRead + cacheCreation))
+                        .outputTokens(Math.toIntExact(anthropicUsage.outputTokens()))
+                        .cachedTokens(Math.toIntExact(cacheRead))
+                        .cacheCreationInputTokens(Math.toIntExact(cacheCreation))
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 
@@ -106,30 +110,52 @@ public class AnthropicResponseParser {
      */
     public static Flux<ChatResponse> parseStreamEvents(
             Flux<RawMessageStreamEvent> eventFlux, Instant startTime) {
-        return eventFlux
-                .flatMap(
-                        event -> {
-                            try {
-                                return Flux.just(parseStreamEvent(event, startTime));
-                            } catch (Exception e) {
-                                log.warn("Error parsing stream event: {}", e.getMessage());
-                                return Flux.empty();
-                            }
-                        })
-                .filter(response -> response != null && !response.getContent().isEmpty());
+        return Flux.defer(
+                () -> {
+                    StreamState state = new StreamState();
+                    return eventFlux
+                            .concatMap(
+                                    event -> {
+                                        try {
+                                            return Flux.just(
+                                                    parseStreamEvent(event, startTime, state));
+                                        } catch (Exception e) {
+                                            log.warn(
+                                                    "Error parsing stream event: {}",
+                                                    e.getMessage());
+                                            return Flux.empty();
+                                        }
+                                    })
+                            .filter(
+                                    response ->
+                                            response != null
+                                                    && (!response.getContent().isEmpty()
+                                                            || response.getUsage() != null));
+                });
     }
 
     /**
      * Parse single stream event.
      */
     private static ChatResponse parseStreamEvent(RawMessageStreamEvent event, Instant startTime) {
+        return parseStreamEvent(event, startTime, new StreamState());
+    }
+
+    private static ChatResponse parseStreamEvent(
+            RawMessageStreamEvent event, Instant startTime, StreamState state) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
-        String messageId = null;
 
         // Message start
         if (event.isMessageStart()) {
-            messageId = event.asMessageStart().message().id();
+            Message message = event.asMessageStart().message();
+            state.messageId = message.id();
+            Usage startUsage = message.usage();
+            if (startUsage != null) {
+                state.inputTokens = startUsage.inputTokens();
+                state.cachedTokens = startUsage.cacheReadInputTokens().orElse(0L);
+                state.cacheCreationInputTokens = startUsage.cacheCreationInputTokens().orElse(0L);
+            }
         }
 
         // Content block delta - text
@@ -193,14 +219,44 @@ public class AnthropicResponseParser {
         // Message delta - usage information
         if (event.isMessageDelta()) {
             var messageDelta = event.asMessageDelta();
+            messageDelta.usage().inputTokens().ifPresent(value -> state.inputTokens = value);
+            messageDelta
+                    .usage()
+                    .cacheReadInputTokens()
+                    .ifPresent(value -> state.cachedTokens = value);
+            messageDelta
+                    .usage()
+                    .cacheCreationInputTokens()
+                    .ifPresent(value -> state.cacheCreationInputTokens = value);
+            state.outputTokens = messageDelta.usage().outputTokens();
             usage =
                     ChatUsage.builder()
-                            .outputTokens((int) messageDelta.usage().outputTokens())
+                            .inputTokens(
+                                    Math.toIntExact(
+                                            state.inputTokens
+                                                    + state.cachedTokens
+                                                    + state.cacheCreationInputTokens))
+                            .outputTokens(Math.toIntExact(state.outputTokens))
+                            .cachedTokens(Math.toIntExact(state.cachedTokens))
+                            .cacheCreationInputTokens(
+                                    Math.toIntExact(state.cacheCreationInputTokens))
                             .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                             .build();
         }
 
-        return ChatResponse.builder().id(messageId).content(contentBlocks).usage(usage).build();
+        return ChatResponse.builder()
+                .id(state.messageId)
+                .content(contentBlocks)
+                .usage(usage)
+                .build();
+    }
+
+    private static final class StreamState {
+        private String messageId;
+        private long inputTokens;
+        private long outputTokens;
+        private long cachedTokens;
+        private long cacheCreationInputTokens;
     }
 
     /**

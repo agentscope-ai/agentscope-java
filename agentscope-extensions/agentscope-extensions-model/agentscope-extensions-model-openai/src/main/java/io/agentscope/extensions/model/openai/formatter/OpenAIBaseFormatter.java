@@ -45,6 +45,8 @@ public abstract class OpenAIBaseFormatter
         extends AbstractBaseFormatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> {
 
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
+    private static final Map<String, String> EXPLICIT_PROMPT_CACHE_BREAKPOINT =
+            Map.of("mode", "explicit");
 
     protected final OpenAIMessageConverter messageConverter;
     protected final OpenAIResponseParser responseParser;
@@ -233,6 +235,88 @@ public abstract class OpenAIBaseFormatter
         }
     }
 
+    /**
+     * Normalize manually marked messages to the official OpenAI explicit prompt-cache protocol.
+     *
+     * <p>OpenAI enables automatic prompt caching by default, so this method never invents
+     * breakpoints for {@link GenerateOptions#getCacheControl() cacheControl=true}. It only
+     * migrates explicit AgentScope metadata (temporarily represented by legacy
+     * {@code cache_control}) to a content-part {@code prompt_cache_breakpoint}, and enables
+     * explicit mode at request level.
+     *
+     * @param request request to normalize
+     */
+    public void applyOpenAIPromptCache(OpenAIRequest request) {
+        if (request == null || request.getMessages() == null) {
+            return;
+        }
+
+        for (OpenAIMessage message : request.getMessages()) {
+            boolean legacyExplicit = message.getCacheControl() != null;
+            List<OpenAIContentPart> parts = message.getContentAsList();
+            if (parts != null) {
+                for (OpenAIContentPart part : parts) {
+                    if (part.getCacheControl() != null) {
+                        legacyExplicit = true;
+                        part.setCacheControl(null);
+                    }
+                }
+            }
+
+            if (legacyExplicit && !hasPromptCacheBreakpoint(message)) {
+                parts = ensureContentArray(message);
+                if (parts.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "Cannot apply prompt_cache_breakpoint to a message without cacheable"
+                                    + " content");
+                }
+                parts.get(parts.size() - 1)
+                        .setPromptCacheBreakpoint(EXPLICIT_PROMPT_CACHE_BREAKPOINT);
+            }
+            message.setCacheControl(null);
+        }
+
+        int markerCount = countPromptCacheBreakpoints(request.getMessages());
+        if (markerCount > MAX_PROMPT_CACHE_BREAKPOINTS) {
+            throw new IllegalArgumentException(
+                    "OpenAI supports at most "
+                            + MAX_PROMPT_CACHE_BREAKPOINTS
+                            + " prompt_cache_breakpoint markers, but got "
+                            + markerCount);
+        }
+        if (markerCount > 0) {
+            Map<String, Object> promptCacheOptions = new java.util.LinkedHashMap<>();
+            Object configured =
+                    request.getExtraParams() != null
+                            ? request.getExtraParams().get("prompt_cache_options")
+                            : null;
+            if (configured instanceof Map<?, ?> configuredMap) {
+                configuredMap.forEach(
+                        (key, value) -> {
+                            if (key instanceof String stringKey) {
+                                promptCacheOptions.put(stringKey, value);
+                            }
+                        });
+            }
+            promptCacheOptions.put("mode", "explicit");
+            request.addExtraParam("prompt_cache_options", promptCacheOptions);
+        }
+    }
+
+    /** Remove AgentScope's internal legacy markers before calling an unknown compatible API. */
+    public void clearLegacyCacheControl(List<OpenAIMessage> messages) {
+        if (messages == null) {
+            return;
+        }
+        for (OpenAIMessage message : messages) {
+            message.setCacheControl(null);
+            List<OpenAIContentPart> parts = message.getContentAsList();
+            if (parts != null) {
+                parts.forEach(part -> part.setCacheControl(null));
+            }
+        }
+    }
+
     static void applyDashScopeCacheControlToContentBlock(OpenAIMessage message) {
         if (hasContentBlockCacheControl(message)) {
             message.setCacheControl(null);
@@ -285,6 +369,27 @@ public abstract class OpenAIBaseFormatter
     private static boolean hasContentBlockCacheControl(OpenAIMessage message) {
         List<OpenAIContentPart> parts = message.getContentAsList();
         return parts != null && parts.stream().anyMatch(part -> part.getCacheControl() != null);
+    }
+
+    private static boolean hasPromptCacheBreakpoint(OpenAIMessage message) {
+        List<OpenAIContentPart> parts = message.getContentAsList();
+        return parts != null
+                && parts.stream().anyMatch(part -> part.getPromptCacheBreakpoint() != null);
+    }
+
+    private static int countPromptCacheBreakpoints(List<OpenAIMessage> messages) {
+        int count = 0;
+        for (OpenAIMessage message : messages) {
+            List<OpenAIContentPart> parts = message.getContentAsList();
+            if (parts != null) {
+                count +=
+                        (int)
+                                parts.stream()
+                                        .filter(part -> part.getPromptCacheBreakpoint() != null)
+                                        .count();
+            }
+        }
+        return count;
     }
 
     private static int countContentBlockCacheMarkers(List<OpenAIMessage> messages) {
