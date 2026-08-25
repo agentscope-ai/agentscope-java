@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="工作区（Workspace）" href="workspace.html"><link rel="prev" title="Harness 架构" href="architecture.html">
+    <meta property="article:modified_time" content="2026-08-25T13:35:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="工作区（Workspace）" href="workspace.html"><link rel="prev" title="Harness 架构" href="architecture.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/compaction.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1029,7 +1029,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>默认排除 <code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> / <code class="docutils literal notranslate"><span class="pre">glob_files</span></code> / <code class="docutils literal notranslate"><span class="pre">list_files</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_*</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code>——这些工具要么自带分页、要么返回值很小。<strong>Shell <code class="docutils literal notranslate"><span class="pre">execute</span></code> 默认不排除</strong>,因为命令输出可能非常大。</p>
+<p>默认排除 <code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">list_files</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_*</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code>——这些工具要么自带分页、要么返回值很小。<code class="docutils literal notranslate"><span class="pre">grep_files</span></code> 和 <code class="docutils literal notranslate"><span class="pre">glob_files</span></code> 会强制限制结果条数，但仍可触发大结果卸载，作为单条结果异常大时的第二道保护。<strong>Shell <code class="docutils literal notranslate"><span class="pre">execute</span></code> 默认不排除</strong>,因为命令输出可能非常大。</p>
 <p>详情见<a class="reference internal" href="memory.html#id7"><span class="std std-ref">记忆 - 大工具结果卸载</span></a>。</p>
 </section>
 <section id="id2">
@@ -1148,7 +1148,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-25</div>
           </div>
           <div class="right-details">
             <div class="icons">

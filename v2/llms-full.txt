@@ -3897,7 +3897,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files` / `memory_*` / `session_search` are excluded by default — they either self-paginate or return tiny payloads. **Shell `execute` is deliberately NOT excluded** because command output can be arbitrarily large.
+`read_file` / `write_file` / `edit_file` / `list_files` / `memory_*` / `session_search` are excluded by default — they either self-paginate or return tiny payloads. `grep_files` and `glob_files` enforce result-count limits, but remain eligible for eviction as a second safety net when individual matches are unusually large. **Shell `execute` is deliberately NOT excluded** because command output can be arbitrarily large.
 
 Details in [Memory — Large tool-result offloading](./memory.md#large-tool-result-offloading).
 

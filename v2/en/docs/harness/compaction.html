@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Workspace" href="workspace.html"><link rel="prev" title="Harness Architecture" href="architecture.html">
+    <meta property="article:modified_time" content="2026-08-25T13:35:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Workspace" href="workspace.html"><link rel="prev" title="Harness Architecture" href="architecture.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/compaction.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1029,7 +1029,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> / <code class="docutils literal notranslate"><span class="pre">glob_files</span></code> / <code class="docutils literal notranslate"><span class="pre">list_files</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_*</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code> are excluded by default — they either self-paginate or return tiny payloads. <strong>Shell <code class="docutils literal notranslate"><span class="pre">execute</span></code> is deliberately NOT excluded</strong> because command output can be arbitrarily large.</p>
+<p><code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">list_files</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_*</span></code> / <code class="docutils literal notranslate"><span class="pre">session_search</span></code> are excluded by default — they either self-paginate or return tiny payloads. <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> and <code class="docutils literal notranslate"><span class="pre">glob_files</span></code> enforce result-count limits, but remain eligible for eviction as a second safety net when individual matches are unusually large. <strong>Shell <code class="docutils literal notranslate"><span class="pre">execute</span></code> is deliberately NOT excluded</strong> because command output can be arbitrarily large.</p>
 <p>Details in <a class="reference internal" href="memory.html#large-tool-result-offloading"><span class="std std-ref">Memory — Large tool-result offloading</span></a>.</p>
 </section>
 <section id="overflow-safety-net">
@@ -1148,7 +1148,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-25</div>
           </div>
           <div class="right-details">
             <div class="icons">
