@@ -3764,7 +3764,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             toolCall ->
                                     toolCall.isServerTool()
                                             && inlineResultIds.contains(toolCall.getId()));
-
         }
 
         private static boolean hasToolCalls(Msg msg) {
