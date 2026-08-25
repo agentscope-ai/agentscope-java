@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
@@ -26,11 +28,13 @@ import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicMultiAgentFormatter;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for AnthropicChatModel.
@@ -448,5 +452,56 @@ class AnthropicChatModelTest {
                         .build();
 
         assertNotNull(model);
+    }
+
+    // ==========================================================================
+    // Prompt caching (cache_control) request-building tests
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Should build streaming request with cacheControl enabled before transport error")
+    void testStreamWithCacheControlEnabled() {
+        // Unreachable local endpoint: the request-building path (system message with
+        // cache_control, message formatting, applyCacheControl) executes fully and
+        // only the transport call fails.
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .baseUrl("http://127.0.0.1:1")
+                        .stream(true)
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().cacheControl(true).build();
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .textContent("You are a helpful assistant.")
+                                .build(),
+                        Msg.builder().role(MsgRole.USER).textContent("Hello").build());
+
+        StepVerifier.create(model.stream(messages, null, options))
+                .expectError()
+                .verify(Duration.ofSeconds(60));
+    }
+
+    @Test
+    @DisplayName(
+            "Should build non-streaming request with cacheControl disabled before transport error")
+    void testCallWithCacheControlDisabled() {
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .baseUrl("http://127.0.0.1:1")
+                        .stream(false)
+                        .build();
+
+        List<Msg> messages = List.of(Msg.builder().role(MsgRole.USER).textContent("Hello").build());
+
+        StepVerifier.create(model.stream(messages, null, null))
+                .expectError()
+                .verify(Duration.ofSeconds(60));
     }
 }
