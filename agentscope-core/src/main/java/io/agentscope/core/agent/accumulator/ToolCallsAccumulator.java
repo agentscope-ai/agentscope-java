@@ -18,6 +18,9 @@ package io.agentscope.core.agent.accumulator;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -121,9 +124,15 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     // Keep previously merged args, but retain enough context to diagnose the
                     // malformed arguments emitted by the model.
                     log.warn(
-                            "Failed to parse accumulated tool call arguments: {}",
-                            rawContentStr,
-                            e);
+                            "Failed to parse accumulated tool call arguments: "
+                                    + "toolId={}, toolName={}, byteLength={}, sha256={}, "
+                                    + "exceptionType={}, message={}",
+                            toolId,
+                            name,
+                            rawContentStr.getBytes(StandardCharsets.UTF_8).length,
+                            sha256(rawContentStr),
+                            e.getClass().getName(),
+                            e.getMessage());
                 }
             }
 
@@ -153,6 +162,21 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             return "__fragment__".equals(name)
                     || "__pending__".equals(name)
                     || (name != null && name.startsWith("__"));
+        }
+
+        private String sha256(String value) {
+            try {
+                byte[] digest =
+                        MessageDigest.getInstance("SHA-256")
+                                .digest(value.getBytes(StandardCharsets.UTF_8));
+                StringBuilder hex = new StringBuilder(digest.length * 2);
+                for (byte b : digest) {
+                    hex.append(String.format("%02x", b));
+                }
+                return hex.toString();
+            } catch (NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 is not available", e);
+            }
         }
 
         private String generateId() {
