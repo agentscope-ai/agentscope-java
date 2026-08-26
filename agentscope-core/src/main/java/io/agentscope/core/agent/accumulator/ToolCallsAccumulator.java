@@ -23,6 +23,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Tool calls accumulator for accumulating streaming tool call chunks.
@@ -38,6 +40,8 @@ import java.util.stream.Collectors;
  * @hidden
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
+
+    private static final Logger log = LoggerFactory.getLogger(ToolCallsAccumulator.class);
 
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
@@ -113,8 +117,13 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                             }
                         }
                     }
-                } catch (Exception ignored) {
-                    // Parsing failed, keep previously merged args
+                } catch (Exception e) {
+                    // Keep previously merged args, but retain enough context to diagnose the
+                    // malformed arguments emitted by the model.
+                    log.warn(
+                            "Failed to parse accumulated tool call arguments: {}",
+                            rawContentStr,
+                            e);
                 }
             }
 

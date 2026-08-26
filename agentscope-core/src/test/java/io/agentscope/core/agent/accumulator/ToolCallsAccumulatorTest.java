@@ -104,6 +104,23 @@ class ToolCallsAccumulatorTest {
     }
 
     @Test
+    @DisplayName("Should preserve merged arguments and fallback content for malformed JSON")
+    void testMalformedJsonFallsBackWithoutDroppingMergedArguments() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_malformed")
+                        .name("write_text_file")
+                        .input(Map.of("path", "output.txt"))
+                        .content("{\"projectName\": \"改造\"文化礼堂\"及配套设施\"}")
+                        .build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertEquals("output.txt", toolCall.getInput().get("path"));
+        assertEquals("{}", toolCall.getContent());
+    }
+
+    @Test
     @DisplayName("Should handle parallel tool calls with different metadata")
     void testParallelToolCallsWithMetadata() {
         // First tool call with metadata
