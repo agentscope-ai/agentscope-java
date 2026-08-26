@@ -198,7 +198,6 @@ public class MongoBaseStore implements BaseStore {
     // ────────────────── Internal Helpers ──────────────────
 
     private void ensureIndexes() {
-        collection.createIndex(Indexes.ascending(FIELD_NAMESPACE));
         collection.createIndex(
                 Indexes.compoundIndex(
                         Indexes.ascending(FIELD_NAMESPACE), Indexes.ascending(FIELD_KEY)));
