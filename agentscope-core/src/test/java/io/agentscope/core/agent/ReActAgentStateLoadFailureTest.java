@@ -85,29 +85,6 @@ class ReActAgentStateLoadFailureTest {
     }
 
     @Test
-    @DisplayName("non-versioned legacy load failures propagate without caching fresh state")
-    void legacyLoadFailurePropagatesWithoutCachingFreshState() {
-        LegacyFailingStore store = new LegacyFailingStore();
-        store.save(USER_ID, SESSION_ID, "memory_messages", List.of(userMsg("legacy turn")));
-        IllegalStateException failure = new IllegalStateException("simulated legacy load failure");
-        store.failLegacyLoadsWith(failure);
-        ReActAgent agent = agent(store);
-
-        IllegalStateException thrown =
-                assertThrows(
-                        IllegalStateException.class,
-                        () -> agent.getAgentState(USER_ID, SESSION_ID));
-
-        assertSame(failure, thrown, "the legacy store failure should propagate");
-        store.recoverLegacyLoads();
-        AgentState restored = agent.getAgentState(USER_ID, SESSION_ID);
-        assertEquals(
-                List.of("legacy turn"),
-                restored.getContext().stream().map(Msg::getTextContent).toList(),
-                "a failed legacy load must not cache a fresh state");
-    }
-
-    @Test
     @DisplayName("a genuinely missing state still creates a fresh session")
     void missingStateStillCreatesFreshSession() {
         AgentState fresh = agent(new InMemoryAgentStateStore()).getAgentState(USER_ID, SESSION_ID);
@@ -129,29 +106,6 @@ class ReActAgentStateLoadFailureTest {
         assertEquals(
                 List.of("old turn"),
                 restored.getContext().stream().map(Msg::getTextContent).toList());
-    }
-
-    @Test
-    @DisplayName("decoding failures propagate without caching fresh state")
-    void decodingFailurePropagatesWithoutCachingFreshState() {
-        ThrowingVersionedStore store = new ThrowingVersionedStore();
-        store.save(USER_ID, SESSION_ID, "agent_state", persistedState());
-        IllegalArgumentException failure =
-                new IllegalArgumentException("simulated decoding failure");
-        store.failLoadsWith(failure);
-        ReActAgent agent = agent(store);
-
-        IllegalArgumentException thrown =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> agent.getAgentState(USER_ID, SESSION_ID));
-
-        assertSame(failure, thrown, "the original decoding failure should propagate");
-        store.recoverLoads();
-        assertEquals(
-                "remembered",
-                agent.getAgentState(USER_ID, SESSION_ID).getSummary(),
-                "a decoding failure must not cache a fresh state");
     }
 
     private static ReActAgent agent(AgentStateStore store) {

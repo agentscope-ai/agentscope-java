@@ -422,30 +422,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (stateStore == null) {
             return new VersionedState<>(fresh, AgentStateStore.UNVERSIONED);
         }
-        try {
-            VersionedState<AgentState> versioned =
-                    stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
-            if (versioned.isPresent()) {
-                return versioned;
-            }
-            LegacyStateLoader.LegacyLoadResult legacy =
-                    LegacyStateLoader.loadFromLegacySessionWithPresence(
-                            stateStore, userId, sessionId);
-            if (legacy.found()) {
-                // Legacy keys have no version; treat as create-if-absent baseline.
-                long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
-                return new VersionedState<>(legacy.state(), version);
-            }
-            long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
-            return new VersionedState<>(fresh, version);
-        } catch (Exception e) {
-            log.warn(
-                    "Failed to load AgentState for slot (userId={}, sessionId={})",
-                    userId,
-                    sessionId,
-                    e);
-            throw e;
+        VersionedState<AgentState> versioned =
+                stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
+        if (versioned.isPresent()) {
+            return versioned;
         }
+        LegacyStateLoader.LegacyLoadResult legacy =
+                LegacyStateLoader.loadFromLegacySessionWithPresence(stateStore, userId, sessionId);
+        if (legacy.found()) {
+            // Legacy keys have no version; treat as create-if-absent baseline.
+            long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
+            return new VersionedState<>(legacy.state(), version);
+        }
+        long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
+        return new VersionedState<>(fresh, version);
     }
 
     private static AgentState freshState(
