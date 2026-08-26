@@ -139,8 +139,7 @@ export default function AgentsHubPage() {
 
       <p style={{ margin: '0 0 24px', color: '#64748b', fontSize: '1rem', lineHeight: 1.6, maxWidth: 720 }}>
         {t('managed.agents.description', {
-          agentsMd: 'AGENTS.md',
-          toolsJson: 'tools.json',
+          owner: me || t('auth.guest'),
         })}
       </p>
 

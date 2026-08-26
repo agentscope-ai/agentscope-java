@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +46,10 @@ const TABS: { id: TabId; labelKey: TranslationKey }[] = [
   { id: 'inventory', labelKey: 'operate.agentDetail.tabs.inventory' },
 ];
 
+function last24HoursSince(): string {
+  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+}
+
 function isHistory(phase?: string) {
   const p = (phase || '').toLowerCase();
   return p === 'archived' || p === 'terminated';
@@ -60,9 +64,6 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
   const { locale, t } = useI18n();
   const [params, setParams] = useSearchParams();
   const namespace = params.get('namespace') || 'default';
-  const [metricsSince] = useState(() =>
-    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-  );
   const tabParam = params.get('tab');
   const tab: TabId = TABS.some((t) => t.id === tabParam) ? (tabParam as TabId) : 'definition';
 
@@ -95,7 +96,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
       fetchAgentMetrics({
         agent: name,
         namespace,
-        since: metricsSince,
+        since: last24HoursSince(),
       }),
     enabled: tab === 'usage',
     refetchIntervalInBackground: false,

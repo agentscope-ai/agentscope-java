@@ -153,7 +153,7 @@ export default function AgentChannelsPage() {
                   style={{ ...S.btn, color: '#dc2626', borderColor: '#fca5a5' }}
                   onClick={async () => {
                     if (!confirm(t('managed.agentChannels.confirmDisconnect', {
-                      channelId: p.channelId,
+                      platform: p.platform || p.channelId,
                     }))) return;
                     try {
                       await deleteAgentPresence(agentId, p.channelId);

@@ -56,6 +56,26 @@ describe('translation catalog', () => {
       expect(tokens(zh[key]), key).toEqual(tokens(en[key]));
     }
   });
+
+  it('retains the consequences of destructive actions in both locales', () => {
+    expect(
+      translate('en', 'managed.memory.confirmRedact', { path: 'profile.md' }),
+    ).toContain('Version history will be cleared');
+    expect(
+      translate('zh', 'managed.memory.confirmRedact', { path: 'profile.md' }),
+    ).toContain('清除版本历史');
+    expect(
+      translate('en', 'managed.channels.confirmDelete', {
+        channelId: 'support',
+      }),
+    ).toContain('all bindings');
+    expect(translate('en', 'managed.vaults.confirmDelete')).toContain(
+      'all credentials',
+    );
+    expect(translate('zh', 'managed.vaults.confirmArchive')).toContain(
+      '不再向会话注入凭据',
+    );
+  });
 });
 
 describe('interpolate', () => {

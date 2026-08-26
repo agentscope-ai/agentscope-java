@@ -194,7 +194,7 @@ function checkCatalogs() {
     if (!english.has(key)) errors.push(`extra Chinese message: ${key}`);
   }
 
-  return english.size;
+  return english;
 }
 
 function walk(directory, predicate, files = []) {
@@ -215,7 +215,42 @@ function callName(expression) {
   return '';
 }
 
-function checkUiCopy() {
+function isTranslationCall(expression) {
+  if (ts.isIdentifier(expression)) {
+    return expression.text === 't' || expression.text === 'tr';
+  }
+  return (
+    ts.isPropertyAccessExpression(expression) &&
+    expression.name.text === 'current' &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === 'tRef'
+  );
+}
+
+function literalObjectKeys(node) {
+  const object = unwrapExpression(node);
+  if (!object || !ts.isObjectLiteralExpression(object)) return null;
+
+  const keys = [];
+  for (const property of object.properties) {
+    if (ts.isSpreadAssignment(property)) return null;
+    if (ts.isShorthandPropertyAssignment(property)) {
+      keys.push(property.name.text);
+      continue;
+    }
+    if (
+      ts.isPropertyAssignment(property) &&
+      (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+    ) {
+      keys.push(property.name.text);
+      continue;
+    }
+    return null;
+  }
+  return keys.sort();
+}
+
+function checkUiCopy(englishMessages) {
   const usedAllowlist = new Set();
   const sourceFiles = walk(SRC, (name) => /\.(ts|tsx)$/.test(name) && !name.includes('.test.'));
 
@@ -249,8 +284,37 @@ function checkUiCopy() {
       if (ts.isStringLiteralLike(node)) report(node, 'conditional', node.text);
     };
 
+    const checkTranslationParams = (node) => {
+      if (!isTranslationCall(node.expression) || !ts.isStringLiteralLike(node.arguments[0])) {
+        return;
+      }
+
+      const key = node.arguments[0].text;
+      const template = englishMessages.get(key);
+      if (template == null) return;
+
+      const expected = interpolationTokens(template);
+      const supplied = node.arguments[1] ? literalObjectKeys(node.arguments[1]) : [];
+      if (supplied == null) return;
+
+      const missing = expected.filter((name) => !supplied.includes(name));
+      const unexpected = supplied.filter((name) => !expected.includes(name));
+      if (missing.length === 0 && unexpected.length === 0) return;
+
+      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      const details = [];
+      if (missing.length > 0) details.push(`missing ${missing.join(', ')}`);
+      if (unexpected.length > 0) details.push(`unexpected ${unexpected.join(', ')}`);
+      errors.push(
+        `${fileName}:${position.line + 1}:${position.character + 1} ` +
+          `translation params for ${key}: ${details.join('; ')}`,
+      );
+    };
+
     const visit = (node) => {
       if (ts.isJsxText(node)) report(node, 'jsx', node.text);
+
+      if (ts.isCallExpression(node)) checkTranslationParams(node);
 
       if (
         ts.isJsxAttribute(node) &&
@@ -311,8 +375,8 @@ function checkUiCopy() {
   return sourceFiles.length;
 }
 
-const messageCount = checkCatalogs();
-const sourceFileCount = checkUiCopy();
+const englishMessages = checkCatalogs();
+const sourceFileCount = checkUiCopy(englishMessages);
 
 if (errors.length > 0) {
   console.error(`i18n check failed with ${errors.length} problem(s):`);
@@ -320,7 +384,7 @@ if (errors.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `i18n check passed: ${messageCount} paired messages, ` +
-      `${sourceFileCount} source files, no unapproved hard-coded UI copy.`,
+    `i18n check passed: ${englishMessages.size} paired messages, ` +
+      `${sourceFileCount} source files, no unapproved hard-coded UI copy or invalid params.`,
   );
 }

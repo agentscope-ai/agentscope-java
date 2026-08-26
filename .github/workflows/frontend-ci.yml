@@ -49,4 +49,6 @@ jobs:
       - name: Verify source
         run: npm run verify
       - name: Check committed bundle is current
-        run: git diff --exit-code -- ../aistio/ui
+        run: |
+          git diff --exit-code -- ../aistio/ui
+          test -z "$(git status --porcelain --untracked-files=all -- ../aistio/ui)"
