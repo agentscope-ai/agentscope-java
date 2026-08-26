@@ -154,14 +154,14 @@ class E2bPlatformHttpTest {
     @Test
     void pruneSnapshotsKeepsLastNByInsertionOrder() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(200));
+        server.enqueue(new MockResponse().setResponseCode(200));
 
         List<String> kept =
                 platform.pruneSnapshots("snap-4", List.of("snap-1", "snap-2", "snap-3"), 2);
 
         assertEquals("/templates/snap-1", server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(2, server.getRequestCount()); // snap-1 and snap-2 deleted (oldest)
-        // keep last 2 by insertion order: snap-3, snap-4
-        server.takeRequest(5, TimeUnit.SECONDS);
+        assertEquals("/templates/snap-2", server.takeRequest(5, TimeUnit.SECONDS).getPath());
+        assertEquals(2, server.getRequestCount());
         assertEquals(List.of("snap-3", "snap-4"), kept);
     }
 
