@@ -109,6 +109,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
+            boolean fallbackBound = false;
             try {
                 sandbox.start();
                 // Bind the acquired sandbox per-call on this invocation's RuntimeContext rather
@@ -119,12 +120,15 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 // context-free callers (e.g. WorkspaceMessageBus) that do not thread a per-call.
                 ctx.put(SandboxAcquireResult.class, result);
                 filesystemProxy.setSandbox(sandbox);
+                fallbackBound = true;
                 log.debug(
                         "[sandbox-mw] Acquired sandbox {}",
                         sandbox.getState() != null ? sandbox.getState().getSessionId() : "?");
             } catch (Exception e) {
                 ctx.put(SandboxAcquireResult.class, null);
-                filesystemProxy.clearSandboxIfCurrent(sandbox);
+                if (fallbackBound) {
+                    filesystemProxy.clearSandboxIfCurrent(sandbox);
+                }
                 try {
                     sandboxManager.release(result);
                 } catch (Exception releaseErr) {
