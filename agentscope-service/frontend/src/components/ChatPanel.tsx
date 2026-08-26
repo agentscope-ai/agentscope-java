@@ -386,7 +386,7 @@ export default function ChatPanel({
       const localUser = pendingUserMsgIdRef.current;
       pendingUserMsgIdRef.current = null;
       setMessages(prev => {
-        let next = closeOpen(prev);
+        const next = closeOpen(prev);
         if (next.some(m => m.id === evt.id)) return next;
         if (localUser && next.some(m => m.id === localUser)) {
           return next.map(m =>
