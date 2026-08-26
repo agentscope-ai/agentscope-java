@@ -165,9 +165,10 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
     /**
      * Check if a message should bypass history merging in multiagent formatters.
      * Messages with the {@link MessageMetadataKeys#BYPASS_MULTIAGENT_HISTORY_MERGE} or {@link
-     * MessageMetadataKeys#CACHE_CONTROL} flag set to {@code true} should be kept as separate messages
-     * rather than merged into the conversation history. Preserving explicitly marked cache
-     * boundaries prevents formatter-level history merging from discarding the marker.
+     * MessageMetadataKeys#CACHE_CONTROL} flag set to either {@code true} or {@code false} should be
+     * kept as separate messages rather than merged into the conversation history. Preserving
+     * explicitly marked cache boundaries prevents formatter-level history merging from discarding
+     * the marker.
      *
      * @param msg The message to check
      * @return true if message should bypass history merging
@@ -179,7 +180,7 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         Object bypassFlag =
                 msg.getMetadata().get(MessageMetadataKeys.BYPASS_MULTIAGENT_HISTORY_MERGE);
         Object cacheControlFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
-        return Boolean.TRUE.equals(bypassFlag) || Boolean.TRUE.equals(cacheControlFlag);
+        return Boolean.TRUE.equals(bypassFlag) || cacheControlFlag instanceof Boolean;
     }
 
     /**

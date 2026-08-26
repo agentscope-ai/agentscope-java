@@ -365,7 +365,11 @@ public class DashScopeMultiAgentFormatter
         }
     }
 
-    /** Apply automatic prompt cache control to DashScope messages. */
+    /**
+     * Apply automatic prompt cache control to DashScope messages.
+     *
+     * @param messages the list of formatted DashScope messages
+     */
     public void applyCacheControl(List<DashScopeMessage> messages) {
         applyCacheControl(messages, true);
     }
@@ -375,7 +379,6 @@ public class DashScopeMultiAgentFormatter
         if (messages == null || messages.isEmpty()) {
             return;
         }
-
         List<DashScopeMessage> selected =
                 selectPromptCacheBreakpoints(
                         messages,

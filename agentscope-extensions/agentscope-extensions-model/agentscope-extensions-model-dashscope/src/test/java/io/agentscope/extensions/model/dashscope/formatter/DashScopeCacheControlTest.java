@@ -41,6 +41,7 @@ import org.junit.jupiter.api.Test;
 class DashScopeCacheControlTest {
 
     private static final Map<String, String> EPHEMERAL = Map.of("type", "ephemeral");
+    private static final Map<String, String> NO_CACHE = Map.of();
 
     private DashScopeChatFormatter formatter;
 
@@ -184,6 +185,47 @@ class DashScopeCacheControlTest {
         }
 
         @Test
+        void explicitNoCacheIsNeitherSerializedNorAutomaticallyReenabled() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("do not cache")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+
+            List<DashScopeMessage> formatted = formatter.format(List.of(msg));
+            assertEquals(NO_CACHE, formatted.get(0).getCacheControl());
+
+            formatter.applyCacheControl(formatted, true);
+
+            assertNoCacheControl(formatted.get(0));
+            JsonNode tree =
+                    JsonUtils.getJsonCodec()
+                            .fromJson(
+                                    JsonUtils.getJsonCodec().toJson(formatted.get(0)),
+                                    JsonNode.class);
+            assertFalse(tree.has("cache_control"));
+            assertFalse(tree.toString().contains("cache_control"));
+        }
+
+        @Test
+        void automaticStrategySkipsExplicitNoCacheSystemMessage() {
+            Msg system =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .textContent("dynamic system")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+            Msg user = Msg.builder().role(MsgRole.USER).textContent("cacheable user").build();
+            List<DashScopeMessage> formatted = formatter.format(List.of(system, user));
+
+            formatter.applyCacheControl(formatted, true);
+
+            assertNoCacheControl(formatted.get(0));
+            assertEquals(EPHEMERAL, lastPart(formatted.get(1)).getCacheControl());
+        }
+
+        @Test
         void explicitMetadataPreventsMultiAgentHistoryMerge() {
             DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
             Msg cached =
@@ -205,6 +247,32 @@ class DashScopeCacheControlTest {
             assertEquals(2, formatted.size());
             assertEquals(EPHEMERAL, lastPart(formatted.get(0)).getCacheControl());
             assertNoCacheControl(formatted.get(1));
+        }
+
+        @Test
+        void explicitNoCachePreventsMultiAgentHistoryMerge() {
+            DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
+            Msg notCached =
+                    Msg.builder()
+                            .name("agent-a")
+                            .role(MsgRole.USER)
+                            .textContent("dynamic context")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+            Msg following =
+                    Msg.builder()
+                            .name("agent-b")
+                            .role(MsgRole.USER)
+                            .textContent("cacheable question")
+                            .build();
+
+            List<DashScopeMessage> formatted = multiFormatter.format(List.of(notCached, following));
+            assertEquals(2, formatted.size());
+
+            multiFormatter.applyCacheControl(formatted, true);
+
+            assertNoCacheControl(formatted.get(0));
+            assertEquals(EPHEMERAL, lastPart(formatted.get(1)).getCacheControl());
         }
 
         @Test

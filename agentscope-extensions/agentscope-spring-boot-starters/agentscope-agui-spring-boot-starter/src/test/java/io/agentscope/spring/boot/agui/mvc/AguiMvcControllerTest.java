@@ -85,6 +85,7 @@ class AguiMvcControllerTest {
             assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
 
             invokeError(emitter);
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
 
             awaitSecondRunAccepted(fixture);
 
@@ -132,6 +133,7 @@ class AguiMvcControllerTest {
 
             Object timeoutCallback = ReflectionTestUtils.getField(emitter, "timeoutCallback");
             ReflectionTestUtils.invokeMethod(timeoutCallback, "run");
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
 
             awaitSecondRunAccepted(fixture);
 
@@ -250,8 +252,9 @@ class AguiMvcControllerTest {
         @Override
         public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
             if (runCount.incrementAndGet() == 1) {
-                firstRunSubscribed.countDown();
-                return firstRunEvents.doFinally(signalType -> firstRunTerminated.countDown());
+                return firstRunEvents
+                        .doOnRequest(ignored -> firstRunSubscribed.countDown())
+                        .doFinally(signalType -> firstRunTerminated.countDown());
             }
             return Flux.empty();
         }

@@ -29,6 +29,7 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -44,6 +45,13 @@ public class DashScopeChatFormatter
         extends AbstractBaseFormatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> {
 
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
+
+    /**
+     * Sentinel for an explicit "no cache" intent. An empty map is serialized away (via
+     * {@code @JsonInclude(NON_EMPTY)} on {@link DashScopeMessage#cacheControl}), so the upstream
+     * API receives no {@code cache_control} field and therefore performs no caching.
+     */
+    private static final Map<String, String> NO_CACHE_CONTROL = Collections.emptyMap();
 
     private final DashScopeMessageConverter messageConverter;
     private final DashScopeResponseParser responseParser;
@@ -173,7 +181,11 @@ public class DashScopeChatFormatter
         return request;
     }
 
-    /** Apply automatic prompt cache control to DashScope messages. */
+    /**
+     * Apply automatic prompt cache control to DashScope messages.
+     *
+     * @param messages the list of formatted DashScope messages
+     */
     public void applyCacheControl(List<DashScopeMessage> messages) {
         applyCacheControl(messages, true);
     }
@@ -192,7 +204,6 @@ public class DashScopeChatFormatter
         if (messages == null || messages.isEmpty()) {
             return;
         }
-
         List<DashScopeMessage> selected =
                 selectPromptCacheBreakpoints(
                         messages,
@@ -219,6 +230,10 @@ public class DashScopeChatFormatter
     }
 
     static void applyCacheControlToContentBlock(DashScopeMessage message) {
+        if (isExplicitNoCache(message)) {
+            message.setCacheControl(null);
+            return;
+        }
         if (hasContentBlockCacheControl(message)) {
             message.setCacheControl(null);
             return;
@@ -263,6 +278,9 @@ public class DashScopeChatFormatter
     }
 
     static boolean isCacheable(DashScopeMessage message) {
+        if (isExplicitNoCache(message)) {
+            return false;
+        }
         if (!("system".equals(message.getRole())
                 || "user".equals(message.getRole())
                 || "assistant".equals(message.getRole())
@@ -275,7 +293,12 @@ public class DashScopeChatFormatter
     }
 
     static boolean hasExplicitCacheControl(DashScopeMessage message) {
-        return message.getCacheControl() != null || hasContentBlockCacheControl(message);
+        return (message.getCacheControl() != null && !message.getCacheControl().isEmpty())
+                || hasContentBlockCacheControl(message);
+    }
+
+    static boolean isExplicitNoCache(DashScopeMessage message) {
+        return message.getCacheControl() != null && message.getCacheControl().isEmpty();
     }
 
     static boolean hasContentBlockCacheControl(DashScopeMessage message) {
@@ -302,5 +325,28 @@ public class DashScopeChatFormatter
      */
     static Map<String, String> getEphemeralCacheControl() {
         return EPHEMERAL_CACHE_CONTROL;
+    }
+
+    /**
+     * Get the "no cache" sentinel constant.
+     *
+     * @return unmodifiable empty map representing an explicit "no cache" intent
+     */
+    static Map<String, String> getNoCacheControl() {
+        return NO_CACHE_CONTROL;
+    }
+
+    /**
+     * Whether the automatic cache-control strategy should mark a message as ephemeral.
+     *
+     * <p>Returns {@code true} only when the message has no cache_control value at all. Any non-null
+     * value — an explicit {@code {"type": "ephemeral"}}, a custom value, or the empty "no cache"
+     * sentinel — is left unchanged.
+     *
+     * @param message the message to inspect
+     * @return {@code true} if the message should be auto-cached, {@code false} otherwise
+     */
+    static boolean shouldAutoCache(DashScopeMessage message) {
+        return message.getCacheControl() == null;
     }
 }

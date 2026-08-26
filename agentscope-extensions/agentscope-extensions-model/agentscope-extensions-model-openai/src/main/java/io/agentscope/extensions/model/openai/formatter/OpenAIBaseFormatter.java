@@ -26,6 +26,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -47,6 +48,13 @@ public abstract class OpenAIBaseFormatter
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
     private static final Map<String, String> EXPLICIT_PROMPT_CACHE_BREAKPOINT =
             Map.of("mode", "explicit");
+
+    /**
+     * Sentinel for an explicit "no cache" intent. An empty map is serialized away (via
+     * {@code @JsonInclude(NON_EMPTY)} on {@link OpenAIMessage#cacheControl}), so the upstream API
+     * receives no {@code cache_control} field and therefore performs no caching.
+     */
+    private static final Map<String, String> NO_CACHE_CONTROL = Collections.emptyMap();
 
     protected final OpenAIMessageConverter messageConverter;
     protected final OpenAIResponseParser responseParser;
@@ -191,12 +199,12 @@ public abstract class OpenAIBaseFormatter
             return;
         }
         for (OpenAIMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
+            if ("system".equals(msg.getRole()) && shouldAutoCache(msg)) {
                 msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
             }
         }
         OpenAIMessage lastMsg = messages.get(messages.size() - 1);
-        if (lastMsg.getCacheControl() == null) {
+        if (shouldAutoCache(lastMsg)) {
             lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
         }
     }
@@ -256,12 +264,14 @@ public abstract class OpenAIBaseFormatter
         }
 
         for (OpenAIMessage message : request.getMessages()) {
-            boolean legacyExplicit = message.getCacheControl() != null;
+            boolean legacyExplicit = hasSerializableCacheControl(message.getCacheControl());
             List<OpenAIContentPart> parts = message.getContentAsList();
             if (parts != null) {
                 for (OpenAIContentPart part : parts) {
-                    if (part.getCacheControl() != null) {
+                    if (hasSerializableCacheControl(part.getCacheControl())) {
                         legacyExplicit = true;
+                    }
+                    if (part.getCacheControl() != null) {
                         part.setCacheControl(null);
                     }
                 }
@@ -322,6 +332,10 @@ public abstract class OpenAIBaseFormatter
     }
 
     static void applyDashScopeCacheControlToContentBlock(OpenAIMessage message) {
+        if (isExplicitNoCache(message)) {
+            message.setCacheControl(null);
+            return;
+        }
         if (hasContentBlockCacheControl(message)) {
             message.setCacheControl(null);
             return;
@@ -355,6 +369,9 @@ public abstract class OpenAIBaseFormatter
     }
 
     private static boolean isCacheable(OpenAIMessage message) {
+        if (isExplicitNoCache(message)) {
+            return false;
+        }
         if (!("system".equals(message.getRole())
                 || "user".equals(message.getRole())
                 || "assistant".equals(message.getRole())
@@ -367,12 +384,23 @@ public abstract class OpenAIBaseFormatter
     }
 
     private static boolean hasExplicitCacheControl(OpenAIMessage message) {
-        return message.getCacheControl() != null || hasContentBlockCacheControl(message);
+        return hasSerializableCacheControl(message.getCacheControl())
+                || hasContentBlockCacheControl(message);
+    }
+
+    private static boolean isExplicitNoCache(OpenAIMessage message) {
+        return message.getCacheControl() != null && message.getCacheControl().isEmpty();
+    }
+
+    private static boolean hasSerializableCacheControl(Map<String, String> cacheControl) {
+        return cacheControl != null && !cacheControl.isEmpty();
     }
 
     private static boolean hasContentBlockCacheControl(OpenAIMessage message) {
         List<OpenAIContentPart> parts = message.getContentAsList();
-        return parts != null && parts.stream().anyMatch(part -> part.getCacheControl() != null);
+        return parts != null
+                && parts.stream()
+                        .anyMatch(part -> hasSerializableCacheControl(part.getCacheControl()));
     }
 
     private static boolean hasPromptCacheBreakpoint(OpenAIMessage message) {
@@ -402,7 +430,13 @@ public abstract class OpenAIBaseFormatter
             List<OpenAIContentPart> parts = message.getContentAsList();
             if (parts != null) {
                 count +=
-                        (int) parts.stream().filter(part -> part.getCacheControl() != null).count();
+                        (int)
+                                parts.stream()
+                                        .filter(
+                                                part ->
+                                                        hasSerializableCacheControl(
+                                                                part.getCacheControl()))
+                                        .count();
             }
         }
         return count;
@@ -415,5 +449,28 @@ public abstract class OpenAIBaseFormatter
      */
     static Map<String, String> getEphemeralCacheControl() {
         return EPHEMERAL_CACHE_CONTROL;
+    }
+
+    /**
+     * Get the "no cache" sentinel constant.
+     *
+     * @return unmodifiable empty map representing an explicit "no cache" intent
+     */
+    static Map<String, String> getNoCacheControl() {
+        return NO_CACHE_CONTROL;
+    }
+
+    /**
+     * Whether the automatic cache-control strategy should mark a message as ephemeral.
+     *
+     * <p>Returns {@code true} only when the message has no cache_control value at all. Any non-null
+     * value — an explicit {@code {"type": "ephemeral"}}, a custom value, or the empty "no cache"
+     * sentinel — is left unchanged.
+     *
+     * @param message the message to inspect
+     * @return {@code true} if the message should be auto-cached, {@code false} otherwise
+     */
+    private static boolean shouldAutoCache(OpenAIMessage message) {
+        return message.getCacheControl() == null;
     }
 }

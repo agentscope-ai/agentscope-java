@@ -107,16 +107,18 @@ public final class MessageMetadataKeys {
     public static final String STRUCTURED_OUTPUT = "_structured_output";
 
     /**
-     * Metadata key to mark a message for prompt caching.
+     * Metadata key to explicitly mark a message for prompt caching or non-caching.
      *
      * <p>When set to {@code true}, a supporting formatter encodes a provider-specific cache
-     * breakpoint at this message. This allows users to manually mark specific messages for caching,
-     * independent of the automatic cache control strategy configured via
-     * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()}. Explicit markers remain
-     * effective when automatic cache control is disabled or unset.
+     * breakpoint at this message, unless an existing custom {@code cache_control} value is present.
+     * Explicit cache markers remain effective when the automatic strategy configured through
+     * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()} is disabled or unset. When
+     * set to {@code false}, the message is explicitly excluded from caching: no provider cache
+     * marker is emitted for it, and the automatic strategy skips it.
      *
-     * <p>Manually marked messages take priority over the automatic strategy — they will not be
-     * overwritten. A request may contain at most four explicitly marked cache breakpoints.
+     * <p>Explicitly marked messages (either {@code true} or {@code false}) take priority over the
+     * automatic strategy — they will not be overwritten. A request may contain at most four cache
+     * breakpoints explicitly enabled with {@code true}.
      *
      * <p><b>Type:</b> Boolean
      * <p><b>Example:</b>

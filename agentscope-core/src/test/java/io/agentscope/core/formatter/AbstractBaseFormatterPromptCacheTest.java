@@ -16,7 +16,6 @@
 package io.agentscope.core.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -127,7 +126,7 @@ class AbstractBaseFormatterPromptCacheTest {
                         .build();
 
         assertTrue(formatter.bypassesHistory(cached));
-        assertFalse(formatter.bypassesHistory(notCached));
+        assertTrue(formatter.bypassesHistory(notCached));
     }
 
     private record CacheItem(String name, boolean explicit, boolean system, boolean cacheable) {}

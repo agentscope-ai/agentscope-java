@@ -43,6 +43,7 @@ import org.junit.jupiter.api.Test;
 class OpenAICacheControlTest {
 
     private static final Map<String, String> EPHEMERAL = Map.of("type", "ephemeral");
+    private static final Map<String, String> NO_CACHE = Map.of();
 
     private OpenAIChatFormatter formatter;
 
@@ -207,7 +208,7 @@ class OpenAICacheControlTest {
         }
 
         @Test
-        @DisplayName("should not set cache_control when metadata flag is false")
+        @DisplayName("should mark explicit no-cache when metadata flag is false")
         void metadataFalse() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
@@ -221,7 +222,47 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(msg));
 
             assertEquals(1, result.size());
-            assertNull(result.get(0).getCacheControl());
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should not auto-cache a system message explicitly marked false")
+        void systemMessageExplicitNoCache() {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
+            Msg systemMsg =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .textContent("System prompt")
+                            .metadata(metadata)
+                            .build();
+            Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("User msg").build();
+
+            List<OpenAIMessage> result = formatter.format(List.of(systemMsg, userMsg));
+            formatter.applyCacheControl(result);
+
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, result.get(1).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should not serialize the no-cache marker into the API payload")
+        void noCacheNotSerialized() throws Exception {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Hello")
+                            .metadata(metadata)
+                            .build();
+
+            List<OpenAIMessage> result = formatter.format(List.of(msg));
+            String json = JsonUtils.getJsonCodec().toJson(result.get(0));
+
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+            assertFalse(json.contains("no_cache"));
+            assertFalse(json.contains("cache_control"));
         }
 
         @Test
@@ -298,6 +339,29 @@ class OpenAICacheControlTest {
                                                             .role("user")
                                                             .content("Question")
                                                             .build())))
+                            .build();
+
+            formatter.applyOpenAIPromptCache(request);
+
+            JsonNode json = toJsonTree(request);
+            assertFalse(json.has("prompt_cache_options"));
+            assertFalse(json.toString().contains("prompt_cache_breakpoint"));
+            assertFalse(json.toString().contains("cache_control"));
+        }
+
+        @Test
+        @DisplayName("should not turn explicit no-cache into an official breakpoint")
+        void explicitNoCacheDoesNotEnableOfficialBreakpoints() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Dynamic context")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+            OpenAIRequest request =
+                    OpenAIRequest.builder()
+                            .model("gpt-5.6")
+                            .messages(formatter.format(List.of(msg)))
                             .build();
 
             formatter.applyOpenAIPromptCache(request);
@@ -455,6 +519,61 @@ class OpenAICacheControlTest {
 
             assertNull(messages.get(0).getCacheControl());
             assertEquals(EPHEMERAL, messages.get(0).getContentAsList().get(0).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should skip explicit no-cache during automatic selection")
+        void explicitNoCacheIsNotReenabled() {
+            Msg system =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .textContent("Dynamic system")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+            Msg user = Msg.builder().role(MsgRole.USER).textContent("Cacheable user").build();
+            List<OpenAIMessage> messages = formatter.format(List.of(system, user));
+
+            formatter.applyDashScopeCacheControl(messages, true);
+
+            JsonNode first = toJsonTree(messages.get(0));
+            JsonNode last = toJsonTree(messages.get(1));
+            assertFalse(first.toString().contains("cache_control"));
+            assertEquals(
+                    "ephemeral",
+                    last.path("content").get(0).path("cache_control").path("type").asText());
+        }
+
+        @Test
+        @DisplayName("should preserve explicit no-cache as a multi-agent boundary")
+        void explicitNoCachePreventsMultiAgentMerge() {
+            OpenAIMultiAgentFormatter multiFormatter = new OpenAIMultiAgentFormatter();
+            Msg notCached =
+                    Msg.builder()
+                            .name("agent-a")
+                            .role(MsgRole.USER)
+                            .textContent("Dynamic context")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+            Msg following =
+                    Msg.builder()
+                            .name("agent-b")
+                            .role(MsgRole.USER)
+                            .textContent("Cacheable question")
+                            .build();
+            List<OpenAIMessage> messages = multiFormatter.format(List.of(notCached, following));
+            assertEquals(2, messages.size());
+
+            multiFormatter.applyDashScopeCacheControl(messages, true);
+
+            assertFalse(toJsonTree(messages.get(0)).toString().contains("cache_control"));
+            assertEquals(
+                    "ephemeral",
+                    toJsonTree(messages.get(1))
+                            .path("content")
+                            .get(0)
+                            .path("cache_control")
+                            .path("type")
+                            .asText());
         }
 
         @Test
