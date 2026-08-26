@@ -318,11 +318,12 @@ class E2bSandboxOptionsAndStateTest {
 
             java.lang.reflect.Method m = E2bSandbox.class.getDeclaredMethod("doPersistWorkspace");
             m.setAccessible(true);
-            java.io.InputStream in = (java.io.InputStream) m.invoke(sandbox);
-            byte[] bytes = in.readAllBytes();
-            String decoded = E2bSnapshotRefs.decodeSnapshotIdIfPresent(bytes);
-            assertEquals("team/agentscope-abc:tag", decoded);
-            assertEquals(List.of("team/agentscope-abc:tag"), state.getSnapshotIds());
+            try (java.io.InputStream in = (java.io.InputStream) m.invoke(sandbox)) {
+                byte[] bytes = in.readAllBytes();
+                String decoded = E2bSnapshotRefs.decodeSnapshotIdIfPresent(bytes);
+                assertEquals("team/agentscope-abc:tag", decoded);
+                assertEquals(List.of("team/agentscope-abc:tag"), state.getSnapshotIds());
+            }
             assertEquals("/sandboxes/sbx-1/snapshots", server.takeRequest().getPath());
         } finally {
             server.shutdown();
