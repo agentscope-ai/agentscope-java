@@ -114,7 +114,7 @@
         <kotlin.version>1.9.24</kotlin.version>
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
         <jgit.version>7.6.0.202603022253-r</jgit.version>
-        <fabric8.kubernetes-client.version>6.13.4</fabric8.kubernetes-client.version>
+        <fabric8.kubernetes-client.version>7.8.0</fabric8.kubernetes-client.version>
         <protobuf.java.version>4.29.3</protobuf.java.version>
 
         <spotless.version>3.4.0</spotless.version>
