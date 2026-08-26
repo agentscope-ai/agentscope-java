@@ -167,12 +167,15 @@ public class MongoBaseStore implements BaseStore {
 
     @Override
     public List<StoreItem> search(List<String> namespace, int limit, int offset) {
+        if (limit <= 0) {
+            return List.of();
+        }
         String nsKey = namespacePath(namespace);
         List<Document> docs =
                 collection
                         .find(Filters.eq(FIELD_NAMESPACE, nsKey))
                         .sort(Sorts.ascending(FIELD_KEY))
-                        .skip(offset)
+                        .skip(Math.max(offset, 0))
                         .limit(limit)
                         .projection(Projections.include(FIELD_KEY, FIELD_VALUE, FIELD_VERSION))
                         .into(new ArrayList<>());
