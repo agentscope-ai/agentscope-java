@@ -3,13 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "preview": "vite preview",
-    "lint": "eslint src",
+    "lint": "eslint src scripts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify": "npm run check:i18n && npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
