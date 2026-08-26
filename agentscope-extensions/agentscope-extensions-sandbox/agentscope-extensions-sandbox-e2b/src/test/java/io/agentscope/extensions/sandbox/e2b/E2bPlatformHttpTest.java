@@ -152,23 +152,17 @@ class E2bPlatformHttpTest {
     }
 
     @Test
-    void pruneSnapshotsKeepsNewestByTimestampWhenUnsorted() throws Exception {
+    void pruneSnapshotsKeepsLastNByInsertionOrder() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(200));
 
         List<String> kept =
-                platform.pruneSnapshots(
-                        "agentscope-a1b2c3d4-1703000000000",
-                        List.of(
-                                "agentscope-a1b2c3d4-1702000000000",
-                                "team/agentscope-a1b2c3d4-1699999999999:latest"),
-                        2);
+                platform.pruneSnapshots("snap-4", List.of("snap-1", "snap-2", "snap-3"), 2);
 
-        assertEquals(
-                "/templates/team%2Fagentscope-a1b2c3d4-1699999999999:latest",
-                server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(
-                List.of("agentscope-a1b2c3d4-1702000000000", "agentscope-a1b2c3d4-1703000000000"),
-                kept);
+        assertEquals("/templates/snap-1", server.takeRequest(5, TimeUnit.SECONDS).getPath());
+        assertEquals(2, server.getRequestCount()); // snap-1 and snap-2 deleted (oldest)
+        // keep last 2 by insertion order: snap-3, snap-4
+        server.takeRequest(5, TimeUnit.SECONDS);
+        assertEquals(List.of("snap-3", "snap-4"), kept);
     }
 
     @Test
@@ -194,30 +188,29 @@ class E2bPlatformHttpTest {
     }
 
     @Test
-    void pruneSnapshotsSkipsLegacyAndForeignSnapshots() throws Exception {
+    void pruneSnapshotsFifoRetainsLastN() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(200));
+        server.enqueue(new MockResponse().setResponseCode(200));
         server.enqueue(new MockResponse().setResponseCode(200));
 
         List<String> kept =
                 platform.pruneSnapshots(
-                        "agentscope-a1b2c3d4-1703000000000",
-                        List.of(
-                                "team/agentscope-a1b2c3d4-1700000000000:latest",
-                                "abc123:default",
-                                "team/custom:latest",
-                                "user-created-1700000000001"),
-                        1);
+                        "snap-5", List.of("snap-1", "snap-2", "snap-3", "snap-4"), 2);
 
-        assertEquals(
-                "/templates/team%2Fagentscope-a1b2c3d4-1700000000000:latest",
-                server.takeRequest(5, TimeUnit.SECONDS).getPath());
-        assertEquals(1, server.getRequestCount());
-        assertEquals(
-                List.of(
-                        "abc123:default",
-                        "team/custom:latest",
-                        "user-created-1700000000001",
-                        "agentscope-a1b2c3d4-1703000000000"),
-                kept);
+        assertEquals(3, server.getRequestCount());
+        assertEquals(List.of("snap-4", "snap-5"), kept);
+    }
+
+    @Test
+    void cleanupSnapshotsRetainsLastNByInsertionOrder() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(200));
+        server.enqueue(new MockResponse().setResponseCode(200));
+
+        List<String> kept =
+                platform.cleanupSnapshots(List.of("snap-1", "snap-2", "snap-3", "snap-4"), 2);
+
+        assertEquals(2, server.getRequestCount());
+        assertEquals(List.of("snap-3", "snap-4"), kept);
     }
 
     @Test
