@@ -21,11 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager.ThreadSession;
@@ -35,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 /** Unit tests for {@link ThreadSessionManager}. */
 @Tag("unit")
@@ -132,27 +137,69 @@ class ThreadSessionManagerTest {
     }
 
     @Test
-    void hasMemoryUsesThreadScopedAgentState() {
+    void hasMemoryUsesRuntimeContextScopedAgentStateWithoutClosingTheAgent() {
         ThreadSessionManager manager = new ThreadSessionManager(10, 30);
-        assertFalse(manager.hasMemory("missing"));
+        assertFalse(manager.hasMemory(ctx("missing")));
+        assertFalse(manager.hasMemory(null));
 
         Agent plain = mock(Agent.class);
         manager.getOrCreateAgent("thread-plain", "agent-a", () -> plain);
-        assertFalse(manager.hasMemory("thread-plain"));
+        assertFalse(manager.hasMemory(ctx("thread-plain")));
 
         ReActAgent emptyAgent = mock(ReActAgent.class);
         AgentState emptyState = mock(AgentState.class);
-        when(emptyAgent.getAgentState(null, "thread-empty")).thenReturn(emptyState);
+        when(emptyAgent.getAgentState(any(RuntimeContext.class))).thenReturn(emptyState);
         when(emptyState.getContext()).thenReturn(List.of());
         manager.getOrCreateAgent("thread-empty", "agent-a", () -> emptyAgent);
-        assertFalse(manager.hasMemory("thread-empty"));
+        assertFalse(manager.hasMemory(ctx("thread-empty")));
 
         ReActAgent filledAgent = mock(ReActAgent.class);
         AgentState filledState = mock(AgentState.class);
-        when(filledAgent.getAgentState(null, "thread-filled")).thenReturn(filledState);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(filledAgent.getAgentState(contextCaptor.capture())).thenReturn(filledState);
         when(filledState.getContext()).thenReturn(List.of(mock(Msg.class)));
-        manager.getOrCreateAgent("thread-filled", "agent-a", () -> filledAgent);
-        assertTrue(manager.hasMemory("thread-filled"));
+        manager.getOrCreateAgent("user-1", "thread-filled", "agent-a", () -> filledAgent);
+        assertTrue(
+                manager.hasMemory(
+                        RuntimeContext.builder()
+                                .sessionId("thread-filled")
+                                .userId("user-1")
+                                .build()));
+        assertFalse(manager.hasMemory(ctx("thread-filled")));
+        assertEquals("thread-filled", contextCaptor.getValue().getSessionId());
+        assertEquals("user-1", contextCaptor.getValue().getUserId());
+        verify(filledAgent, never()).close();
+    }
+
+    @Test
+    void sessionsAndHasMemoryAreIsolatedByUserId() {
+        ThreadSessionManager manager = new ThreadSessionManager(10, 30);
+        ReActAgent agentA = mock(ReActAgent.class);
+        ReActAgent agentB = mock(ReActAgent.class);
+        AgentState filledState = mock(AgentState.class);
+        AgentState emptyState = mock(AgentState.class);
+        when(filledState.getContext()).thenReturn(List.of(mock(Msg.class)));
+        when(emptyState.getContext()).thenReturn(List.of());
+        when(agentA.getAgentState(any(RuntimeContext.class))).thenReturn(filledState);
+        when(agentB.getAgentState(any(RuntimeContext.class))).thenReturn(emptyState);
+
+        Agent createdA = manager.getOrCreateAgent("user-a", "thread-1", "agent-a", () -> agentA);
+        Agent createdB = manager.getOrCreateAgent("user-b", "thread-1", "agent-a", () -> agentB);
+
+        assertSame(agentA, createdA);
+        assertSame(agentB, createdB);
+        assertEquals(2, manager.getSessionCount());
+        assertSame(agentA, manager.getSession("user-a", "thread-1").orElseThrow().getAgent());
+        assertSame(agentB, manager.getSession("user-b", "thread-1").orElseThrow().getAgent());
+        assertTrue(manager.getSession("thread-1").isEmpty());
+        assertTrue(
+                manager.hasMemory(
+                        RuntimeContext.builder().userId("user-a").sessionId("thread-1").build()));
+        assertFalse(
+                manager.hasMemory(
+                        RuntimeContext.builder().userId("user-b").sessionId("thread-1").build()));
+        assertFalse(manager.hasMemory(ctx("thread-1")));
     }
 
     @Test
@@ -204,5 +251,9 @@ class ThreadSessionManagerTest {
 
         manager.cleanupExpiredSessions();
         assertTrue(manager.getSession("thread-old").isEmpty());
+    }
+
+    private static RuntimeContext ctx(String threadId) {
+        return RuntimeContext.builder().sessionId(threadId).build();
     }
 }

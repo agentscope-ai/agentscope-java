@@ -114,20 +114,25 @@ public class CopilotKitRouteConfiguration {
 
     private Mono<ServerResponse> stopThread(
             ServerRequest request, ThreadSessionManager threadSessionManager) {
-        String agentId = request.pathVariable("agentId");
         String threadId = request.pathVariable("threadId");
+        String userId = resolveDemoUserId(request);
         threadSessionManager
-                .getSession(threadId)
+                .getSession(userId, threadId)
                 .ifPresent(
                         threadSession -> {
                             if (threadSession.getAgent() instanceof ReActAgent reActAgent) {
-                                reActAgent.interrupt(null, threadId);
+                                reActAgent.interrupt(userId, threadId);
                             } else {
                                 // todo Harness?
                                 threadSession.getAgent().interrupt();
                             }
                         });
         return Mono.empty();
+    }
+
+    private static String resolveDemoUserId(ServerRequest request) {
+        String token = request.headers().firstHeader("X-Token");
+        return token == null || token.isBlank() ? DemoThreadStore.DEMO_USER_ID : token;
     }
 
     private static Mono<ServerResponse> listThreads(

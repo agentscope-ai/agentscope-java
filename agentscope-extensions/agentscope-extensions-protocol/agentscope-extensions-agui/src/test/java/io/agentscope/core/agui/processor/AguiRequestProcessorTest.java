@@ -18,8 +18,12 @@ package io.agentscope.core.agui.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -42,6 +46,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
@@ -84,12 +89,77 @@ class AguiRequestProcessorTest {
     }
 
     @Test
+    void extractLatestUserMessageKeepsFullInputWhenNoAssistantTurnExists() {
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
+        AguiMessage firstUser = AguiMessage.userMessage("msg-1", "first");
+        AguiMessage secondUser = AguiMessage.userMessage("msg-2", "second");
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(firstUser, secondUser))
+                        .build();
+
+        assertSame(input, processor.extractLatestUserMessage(input));
+    }
+
+    @Test
+    void extractLatestUserMessageIncludesToolAndUserFollowUpsAfterAssistant() {
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
+        AguiMessage tool = AguiMessage.toolMessage("msg-3", "tool-1", "approved");
+        AguiMessage followUp = AguiMessage.userMessage("msg-4", "continue");
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage("msg-1", "first"),
+                                        AguiMessage.assistantMessage("msg-2", "need approval"),
+                                        tool,
+                                        followUp))
+                        .state(Map.of("cursor", 8))
+                        .build();
+
+        RunAgentInput extracted = processor.extractLatestUserMessage(input);
+
+        assertEquals(List.of(tool, followUp), extracted.getMessages());
+        assertEquals(input.getState(), extracted.getState());
+    }
+
+    @Test
+    void extractLatestUserMessageClearsMessagesWhenAssistantIsLast() {
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage("msg-1", "first"),
+                                        AguiMessage.assistantMessage("msg-2", "done")))
+                        .state(Map.of("cursor", 8))
+                        .forwardedProps(Map.of("agentId", "agent-a"))
+                        .build();
+
+        RunAgentInput extracted = processor.extractLatestUserMessage(input);
+
+        assertTrue(extracted.getMessages().isEmpty());
+        assertEquals(input.getState(), extracted.getState());
+        assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
+    }
+
+    @Test
     void processPassesCustomRuntimeContextThroughAdapterWithoutLosingAguiMetadata() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
         ArgumentCaptor<RuntimeContext> contextCaptor =
                 ArgumentCaptor.forClass(RuntimeContext.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
         RuntimeContext callerContext =
                 RuntimeContext.builder()
@@ -124,8 +194,9 @@ class AguiRequestProcessorTest {
     void processRecordsInterruptsAndResolvesOfficialResumeToToolCallId() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
-        when(resolver.hasMemory("thread-1")).thenReturn(false);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(false);
         ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
         when(agent.streamEvents(msgsCaptor.capture(), any(RuntimeContext.class)))
                 .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
@@ -165,7 +236,8 @@ class AguiRequestProcessorTest {
     void processRejectsNewInputWhenThreadHasOpenInterrupts() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         AtomicInteger adapterCount = new AtomicInteger();
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder()
@@ -202,7 +274,8 @@ class AguiRequestProcessorTest {
     void processRejectsConcurrentRunOnSameThreadUntilActiveRunFinishes() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         AtomicInteger adapterCount = new AtomicInteger();
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder()
@@ -237,7 +310,8 @@ class AguiRequestProcessorTest {
     void processDoesNotBeginRunUntilEventsAreSubscribed() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder().agentResolver(resolver).build();
@@ -252,7 +326,8 @@ class AguiRequestProcessorTest {
     void processCreatesIndependentRunStateForEachEventsSubscription() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
         AguiRequestProcessor.ProcessResult result =
                 AguiRequestProcessor.builder()
@@ -270,7 +345,8 @@ class AguiRequestProcessorTest {
     void processReleasesActiveRunWhenSynchronousSetupFailsAfterBeginRun() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
         AtomicInteger adapterCount = new AtomicInteger();
         AguiRequestProcessor processor =
@@ -300,7 +376,8 @@ class AguiRequestProcessorTest {
     void processRejectsPartialResumeWhenMultipleInterruptsAreOpen() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder()
                         .agentResolver(resolver)
@@ -340,7 +417,8 @@ class AguiRequestProcessorTest {
     void processRejectsUnsupportedResumeStatus() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder()
                         .agentResolver(resolver)
@@ -373,7 +451,8 @@ class AguiRequestProcessorTest {
     void processAllowsResumeOnlyWhenAllOpenInterruptsAreCovered() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
         when(agent.streamEvents(msgsCaptor.capture(), any(RuntimeContext.class)))
                 .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
@@ -430,7 +509,8 @@ class AguiRequestProcessorTest {
     void processRejectsResumeWhenNoInterruptsAreOpen() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder().agentResolver(resolver).build();
         RunAgentInput resumeInput =
@@ -457,7 +537,8 @@ class AguiRequestProcessorTest {
         ReActAgent agent = mock(ReActAgent.class);
         ArgumentCaptor<RuntimeContext> contextCaptor =
                 ArgumentCaptor.forClass(RuntimeContext.class);
-        when(resolver.resolveAgent("default", "thread-1")).thenReturn(agent);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
         when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
         RunAgentInput input =
                 RunAgentInput.builder()
@@ -477,6 +558,58 @@ class AguiRequestProcessorTest {
         assertEquals("custom-adapter", context.get("adapter"));
         assertEquals("thread-1", context.getSessionId());
         assertEquals("run-1", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RUN_ID_KEY));
+    }
+
+    @Test
+    void processExtractsFollowUpMessagesWhenServerHasMemory() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(true);
+        AtomicReference<RunAgentInput> seenInput = new AtomicReference<>();
+        AguiMessage tool = AguiMessage.toolMessage("msg-3", "tool-1", "approved");
+        AguiMessage followUp = AguiMessage.userMessage("msg-4", "continue");
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage("msg-1", "first"),
+                                        AguiMessage.assistantMessage("msg-2", "need approval"),
+                                        tool,
+                                        followUp))
+                        .build();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        new RecordingAdapter(resolvedAgent, config, seenInput))
+                        .build();
+
+        processor.process(request(input)).events().collectList().block();
+
+        verify(resolver).hasMemory(any(RuntimeContext.class));
+        assertEquals(List.of(tool, followUp), seenInput.get().getMessages());
+    }
+
+    private static final class RecordingAdapter extends AguiAgentAdapter {
+
+        private final AtomicReference<RunAgentInput> seenInput;
+
+        private RecordingAdapter(
+                Agent agent, AguiAdapterConfig config, AtomicReference<RunAgentInput> seenInput) {
+            super(agent, config);
+            this.seenInput = seenInput;
+        }
+
+        @Override
+        public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+            seenInput.set(input);
+            return Flux.empty();
+        }
     }
 
     private static final class CustomAdapter extends AguiAgentAdapter {
