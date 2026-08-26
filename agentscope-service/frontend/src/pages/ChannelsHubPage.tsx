@@ -32,6 +32,7 @@ import PlatformCredentialsForm, {
   credentialsFromProperties,
   propertiesFromCredentials,
 } from '../components/PlatformCredentialsForm';
+import { useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -84,6 +85,7 @@ function typeBadge(type: string): { bg: string; fg: string; bd: string } {
 }
 
 export default function ChannelsHubPage() {
+  const t = useT();
   const admin = isAdmin();
   const navigate = useNavigate();
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
@@ -100,12 +102,14 @@ export default function ChannelsHubPage() {
       setChannels(c);
       setTypes(t);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     } finally {
       setLoading(false);
     }
   }
 
+  // Initial data load must not repeat when the locale changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void refresh(); }, []);
 
   async function toggleDisabled(c: ChannelInfo) {
@@ -114,17 +118,17 @@ export default function ChannelsHubPage() {
       else await disableChannel(c.channelId);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     }
   }
 
   async function handleDelete(c: ChannelInfo) {
-    if (!confirm(`Delete channel '${c.channelId}'? This removes its entry and all bindings.`)) return;
+    if (!confirm(t('managed.channels.confirmDelete', { channelId: c.channelId }))) return;
     try {
       await deleteChannel(c.channelId);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     }
   }
 
@@ -140,16 +144,21 @@ export default function ChannelsHubPage() {
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <h1 style={S.title}>Channels</h1>
-        <button style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New channel</button>
+        <h1 style={S.title}>{t('navigation.managed.channels')}</h1>
+        <button style={S.primaryBtn} onClick={() => setCreating(true)}>
+          ＋ {t('managed.channels.new')}
+        </button>
       </div>
 
       <p style={S.blurb}>
-        Channels are IM identities (one bot account per channel). Prefer connecting from an Agent&apos;s
-        <strong> Connect IM </strong> page; this hub is the ops overview.
+        {t('managed.channels.description')}
       </p>
 
-      {loading && <div style={{ color: '#64748b', fontSize: '0.95rem' }}>Loading…</div>}
+      {loading && (
+        <div style={{ color: '#64748b', fontSize: '0.95rem' }}>
+          {t('common.loading')}
+        </div>
+      )}
       {err && <div style={S.err}>{err}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 18 }}>
@@ -180,20 +189,30 @@ export default function ChannelsHubPage() {
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {c.dmScope && <span style={S.badge}>{c.dmScope}</span>}
+                {c.dmScope && (
+                  <span style={S.badge}>
+                    {c.dmScope === 'PER_PEER'
+                      ? t('managed.agentChannels.perPerson')
+                      : c.dmScope === 'MAIN'
+                        ? t('managed.agentChannels.sharedInbox')
+                        : c.dmScope}
+                  </span>
+                )}
                 {c.defaultAgentId && (
                   <span style={{ ...S.badge, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>
-                    default → {c.defaultAgentId}
+                    {t('managed.channels.defaultAgent', {
+                      agentId: c.defaultAgentId,
+                    })}
                   </span>
                 )}
                 {c.disabled && (
                   <span style={{ ...S.badge, background: '#fee2e2', color: '#b91c1c', borderColor: '#fca5a5' }}>
-                    disabled
+                    {t('managed.channels.disabled')}
                   </span>
                 )}
                 {!c.disabled && c.started && (
                   <span style={{ ...S.badge, background: '#dcfce7', color: '#166534', borderColor: '#86efac' }}>
-                    running
+                    {t('status.running')}
                   </span>
                 )}
               </div>
@@ -202,13 +221,15 @@ export default function ChannelsHubPage() {
                 onClick={e => e.stopPropagation()}
               >
                 <button style={S.rowBtn} onClick={() => toggleDisabled(c)}>
-                  {c.disabled ? 'Enable' : 'Disable'}
+                  {c.disabled
+                    ? t('managed.channels.enable')
+                    : t('managed.channels.disable')}
                 </button>
                 <button
                   style={{ ...S.rowBtn, color: '#dc2626', borderColor: '#fca5a5' }}
                   onClick={() => handleDelete(c)}
                 >
-                  Delete
+                  {t('common.delete')}
                 </button>
               </div>
             </div>
@@ -216,7 +237,7 @@ export default function ChannelsHubPage() {
         })}
         {!loading && sorted.length === 0 && (
           <div style={{ color: '#94a3b8', fontSize: '0.92rem', fontStyle: 'italic' }}>
-            No channels registered. Click + New channel to add one.
+            {t('managed.channels.empty')}
           </div>
         )}
       </div>
@@ -243,6 +264,7 @@ interface CreateProps {
 }
 
 function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
+  const t = useT();
   const [channelId, setChannelId] = useState('');
   const [type, setType] = useState(types[0]?.type ?? '');
   const [dmScope, setDmScope] = useState('PER_PEER');
@@ -263,8 +285,14 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
 
   async function handleSave() {
     setErr(null);
-    if (!channelId.trim()) { setErr('channelId is required'); return; }
-    if (!type) { setErr('platform is required'); return; }
+    if (!channelId.trim()) {
+      setErr(t('managed.channels.channelIdRequired'));
+      return;
+    }
+    if (!type) {
+      setErr(t('managed.channels.platformRequired'));
+      return;
+    }
     const req: ChannelUpsertRequest = {
       channelId: channelId.trim(),
       type,
@@ -277,7 +305,7 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
       const created = await createChannel(req);
       onCreated(created.channelId);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     } finally {
       setBusy(false);
     }
@@ -298,49 +326,53 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
     <div style={scrim} onClick={onClose}>
       <div style={modal} onClick={e => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 16px', fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
-          New IM identity
+          {t('managed.channels.newIdentity')}
         </h3>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <div>
-            <label style={S.formField}>Channel id</label>
+            <label style={S.formField}>{t('managed.agentChannels.channelId')}</label>
             <input
               style={S.input}
               value={channelId}
               onChange={e => setChannelId(e.target.value)}
-              placeholder="e.g. dingtalk-sales"
+              placeholder={t('managed.channels.channelIdPlaceholder')}
             />
           </div>
           <div>
-            <label style={S.formField}>Platform</label>
+            <label style={S.formField}>{t('managed.agentChannels.platform')}</label>
             <select style={S.input} value={type} onChange={e => onTypeChange(e.target.value)}>
-              {types.length === 0 && <option value="">— no platforms —</option>}
+              {types.length === 0 && (
+                <option value="">{t('managed.channels.noPlatforms')}</option>
+              )}
               {types.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
             </select>
           </div>
           <div>
-            <label style={S.formField}>Conversation isolation</label>
+            <label style={S.formField}>{t('managed.agentChannels.isolation')}</label>
             <select style={S.input} value={dmScope} onChange={e => setDmScope(e.target.value)}>
               {DM_SCOPES.map(s => (
                 <option key={s} value={s}>
-                  {s === 'PER_PEER' ? 'Per person' : 'Shared inbox'}
+                  {s === 'PER_PEER'
+                    ? t('managed.agentChannels.perPerson')
+                    : t('managed.agentChannels.sharedInbox')}
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <label style={S.formField}>Default agent id</label>
+            <label style={S.formField}>{t('managed.channels.defaultAgentId')}</label>
             <input
               style={S.input}
               value={defaultAgentId}
               onChange={e => setDefaultAgentId(e.target.value)}
-              placeholder="e.g. default"
+              placeholder={t('managed.channels.defaultAgentPlaceholder')}
             />
           </div>
         </div>
 
         <div style={{ marginTop: 16 }}>
-          <label style={S.formField}>Credentials</label>
+          <label style={S.formField}>{t('managed.agentChannels.credentials')}</label>
           <PlatformCredentialsForm
             spec={typeSpec}
             values={creds}
@@ -353,9 +385,11 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
         {err && <div style={{ color: '#dc2626', fontSize: '0.9rem', marginTop: 10 }}>{err}</div>}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
-          <button style={S.rowBtn} onClick={onClose} disabled={busy}>Cancel</button>
+          <button style={S.rowBtn} onClick={onClose} disabled={busy}>
+            {t('common.cancel')}
+          </button>
           <button style={{ ...S.rowBtn, ...S.primaryBtn }} onClick={handleSave} disabled={busy}>
-            {busy ? 'Creating…' : 'Create'}
+            {busy ? t('managed.common.creating') : t('managed.common.create')}
           </button>
         </div>
       </div>

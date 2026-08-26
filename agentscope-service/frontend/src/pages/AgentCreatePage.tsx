@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { AgentCreateRequest, createAgent } from '../api/agents';
 import { listEnvironments } from '../api/environments';
 import { getWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
+import { useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '36px 40px', maxWidth: 880 },
@@ -60,6 +61,7 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function AgentCreatePage() {
+  const t = useT();
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -109,7 +111,7 @@ export default function AgentCreatePage() {
       const created = await createAgent(req);
       navigate(`/agents/${encodeURIComponent(created.id)}/settings`, { replace: true });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to create');
+      setErr(e instanceof Error ? e.message : t('managed.agentCreate.createFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -117,47 +119,46 @@ export default function AgentCreatePage() {
 
   return (
     <div style={S.page}>
-      <h1 style={S.title}>New agent</h1>
+      <h1 style={S.title}>{t('managed.agentCreate.title')}</h1>
       <div style={S.card}>
         <div style={S.tip}>
-          Prefer linking a Workspace so AGENTS.md / skills / tools / subagents are authored once and
-          rematerialized into this agent. Or leave Workspace empty for an agent-private definition.
+          {t('managed.agentCreate.description')}
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Name *</label>
+          <label style={S.fieldLabel}>{t('managed.agentCreate.nameRequired')}</label>
           <input
             style={S.input}
             value={name}
             onChange={e => setName(e.target.value)}
-            placeholder="e.g. Research Assistant"
+            placeholder={t('managed.agentCreate.namePlaceholder')}
           />
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Description</label>
+          <label style={S.fieldLabel}>{t('managed.common.description')}</label>
           <input
             style={S.input}
             value={description}
             onChange={e => setDescription(e.target.value)}
-            placeholder="Short summary shown on cards and tabs"
+            placeholder={t('managed.agentCreate.descriptionPlaceholder')}
           />
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Workspace</label>
+          <label style={S.fieldLabel}>{t('agent.workspace')}</label>
           <select
             style={S.input}
             value={workspaceId}
             onChange={e => setWorkspaceId(e.target.value)}
           >
-            <option value="">None (agent-private files)</option>
+            <option value="">{t('managed.agentCreate.privateWorkspace')}</option>
             {workspaces.map(w => (
               <option key={w.id} value={w.id}>{w.name}</option>
             ))}
           </select>
           <div style={S.hint}>
-            Link a Workspace to inherit AGENTS.md, skills, tools and subagents. Manage workspaces from the Workspaces nav.
+            {t('managed.agentCreate.workspaceHint')}
           </div>
           {preview && (
             <div style={{
@@ -165,64 +166,72 @@ export default function AgentCreatePage() {
               background: '#f8fafc', border: '1px solid #e2e8f0',
               fontSize: '0.85rem', color: '#475569', lineHeight: 1.5,
             }}>
-              Will inherit from <strong>{preview.name}</strong> (v{preview.version}):
-              {' '}{preview.agentsMdExists ? 'AGENTS.md · ' : ''}
-              skills {preview.skillCount ?? 0} · subagents {preview.subagentCount ?? 0}.
-              Leave system prompt blank to use the workspace AGENTS.md.
+              {t('managed.agentCreate.inheritPrefix')}{' '}
+              <strong>{preview.name}</strong> (v{preview.version}):{' '}
+              {preview.agentsMdExists ? 'AGENTS.md · ' : ''}
+              {t('managed.workspaces.skillCount', { count: preview.skillCount ?? 0 })}
+              {' · '}
+              {t('managed.workspaces.subagentCount', { count: preview.subagentCount ?? 0 })}
+              {t('managed.common.period')}{' '}
+              {t('managed.agentCreate.workspacePromptHint')}
             </div>
           )}
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Default environment (optional)</label>
+          <label style={S.fieldLabel}>
+            {t('managed.agentCreate.defaultEnvironmentOptional')}
+          </label>
           <select
             style={S.input}
             value={defaultEnvironmentId}
             onChange={e => setDefaultEnvironmentId(e.target.value)}
           >
-            <option value="">None — Chat will ensure a local default</option>
+            <option value="">{t('managed.agentCreate.defaultEnvironmentNone')}</option>
             {environments.map(env => (
               <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
             ))}
           </select>
           <div style={S.hint}>
-            Used when opening Chat / Channel sessions. Vaults and memory stores can be attached later in Settings.
+            {t('managed.agentCreate.defaultEnvironmentHint')}
           </div>
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Workspace path (optional override)</label>
+          <label style={S.fieldLabel}>
+            {t('managed.agentCreate.workspacePathOptional')}
+          </label>
           <input
             style={S.input}
             value={workspacePath}
             onChange={e => setWorkspacePath(e.target.value)}
-            placeholder="leave blank for default under aistiod workspace root"
+            placeholder={t('managed.agentCreate.workspacePathPlaceholder')}
           />
           <div style={S.hint}>
-            Leave blank to use the control-plane default path. Absolute paths are used as-is.
+            {t('managed.agentCreate.workspacePathHint')}
           </div>
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Model</label>
+          <label style={S.fieldLabel}>{t('common.fields.model')}</label>
           <input
             style={S.input}
             value={model}
             onChange={e => setModel(e.target.value)}
-            placeholder="e.g. dashscope:qwen-max, deepseek:deepseek-chat, openai:gpt-4o"
+            placeholder={t('managed.agentCreate.modelPlaceholder')}
           />
           <div style={S.hint}>
-            Provider-qualified model id resolved via ModelRegistry; empty falls back to the data-plane default model.
+            {t('managed.agentCreate.modelHint')}
           </div>
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>System prompt</label>
+          <label style={S.fieldLabel}>{t('common.fields.systemPrompt')}</label>
           <textarea
             style={S.textarea}
             value={sysPrompt}
             onChange={e => setSysPrompt(e.target.value)}
-            placeholder="High-level behavior. You can also edit AGENTS.md after creation."
+            placeholder={t('managed.agentCreate.systemPromptPlaceholder')}
           />
         </div>
 
@@ -232,9 +241,13 @@ export default function AgentCreatePage() {
             onClick={handleSubmit}
             disabled={!canSubmit}
           >
-            {submitting ? 'Creating…' : 'Create agent'}
+            {submitting
+              ? t('managed.common.creating')
+              : t('managed.agentCreate.create')}
           </button>
-          <button style={S.cancel} onClick={() => navigate('/agents')}>Cancel</button>
+          <button style={S.cancel} onClick={() => navigate('/agents')}>
+            {t('common.cancel')}
+          </button>
           {err && <span style={S.err}>{err}</span>}
         </div>
       </div>

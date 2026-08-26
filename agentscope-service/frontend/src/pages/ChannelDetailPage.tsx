@@ -34,6 +34,7 @@ import PlatformCredentialsForm, {
   credentialsFromProperties,
   propertiesFromCredentials,
 } from '../components/PlatformCredentialsForm';
+import { type TranslationFunction, useI18n, useT } from '@/i18n';
 
 const DM_SCOPES = ['MAIN', 'PER_PEER'];
 
@@ -85,7 +86,7 @@ const S: Record<string, React.CSSProperties> = {
   },
 };
 
-function describe(b: BindingConfigEntry): string {
+function describe(b: BindingConfigEntry, t: TranslationFunction): string {
   const parts: string[] = [];
   if (b.peer) parts.push(`peer=${b.peer}`);
   if (b.parentPeer) parts.push(`parentPeer=${b.parentPeer}`);
@@ -93,7 +94,7 @@ function describe(b: BindingConfigEntry): string {
   if (b.roles && b.roles.length) parts.push(`roles=${b.roles.join('|')}`);
   if (b.team) parts.push(`team=${b.team}`);
   if (b.account) parts.push(`account=${b.account}`);
-  return parts.join(', ') || '(catch-all)';
+  return parts.join(', ') || t('managed.channels.catchAll');
 }
 
 interface BindingForm {
@@ -137,6 +138,7 @@ function formToBinding(f: BindingForm): BindingConfigEntry {
 }
 
 export default function ChannelDetailPage() {
+  const { locale, t } = useI18n();
   const admin = isAdmin();
   const { channelId = '' } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
@@ -174,15 +176,17 @@ export default function ChannelDetailPage() {
       setCreds(credentialsFromProperties(spec, d.properties));
       setBindings(d.bindings ?? []);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     }
   }
 
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [channelId]);
+  // Reload for a different channel, but not for translated fallback text.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(); }, [channelId]);
 
   function onTypeChange(next: string) {
     if (next === type) return;
-    if (!confirm('Switching platform clears the credential form. Continue?')) return;
+    if (!confirm(t('managed.channels.confirmPlatformChange'))) return;
     setType(next);
     const spec = types.find((t) => t.type === next);
     setCreds(credentialsFromProperties(spec, undefined));
@@ -208,9 +212,9 @@ export default function ChannelDetailPage() {
       setBindings(updated.bindings ?? []);
       const spec = types.find((x) => x.type === updated.type);
       setCreds(credentialsFromProperties(spec, updated.properties));
-      setInfo('Saved. Scheduler will pick up changes on the next refresh.');
+      setInfo(t('managed.channels.savedRefreshHint'));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     }
   }
 
@@ -221,17 +225,17 @@ export default function ChannelDetailPage() {
       else await disableChannel(channelId);
       await load();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     }
   }
 
   async function handleDeleteChannel() {
-    if (!confirm(`Delete channel '${channelId}'? This removes its entry and all bindings.`)) return;
+    if (!confirm(t('managed.channels.confirmDelete', { channelId }))) return;
     try {
       await deleteChannel(channelId);
       navigate('/channels');
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     }
   }
 
@@ -247,7 +251,10 @@ export default function ChannelDetailPage() {
 
   async function saveBinding() {
     if (editForm == null || editIdx == null) return;
-    if (!editForm.agentId.trim()) { setErr('agentId is required'); return; }
+    if (!editForm.agentId.trim()) {
+      setErr(t('managed.channels.agentIdRequired'));
+      return;
+    }
     const next = [...bindings];
     const entry = formToBinding(editForm);
     if (editIdx >= bindings.length) next.push(entry);
@@ -259,7 +266,10 @@ export default function ChannelDetailPage() {
   }
 
   async function deleteBindingAt(i: number) {
-    if (!confirm(`Delete binding #${i} (${describe(bindings[i])})?`)) return;
+    if (!confirm(t('managed.channels.confirmDeleteBinding', {
+      index: new Intl.NumberFormat(locale).format(i),
+      binding: describe(bindings[i], t),
+    }))) return;
     const next = bindings.filter((_, idx) => idx !== i);
     setBindings(next);
     await persist({ bindings: next });
@@ -267,23 +277,25 @@ export default function ChannelDetailPage() {
 
   const status = useMemo(() => {
     if (!detail) return '';
-    if (detail.disabled) return 'disabled';
-    return detail.started ? 'running' : 'stopped';
-  }, [detail]);
+    if (detail.disabled) return t('managed.channels.disabled');
+    return detail.started ? t('status.running') : t('common.status.stopped');
+  }, [detail, t]);
 
   if (!admin) {
     return <Navigate to="/agents" replace />;
   }
 
   if (!detail && !err) {
-    return <div style={S.root}>Loading…</div>;
+    return <div style={S.root}>{t('common.loading')}</div>;
   }
 
   return (
     <div style={S.root}>
-      <button style={S.backLink} onClick={() => navigate('/channels')}>← All channels</button>
+      <button style={S.backLink} onClick={() => navigate('/channels')}>
+        ← {t('managed.channels.all')}
+      </button>
       <h1 style={S.title}>{channelId}</h1>
-      <div style={S.subtle}>IM identity configuration. Credentials switch with the selected platform.</div>
+      <div style={S.subtle}>{t('managed.channels.detailDescription')}</div>
 
       {err && <div style={{ ...S.err, marginTop: 16 }}>{err}</div>}
       {info && <div style={{ ...S.ok, marginTop: 16 }}>{info}</div>}
@@ -292,46 +304,52 @@ export default function ChannelDetailPage() {
         <>
           <div style={{ ...S.section, marginTop: 18 }}>
             <div style={S.sectionHead}>
-              <h2 style={S.sectionTitle}>Configuration</h2>
+              <h2 style={S.sectionTitle}>{t('managed.channels.configuration')}</h2>
               <span style={S.badge}>{status}</span>
               {detail.lastError ? <span style={{ ...S.badge, color: '#dc2626' }}>{detail.lastError}</span> : null}
               <span style={{ flex: 1 }} />
               <button style={S.btn} onClick={toggleDisabled}>
-                {detail.disabled ? 'Enable' : 'Disable'}
+                {detail.disabled
+                  ? t('managed.channels.enable')
+                  : t('managed.channels.disable')}
               </button>
               <button style={{ ...S.btn, color: '#dc2626', borderColor: '#fca5a5' }} onClick={handleDeleteChannel}>
-                Delete
+                {t('common.delete')}
               </button>
             </div>
             <div style={S.grid2}>
               <div>
-                <label style={S.field}>Platform</label>
+                <label style={S.field}>{t('managed.agentChannels.platform')}</label>
                 <select style={S.input} value={type} onChange={e => onTypeChange(e.target.value)}>
                   {types.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
                 </select>
               </div>
               <div>
-                <label style={S.field}>Conversation isolation</label>
+                <label style={S.field}>{t('managed.agentChannels.isolation')}</label>
                 <select style={S.input} value={dmScope} onChange={e => setDmScope(e.target.value)}>
                   {DM_SCOPES.map(s => (
                     <option key={s} value={s}>
-                      {s === 'PER_PEER' ? 'Per person (PER_PEER)' : 'Shared inbox (MAIN)'}
+                      {s === 'PER_PEER'
+                        ? t('managed.channels.perPeerWithValue')
+                        : t('managed.channels.mainWithValue')}
                     </option>
                   ))}
                 </select>
               </div>
               <div style={{ gridColumn: '1 / span 2' }}>
-                <label style={S.field}>Default agent id</label>
+                <label style={S.field}>{t('managed.channels.defaultAgentId')}</label>
                 <input
                   style={S.input}
                   value={defaultAgentId}
                   onChange={e => setDefaultAgentId(e.target.value)}
-                  placeholder="e.g. default"
+                  placeholder={t('managed.channels.defaultAgentPlaceholder')}
                 />
               </div>
             </div>
             <div style={{ marginTop: 18 }}>
-              <h3 style={{ ...S.sectionTitle, fontSize: '0.95rem', marginBottom: 10 }}>Credentials</h3>
+              <h3 style={{ ...S.sectionTitle, fontSize: '0.95rem', marginBottom: 10 }}>
+                {t('managed.agentChannels.credentials')}
+              </h3>
               <PlatformCredentialsForm
                 spec={typeSpec}
                 values={creds}
@@ -342,29 +360,37 @@ export default function ChannelDetailPage() {
             </div>
             {callbackUrl ? (
               <div style={S.callout}>
-                <strong>Callback / webhook URL</strong>
+                <strong>{t('managed.channels.callbackUrl')}</strong>
                 <div style={{ fontFamily: 'monospace', marginTop: 6, wordBreak: 'break-all' }}>{callbackUrl}</div>
-                <div style={{ ...S.subtle, marginTop: 6 }}>Paste this into the platform developer console.</div>
+                <div style={{ ...S.subtle, marginTop: 6 }}>
+                  {t('managed.channels.callbackHint')}
+                </div>
               </div>
             ) : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-              <button style={{ ...S.btn, ...S.btnPrimary }} onClick={() => persist()}>Save configuration</button>
+              <button style={{ ...S.btn, ...S.btnPrimary }} onClick={() => persist()}>
+                {t('managed.channels.saveConfiguration')}
+              </button>
             </div>
           </div>
 
           <div style={S.section}>
             <div style={S.sectionHead}>
-              <h2 style={S.sectionTitle}>Transfer rules</h2>
-              <span style={S.subtle}>({bindings.length})</span>
+              <h2 style={S.sectionTitle}>{t('managed.channels.transferRules')}</h2>
+              <span style={S.subtle}>
+                ({new Intl.NumberFormat(locale).format(bindings.length)})
+              </span>
               <span style={{ flex: 1 }} />
-              <button style={{ ...S.btn, ...S.btnPrimary }} onClick={startAddBinding}>+ Add rule</button>
+              <button style={{ ...S.btn, ...S.btnPrimary }} onClick={startAddBinding}>
+                + {t('managed.channels.addRule')}
+              </button>
             </div>
             <div style={{ ...S.subtle, marginBottom: 12 }}>
-              Route specific peers / groups to another agent. Leave selectors blank for catch-all.
+              {t('managed.channels.transferRulesHint')}
             </div>
             {bindings.length === 0 ? (
               <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                No rules. Inbound messages route to <code>defaultAgentId</code>.
+                {t('managed.channels.noRules')}
               </div>
             ) : bindings.map((b, i) => (
               <div key={i} style={S.bindingRow}>
@@ -372,14 +398,24 @@ export default function ChannelDetailPage() {
                   → {b.agentId}
                 </span>
                 <span style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.86rem', color: '#475569' }}>
-                  {describe(b)}
+                  {describe(b, t)}
                 </span>
-                {b.sessionScope && <span style={S.badge}>{b.sessionScope}</span>}
-                <button style={S.btn} onClick={() => startEditBinding(i)}>Edit</button>
+                {b.sessionScope && (
+                  <span style={S.badge}>
+                    {b.sessionScope === 'PER_PEER'
+                      ? t('managed.agentChannels.perPerson')
+                      : b.sessionScope === 'MAIN'
+                        ? t('managed.agentChannels.sharedInbox')
+                        : b.sessionScope}
+                  </span>
+                )}
+                <button style={S.btn} onClick={() => startEditBinding(i)}>
+                  {t('common.actions.edit')}
+                </button>
                 <button
                   style={{ ...S.btn, color: '#dc2626', borderColor: '#fca5a5' }}
                   onClick={() => deleteBindingAt(i)}
-                >Delete</button>
+                >{t('common.delete')}</button>
               </div>
             ))}
           </div>
@@ -408,6 +444,7 @@ interface DialogProps {
 }
 
 function BindingDialog({ form, isNew, onChange, onCancel, onSave }: DialogProps) {
+  const t = useT();
   const scrim: React.CSSProperties = {
     position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
@@ -423,62 +460,72 @@ function BindingDialog({ form, isNew, onChange, onCancel, onSave }: DialogProps)
     <div style={scrim} onClick={onCancel}>
       <div style={modal} onClick={e => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 16px', fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
-          {isNew ? 'Add transfer rule' : 'Edit transfer rule'}
+          {isNew
+            ? t('managed.channels.addTransferRule')
+            : t('managed.channels.editTransferRule')}
         </h3>
         <p style={{ ...S.subtle, margin: '0 0 14px' }}>
-          Fill the most-specific selector (e.g. a DingTalk staff id as peer). Leave others blank.
+          {t('managed.channels.bindingDialogHint')}
         </p>
 
         <div style={S.grid2}>
           <div>
-            <label style={S.field}>Hand off to agent</label>
+            <label style={S.field}>{t('managed.channels.handOffAgent')}</label>
             <input
               style={S.input}
               value={form.agentId}
               onChange={e => onChange({ ...form, agentId: e.target.value })}
-              placeholder="e.g. support-bot"
+              placeholder={t('managed.channels.agentPlaceholder')}
             />
           </div>
           <div>
-            <label style={S.field}>Isolation override</label>
+            <label style={S.field}>{t('managed.channels.isolationOverride')}</label>
             <select
               style={S.input}
               value={form.sessionScope}
               onChange={e => onChange({ ...form, sessionScope: e.target.value })}
             >
-              <option value="">— inherit channel —</option>
-              {DM_SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
+              <option value="">{t('bindings.scope.inherit')}</option>
+              {DM_SCOPES.map(s => (
+                <option key={s} value={s}>
+                  {s === 'PER_PEER'
+                    ? t('managed.agentChannels.perPerson')
+                    : t('managed.agentChannels.sharedInbox')}
+                </option>
+              ))}
             </select>
           </div>
           <div>
-            <label style={S.field}>peer (e.g. direct:staffId)</label>
+            <label style={S.field}>{t('managed.channels.peerLabel')}</label>
             <input style={S.input} value={form.peer} onChange={e => onChange({ ...form, peer: e.target.value })} />
           </div>
           <div>
-            <label style={S.field}>parentPeer</label>
+            <label style={S.field}>{t('bindings.fields.parentPeer')}</label>
             <input style={S.input} value={form.parentPeer} onChange={e => onChange({ ...form, parentPeer: e.target.value })} />
           </div>
           <div>
-            <label style={S.field}>guild</label>
+            <label style={S.field}>{t('bindings.fields.guild')}</label>
             <input style={S.input} value={form.guild} onChange={e => onChange({ ...form, guild: e.target.value })} />
           </div>
           <div>
-            <label style={S.field}>roles (comma-separated)</label>
+            <label style={S.field}>{t('bindings.fields.roles')}</label>
             <input style={S.input} value={form.roles} onChange={e => onChange({ ...form, roles: e.target.value })} />
           </div>
           <div>
-            <label style={S.field}>team</label>
+            <label style={S.field}>{t('bindings.fields.team')}</label>
             <input style={S.input} value={form.team} onChange={e => onChange({ ...form, team: e.target.value })} />
           </div>
           <div>
-            <label style={S.field}>account</label>
+            <label style={S.field}>{t('bindings.fields.account')}</label>
             <input style={S.input} value={form.account} onChange={e => onChange({ ...form, account: e.target.value })} />
           </div>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
-          <button style={S.btn} onClick={onCancel}>Cancel</button>
-          <button style={{ ...S.btn, ...S.btnPrimary }} onClick={onSave}>{isNew ? 'Create' : 'Save'}</button>
+          <button style={S.btn} onClick={onCancel}>{t('common.cancel')}</button>
+          <button style={{ ...S.btn, ...S.btnPrimary }} onClick={onSave}>
+            {isNew ? t('managed.common.create') : t('common.actions.save')}
+          </button>
         </div>
       </div>
     </div>

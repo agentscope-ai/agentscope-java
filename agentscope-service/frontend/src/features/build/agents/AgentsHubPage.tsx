@@ -19,28 +19,38 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AgentDefinition, listAgents } from '../../../api/agents';
 import { cloneAgent } from '../../../api/clone';
 import { getUserId } from '../../../api/auth';
+import {
+  type TranslationFunction,
+  type TranslationKey,
+  useI18n,
+} from '@/i18n';
 
 type Filter = 'all' | 'mine' | 'shared' | 'global' | 'clone';
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all',    label: 'All' },
-  { key: 'mine',   label: 'Mine' },
-  { key: 'shared', label: 'Shared with me' },
-  { key: 'global', label: 'Global' },
-  { key: 'clone',  label: 'Clone-only' },
+const FILTERS: { key: Filter; labelKey: TranslationKey }[] = [
+  { key: 'all', labelKey: 'managed.agents.filters.all' },
+  { key: 'mine', labelKey: 'managed.agents.filters.mine' },
+  { key: 'shared', labelKey: 'managed.agents.filters.shared' },
+  { key: 'global', labelKey: 'managed.agents.filters.global' },
+  { key: 'clone', labelKey: 'agent.access.cloneOnly' },
 ];
 
-function badgeFor(a: AgentDefinition, me: string) {
+function badgeFor(a: AgentDefinition, me: string, t: TranslationFunction) {
   if (a.scope === 'global') {
-    return { label: 'global', bg: '#eef2ff', fg: '#4338ca', bd: '#c7d2fe' };
+    return { label: t('agent.scope.global'), bg: '#eef2ff', fg: '#4338ca', bd: '#c7d2fe' };
   }
   if (a.ownerId === me) {
-    return { label: 'owner', bg: '#ecfdf5', fg: '#047857', bd: '#a7f3d0' };
+    return { label: t('managed.agents.owner'), bg: '#ecfdf5', fg: '#047857', bd: '#a7f3d0' };
   }
   if (a.tierForCurrentUser === 'CLONE') {
-    return { label: '🔁 clone-only', bg: '#fef3c7', fg: '#92400e', bd: '#fde68a' };
+    return { label: `🔁 ${t('agent.access.cloneOnly')}`, bg: '#fef3c7', fg: '#92400e', bd: '#fde68a' };
   }
-  return { label: `shared by ${a.ownerId}`, bg: '#e0e7ff', fg: '#3730a3', bd: '#c7d2fe' };
+  return {
+    label: t('managed.agents.sharedBy', { owner: a.ownerId ?? '—' }),
+    bg: '#e0e7ff',
+    fg: '#3730a3',
+    bd: '#c7d2fe',
+  };
 }
 function bucket(a: AgentDefinition, me: string): Filter[] {
   const tags: Filter[] = ['all'];
@@ -52,6 +62,7 @@ function bucket(a: AgentDefinition, me: string): Filter[] {
 }
 
 export default function AgentsHubPage() {
+  const { locale, t } = useI18n();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
@@ -67,22 +78,26 @@ export default function AgentsHubPage() {
       const list = await listAgents();
       setAgents(list);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
     } finally {
       setLoading(false);
     }
   }
 
+  // Initial data load must not repeat when the locale changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void refresh(); }, []);
 
   // ?clone=<id> deep-link from CLONE-only landing card
   const queuedClone = searchParams.get('clone');
+  // Clone only when the deep-link state changes, not when translated labels change.
   useEffect(() => {
     if (!queuedClone || loading) return;
     const src = agents.find(a => a.id === queuedClone);
     if (!src) return;
     setSearchParams({}, { replace: true });
     void handleClone(src);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedClone, loading, agents]);
 
   async function handleClone(src: AgentDefinition) {
@@ -93,7 +108,7 @@ export default function AgentsHubPage() {
       await refresh();
       navigate(`/agents/${encodeURIComponent(clone.id)}/chat`);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Clone failed');
+      setErr(e instanceof Error ? e.message : t('managed.agents.cloneFailed'));
     } finally {
       setBusyId(null);
     }
@@ -107,7 +122,7 @@ export default function AgentsHubPage() {
     <div style={{ padding: '40px 44px', maxWidth: 1200 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>
-          Agents
+          {t('navigation.managed.agents')}
         </h1>
         <button
           onClick={() => navigate('/agents/new')}
@@ -119,12 +134,14 @@ export default function AgentsHubPage() {
             cursor: 'pointer',
             boxShadow: '0 2px 6px rgba(99,102,241,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
           }}
-        >＋ New agent</button>
+        >＋ {t('managed.agentCreate.title')}</button>
       </div>
 
       <p style={{ margin: '0 0 24px', color: '#64748b', fontSize: '1rem', lineHeight: 1.6, maxWidth: 720 }}>
-        Each agent is defined by its workspace folder — files like <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontSize: '0.92em' }}>AGENTS.md</code>,
-        {' '}<code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontSize: '0.92em' }}>tools.json</code>, skills and subagents shape its behaviour.
+        {t('managed.agents.description', {
+          agentsMd: 'AGENTS.md',
+          toolsJson: 'tools.json',
+        })}
       </p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -144,24 +161,28 @@ export default function AgentsHubPage() {
                 display: 'inline-flex', alignItems: 'center', gap: 6,
               }}
             >
-              {f.label}
+              {t(f.labelKey)}
               <span style={{
                 fontSize: '0.72rem', fontWeight: 600,
                 padding: '1px 7px', borderRadius: 999,
                 background: active ? 'rgba(255,255,255,0.18)' : '#f1f5f9',
                 color: active ? '#ffffff' : '#64748b',
-              }}>{count}</span>
+              }}>{new Intl.NumberFormat(locale).format(count)}</span>
             </button>
           );
         })}
       </div>
 
-      {loading && <div style={{ color: '#64748b', fontSize: '0.95rem' }}>Loading…</div>}
+      {loading && (
+        <div style={{ color: '#64748b', fontSize: '0.95rem' }}>
+          {t('common.loading')}
+        </div>
+      )}
       {err && <div style={{ color: '#dc2626', fontSize: '0.95rem', marginBottom: 16 }}>{err}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 18 }}>
         {visible.map(a => {
-          const b = badgeFor(a, me);
+          const b = badgeFor(a, me, t);
           const tier = a.tierForCurrentUser;
           const canOpen = a.scope === 'global' || tier === 'RUN' || tier === 'EDIT';
           const canClone = tier === 'CLONE' || tier === 'RUN' || tier === 'EDIT';
@@ -210,7 +231,11 @@ export default function AgentsHubPage() {
                 }}>{b.label}</span>
               </div>
               <div style={{ fontSize: '0.88rem', color: '#64748b', minHeight: 40, lineHeight: 1.5 }}>
-                {a.description || <em style={{ color: '#94a3b8' }}>No description</em>}
+                {a.description || (
+                  <em style={{ color: '#94a3b8' }}>
+                    {t('managed.common.noDescription')}
+                  </em>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
                 <span style={{ fontSize: '0.76rem', color: '#94a3b8', fontFamily: 'monospace' }}>
@@ -226,9 +251,9 @@ export default function AgentsHubPage() {
                       padding: '4px 10px', cursor: 'pointer',
                       fontSize: '0.78rem', fontWeight: 500,
                     }}
-                    title="Clone into my namespace"
+                    title={t('managed.agents.cloneTitle')}
                   >
-                    {busyId === a.id ? '⏳' : '🔁 Clone'}
+                    {busyId === a.id ? '⏳' : `🔁 ${t('agent.clone')}`}
                   </button>
                 )}
               </div>
@@ -237,7 +262,7 @@ export default function AgentsHubPage() {
         })}
         {!loading && visible.length === 0 && (
           <div style={{ color: '#94a3b8', fontSize: '0.92rem', fontStyle: 'italic' }}>
-            No agents in this view yet.
+            {t('managed.agents.empty')}
           </div>
         )}
       </div>

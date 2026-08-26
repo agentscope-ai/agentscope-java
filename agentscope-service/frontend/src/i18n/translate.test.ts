@@ -47,6 +47,15 @@ describe('translation catalog', () => {
   it('returns the selected locale value', () => {
     expect(translate('zh', 'language.switchToEnglish')).toBe('切换到英文');
   });
+
+  it('keeps interpolation parameters paired across locales', () => {
+    const tokens = (value: string) =>
+      Array.from(value.matchAll(/\{(\w+)\}/g), (match) => match[1]).sort();
+
+    for (const key of Object.keys(en) as Array<keyof typeof en>) {
+      expect(tokens(zh[key]), key).toEqual(tokens(en[key]));
+    }
+  });
 });
 
 describe('interpolate', () => {

@@ -17,8 +17,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createWorkspace, deleteWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
+import { useT } from '@/i18n';
 
 export default function WorkspacesHubPage() {
+  const t = useT();
   const navigate = useNavigate();
   const [items, setItems] = useState<WorkspaceSummary[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -30,12 +32,14 @@ export default function WorkspacesHubPage() {
       setItems(await listWorkspaces());
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load');
+      setErr(e instanceof Error ? e.message : t('managed.workspaces.loadFailed'));
     }
   }
 
+  // Initial data load must not repeat when the locale changes.
   useEffect(() => {
     reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function onCreate() {
@@ -46,7 +50,7 @@ export default function WorkspacesHubPage() {
       setName('');
       navigate(`/workspaces/${encodeURIComponent(ws.id)}`);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Create failed');
+      setErr(e instanceof Error ? e.message : t('managed.workspaces.createFailed'));
     } finally {
       setCreating(false);
     }
@@ -55,10 +59,10 @@ export default function WorkspacesHubPage() {
   return (
     <div style={{ padding: '36px 40px', maxWidth: 960 }}>
       <h1 style={{ margin: '0 0 8px', fontSize: '1.6rem', fontWeight: 700, color: '#0f172a' }}>
-        Workspaces
+        {t('navigation.managed.workspaces')}
       </h1>
       <p style={{ margin: '0 0 24px', color: '#64748b', fontSize: '0.95rem', lineHeight: 1.55 }}>
-        Author skills, tools, subagents and AGENTS.md in a reusable workspace, then link agents to it.
+        {t('managed.workspaces.description')}
       </p>
 
       <div style={{
@@ -68,7 +72,7 @@ export default function WorkspacesHubPage() {
         <input
           value={name}
           onChange={e => setName(e.target.value)}
-          placeholder="New workspace name"
+          placeholder={t('managed.workspaces.newNamePlaceholder')}
           style={{
             flex: 1, padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 8,
             fontSize: '0.95rem',
@@ -82,7 +86,7 @@ export default function WorkspacesHubPage() {
             background: '#6366f1', color: '#fff', fontWeight: 600,
           }}
         >
-          Create
+          {creating ? t('managed.workspaces.creating') : t('managed.common.create')}
         </button>
       </div>
 
@@ -108,18 +112,18 @@ export default function WorkspacesHubPage() {
               <div style={{ color: '#64748b', fontSize: '0.85rem', marginTop: 4 }}>
                 {ws.description || ws.id} · v{ws.version}
                 {ws.agentsMdExists ? ' · AGENTS.md' : ''}
-                {' · '}skills {ws.skillCount ?? 0}
-                {' · '}subagents {ws.subagentCount ?? 0}
+                {' · '}{t('managed.workspaces.skillCount', { count: ws.skillCount ?? 0 })}
+                {' · '}{t('managed.workspaces.subagentCount', { count: ws.subagentCount ?? 0 })}
               </div>
             </button>
             <button
               onClick={async () => {
-                if (!confirm(`Delete workspace ${ws.name}?`)) return;
+                if (!confirm(t('managed.workspaces.confirmDelete', { name: ws.name }))) return;
                 try {
                   await deleteWorkspace(ws.id);
                   await reload();
                 } catch (e: unknown) {
-                  setErr(e instanceof Error ? e.message : 'Delete failed');
+                  setErr(e instanceof Error ? e.message : t('managed.workspaces.deleteFailed'));
                 }
               }}
               style={{
@@ -127,12 +131,14 @@ export default function WorkspacesHubPage() {
                 color: '#b91c1c', borderRadius: 8, cursor: 'pointer', fontSize: '0.85rem',
               }}
             >
-              Delete
+              {t('common.delete')}
             </button>
           </div>
         ))}
         {items.length === 0 && !err && (
-          <div style={{ color: '#94a3b8', padding: 24 }}>No workspaces yet.</div>
+          <div style={{ color: '#94a3b8', padding: 24 }}>
+            {t('managed.workspaces.empty')}
+          </div>
         )}
       </div>
     </div>

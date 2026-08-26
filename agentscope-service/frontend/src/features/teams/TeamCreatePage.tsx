@@ -29,6 +29,7 @@ import { Page, PageHeader } from '@/components/Page';
 import { me } from '@/lib/auth';
 import { fetchDataPlanes } from '@/features/operate/api';
 import { ApiError } from '@/lib/apiClient';
+import { useT } from '@/i18n';
 
 type DeployPick = 'managed' | 'byo';
 
@@ -55,6 +56,7 @@ function agentRefFor(pick: DeployPick, managedId: string, byoRef: string, agents
 }
 
 export default function TeamCreatePage() {
+  const t = useT();
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [namespace, setNamespace] = useState('default');
@@ -94,11 +96,11 @@ export default function TeamCreatePage() {
     setError('');
     const leadRef = agentRefFor(leadMode, leadManagedId, leadByoRef, managedAgents);
     if (!name.trim() || !objective.trim() || !leadRef) {
-      setError('Name, objective, and lead agent are required.');
+      setError(t('teams.create.validation.required'));
       return;
     }
     if (leadMode === 'managed' && !ownerId) {
-      setError('Managed lead requires a signed-in ownerId.');
+      setError(t('teams.create.validation.managedLeadOwner'));
       return;
     }
 
@@ -108,7 +110,7 @@ export default function TeamCreatePage() {
       if (!ref) continue;
       const memberName = w.name.trim() || `worker-${i + 1}`;
       if (w.deployMode === 'managed' && !ownerId) {
-        setError(`Managed worker ${memberName} requires ownerId.`);
+        setError(t('teams.create.validation.managedWorkerOwner', { name: memberName }));
         return;
       }
       members.push({
@@ -146,7 +148,7 @@ export default function TeamCreatePage() {
           ? err.body || err.message
           : err instanceof Error
             ? err.message
-            : 'Create failed';
+            : t('teams.create.failed');
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -156,11 +158,11 @@ export default function TeamCreatePage() {
   return (
     <Page className="max-w-3xl">
       <PageHeader
-        title="New team"
-        description="Pick a lead and optional workers. Managed members use product sessions; BYO members join via registry + team_join."
+        title={t('teams.new')}
+        description={t('teams.create.description')}
         actions={
           <Button variant="outline" asChild>
-            <Link to="/teams/list">Cancel</Link>
+            <Link to="/teams/list">{t('common.cancel')}</Link>
           </Button>
         }
       />
@@ -168,27 +170,27 @@ export default function TeamCreatePage() {
       <form onSubmit={onSubmit} className="space-y-8 rounded-xl border border-border bg-white p-6 shadow-sm">
         <section className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm sm:col-span-1">
-            <span className="font-medium">Name</span>
+            <span className="font-medium">{t('teams.name')}</span>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="research" required />
           </label>
           <label className="grid gap-1.5 text-sm">
-            <span className="font-medium">Namespace</span>
+            <span className="font-medium">{t('teams.namespace')}</span>
             <Input value={namespace} onChange={(e) => setNamespace(e.target.value)} placeholder="default" />
           </label>
           <label className="grid gap-1.5 text-sm sm:col-span-2">
-            <span className="font-medium">Objective</span>
+            <span className="font-medium">{t('teams.objective')}</span>
             <textarea
               className="min-h-[88px] w-full rounded-lg border border-border bg-white px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
-              placeholder="What should this team accomplish?"
+              placeholder={t('teams.create.objectivePlaceholder')}
               required
             />
           </label>
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-base font-semibold">Lead</h2>
+          <h2 className="text-base font-semibold">{t('teams.lead')}</h2>
           <DeployModeFields
             mode={leadMode}
             onMode={setLeadMode}
@@ -205,21 +207,21 @@ export default function TeamCreatePage() {
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold">Workers</h2>
+            <h2 className="text-base font-semibold">{t('teams.workers')}</h2>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setWorkers((w) => [...w, emptyMember()])}
             >
-              Add worker
+              {t('teams.create.addWorker')}
             </Button>
           </div>
           {workers.map((w, i) => (
             <div key={i} className="space-y-3 rounded-lg border border-border p-4">
               <div className="flex items-center justify-between gap-2">
                 <label className="grid flex-1 gap-1.5 text-sm">
-                  <span className="font-medium">Member name</span>
+                  <span className="font-medium">{t('teams.create.memberName')}</span>
                   <Input
                     value={w.name}
                     onChange={(e) =>
@@ -238,7 +240,7 @@ export default function TeamCreatePage() {
                     className="mt-6"
                     onClick={() => setWorkers((all) => all.filter((_, j) => j !== i))}
                   >
-                    Remove
+                    {t('teams.detail.remove')}
                   </Button>
                 )}
               </div>
@@ -274,10 +276,10 @@ export default function TeamCreatePage() {
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" asChild>
-            <Link to="/teams/list">Cancel</Link>
+            <Link to="/teams/list">{t('common.cancel')}</Link>
           </Button>
           <Button type="submit" disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create team'}
+            {submitting ? t('teams.creating') : t('teams.create')}
           </Button>
         </div>
       </form>
@@ -308,29 +310,30 @@ function DeployModeFields({
   prompt: string;
   onPrompt: (p: string) => void;
 }) {
+  const t = useT();
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="grid gap-1.5 text-sm">
-        <span className="font-medium">Deploy mode</span>
+        <span className="font-medium">{t('teams.create.deployMode')}</span>
         <select
           className="h-10 rounded-lg border border-border bg-white px-3 text-sm shadow-sm"
           value={mode}
           onChange={(e) => onMode(e.target.value as DeployPick)}
         >
-          <option value="managed">Managed (product agent)</option>
-          <option value="byo">BYO (registry agent)</option>
+          <option value="managed">{t('teams.create.managedMode')}</option>
+          <option value="byo">{t('teams.create.byoMode')}</option>
         </select>
       </label>
       {mode === 'managed' ? (
         <label className="grid gap-1.5 text-sm">
-          <span className="font-medium">Managed agent</span>
+          <span className="font-medium">{t('teams.create.managedAgent')}</span>
           <select
             className="h-10 rounded-lg border border-border bg-white px-3 text-sm shadow-sm"
             value={managedId}
             onChange={(e) => onManagedId(e.target.value)}
             required
           >
-            <option value="">Select agent…</option>
+            <option value="">{t('teams.create.selectAgent')}</option>
             {managedAgents.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name} ({a.id})
@@ -340,7 +343,7 @@ function DeployModeFields({
         </label>
       ) : (
         <label className="grid gap-1.5 text-sm">
-          <span className="font-medium">Registry agentRef</span>
+          <span className="font-medium">{t('teams.create.registryAgentRef')}</span>
           <Input
             list="byo-agent-refs"
             value={byoRef}
@@ -356,8 +359,8 @@ function DeployModeFields({
         </label>
       )}
       <label className="grid gap-1.5 text-sm sm:col-span-2">
-        <span className="font-medium">Role prompt (optional)</span>
-        <Input value={prompt} onChange={(e) => onPrompt(e.target.value)} placeholder="Focus on…" />
+        <span className="font-medium">{t('teams.create.rolePrompt')}</span>
+        <Input value={prompt} onChange={(e) => onPrompt(e.target.value)} placeholder={t('teams.create.rolePromptPlaceholder')} />
       </label>
     </div>
   );

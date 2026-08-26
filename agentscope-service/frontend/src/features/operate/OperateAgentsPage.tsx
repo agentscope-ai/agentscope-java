@@ -22,7 +22,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { EmptyState } from '@/components/EmptyState';
 import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
+import { useI18n, type TranslationFunction } from '@/i18n';
 import { AgentPresence, fetchManagedAgents } from './api';
+import { formatNumber, statusLabel } from './i18n';
 
 function parsePresence(v: string | null, healthLegacy: string | null): AgentPresence {
   if (v === 'live' || v === 'offline' || v === 'historical' || v === 'all') return v;
@@ -32,16 +34,16 @@ function parsePresence(v: string | null, healthLegacy: string | null): AgentPres
   return 'live';
 }
 
-function presenceLabel(p: AgentPresence): string {
+function presenceLabel(t: TranslationFunction, p: AgentPresence): string {
   switch (p) {
     case 'live':
-      return 'Live';
+      return t('operate.status.live');
     case 'offline':
-      return 'Offline';
+      return t('operate.status.offline');
     case 'historical':
-      return 'Historical';
+      return t('operate.status.historical');
     case 'all':
-      return 'All';
+      return t('operate.filters.all');
   }
 }
 
@@ -59,6 +61,7 @@ function presenceTone(p?: string): 'success' | 'warning' | 'default' | 'info' {
 }
 
 export default function OperateAgentsPage() {
+  const { locale, t } = useI18n();
   const [params, setParams] = useSearchParams();
   const [presence, setPresence] = useState<AgentPresence>(() =>
     parsePresence(params.get('presence'), params.get('health')),
@@ -100,45 +103,45 @@ export default function OperateAgentsPage() {
   const emptyDescription = (() => {
     switch (presence) {
       case 'live':
-        return 'Agents with at least one healthy data-plane instance appear here. Offline and session-only history are under other Presence filters.';
+        return t('operate.agents.empty.live');
       case 'offline':
-        return 'Agents that still have registry entries but no healthy instance (missed heartbeats).';
+        return t('operate.agents.empty.offline');
       case 'historical':
-        return 'Agents seen only in past runtime sessions, with no registered instance.';
+        return t('operate.agents.empty.historical');
       case 'all':
-        return 'No agents in any presence bucket yet. Register a data plane via POST /api/v1/dataplanes/register.';
+        return t('operate.agents.empty.all');
     }
   })();
 
   return (
     <Page>
       <PageHeader
-        title="Agents"
-        description="Live data planes by default. Use Presence to inspect offline or historical agents."
+        title={t('operate.fields.agents')}
+        description={t('operate.agents.description')}
       />
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-sm">
-          <span className="text-muted-foreground">Presence</span>
+          <span className="text-muted-foreground">{t('operate.fields.presence')}</span>
           <select
             className="h-10 min-w-[12rem] rounded-lg border border-border bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={presence}
             onChange={(e) => updatePresence(e.target.value as AgentPresence)}
           >
-            <option value="live">Live</option>
-            <option value="offline">Offline</option>
-            <option value="historical">Historical</option>
-            <option value="all">All</option>
+            <option value="live">{t('operate.status.live')}</option>
+            <option value="offline">{t('operate.status.offline')}</option>
+            <option value="historical">{t('operate.status.historical')}</option>
+            <option value="all">{t('operate.filters.all')}</option>
           </select>
         </label>
 
         {(items.length > 0 || q) && (
           <label className="grid min-w-[16rem] flex-1 gap-1 text-sm">
-            <span className="text-muted-foreground">Search</span>
+            <span className="text-muted-foreground">{t('operate.fields.search')}</span>
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search agents by name, namespace, or runtime…"
+              placeholder={t('operate.agents.searchPlaceholder')}
             />
           </label>
         )}
@@ -146,13 +149,16 @@ export default function OperateAgentsPage() {
 
       {items.length === 0 ? (
         <EmptyState
-          title={`No ${presenceLabel(presence).toLowerCase()} agents`}
+          title={t('operate.agents.noPresence', { presence: presenceLabel(t, presence) })}
           description={emptyDescription}
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          title="No matches"
-          description={`No ${presenceLabel(presence).toLowerCase()} agents matching “${q.trim()}”.`}
+          title={t('operate.common.noMatches')}
+          description={t('operate.agents.noMatches', {
+            presence: presenceLabel(t, presence),
+            query: q.trim(),
+          })}
         />
       ) : (
         <div className="grid gap-5 md:grid-cols-2">
@@ -167,19 +173,24 @@ export default function OperateAgentsPage() {
                     <CardTitle>{a.displayName || a.name}</CardTitle>
                     <div className="flex shrink-0 gap-1">
                       {a.presence && (
-                        <Badge tone={presenceTone(a.presence)}>{a.presence}</Badge>
+                        <Badge tone={presenceTone(a.presence)}>{statusLabel(t, a.presence)}</Badge>
                       )}
                       <Badge tone="info">{a.replicas || '—'}</Badge>
                     </div>
                   </div>
                   <CardDescription>
-                    {a.namespace} · {a.runtime || a.type || 'unknown'}
+                    {a.namespace} · {a.runtime || a.type || t('status.unknown')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground">
-                  Active sessions: {a.activeSessions ?? 0}
+                  {t('operate.agents.activeSessions', {
+                    count: formatNumber(locale, a.activeSessions ?? 0),
+                  })}
                   {typeof a.healthyCount === 'number' && (
-                    <> · healthy {a.healthyCount}/{a.instanceCount ?? 0}</>
+                    <> · {t('operate.agents.healthyInstances', {
+                      healthy: a.healthyCount,
+                      total: a.instanceCount ?? 0,
+                    })}</>
                   )}
                 </CardContent>
               </Card>

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ManagedSession,
@@ -29,6 +29,11 @@ import {
 } from '../api/managedSessions';
 import { AgentDefinition, listAgents } from '../api/agents';
 import { Environment, listEnvironments } from '../api/environments';
+import {
+  type Locale,
+  type TranslationFunction,
+  useI18n,
+} from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 1000 },
@@ -91,12 +96,20 @@ const S: Record<string, React.CSSProperties> = {
   err: { color: '#dc2626', fontSize: '0.9rem', marginBottom: 12 },
 };
 
-function relTime(ms: number): string {
+function relTime(ms: number, locale: Locale): string {
   const diff = Date.now() - ms;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
-  return `${Math.floor(diff / 86_400_000)}d`;
+  const formatter = new Intl.RelativeTimeFormat(locale, {
+    numeric: 'auto',
+    style: 'narrow',
+  });
+  if (diff < 60_000) return formatter.format(0, 'second');
+  if (diff < 3_600_000) {
+    return formatter.format(-Math.floor(diff / 60_000), 'minute');
+  }
+  if (diff < 86_400_000) {
+    return formatter.format(-Math.floor(diff / 3_600_000), 'hour');
+  }
+  return formatter.format(-Math.floor(diff / 86_400_000), 'day');
 }
 
 function statusStyle(status: string): React.CSSProperties {
@@ -131,17 +144,41 @@ function stopReasonSummary(stopReason: Record<string, unknown> | null | undefine
   }
 }
 
-function mountSummary(s: ManagedSession, envNameById: Map<string, string>): string {
+function mountSummary(
+  s: ManagedSession,
+  envNameById: Map<string, string>,
+  t: TranslationFunction,
+): string {
   const env = envNameById.get(s.environmentId) || s.environmentId || '—';
   const vaults = s.vaultIds?.length ?? 0;
   const mems = s.memoryStoreIds?.length ?? 0;
-  return `env: ${env} · vaults: ${vaults} · memory: ${mems}`;
+  return t('chat.mountSummary', {
+    environment: env,
+    vaultCount: vaults,
+    memoryCount: mems,
+  });
+}
+
+function statusLabel(status: string, t: TranslationFunction): string {
+  const labels: Record<string, Parameters<TranslationFunction>[0]> = {
+    active: 'status.active',
+    created: 'status.created',
+    running: 'status.running',
+    idle: 'status.idle',
+    requires_action: 'status.requiresAction',
+    terminated: 'status.terminated',
+    rescheduled: 'status.rescheduled',
+    archived: 'status.archived',
+  };
+  return labels[status] ? t(labels[status]) : status;
 }
 
 /**
  * Top-level Managed Sessions hub (`/sessions`). Optional `?agentId=` filter.
  */
 export default function SessionsHubPage() {
+  const { locale, t } = useI18n();
+  const tRef = useRef(t);
   const [searchParams, setSearchParams] = useSearchParams();
   const agentFilter = searchParams.get('agentId') ?? '';
   const [tab, setTab] = useState<ManagedSessionListStatus>('active');
@@ -151,6 +188,10 @@ export default function SessionsHubPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   const agentNameById = useMemo(
     () => new Map(agents.map(a => [a.id, a.name])),
@@ -173,7 +214,11 @@ export default function SessionsHubPage() {
       setEnvNameById(new Map(envs.map(e => [e.id, e.name])));
       setAgents(agentList);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load sessions');
+      setErr(
+        e instanceof Error
+          ? e.message
+          : tRef.current('managed.sessions.loadFailed'),
+      );
     }
   }, [agentFilter, tab]);
 
@@ -188,7 +233,7 @@ export default function SessionsHubPage() {
       await action();
       await reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Action failed');
+      setErr(e instanceof Error ? e.message : t('managed.common.actionFailed'));
     } finally {
       setBusyId(null);
     }
@@ -197,7 +242,7 @@ export default function SessionsHubPage() {
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <h2 style={S.title}>Sessions</h2>
+        <h2 style={S.title}>{t('navigation.managed.sessions')}</h2>
         <select
           style={S.filter}
           value={agentFilter}
@@ -208,26 +253,28 @@ export default function SessionsHubPage() {
             setSearchParams(next, { replace: true });
           }}
         >
-          <option value="">All agents</option>
+          <option value="">{t('managed.sessions.allAgents')}</option>
           {agents.map(a => (
             <option key={a.id} value={a.id}>{a.name}</option>
           ))}
         </select>
-        <Link to={newSessionHref} style={S.primary}>New session</Link>
+        <Link to={newSessionHref} style={S.primary}>
+          {t('session.new.title')}
+        </Link>
       </div>
 
       <div style={S.tabs}>
         {([
-          ['active', 'Active'],
-          ['archived', 'Archived'],
-        ] as const).map(([key, label]) => (
+          ['active', 'status.active'],
+          ['archived', 'status.archived'],
+        ] as const).map(([key, labelKey]) => (
           <button
             key={key}
             type="button"
             style={{ ...S.tab, ...(tab === key ? S.tabActive : {}) }}
             onClick={() => setTab(key)}
           >
-            {label}
+            {t(labelKey)}
           </button>
         ))}
       </div>
@@ -237,11 +284,14 @@ export default function SessionsHubPage() {
       {!err && managedEntries.length === 0 && (
         <div style={S.empty}>
           {tab === 'archived' ? (
-            'No archived sessions.'
+            t('managed.sessions.noArchived')
           ) : (
             <>
-              No managed sessions yet —{' '}
-              <Link to={newSessionHref} style={S.emptyLink}>create a new session</Link>.
+              {t('managed.sessions.noSessionsPrefix')}{' '}
+              <Link to={newSessionHref} style={S.emptyLink}>
+                {t('managed.sessions.createNew')}
+              </Link>
+              {t('managed.common.period')}
             </>
           )}
         </div>
@@ -257,18 +307,29 @@ export default function SessionsHubPage() {
           <div key={s.id} style={S.card}>
             <div style={S.cardHeader}>
               <span style={S.label}>{s.id}</span>
-              {fromTeam && <span style={S.teamTag} title={s.externalKey || undefined}>Team</span>}
-              <span style={statusStyle(s.status)}>{s.status}</span>
-              <span style={S.time}>{relTime(s.updatedAt)}</span>
+              {fromTeam && (
+                <span style={S.teamTag} title={s.externalKey || undefined}>
+                  {t('managed.common.team')}
+                </span>
+              )}
+              <span style={statusStyle(s.status)}>{statusLabel(s.status, t)}</span>
+              <span style={S.time}>{relTime(s.updatedAt, locale)}</span>
             </div>
             <div style={S.agent}>{agentLabel}</div>
             {teamRef && (
               <div style={S.teamMeta}>
-                from team {teamRef.namespace}/{teamRef.teamName} · member {teamRef.memberName}
+                {t('managed.sessions.fromTeam', {
+                  team: `${teamRef.namespace}/${teamRef.teamName}`,
+                  member: teamRef.memberName,
+                })}
               </div>
             )}
-            {reason && <div style={S.stopReason}>stop: {reason}</div>}
-            <div style={S.mounts}>{mountSummary(s, envNameById)}</div>
+            {reason && (
+              <div style={S.stopReason}>
+                {t('managed.sessions.stopReason', { reason })}
+              </div>
+            )}
+            <div style={S.mounts}>{mountSummary(s, envNameById, t)}</div>
             <div style={S.cardFooter}>
               {!archived && (
                 <button
@@ -277,7 +338,9 @@ export default function SessionsHubPage() {
                   disabled={busyId === s.id}
                   onClick={() => navigate(`/sessions/${encodeURIComponent(s.id)}`)}
                 >
-                  {fromTeam ? 'View transcript' : 'Open chat'}
+                  {fromTeam
+                    ? t('managed.sessions.viewTranscript')
+                    : t('managed.sessions.openChat')}
                 </button>
               )}
               {teamRef && (
@@ -286,7 +349,7 @@ export default function SessionsHubPage() {
                   style={S.action}
                   onClick={() => navigate(teamDetailPath(teamRef))}
                 >
-                  Open team
+                  {t('managed.sessions.openTeam')}
                 </button>
               )}
               <button
@@ -294,7 +357,7 @@ export default function SessionsHubPage() {
                 style={S.action}
                 onClick={() => navigate(`/sessions/${encodeURIComponent(s.id)}?tab=details`)}
               >
-                Details
+                {t('session.details.title')}
               </button>
               {!archived ? (
                 <button
@@ -302,11 +365,11 @@ export default function SessionsHubPage() {
                   style={S.action}
                   disabled={busyId === s.id}
                   onClick={() => {
-                    if (!confirm('Archive this managed session?')) return;
+                    if (!confirm(t('session.details.confirmArchive'))) return;
                     void runAction(s.id, () => archiveManagedSession(s.id));
                   }}
                 >
-                  Archive
+                  {t('common.archive')}
                 </button>
               ) : (
                 <button
@@ -315,7 +378,7 @@ export default function SessionsHubPage() {
                   disabled={busyId === s.id}
                   onClick={() => void runAction(s.id, () => restoreManagedSession(s.id))}
                 >
-                  Restore
+                  {t('common.restore')}
                 </button>
               )}
               <button
@@ -323,11 +386,11 @@ export default function SessionsHubPage() {
                 style={{ ...S.action, ...S.danger }}
                 disabled={busyId === s.id}
                 onClick={() => {
-                  if (!confirm('Delete this session entirely?')) return;
+                  if (!confirm(t('session.details.confirmDelete'))) return;
                   void runAction(s.id, () => deleteManagedSession(s.id));
                 }}
               >
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </div>

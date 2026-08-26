@@ -15,6 +15,9 @@
  */
 
 import type { TranslationKey } from './en';
+import { managedZh } from './managed';
+import { operateZh } from './operate';
+import { teamsZh } from './teams';
 
 export const zh = {
   'language.english': '英文',
@@ -453,4 +456,7 @@ export const zh = {
   'capability.contextQueryRequired': '数据平面必须声明 context-query',
   'capability.messageQueryRequired': '未声明实时 message-query（控制平面的对话记录仍可能可用）',
   'capability.taskQueryRequired': '数据平面必须声明 task-query',
+  ...managedZh,
+  ...operateZh,
+  ...teamsZh,
 } as const satisfies Record<TranslationKey, string>;

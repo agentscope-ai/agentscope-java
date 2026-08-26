@@ -27,6 +27,7 @@ import {
 } from '../../../api/deployments';
 import { AgentDefinition, listAgents } from '../../../api/agents';
 import { Environment, listEnvironments } from '../../../api/environments';
+import { type Locale, type TranslationFunction, useI18n } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -85,12 +86,26 @@ function triggerBadgeStyle(type: TriggerType): React.CSSProperties {
   if (type === 'webhook') return { ...S.badge, ...S.triggerWebhook };
   return { ...S.badge, ...S.triggerManual };
 }
-function formatTime(ms?: number | null): string {
-  if (!ms) return 'never';
-  return new Date(ms).toLocaleString();
+function formatTime(
+  ms: number | null | undefined,
+  locale: Locale,
+  t: TranslationFunction,
+): string {
+  if (!ms) return t('managed.deployments.never');
+  return new Date(ms).toLocaleString(locale);
+}
+
+function triggerLabel(type: TriggerType, t: TranslationFunction): string {
+  const labels = {
+    manual: 'managed.deployments.trigger.manual',
+    cron: 'managed.deployments.trigger.cron',
+    webhook: 'managed.deployments.trigger.webhook',
+  } as const;
+  return t(labels[type]);
 }
 
 export default function DeploymentsPage() {
+  const { locale, t } = useI18n();
   const [items, setItems] = useState<Deployment[]>([]);
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
@@ -118,12 +133,14 @@ export default function DeploymentsPage() {
       setAgents(agentList);
       setEnvironments(envList);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load');
+      setErr(e instanceof Error ? e.message : t('managed.deployments.loadFailed'));
     } finally {
       setLoading(false);
     }
   }
 
+  // Initial data load must not repeat when the locale changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void refresh(); }, []);
 
   async function handleCreate(e: React.FormEvent) {
@@ -147,7 +164,7 @@ export default function DeploymentsPage() {
       setCronExpression('0 0 * * * *');
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Create failed');
+      setErr(e instanceof Error ? e.message : t('managed.deployments.createFailed'));
     } finally {
       setBusyId(null);
     }
@@ -160,7 +177,7 @@ export default function DeploymentsPage() {
       await updateDeployment(d.id, { enabled: !d.enabled });
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Update failed');
+      setErr(e instanceof Error ? e.message : t('managed.deployments.updateFailed'));
     } finally {
       setBusyId(null);
     }
@@ -173,33 +190,33 @@ export default function DeploymentsPage() {
       await runDeployment(d.id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Run failed');
+      setErr(e instanceof Error ? e.message : t('managed.deployments.runFailed'));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleArchive(id: string) {
-    if (!confirm('Archive this deployment? It will stop firing.')) return;
+    if (!confirm(t('managed.deployments.confirmArchive'))) return;
     setBusyId(id);
     try {
       await archiveDeployment(id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Archive failed');
+      setErr(e instanceof Error ? e.message : t('managed.deployments.archiveFailed'));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this deployment permanently?')) return;
+    if (!confirm(t('managed.deployments.confirmDelete'))) return;
     setBusyId(id);
     try {
       await deleteDeployment(id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Delete failed');
+      setErr(e instanceof Error ? e.message : t('managed.deployments.deleteFailed'));
     } finally {
       setBusyId(null);
     }
@@ -212,99 +229,123 @@ export default function DeploymentsPage() {
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <h1 style={S.title}>Deployments</h1>
-        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New deployment</button>
+        <h1 style={S.title}>{t('navigation.managed.deployments')}</h1>
+        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>
+          ＋ {t('managed.deployments.new')}
+        </button>
       </div>
       <p style={S.blurb}>
-        Bind an agent, version, and environment to a trigger — cron schedule, webhook, or manual run —
-        so it fires without a human driving a chat session.
+        {t('managed.deployments.description')}
       </p>
       {err && <div style={S.err}>{err}</div>}
-      {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
+      {loading && <div style={{ color: '#64748b' }}>{t('common.loading')}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(340px,1fr))', gap: 18 }}>
         {items.map(d => (
           <div key={d.id} style={S.card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: '1.25rem' }}>🚀</span>
               <span style={{ fontWeight: 600, fontSize: '1.05rem', flex: 1 }}>{d.name}</span>
-              <span style={triggerBadgeStyle(d.triggerType)}>{d.triggerType}</span>
+              <span style={triggerBadgeStyle(d.triggerType)}>
+                {triggerLabel(d.triggerType, t)}
+              </span>
               {d.archivedAt ? (
-                <span style={{ ...S.badge, ...S.archived }}>archived</span>
+                <span style={{ ...S.badge, ...S.archived }}>
+                  {t('status.archived')}
+                </span>
               ) : !d.enabled ? (
-                <span style={{ ...S.badge, ...S.disabled }}>disabled</span>
+                <span style={{ ...S.badge, ...S.disabled }}>
+                  {t('managed.deployments.disabled')}
+                </span>
               ) : null}
             </div>
             <div style={S.meta}>
-              agent <code>{d.agentId}</code>{d.agentVersion != null ? ` @v${d.agentVersion}` : ' @latest'}
-              {' · env '}<code>{d.environmentId}</code>
+              {t('managed.common.agent')} <code>{d.agentId}</code>
+              {d.agentVersion != null
+                ? ` @v${d.agentVersion}`
+                : ` @${t('managed.deployments.latest')}`}
+              {' · '}{t('managed.deployments.environmentShort')}{' '}
+              <code>{d.environmentId}</code>
             </div>
             {d.triggerType === 'cron' && (
-              <div style={S.meta}>cron <code>{d.cronExpression}</code></div>
+              <div style={S.meta}>
+                {t('managed.deployments.trigger.cron')}{' '}
+                <code>{d.cronExpression}</code>
+              </div>
             )}
             {d.triggerType === 'webhook' && d.webhookToken && (
               <div style={{ ...S.meta, wordBreak: 'break-all' }}>
-                webhook <code>{webhookUrl(d.webhookToken)}</code>
+                {t('managed.deployments.trigger.webhook')}{' '}
+                <code>{webhookUrl(d.webhookToken)}</code>
               </div>
             )}
             <div style={S.meta}>
-              last run: {formatTime(d.lastRunAt)}{d.lastStatus ? ` (${d.lastStatus})` : ''}
+              {t('managed.deployments.lastRun', {
+                time: formatTime(d.lastRunAt, locale, t),
+              })}
+              {d.lastStatus ? ` (${d.lastStatus})` : ''}
             </div>
             {d.lastSessionId && (
               <div style={S.meta}>
                 <a href={`/agents/${encodeURIComponent(d.agentId)}/sessions/_managed?managed=${encodeURIComponent(d.lastSessionId)}`}>
-                  Replay last session
+                  {t('managed.deployments.replayLastSession')}
                 </a>
               </div>
             )}
             <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
               {!d.archivedAt && (
                 <button type="button" style={S.rowBtn} disabled={busyId === d.id} onClick={() => handleRun(d)}>
-                  ▶ Run now
+                  ▶ {t('managed.deployments.runNow')}
                 </button>
               )}
               {!d.archivedAt && d.triggerType === 'cron' && (
                 <button type="button" style={S.rowBtn} disabled={busyId === d.id} onClick={() => handleToggleEnabled(d)}>
-                  {d.enabled ? 'Disable' : 'Enable'}
+                  {d.enabled
+                    ? t('managed.deployments.disable')
+                    : t('managed.deployments.enable')}
                 </button>
               )}
               {!d.archivedAt && (
                 <button type="button" style={S.rowBtn} disabled={busyId === d.id} onClick={() => handleArchive(d.id)}>
-                  Archive
+                  {t('common.archive')}
                 </button>
               )}
               <button type="button" style={{ ...S.rowBtn, ...S.danger }} disabled={busyId === d.id} onClick={() => handleDelete(d.id)}>
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </div>
         ))}
         {!loading && items.length === 0 && (
-          <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No deployments yet.</div>
+          <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+            {t('managed.deployments.empty')}
+          </div>
         )}
       </div>
 
       {creating && (
         <div style={S.modal} onClick={() => setCreating(false)}>
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>New deployment</h2>
+            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>
+              {t('managed.deployments.new')}
+            </h2>
             <form onSubmit={handleCreate}>
-              <label style={S.formField}>Name</label>
+              <label style={S.formField}>{t('common.fields.name')}</label>
               <input
                 style={{ ...S.input, marginBottom: 14 }}
                 value={name}
                 onChange={e => setName(e.target.value)}
-                placeholder="daily-report"
+                placeholder={t('managed.deployments.namePlaceholder')}
                 autoFocus
               />
 
-              <label style={S.formField}>Agent</label>
+              <label style={S.formField}>{t('managed.common.agent')}</label>
               {agents.length > 0 ? (
                 <select
                   style={{ ...S.input, marginBottom: 14 }}
                   value={agentId}
                   onChange={e => setAgentId(e.target.value)}
                 >
-                  <option value="">Select an agent…</option>
+                  <option value="">{t('managed.sessions.selectAgent')}</option>
                   {agents.map(a => (
                     <option key={a.id} value={a.id}>{a.name} ({a.id})</option>
                   ))}
@@ -314,36 +355,40 @@ export default function DeploymentsPage() {
                   style={{ ...S.input, marginBottom: 14 }}
                   value={agentId}
                   onChange={e => setAgentId(e.target.value)}
-                  placeholder="agent id"
+                  placeholder={t('managed.deployments.agentIdPlaceholder')}
                 />
               )}
 
-              <label style={S.formField}>Environment (optional — defaults to your default environment)</label>
+              <label style={S.formField}>
+                {t('managed.deployments.environmentOptional')}
+              </label>
               <select
                 style={{ ...S.input, marginBottom: 14 }}
                 value={environmentId}
                 onChange={e => setEnvironmentId(e.target.value)}
               >
-                <option value="">Use default environment</option>
+                <option value="">{t('managed.deployments.useDefaultEnvironment')}</option>
                 {environments.map(e => (
                   <option key={e.id} value={e.id}>{e.name}</option>
                 ))}
               </select>
 
-              <label style={S.formField}>Trigger</label>
+              <label style={S.formField}>{t('managed.deployments.trigger')}</label>
               <select
                 style={{ ...S.input, marginBottom: 14 }}
                 value={triggerType}
                 onChange={e => setTriggerType(e.target.value as TriggerType)}
               >
-                <option value="manual">Manual — run on demand</option>
-                <option value="cron">Cron — fire on a schedule</option>
-                <option value="webhook">Webhook — fire via HTTP POST</option>
+                <option value="manual">{t('managed.deployments.trigger.manualDescription')}</option>
+                <option value="cron">{t('managed.deployments.trigger.cronDescription')}</option>
+                <option value="webhook">{t('managed.deployments.trigger.webhookDescription')}</option>
               </select>
 
               {triggerType === 'cron' && (
                 <>
-                  <label style={S.formField}>Cron expression (Spring 6-field: sec min hour dom mon dow)</label>
+                  <label style={S.formField}>
+                    {t('managed.deployments.cronExpression')}
+                  </label>
                   <input
                     style={{ ...S.input, marginBottom: 20 }}
                     value={cronExpression}
@@ -354,9 +399,13 @@ export default function DeploymentsPage() {
               )}
 
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: triggerType === 'cron' ? 0 : 6 }}>
-                <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>Cancel</button>
+                <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>
+                  {t('common.cancel')}
+                </button>
                 <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>
-                  {busyId === 'create' ? 'Creating…' : 'Create'}
+                  {busyId === 'create'
+                    ? t('managed.common.creating')
+                    : t('managed.common.create')}
                 </button>
               </div>
             </form>

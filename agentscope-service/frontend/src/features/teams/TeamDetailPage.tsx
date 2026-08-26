@@ -46,6 +46,15 @@ import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
 import { ApiError } from '@/lib/apiClient';
 import { cn } from '@/lib/utils';
+import { useI18n, type TranslationFunction } from '@/i18n';
+import {
+  deployModeLabel,
+  formatTeamDate,
+  formatTeamNumber,
+  memberPhaseLabel,
+  planStatusLabel,
+  teamPhaseLabel,
+} from './i18n';
 
 type Tab = 'board' | 'members' | 'messages';
 
@@ -81,6 +90,7 @@ function bucketTasks(tasks: TeamTask[]) {
 }
 
 export default function TeamDetailPage() {
+  const { locale, t: tr } = useI18n();
   const { teamName = '' } = useParams();
   const [params] = useSearchParams();
   const namespace = params.get('namespace') || 'default';
@@ -127,7 +137,7 @@ export default function TeamDetailPage() {
   });
 
   const members = detail.data?.members || [];
-  const tasks = tasksQ.data?.tasks || [];
+  const tasks = useMemo(() => tasksQ.data?.tasks || [], [tasksQ.data?.tasks]);
   const buckets = useMemo(() => bucketTasks(tasks), [tasks]);
   const lead = members.find((m) => m.memberName === 'lead');
   const chatSessionId = chatMember ? managedChatSessionId(chatMember) : null;
@@ -150,25 +160,25 @@ export default function TeamDetailPage() {
       setSubject('');
       invalidate();
     },
-    onError: (e) => setError(errMsg(e)),
+    onError: (e) => setError(errMsg(e, tr)),
   });
 
   const completeMut = useMutation({
     mutationFn: () => completeTeam(teamName, namespace),
     onSuccess: () => navigate('/teams/list'),
-    onError: (e) => setError(errMsg(e)),
+    onError: (e) => setError(errMsg(e, tr)),
   });
 
   const forceDeleteMut = useMutation({
     mutationFn: () => deleteTeam(teamName, namespace),
     onSuccess: () => navigate('/teams/list'),
-    onError: (e) => setError(errMsg(e)),
+    onError: (e) => setError(errMsg(e, tr)),
   });
 
   if (detail.isLoading) {
     return (
       <Page>
-        <p className="text-sm text-muted-foreground">Loading team…</p>
+        <p className="text-sm text-muted-foreground">{tr('teams.detail.loading')}</p>
       </Page>
     );
   }
@@ -176,9 +186,9 @@ export default function TeamDetailPage() {
   if (detail.isError || !detail.data) {
     return (
       <Page>
-        <p className="text-sm text-red-600">Team not found or store unavailable.</p>
+        <p className="text-sm text-red-600">{tr('teams.detail.notFound')}</p>
         <Button className="mt-4" variant="outline" asChild>
-          <Link to="/teams/list">Back</Link>
+          <Link to="/teams/list">{tr('common.back')}</Link>
         </Button>
       </Page>
     );
@@ -203,46 +213,50 @@ export default function TeamDetailPage() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>
-              <Link to="/teams/list">Back</Link>
+              <Link to="/teams/list">{tr('common.back')}</Link>
             </Button>
             <Button
               variant={readOnly ? 'secondary' : 'destructive'}
               disabled={readOnly || completeMut.isPending}
-              title={readOnly ? 'Team is already completed' : undefined}
+              title={readOnly ? tr('teams.detail.alreadyCompleted') : undefined}
               onClick={() => {
                 if (readOnly) return;
-                if (window.confirm(`Complete team "${team.name}" (keeps state until TTL)?`)) {
+                if (window.confirm(tr('teams.detail.completeConfirm', { name: team.name }))) {
                   completeMut.mutate();
                 }
               }}
             >
-              {readOnly ? 'Completed' : 'Complete team'}
+              {readOnly ? tr('teams.status.completed') : tr('teams.detail.completeTeam')}
             </Button>
             <Button
               variant="outline"
               disabled={forceDeleteMut.isPending}
               onClick={() => {
-                if (window.confirm(`Force-delete team "${team.name}" immediately?`)) {
+                if (window.confirm(tr('teams.detail.forceDeleteConfirm', { name: team.name }))) {
                   forceDeleteMut.mutate();
                 }
               }}
             >
-              Force delete
+              {tr('teams.detail.forceDelete')}
             </Button>
           </div>
         }
       />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Badge tone={teamPhaseTone(team.phase)}>{team.phase}</Badge>
+        <Badge tone={teamPhaseTone(team.phase)}>{teamPhaseLabel(tr, team.phase)}</Badge>
         <span className="text-sm text-muted-foreground">ns={team.namespace}</span>
         <span className="text-sm text-muted-foreground">
-          tasks {summary?.completed ?? 0}/{summary?.total ?? 0} complete ·{' '}
-          {summary?.inProgress ?? 0} in progress · {summary?.pending ?? 0} pending
+          {tr('teams.detail.taskSummary', {
+            completed: formatTeamNumber(locale, summary?.completed ?? 0),
+            total: formatTeamNumber(locale, summary?.total ?? 0),
+            inProgress: formatTeamNumber(locale, summary?.inProgress ?? 0),
+            pending: formatTeamNumber(locale, summary?.pending ?? 0),
+          })}
         </span>
         {readOnly && (
           <span className="text-sm font-medium text-muted-foreground">
-            Read-only — team is completed
+            {tr('teams.detail.readOnly')}
           </span>
         )}
       </div>
@@ -250,7 +264,7 @@ export default function TeamDetailPage() {
       {/* Topology */}
       <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Topology
+          {tr('teams.detail.topology')}
         </h2>
         <div className="flex flex-wrap items-stretch gap-3">
           {members.map((m) => (
@@ -264,7 +278,7 @@ export default function TeamDetailPage() {
             />
           ))}
           {members.length === 0 && (
-            <p className="text-sm text-muted-foreground">No members registered.</p>
+            <p className="text-sm text-muted-foreground">{tr('teams.detail.noMembers')}</p>
           )}
         </div>
       </section>
@@ -272,9 +286,9 @@ export default function TeamDetailPage() {
       <div className="flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
         {(
           [
-            ['board', 'Task board'],
-            ['members', 'Members'],
-            ['messages', 'Messages'],
+            ['board', tr('teams.detail.tab.board')],
+            ['members', tr('teams.detail.tab.members')],
+            ['messages', tr('teams.detail.tab.messages')],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -307,23 +321,23 @@ export default function TeamDetailPage() {
               className="min-w-[16rem] flex-1"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="New task subject"
+              placeholder={tr('teams.detail.newTaskPlaceholder')}
               disabled={readOnly}
             />
             <Button type="submit" disabled={readOnly || createTask.isPending}>
-              Add task
+              {tr('teams.detail.addTask')}
             </Button>
           </form>
 
           <div className="grid gap-3 lg:grid-cols-5">
             {(
               [
-                ['Unassigned', buckets.unassigned],
-                ['Assigned', buckets.assigned],
-                ['In progress', buckets.inProgress],
-                ['Blocked', buckets.blocked],
-                ['Completed', buckets.completed],
-                ['Failed', buckets.failed],
+                [tr('teams.detail.bucket.unassigned'), buckets.unassigned],
+                [tr('teams.detail.bucket.assigned'), buckets.assigned],
+                [tr('teams.detail.bucket.inProgress'), buckets.inProgress],
+                [tr('teams.detail.bucket.blocked'), buckets.blocked],
+                [tr('teams.detail.bucket.completed'), buckets.completed],
+                [tr('teams.detail.bucket.failed'), buckets.failed],
               ] as const
             ).map(([title, list]) => (
               <div
@@ -332,7 +346,9 @@ export default function TeamDetailPage() {
               >
                 <div className="border-b border-border px-3 py-2 text-sm font-semibold">
                   {title}{' '}
-                  <span className="text-muted-foreground font-normal">({list.length})</span>
+                  <span className="text-muted-foreground font-normal">
+                    ({formatTeamNumber(locale, list.length)})
+                  </span>
                 </div>
                 <ul className="flex-1 space-y-2 overflow-auto p-2">
                   {list.map((t) => (
@@ -356,7 +372,7 @@ export default function TeamDetailPage() {
                                 setAssignOwner((m) => ({ ...m, [t.taskId]: e.target.value }))
                               }
                             >
-                              <option value="">assign to…</option>
+                              <option value="">{tr('teams.detail.assignTo')}</option>
                               {members.map((m) => (
                                 <option key={m.memberName} value={m.memberName}>
                                   {m.memberName}
@@ -379,11 +395,11 @@ export default function TeamDetailPage() {
                                   );
                                   invalidate();
                                 } catch (e) {
-                                  setError(errMsg(e));
+                                  setError(errMsg(e, tr));
                                 }
                               }}
                             >
-                              Assign
+                              {tr('teams.detail.assign')}
                             </Button>
                             <Button
                               size="sm"
@@ -399,11 +415,11 @@ export default function TeamDetailPage() {
                                   );
                                   invalidate();
                                 } catch (e) {
-                                  setError(errMsg(e));
+                                  setError(errMsg(e, tr));
                                 }
                               }}
                             >
-                              Claim
+                              {tr('teams.detail.claim')}
                             </Button>
                           </>
                         )}
@@ -422,11 +438,11 @@ export default function TeamDetailPage() {
                                 );
                                 invalidate();
                               } catch (e) {
-                                setError(errMsg(e));
+                                setError(errMsg(e, tr));
                               }
                             }}
                           >
-                            Start
+                            {tr('teams.detail.start')}
                           </Button>
                         )}
                         {!readOnly && t.state === 'in_progress' && (
@@ -438,11 +454,11 @@ export default function TeamDetailPage() {
                                   await completeTeamTask(teamName, t.taskId, 'done', namespace);
                                   invalidate();
                                 } catch (e) {
-                                  setError(errMsg(e));
+                                  setError(errMsg(e, tr));
                                 }
                               }}
                             >
-                              Complete
+                              {tr('teams.detail.complete')}
                             </Button>
                             <Button
                               size="sm"
@@ -452,11 +468,11 @@ export default function TeamDetailPage() {
                                   await unclaimTeamTask(teamName, t.taskId, t.version, namespace);
                                   invalidate();
                                 } catch (e) {
-                                  setError(errMsg(e));
+                                  setError(errMsg(e, tr));
                                 }
                               }}
                             >
-                              Unclaim
+                              {tr('teams.detail.unclaim')}
                             </Button>
                           </>
                         )}
@@ -492,16 +508,16 @@ export default function TeamDetailPage() {
                 setSpawnPrompt('');
                 invalidate();
               } catch (err) {
-                setError(errMsg(err));
+                setError(errMsg(err, tr));
               }
             }}
           >
             <div className="grid gap-1">
-              <label className="text-xs text-muted-foreground">Spawn member</label>
+              <label className="text-xs text-muted-foreground">{tr('teams.detail.spawnMember')}</label>
               <Input
                 value={spawnName}
                 onChange={(e) => setSpawnName(e.target.value)}
-                placeholder="name"
+                placeholder={tr('teams.detail.namePlaceholder')}
                 disabled={readOnly}
               />
             </div>
@@ -514,11 +530,11 @@ export default function TeamDetailPage() {
             <Input
               value={spawnPrompt}
               onChange={(e) => setSpawnPrompt(e.target.value)}
-              placeholder="prompt (optional)"
+              placeholder={tr('teams.detail.promptPlaceholder')}
               disabled={readOnly}
             />
             <Button type="submit" disabled={readOnly}>
-              Spawn
+              {tr('teams.detail.spawn')}
             </Button>
           </form>
 
@@ -526,13 +542,13 @@ export default function TeamDetailPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border bg-muted/40 text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Member</th>
-                  <th className="px-4 py-3 font-medium">Agent</th>
-                  <th className="px-4 py-3 font-medium">Mode</th>
-                  <th className="px-4 py-3 font-medium">Phase</th>
-                  <th className="px-4 py-3 font-medium">Plan</th>
-                  <th className="px-4 py-3 font-medium">Recovery</th>
-                  <th className="px-4 py-3 font-medium">Actions</th>
+                  <th className="px-4 py-3 font-medium">{tr('teams.member')}</th>
+                  <th className="px-4 py-3 font-medium">{tr('teams.agent')}</th>
+                  <th className="px-4 py-3 font-medium">{tr('teams.mode')}</th>
+                  <th className="px-4 py-3 font-medium">{tr('teams.phase')}</th>
+                  <th className="px-4 py-3 font-medium">{tr('teams.plan')}</th>
+                  <th className="px-4 py-3 font-medium">{tr('teams.recovery')}</th>
+                  <th className="px-4 py-3 font-medium">{tr('teams.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -542,12 +558,12 @@ export default function TeamDetailPage() {
                     <tr key={m.memberName}>
                       <td className="px-4 py-3 font-medium">{m.memberName}</td>
                       <td className="px-4 py-3 font-mono text-xs">{m.agentRef}</td>
-                      <td className="px-4 py-3">{m.deployMode || 'byo'}</td>
+                      <td className="px-4 py-3">{deployModeLabel(tr, m.deployMode)}</td>
                       <td className="px-4 py-3">
-                        <Badge tone={teamPhaseTone(m.phase)}>{m.phase}</Badge>
+                        <Badge tone={teamPhaseTone(m.phase)}>{memberPhaseLabel(tr, m.phase)}</Badge>
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {m.planStatus || '—'}
+                        {planStatusLabel(tr, m.planStatus)}
                         {m.planText ? `: ${m.planText.slice(0, 40)}` : ''}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
@@ -566,10 +582,10 @@ export default function TeamDetailPage() {
                               }
                               onClick={() => openMemberChat(m)}
                             >
-                              {readOnly ? 'View chat' : 'Chat'}
+                              {readOnly ? tr('teams.detail.viewChat') : tr('teams.detail.chat')}
                             </button>
                           ) : (
-                            <span className="text-xs text-muted-foreground">Observe</span>
+                            <span className="text-xs text-muted-foreground">{tr('teams.detail.observe')}</span>
                           )}
                           {!readOnly && m.planStatus === 'pending' && (
                             <>
@@ -581,11 +597,11 @@ export default function TeamDetailPage() {
                                     await approveMemberPlan(teamName, m.memberName, namespace);
                                     invalidate();
                                   } catch (e) {
-                                    setError(errMsg(e));
+                                    setError(errMsg(e, tr));
                                   }
                                 }}
                               >
-                                Approve
+                                {tr('teams.detail.approve')}
                               </Button>
                               <Button
                                 size="sm"
@@ -595,11 +611,11 @@ export default function TeamDetailPage() {
                                     await rejectMemberPlan(teamName, m.memberName, namespace);
                                     invalidate();
                                   } catch (e) {
-                                    setError(errMsg(e));
+                                    setError(errMsg(e, tr));
                                   }
                                 }}
                               >
-                                Reject
+                                {tr('teams.detail.reject')}
                               </Button>
                             </>
                           )}
@@ -608,16 +624,16 @@ export default function TeamDetailPage() {
                               size="sm"
                               variant="outline"
                               onClick={async () => {
-                                if (!window.confirm(`Remove member ${m.memberName}?`)) return;
+                                if (!window.confirm(tr('teams.detail.removeMemberConfirm', { name: m.memberName }))) return;
                                 try {
                                   await removeTeamMember(teamName, m.memberName, namespace);
                                   invalidate();
                                 } catch (e) {
-                                  setError(errMsg(e));
+                                  setError(errMsg(e, tr));
                                 }
                               }}
                             >
-                              Remove
+                              {tr('teams.detail.remove')}
                             </Button>
                           )}
                         </div>
@@ -634,7 +650,7 @@ export default function TeamDetailPage() {
       {tab === 'messages' && (
         <section className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-            <h3 className="mb-3 text-sm font-semibold">Mailbox</h3>
+            <h3 className="mb-3 text-sm font-semibold">{tr('teams.detail.mailbox')}</h3>
             <ul className="mb-4 max-h-80 space-y-2 overflow-auto">
               {(messagesQ.data?.messages || []).map((m) => (
                 <li key={m.id} className="rounded-lg border border-border px-3 py-2 text-sm">
@@ -645,7 +661,7 @@ export default function TeamDetailPage() {
                 </li>
               ))}
               {!messagesQ.data?.messages?.length && (
-                <li className="text-sm text-muted-foreground">No messages yet.</li>
+                <li className="text-sm text-muted-foreground">{tr('teams.detail.noMessages')}</li>
               )}
             </ul>
             <form
@@ -668,7 +684,7 @@ export default function TeamDetailPage() {
                     queryKey: ['team-messages', namespace, teamName],
                   });
                 } catch (err) {
-                  setError(errMsg(err));
+                  setError(errMsg(err, tr));
                 }
               }}
             >
@@ -678,7 +694,7 @@ export default function TeamDetailPage() {
                 onChange={(e) => setMsgTo(e.target.value)}
                 disabled={readOnly}
               >
-                <option value="">To member… (empty = broadcast)</option>
+                <option value="">{tr('teams.detail.toMember')}</option>
                 {members.map((m) => (
                   <option key={m.memberName} value={m.memberName}>
                     {m.memberName}
@@ -688,18 +704,18 @@ export default function TeamDetailPage() {
               <Input
                 value={msgBody}
                 onChange={(e) => setMsgBody(e.target.value)}
-                placeholder="Short message or artifact ref"
+                placeholder={tr('teams.detail.messagePlaceholder')}
                 disabled={readOnly}
               />
               <Button type="submit" disabled={readOnly}>
-                Send
+                {tr('teams.detail.send')}
               </Button>
             </form>
           </div>
 
           <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Events (poll)</h3>
+              <h3 className="text-sm font-semibold">{tr('teams.detail.events')}</h3>
               <Button
                 size="sm"
                 variant="outline"
@@ -708,20 +724,20 @@ export default function TeamDetailPage() {
                   if (next) setAfter(next);
                 }}
               >
-                Advance cursor
+                {tr('teams.detail.advanceCursor')}
               </Button>
             </div>
             <ul className="max-h-[28rem] space-y-2 overflow-auto">
               {(eventsQ.data?.events || []).map((ev) => (
                 <li key={ev.id} className="rounded-lg border border-border px-3 py-2 text-sm">
                   <div className="text-xs text-muted-foreground">
-                    {ev.createdAt || ''} · {ev.fromMember} → {ev.toMember}
+                    {formatTeamDate(locale, ev.createdAt)} · {ev.fromMember} → {ev.toMember}
                   </div>
                   <div>{ev.content}</div>
                 </li>
               ))}
               {!eventsQ.data?.events?.length && (
-                <li className="text-sm text-muted-foreground">No events.</li>
+                <li className="text-sm text-muted-foreground">{tr('teams.detail.noEvents')}</li>
               )}
             </ul>
           </div>
@@ -744,7 +760,7 @@ export default function TeamDetailPage() {
                 variant="outline"
                 onClick={() => setChatMember(null)}
               >
-                Close
+                {tr('teams.detail.close')}
               </Button>
             </div>
             <div className="min-h-0 flex-1">
@@ -776,6 +792,7 @@ function MemberCard({
   readOnly?: boolean;
   onOpenChat: () => void;
 }) {
+  const { locale, t } = useI18n();
   const canChat = !!managedChatSessionId(member);
   return (
     <div
@@ -789,14 +806,16 @@ function MemberCard({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="font-semibold">{member.memberName}</div>
-        <Badge tone={teamPhaseTone(member.phase)}>{member.phase}</Badge>
+        <Badge tone={teamPhaseTone(member.phase)}>{memberPhaseLabel(t, member.phase)}</Badge>
       </div>
       <div className="mt-1 font-mono text-xs text-muted-foreground">{member.agentRef}</div>
       <div className="mt-2 text-xs text-muted-foreground">
-        {member.deployMode || 'byo'}
-        {member.restartCount ? ` · restarts ${member.restartCount}` : ''}
+        {deployModeLabel(t, member.deployMode)}
+        {member.restartCount
+          ? ` · ${t('teams.detail.restarts', { count: formatTeamNumber(locale, member.restartCount) })}`
+          : ''}
         {member.lastRestartReason ? ` · ${member.lastRestartReason}` : ''}
-        {member.planStatus ? ` · plan ${member.planStatus}` : ''}
+        {member.planStatus ? ` · ${t('teams.detail.planStatus', { status: planStatusLabel(t, member.planStatus) })}` : ''}
       </div>
       <div className="mt-3">
         {canChat ? (
@@ -809,18 +828,24 @@ function MemberCard({
             }
             onClick={onOpenChat}
           >
-            {active ? (readOnly ? 'Viewing chat' : 'Chat open') : readOnly ? 'View chat' : 'Open chat'}
+            {active
+              ? readOnly
+                ? t('teams.detail.viewingChat')
+                : t('teams.detail.chatOpen')
+              : readOnly
+                ? t('teams.detail.viewChat')
+                : t('teams.detail.openChat')}
           </button>
         ) : (
-          <span className="text-sm text-muted-foreground">Observe only</span>
+          <span className="text-sm text-muted-foreground">{t('teams.detail.observeOnly')}</span>
         )}
       </div>
     </div>
   );
 }
 
-function errMsg(e: unknown) {
+function errMsg(e: unknown, t: TranslationFunction) {
   if (e instanceof ApiError) return e.body || e.message;
   if (e instanceof Error) return e.message;
-  return 'Request failed';
+  return t('common.requestFailed');
 }

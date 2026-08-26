@@ -29,6 +29,7 @@ import {
   updateVault,
   validateCredential,
 } from '../api/vaults';
+import { useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -78,6 +79,7 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function VaultsPage() {
+  const t = useT();
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [selected, setSelected] = useState<Vault | null>(null);
   const [credentials, setCredentials] = useState<VaultCredential[]>([]);
@@ -98,7 +100,7 @@ export default function VaultsPage() {
     try {
       setVaults(await listVaults());
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -110,10 +112,12 @@ export default function VaultsPage() {
     try {
       setCredentials(await listCredentials(vault.id));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load credentials');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.loadCredentialsFailed'));
     }
   }
 
+  // Initial data load must not repeat when the locale changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void refreshVaults(); }, []);
 
   async function handleCreateVault(e: React.FormEvent) {
@@ -127,14 +131,14 @@ export default function VaultsPage() {
       await refreshVaults();
       await loadCredentials(created);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Create failed');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.createFailed'));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleRenameVault(v: Vault) {
-    const next = window.prompt('Rename vault', v.displayName);
+    const next = window.prompt(t('managed.vaults.renamePrompt'), v.displayName);
     if (next == null || !next.trim() || next.trim() === v.displayName) return;
     setBusyId(v.id);
     try {
@@ -144,35 +148,35 @@ export default function VaultsPage() {
         setSelected({ ...v, displayName: next.trim() });
       }
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Rename failed');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.renameFailed'));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleArchiveVault(id: string) {
-    if (!confirm('Archive this vault? It will no longer inject credentials into sessions.')) return;
+    if (!confirm(t('managed.vaults.confirmArchive'))) return;
     setBusyId(id);
     try {
       await archiveVault(id);
       if (selected?.id === id) { setSelected(null); setCredentials([]); }
       await refreshVaults();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Archive failed');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.archiveFailed'));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleDeleteVault(id: string) {
-    if (!confirm('Delete this vault and all credentials?')) return;
+    if (!confirm(t('managed.vaults.confirmDelete'))) return;
     setBusyId(id);
     try {
       await deleteVault(id);
       if (selected?.id === id) { setSelected(null); setCredentials([]); }
       await refreshVaults();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Delete failed');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.deleteFailed'));
     } finally {
       setBusyId(null);
     }
@@ -184,9 +188,13 @@ export default function VaultsPage() {
     try {
       const result = await validateCredential(selected.id, credentialId);
       const detail = Object.entries(result.checks).map(([k, v]) => `${k}=${v}`).join(', ');
-      window.alert(result.ok ? `Valid (${detail})` : `Invalid (${detail})`);
+      window.alert(
+        result.ok
+          ? t('managed.vaults.validResult', { detail })
+          : t('managed.vaults.invalidResult', { detail }),
+      );
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Validate failed');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.validateFailed'));
     } finally {
       setBusyId(null);
     }
@@ -194,14 +202,14 @@ export default function VaultsPage() {
 
   async function handleRotateSecret(credentialId: string) {
     if (!selected) return;
-    const secret = window.prompt('Enter new secret (write-only; never shown again)');
+    const secret = window.prompt(t('managed.vaults.rotateSecretPrompt'));
     if (secret == null || !secret) return;
     setBusyId(credentialId);
     try {
       await updateCredential(selected.id, credentialId, { secret });
       await loadCredentials(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Update failed');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.updateFailed'));
     } finally {
       setBusyId(null);
     }
@@ -224,20 +232,20 @@ export default function VaultsPage() {
       setCredSecret('');
       await loadCredentials(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Add failed');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.addFailed'));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleDeleteCredential(credentialId: string) {
-    if (!selected || !confirm('Delete this credential?')) return;
+    if (!selected || !confirm(t('managed.vaults.confirmDeleteCredential'))) return;
     setBusyId(credentialId);
     try {
       await deleteCredential(selected.id, credentialId);
       await loadCredentials(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Delete failed');
+      setErr(e instanceof Error ? e.message : t('managed.vaults.deleteFailed'));
     } finally {
       setBusyId(null);
     }
@@ -246,15 +254,17 @@ export default function VaultsPage() {
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <h1 style={S.title}>Vaults</h1>
-        <button type="button" style={S.primaryBtn} onClick={() => setCreatingVault(true)}>＋ New vault</button>
+        <h1 style={S.title}>{t('navigation.managed.vaults')}</h1>
+        <button type="button" style={S.primaryBtn} onClick={() => setCreatingVault(true)}>
+          ＋ {t('managed.vaults.new')}
+        </button>
       </div>
       <p style={S.blurb}>
-        Encrypted credential vaults mountable on managed sessions. Secrets are never displayed after creation.
+        {t('managed.vaults.description')}
       </p>
-      <div style={S.notice}>🔒 Secret values are write-only — only metadata (type, label, target) is shown after add.</div>
+      <div style={S.notice}>🔒 {t('managed.vaults.writeOnlyNotice')}</div>
       {err && <div style={S.err}>{err}</div>}
-      {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
+      {loading && <div style={{ color: '#64748b' }}>{t('common.loading')}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,1fr) minmax(0,2fr)', gap: 24 }}>
         <div>
@@ -277,27 +287,29 @@ export default function VaultsPage() {
                   style={S.rowBtn}
                   onClick={e => { e.stopPropagation(); void handleRenameVault(v); }}
                 >
-                  Rename
+                  {t('managed.vaults.rename')}
                 </button>
                 <button
                   type="button"
                   style={S.rowBtn}
                   onClick={e => { e.stopPropagation(); void handleArchiveVault(v.id); }}
                 >
-                  Archive
+                  {t('common.archive')}
                 </button>
                 <button
                   type="button"
                   style={{ ...S.rowBtn, ...S.danger }}
                   onClick={e => { e.stopPropagation(); void handleDeleteVault(v.id); }}
                 >
-                  Delete
+                  {t('common.delete')}
                 </button>
               </div>
             </div>
           ))}
           {!loading && vaults.length === 0 && (
-            <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No vaults yet.</div>
+            <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+              {t('managed.vaults.empty')}
+            </div>
           )}
         </div>
 
@@ -305,16 +317,20 @@ export default function VaultsPage() {
           {selected ? (
             <div style={S.card}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{selected.displayName} — credentials</h2>
-                <button type="button" style={S.rowBtn} onClick={() => setAddingCred(true)}>＋ Add credential</button>
+                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>
+                  {t('managed.vaults.credentialsTitle', { name: selected.displayName })}
+                </h2>
+                <button type="button" style={S.rowBtn} onClick={() => setAddingCred(true)}>
+                  ＋ {t('managed.vaults.addCredential')}
+                </button>
               </div>
               <table style={S.table}>
                 <thead>
                   <tr>
-                    <th style={S.th}>Label</th>
-                    <th style={S.th}>Type</th>
-                    <th style={S.th}>Target</th>
-                    <th style={S.th}>Actions</th>
+                    <th style={S.th}>{t('managed.vaults.label')}</th>
+                    <th style={S.th}>{t('managed.common.type')}</th>
+                    <th style={S.th}>{t('managed.vaults.target')}</th>
+                    <th style={S.th}>{t('managed.common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -324,22 +340,22 @@ export default function VaultsPage() {
                       <td style={S.td}><code>{c.type}</code></td>
                       <td style={S.td}>{c.target || '—'}</td>
                       <td style={S.td}>
-                        <button type="button" style={S.rowBtn} onClick={() => handleValidateCredential(c.id)}>Validate</button>
+                        <button type="button" style={S.rowBtn} onClick={() => handleValidateCredential(c.id)}>{t('managed.vaults.validate')}</button>
                         {' '}
-                        <button type="button" style={S.rowBtn} onClick={() => handleRotateSecret(c.id)}>Rotate</button>
+                        <button type="button" style={S.rowBtn} onClick={() => handleRotateSecret(c.id)}>{t('managed.vaults.rotate')}</button>
                         {' '}
-                        <button type="button" style={{ ...S.rowBtn, ...S.danger }} onClick={() => handleDeleteCredential(c.id)}>Delete</button>
+                        <button type="button" style={{ ...S.rowBtn, ...S.danger }} onClick={() => handleDeleteCredential(c.id)}>{t('common.delete')}</button>
                       </td>
                     </tr>
                   ))}
                   {credentials.length === 0 && (
-                    <tr><td colSpan={4} style={{ ...S.td, color: '#94a3b8', fontStyle: 'italic' }}>No credentials in this vault.</td></tr>
+                    <tr><td colSpan={4} style={{ ...S.td, color: '#94a3b8', fontStyle: 'italic' }}>{t('managed.vaults.noCredentials')}</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           ) : (
-            <div style={{ color: '#94a3b8', padding: '40px 0', textAlign: 'center' }}>Select a vault to manage credentials.</div>
+            <div style={{ color: '#94a3b8', padding: '40px 0', textAlign: 'center' }}>{t('managed.vaults.selectVault')}</div>
           )}
         </div>
       </div>
@@ -347,13 +363,13 @@ export default function VaultsPage() {
       {creatingVault && (
         <div style={S.modal} onClick={() => setCreatingVault(false)}>
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>New vault</h2>
+            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>{t('managed.vaults.new')}</h2>
             <form onSubmit={handleCreateVault}>
-              <label style={S.formField}>Display name</label>
+              <label style={S.formField}>{t('managed.vaults.displayName')}</label>
               <input style={{ ...S.input, marginBottom: 20 }} value={vaultName} onChange={e => setVaultName(e.target.value)} autoFocus />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" style={S.rowBtn} onClick={() => setCreatingVault(false)}>Cancel</button>
-                <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>Create</button>
+                <button type="button" style={S.rowBtn} onClick={() => setCreatingVault(false)}>{t('common.cancel')}</button>
+                <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>{t('managed.common.create')}</button>
               </div>
             </form>
           </div>
@@ -363,19 +379,29 @@ export default function VaultsPage() {
       {addingCred && selected && (
         <div style={S.modal} onClick={() => setAddingCred(false)}>
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>Add credential</h2>
+            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>{t('managed.vaults.addCredential')}</h2>
             <form onSubmit={handleAddCredential}>
-              <label style={S.formField}>Type</label>
-              <input style={{ ...S.input, marginBottom: 14 }} value={credType} onChange={e => setCredType(e.target.value)} placeholder="api_key" />
-              <label style={S.formField}>Label</label>
+              <label style={S.formField}>{t('managed.common.type')}</label>
+              <input
+                style={{ ...S.input, marginBottom: 14 }}
+                value={credType}
+                onChange={e => setCredType(e.target.value)}
+                placeholder={t('managed.vaults.typePlaceholder')}
+              />
+              <label style={S.formField}>{t('managed.vaults.label')}</label>
               <input style={{ ...S.input, marginBottom: 14 }} value={credLabel} onChange={e => setCredLabel(e.target.value)} autoFocus />
-              <label style={S.formField}>Target</label>
-              <input style={{ ...S.input, marginBottom: 14 }} value={credTarget} onChange={e => setCredTarget(e.target.value)} placeholder="api.openai.com" />
-              <label style={S.formField}>Secret (shown once)</label>
+              <label style={S.formField}>{t('managed.vaults.target')}</label>
+              <input
+                style={{ ...S.input, marginBottom: 14 }}
+                value={credTarget}
+                onChange={e => setCredTarget(e.target.value)}
+                placeholder={t('managed.vaults.targetPlaceholder')}
+              />
+              <label style={S.formField}>{t('managed.vaults.secretShownOnce')}</label>
               <input style={{ ...S.input, marginBottom: 20 }} type="password" value={credSecret} onChange={e => setCredSecret(e.target.value)} />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" style={S.rowBtn} onClick={() => setAddingCred(false)}>Cancel</button>
-                <button type="submit" style={S.primaryBtn} disabled={busyId === 'cred'}>Add</button>
+                <button type="button" style={S.rowBtn} onClick={() => setAddingCred(false)}>{t('common.cancel')}</button>
+                <button type="submit" style={S.primaryBtn} disabled={busyId === 'cred'}>{t('common.actions.add')}</button>
               </div>
             </form>
           </div>

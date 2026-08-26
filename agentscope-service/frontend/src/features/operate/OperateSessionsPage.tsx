@@ -23,7 +23,9 @@ import { EmptyState } from '@/components/EmptyState';
 import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
 import { PressureGauge } from '@/components/PressureGauge';
+import { useI18n } from '@/i18n';
 import { fetchManagedAgents, fetchRuntimeSessions, phaseTone, sessionDetailPath } from './api';
+import { formatNumber, statusLabel } from './i18n';
 
 const PAGE_SIZE = 50;
 const PHASES = ['active', 'idle', 'compressing', 'archived', 'terminated'] as const;
@@ -33,6 +35,7 @@ function isPhase(v: string): v is (typeof PHASES)[number] {
 }
 
 export default function OperateSessionsPage() {
+  const { locale, t } = useI18n();
   const [params, setParams] = useSearchParams();
   const [agent, setAgent] = useState(() => params.get('agent') || '');
   const [phase, setPhase] = useState(() => {
@@ -106,19 +109,19 @@ export default function OperateSessionsPage() {
   return (
     <Page>
       <PageHeader
-        title="Sessions"
-        description="Runtime sessions across all managed data planes."
+        title={t('operate.fields.sessions')}
+        description={t('operate.sessions.description')}
       />
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-sm">
-          <span className="text-muted-foreground">Agent</span>
+          <span className="text-muted-foreground">{t('operate.fields.agent')}</span>
           <select
             className="h-10 min-w-[10rem] rounded-lg border border-border bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={agent}
             onChange={(e) => updateAgent(e.target.value)}
           >
-            <option value="">All agents</option>
+            <option value="">{t('operate.sessions.allAgents')}</option>
             {agentOptions.map((name) => (
               <option key={name} value={name}>
                 {name}
@@ -128,46 +131,46 @@ export default function OperateSessionsPage() {
         </label>
 
         <label className="grid gap-1 text-sm">
-          <span className="text-muted-foreground">Phase</span>
+          <span className="text-muted-foreground">{t('operate.fields.phase')}</span>
           <select
             className="h-10 min-w-[9rem] rounded-lg border border-border bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={phase}
             onChange={(e) => updatePhase(e.target.value)}
           >
-            <option value="">All phases</option>
+            <option value="">{t('operate.sessions.allPhases')}</option>
             {PHASES.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {statusLabel(t, p)}
               </option>
             ))}
           </select>
         </label>
 
         <label className="grid min-w-[16rem] flex-1 gap-1 text-sm">
-          <span className="text-muted-foreground">Search</span>
+          <span className="text-muted-foreground">{t('operate.fields.search')}</span>
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Filter this page by session id, agent…"
+            placeholder={t('operate.sessions.searchPlaceholder')}
           />
         </label>
       </div>
 
       {list.length === 0 && !sessions.isLoading ? (
-        <EmptyState title="No sessions" description="No sessions match the current filters." />
+        <EmptyState title={t('operate.sessions.empty')} description={t('operate.sessions.emptyDescription')} />
       ) : filtered.length === 0 && !sessions.isLoading ? (
-        <EmptyState title="No matches" description={`No sessions on this page match “${q.trim()}”.`} />
+        <EmptyState title={t('operate.common.noMatches')} description={t('operate.sessions.noMatches', { query: q.trim() })} />
       ) : (
         <>
           <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-[13px] uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-5 py-3.5 font-medium">Agent</th>
-                  <th className="px-5 py-3.5 font-medium">Session</th>
-                  <th className="px-5 py-3.5 font-medium">Phase</th>
-                  <th className="px-5 py-3.5 font-medium">Pressure</th>
-                  <th className="px-5 py-3.5 font-medium">Messages</th>
+                  <th className="px-5 py-3.5 font-medium">{t('operate.fields.agent')}</th>
+                  <th className="px-5 py-3.5 font-medium">{t('operate.fields.session')}</th>
+                  <th className="px-5 py-3.5 font-medium">{t('operate.fields.phase')}</th>
+                  <th className="px-5 py-3.5 font-medium">{t('operate.fields.pressure')}</th>
+                  <th className="px-5 py-3.5 font-medium">{t('operate.fields.messages')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -180,13 +183,18 @@ export default function OperateSessionsPage() {
                       </Link>
                     </td>
                     <td className="px-5 py-3.5">
-                      <Badge tone={phaseTone(s.phase)}>{s.phase}</Badge>
+                      <Badge tone={phaseTone(s.phase)}>{statusLabel(t, s.phase)}</Badge>
                     </td>
                     <td className="px-5 py-3.5">
                       <PressureGauge value={s.snapshot?.contextPressure} />
                     </td>
                     <td className="px-5 py-3.5 font-mono tabular-nums text-muted-foreground">
-                      {s.snapshot?.effectiveMessageCount ?? s.snapshot?.messageCount ?? '—'}
+                      {s.snapshot?.effectiveMessageCount != null || s.snapshot?.messageCount != null
+                        ? formatNumber(
+                            locale,
+                            s.snapshot?.effectiveMessageCount ?? s.snapshot?.messageCount ?? 0,
+                          )
+                        : '—'}
                     </td>
                   </tr>
                 ))}
@@ -196,8 +204,11 @@ export default function OperateSessionsPage() {
 
           <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
             <span>
-              Showing {offset + 1}–{offset + list.length}
-              {q.trim() ? ` · ${filtered.length} match search` : ''}
+              {t('operate.sessions.showingRange', {
+                start: formatNumber(locale, offset + 1),
+                end: formatNumber(locale, offset + list.length),
+              })}
+              {q.trim() ? ` · ${t('operate.sessions.matchCount', { count: formatNumber(locale, filtered.length) })}` : ''}
             </span>
             <div className="flex gap-2">
               <Button
@@ -206,7 +217,7 @@ export default function OperateSessionsPage() {
                 disabled={!canPrev || sessions.isFetching}
                 onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
               >
-                Previous
+                {t('operate.pagination.previous')}
               </Button>
               <Button
                 size="sm"
@@ -214,7 +225,7 @@ export default function OperateSessionsPage() {
                 disabled={!canNext || sessions.isFetching}
                 onClick={() => setOffset((o) => o + PAGE_SIZE)}
               >
-                Next
+                {t('operate.pagination.next')}
               </Button>
             </div>
           </div>

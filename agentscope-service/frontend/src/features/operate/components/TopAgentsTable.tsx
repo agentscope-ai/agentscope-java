@@ -17,39 +17,32 @@
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useI18n } from '@/i18n';
 import type { AgentUsage, SessionDurationRank, SessionUsage } from '../api';
 import { phaseTone, sessionDetailPath } from '../api';
-
-function formatDuration(ms?: number) {
-  if (ms == null || ms < 0) return '—';
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ${sec % 60}s`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ${min % 60}m`;
-}
+import { formatDuration, formatNumber, statusLabel } from '../i18n';
 
 export function TopAgentsByTokensTable({ agents = [] }: { agents?: AgentUsage[] }) {
+  const { locale, t } = useI18n();
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Top 10 agents by tokens</CardTitle>
-        <CardDescription>Ranked by token usage deltas · last 24h</CardDescription>
+        <CardTitle>{t('operate.rankings.agentsByTokens')}</CardTitle>
+        <CardDescription>{t('operate.rankings.tokenDelta24h')}</CardDescription>
       </CardHeader>
       <CardContent>
         {agents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No agent usage yet.</p>
+          <p className="text-sm text-muted-foreground">{t('operate.rankings.noAgentUsage')}</p>
         ) : (
           <div className="max-h-80 overflow-auto rounded-lg border border-border">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 border-b border-border bg-muted/50 text-[13px] uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">#</th>
-                  <th className="px-4 py-3 font-medium">Agent</th>
-                  <th className="px-4 py-3 font-medium">Tokens</th>
-                  <th className="px-4 py-3 font-medium">Active</th>
-                  <th className="px-4 py-3 font-medium">Errors</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.agent')}</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.tokens')}</th>
+                  <th className="px-4 py-3 font-medium">{t('status.active')}</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.errors')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -65,9 +58,9 @@ export function TopAgentsByTokensTable({ agents = [] }: { agents?: AgentUsage[] 
                       </Link>
                       <div className="text-sm text-muted-foreground">{a.namespace}</div>
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums">{(a.totalTokens || 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 font-mono tabular-nums">{a.activeSessions ?? 0}</td>
-                    <td className="px-4 py-3 font-mono tabular-nums text-muted-foreground">{a.errorCount ?? 0}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums">{formatNumber(locale, a.totalTokens || 0)}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums">{formatNumber(locale, a.activeSessions ?? 0)}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-muted-foreground">{formatNumber(locale, a.errorCount ?? 0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -80,23 +73,24 @@ export function TopAgentsByTokensTable({ agents = [] }: { agents?: AgentUsage[] 
 }
 
 export function TopAgentsByActiveTable({ agents = [] }: { agents?: AgentUsage[] }) {
+  const { locale, t } = useI18n();
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Top 10 agents by active sessions</CardTitle>
-        <CardDescription>Ranked by peak concurrent sessions · last 5 minutes</CardDescription>
+        <CardTitle>{t('operate.rankings.agentsByActive')}</CardTitle>
+        <CardDescription>{t('operate.rankings.peakActive5m')}</CardDescription>
       </CardHeader>
       <CardContent>
         {agents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No active-session samples yet.</p>
+          <p className="text-sm text-muted-foreground">{t('operate.rankings.noActiveSamples')}</p>
         ) : (
           <div className="max-h-80 overflow-auto rounded-lg border border-border">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 border-b border-border bg-muted/50 text-[13px] uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">#</th>
-                  <th className="px-4 py-3 font-medium">Agent</th>
-                  <th className="px-4 py-3 font-medium">Peak active</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.agent')}</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.rankings.peakActive')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -112,7 +106,7 @@ export function TopAgentsByActiveTable({ agents = [] }: { agents?: AgentUsage[] 
                       </Link>
                       <div className="text-sm text-muted-foreground">{a.namespace}</div>
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums">{a.activeSessions ?? 0}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums">{formatNumber(locale, a.activeSessions ?? 0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -125,24 +119,25 @@ export function TopAgentsByActiveTable({ agents = [] }: { agents?: AgentUsage[] 
 }
 
 export function TopSessionsByTokensTable({ sessions = [] }: { sessions?: SessionUsage[] }) {
+  const { locale, t } = useI18n();
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Top 10 sessions by tokens</CardTitle>
-        <CardDescription>Ranked by token usage deltas · last 24h</CardDescription>
+        <CardTitle>{t('operate.rankings.sessionsByTokens')}</CardTitle>
+        <CardDescription>{t('operate.rankings.tokenDelta24h')}</CardDescription>
       </CardHeader>
       <CardContent>
         {sessions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No session usage yet.</p>
+          <p className="text-sm text-muted-foreground">{t('operate.rankings.noSessionUsage')}</p>
         ) : (
           <div className="max-h-80 overflow-auto rounded-lg border border-border">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 border-b border-border bg-muted/50 text-[13px] uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">#</th>
-                  <th className="px-4 py-3 font-medium">Session</th>
-                  <th className="px-4 py-3 font-medium">Tokens</th>
-                  <th className="px-4 py-3 font-medium">Phase</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.session')}</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.tokens')}</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.phase')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -163,9 +158,9 @@ export function TopSessionsByTokensTable({ sessions = [] }: { sessions?: Session
                       </Link>
                       <div className="text-sm text-muted-foreground">{s.agentName}</div>
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums">{(s.totalTokens || 0).toLocaleString()}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums">{formatNumber(locale, s.totalTokens || 0)}</td>
                     <td className="px-4 py-3">
-                      <Badge tone={phaseTone(s.phase)}>{s.phase || '—'}</Badge>
+                      <Badge tone={phaseTone(s.phase)}>{statusLabel(t, s.phase)}</Badge>
                     </td>
                   </tr>
                 ))}
@@ -179,27 +174,28 @@ export function TopSessionsByTokensTable({ sessions = [] }: { sessions?: Session
 }
 
 export function TopSessionsByDurationTable({ sessions = [] }: { sessions?: SessionDurationRank[] }) {
+  const { locale, t } = useI18n();
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Top 10 active turns by duration</CardTitle>
+        <CardTitle>{t('operate.rankings.turnsByDuration')}</CardTitle>
         <CardDescription>
-          Only phase=active · ranked by current turn elapsed (not session lifetime)
+          {t('operate.rankings.turnDurationDescription')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {sessions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No active turns right now.</p>
+          <p className="text-sm text-muted-foreground">{t('operate.rankings.noActiveTurns')}</p>
         ) : (
           <div className="max-h-80 overflow-auto rounded-lg border border-border">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 border-b border-border bg-muted/50 text-[13px] uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">#</th>
-                  <th className="px-4 py-3 font-medium">Session</th>
-                  <th className="px-4 py-3 font-medium">Turn</th>
-                  <th className="px-4 py-3 font-medium">Elapsed</th>
-                  <th className="px-4 py-3 font-medium">Phase</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.session')}</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.turn')}</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.elapsed')}</th>
+                  <th className="px-4 py-3 font-medium">{t('operate.fields.phase')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -223,9 +219,9 @@ export function TopSessionsByDurationTable({ sessions = [] }: { sessions?: Sessi
                     <td className="px-4 py-3 font-mono tabular-nums text-muted-foreground">
                       {s.turnIndex != null ? `#${s.turnIndex}` : '—'}
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums">{formatDuration(s.durationMs)}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums">{formatDuration(t, locale, s.durationMs)}</td>
                     <td className="px-4 py-3">
-                      <Badge tone={phaseTone(s.phase)}>{s.phase || '—'}</Badge>
+                      <Badge tone={phaseTone(s.phase)}>{statusLabel(t, s.phase)}</Badge>
                     </td>
                   </tr>
                 ))}

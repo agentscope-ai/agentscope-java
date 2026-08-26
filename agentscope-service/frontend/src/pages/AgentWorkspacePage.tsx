@@ -21,6 +21,7 @@ import WorkspaceEditor from '../components/WorkspaceEditor';
 import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
 import { summary as fetchSummary, WorkspaceSummary } from '../api/workspace';
 import type { AgentDefinition } from '../api/agents';
+import { useT } from '@/i18n';
 
 const pathBar: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8,
@@ -38,6 +39,7 @@ const pathValue: React.CSSProperties = {
 };
 
 export default function AgentWorkspacePage() {
+  const t = useT();
   const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
   const [selected, setSelected] = useState<string | null>(null);
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
@@ -65,7 +67,7 @@ export default function AgentWorkspacePage() {
       {linked && <LinkedWorkspaceBanner workspaceId={linked} resource="files" />}
       {summary?.workspacePath && (
         <div style={pathBar} title={summary.workspacePath}>
-          <span style={pathLabel}>Path</span>
+          <span style={pathLabel}>{t('managed.agentWorkspace.path')}</span>
           <span style={pathValue}>{summary.workspacePath}</span>
           <button
             onClick={copyPath}
@@ -74,9 +76,9 @@ export default function AgentWorkspacePage() {
               borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
               fontSize: '0.75rem', fontWeight: 500,
             }}
-            title="Copy path"
+            title={t('managed.agentWorkspace.copyPath')}
           >
-            Copy
+            {t('managed.agentWorkspace.copy')}
           </button>
         </div>
       )}

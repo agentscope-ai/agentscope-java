@@ -17,6 +17,8 @@
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { JsonViewer } from '@/components/JsonViewer';
+import { useI18n, useT } from '@/i18n';
+import { formatNumber, messageRoleLabel, statusLabel } from '../i18n';
 
 function asArray(v: unknown): unknown[] {
   if (Array.isArray(v)) return v;
@@ -71,16 +73,17 @@ export function ContextPanel({
   error?: boolean;
   loading?: boolean;
 }) {
+  const { locale, t } = useI18n();
   const [showRaw, setShowRaw] = useState(false);
 
   if (unavailableReason) {
     return <p className="text-sm text-muted-foreground">{unavailableReason}</p>;
   }
   if (error) {
-    return <p className="text-sm text-red-600">Failed to load context.</p>;
+    return <p className="text-sm text-red-600">{t('operate.context.loadFailed')}</p>;
   }
   if (loading || !data) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>;
   }
 
   const systemPrompt = typeof data.systemPrompt === 'string' ? data.systemPrompt : '';
@@ -114,14 +117,23 @@ export function ContextPanel({
       {hasStructured ? (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            {isCompacted && <Badge tone="warning">compacted</Badge>}
-            {planActive && <Badge tone="info">plan mode</Badge>}
+            {isCompacted && <Badge tone="warning">{t('operate.status.compacted')}</Badge>}
+            {planActive && <Badge tone="info">{t('operate.status.planMode')}</Badge>}
             {model && <Badge tone="info">{model}</Badge>}
             <span className="text-sm text-muted-foreground">
-              {messages.length} effective messages
-              {tools.length ? ` · ${tools.length} tools` : ''}
+              {t('operate.context.effectiveMessages', {
+                count: formatNumber(locale, messages.length),
+              })}
+              {tools.length
+                ? ` · ${t('operate.context.toolsCount', { count: formatNumber(locale, tools.length) })}`
+                : ''}
               {totalTokens != null
-                ? ` · window ${Number(totalTokens).toLocaleString()}${maxTokens != null ? ` / ${Number(maxTokens).toLocaleString()}` : ''}`
+                ? ` · ${t('operate.context.windowTokens', {
+                    tokens: formatNumber(locale, Number(totalTokens)),
+                    maximum: maxTokens != null
+                      ? ` / ${formatNumber(locale, Number(maxTokens))}`
+                      : '',
+                  })}`
                 : ''}
             </span>
           </div>
@@ -129,11 +141,11 @@ export function ContextPanel({
           {systemPrompt && (
             <div>
               <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-muted-foreground">
-                System prompt
+                {t('common.fields.systemPrompt')}
                 {promptSource === 'effective'
-                  ? ' (last model call)'
+                  ? ` ${t('operate.context.promptSource.effective')}`
                   : promptSource === 'base'
-                    ? ' (builder base — no turn sampled yet)'
+                    ? ` ${t('operate.context.promptSource.base')}`
                     : ''}
               </div>
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-4 text-sm leading-relaxed">
@@ -145,11 +157,11 @@ export function ContextPanel({
           {(planActive || planFile || planExcerpt) && (
             <div>
               <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-muted-foreground">
-                Plan
+                {t('operate.context.plan')}
               </div>
               <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-4 text-sm leading-relaxed">
                 <div>
-                  {planActive ? 'active' : 'inactive'}
+                  {statusLabel(t, planActive ? 'active' : 'inactive')}
                   {planFile ? ` · ${planFile}` : ''}
                 </div>
                 {planExcerpt && (
@@ -162,7 +174,7 @@ export function ContextPanel({
           {compactionSummary && (
             <div>
               <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-muted-foreground">
-                Compaction
+                {t('operate.context.compaction')}
               </div>
               <p className="rounded-lg border border-border bg-muted/40 p-4 text-sm leading-relaxed">
                 {compactionSummary}
@@ -173,7 +185,7 @@ export function ContextPanel({
           {tools.length > 0 && (
             <div>
               <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-muted-foreground">
-                Tools (session-effective)
+                {t('operate.context.effectiveTools')}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {tools.map((t) => (
@@ -188,7 +200,9 @@ export function ContextPanel({
           {messages.length > 0 && (
             <div>
               <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-muted-foreground">
-                Effective messages ({messages.length}) — AgentState window for next model call
+                {t('operate.context.messagesTitle', {
+                  count: formatNumber(locale, messages.length),
+                })}
               </div>
               <div className="max-h-[50vh] space-y-2.5 overflow-auto">
                 {messages.map((m, i) => {
@@ -210,7 +224,7 @@ export function ContextPanel({
             className="text-sm text-muted-foreground underline-offset-2 hover:underline"
             onClick={() => setShowRaw((v) => !v)}
           >
-            {showRaw ? 'Hide raw' : 'Show raw'}
+            {showRaw ? t('operate.context.hideRaw') : t('operate.context.showRaw')}
           </button>
           {showRaw && <JsonViewer value={data} className="mt-2 max-h-64" />}
         </div>
@@ -231,6 +245,7 @@ function ContextMessageRow({
 }: {
   message: { role?: string; content?: string; isCompaction?: boolean };
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-lg border border-border text-sm">
@@ -240,8 +255,10 @@ function ContextMessageRow({
         onClick={() => setOpen((v) => !v)}
       >
         <span className="font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
-        <Badge tone={message.role === 'user' ? 'info' : 'default'}>{message.role || 'msg'}</Badge>
-        {message.isCompaction && <Badge tone="warning">compaction</Badge>}
+        <Badge tone={message.role === 'user' ? 'info' : 'default'}>
+          {messageRoleLabel(t, message.role, 'operate.message.msg')}
+        </Badge>
+        {message.isCompaction && <Badge tone="warning">{t('operate.context.compaction')}</Badge>}
         {!open && (
           <span className="min-w-0 flex-1 truncate text-muted-foreground">
             {previewText(message.content)}

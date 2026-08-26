@@ -19,31 +19,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { JsonViewer } from '@/components/JsonViewer';
+import { useI18n } from '@/i18n';
 import type { SessionTurn } from '../api';
 import {
   extractHistoryMessages,
   groupMessagesByTurns,
 } from '../lib/groupMessagesByTurns';
 import { MessageItems, MessagesList } from './MessagesList';
-
-function formatDuration(ms?: number) {
-  if (ms == null || ms < 0) return '—';
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ${sec % 60}s`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ${min % 60}m`;
-}
-
-function formatTime(v?: string) {
-  if (!v) return '—';
-  try {
-    return new Date(v).toLocaleString();
-  } catch {
-    return v;
-  }
-}
+import { formatDateTime, formatDuration, formatNumber, statusLabel } from '../i18n';
 
 function statusTone(status?: string): 'default' | 'success' | 'warning' | 'danger' | 'info' {
   switch ((status || '').toLowerCase()) {
@@ -96,6 +79,7 @@ export function ConversationHistoryPanel({
   deepLinkTurnIndex?: number | null;
   onSelectTurn?: (turn: SessionTurn) => void;
 }) {
+  const { locale, t } = useI18n();
   const [density, setDensity] = useState<Density>('by-turn');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const scrollTargetRef = useRef<HTMLDivElement | null>(null);
@@ -136,12 +120,18 @@ export function ConversationHistoryPanel({
     (messagesLoading && historyMessages == null) ||
     (turnsLoading && turns.length === 0 && historyMessages == null);
 
-  const sourceLabel =
-    source === 'transcript' ? 'transcript store' : source === 'dataplane' ? 'live instance' : null;
+  const sourceLabel = source === 'transcript'
+    ? t('operate.conversation.source.transcript')
+    : source === 'dataplane'
+      ? t('operate.conversation.source.dataplane')
+      : null;
 
   const rangeLabel =
     total != null && loadedCount != null && total > 0
-      ? `Showing ${loadedCount.toLocaleString()} of ${total.toLocaleString()}`
+      ? t('operate.conversation.showingCount', {
+          loaded: formatNumber(locale, loadedCount),
+          total: formatNumber(locale, total),
+        })
       : null;
 
   const pager = (
@@ -153,7 +143,7 @@ export function ConversationHistoryPanel({
           disabled={!!loadingEarlier}
           onClick={() => onLoadEarlier?.()}
         >
-          {loadingEarlier ? 'Loading…' : 'Load earlier'}
+          {loadingEarlier ? t('common.loading') : t('operate.pagination.loadEarlier')}
         </Button>
       )}
       {rangeLabel && <span className="text-sm text-muted-foreground">{rangeLabel}</span>}
@@ -165,10 +155,9 @@ export function ConversationHistoryPanel({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle>Conversation history</CardTitle>
+          <CardTitle>{t('operate.conversation.title')}</CardTitle>
           <CardDescription>
-            Message-level transcript (tools structured). Prefer control-plane transcript; live
-            instance is fallback only.
+            {t('operate.conversation.description')}
           </CardDescription>
         </div>
         <div className="flex shrink-0 rounded-lg border border-border p-0.5">
@@ -178,7 +167,7 @@ export function ConversationHistoryPanel({
             className="h-8"
             onClick={() => setDensity('by-turn')}
           >
-            By turn
+            {t('operate.conversation.byTurn')}
           </Button>
           <Button
             size="sm"
@@ -186,7 +175,7 @@ export function ConversationHistoryPanel({
             className="h-8"
             onClick={() => setDensity('flat')}
           >
-            Flat
+            {t('operate.conversation.flat')}
           </Button>
         </div>
       </CardHeader>
@@ -196,7 +185,7 @@ export function ConversationHistoryPanel({
         )}
         {density === 'flat' ? (
           sessionPending ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
           ) : (
             <>
               {pager}
@@ -208,11 +197,10 @@ export function ConversationHistoryPanel({
             </>
           )
         ) : showLoading ? (
-          <p className="text-sm text-muted-foreground">Loading conversation…</p>
+          <p className="text-sm text-muted-foreground">{t('chat.loadingConversation')}</p>
         ) : turnsEmpty && (!historyMessages || historyMessages.length === 0) && !messagesError ? (
           <p className="text-sm text-muted-foreground">
-            No turns or messages recorded yet. Messages come from the control-plane transcript (or
-            live message-query fallback). Turns open when phase becomes active.
+            {t('operate.conversation.empty')}
           </p>
         ) : historyMessages == null && messagesData != null ? (
           <JsonViewer value={messagesData} className="max-h-[50vh]" />
@@ -232,9 +220,14 @@ export function ConversationHistoryPanel({
                         onClick={() => toggle(key)}
                       >
                         <span className="font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
-                        <span className="font-medium">Before recorded turns</span>
+                        <span className="font-medium">{t('operate.conversation.beforeTurns')}</span>
                         <span className="text-muted-foreground">
-                          {g.messages.length} msg{g.messages.length === 1 ? '' : 's'}
+                          {t(
+                            g.messages.length === 1
+                              ? 'operate.message.countOne'
+                              : 'operate.message.countMany',
+                            { count: formatNumber(locale, g.messages.length) },
+                          )}
                         </span>
                       </button>
                       {open && (
@@ -246,15 +239,15 @@ export function ConversationHistoryPanel({
                   );
                 }
 
-                const t = g.turn;
-                const key = `turn:${t.turnIndex}`;
+                const turn = g.turn;
+                const key = `turn:${turn.turnIndex}`;
                 const open = expanded.has(key);
                 const selected =
-                  selectedTurnIndex === t.turnIndex || deepLinkTurnIndex === t.turnIndex;
+                  selectedTurnIndex === turn.turnIndex || deepLinkTurnIndex === turn.turnIndex;
                 return (
                   <div
-                    key={t.id || t.turnIndex}
-                    ref={deepLinkTurnIndex === t.turnIndex ? scrollTargetRef : undefined}
+                    key={turn.id || turn.turnIndex}
+                    ref={deepLinkTurnIndex === turn.turnIndex ? scrollTargetRef : undefined}
                     className={`rounded-lg border border-border ${selected ? 'ring-1 ring-ring' : ''}`}
                   >
                     <button
@@ -262,31 +255,36 @@ export function ConversationHistoryPanel({
                       className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-left text-sm hover:bg-muted/40"
                       onClick={() => {
                         toggle(key);
-                        onSelectTurn?.(t);
+                        onSelectTurn?.(turn);
                       }}
                     >
                       <span className="font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
-                      <span className="font-mono tabular-nums font-medium">#{t.turnIndex}</span>
-                      <Badge tone={statusTone(t.status)}>{t.status}</Badge>
+                      <span className="font-mono tabular-nums font-medium">#{turn.turnIndex}</span>
+                      <Badge tone={statusTone(turn.status)}>{statusLabel(t, turn.status)}</Badge>
                       <span className="font-mono tabular-nums text-muted-foreground">
-                        {formatDuration(t.durationMs)}
+                        {formatDuration(t, locale, turn.durationMs)}
                       </span>
-                      <span className="text-muted-foreground">{formatTime(t.startedAt)}</span>
+                      <span className="text-muted-foreground">{formatDateTime(locale, turn.startedAt)}</span>
                       <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                        {t.userPreview || '—'}
+                        {turn.userPreview || '—'}
                       </span>
                       <span className="text-muted-foreground">
-                        {g.messages.length} msg{g.messages.length === 1 ? '' : 's'}
+                        {t(
+                          g.messages.length === 1
+                            ? 'operate.message.countOne'
+                            : 'operate.message.countMany',
+                          { count: formatNumber(locale, g.messages.length) },
+                        )}
                       </span>
                     </button>
                     {open && (
                       <div className="border-t border-border px-4 py-3">
                         {messagesLoading && !historyMessages ? (
-                          <p className="text-sm text-muted-foreground">Loading messages…</p>
+                          <p className="text-sm text-muted-foreground">{t('operate.conversation.loadingMessages')}</p>
                         ) : (
                           <MessageItems
                             messages={g.messages}
-                            emptyLabel="No messages attributed to this turn."
+                            emptyLabel={t('operate.conversation.noTurnMessages')}
                           />
                         )}
                       </div>

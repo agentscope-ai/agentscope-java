@@ -17,24 +17,25 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Page, PageHeader } from '@/components/Page';
+import { useT } from '@/i18n';
 
 /** Placeholder for reusable team blueprints (P5 stub). */
 export default function TeamsTemplatesPage() {
+  const t = useT();
   return (
     <Page>
       <PageHeader
-        title="Templates"
-        description="Reusable team blueprints (roster + objective presets) will land here. Instantiation will still POST /api/v1/teams."
+        title={t('teams.templates.title')}
+        description={t('teams.templates.description')}
         actions={
           <Button asChild>
-            <Link to="/teams/new">Create team now</Link>
+            <Link to="/teams/new">{t('teams.templates.createNow')}</Link>
           </Button>
         }
       />
       <div className="rounded-xl border border-dashed border-border bg-white px-6 py-16 text-center">
         <p className="text-sm text-muted-foreground">
-          Templates are not implemented in this release. Use New team to start a live store-backed
-          team.
+          {t('teams.templates.unavailable')}
         </p>
       </div>
     </Page>

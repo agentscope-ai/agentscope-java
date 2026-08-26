@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+import { managedEn } from './managed';
+import { operateEn } from './operate';
+import { teamsEn } from './teams';
+
 export const en = {
   'language.english': 'English',
   'language.chinese': 'Chinese',
@@ -474,6 +478,9 @@ export const en = {
   'capability.messageQueryRequired':
     'Live message-query not advertised (control-plane transcript may still work)',
   'capability.taskQueryRequired': 'Data plane must advertise task-query',
+  ...managedEn,
+  ...operateEn,
+  ...teamsEn,
 } as const;
 
 export type TranslationKey = keyof typeof en;

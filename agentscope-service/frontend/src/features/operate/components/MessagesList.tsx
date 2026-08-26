@@ -17,12 +17,14 @@
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { JsonViewer } from '@/components/JsonViewer';
+import { useI18n, useT } from '@/i18n';
 import {
   extractHistoryMessages,
   formatToolInput,
   messagePreviewText,
   type HistoryMessage,
 } from '../lib/groupMessagesByTurns';
+import { formatDateTime, formatNumber, messageRoleLabel } from '../i18n';
 
 export function messagesSummary(data: unknown) {
   const messages = extractHistoryMessages(data);
@@ -51,17 +53,18 @@ function isToolUse(m: HistoryMessage): boolean {
 }
 
 function MessageBody({ message: m }: { message: HistoryMessage }) {
+  const t = useT();
   if (isToolUse(m) || (m.toolName && m.toolInput != null && !isToolResult(m))) {
     const inputText = formatToolInput(m.toolInput);
     return (
       <div className="space-y-2">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Input</div>
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('toolCall.input')}</div>
         {inputText ? (
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 px-3 py-2 font-mono text-[12px] leading-relaxed">
             {inputText}
           </pre>
         ) : (
-          <p className="text-sm text-muted-foreground">No input recorded.</p>
+          <p className="text-sm text-muted-foreground">{t('operate.message.noInput')}</p>
         )}
         {m.content && m.content !== inputText && (
           <div className="text-sm text-muted-foreground whitespace-pre-wrap">{m.content}</div>
@@ -74,13 +77,13 @@ function MessageBody({ message: m }: { message: HistoryMessage }) {
     const out = m.toolOutput || m.content || '';
     return (
       <div className="space-y-2">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Output</div>
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('operate.message.output')}</div>
         {out ? (
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 px-3 py-2 font-mono text-[12px] leading-relaxed">
             {out}
           </pre>
         ) : (
-          <p className="text-sm text-muted-foreground">No output recorded.</p>
+          <p className="text-sm text-muted-foreground">{t('operate.message.noOutput')}</p>
         )}
       </div>
     );
@@ -94,6 +97,7 @@ function MessageBody({ message: m }: { message: HistoryMessage }) {
 }
 
 function MessageRow({ message: m }: { message: HistoryMessage }) {
+  const { locale, t } = useI18n();
   const [open, setOpen] = useState(false);
   const toolish = !!m.toolName || isToolResult(m);
   return (
@@ -107,15 +111,23 @@ function MessageRow({ message: m }: { message: HistoryMessage }) {
         {m.seq != null && (
           <span className="font-mono tabular-nums text-muted-foreground">#{m.seq}</span>
         )}
-        <Badge tone={roleTone(m.role)}>{m.role || 'message'}</Badge>
+        <Badge tone={roleTone(m.role)}>{messageRoleLabel(t, m.role)}</Badge>
         {m.toolName && (
           <Badge tone="warning">
-            {isToolResult(m) ? 'tool_result' : 'tool_use'} · {m.toolName}
+            {isToolResult(m) ? t('operate.message.toolResult') : t('operate.message.toolUse')} · {m.toolName}
           </Badge>
         )}
         {m.truncated && (
-          <Badge tone="danger" title={m.originalSize != null ? `original ${m.originalSize} bytes` : undefined}>
-            truncated{m.originalSize != null ? ` · ${m.originalSize}` : ''}
+          <Badge
+            tone="danger"
+            title={m.originalSize != null
+              ? t('operate.message.originalBytes', {
+                  count: formatNumber(locale, m.originalSize),
+                })
+              : undefined}
+          >
+            {t('operate.message.truncated')}
+            {m.originalSize != null ? ` · ${formatNumber(locale, m.originalSize)}` : ''}
           </Badge>
         )}
         {m.toolCallId && (
@@ -125,7 +137,7 @@ function MessageRow({ message: m }: { message: HistoryMessage }) {
         )}
         {m.occurredAt && (
           <span className="text-sm text-muted-foreground">
-            {new Date(m.occurredAt).toLocaleString()}
+            {formatDateTime(locale, m.occurredAt)}
           </span>
         )}
         {!open && (
@@ -146,13 +158,14 @@ function MessageRow({ message: m }: { message: HistoryMessage }) {
 
 export function MessageItems({
   messages,
-  emptyLabel = 'No messages.',
+  emptyLabel,
 }: {
   messages: HistoryMessage[];
   emptyLabel?: string;
 }) {
+  const t = useT();
   if (messages.length === 0) {
-    return <p className="text-sm text-muted-foreground">{emptyLabel}</p>;
+    return <p className="text-sm text-muted-foreground">{emptyLabel || t('operate.message.empty')}</p>;
   }
   return (
     <div className="space-y-2.5">
@@ -174,14 +187,15 @@ export function MessagesList({
   loading?: boolean;
   maxHeightClass?: string;
 }) {
+  const t = useT();
   if (unavailableReason) {
     return <p className="text-sm text-muted-foreground">{unavailableReason}</p>;
   }
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>;
   }
   if (data == null) {
-    return <p className="text-sm text-muted-foreground">No messages.</p>;
+    return <p className="text-sm text-muted-foreground">{t('operate.message.empty')}</p>;
   }
 
   const messages = extractHistoryMessages(data);

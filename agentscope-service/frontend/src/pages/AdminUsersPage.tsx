@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import {
   AdminUserView,
@@ -26,6 +26,7 @@ import {
   updateRoles,
 } from '../api/admin';
 import { isAdmin } from '../api/auth';
+import { useT, type TranslationFunction } from '../i18n';
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '36px 40px', maxWidth: 1000 },
@@ -93,7 +94,7 @@ const S: Record<string, React.CSSProperties> = {
   },
 };
 
-function roleBadge(role: string) {
+function roleBadge(role: string, t: TranslationFunction) {
   const isA = role === 'admin';
   return (
     <span
@@ -105,7 +106,7 @@ function roleBadge(role: string) {
         border: isA ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
       }}
     >
-      {role}
+      {role === 'admin' ? t('teams.role.admin') : role === 'user' ? t('teams.role.user') : role}
     </span>
   );
 }
@@ -117,6 +118,7 @@ function InviteModal({
   onClose: () => void;
   onCreated: (res: CreateUserResponse) => void;
 }) {
+  const t = useT();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [adminRole, setAdminRole] = useState(false);
@@ -126,7 +128,7 @@ function InviteModal({
   async function submit() {
     setErr(null);
     const u = username.trim();
-    if (!u) { setErr('Username is required'); return; }
+    if (!u) { setErr(t('teams.admin.usernameRequired')); return; }
     setSubmitting(true);
     try {
       const roles = adminRole ? ['user', 'admin'] : ['user'];
@@ -137,7 +139,7 @@ function InviteModal({
       });
       onCreated(res);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
+      setErr(e instanceof Error ? e.message : t('teams.admin.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -146,20 +148,20 @@ function InviteModal({
   return (
     <div style={S.modalBackdrop} onClick={onClose}>
       <div style={S.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={S.modalTitle}>Invite user</h3>
-        <label style={S.fieldLabel}>Username</label>
+        <h3 style={S.modalTitle}>{t('teams.admin.inviteTitle')}</h3>
+        <label style={S.fieldLabel}>{t('teams.admin.username')}</label>
         <input style={S.input} value={username} onChange={e => setUsername(e.target.value)} autoFocus />
-        <label style={S.fieldLabel}>Initial password <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional — leave blank to generate)</span></label>
+        <label style={S.fieldLabel}>{t('teams.admin.initialPassword')} <span style={{ color: '#94a3b8', fontWeight: 400 }}>{t('teams.admin.initialPasswordHint')}</span></label>
         <input style={S.input} type="password" value={password} onChange={e => setPassword(e.target.value)} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.92rem', color: '#475569', marginBottom: 18 }}>
           <input type="checkbox" checked={adminRole} onChange={e => setAdminRole(e.target.checked)} />
-          Grant <strong>admin</strong> role
+          {t('teams.admin.grantAdmin')}
         </label>
         {err && <p style={S.error}>{err}</p>}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button style={S.secondaryBtn} onClick={onClose} disabled={submitting}>Cancel</button>
+          <button style={S.secondaryBtn} onClick={onClose} disabled={submitting}>{t('common.cancel')}</button>
           <button style={S.primaryBtn} onClick={submit} disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create user'}
+            {submitting ? t('teams.creating') : t('teams.admin.createUser')}
           </button>
         </div>
       </div>
@@ -176,6 +178,7 @@ function GeneratedPasswordModal({
   password: string;
   onClose: () => void;
 }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -187,19 +190,18 @@ function GeneratedPasswordModal({
   return (
     <div style={S.modalBackdrop}>
       <div style={S.modal}>
-        <h3 style={S.modalTitle}>User created — {username}</h3>
+        <h3 style={S.modalTitle}>{t('teams.admin.userCreated', { username })}</h3>
         <p style={{ fontSize: '0.92rem', color: '#475569', margin: '0 0 10px' }}>
-          Share this temporary password with the user. It is shown only once —
-          you cannot retrieve it later.
+          {t('teams.admin.temporaryPassword')}
         </p>
         <div style={S.callout}>
           <div style={S.codeBlock}>{password}</div>
           <button style={{ ...S.secondaryBtn, marginTop: 10 }} onClick={copy}>
-            {copied ? '✓ Copied' : 'Copy to clipboard'}
+            {copied ? t('teams.admin.copied') : t('teams.admin.copy')}
           </button>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-          <button style={S.primaryBtn} onClick={onClose}>Done</button>
+          <button style={S.primaryBtn} onClick={onClose}>{t('teams.admin.done')}</button>
         </div>
       </div>
     </div>
@@ -215,18 +217,19 @@ function ResetPasswordModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const t = useT();
   const [pwd, setPwd] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   async function submit() {
     setErr(null);
-    if (pwd.length < 6) { setErr('Password must be ≥ 6 characters'); return; }
+    if (pwd.length < 6) { setErr(t('teams.admin.passwordMin')); return; }
     setSubmitting(true);
     try {
       await resetPassword(user.userId, pwd);
       onDone();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
+      setErr(e instanceof Error ? e.message : t('teams.admin.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -234,14 +237,14 @@ function ResetPasswordModal({
   return (
     <div style={S.modalBackdrop} onClick={onClose}>
       <div style={S.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={S.modalTitle}>Reset password — {user.username}</h3>
-        <label style={S.fieldLabel}>New password</label>
+        <h3 style={S.modalTitle}>{t('teams.admin.resetPasswordTitle', { username: user.username })}</h3>
+        <label style={S.fieldLabel}>{t('teams.admin.newPassword')}</label>
         <input style={S.input} type="password" value={pwd} onChange={e => setPwd(e.target.value)} autoFocus />
         {err && <p style={S.error}>{err}</p>}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button style={S.secondaryBtn} onClick={onClose} disabled={submitting}>Cancel</button>
+          <button style={S.secondaryBtn} onClick={onClose} disabled={submitting}>{t('common.cancel')}</button>
           <button style={S.primaryBtn} onClick={submit} disabled={submitting}>
-            {submitting ? 'Saving…' : 'Reset password'}
+            {submitting ? t('common.saving') : t('teams.admin.resetPassword')}
           </button>
         </div>
       </div>
@@ -250,21 +253,22 @@ function ResetPasswordModal({
 }
 
 export default function AdminUsersPage() {
+  const t = useT();
   const admin = isAdmin();
   const [users, setUsers] = useState<AdminUserView[]>([]);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<unknown>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [generated, setGenerated] = useState<{ username: string; password: string } | null>(null);
   const [resetTarget, setResetTarget] = useState<AdminUserView | null>(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       setUsers(await listUsers());
     } catch (e: unknown) {
-      setLoadErr(e instanceof Error ? e.message : 'Load failed');
+      setLoadErr(e);
     }
-  }
-  useEffect(() => { if (admin) refresh(); }, [admin]);
+  }, []);
+  useEffect(() => { if (admin) void refresh(); }, [admin, refresh]);
 
   if (!admin) {
     return <Navigate to="/agents" replace />;
@@ -274,34 +278,42 @@ export default function AdminUsersPage() {
     const hasAdmin = u.roles.includes('admin');
     const next = hasAdmin ? u.roles.filter(r => r !== 'admin') : [...u.roles, 'admin'];
     if (!next.includes('user')) next.push('user');
-    updateRoles(u.userId, next).then(refresh).catch(e => alert(e.message));
+    updateRoles(u.userId, next)
+      .then(refresh)
+      .catch((e: unknown) => alert(e instanceof Error ? e.message : t('teams.admin.failed')));
   }
 
   function doDelete(u: AdminUserView) {
-    if (!confirm(`Delete user "${u.username}"?\n\nAll shares granted to this user across every agent will be revoked. Workspace files are NOT deleted.`)) return;
-    deleteUser(u.userId).then(refresh).catch(e => alert(e.message));
+    if (!confirm(t('teams.admin.deleteConfirm', { username: u.username }))) return;
+    deleteUser(u.userId)
+      .then(refresh)
+      .catch((e: unknown) => alert(e instanceof Error ? e.message : t('teams.admin.failed')));
   }
 
   return (
     <div style={S.page}>
       <div style={S.headerBar}>
         <div>
-          <h2 style={S.title}>Users</h2>
-          <p style={S.subtitle}>Invite teammates and manage their roles.</p>
+          <h2 style={S.title}>{t('teams.admin.title')}</h2>
+          <p style={S.subtitle}>{t('teams.admin.description')}</p>
         </div>
-        <button style={S.primaryBtn} onClick={() => setShowInvite(true)}>+ Invite user</button>
+        <button style={S.primaryBtn} onClick={() => setShowInvite(true)}>+ {t('teams.admin.invite')}</button>
       </div>
 
-      {loadErr && <p style={{ color: '#dc2626' }}>{loadErr}</p>}
+      {loadErr != null && (
+        <p style={{ color: '#dc2626' }}>
+          {loadErr instanceof Error ? loadErr.message : t('teams.admin.loadFailed')}
+        </p>
+      )}
 
       <div style={S.card}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th style={S.th}>Username</th>
-              <th style={S.th}>User ID</th>
-              <th style={S.th}>Roles</th>
-              <th style={{ ...S.th, textAlign: 'right' }}>Actions</th>
+              <th style={S.th}>{t('teams.admin.username')}</th>
+              <th style={S.th}>{t('teams.admin.userId')}</th>
+              <th style={S.th}>{t('teams.admin.roles')}</th>
+              <th style={{ ...S.th, textAlign: 'right' }}>{t('teams.actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -311,19 +323,19 @@ export default function AdminUsersPage() {
                 <td style={{ ...S.td, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.85rem', color: '#64748b' }}>
                   {u.userId}
                 </td>
-                <td style={S.td}>{u.roles.map(roleBadge)}</td>
+                <td style={S.td}>{u.roles.map(role => roleBadge(role, t))}</td>
                 <td style={{ ...S.td, textAlign: 'right' }}>
                   <button style={S.rowAction} onClick={() => toggleAdmin(u)}>
-                    {u.roles.includes('admin') ? 'Demote' : 'Promote to admin'}
+                    {u.roles.includes('admin') ? t('teams.admin.demote') : t('teams.admin.promote')}
                   </button>
-                  <button style={S.rowAction} onClick={() => setResetTarget(u)}>Reset password</button>
-                  <button style={S.rowActionDanger} onClick={() => doDelete(u)}>Delete</button>
+                  <button style={S.rowAction} onClick={() => setResetTarget(u)}>{t('teams.admin.resetPassword')}</button>
+                  <button style={S.rowActionDanger} onClick={() => doDelete(u)}>{t('common.delete')}</button>
                 </td>
               </tr>
             ))}
             {users.length === 0 && !loadErr && (
               <tr>
-                <td style={{ ...S.td, textAlign: 'center', color: '#94a3b8' }} colSpan={4}>No users.</td>
+                <td style={{ ...S.td, textAlign: 'center', color: '#94a3b8' }} colSpan={4}>{t('teams.admin.noUsers')}</td>
               </tr>
             )}
           </tbody>
