@@ -22,7 +22,6 @@ import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -122,57 +121,41 @@ final class E2bPlatformHttp {
                 });
     }
 
-    /**
-     * Best-effort pruning of this session's own snapshots. Keeps at least {@code retention}
-     * snapshots (including the just-created {@code keepSnapshotId}): the keep snapshot plus the
-     * newest {@code retention - 1} from {@code olderSnapshotIds}, ordered by their embedded
-     * timestamp. Older ones are deleted ({@code 404} idempotent, individual failures logged and
-     * skipped). {@code retention <= 0} disables pruning and nothing is deleted.
-     *
-     * <p>The caller passes the snapshots it previously created for this session (from its own
-     * persisted state) rather than a {@code GET /snapshots} listing, so pruning never depends on
-     * the source sandbox id (which changes when a session is resumed from an earlier snapshot) or
-     * a team-wide listing. Snapshots whose alias does not match {@code
-     * agentscope-<shortId>-<epochMillis>} (timestamp unparseable) are conservatively kept.
-     *
-     * @return the snapshot ids to keep afterwards: {@code keepSnapshotId} plus the retained older
-     *     ones (older ids with an unparseable timestamp are always kept). Callers should replace
-     *     their persisted record with this list.
-     */
+    /** Retention keeps the last N snapshots by insertion order (most recent last). */
     List<String> pruneSnapshots(
             String keepSnapshotId, List<String> olderSnapshotIds, int retention) {
         if (retention <= 0) {
             return append(keepSnapshotId, olderSnapshotIds);
         }
-        List<StaleSnapshot> stale = new ArrayList<>();
-        List<String> kept = new ArrayList<>();
+        List<String> all = new ArrayList<>();
         for (String id : olderSnapshotIds) {
             if (id == null || id.isBlank() || id.equals(keepSnapshotId)) {
                 continue;
             }
-            long ts = snapshotTimestampMillis(id);
-            if (ts > 0) {
-                stale.add(new StaleSnapshot(id, ts));
-            } else {
-                kept.add(id);
-            }
+            all.add(id);
         }
-        stale.sort(Comparator.comparingLong(s -> s.timestamp));
-        int toKeep = Math.max(0, retention - 1);
-        int deleteCount = Math.max(0, stale.size() - toKeep);
-        for (int i = deleteCount; i < stale.size(); i++) {
-            kept.add(stale.get(i).id);
+        all.add(keepSnapshotId);
+        if (all.size() <= retention) {
+            return all;
         }
-        for (int i = 0; i < deleteCount; i++) {
-            String old = stale.get(i).id;
+        int deleteCount = all.size() - retention;
+        List<String> toDelete = new ArrayList<>(all.subList(0, deleteCount));
+        List<String> kept = new ArrayList<>(all.subList(deleteCount, all.size()));
+        // toDelete are oldest; failures are kept
+        List<String> actuallyKeptPrefix = new ArrayList<>();
+        for (String old : toDelete) {
             try {
                 deleteSnapshot(old);
             } catch (Exception e) {
                 log.warn("[sandbox-e2b] failed to prune snapshot {}: {}", old, e.getMessage());
-                kept.add(old);
+                actuallyKeptPrefix.add(old);
             }
         }
-        kept.add(keepSnapshotId);
+        if (!actuallyKeptPrefix.isEmpty()) {
+            List<String> result = new ArrayList<>(actuallyKeptPrefix);
+            result.addAll(kept);
+            return result;
+        }
         return kept;
     }
 
@@ -182,36 +165,24 @@ final class E2bPlatformHttp {
         return all;
     }
 
-    /**
-     * One-shot cleanup of a session's snapshot record: keeps the newest {@code retention} ids by
-     * their embedded timestamp and deletes the rest, regardless of any residue left by earlier
-     * persists. {@code retention <= 0} keeps everything. Callers invoke this once the sandbox has
-     * been killed and E2B no longer locks the restored template.
-     *
-     * @param snapshotIds the session's recorded snapshot ids (most recent persist last)
-     * @param retention max snapshots to keep; {@code <= 0} keeps all
-     * @return the ids to keep afterwards
-     */
+    /** One-shot cleanup keeps the last {@code retention} ids by insertion order. */
     List<String> cleanupSnapshots(List<String> snapshotIds, int retention) {
         List<String> ids = snapshotIds != null ? new ArrayList<>(snapshotIds) : new ArrayList<>();
-        if (retention <= 0 || ids.isEmpty()) {
+        if (retention <= 0 || ids.isEmpty() || ids.size() <= retention) {
             return ids;
         }
-        String keep = null;
-        long keepTs = -1;
-        for (String id : ids) {
-            long ts = snapshotTimestampMillis(id);
-            if (ts > keepTs) {
-                keepTs = ts;
-                keep = id;
+        int deleteCount = ids.size() - retention;
+        List<String> toDelete = new ArrayList<>(ids.subList(0, deleteCount));
+        List<String> kept = new ArrayList<>(ids.subList(deleteCount, ids.size()));
+        for (String old : toDelete) {
+            try {
+                deleteSnapshot(old);
+            } catch (Exception e) {
+                log.warn("[sandbox-e2b] failed to prune snapshot {}: {}", old, e.getMessage());
+                kept.add(0, old);
             }
         }
-        if (keep == null) {
-            return ids;
-        }
-        List<String> older = new ArrayList<>(ids);
-        older.remove(keep);
-        return pruneSnapshots(keep, older, retention);
+        return kept;
     }
 
     void killSandbox(String sandboxId) throws IOException {
