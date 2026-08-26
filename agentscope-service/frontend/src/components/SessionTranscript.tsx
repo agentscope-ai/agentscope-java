@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ManagedSession,
   archiveManagedSession,
@@ -28,6 +28,7 @@ import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 import { Vault, listVaults } from '../api/vaults';
 import { Link, useNavigate } from 'react-router-dom';
 import SessionEventTimeline from './SessionEventTimeline';
+import { type TranslationFunction, useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 1100 },
@@ -82,6 +83,27 @@ function parseOverrides(raw: string | null | undefined): Record<string, unknown>
   }
 }
 
+function sessionStatusLabel(status: string, t: TranslationFunction): string {
+  switch (status.toLowerCase()) {
+    case 'created':
+      return t('status.created');
+    case 'running':
+      return t('status.running');
+    case 'idle':
+      return t('status.idle');
+    case 'requires_action':
+      return t('status.requiresAction');
+    case 'terminated':
+      return t('status.terminated');
+    case 'rescheduled':
+      return t('status.rescheduled');
+    case 'archived':
+      return t('status.archived');
+    default:
+      return status;
+  }
+}
+
 /**
  * Managed session details: mounts, overrides, event timeline, archive/restore/delete.
  */
@@ -97,6 +119,8 @@ export default function SessionTranscript({
   /** When true (Details tab), hide outer back/title chrome. */
   embedded?: boolean;
 }) {
+  const t = useT();
+  const tRef = useRef(t);
   const [managedSession, setManagedSession] = useState<ManagedSession | null>(null);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [vaults, setVaults] = useState<Vault[]>([]);
@@ -111,6 +135,10 @@ export default function SessionTranscript({
   const [savingOverrides, setSavingOverrides] = useState(false);
   const [savingMounts, setSavingMounts] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   const archived = !!managedSession?.archivedAt;
 
@@ -135,7 +163,11 @@ export default function SessionTranscript({
       setModel(typeof ov.model === 'string' ? ov.model : '');
       setMaxIters(ov.maxIters != null ? String(ov.maxIters) : '');
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
+      setErr(
+        e instanceof Error
+          ? e.message
+          : tRef.current('common.requestFailed'),
+      );
     }
   }
 
@@ -145,12 +177,12 @@ export default function SessionTranscript({
   }, [agentId, sessionId]);
 
   async function handleArchiveManaged() {
-    if (!confirm('Archive this managed session?')) return;
+    if (!confirm(t('session.details.confirmArchive'))) return;
     try {
       await archiveManagedSession(sessionId);
       await reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
+      setErr(e instanceof Error ? e.message : t('common.requestFailed'));
     }
   }
 
@@ -159,18 +191,18 @@ export default function SessionTranscript({
       await restoreManagedSession(sessionId);
       await reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
+      setErr(e instanceof Error ? e.message : t('common.requestFailed'));
     }
   }
 
   async function handleDelete() {
-    if (!confirm('Delete this session entirely?')) return;
+    if (!confirm(t('session.details.confirmDelete'))) return;
     try {
       await deleteManagedSession(sessionId);
       if (onDeleted) onDeleted();
       else navigate(`/sessions?agentId=${encodeURIComponent(agentId)}`, { replace: true });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
+      setErr(e instanceof Error ? e.message : t('common.requestFailed'));
     }
   }
 
@@ -186,12 +218,16 @@ export default function SessionTranscript({
         maxIters: maxIters.trim() ? Number(maxIters) : null,
       };
       if (maxIters.trim() && Number.isNaN(Number(maxIters))) {
-        throw new Error('maxIters must be a number');
+        throw new Error(t('session.validation.maxItersNumber'));
       }
       const updated = await updateManagedSession(sessionId, { agentOverrides });
       setManagedSession(updated);
     } catch (ex: unknown) {
-      setErr(ex instanceof Error ? ex.message : 'Failed to save overrides');
+      setErr(
+        ex instanceof Error
+          ? ex.message
+          : t('session.details.saveOverridesFailed'),
+      );
     } finally {
       setSavingOverrides(false);
     }
@@ -203,7 +239,9 @@ export default function SessionTranscript({
     setSavingMounts(true);
     setErr(null);
     try {
-      if (!environmentId.trim()) throw new Error('environmentId is required');
+      if (!environmentId.trim()) {
+        throw new Error(t('session.validation.environmentRequired'));
+      }
       const updated = await updateManagedSession(sessionId, {
         environmentId: environmentId.trim(),
         vaultIds,
@@ -211,7 +249,9 @@ export default function SessionTranscript({
       });
       setManagedSession(updated);
     } catch (ex: unknown) {
-      setErr(ex instanceof Error ? ex.message : 'Failed to save mounts');
+      setErr(
+        ex instanceof Error ? ex.message : t('session.details.saveMountsFailed'),
+      );
     } finally {
       setSavingMounts(false);
     }
@@ -221,67 +261,83 @@ export default function SessionTranscript({
     <div style={S.root}>
       {!embedded && (
         <div style={S.bar}>
-          <Link to={`/sessions?agentId=${encodeURIComponent(agentId)}`} style={S.back}>← Back</Link>
-          <h2 style={S.title}>Details</h2>
+          <Link to={`/sessions?agentId=${encodeURIComponent(agentId)}`} style={S.back}>
+            ← {t('common.back')}
+          </Link>
+          <h2 style={S.title}>{t('session.details.title')}</h2>
           <span style={{ flex: 1 }} />
           {!archived && (
             <Link
               to={`/sessions/${encodeURIComponent(sessionId)}`}
               style={{ ...S.btn, ...S.primary }}
-              title="Open Chat for this session"
+              title={t('session.details.openChatTitle')}
             >
-              ▶ Open Chat
+              ▶ {t('session.details.openChat')}
             </Link>
           )}
           {archived ? (
-            <button type="button" style={S.btn} onClick={handleRestoreManaged}>Restore</button>
+            <button type="button" style={S.btn} onClick={handleRestoreManaged}>
+              {t('common.restore')}
+            </button>
           ) : (
-            <button type="button" style={S.btn} onClick={handleArchiveManaged}>Archive</button>
+            <button type="button" style={S.btn} onClick={handleArchiveManaged}>
+              {t('common.archive')}
+            </button>
           )}
-          <button type="button" style={{ ...S.btn, ...S.danger }} onClick={handleDelete}>Delete</button>
+          <button type="button" style={{ ...S.btn, ...S.danger }} onClick={handleDelete}>
+            {t('common.delete')}
+          </button>
         </div>
       )}
       {embedded && (
         <div style={{ ...S.bar, marginBottom: 12 }}>
           <span style={{ flex: 1 }} />
           {archived ? (
-            <button type="button" style={S.btn} onClick={handleRestoreManaged}>Restore</button>
+            <button type="button" style={S.btn} onClick={handleRestoreManaged}>
+              {t('common.restore')}
+            </button>
           ) : (
-            <button type="button" style={S.btn} onClick={handleArchiveManaged}>Archive</button>
+            <button type="button" style={S.btn} onClick={handleArchiveManaged}>
+              {t('common.archive')}
+            </button>
           )}
-          <button type="button" style={{ ...S.btn, ...S.danger }} onClick={handleDelete}>Delete</button>
+          <button type="button" style={{ ...S.btn, ...S.danger }} onClick={handleDelete}>
+            {t('common.delete')}
+          </button>
         </div>
       )}
       <div style={S.meta}>
         {sessionId}
-        {managedSession && ` · ${managedSession.status}`}
-        {archived && ' · archived'}
+        {managedSession && ` · ${sessionStatusLabel(managedSession.status, t)}`}
+        {archived && ` · ${t('status.archived')}`}
       </div>
       {err && <div style={S.err}>{err}</div>}
 
       <div style={S.panel}>
-        <div style={S.panelTitle}>Mounts</div>
+        <div style={S.panelTitle}>{t('session.details.mounts')}</div>
         <div style={S.hint}>
           {archived
-            ? 'Archived sessions are read-only. Restore to change mounts.'
-            : 'Applies on the next turn when the data plane resolves the session.'}
+            ? t('session.details.archivedMountsHint')
+            : t('session.details.mountsHint')}
         </div>
         <form onSubmit={handleSaveMounts}>
-          <label style={S.field}>Environment</label>
+          <label style={S.field}>{t('session.fields.environment')}</label>
           <select
             style={S.input}
             value={environmentId}
             onChange={e => setEnvironmentId(e.target.value)}
             disabled={archived}
           >
-            <option value="">Select environment…</option>
+            <option value="">{t('session.fields.selectEnvironment')}</option>
             {environments.map(env => (
               <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
             ))}
           </select>
-          <label style={S.field}>Vaults</label>
+          <label style={S.field}>{t('session.fields.vaults')}</label>
           <div style={S.checkGrid}>
-            {vaults.length === 0 && <div style={S.hint}>No vaults available.</div>}
+            {vaults.length === 0 && (
+              <div style={S.hint}>{t('session.details.noVaults')}</div>
+            )}
             {vaults.map(v => {
               const on = vaultIds.includes(v.id);
               return (
@@ -299,9 +355,11 @@ export default function SessionTranscript({
               );
             })}
           </div>
-          <label style={S.field}>Memory stores</label>
+          <label style={S.field}>{t('session.fields.memoryStores')}</label>
           <div style={S.checkGrid}>
-            {memoryStores.length === 0 && <div style={S.hint}>No memory stores available.</div>}
+            {memoryStores.length === 0 && (
+              <div style={S.hint}>{t('session.details.noMemoryStores')}</div>
+            )}
             {memoryStores.map(m => {
               const on = memoryStoreIds.includes(m.id);
               return (
@@ -321,43 +379,45 @@ export default function SessionTranscript({
           </div>
           {!archived && (
             <button type="submit" style={{ ...S.btn, ...S.primary }} disabled={savingMounts}>
-              {savingMounts ? 'Saving…' : 'Save mounts'}
+              {savingMounts ? t('common.saving') : t('session.details.saveMounts')}
             </button>
           )}
         </form>
       </div>
 
       <div style={S.panel}>
-        <div style={S.panelTitle}>Session overrides</div>
-        <div style={S.hint}>Applies on the next turn. Tools / MCP cannot be overridden here.</div>
+        <div style={S.panelTitle}>{t('session.details.overrides')}</div>
+        <div style={S.hint}>{t('session.details.overridesHint')}</div>
         <form onSubmit={handleSaveOverrides}>
-          <label style={S.field}>System prompt</label>
+          <label style={S.field}>{t('session.fields.systemPrompt')}</label>
           <textarea
             style={S.textarea}
             value={system}
             onChange={e => setSystem(e.target.value)}
-            placeholder="Leave empty to clear override"
+            placeholder={t('session.overrides.clearPlaceholder')}
             disabled={archived}
           />
-          <label style={S.field}>Model</label>
+          <label style={S.field}>{t('session.fields.model')}</label>
           <input
             style={S.input}
             value={model}
             onChange={e => setModel(e.target.value)}
-            placeholder="e.g. qwen-plus"
+            placeholder={t('session.placeholders.modelExample')}
             disabled={archived}
           />
-          <label style={S.field}>Max iters</label>
+          <label style={S.field}>{t('session.fields.maxIters')}</label>
           <input
             style={S.input}
             value={maxIters}
             onChange={e => setMaxIters(e.target.value)}
-            placeholder="e.g. 10"
+            placeholder={t('session.placeholders.maxItersExample')}
             disabled={archived}
           />
           {!archived && (
             <button type="submit" style={{ ...S.btn, ...S.primary }} disabled={savingOverrides}>
-              {savingOverrides ? 'Saving…' : 'Save overrides'}
+              {savingOverrides
+                ? t('common.saving')
+                : t('session.details.saveOverrides')}
             </button>
           )}
         </form>

@@ -19,25 +19,29 @@ import {
   ChannelInfo, AgentBinding, BindingTier, BindingCreateRequest,
   listChannels, listAgentBindings, addBinding, updateBinding, deleteBinding, setChannelDefault,
 } from '../api/channels';
+import { type TranslationKey, useT } from '../i18n';
 
 interface Props {
   agentId: string;
 }
 
-const TIERS: { value: BindingTier; label: string; field: keyof BindingCreateRequest | 'roles' }[] = [
-  { value: 'peer',       label: 'Peer (most specific)', field: 'peer' },
-  { value: 'parentPeer', label: 'Parent peer',          field: 'parentPeer' },
-  { value: 'guildRoles', label: 'Guild + roles',        field: 'roles' },
-  { value: 'guild',      label: 'Guild',                field: 'guild' },
-  { value: 'team',       label: 'Team',                 field: 'team' },
-  { value: 'account',    label: 'Account',              field: 'account' },
-  { value: 'channel',    label: 'Channel (catch-all)',  field: 'channel' },
+const TIERS: { value: BindingTier; labelKey: TranslationKey; field: keyof BindingCreateRequest | 'roles' }[] = [
+  { value: 'peer',       labelKey: 'bindings.tiers.peer', field: 'peer' },
+  { value: 'parentPeer', labelKey: 'bindings.tiers.parentPeer', field: 'parentPeer' },
+  { value: 'guildRoles', labelKey: 'bindings.tiers.guildRoles', field: 'roles' },
+  { value: 'guild',      labelKey: 'bindings.tiers.guild', field: 'guild' },
+  { value: 'team',       labelKey: 'bindings.tiers.team', field: 'team' },
+  { value: 'account',    labelKey: 'bindings.tiers.account', field: 'account' },
+  { value: 'channel',    labelKey: 'bindings.tiers.channel', field: 'channel' },
 ];
 
-const SCOPES: { value: NonNullable<BindingCreateRequest['sessionScope']>; label: string }[] = [
-  { value: 'PER_PEER', label: 'Per person — one session per sender' },
-  { value: 'MAIN', label: 'Shared inbox — single session for all DMs' },
+const SCOPES: { value: NonNullable<BindingCreateRequest['sessionScope']>; labelKey: TranslationKey }[] = [
+  { value: 'PER_PEER', labelKey: 'bindings.scopes.perPeer' },
+  { value: 'MAIN', labelKey: 'bindings.scopes.main' },
 ];
+
+const TIER_LABELS = Object.fromEntries(TIERS.map((tier) => [tier.value, tier.labelKey])) as Record<BindingTier, TranslationKey>;
+const SCOPE_LABELS = Object.fromEntries(SCOPES.map((scope) => [scope.value, scope.labelKey])) as Record<string, TranslationKey>;
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', maxWidth: 1100 },
@@ -150,6 +154,7 @@ function describe(b: AgentBinding): string {
 }
 
 export default function ChannelBindingTable({ agentId }: Props) {
+  const t = useT();
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
   const [bindings, setBindings] = useState<AgentBinding[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -163,7 +168,7 @@ export default function ChannelBindingTable({ agentId }: Props) {
       setChannels(c);
       setBindings(b);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load');
+      setErr(e instanceof Error ? e.message : t('bindings.errors.load'));
     }
   }
 
@@ -190,18 +195,18 @@ export default function ChannelBindingTable({ agentId }: Props) {
       setDirty(true);
       reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : t('bindings.errors.save'));
     }
   }
 
   async function handleDelete(b: AgentBinding) {
-    if (!confirm(`Delete binding (${describe(b)})?`)) return;
+    if (!confirm(t('bindings.confirm.delete', { binding: describe(b) }))) return;
     try {
       await deleteBinding(agentId, b.channelId, b.index);
       setDirty(true);
       reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Delete failed');
+      setErr(e instanceof Error ? e.message : t('bindings.errors.delete'));
     }
   }
 
@@ -211,22 +216,20 @@ export default function ChannelBindingTable({ agentId }: Props) {
       setDirty(true);
       reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
+      setErr(e instanceof Error ? e.message : t('bindings.errors.default'));
     }
   }
 
   return (
     <div style={S.root}>
-      <h2 style={S.title}>Channels</h2>
+      <h2 style={S.title}>{t('bindings.title')}</h2>
       {dirty && (
         <div style={S.banner}>
-          ⚠ Channel adapters that do not support live config swap will pick up binding changes on
-          next restart. Check the server log for the per-channel status emitted by
-          BindingPersistence.
+          ⚠ {t('bindings.restartWarning')}
         </div>
       )}
       {err && <div style={{ ...S.err, marginBottom: 8 }}>{err}</div>}
-      {channels.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>No channels registered.</div>}
+      {channels.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{t('bindings.noChannels')}</div>}
       {channels.map(c => {
         const isDefault = c.defaultAgentId === agentId;
         const myBindings = byChannel[c.channelId] ?? [];
@@ -234,27 +237,27 @@ export default function ChannelBindingTable({ agentId }: Props) {
           <div key={c.channelId} style={S.section}>
             <div style={S.channelHead}>
               <span style={S.channelName}>{c.channelId}</span>
-              <span style={S.badge}>{c.dmScope}</span>
-              {!c.started && <span style={{ ...S.badge, color: '#dc2626' }}>stopped</span>}
-              {isDefault && <span style={S.defaultMark}>default</span>}
+              <span style={S.badge}>{c.dmScope && SCOPE_LABELS[c.dmScope] ? t(SCOPE_LABELS[c.dmScope]) : c.dmScope}</span>
+              {!c.started && <span style={{ ...S.badge, color: '#dc2626' }}>{t('common.status.stopped')}</span>}
+              {isDefault && <span style={S.defaultMark}>{t('common.status.default')}</span>}
               <span style={{ flex: 1 }} />
               {!isDefault && (
-                <button style={S.btnSm} onClick={() => handleSetDefault(c.channelId)}>Set as default</button>
+                <button style={S.btnSm} onClick={() => handleSetDefault(c.channelId)}>{t('bindings.actions.setDefault')}</button>
               )}
               <button
                 style={{ ...S.btnSm, ...S.btnPrimary }}
                 onClick={() => setEditing({ form: emptyForm(c.channelId), index: null })}
-              >+ Add binding</button>
+              >+ {t('bindings.actions.add')}</button>
             </div>
             {myBindings.length === 0 ? (
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>No bindings on this channel.</div>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>{t('bindings.noBindings')}</div>
             ) : myBindings.map(b => (
               <div key={`${b.channelId}-${b.index}`} style={S.bindingRow}>
-                <span style={{ ...S.badge, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>{b.tier}</span>
+                <span style={{ ...S.badge, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>{t(TIER_LABELS[b.tier])}</span>
                 <span style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.86rem', color: '#475569' }}>{describe(b)}</span>
-                {b.sessionScope && <span style={S.badge}>{b.sessionScope}</span>}
-                <button style={S.btnSm} onClick={() => setEditing({ form: bindingToForm(b), index: b.index })}>Edit</button>
-                <button style={{ ...S.btnSm, color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleDelete(b)}>Delete</button>
+                {b.sessionScope && <span style={S.badge}>{SCOPE_LABELS[b.sessionScope] ? t(SCOPE_LABELS[b.sessionScope]) : b.sessionScope}</span>}
+                <button style={S.btnSm} onClick={() => setEditing({ form: bindingToForm(b), index: b.index })}>{t('common.actions.edit')}</button>
+                <button style={{ ...S.btnSm, color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleDelete(b)}>{t('common.actions.delete')}</button>
               </div>
             ))}
           </div>
@@ -298,89 +301,90 @@ const D: Record<string, React.CSSProperties> = {
 };
 
 function BindingDialog({ state, isNew, onChange, onCancel, onSave }: DialogProps) {
+  const t = useT();
   const tierField = TIERS.find(t => t.value === state.tier)?.field;
 
   return (
     <div style={D.scrim} onClick={onCancel}>
       <div style={D.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={D.title}>{isNew ? 'Add binding' : 'Edit binding'} on {state.channelId}</h3>
+        <h3 style={D.title}>{t(isNew ? 'bindings.dialog.addTitle' : 'bindings.dialog.editTitle', { channel: state.channelId })}</h3>
 
         <div style={S.formGrid}>
           <div>
-            <label style={S.fieldLabel}>Tier (evaluation order)</label>
+            <label style={S.fieldLabel}>{t('bindings.fields.tier')}</label>
             <select
               style={S.input}
               value={state.tier}
               onChange={e => onChange({ ...state, tier: e.target.value as BindingTier })}
             >
-              {TIERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              {TIERS.map(tier => <option key={tier.value} value={tier.value}>{t(tier.labelKey)}</option>)}
             </select>
           </div>
           <div>
-            <label style={S.fieldLabel}>Session scope (optional)</label>
+            <label style={S.fieldLabel}>{t('bindings.fields.sessionScope')}</label>
             <select
               style={S.input}
               value={state.sessionScope}
               onChange={e => onChange({ ...state, sessionScope: e.target.value as FormState['sessionScope'] })}
             >
-              <option value="">— inherit channel —</option>
-              {SCOPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              <option value="">{t('bindings.scope.inherit')}</option>
+              {SCOPES.map(scope => <option key={scope.value} value={scope.value}>{t(scope.labelKey)}</option>)}
             </select>
           </div>
         </div>
 
         {tierField === 'peer' && (
           <div style={{ marginTop: 10 }}>
-            <label style={S.fieldLabel}>Peer ID</label>
-            <input style={S.input} value={state.peer} onChange={e => onChange({ ...state, peer: e.target.value })} placeholder="e.g. user-42" />
+            <label style={S.fieldLabel}>{t('bindings.fields.peerId')}</label>
+            <input style={S.input} value={state.peer} onChange={e => onChange({ ...state, peer: e.target.value })} placeholder={t('bindings.placeholders.peerId')} />
           </div>
         )}
         {tierField === 'parentPeer' && (
           <div style={{ marginTop: 10 }}>
-            <label style={S.fieldLabel}>Parent peer</label>
+            <label style={S.fieldLabel}>{t('bindings.fields.parentPeer')}</label>
             <input style={S.input} value={state.parentPeer} onChange={e => onChange({ ...state, parentPeer: e.target.value })} />
           </div>
         )}
         {tierField === 'roles' && (
           <div style={S.formGrid}>
             <div>
-              <label style={S.fieldLabel}>Guild</label>
+              <label style={S.fieldLabel}>{t('bindings.fields.guild')}</label>
               <input style={S.input} value={state.guild} onChange={e => onChange({ ...state, guild: e.target.value })} />
             </div>
             <div>
-              <label style={S.fieldLabel}>Roles (comma-separated)</label>
+              <label style={S.fieldLabel}>{t('bindings.fields.roles')}</label>
               <input style={S.input} value={state.roles} onChange={e => onChange({ ...state, roles: e.target.value })} placeholder="admin, support" />
             </div>
           </div>
         )}
         {tierField === 'guild' && (
           <div style={{ marginTop: 10 }}>
-            <label style={S.fieldLabel}>Guild</label>
+            <label style={S.fieldLabel}>{t('bindings.fields.guild')}</label>
             <input style={S.input} value={state.guild} onChange={e => onChange({ ...state, guild: e.target.value })} />
           </div>
         )}
         {tierField === 'team' && (
           <div style={{ marginTop: 10 }}>
-            <label style={S.fieldLabel}>Team</label>
+            <label style={S.fieldLabel}>{t('bindings.fields.team')}</label>
             <input style={S.input} value={state.team} onChange={e => onChange({ ...state, team: e.target.value })} />
           </div>
         )}
         {tierField === 'account' && (
           <div style={{ marginTop: 10 }}>
-            <label style={S.fieldLabel}>Account</label>
+            <label style={S.fieldLabel}>{t('bindings.fields.account')}</label>
             <input style={S.input} value={state.account} onChange={e => onChange({ ...state, account: e.target.value })} />
           </div>
         )}
         {tierField === 'channel' && (
           <div style={{ marginTop: 10 }}>
-            <label style={S.fieldLabel}>Channel match (leave blank for catch-all)</label>
+            <label style={S.fieldLabel}>{t('bindings.fields.channelMatch')}</label>
             <input style={S.input} value={state.channel} onChange={e => onChange({ ...state, channel: e.target.value })} placeholder={state.channelId} />
           </div>
         )}
 
         <div style={D.actions}>
-          <button style={S.btnSm} onClick={onCancel}>Cancel</button>
-          <button style={{ ...S.btnSm, ...S.btnPrimary }} onClick={onSave}>{isNew ? 'Create' : 'Save'}</button>
+          <button style={S.btnSm} onClick={onCancel}>{t('common.actions.cancel')}</button>
+          <button style={{ ...S.btnSm, ...S.btnPrimary }} onClick={onSave}>{t(isNew ? 'bindings.actions.create' : 'common.actions.save')}</button>
         </div>
       </div>
     </div>

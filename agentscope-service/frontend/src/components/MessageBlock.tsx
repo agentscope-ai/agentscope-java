@@ -17,6 +17,7 @@
 import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import ToolCallBlock from './ToolCallBlock';
+import { useT } from '@/i18n';
 
 /** Ordered content inside one assistant turn bubble (text and tool calls interleaved). */
 export interface ContentBlock {
@@ -44,10 +45,14 @@ function normalizePreview(text: string): string {
 }
 
 /** Single-line preview; while streaming show the trailing window (typewriter tip). */
-export function messagePreviewLine(text: string, pending?: boolean): string {
+export function messagePreviewLine(
+  text: string,
+  pending?: boolean,
+  generatingLabel?: string,
+): string {
   const t = normalizePreview(text);
   if (!t) {
-    if (pending) return 'Generating…';
+    if (pending) return generatingLabel ?? '';
     return '';
   }
   if (t.length <= PREVIEW_CHARS) return t;
@@ -163,14 +168,24 @@ export default function MessageBlock({
   pending,
   defaultOpen = false,
 }: MessageBlockProps) {
+  const t = useT();
   const [open, setOpen] = useState(defaultOpen);
   const text = useMemo(
     () => blocks.filter(b => b.kind === 'text').map(b => b.text ?? '').join(''),
     [blocks],
   );
   const toolCount = useMemo(() => blocks.filter(b => b.kind === 'tool').length, [blocks]);
-  const preview = useMemo(() => messagePreviewLine(text, pending), [text, pending]);
-  const toolHint = toolCount > 0 ? `${toolCount} tool${toolCount === 1 ? '' : 's'}` : '';
+  const preview = useMemo(
+    () => messagePreviewLine(text, pending, t('message.generating')),
+    [text, pending, t],
+  );
+  const toolHint =
+    toolCount > 0
+      ? t(toolCount === 1 ? 'message.toolCountOne' : 'message.toolCountMany', {
+          count: toolCount,
+        })
+      : '';
+  const roleLabel = t(`message.role.${role}`);
 
   const empty = blocks.length === 0;
 
@@ -183,17 +198,22 @@ export default function MessageBlock({
         aria-expanded={open}
       >
         <span style={s.chevron}>{open ? '▾' : '▸'}</span>
-        <span style={s.role}>{role}</span>
+        <span style={s.role}>{roleLabel}</span>
         {!open && (
           <span style={s.preview} title={normalizePreview(text) || undefined}>
-            {preview || (toolHint ? `${toolHint}…` : pending ? 'Generating…' : '(empty)')}
+            {preview ||
+              (toolHint
+                ? `${toolHint}…`
+                : pending
+                  ? t('message.generating')
+                  : t('message.empty'))}
           </span>
         )}
         {!open && toolHint && preview && (
           <span style={s.meta}>{toolHint}</span>
         )}
         {open && <span style={{ flex: 1 }} />}
-        {pending && <span style={s.meta}>streaming</span>}
+        {pending && <span style={s.meta}>{t('message.streaming')}</span>}
       </button>
 
       {open && (
@@ -214,7 +234,7 @@ export default function MessageBlock({
               : (
                 <ToolCallBlock
                   key={b.id}
-                  toolName={b.toolName ?? 'tool'}
+                  toolName={b.toolName ?? t('chat.toolFallback')}
                   toolCallId={b.id}
                   input={b.text}
                   result={b.result}

@@ -16,6 +16,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { readFile } from '../api/workspace';
+import { useT } from '../i18n';
 
 interface Props {
   agentId: string;
@@ -48,45 +49,62 @@ const S: Record<string, React.CSSProperties> = {
 const TEXT_EXT = /\.(md|txt|json|jsonl|ndjson|log|yaml|yml|toml|properties|conf|ini|csv|tsv|xml|html?|css|sql|sh|bash|zsh|java|py|ts|tsx|js|jsx|kt|go|rs|c|cpp|h|hpp)$/i;
 
 export default function WorkspaceEditor({ agentId, path }: Props) {
+  const tr = useT();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [errFallback, setErrFallback] = useState<'unsupported' | 'read' | null>(null);
 
   const viewable = !!path && (TEXT_EXT.test(path) || path.endsWith('AGENTS.md'));
 
   useEffect(() => {
     if (!path) {
-      setContent(''); setErr(null);
+      setContent(''); setErr(null); setErrFallback(null);
       return;
     }
     if (!viewable) {
       setContent('');
-      setErr('Binary or unsupported file type. Download via API.');
+      setErr(null);
+      setErrFallback('unsupported');
       return;
     }
     setLoading(true);
     setErr(null);
+    setErrFallback(null);
     readFile(agentId, path)
       .then(text => setContent(text))
-      .catch(e => setErr(e instanceof Error ? e.message : 'Failed to read'))
+      .catch(e => {
+        if (e instanceof Error && e.message) setErr(e.message);
+        else setErrFallback('read');
+      })
       .finally(() => setLoading(false));
   }, [agentId, path, viewable]);
 
+  const displayErr = err ?? (errFallback
+    ? tr(errFallback === 'unsupported'
+      ? 'workspaceEditor.errors.unsupported'
+      : 'workspaceEditor.errors.read')
+    : null);
+
   if (!path) {
-    return <div style={S.root}><div style={S.empty}>Select a file from the tree to view.</div></div>;
+    return (
+      <div style={S.root}>
+        <div style={S.empty}>{tr('workspaceEditor.selectFile')}</div>
+      </div>
+    );
   }
 
   return (
     <div style={S.root}>
       <div style={S.bar}>
         <span style={S.pathTxt}>{path}</span>
-        <span style={S.readonlyBadge}>read-only</span>
-        {err && <span style={{ ...S.status, ...S.err }}>{err}</span>}
+        <span style={S.readonlyBadge}>{tr('common.status.readOnly')}</span>
+        {displayErr && <span style={{ ...S.status, ...S.err }}>{displayErr}</span>}
       </div>
       {loading ? (
-        <div style={S.empty}>Loading…</div>
+        <div style={S.empty}>{tr('common.loading')}</div>
       ) : !viewable ? (
-        <div style={S.empty}>{err ?? 'Cannot view this file in the browser.'}</div>
+        <div style={S.empty}>{displayErr ?? tr('workspaceEditor.errors.cannotView')}</div>
       ) : (
         <textarea
           style={S.textarea}

@@ -27,6 +27,7 @@ import {
   fetchConfiguredActive,
   saveBuiltinToolConfig,
 } from '../api/tools';
+import { useT } from '../i18n';
 
 interface Props {
   agentId: string;
@@ -113,16 +114,19 @@ export default function ToolsActivePanel({
   onRequestBrowse,
   readOnly = false,
 }: Props) {
+  const tr = useT();
   const [data, setData] = useState<ActiveToolsResponse | null>(null);
   const [catalog, setCatalog] = useState<BuiltinToolInfo[]>([]);
   const [policies, setPolicies] = useState<Map<string, ToolPermissionType>>(new Map());
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [hasLoadFallback, setHasLoadFallback] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [actionErrFallback, setActionErrFallback] = useState<'agent' | 'permission' | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setErr(null);
+    setLoading(true); setErr(null); setHasLoadFallback(false);
     Promise.all([
       fetchConfiguredActive(agentId),
       fetchBuiltinCatalog(agentId),
@@ -134,7 +138,11 @@ export default function ToolsActivePanel({
         setCatalog(cat);
         setPolicies(computeToolPolicies(agent.tools));
       })
-      .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
+      .catch(e => {
+        if (cancelled) return;
+        if (e instanceof Error && e.message) setErr(e.message);
+        else setHasLoadFallback(true);
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [agentId, refreshKey]);
@@ -151,16 +159,19 @@ export default function ToolsActivePanel({
 
   async function disableTool(t: ActiveTool) {
     setActionErr(null);
+    setActionErrFallback(null);
     try {
       await disableConfiguredTool(agentId, t);
       onChange();
     } catch (e: unknown) {
-      setActionErr(e instanceof Error ? e.message : 'Failed to update agent');
+      if (e instanceof Error && e.message) setActionErr(e.message);
+      else setActionErrFallback('agent');
     }
   }
 
   async function changePolicy(toolName: string, type: ToolPermissionType) {
     setActionErr(null);
+    setActionErrFallback(null);
     try {
       const enabled = new Set(
         (data?.tools ?? []).filter(t => t.source === 'built-in').map(t => t.name),
@@ -174,7 +185,8 @@ export default function ToolsActivePanel({
       await saveBuiltinToolConfig(agentId, catalog, enabled, next);
       onChange();
     } catch (e: unknown) {
-      setActionErr(e instanceof Error ? e.message : 'Failed to update permission');
+      if (e instanceof Error && e.message) setActionErr(e.message);
+      else setActionErrFallback('permission');
     }
   }
 
@@ -182,19 +194,19 @@ export default function ToolsActivePanel({
     <div style={S.root}>
       <div style={S.headerRow}>
         <div style={{ flex: 1 }}>
-          <div style={S.title}>Configured tools</div>
+          <div style={S.title}>{tr('toolsActive.title')}</div>
           <div style={S.sub}>
             {readOnly
-              ? 'Snapshot materialized from the linked Workspace. Edit tools there to refresh linked agents.'
-              : <>From Agent body (<code>tools</code> / <code>mcpServers</code>). Saves create a new agent version.</>}
+              ? tr('toolsActive.hint.readOnly')
+              : tr('toolsActive.hint.editable')}
           </div>
         </div>
         <button style={S.refreshBtn} onClick={() => onChange()} disabled={loading}>
-          {loading ? '…' : '↻ refresh'}
+          {loading ? '…' : `↻ ${tr('toolsActive.actions.refresh')}`}
         </button>
         {!readOnly && (
           <button style={S.primaryBtn} onClick={onRequestBrowse}>
-            + Add / configure
+            + {tr('toolsActive.actions.addConfigure')}
           </button>
         )}
       </div>
@@ -205,24 +217,36 @@ export default function ToolsActivePanel({
         </div>
       )}
       {actionErr && <div style={S.err}>{actionErr}</div>}
+      {actionErrFallback && (
+        <div style={S.err}>
+          {tr(actionErrFallback === 'agent'
+            ? 'toolsActive.errors.updateAgent'
+            : 'toolsActive.errors.updatePermission')}
+        </div>
+      )}
       {err && <div style={S.err}>{err}</div>}
+      {hasLoadFallback && <div style={S.err}>{tr('toolsActive.errors.load')}</div>}
 
       <div style={S.list}>
-        {!err && !loading && (data?.tools ?? []).length === 0 && (
-          <div style={S.empty}>No tools configured. Click <b>Add / configure</b> to enable some.</div>
+        {!err && !hasLoadFallback && !loading && (data?.tools ?? []).length === 0 && (
+          <div style={S.empty}>{tr('toolsActive.empty')}</div>
         )}
         {Array.from(grouped.entries()).map(([source, tools]) => (
           <div key={source}>
-            <div style={S.groupHeader}>{source === 'built-in' || source === 'unknown' ? 'Built-in' : 'MCP servers'}</div>
+            <div style={S.groupHeader}>
+              {source === 'built-in' || source === 'unknown'
+                ? tr('toolsActive.groups.builtin')
+                : tr('toolsActive.groups.mcp')}
+            </div>
             {tools.map(t => {
               const policy = policies.get(t.name) ?? 'always_allow';
               return (
                 <div key={`${source}:${t.name}`} style={S.card}>
                   <span style={t.source === 'built-in' ? S.badge : S.mcpBadge}>
-                    {t.source === 'built-in' ? 'built-in' : 'mcp'}
+                    {t.source === 'built-in' ? tr('toolsActive.badges.builtin') : 'mcp'}
                   </span>
                   {t.source === 'built-in' && policy === 'always_ask' && (
-                    <span style={S.askBadge}>ask</span>
+                    <span style={S.askBadge}>{tr('toolsActive.badges.ask')}</span>
                   )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={S.cardName}>{t.name}</div>
@@ -233,19 +257,21 @@ export default function ToolsActivePanel({
                       style={S.policySelect}
                       value={policy}
                       onChange={e => changePolicy(t.name, e.target.value as ToolPermissionType)}
-                      title="Auto runs without asking; Ask pauses for confirmation"
+                      title={tr('toolPolicy.hint')}
                     >
-                      <option value="always_allow">Auto</option>
-                      <option value="always_ask">Ask</option>
+                      <option value="always_allow">{tr('toolPolicy.auto')}</option>
+                      <option value="always_ask">{tr('toolPolicy.ask')}</option>
                     </select>
                   )}
                   {!readOnly && (
                     <button
                       style={S.disableBtn}
                       onClick={() => disableTool(t)}
-                      title={t.source === 'built-in' ? 'Disable built-in tool' : 'Remove MCP server'}
+                      title={t.source === 'built-in'
+                        ? tr('toolsActive.actions.disableBuiltin')
+                        : tr('toolsActive.actions.removeMcp')}
                     >
-                      Disable
+                      {tr('toolsActive.actions.disable')}
                     </button>
                   )}
                 </div>

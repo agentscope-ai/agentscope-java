@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AgentDefinition, AgentVersionEntry, archiveAgent, getAgent, listVersions, updateAgent, deleteAgent } from '../api/agents';
 import { useNavigate, Link } from 'react-router-dom';
 import ShareAgentDialog from './ShareAgentDialog';
@@ -23,6 +23,23 @@ import { Environment, listEnvironments } from '../api/environments';
 import { Vault, listVaults } from '../api/vaults';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 import { getUsername } from '../lib/auth';
+import {
+  type TranslationFunction,
+  type TranslationKey,
+  useI18n,
+  useT,
+} from '../i18n';
+
+const ACCESS_TIER_LABELS: Record<string, TranslationKey> = {
+  CLONE: 'agent.shareDialog.tier.clone',
+  RUN: 'agent.shareDialog.tier.run',
+  EDIT: 'agent.shareDialog.tier.edit',
+};
+
+function accessTierLabel(t: TranslationFunction, tier: string): string {
+  const key = ACCESS_TIER_LABELS[tier];
+  return key ? t(key) : tier;
+}
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '32px 36px', maxWidth: 820 },
@@ -89,6 +106,10 @@ export default function AgentSettingsForm({
   agent: AgentDefinition;
   onSaved?: () => void | Promise<unknown>;
 }) {
+  const t = useT();
+  const tRef = useRef(t);
+  const { locale } = useI18n();
+  const dateLocale = locale === 'zh' ? 'zh-CN' : 'en-US';
   const navigate = useNavigate();
   const isGlobal = agent.scope === 'global';
   const tier = agent.tierForCurrentUser;
@@ -119,6 +140,10 @@ export default function AgentSettingsForm({
   const [versions, setVersions] = useState<AgentVersionEntry[]>([]);
   const [versionsErr, setVersionsErr] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   useEffect(() => {
     setName(agent.name);
@@ -162,7 +187,7 @@ export default function AgentSettingsForm({
     let cancelled = false;
     listVersions(agent.id)
       .then(v => { if (!cancelled) { setVersions(v); setVersionsErr(null); } })
-      .catch(e => { if (!cancelled) setVersionsErr(e instanceof Error ? e.message : 'Failed to load versions'); });
+      .catch(e => { if (!cancelled) setVersionsErr(e instanceof Error ? e.message : tRef.current('agent.settings.error.loadVersions')); });
     return () => { cancelled = true; };
   }, [agent.id, agent.scope, agent.ownerId, agent.version]);
 
@@ -171,7 +196,7 @@ export default function AgentSettingsForm({
     setErr(null);
     setSaving(true);
     try {
-      if (version == null) throw new Error('Missing agent version for optimistic lock');
+      if (version == null) throw new Error(t('agent.settings.error.missingVersion'));
       const iters = Number.parseInt(maxIters, 10);
       const updated = await updateAgent(agent.id, {
         name: name.trim() || agent.id,
@@ -194,24 +219,24 @@ export default function AgentSettingsForm({
       setOk(true);
       await onSaved?.();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : t('agent.settings.error.save'));
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete agent "${agent.name}"? This removes its workspace and sessions.`)) return;
+    if (!confirm(t('agent.settings.confirmDelete', { name: agent.name }))) return;
     try {
       await deleteAgent(agent.id);
       navigate('/agents', { replace: true });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Delete failed');
+      setErr(e instanceof Error ? e.message : t('agent.settings.error.delete'));
     }
   }
 
   async function handleArchive() {
-    if (!confirm(`Archive agent "${agent.name}"? New managed sessions cannot be created.`)) return;
+    if (!confirm(t('agent.settings.confirmArchive', { name: agent.name }))) return;
     setArchiving(true);
     setErr(null);
     try {
@@ -219,7 +244,7 @@ export default function AgentSettingsForm({
       await getAgent(agent.id);
       setOk(true);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Archive failed');
+      setErr(e instanceof Error ? e.message : t('agent.settings.error.archive'));
     } finally {
       setArchiving(false);
     }
@@ -229,26 +254,29 @@ export default function AgentSettingsForm({
     <div style={S.page}>
       {isGlobal && (
         <div style={S.banner}>
-          Global agents are read-only from the UI. Edit <code>agentscope.json</code> to change them.
+          {t('agent.settings.globalReadOnlyBefore')} <code>agentscope.json</code>{' '}
+          {t('agent.settings.globalReadOnlyAfter')}
         </div>
       )}
       {!isGlobal && !canEdit && (
         <div style={S.banner}>
-          You have <strong>{tier ?? 'no'}</strong> access to this agent. Only EDIT-tier collaborators can change settings.
+          {t('agent.settings.accessBefore')}{' '}
+          <strong>{tier ? accessTierLabel(t, tier) : t('agent.settings.accessNone')}</strong>{' '}
+          {t('agent.settings.accessAfter')}
         </div>
       )}
 
       <div style={S.card}>
-        <span style={S.cardLabel}>Identity</span>
+        <span style={S.cardLabel}>{t('agent.settings.identity')}</span>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Agent ID</label>
+          <label style={S.fieldLabel}>{t('agent.settings.agentId')}</label>
           <div style={S.meta}>{agent.id}</div>
         </div>
 
         {agent.version != null && (
           <div style={S.row}>
-            <label style={S.fieldLabel}>Current version</label>
+            <label style={S.fieldLabel}>{t('agent.settings.currentVersion')}</label>
             <div style={S.meta}>v{version ?? agent.version}</div>
           </div>
         )}
@@ -258,12 +286,14 @@ export default function AgentSettingsForm({
             padding: '10px 14px', borderRadius: 8, marginBottom: 14,
             background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.88rem',
           }}>
-            Archived {new Date(agent.archivedAt).toLocaleString()}
+            {t('agent.settings.archivedAt', {
+              date: new Date(agent.archivedAt).toLocaleString(dateLocale),
+            })}
           </div>
         )}
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Name</label>
+          <label style={S.fieldLabel}>{t('agent.settings.name')}</label>
           <input
             style={S.input}
             value={name}
@@ -273,48 +303,48 @@ export default function AgentSettingsForm({
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Description</label>
+          <label style={S.fieldLabel}>{t('agent.settings.description')}</label>
           <input
             style={S.input}
             value={description}
             onChange={e => setDescription(e.target.value)}
             disabled={readOnly}
-            placeholder="Short summary shown on cards and tabs"
+            placeholder={t('agent.settings.descriptionPlaceholder')}
           />
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Model</label>
+          <label style={S.fieldLabel}>{t('agent.settings.model')}</label>
           <input
             style={S.input}
             value={model}
             onChange={e => setModel(e.target.value)}
             disabled={readOnly}
-            placeholder="e.g. dashscope:qwen-max, deepseek:deepseek-chat, openai:gpt-4o"
+            placeholder={t('agent.settings.modelPlaceholder')}
           />
           <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>
-            Provider-qualified model id resolved via ModelRegistry; empty falls back to the data-plane default model.
+            {t('agent.settings.modelHelp')}
           </div>
         </div>
       </div>
 
       <div style={S.card}>
-        <span style={S.cardLabel}>Workspace</span>
+        <span style={S.cardLabel}>{t('agent.settings.workspace')}</span>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Linked workspace</label>
+          <label style={S.fieldLabel}>{t('agent.settings.linkedWorkspace')}</label>
           <select
             style={S.input}
             value={workspaceId}
             onChange={e => setWorkspaceId(e.target.value)}
             disabled={readOnly}
           >
-            <option value="">None (agent-private skills/tools/files)</option>
+            <option value="">{t('agent.settings.workspaceNone')}</option>
             {workspaces.map(w => (
               <option key={w.id} value={w.id}>{w.name}</option>
             ))}
           </select>
           <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>
-            Linking rematerializes tools/skills/AGENTS.md into this agent version. Edit shared content under Build → Workspaces.
+            {t('agent.settings.workspaceHelp')}
           </div>
         </div>
         {linkedSummary && (
@@ -325,14 +355,14 @@ export default function AgentSettingsForm({
             <div style={{ fontWeight: 650, color: '#0f172a', marginBottom: 6 }}>
               {linkedSummary.name}{' '}
               <Link to={`/workspaces/${encodeURIComponent(linkedSummary.id)}`} style={{ color: '#4338ca' }}>
-                Open →
+                {t('agent.settings.open')} →
               </Link>
             </div>
             <div>
               v{linkedSummary.version}
               {linkedSummary.agentsMdExists ? ' · AGENTS.md' : ''}
-              {' · '}skills {linkedSummary.skillCount ?? 0}
-              {' · '}subagents {linkedSummary.subagentCount ?? 0}
+              {' · '}{t('agent.settings.skillCount', { count: linkedSummary.skillCount ?? 0 })}
+              {' · '}{t('agent.settings.subagentCount', { count: linkedSummary.subagentCount ?? 0 })}
             </div>
             {linkedSummary.description && (
               <div style={{ marginTop: 6 }}>{linkedSummary.description}</div>
@@ -342,33 +372,32 @@ export default function AgentSettingsForm({
       </div>
 
       <div style={S.card}>
-        <span style={S.cardLabel}>Session defaults</span>
+        <span style={S.cardLabel}>{t('agent.settings.sessionDefaults')}</span>
         <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: 14, lineHeight: 1.5 }}>
-          Prefills the New session form and is used when Channel / Deploy omit mounts.
-          Per-session mounts remain the runtime source of truth and can be edited later.
+          {t('agent.settings.sessionDefaultsHelp')}
         </div>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Default environment</label>
+          <label style={S.fieldLabel}>{t('agent.settings.defaultEnvironment')}</label>
           <select
             style={S.input}
             value={defaultEnvironmentId}
             onChange={e => setDefaultEnvironmentId(e.target.value)}
             disabled={readOnly}
           >
-            <option value="">None (use owner heuristic / ensure default)</option>
+            <option value="">{t('agent.settings.environmentNone')}</option>
             {environments.map(env => (
               <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
             ))}
           </select>
           <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 6 }}>
-            Manage environments under Build → Environments.
+            {t('agent.settings.environmentHelp')}
           </div>
         </div>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Default vaults</label>
+          <label style={S.fieldLabel}>{t('agent.settings.defaultVaults')}</label>
           {vaults.length === 0 ? (
             <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-              No vaults yet. Create one under Build → Vaults.
+              {t('agent.settings.noVaults')}
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -393,10 +422,10 @@ export default function AgentSettingsForm({
           )}
         </div>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Default memory stores</label>
+          <label style={S.fieldLabel}>{t('agent.settings.defaultMemoryStores')}</label>
           {memoryStores.length === 0 ? (
             <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-              No memory stores yet. Create one under Build → Memory.
+              {t('agent.settings.noMemoryStores')}
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -423,21 +452,21 @@ export default function AgentSettingsForm({
       </div>
 
       <div style={S.card}>
-        <span style={S.cardLabel}>Behavior</span>
+        <span style={S.cardLabel}>{t('agent.settings.behavior')}</span>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>System prompt</label>
+          <label style={S.fieldLabel}>{t('agent.settings.systemPrompt')}</label>
           <textarea
             style={S.textarea}
             value={system}
             onChange={e => setSystem(e.target.value)}
             disabled={readOnly}
-            placeholder="Optional override. When linked and empty, Workspace AGENTS.md is used on rematerialize."
+            placeholder={t('agent.settings.systemPromptPlaceholder')}
           />
         </div>
 
         <div style={S.row}>
-          <label style={S.fieldLabel}>Max iterations</label>
+          <label style={S.fieldLabel}>{t('agent.settings.maxIterations')}</label>
           <input
             style={{ ...S.input, width: 140 }}
             type="number"
@@ -453,20 +482,20 @@ export default function AgentSettingsForm({
       {canEdit && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <button style={S.saveBtn} onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save changes'}
+            {saving ? t('agent.settings.saving') : t('agent.settings.saveChanges')}
           </button>
           {canShare && (
-            <button style={S.shareBtn} onClick={() => setShareOpen(true)}>↗ Share</button>
+            <button style={S.shareBtn} onClick={() => setShareOpen(true)}>↗ {t('agent.share')}</button>
           )}
           {!agent.archivedAt && (
             <button style={S.dangerBtn} onClick={handleArchive} disabled={archiving}>
-              {archiving ? 'Archiving…' : 'Archive agent'}
+              {archiving ? t('agent.settings.archiving') : t('agent.settings.archiveAgent')}
             </button>
           )}
-          <button style={S.dangerBtn} onClick={handleDelete}>Delete agent</button>
+          <button style={S.dangerBtn} onClick={handleDelete}>{t('agent.settings.deleteAgent')}</button>
         </div>
       )}
-      {ok && <p style={S.success}>Saved.</p>}
+      {ok && <p style={S.success}>{t('agent.settings.saved')}</p>}
       {err && <p style={S.error}>{err}</p>}
 
       {shareOpen && (
@@ -474,10 +503,10 @@ export default function AgentSettingsForm({
       )}
 
       <div style={{ ...S.card, marginTop: 24 }}>
-        <span style={S.cardLabel}>Version history</span>
+        <span style={S.cardLabel}>{t('agent.settings.versionHistory')}</span>
         {versionsErr && <p style={S.error}>{versionsErr}</p>}
         {!versionsErr && versions.length === 0 && (
-          <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>No version snapshots yet.</p>
+          <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>{t('agent.settings.noVersions')}</p>
         )}
         {versions.map(v => (
           <div key={v.version} style={{
@@ -490,11 +519,11 @@ export default function AgentSettingsForm({
                 <span style={{
                   marginLeft: 8, padding: '2px 8px', borderRadius: 999,
                   fontSize: '0.72rem', background: '#dcfce7', color: '#15803d',
-                }}>current</span>
+                }}>{t('agent.settings.current')}</span>
               )}
             </div>
             <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4 }}>
-              {new Date(v.createdAt).toLocaleString()}
+              {new Date(v.createdAt).toLocaleString(dateLocale)}
             </div>
             {v.snapshot && (
               <pre style={{
@@ -509,18 +538,18 @@ export default function AgentSettingsForm({
       </div>
 
       <div style={{ ...S.card, marginTop: 24 }}>
-        <span style={S.cardLabel}>Metadata</span>
+        <span style={S.cardLabel}>{t('agent.settings.metadata')}</span>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Owner</label>
+          <label style={S.fieldLabel}>{t('agent.settings.owner')}</label>
           <div style={S.meta}>{agent.ownerId ?? '—'}</div>
         </div>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Created</label>
-          <div style={S.meta}>{new Date(agent.createdAt).toLocaleString()}</div>
+          <label style={S.fieldLabel}>{t('agent.settings.created')}</label>
+          <div style={S.meta}>{new Date(agent.createdAt).toLocaleString(dateLocale)}</div>
         </div>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Updated</label>
-          <div style={S.meta}>{new Date(agent.updatedAt).toLocaleString()}</div>
+          <label style={S.fieldLabel}>{t('agent.settings.updated')}</label>
+          <div style={S.meta}>{new Date(agent.updatedAt).toLocaleString(dateLocale)}</div>
         </div>
       </div>
     </div>

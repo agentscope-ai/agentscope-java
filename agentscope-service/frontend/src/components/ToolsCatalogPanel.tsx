@@ -29,6 +29,7 @@ import {
   listInstalledMcpNames,
   saveBuiltinToolConfig,
 } from '../api/tools';
+import { useT } from '../i18n';
 
 interface Props {
   agentId: string;
@@ -113,15 +114,16 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function ToolsCatalogPanel({ agentId, onSaved }: Props) {
+  const tr = useT();
   const [tab, setTab] = useState<Tab>('builtin');
   return (
     <div style={S.root}>
       <div style={S.tabs}>
         <button style={tabStyle(tab === 'builtin')} onClick={() => setTab('builtin')}>
-          Built-in tools
+          {tr('toolsCatalog.tabs.builtin')}
         </button>
         <button style={tabStyle(tab === 'mcp')} onClick={() => setTab('mcp')}>
-          MCP servers
+          {tr('toolsCatalog.tabs.mcp')}
         </button>
       </div>
       {tab === 'builtin' ? (
@@ -134,17 +136,19 @@ export default function ToolsCatalogPanel({ agentId, onSaved }: Props) {
 }
 
 function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) {
+  const tr = useT();
   const [catalog, setCatalog] = useState<BuiltinToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [errFallback, setErrFallback] = useState<'load' | 'save' | null>(null);
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
   const [policies, setPolicies] = useState<Map<string, ToolPermissionType>>(new Map());
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setErr(null);
+    setLoading(true); setErr(null); setErrFallback(null);
     Promise.all([fetchBuiltinCatalog(agentId), getAgent(agentId)])
       .then(([cat, agent]) => {
         if (cancelled) return;
@@ -158,7 +162,11 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
         setPolicies(next);
         setDirty(false);
       })
-      .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
+      .catch(e => {
+        if (cancelled) return;
+        if (e instanceof Error && e.message) setErr(e.message);
+        else setErrFallback('load');
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [agentId]);
@@ -183,13 +191,14 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
   }
 
   async function save() {
-    setSaving(true); setErr(null);
+    setSaving(true); setErr(null); setErrFallback(null);
     try {
       await saveBuiltinToolConfig(agentId, catalog, enabled, policies);
       setDirty(false);
       onSaved();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      if (e instanceof Error && e.message) setErr(e.message);
+      else setErrFallback('save');
     } finally {
       setSaving(false);
     }
@@ -218,8 +227,15 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
   return (
     <>
       <div style={S.body}>
-        {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
+        {loading && <div style={{ color: '#64748b' }}>{tr('common.loading')}</div>}
         {err && <div style={S.err}>{err}</div>}
+        {errFallback && (
+          <div style={S.err}>
+            {tr(errFallback === 'load'
+              ? 'toolsCatalog.errors.load'
+              : 'toolsCatalog.errors.save')}
+          </div>
+        )}
         {!loading && Array.from(groups.entries()).map(([group, items]) => (
           <div key={group}>
             <div style={S.groupHeader}>{group}</div>
@@ -241,10 +257,10 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
                   disabled={!enabled.has(b.id)}
                   onClick={e => e.stopPropagation()}
                   onChange={e => setPolicy(b.id, e.target.value as ToolPermissionType)}
-                  title="Auto runs without asking; Ask pauses for confirmation"
+                  title={tr('toolPolicy.hint')}
                 >
-                  <option value="always_allow">Auto</option>
-                  <option value="always_ask">Ask</option>
+                  <option value="always_allow">{tr('toolPolicy.auto')}</option>
+                  <option value="always_ask">{tr('toolPolicy.ask')}</option>
                 </select>
               </label>
             ))}
@@ -253,14 +269,16 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
       </div>
       <div style={S.footer}>
         <span style={S.status}>
-          {dirty ? `${enabled.size} of ${catalog.length} enabled — unsaved` : `${enabled.size} of ${catalog.length} enabled`}
+          {dirty
+            ? tr('toolsCatalog.enabledDirty', { enabled: enabled.size, total: catalog.length })
+            : tr('toolsCatalog.enabled', { enabled: enabled.size, total: catalog.length })}
         </span>
         <button
           style={{ ...S.saveBtn, ...((!dirty || saving) ? S.saveBtnDisabled : {}) }}
           onClick={save}
           disabled={!dirty || saving}
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? tr('common.actions.saving') : tr('common.actions.save')}
         </button>
       </div>
     </>
@@ -268,22 +286,28 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
 }
 
 function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) {
+  const tr = useT();
   const [catalog, setCatalog] = useState<McpCatalogEntry[]>([]);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [hasLoadFallback, setHasLoadFallback] = useState(false);
   const [adding, setAdding] = useState<McpCatalogEntry | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setErr(null);
+    setLoading(true); setErr(null); setHasLoadFallback(false);
     Promise.all([fetchMcpCatalog(agentId), listInstalledMcpNames(agentId)])
       .then(([cat, inst]) => {
         if (cancelled) return;
         setCatalog(cat);
         setInstalled(inst.names);
       })
-      .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
+      .catch(e => {
+        if (cancelled) return;
+        if (e instanceof Error && e.message) setErr(e.message);
+        else setHasLoadFallback(true);
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [agentId]);
@@ -298,11 +322,12 @@ function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) 
   return (
     <>
       <div style={S.body}>
-        {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
+        {loading && <div style={{ color: '#64748b' }}>{tr('common.loading')}</div>}
         {err && <div style={S.err}>{err}</div>}
+        {hasLoadFallback && <div style={S.err}>{tr('toolsCatalog.errors.load')}</div>}
         {!loading && catalog.length === 0 && (
           <div style={{ color: '#94a3b8', padding: 24, textAlign: 'center' }}>
-            No MCP servers in the catalog. Add servers via Agent body <code>mcpServers</code>.
+            {tr('toolsCatalog.emptyMcp')}
           </div>
         )}
         {catalog.map(entry => {
@@ -319,14 +344,16 @@ function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) 
                     rel="noreferrer"
                     style={{ fontSize: '0.78rem', color: '#4338ca', marginTop: 4, display: 'inline-block' }}
                   >
-                    docs ↗
+                    {tr('toolsCatalog.actions.docs')} ↗
                   </a>
                 )}
               </div>
               {isInstalled ? (
-                <span style={S.installedTag}>installed</span>
+                <span style={S.installedTag}>{tr('toolsCatalog.status.installed')}</span>
               ) : (
-                <button style={S.addBtn} onClick={() => setAdding(entry)}>+ Add</button>
+                <button style={S.addBtn} onClick={() => setAdding(entry)}>
+                  + {tr('common.actions.add')}
+                </button>
               )}
             </div>
           );
@@ -352,6 +379,7 @@ interface AddFormProps {
 }
 
 function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) {
+  const tr = useT();
   const [name, setName] = useState(entry.id);
   const [envValues, setEnvValues] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {};
@@ -360,11 +388,12 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [errFallback, setErrFallback] = useState<'nameRequired' | 'nameDuplicate' | 'add' | null>(null);
 
   async function submit() {
-    if (!name.trim()) { setErr('Name is required'); return; }
-    if (existingNames.has(name.trim())) { setErr('That name is already in use'); return; }
-    setBusy(true); setErr(null);
+    if (!name.trim()) { setErr(null); setErrFallback('nameRequired'); return; }
+    if (existingNames.has(name.trim())) { setErr(null); setErrFallback('nameDuplicate'); return; }
+    setBusy(true); setErr(null); setErrFallback(null);
     try {
       const server: McpServerConfig = {
         transport: entry.transport,
@@ -380,7 +409,8 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
       }
       await onSubmit(name.trim(), server);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Add failed');
+      if (e instanceof Error && e.message) setErr(e.message);
+      else setErrFallback('add');
     } finally {
       setBusy(false);
     }
@@ -390,27 +420,29 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
     <div style={S.formOverlay} onClick={onCancel}>
       <div style={S.formCard} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize: '1.02rem', fontWeight: 600, color: '#0f172a' }}>
-          Add MCP server: {entry.name}
+          {tr('toolsCatalog.add.title', { name: entry.name })}
         </div>
         <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 4 }}>
-          Transport: <b>{entry.transport}</b>
-          {entry.url && <> &middot; URL: <code>{entry.url}</code></>}
+          {tr('toolsCatalog.add.transport')}: <b>{entry.transport}</b>
+          {entry.url && <> &middot; {tr('toolsCatalog.add.url')}: <code>{entry.url}</code></>}
         </div>
 
-        <label style={S.formLabel}>Server name (key in Agent mcpServers)</label>
+        <label style={S.formLabel}>{tr('toolsCatalog.add.serverName')}</label>
         <input
           style={S.formInput}
           value={name}
           onChange={e => setName(e.target.value)}
           disabled={busy}
-          placeholder="e.g. amap"
+          placeholder={tr('toolsCatalog.add.serverNamePlaceholder')}
         />
 
         {(entry.requiredEnv ?? []).length > 0 && (
           <>
-            <div style={{ ...S.formLabel, marginTop: 18 }}>Environment variables</div>
+            <div style={{ ...S.formLabel, marginTop: 18 }}>
+              {tr('toolsCatalog.add.environmentVariables')}
+            </div>
             <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: 6 }}>
-              Leave blank to use the process environment (recommended for secrets).
+              {tr('toolsCatalog.add.environmentHint')}
             </div>
             {(entry.requiredEnv ?? []).map(envKey => (
               <div key={envKey} style={{ marginBottom: 8 }}>
@@ -431,6 +463,15 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
         )}
 
         {err && <div style={{ marginTop: 12, ...S.err }}>{err}</div>}
+        {errFallback && (
+          <div style={{ marginTop: 12, ...S.err }}>
+            {tr(errFallback === 'nameRequired'
+              ? 'toolsCatalog.errors.nameRequired'
+              : errFallback === 'nameDuplicate'
+                ? 'toolsCatalog.errors.nameDuplicate'
+                : 'toolsCatalog.errors.add')}
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
           <button
@@ -442,7 +483,7 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
               fontSize: '0.86rem', fontWeight: 500,
             }}
           >
-            Cancel
+            {tr('common.actions.cancel')}
           </button>
           <button
             onClick={submit}
@@ -455,7 +496,7 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
               opacity: busy || !name.trim() ? 0.6 : 1,
             }}
           >
-            {busy ? 'Adding…' : 'Add server'}
+            {busy ? tr('toolsCatalog.add.adding') : tr('toolsCatalog.add.addServer')}
           </button>
         </div>
       </div>

@@ -19,6 +19,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bot,
   ChevronRight,
+  Globe,
   LayoutDashboard,
   LogOut,
   UsersRound,
@@ -26,19 +27,20 @@ import {
 import { cn } from '@/lib/utils';
 import { clearToken, getUsername, isAdmin } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
+import { type TranslationKey, useI18n, useT } from '@/i18n';
 
 type ZoneId = 'dashboard' | 'managed' | 'teams';
 
 type NavItem = {
   to: string;
-  label: string;
+  labelKey: TranslationKey;
   end?: boolean;
   admin?: boolean;
 };
 
 type NavSection = {
   id: ZoneId;
-  label: string;
+  labelKey: TranslationKey;
   icon: React.ComponentType<{ className?: string }>;
   match: (pathname: string) => boolean;
   home: string;
@@ -59,20 +61,27 @@ const managedPrefixes = [
 const navSections: NavSection[] = [
   {
     id: 'dashboard',
-    label: 'Dashboard',
+    labelKey: 'navigation.dashboard.title',
     icon: LayoutDashboard,
     match: (pathname) => pathname.startsWith('/operate'),
     home: '/operate',
     items: [
-      { to: '/operate', label: 'Overview', end: true },
-      { to: '/operate/agents', label: 'Agents' },
-      { to: '/operate/sessions', label: 'Sessions' },
-      { to: '/operate/governance', label: 'Governance' },
+      {
+        to: '/operate',
+        labelKey: 'navigation.dashboard.overview',
+        end: true,
+      },
+      { to: '/operate/agents', labelKey: 'navigation.dashboard.agents' },
+      { to: '/operate/sessions', labelKey: 'navigation.dashboard.sessions' },
+      {
+        to: '/operate/governance',
+        labelKey: 'navigation.dashboard.governance',
+      },
     ],
   },
   {
     id: 'managed',
-    label: 'Managed Agents',
+    labelKey: 'navigation.managed.title',
     icon: Bot,
     match: (pathname) =>
       managedPrefixes.some(
@@ -80,26 +89,37 @@ const navSections: NavSection[] = [
       ),
     home: '/agents',
     items: [
-      { to: '/agents', label: 'Agents' },
-      { to: '/sessions', label: 'Sessions' },
-      { to: '/workspaces', label: 'Workspaces' },
-      { to: '/environments', label: 'Environments' },
-      { to: '/memory-stores', label: 'Memory' },
-      { to: '/vaults', label: 'Vaults' },
-      { to: '/deployments', label: 'Deployments' },
-      { to: '/channels', label: 'Channels', admin: true },
+      { to: '/agents', labelKey: 'navigation.managed.agents' },
+      { to: '/sessions', labelKey: 'navigation.managed.sessions' },
+      { to: '/workspaces', labelKey: 'navigation.managed.workspaces' },
+      {
+        to: '/environments',
+        labelKey: 'navigation.managed.environments',
+      },
+      { to: '/memory-stores', labelKey: 'navigation.managed.memory' },
+      { to: '/vaults', labelKey: 'navigation.managed.vaults' },
+      { to: '/deployments', labelKey: 'navigation.managed.deployments' },
+      {
+        to: '/channels',
+        labelKey: 'navigation.managed.channels',
+        admin: true,
+      },
     ],
   },
   {
     id: 'teams',
-    label: 'Teams',
+    labelKey: 'navigation.teams.title',
     icon: UsersRound,
     match: (pathname) => pathname.startsWith('/teams'),
     home: '/teams',
     items: [
-      { to: '/teams', label: 'Overview', end: true },
-      { to: '/teams/list', label: 'Teams' },
-      { to: '/teams/templates', label: 'Templates' },
+      {
+        to: '/teams',
+        labelKey: 'navigation.teams.overview',
+        end: true,
+      },
+      { to: '/teams/list', labelKey: 'navigation.teams.list' },
+      { to: '/teams/templates', labelKey: 'navigation.teams.templates' },
     ],
   },
 ];
@@ -149,6 +169,7 @@ function NavGroup({
   onToggle: () => void;
   admin: boolean;
 }) {
+  const t = useT();
   const Icon = section.icon;
   const items = section.items.filter((item) => !item.admin || admin);
 
@@ -172,7 +193,7 @@ function NavGroup({
           )}
         />
         <Icon className="h-5 w-5 shrink-0" />
-        <span className="truncate text-left">{section.label}</span>
+        <span className="truncate text-left">{t(section.labelKey)}</span>
       </button>
 
       {open && (
@@ -181,7 +202,7 @@ function NavGroup({
             <SideLink
               key={item.to}
               to={item.to}
-              label={item.label}
+              label={t(item.labelKey)}
               end={item.end}
             />
           ))}
@@ -192,6 +213,7 @@ function NavGroup({
 }
 
 export default function AppShell() {
+  const { locale, setLocale, t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const username = getUsername();
@@ -233,7 +255,9 @@ export default function AppShell() {
             />
             <div>
               <div className="text-lg font-bold tracking-tight text-foreground">aistio</div>
-              <div className="mt-0.5 text-sm text-muted-foreground">Control plane console</div>
+              <div className="mt-0.5 text-sm text-muted-foreground">
+                {t('app.controlPlaneConsole')}
+              </div>
             </div>
           </button>
         </div>
@@ -252,31 +276,56 @@ export default function AppShell() {
 
         <div className="border-t border-border p-4">
           <div className="mb-2.5 truncate px-2 text-sm text-muted-foreground">
-            {username || 'guest'}
+            {username || t('auth.guest')}
           </div>
-          <div className="flex gap-1">
+          <div className="grid grid-cols-2 gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full gap-1.5 px-2"
+              aria-label={
+                locale === 'zh'
+                  ? t('language.switchToEnglish')
+                  : t('language.switchToChinese')
+              }
+              title={
+                locale === 'zh'
+                  ? t('language.switchToEnglish')
+                  : t('language.switchToChinese')
+              }
+              onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
+            >
+              <Globe className="h-4 w-4" />
+              <span>
+                {locale === 'zh'
+                  ? t('language.shortEnglish')
+                  : t('language.shortChinese')}
+              </span>
+            </Button>
             {admin && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="flex-1 justify-start"
+                className="w-full justify-start px-2"
                 onClick={() => navigate('/admin/users')}
               >
-                Users
+                {t('navigation.users')}
               </Button>
             )}
             <Button
               variant="ghost"
               size="sm"
-              className="flex-1 justify-start"
+              className="w-full justify-start px-2"
               onClick={() => navigate('/profile')}
             >
-              Profile
+              {t('navigation.profile')}
             </Button>
             <Button
               variant="ghost"
-              size="icon"
-              title="Sign out"
+              size="sm"
+              className="w-full"
+              aria-label={t('auth.signOut')}
+              title={t('auth.signOut')}
               onClick={() => {
                 clearToken();
                 navigate('/login');

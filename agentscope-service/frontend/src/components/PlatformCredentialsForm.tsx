@@ -16,6 +16,7 @@
 
 import React from 'react';
 import { ChannelFieldSpec, ChannelTypeSpec } from '../api/channels';
+import { useT } from '../i18n';
 
 const S: Record<string, React.CSSProperties> = {
   field: { display: 'block', fontSize: '0.85rem', color: '#475569', marginBottom: 6, fontWeight: 500 },
@@ -48,8 +49,13 @@ export default function PlatformCredentialsForm({
   showAdvanced,
   onToggleAdvanced,
 }: Props) {
+  const tr = useT();
   if (!spec) {
-    return <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Select a platform to configure credentials.</div>;
+    return (
+      <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
+        {tr('credentials.selectPlatform')}
+      </div>
+    );
   }
 
   const primary = spec.fields.filter((f) => !f.advanced);
@@ -83,7 +89,9 @@ export default function PlatformCredentialsForm({
       {hasAdvanced ? (
         <>
           <button type="button" style={S.advancedToggle} onClick={onToggleAdvanced}>
-            {showAdvanced ? 'Hide advanced' : 'Show advanced'}
+            {showAdvanced
+              ? tr('credentials.hideAdvanced')
+              : tr('credentials.showAdvanced')}
           </button>
           {showAdvanced ? <div style={{ ...S.grid, marginTop: 12 }}>{advanced.map(renderField)}</div> : null}
         </>

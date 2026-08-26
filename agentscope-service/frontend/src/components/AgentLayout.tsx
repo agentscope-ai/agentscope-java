@@ -17,17 +17,18 @@
 import React, { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AgentDefinition, getAgent, ShareTier } from '../api/agents';
+import { type TranslationKey, useT } from '../i18n';
 import ShareAgentDialog from './ShareAgentDialog';
 
 type TierMin = ShareTier;
 
-const TABS: { key: string; label: string; icon: string; minTier: TierMin }[] = [
-  { key: 'workspace', label: 'Workspace', icon: '📁', minTier: 'RUN'  },
-  { key: 'skills',    label: 'Skills',    icon: '🧩', minTier: 'RUN'  },
-  { key: 'tools',     label: 'Tools',     icon: '🛠️', minTier: 'RUN'  },
-  { key: 'subagents', label: 'Subagents', icon: '🤝', minTier: 'RUN'  },
-  { key: 'channels',  label: 'Channels',  icon: '📡', minTier: 'RUN'  },
-  { key: 'settings',  label: 'Settings',  icon: '⚙️', minTier: 'RUN'  },
+const TABS: { key: string; labelKey: TranslationKey; icon: string; minTier: TierMin }[] = [
+  { key: 'workspace', labelKey: 'agent.tabs.workspace', icon: '📁', minTier: 'RUN'  },
+  { key: 'skills',    labelKey: 'agent.tabs.skills',    icon: '🧩', minTier: 'RUN'  },
+  { key: 'tools',     labelKey: 'agent.tabs.tools',     icon: '🛠️', minTier: 'RUN'  },
+  { key: 'subagents', labelKey: 'agent.tabs.subagents', icon: '🤝', minTier: 'RUN'  },
+  { key: 'channels',  labelKey: 'agent.tabs.channels',  icon: '📡', minTier: 'RUN'  },
+  { key: 'settings',  labelKey: 'agent.tabs.settings',  icon: '⚙️', minTier: 'RUN'  },
 ];
 
 const TIER_RANK: Record<ShareTier, number> = { CLONE: 1, RUN: 2, EDIT: 3 };
@@ -38,6 +39,7 @@ function tierImplies(have: ShareTier | undefined | null, need: TierMin): boolean
 }
 
 export default function AgentLayout() {
+  const t = useT();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -55,7 +57,7 @@ export default function AgentLayout() {
     return () => { cancelled = true; };
   }, [id]);
 
-  if (!id) return <div style={{ padding: 32 }}>Missing agent id.</div>;
+  if (!id) return <div style={{ padding: 32 }}>{t('agent.missingId')}</div>;
 
   const tier = agent?.tierForCurrentUser ?? null;
   const isClonyOnly = tier === 'CLONE';
@@ -95,7 +97,9 @@ export default function AgentLayout() {
               color: agent.scope === 'global' ? '#4338ca' : '#475569',
               border: agent.scope === 'global' ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
             }}>
-              {agent.scope}
+              {agent.scope === 'global'
+                ? t('agent.scope.global')
+                : t('agent.scope.user')}
             </span>
           )}
           {agent?.workspaceId && (
@@ -108,7 +112,7 @@ export default function AgentLayout() {
               }}
               title={agent.workspaceId}
             >
-              📁 Workspace
+              📁 {t('agent.workspace')}
             </Link>
           )}
           {tier && tier !== 'EDIT' && agent && !isGlobal && (
@@ -116,7 +120,7 @@ export default function AgentLayout() {
               padding: '4px 10px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
               background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0',
             }}>
-              {tier === 'RUN' ? 'shared · can run' : '🔁 clone-only'}
+              {tier === 'RUN' ? t('agent.access.sharedRun') : `🔁 ${t('agent.access.cloneOnly')}`}
             </span>
           )}
           <span style={{ flex: 1 }} />
@@ -129,7 +133,7 @@ export default function AgentLayout() {
                 fontSize: '0.88rem', fontWeight: 600,
               }}
             >
-              ↗ Share
+              ↗ {t('agent.share')}
             </button>
           )}
           {err && <span style={{ marginLeft: 12, color: '#dc2626', fontSize: '0.85rem' }}>{err}</span>}
@@ -149,9 +153,9 @@ export default function AgentLayout() {
           }}
         >
           <div>
-            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>Runtime</div>
+            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>{t('agent.runtime.title')}</div>
             <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-              Open this agent in Operate if a data plane has registered under the same name.
+              {t('agent.runtime.description')}
             </div>
           </div>
           <button
@@ -168,26 +172,26 @@ export default function AgentLayout() {
               whiteSpace: 'nowrap',
             }}
           >
-            View in Operate →
+            {t('agent.runtime.viewInOperate')} →
           </button>
         </div>
 
         {isClonyOnly ? (
           <div style={{ paddingBottom: 12, color: '#64748b', fontSize: '0.9rem' }}>
-            You have <strong>CLONE-only</strong> access. Use the Clone button on the agents hub to copy this agent into your namespace.
+            {t('agent.access.cloneOnlyNotice')}
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 4 }}>
-            {TABS.map(t => {
+            {TABS.map(tab => {
               const allowed =
-                isGlobal ? (t.minTier !== 'EDIT')
-                : tierImplies(tier, t.minTier);
+                isGlobal ? (tab.minTier !== 'EDIT')
+                : tierImplies(tier, tab.minTier);
               if (!allowed) return null;
-              const active = activeTab === t.key;
+              const active = activeTab === tab.key;
               return (
                 <button
-                  key={t.key}
-                  onClick={() => navigate(`/agents/${encodeURIComponent(id)}/${t.key}`)}
+                  key={tab.key}
+                  onClick={() => navigate(`/agents/${encodeURIComponent(id)}/${tab.key}`)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     background: 'transparent', border: 'none',
@@ -201,7 +205,7 @@ export default function AgentLayout() {
                   onMouseEnter={e => { if (!active) e.currentTarget.style.color = '#0f172a'; }}
                   onMouseLeave={e => { if (!active) e.currentTarget.style.color = '#64748b'; }}
                 >
-                  <span>{t.icon}</span> {t.label}
+                  <span>{tab.icon}</span> {t(tab.labelKey)}
                 </button>
               );
             })}
@@ -221,10 +225,10 @@ export default function AgentLayout() {
                 padding: '4px 10px', borderRadius: 999,
                 background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a',
                 fontSize: '0.78rem', fontWeight: 600, marginBottom: 14,
-              }}>🔁 Clone-only</div>
+              }}>🔁 {t('agent.access.cloneOnly')}</div>
               <h2 style={{ margin: '0 0 8px', fontSize: '1.4rem', color: '#0f172a' }}>{agent?.name}</h2>
               <p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '0.95rem', lineHeight: 1.6 }}>
-                {agent?.description || 'The owner has granted you Clone access. Copy this agent into your own namespace to run or edit it.'}
+                {agent?.description || t('agent.access.cloneDescription')}
               </p>
               <button
                 onClick={() => navigate(`/agents?clone=${encodeURIComponent(id)}`)}
@@ -236,7 +240,7 @@ export default function AgentLayout() {
                   boxShadow: '0 2px 6px rgba(99,102,241,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
                 }}
               >
-                🔁 Clone agent
+                🔁 {t('agent.clone')}
               </button>
             </div>
           </div>

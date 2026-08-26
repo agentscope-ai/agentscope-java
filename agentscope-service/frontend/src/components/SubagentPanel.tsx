@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   SubagentInfo,
   SubagentUpsertRequest,
@@ -25,6 +25,7 @@ import {
 } from '../api/subagents';
 import { AgentDefinition, listAgents } from '../api/agents';
 import { readFile } from '../api/workspace';
+import { type TranslationFunction, useT } from '../i18n';
 
 interface Props {
   agentId: string;
@@ -158,7 +159,15 @@ function formFromInfo(info: SubagentInfo, body: string): FormState {
   };
 }
 
+function workspaceModeLabel(t: TranslationFunction, mode: string): string {
+  if (mode === 'shared') return t('subagent.workspaceMode.sharedShort');
+  if (mode === 'isolated') return t('subagent.workspaceMode.isolated');
+  return mode;
+}
+
 export default function SubagentPanel({ agentId, onChanged, readOnly = false }: Props) {
+  const t = useT();
+  const tRef = useRef(t);
   const [view, setView] = useState<View>('list');
   const [items, setItems] = useState<SubagentInfo[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -174,6 +183,10 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
   const [search, setSearch] = useState('');
   const [pickerLoading, setPickerLoading] = useState(false);
 
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
   const reload = useCallback(async () => {
     setLoading(true);
     setErr(null);
@@ -181,7 +194,7 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
       const list = await listSubagents(agentId);
       setItems(list);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load subagents');
+      setErr(e instanceof Error ? e.message : tRef.current('subagent.error.load'));
     } finally {
       setLoading(false);
     }
@@ -217,12 +230,12 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
 
   async function handleSave() {
     if (!form.description.trim()) {
-      setFormErr('Description is required');
+      setFormErr(t('subagent.error.descriptionRequired'));
       return;
     }
     const nameVal = form.name.trim();
     if (!nameVal) {
-      setFormErr('Name is required');
+      setFormErr(t('subagent.error.nameRequired'));
       return;
     }
     setSaving(true);
@@ -243,21 +256,21 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
       await reload();
       onChanged?.();
     } catch (e: unknown) {
-      setFormErr(e instanceof Error ? e.message : 'Save failed');
+      setFormErr(e instanceof Error ? e.message : t('subagent.error.save'));
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!form.name || !window.confirm(`Delete subagent "${form.name}"?`)) return;
+    if (!form.name || !window.confirm(t('subagent.confirmDelete', { name: form.name }))) return;
     try {
       await deleteSubagent(agentId, form.name);
       setView('list');
       await reload();
       onChanged?.();
     } catch (e: unknown) {
-      setFormErr(e instanceof Error ? e.message : 'Delete failed');
+      setFormErr(e instanceof Error ? e.message : t('subagent.error.delete'));
     }
   }
 
@@ -282,7 +295,7 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
       await reload();
       onChanged?.();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to add subagent');
+      setErr(e instanceof Error ? e.message : t('subagent.error.add'));
     }
   }
 
@@ -296,25 +309,25 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
       <div style={S.root}>
         <div style={S.overlay} onClick={() => setView('list')}>
           <div style={S.dialog} onClick={e => e.stopPropagation()}>
-            <div style={S.dialogTitle}>Add subagent from existing agent</div>
+            <div style={S.dialogTitle}>{t('subagent.picker.title')}</div>
             <input
               style={S.searchInput}
-              placeholder="Search agents..."
+              placeholder={t('subagent.picker.searchPlaceholder')}
               value={search}
               onChange={e => setSearch(e.target.value)}
               autoFocus
             />
             <div style={S.dialogList}>
-              {pickerLoading && <div style={S.empty}>Loading…</div>}
+              {pickerLoading && <div style={S.empty}>{t('subagent.loading')}</div>}
               {!pickerLoading && filteredAgents.length === 0 && (
-                <div style={S.empty}>No agents found</div>
+                <div style={S.empty}>{t('subagent.picker.notFound')}</div>
               )}
               {filteredAgents.map(a => (
                 <AgentPickerRow key={a.id} agent={a} onPick={pickAgent} />
               ))}
             </div>
             <div style={{ marginTop: 12, textAlign: 'right' }}>
-              <button style={S.btn} onClick={() => setView('list')}>Cancel</button>
+              <button style={S.btn} onClick={() => setView('list')}>{t('subagent.cancel')}</button>
             </div>
           </div>
         </div>
@@ -326,41 +339,43 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
     return (
       <div style={S.root}>
         <div style={S.header}>
-          <button style={S.btn} onClick={() => setView('list')}>← Back</button>
-          <span style={S.title}>{isNew ? 'New subagent' : `Edit: ${form.name}`}</span>
+          <button style={S.btn} onClick={() => setView('list')}>← {t('subagent.back')}</button>
+          <span style={S.title}>
+            {isNew ? t('subagent.new') : t('subagent.editTitle', { name: form.name })}
+          </span>
         </div>
         <div style={S.scroll}>
           <div style={S.row}>
-            <label style={S.fieldLabel}>Name *</label>
+            <label style={S.fieldLabel}>{t('subagent.name')} *</label>
             <input
               style={S.input}
               value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })}
               disabled={!isNew}
-              placeholder="e.g. code-reviewer"
+              placeholder={t('subagent.namePlaceholder')}
             />
           </div>
           <div style={S.row}>
-            <label style={S.fieldLabel}>Description *</label>
+            <label style={S.fieldLabel}>{t('subagent.description')} *</label>
             <input
               style={S.input}
               value={form.description}
               onChange={e => setForm({ ...form, description: e.target.value })}
-              placeholder="What this subagent does — used by the orchestrator to decide when to delegate"
+              placeholder={t('subagent.descriptionPlaceholder')}
             />
           </div>
           <div style={{ ...S.row, ...S.inlineRow }}>
             <div style={S.inlineField}>
-              <label style={S.fieldLabel}>Model</label>
+              <label style={S.fieldLabel}>{t('subagent.model')}</label>
               <input
                 style={S.input}
                 value={form.model}
                 onChange={e => setForm({ ...form, model: e.target.value })}
-                placeholder="e.g. qwen3-max (inherit if blank)"
+                placeholder={t('subagent.modelPlaceholder')}
               />
             </div>
             <div style={S.inlineField}>
-              <label style={S.fieldLabel}>Max iterations</label>
+              <label style={S.fieldLabel}>{t('subagent.maxIterations')}</label>
               <input
                 style={S.input}
                 type="number"
@@ -371,62 +386,62 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
             </div>
           </div>
           <div style={S.row}>
-            <label style={S.fieldLabel}>Tools (comma-separated)</label>
+            <label style={S.fieldLabel}>{t('subagent.tools')}</label>
             <input
               style={S.input}
               value={form.tools}
               onChange={e => setForm({ ...form, tools: e.target.value })}
-              placeholder="e.g. read_file, grep_files, edit_file"
+              placeholder={t('subagent.toolsPlaceholder')}
             />
           </div>
           <div style={S.row}>
-            <label style={S.fieldLabel}>Workspace mode</label>
+            <label style={S.fieldLabel}>{t('subagent.workspaceMode')}</label>
             <div style={S.radio}>
               <label style={S.radioLabel}>
                 <input
                   type="radio"
                   checked={form.workspaceMode === 'isolated'}
                   onChange={() => setForm({ ...form, workspaceMode: 'isolated' })}
-                /> Isolated
+                /> {t('subagent.workspaceMode.isolated')}
               </label>
               <label style={S.radioLabel}>
                 <input
                   type="radio"
                   checked={form.workspaceMode === 'shared'}
                   onChange={() => setForm({ ...form, workspaceMode: 'shared' })}
-                /> Shared (with parent)
+                /> {t('subagent.workspaceMode.shared')}
               </label>
             </div>
           </div>
           {form.workspaceMode === 'isolated' && (
             <div style={S.row}>
-              <label style={S.fieldLabel}>Workspace path (optional)</label>
+              <label style={S.fieldLabel}>{t('subagent.workspacePath')}</label>
               <input
                 style={S.input}
                 value={form.workspacePath}
                 onChange={e => setForm({ ...form, workspacePath: e.target.value })}
-                placeholder="~/.agentscope/builder/users/<userId>/agents/<parent>/agents/<name>/workspace (auto-created if blank)"
+                placeholder={t('subagent.workspacePathPlaceholder')}
               />
             </div>
           )}
           <div style={S.row}>
-            <label style={S.fieldLabel}>System prompt (inline body)</label>
+            <label style={S.fieldLabel}>{t('subagent.systemPrompt')}</label>
             <textarea
               style={S.textarea}
               value={form.inlineBody}
               onChange={e => setForm({ ...form, inlineBody: e.target.value })}
-              placeholder="Optional system prompt for this subagent. Not used when workspace path is set."
+              placeholder={t('subagent.systemPromptPlaceholder')}
             />
           </div>
           {formErr && <div style={{ ...S.status, ...S.errText }}>{formErr}</div>}
-          {formOk && <div style={{ ...S.status, ...S.ok }}>Saved</div>}
+          {formOk && <div style={{ ...S.status, ...S.ok }}>{t('subagent.saved')}</div>}
           {!readOnly && (
             <div style={S.formActions}>
               <button style={S.primaryBtn} onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? t('subagent.saving') : t('subagent.save')}
               </button>
               {!isNew && (
-                <button style={S.dangerBtn} onClick={handleDelete}>Delete</button>
+                <button style={S.dangerBtn} onClick={handleDelete}>{t('subagent.delete')}</button>
               )}
             </div>
           )}
@@ -439,21 +454,21 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <span style={S.title}>Subagents</span>
+        <span style={S.title}>{t('subagent.title')}</span>
         {!readOnly && (
           <>
-            <button style={S.btn} onClick={openPicker}>+ From agent</button>
-            <button style={S.primaryBtn} onClick={handleNew}>+ New</button>
+            <button style={S.btn} onClick={openPicker}>+ {t('subagent.fromAgent')}</button>
+            <button style={S.primaryBtn} onClick={handleNew}>+ {t('subagent.newButton')}</button>
           </>
         )}
       </div>
       <div style={S.scroll}>
         {err && <div style={S.err}>{err}</div>}
-        {loading && <div style={S.empty}>Loading…</div>}
+        {loading && <div style={S.empty}>{t('subagent.loading')}</div>}
         {!loading && !err && items.length === 0 && (
           <div style={S.empty}>
-            No subagents configured yet.<br />
-            Create one or add from an existing agent.
+            {t('subagent.empty')}<br />
+            {t('subagent.emptyHelp')}
           </div>
         )}
         {items.map(item => (
@@ -465,7 +480,7 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
             <div>
               <span style={S.cardName}>{item.name}</span>
               <span style={{ ...S.badge, ...(item.workspaceMode === 'shared' ? S.badgeShared : S.badgeIsolated) }}>
-                {item.workspaceMode}
+                {workspaceModeLabel(t, item.workspaceMode)}
               </span>
               {item.model && (
                 <span style={{ ...S.badge, ...S.badgeModel }}>{item.model}</span>
@@ -474,7 +489,7 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
             <div style={S.cardDesc}>{item.description}</div>
             {item.tools && item.tools.length > 0 && (
               <div style={{ ...S.cardDesc, fontSize: '0.8rem', marginTop: 6, fontFamily: 'monospace' }}>
-                tools: {item.tools.join(', ')}
+                {t('subagent.toolsList', { tools: item.tools.join(', ') })}
               </div>
             )}
           </div>

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AgentDefinition,
   AgentShareGrant,
@@ -24,6 +24,7 @@ import {
 import { addShare, listShares, revokeShare } from '../api/shares';
 import { AdminUserView, listUsers } from '../api/admin';
 import { isAdmin } from '../api/auth';
+import { type TranslationFunction, type TranslationKey, useT } from '../i18n';
 
 const S: Record<string, React.CSSProperties> = {
   scrim: {
@@ -87,16 +88,17 @@ const S: Record<string, React.CSSProperties> = {
   empty: { color: '#94a3b8', fontSize: '0.9rem', fontStyle: 'italic' },
 };
 
-function tierBadgeStyle(tier: ShareTier): React.CSSProperties {
+function tierBadgeStyle(tier: string): React.CSSProperties {
   const map: Record<ShareTier, { bg: string; fg: string; bd: string }> = {
     CLONE: { bg: '#fef3c7', fg: '#92400e', bd: '#fde68a' },
     RUN:   { bg: '#dcfce7', fg: '#15803d', bd: '#bbf7d0' },
     EDIT:  { bg: '#ede9fe', fg: '#6d28d9', bd: '#ddd6fe' },
   };
+  const colors = map[tier as ShareTier] ?? { bg: '#f1f5f9', fg: '#64748b', bd: '#e2e8f0' };
   return {
     padding: '3px 10px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
     letterSpacing: '0.02em',
-    background: map[tier].bg, color: map[tier].fg, border: `1px solid ${map[tier].bd}`,
+    background: colors.bg, color: colors.fg, border: `1px solid ${colors.bd}`,
   };
 }
 
@@ -111,6 +113,16 @@ function tierChipStyle(active: boolean): React.CSSProperties {
 }
 
 const WORKSPACE_ID = '*';
+const TIER_LABELS: Record<ShareTier, TranslationKey> = {
+  CLONE: 'agent.shareDialog.tier.clone',
+  RUN: 'agent.shareDialog.tier.run',
+  EDIT: 'agent.shareDialog.tier.edit',
+};
+
+function tierLabel(t: TranslationFunction, tier: string): string {
+  const key = TIER_LABELS[tier as ShareTier];
+  return key ? t(key) : tier;
+}
 
 interface Props {
   agent: AgentDefinition;
@@ -118,6 +130,8 @@ interface Props {
 }
 
 export default function ShareAgentDialog({ agent, onClose }: Props) {
+  const t = useT();
+  const tRef = useRef(t);
   const [grants, setGrants] = useState<AgentShareGrant[]>([]);
   const [users, setUsers] = useState<AdminUserView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,6 +142,10 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
   const [busy, setBusy] = useState(false);
 
   const admin = isAdmin();
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +159,11 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
         setGrants(gs);
         setUsers(us);
       })
-      .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : String(e)); })
+      .catch(e => {
+        if (!cancelled) {
+          setErr(e instanceof Error ? e.message : tRef.current('agent.shareDialog.error.load'));
+        }
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [agent.id, admin]);
@@ -162,7 +184,7 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
       }
       setGrants(await listShares(agent.id));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to update workspace grant');
+      setErr(e instanceof Error ? e.message : t('agent.shareDialog.error.updateWorkspace'));
     } finally {
       setBusy(false);
     }
@@ -171,7 +193,7 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
   async function addUserGrant() {
     const granteeId = newGrantee.trim();
     if (!granteeId) {
-      setErr('Pick a user');
+      setErr(t('agent.shareDialog.error.pickUser'));
       return;
     }
     setBusy(true);
@@ -181,7 +203,7 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
       setGrants(await listShares(agent.id));
       setNewGrantee('');
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to add grant');
+      setErr(e instanceof Error ? e.message : t('agent.shareDialog.error.addGrant'));
     } finally {
       setBusy(false);
     }
@@ -194,7 +216,7 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
       await revokeShare(agent.id, granteeType, granteeId);
       setGrants(await listShares(agent.id));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to revoke');
+      setErr(e instanceof Error ? e.message : t('agent.shareDialog.error.revoke'));
     } finally {
       setBusy(false);
     }
@@ -204,20 +226,20 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
     <div style={S.scrim} onClick={onClose}>
       <div style={S.modal} onClick={e => e.stopPropagation()}>
         <div style={S.header}>
-          <h2 style={S.title}>↗ Share "{agent.name}"</h2>
-          <button style={S.iconBtn} onClick={onClose}>Close</button>
+          <h2 style={S.title}>↗ {t('agent.shareDialog.title', { name: agent.name })}</h2>
+          <button style={S.iconBtn} onClick={onClose}>{t('agent.shareDialog.close')}</button>
         </div>
 
         <div style={S.body}>
           {loading ? (
-            <div style={S.empty}>Loading…</div>
+            <div style={S.empty}>{t('agent.shareDialog.loading')}</div>
           ) : (
             <>
               <section>
-                <div style={S.sectionLabel}>Entire workspace</div>
+                <div style={S.sectionLabel}>{t('agent.shareDialog.entireWorkspace')}</div>
                 <div style={S.workspaceRow}>
                   <span style={{ flex: 1, fontSize: '0.92rem', color: '#475569' }}>
-                    Every logged-in user
+                    {t('agent.shareDialog.everyUser')}
                   </span>
                   <div style={S.tierChips}>
                     {(['none', 'CLONE', 'RUN', 'EDIT'] as const).map(opt => {
@@ -233,7 +255,9 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
                             void setWorkspaceTier(opt === 'none' ? null : opt);
                           }}
                         >
-                          {opt === 'none' ? 'None' : opt}
+                          {opt === 'none'
+                            ? t('agent.shareDialog.tier.none')
+                            : tierLabel(t, opt)}
                         </span>
                       );
                     })}
@@ -242,12 +266,14 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
               </section>
 
               <section>
-                <div style={S.sectionLabel}>Add user</div>
+                <div style={S.sectionLabel}>{t('agent.shareDialog.addUser')}</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     style={S.input}
                     list={admin ? 'share-user-list' : undefined}
-                    placeholder={admin ? 'Pick or type a userId' : 'Enter a userId'}
+                    placeholder={admin
+                      ? t('agent.shareDialog.pickOrTypeUserId')
+                      : t('agent.shareDialog.enterUserId')}
                     value={newGrantee}
                     onChange={e => setNewGrantee(e.target.value)}
                   />
@@ -263,13 +289,13 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
                     </datalist>
                   )}
                   <div style={S.tierChips}>
-                    {(['CLONE', 'RUN', 'EDIT'] as ShareTier[]).map(t => (
+                    {(['CLONE', 'RUN', 'EDIT'] as ShareTier[]).map(tier => (
                       <span
-                        key={t}
-                        style={tierChipStyle(newTier === t)}
-                        onClick={() => setNewTier(t)}
+                        key={tier}
+                        style={tierChipStyle(newTier === tier)}
+                        onClick={() => setNewTier(tier)}
                       >
-                        {t}
+                        {tierLabel(t, tier)}
                       </span>
                     ))}
                   </div>
@@ -278,28 +304,30 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
                     onClick={addUserGrant}
                     disabled={busy}
                   >
-                    Add
+                    {t('agent.shareDialog.add')}
                   </button>
                 </div>
               </section>
 
               <section>
-                <div style={S.sectionLabel}>Granted to users</div>
+                <div style={S.sectionLabel}>{t('agent.shareDialog.grantedUsers')}</div>
                 {userGrants.length === 0 ? (
-                  <div style={S.empty}>No per-user grants yet.</div>
+                  <div style={S.empty}>{t('agent.shareDialog.noUserGrants')}</div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {userGrants.map(g => (
                       <div key={`${g.granteeType}:${g.granteeId}`} style={S.grantRow}>
-                        <span style={S.granteeChip}>USER</span>
+                        <span style={S.granteeChip}>{t('agent.shareDialog.user')}</span>
                         <span style={S.granteeText}>{g.granteeId}</span>
                         <span style={{ flex: 1 }} />
-                        <span style={tierBadgeStyle(g.tier)}>{g.tier}</span>
+                        <span style={tierBadgeStyle(g.tier)}>
+                          {tierLabel(t, g.tier)}
+                        </span>
                         <button
                           style={S.iconBtn}
                           onClick={() => revoke('USER', g.granteeId)}
                           disabled={busy}
-                          title="Revoke"
+                          title={t('agent.shareDialog.revoke')}
                         >
                           ✕
                         </button>
