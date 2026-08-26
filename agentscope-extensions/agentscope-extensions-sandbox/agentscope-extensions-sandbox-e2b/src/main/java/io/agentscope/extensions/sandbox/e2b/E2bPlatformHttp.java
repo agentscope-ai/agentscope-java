@@ -25,8 +25,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -42,15 +40,6 @@ final class E2bPlatformHttp {
     private static final Logger log = LoggerFactory.getLogger(E2bPlatformHttp.class);
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-
-    /**
-     * AgentScope-native snapshot alias: {@code agentscope-<shortId>-<epochMillis>}, where the
-     * middle segment is an 8-hex-char short UUID. The trailing 13-digit epoch millis timestamp
-     * makes ordering deterministic; anything not matching this format is treated as a legacy/foreign
-     * snapshot and never pruned.
-     */
-    private static final Pattern SNAPSHOT_TIMESTAMP_PATTERN =
-            Pattern.compile("^agentscope-[0-9a-f]{8}-(\\d{13})$");
 
     private final OkHttpClient http;
     private final ObjectMapper json = new ObjectMapper();
@@ -219,35 +208,6 @@ final class E2bPlatformHttp {
             state.setEnvdVersion(node.get("envdVersion").asText());
         }
     }
-
-    /**
-     * Extracts the embedded epoch-millis timestamp from an AgentScope-native snapshot id, or {@code
-     * -1} when the id is not in the {@code agentscope-...-<epochMillis>} format. The E2B snapshot id
-     * is {@code <namespace>/<alias>:<tag>}; the namespace prefix and tag suffix are stripped before
-     * matching.
-     */
-    private static long snapshotTimestampMillis(String snapshotId) {
-        String alias = snapshotId;
-        int colon = alias.lastIndexOf(':');
-        if (colon >= 0) {
-            alias = alias.substring(0, colon);
-        }
-        int slash = alias.lastIndexOf('/');
-        if (slash >= 0) {
-            alias = alias.substring(slash + 1);
-        }
-        Matcher m = SNAPSHOT_TIMESTAMP_PATTERN.matcher(alias);
-        if (!m.matches()) {
-            return -1;
-        }
-        try {
-            return Long.parseLong(m.group(1));
-        } catch (NumberFormatException e) {
-            return -1;
-        }
-    }
-
-    private record StaleSnapshot(String id, long timestamp) {}
 
     private JsonNode postJson(String url, ObjectNode body, boolean apiKey) throws IOException {
         Request.Builder rb =
