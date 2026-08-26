@@ -26,6 +26,7 @@ import {
 import { Environment, listEnvironments } from '../api/environments';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 import { Vault, listVaults } from '../api/vaults';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { Link, useNavigate } from 'react-router-dom';
 import SessionEventTimeline from './SessionEventTimeline';
 import { type TranslationFunction, useT } from '@/i18n';
@@ -163,11 +164,7 @@ export default function SessionTranscript({
       setModel(typeof ov.model === 'string' ? ov.model : '');
       setMaxIters(ov.maxIters != null ? String(ov.maxIters) : '');
     } catch (e: unknown) {
-      setErr(
-        e instanceof Error
-          ? e.message
-          : tRef.current('common.requestFailed'),
-      );
+      setErr(resolveApiErrorMessage(e, tRef.current('common.requestFailed')));
     }
   }
 
@@ -182,7 +179,7 @@ export default function SessionTranscript({
       await archiveManagedSession(sessionId);
       await reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('common.requestFailed')));
     }
   }
 
@@ -191,7 +188,7 @@ export default function SessionTranscript({
       await restoreManagedSession(sessionId);
       await reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('common.requestFailed')));
     }
   }
 
@@ -202,32 +199,32 @@ export default function SessionTranscript({
       if (onDeleted) onDeleted();
       else navigate(`/sessions?agentId=${encodeURIComponent(agentId)}`, { replace: true });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('common.requestFailed')));
     }
   }
 
   async function handleSaveOverrides(e: React.FormEvent) {
     e.preventDefault();
     if (archived) return;
-    setSavingOverrides(true);
     setErr(null);
+    if (maxIters.trim() && Number.isNaN(Number(maxIters))) {
+      setErr(t('session.validation.maxItersNumber'));
+      return;
+    }
+    setSavingOverrides(true);
     try {
       const agentOverrides: Record<string, unknown> = {
         system: system.trim() ? system : null,
         model: model.trim() ? model : null,
         maxIters: maxIters.trim() ? Number(maxIters) : null,
       };
-      if (maxIters.trim() && Number.isNaN(Number(maxIters))) {
-        throw new Error(t('session.validation.maxItersNumber'));
-      }
       const updated = await updateManagedSession(sessionId, { agentOverrides });
       setManagedSession(updated);
     } catch (ex: unknown) {
-      setErr(
-        ex instanceof Error
-          ? ex.message
-          : t('session.details.saveOverridesFailed'),
-      );
+      setErr(resolveApiErrorMessage(
+        ex,
+        t('session.details.saveOverridesFailed'),
+      ));
     } finally {
       setSavingOverrides(false);
     }
@@ -236,12 +233,13 @@ export default function SessionTranscript({
   async function handleSaveMounts(e: React.FormEvent) {
     e.preventDefault();
     if (archived) return;
-    setSavingMounts(true);
     setErr(null);
+    if (!environmentId.trim()) {
+      setErr(t('session.validation.environmentRequired'));
+      return;
+    }
+    setSavingMounts(true);
     try {
-      if (!environmentId.trim()) {
-        throw new Error(t('session.validation.environmentRequired'));
-      }
       const updated = await updateManagedSession(sessionId, {
         environmentId: environmentId.trim(),
         vaultIds,
@@ -249,9 +247,7 @@ export default function SessionTranscript({
       });
       setManagedSession(updated);
     } catch (ex: unknown) {
-      setErr(
-        ex instanceof Error ? ex.message : t('session.details.saveMountsFailed'),
-      );
+      setErr(resolveApiErrorMessage(ex, t('session.details.saveMountsFailed')));
     } finally {
       setSavingMounts(false);
     }

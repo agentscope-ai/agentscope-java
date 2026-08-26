@@ -15,6 +15,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { UserProfile, getProfile, changePassword } from '../api/auth';
 import { useT } from '../i18n';
 
@@ -79,7 +80,7 @@ export default function ProfilePage() {
       setPwdOk(true);
       setCurPwd(''); setNewPwd(''); setConPwd('');
     } catch (e: unknown) {
-      setPwdErr(e instanceof Error ? e.message : t('teams.profile.error'));
+      setPwdErr(resolveApiErrorMessage(e, t('teams.profile.error')));
     }
   }
 
@@ -88,7 +89,7 @@ export default function ProfilePage() {
       <h2 style={S.title}>{t('teams.profile.title')}</h2>
       {loadErr != null && (
         <p style={S.error}>
-          {loadErr instanceof Error ? loadErr.message : t('teams.admin.loadFailed')}
+          {resolveApiErrorMessage(loadErr, t('teams.admin.loadFailed'))}
         </p>
       )}
 

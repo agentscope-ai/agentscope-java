@@ -16,6 +16,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { isAdmin } from '../api/auth';
 import {
   ChannelInfo,
@@ -102,7 +103,7 @@ export default function ChannelsHubPage() {
       setChannels(c);
       setTypes(t);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     } finally {
       setLoading(false);
     }
@@ -118,7 +119,7 @@ export default function ChannelsHubPage() {
       else await disableChannel(c.channelId);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     }
   }
 
@@ -128,7 +129,7 @@ export default function ChannelsHubPage() {
       await deleteChannel(c.channelId);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     }
   }
 
@@ -305,7 +306,7 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
       const created = await createChannel(req);
       onCreated(created.channelId);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     } finally {
       setBusy(false);
     }

@@ -25,6 +25,7 @@ describe('operate i18n helpers', () => {
   it('translates known statuses and preserves unknown machine values', () => {
     expect(statusLabel(zhT, 'running')).toBe('运行中');
     expect(statusLabel(zhT, 'vendor-specific')).toBe('vendor-specific');
+    expect(statusLabel(zhT, 'constructor')).toBe('constructor');
   });
 
   it('formats display numbers using the selected locale', () => {

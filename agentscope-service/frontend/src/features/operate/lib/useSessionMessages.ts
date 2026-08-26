@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { ApiError } from '@/lib/apiClient';
 import { type TranslationFunction, useT } from '@/i18n';
 import { fetchSessionMessages, type SessionMessageItem, type SessionMessagePage } from '../api';
@@ -22,15 +23,9 @@ import { fetchSessionMessages, type SessionMessageItem, type SessionMessagePage 
 const PAGE_SIZE = 100;
 const MAX_WINDOW = 500;
 
-function formatMessagesError(err: unknown, t: TranslationFunction): string {
+export function formatMessagesError(err: unknown, t: TranslationFunction): string {
   if (err instanceof ApiError) {
-    let detail = err.body || err.message;
-    try {
-      const parsed = JSON.parse(err.body) as { error?: string };
-      if (parsed.error) detail = parsed.error;
-    } catch {
-      /* keep raw body */
-    }
+    const detail = resolveApiErrorMessage(err, t('operate.messagesError.failed'));
     if (err.status === 501) {
       return t('operate.messagesError.transcriptUnavailable', { detail });
     }
@@ -40,9 +35,9 @@ function formatMessagesError(err: unknown, t: TranslationFunction): string {
     if (err.status === 502 || err.status === 503) {
       return t('operate.messagesError.unreachable', { detail });
     }
-    return detail || t('operate.messagesError.http', { status: err.status });
+    return detail;
   }
-  return err instanceof Error ? err.message : t('operate.messagesError.failed');
+  return resolveApiErrorMessage(err, t('operate.messagesError.failed'));
 }
 
 function mergeBySeq(base: SessionMessageItem[], extra: SessionMessageItem[]): SessionMessageItem[] {

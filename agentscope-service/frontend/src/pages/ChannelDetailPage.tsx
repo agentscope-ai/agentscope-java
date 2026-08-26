@@ -16,6 +16,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { isAdmin } from '../api/auth';
 import {
   BindingConfigEntry,
@@ -176,7 +177,7 @@ export default function ChannelDetailPage() {
       setCreds(credentialsFromProperties(spec, d.properties));
       setBindings(d.bindings ?? []);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     }
   }
 
@@ -214,7 +215,7 @@ export default function ChannelDetailPage() {
       setCreds(credentialsFromProperties(spec, updated.properties));
       setInfo(t('managed.channels.savedRefreshHint'));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     }
   }
 
@@ -225,7 +226,7 @@ export default function ChannelDetailPage() {
       else await disableChannel(channelId);
       await load();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     }
   }
 
@@ -235,7 +236,7 @@ export default function ChannelDetailPage() {
       await deleteChannel(channelId);
       navigate('/channels');
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     }
   }
 

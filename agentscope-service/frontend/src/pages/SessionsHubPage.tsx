@@ -16,6 +16,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   ManagedSession,
   ManagedSessionListStatus,
@@ -32,6 +33,7 @@ import { Environment, listEnvironments } from '../api/environments';
 import {
   type Locale,
   type TranslationFunction,
+  type TranslationKey,
   useI18n,
 } from '@/i18n';
 
@@ -159,18 +161,20 @@ function mountSummary(
   });
 }
 
+const SESSION_STATUS_LABELS = new Map<string, TranslationKey>([
+  ['active', 'status.active'],
+  ['created', 'status.created'],
+  ['running', 'status.running'],
+  ['idle', 'status.idle'],
+  ['requires_action', 'status.requiresAction'],
+  ['terminated', 'status.terminated'],
+  ['rescheduled', 'status.rescheduled'],
+  ['archived', 'status.archived'],
+]);
+
 function statusLabel(status: string, t: TranslationFunction): string {
-  const labels: Record<string, Parameters<TranslationFunction>[0]> = {
-    active: 'status.active',
-    created: 'status.created',
-    running: 'status.running',
-    idle: 'status.idle',
-    requires_action: 'status.requiresAction',
-    terminated: 'status.terminated',
-    rescheduled: 'status.rescheduled',
-    archived: 'status.archived',
-  };
-  return labels[status] ? t(labels[status]) : status;
+  const key = SESSION_STATUS_LABELS.get(status);
+  return key ? t(key) : status;
 }
 
 /**
@@ -214,11 +218,7 @@ export default function SessionsHubPage() {
       setEnvNameById(new Map(envs.map(e => [e.id, e.name])));
       setAgents(agentList);
     } catch (e: unknown) {
-      setErr(
-        e instanceof Error
-          ? e.message
-          : tRef.current('managed.sessions.loadFailed'),
-      );
+      setErr(resolveApiErrorMessage(e, tRef.current('managed.sessions.loadFailed')));
     }
   }, [agentFilter, tab]);
 
@@ -233,7 +233,7 @@ export default function SessionsHubPage() {
       await action();
       await reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.actionFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.actionFailed')));
     } finally {
       setBusyId(null);
     }

@@ -35,13 +35,13 @@ describe('StatusBadge translations', () => {
     expect(screen.getByText('健康')).toBeInTheDocument();
   });
 
-  it('preserves an unknown machine status', () => {
+  it('preserves a prototype-named machine status', () => {
     render(
       <I18nProvider>
-        <StatusBadge status="vendor-specific" />
+        <StatusBadge status="constructor" />
       </I18nProvider>,
     );
 
-    expect(screen.getByText('vendor-specific')).toBeInTheDocument();
+    expect(screen.getByText('constructor')).toBeInTheDocument();
   });
 });

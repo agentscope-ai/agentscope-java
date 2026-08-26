@@ -16,6 +16,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { listEvents, SessionEvent } from '../api/managedSessions';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { useI18n } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
@@ -62,13 +63,9 @@ export default function SessionEventTimeline({ managedSessionId }: { managedSess
     setErr(null);
     listEvents(managedSessionId)
       .then(list => { if (!cancelled) setEvents(list); })
-      .catch(e => {
+      .catch((e: unknown) => {
         if (!cancelled) {
-          setErr(
-            e instanceof Error
-              ? e.message
-              : tRef.current('common.requestFailed'),
-          );
+          setErr(resolveApiErrorMessage(e, tRef.current('common.requestFailed')));
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });

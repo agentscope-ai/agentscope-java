@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { readApiError } from './http';
 
 export interface ChannelInfo {
   channelId: string;
@@ -145,8 +146,7 @@ function jsonHeaders(): Record<string, string> {
 }
 
 async function failOn(res: Response, fallback: string): Promise<never> {
-  const msg = await res.text().catch(() => '');
-  throw new Error(msg || `${fallback} (${res.status})`);
+  throw await readApiError(res, fallback);
 }
 
 export async function listChannels(): Promise<ChannelInfo[]> {
@@ -230,7 +230,7 @@ export async function listAgentBindings(agentId: string): Promise<AgentBinding[]
   const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/bindings`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error('Failed to load agent bindings');
+  if (!res.ok) throw await readApiError(res, 'Failed to load agent bindings');
   return res.json();
 }
 
@@ -244,8 +244,7 @@ export async function addBinding(
     body: JSON.stringify(req),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || 'Failed to add binding');
+    throw await readApiError(res, 'Failed to add binding');
   }
   return res.json();
 }
@@ -262,7 +261,7 @@ export async function updateBinding(
     headers: jsonHeaders(),
     body: JSON.stringify(req),
   });
-  if (!res.ok) throw new Error('Failed to update binding');
+  if (!res.ok) throw await readApiError(res, 'Failed to update binding');
   return res.json();
 }
 
@@ -273,7 +272,9 @@ export async function deleteBinding(
 ): Promise<void> {
   const url = `/api/agents/${encodeURIComponent(agentId)}/bindings/${index}?channelId=${encodeURIComponent(channelId)}`;
   const res = await fetch(url, { method: 'DELETE', headers: authHeaders() });
-  if (!res.ok && res.status !== 204) throw new Error('Failed to delete binding');
+  if (!res.ok && res.status !== 204) {
+    throw await readApiError(res, 'Failed to delete binding');
+  }
 }
 
 export async function setChannelDefault(agentId: string, channelId: string): Promise<void> {
@@ -281,7 +282,7 @@ export async function setChannelDefault(agentId: string, channelId: string): Pro
     `/api/agents/${encodeURIComponent(agentId)}/channels/${encodeURIComponent(channelId)}/default`,
     { method: 'POST', headers: authHeaders() },
   );
-  if (!res.ok) throw new Error('Failed to set channel default');
+  if (!res.ok) throw await readApiError(res, 'Failed to set channel default');
 }
 
 export async function listAgentPresences(agentId: string): Promise<AgentPresence[]> {

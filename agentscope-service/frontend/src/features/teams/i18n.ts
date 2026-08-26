@@ -16,41 +16,41 @@
 
 import type { Locale, TranslationFunction, TranslationKey } from '@/i18n';
 
-const teamPhaseKeys: Record<string, TranslationKey> = {
-  Pending: 'status.pending',
-  Running: 'status.running',
-  Idle: 'status.idle',
-  Completed: 'teams.status.completed',
-  Failed: 'status.failed',
-};
+const teamPhaseKeys = new Map<string, TranslationKey>([
+  ['Pending', 'status.pending'],
+  ['Running', 'status.running'],
+  ['Idle', 'status.idle'],
+  ['Completed', 'teams.status.completed'],
+  ['Failed', 'status.failed'],
+]);
 
-const memberPhaseKeys: Record<string, TranslationKey> = {
-  Joining: 'teams.status.joining',
-  Working: 'teams.status.working',
-  Idle: 'status.idle',
-  Lost: 'teams.status.lost',
-  Failed: 'status.failed',
-  Shutdown: 'teams.status.shutdown',
-};
+const memberPhaseKeys = new Map<string, TranslationKey>([
+  ['Joining', 'teams.status.joining'],
+  ['Working', 'teams.status.working'],
+  ['Idle', 'status.idle'],
+  ['Lost', 'teams.status.lost'],
+  ['Failed', 'status.failed'],
+  ['Shutdown', 'teams.status.shutdown'],
+]);
 
-const planStatusKeys: Record<string, TranslationKey> = {
-  pending: 'status.pending',
-  approved: 'teams.status.approved',
-  rejected: 'teams.status.rejected',
-};
+const planStatusKeys = new Map<string, TranslationKey>([
+  ['pending', 'status.pending'],
+  ['approved', 'teams.status.approved'],
+  ['rejected', 'teams.status.rejected'],
+]);
 
-const deployModeKeys: Record<string, TranslationKey> = {
-  managed: 'teams.deploy.managed',
-  byo: 'teams.deploy.byo',
-};
+const deployModeKeys = new Map<string, TranslationKey>([
+  ['managed', 'teams.deploy.managed'],
+  ['byo', 'teams.deploy.byo'],
+]);
 
 function mappedLabel(
   t: TranslationFunction,
   value: string | undefined,
-  keys: Record<string, TranslationKey>,
+  keys: ReadonlyMap<string, TranslationKey>,
 ) {
   if (!value) return t('status.unknown');
-  const key = keys[value];
+  const key = keys.get(value);
   return key ? t(key) : value;
 }
 

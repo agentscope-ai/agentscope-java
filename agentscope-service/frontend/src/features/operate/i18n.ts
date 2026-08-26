@@ -20,28 +20,28 @@ import type {
   TranslationKey,
 } from '@/i18n';
 
-const STATUS_KEYS: Record<string, TranslationKey> = {
-  active: 'status.active',
-  archived: 'status.archived',
-  compressing: 'status.compressing',
-  failed: 'status.failed',
-  healthy: 'status.healthy',
-  idle: 'status.idle',
-  pending: 'status.pending',
-  ready: 'status.ready',
-  running: 'status.running',
-  terminated: 'status.terminated',
-  unhealthy: 'status.unhealthy',
-  unknown: 'status.unknown',
-  aborted: 'operate.status.aborted',
-  completed: 'operate.status.completed',
-  compacted: 'operate.status.compacted',
-  historical: 'operate.status.historical',
-  inactive: 'operate.status.inactive',
-  live: 'operate.status.live',
-  offline: 'operate.status.offline',
-  stale: 'operate.status.stale',
-};
+const STATUS_KEYS = new Map<string, TranslationKey>([
+  ['active', 'status.active'],
+  ['archived', 'status.archived'],
+  ['compressing', 'status.compressing'],
+  ['failed', 'status.failed'],
+  ['healthy', 'status.healthy'],
+  ['idle', 'status.idle'],
+  ['pending', 'status.pending'],
+  ['ready', 'status.ready'],
+  ['running', 'status.running'],
+  ['terminated', 'status.terminated'],
+  ['unhealthy', 'status.unhealthy'],
+  ['unknown', 'status.unknown'],
+  ['aborted', 'operate.status.aborted'],
+  ['completed', 'operate.status.completed'],
+  ['compacted', 'operate.status.compacted'],
+  ['historical', 'operate.status.historical'],
+  ['inactive', 'operate.status.inactive'],
+  ['live', 'operate.status.live'],
+  ['offline', 'operate.status.offline'],
+  ['stale', 'operate.status.stale'],
+]);
 
 export function localeTag(locale: Locale): string {
   return locale === 'zh' ? 'zh-CN' : 'en-US';
@@ -101,7 +101,7 @@ export function statusLabel(
   fallback = '—',
 ): string {
   if (!status) return fallback;
-  const key = STATUS_KEYS[status.toLowerCase()];
+  const key = STATUS_KEYS.get(status.toLowerCase());
   return key ? t(key) : status;
 }
 

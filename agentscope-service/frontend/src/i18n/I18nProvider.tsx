@@ -83,6 +83,36 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleStorage = (event: StorageEvent) => {
+      if (
+        event.key !== LOCALE_STORAGE_KEY ||
+        !isLocale(event.newValue)
+      ) {
+        return;
+      }
+
+      try {
+        if (
+          event.storageArea !== null &&
+          event.storageArea !== window.localStorage
+        ) {
+          return;
+        }
+      } catch {
+        // Ignore events that cannot be verified as local-storage updates.
+        return;
+      }
+
+      setLocaleState(event.newValue);
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.lang = locale;
     }

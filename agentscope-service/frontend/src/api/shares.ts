@@ -16,6 +16,7 @@
 
 import { getToken } from './auth';
 import type { AgentShareGrant, GranteeType, ShareTier } from './agents';
+import { readApiError } from './http';
 
 function authHeaders(): Record<string, string> {
   return {
@@ -25,8 +26,7 @@ function authHeaders(): Record<string, string> {
 }
 
 async function asError(res: Response): Promise<never> {
-  const msg = await res.text().catch(() => `${res.status}`);
-  throw new Error(msg || `${res.status}`);
+  throw await readApiError(res, 'Share request failed');
 }
 
 export async function listShares(agentId: string): Promise<AgentShareGrant[]> {

@@ -15,6 +15,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   Memory,
   MemoryStore,
@@ -96,7 +97,7 @@ export default function MemoryStoresPage() {
     try {
       setStores(await listMemoryStores());
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.memory.loadStoresFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.memory.loadStoresFailed')));
     } finally {
       setLoading(false);
     }
@@ -108,7 +109,7 @@ export default function MemoryStoresPage() {
     try {
       setMemories(await listMemories(store.id));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.memory.loadMemoriesFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.memory.loadMemoriesFailed')));
     }
   }
 
@@ -128,7 +129,7 @@ export default function MemoryStoresPage() {
       await refreshStores();
       await loadMemories(created);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.memory.createFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.memory.createFailed')));
     } finally {
       setBusyId(null);
     }
@@ -142,7 +143,7 @@ export default function MemoryStoresPage() {
       if (selected?.id === id) { setSelected(null); setMemories([]); }
       await refreshStores();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.memory.archiveFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.memory.archiveFailed')));
     } finally {
       setBusyId(null);
     }
@@ -156,7 +157,7 @@ export default function MemoryStoresPage() {
       if (selected?.id === id) { setSelected(null); setMemories([]); }
       await refreshStores();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.memory.deleteFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.memory.deleteFailed')));
     } finally {
       setBusyId(null);
     }
@@ -170,7 +171,7 @@ export default function MemoryStoresPage() {
       await redactMemory(selected.id, path);
       await loadMemories(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.memory.redactFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.memory.redactFailed')));
     } finally {
       setBusyId(null);
     }
@@ -185,7 +186,7 @@ export default function MemoryStoresPage() {
       setEditing(null);
       await loadMemories(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.saveFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.saveFailed')));
     } finally {
       setBusyId(null);
     }
@@ -198,7 +199,7 @@ export default function MemoryStoresPage() {
       await deleteMemory(selected.id, path);
       await loadMemories(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.memory.deleteFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.memory.deleteFailed')));
     } finally {
       setBusyId(null);
     }

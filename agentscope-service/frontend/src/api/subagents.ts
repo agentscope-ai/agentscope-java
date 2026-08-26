@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { readApiError } from './http';
 
 export interface SubagentInfo {
   name: string;
@@ -54,7 +55,7 @@ function base(agentId: string): string {
 
 export async function listSubagents(agentId: string): Promise<SubagentInfo[]> {
   const res = await fetch(base(agentId), { headers: authHeaders() });
-  if (!res.ok) throw new Error('Failed to list subagents');
+  if (!res.ok) throw await readApiError(res, 'Failed to list subagents');
   return res.json();
 }
 
@@ -69,8 +70,7 @@ export async function upsertSubagent(
     body: JSON.stringify(req),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(`Failed to save subagent: ${msg}`);
+    throw await readApiError(res, 'Failed to save subagent');
   }
   return res.json();
 }
@@ -86,8 +86,7 @@ export async function createFromAgent(
     body: JSON.stringify({ sourceAgentId, name }),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(`Failed to create subagent from agent: ${msg}`);
+    throw await readApiError(res, 'Failed to create subagent from agent');
   }
   return res.json();
 }
@@ -97,5 +96,7 @@ export async function deleteSubagent(agentId: string, name: string): Promise<voi
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw new Error('Failed to delete subagent');
+  if (!res.ok && res.status !== 204) {
+    throw await readApiError(res, 'Failed to delete subagent');
+  }
 }

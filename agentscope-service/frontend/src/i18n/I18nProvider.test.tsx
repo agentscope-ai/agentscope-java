@@ -122,6 +122,29 @@ describe('I18nProvider', () => {
     expect(document.documentElement.lang).toBe('zh');
   });
 
+  it('syncs locale changes made in another tab', () => {
+    render(
+      <I18nProvider>
+        <Consumer />
+      </I18nProvider>,
+    );
+
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, 'zh');
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: LOCALE_STORAGE_KEY,
+          newValue: 'zh',
+          storageArea: window.localStorage,
+        }),
+      );
+    });
+
+    expect(screen.getByText('zh')).toBeInTheDocument();
+    expect(screen.getByText('英文')).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe('zh');
+  });
+
   it('keeps switching when storage writes fail under StrictMode', () => {
     vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
       throw new DOMException('blocked', 'SecurityError');

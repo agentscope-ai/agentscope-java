@@ -21,6 +21,7 @@ import { ManagedFile, listFiles } from '../api/files';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 import { createManagedSession, ManagedSession } from '../api/managedSessions';
 import { Vault, listVaults } from '../api/vaults';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
@@ -136,11 +137,10 @@ export default function NewManagedSessionForm({
         setMemoryStoreIds(agent.defaultMemoryStoreIds ?? []);
       } catch (e: unknown) {
         if (!cancelled) {
-          setErr(
-            e instanceof Error
-              ? e.message
-              : tRef.current('session.new.loadFailed'),
-          );
+          setErr(resolveApiErrorMessage(
+            e,
+            tRef.current('session.new.loadFailed'),
+          ));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -157,16 +157,17 @@ export default function NewManagedSessionForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
     setErr(null);
+    if (maxIters.trim() && Number.isNaN(Number(maxIters))) {
+      setErr(t('session.validation.maxItersNumber'));
+      return;
+    }
+    setSubmitting(true);
     try {
       let envId = environmentId.trim();
       if (!envId) {
         envId = (await ensureDefaultEnvironment()).id;
         setEnvironmentId(envId);
-      }
-      if (maxIters.trim() && Number.isNaN(Number(maxIters))) {
-        throw new Error(t('session.validation.maxItersNumber'));
       }
       const agentOverrides: Record<string, unknown> = {};
       if (system.trim()) agentOverrides.system = system.trim();
@@ -182,9 +183,7 @@ export default function NewManagedSessionForm({
       });
       onCreated(session);
     } catch (ex: unknown) {
-      setErr(
-        ex instanceof Error ? ex.message : t('session.new.createFailed'),
-      );
+      setErr(resolveApiErrorMessage(ex, t('session.new.createFailed')));
     } finally {
       setSubmitting(false);
     }

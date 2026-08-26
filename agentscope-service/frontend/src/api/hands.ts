@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { readApiError } from './http';
 
 export type HandsStatus = {
   brainInstanceId: string;
@@ -35,7 +36,7 @@ function authHeaders(): Record<string, string> {
 export async function fetchHandsStatus(): Promise<HandsStatus> {
   const res = await fetch('/api/hands/status', { headers: authHeaders() });
   if (!res.ok) {
-    throw new Error(`hands status failed: ${res.status}`);
+    throw await readApiError(res, 'Failed to load hands status');
   }
   return res.json();
 }

@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { fallbackApiError } from './errors';
 import { readApiError } from './http';
 import {
   AgentDefinition,
@@ -80,19 +81,15 @@ function base(agentId: string): string {
   return `/api/agents/${encodeURIComponent(agentId)}/tools`;
 }
 
-async function readError(res: Response, fallback: string): Promise<Error> {
-  return readApiError(res, fallback);
-}
-
 export async function fetchBuiltinCatalog(agentId: string): Promise<BuiltinToolInfo[]> {
   const res = await fetch(`${base(agentId)}/catalog/builtins`, { headers: authHeaders() });
-  if (!res.ok) throw await readError(res, 'Failed to load built-in catalog');
+  if (!res.ok) throw await readApiError(res, 'Failed to load built-in catalog');
   return res.json();
 }
 
 export async function fetchMcpCatalog(agentId: string): Promise<McpCatalogEntry[]> {
   const res = await fetch(`${base(agentId)}/catalog/mcp-servers`, { headers: authHeaders() });
-  if (!res.ok) throw await readError(res, 'Failed to load MCP catalog');
+  if (!res.ok) throw await readApiError(res, 'Failed to load MCP catalog');
   return res.json();
 }
 
@@ -124,7 +121,7 @@ export function computeEnabledBuiltins(
 
 function requireVersion(agent: AgentDefinition): number {
   if (agent.version == null) {
-    throw new Error('Agent version missing; cannot update (optimistic lock)');
+    throw fallbackApiError('Agent version missing; cannot update (optimistic lock)');
   }
   return agent.version;
 }

@@ -19,7 +19,12 @@ import {
   ChannelInfo, AgentBinding, BindingTier, BindingCreateRequest,
   listChannels, listAgentBindings, addBinding, updateBinding, deleteBinding, setChannelDefault,
 } from '../api/channels';
-import { type TranslationKey, useT } from '../i18n';
+import { resolveApiErrorMessage } from '@/api/errors';
+import {
+  type TranslationFunction,
+  type TranslationKey,
+  useT,
+} from '../i18n';
 
 interface Props {
   agentId: string;
@@ -40,8 +45,21 @@ const SCOPES: { value: NonNullable<BindingCreateRequest['sessionScope']>; labelK
   { value: 'MAIN', labelKey: 'bindings.scopes.main' },
 ];
 
-const TIER_LABELS = Object.fromEntries(TIERS.map((tier) => [tier.value, tier.labelKey])) as Record<BindingTier, TranslationKey>;
-const SCOPE_LABELS = Object.fromEntries(SCOPES.map((scope) => [scope.value, scope.labelKey])) as Record<string, TranslationKey>;
+const TIER_LABELS = new Map<string, TranslationKey>(
+  TIERS.map((tier) => [tier.value, tier.labelKey] as const),
+);
+const SCOPE_LABELS = new Map<string, TranslationKey>(
+  SCOPES.map((scope) => [scope.value, scope.labelKey] as const),
+);
+
+function enumLabel(
+  t: TranslationFunction,
+  labels: ReadonlyMap<string, TranslationKey>,
+  value: string,
+): string {
+  const key = labels.get(value);
+  return key ? t(key) : value;
+}
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', maxWidth: 1100 },
@@ -168,18 +186,20 @@ export default function ChannelBindingTable({ agentId }: Props) {
       setChannels(c);
       setBindings(b);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('bindings.errors.load'));
+      setErr(resolveApiErrorMessage(e, t('bindings.errors.load')));
     }
   }
 
   useEffect(() => { reload(); /* eslint-disable-next-line */ }, [agentId]);
 
   const byChannel = useMemo(() => {
-    const m: Record<string, AgentBinding[]> = {};
+    const grouped = new Map<string, AgentBinding[]>();
     for (const b of bindings) {
-      (m[b.channelId] ??= []).push(b);
+      const existing = grouped.get(b.channelId);
+      if (existing) existing.push(b);
+      else grouped.set(b.channelId, [b]);
     }
-    return m;
+    return grouped;
   }, [bindings]);
 
   async function handleSave() {
@@ -195,7 +215,7 @@ export default function ChannelBindingTable({ agentId }: Props) {
       setDirty(true);
       reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('bindings.errors.save'));
+      setErr(resolveApiErrorMessage(e, t('bindings.errors.save')));
     }
   }
 
@@ -206,7 +226,7 @@ export default function ChannelBindingTable({ agentId }: Props) {
       setDirty(true);
       reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('bindings.errors.delete'));
+      setErr(resolveApiErrorMessage(e, t('bindings.errors.delete')));
     }
   }
 
@@ -216,7 +236,7 @@ export default function ChannelBindingTable({ agentId }: Props) {
       setDirty(true);
       reload();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('bindings.errors.default'));
+      setErr(resolveApiErrorMessage(e, t('bindings.errors.default')));
     }
   }
 
@@ -232,12 +252,12 @@ export default function ChannelBindingTable({ agentId }: Props) {
       {channels.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{t('bindings.noChannels')}</div>}
       {channels.map(c => {
         const isDefault = c.defaultAgentId === agentId;
-        const myBindings = byChannel[c.channelId] ?? [];
+        const myBindings = byChannel.get(c.channelId) ?? [];
         return (
           <div key={c.channelId} style={S.section}>
             <div style={S.channelHead}>
               <span style={S.channelName}>{c.channelId}</span>
-              <span style={S.badge}>{c.dmScope && SCOPE_LABELS[c.dmScope] ? t(SCOPE_LABELS[c.dmScope]) : c.dmScope}</span>
+              <span style={S.badge}>{c.dmScope ? enumLabel(t, SCOPE_LABELS, c.dmScope) : c.dmScope}</span>
               {!c.started && <span style={{ ...S.badge, color: '#dc2626' }}>{t('common.status.stopped')}</span>}
               {isDefault && <span style={S.defaultMark}>{t('common.status.default')}</span>}
               <span style={{ flex: 1 }} />
@@ -253,9 +273,9 @@ export default function ChannelBindingTable({ agentId }: Props) {
               <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>{t('bindings.noBindings')}</div>
             ) : myBindings.map(b => (
               <div key={`${b.channelId}-${b.index}`} style={S.bindingRow}>
-                <span style={{ ...S.badge, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>{t(TIER_LABELS[b.tier])}</span>
+                <span style={{ ...S.badge, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>{enumLabel(t, TIER_LABELS, b.tier)}</span>
                 <span style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.86rem', color: '#475569' }}>{describe(b)}</span>
-                {b.sessionScope && <span style={S.badge}>{SCOPE_LABELS[b.sessionScope] ? t(SCOPE_LABELS[b.sessionScope]) : b.sessionScope}</span>}
+                {b.sessionScope && <span style={S.badge}>{enumLabel(t, SCOPE_LABELS, b.sessionScope)}</span>}
                 <button style={S.btnSm} onClick={() => setEditing({ form: bindingToForm(b), index: b.index })}>{t('common.actions.edit')}</button>
                 <button style={{ ...S.btnSm, color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleDelete(b)}>{t('common.actions.delete')}</button>
               </div>

@@ -27,7 +27,13 @@ import {
 } from '../../../api/deployments';
 import { AgentDefinition, listAgents } from '../../../api/agents';
 import { Environment, listEnvironments } from '../../../api/environments';
-import { type Locale, type TranslationFunction, useI18n } from '@/i18n';
+import { resolveApiErrorMessage } from '@/api/errors';
+import {
+  type Locale,
+  type TranslationFunction,
+  type TranslationKey,
+  useI18n,
+} from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -95,13 +101,15 @@ function formatTime(
   return new Date(ms).toLocaleString(locale);
 }
 
+const TRIGGER_LABELS = new Map<string, TranslationKey>([
+  ['manual', 'managed.deployments.trigger.manual'],
+  ['cron', 'managed.deployments.trigger.cron'],
+  ['webhook', 'managed.deployments.trigger.webhook'],
+]);
+
 function triggerLabel(type: TriggerType, t: TranslationFunction): string {
-  const labels = {
-    manual: 'managed.deployments.trigger.manual',
-    cron: 'managed.deployments.trigger.cron',
-    webhook: 'managed.deployments.trigger.webhook',
-  } as const;
-  return t(labels[type]);
+  const key = TRIGGER_LABELS.get(type);
+  return key ? t(key) : type;
 }
 
 export default function DeploymentsPage() {
@@ -133,7 +141,7 @@ export default function DeploymentsPage() {
       setAgents(agentList);
       setEnvironments(envList);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.deployments.loadFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.deployments.loadFailed')));
     } finally {
       setLoading(false);
     }
@@ -164,7 +172,7 @@ export default function DeploymentsPage() {
       setCronExpression('0 0 * * * *');
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.deployments.createFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.deployments.createFailed')));
     } finally {
       setBusyId(null);
     }
@@ -177,7 +185,7 @@ export default function DeploymentsPage() {
       await updateDeployment(d.id, { enabled: !d.enabled });
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.deployments.updateFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.deployments.updateFailed')));
     } finally {
       setBusyId(null);
     }
@@ -190,7 +198,7 @@ export default function DeploymentsPage() {
       await runDeployment(d.id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.deployments.runFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.deployments.runFailed')));
     } finally {
       setBusyId(null);
     }
@@ -203,7 +211,7 @@ export default function DeploymentsPage() {
       await archiveDeployment(id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.deployments.archiveFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.deployments.archiveFailed')));
     } finally {
       setBusyId(null);
     }
@@ -216,7 +224,7 @@ export default function DeploymentsPage() {
       await deleteDeployment(id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.deployments.deleteFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.deployments.deleteFailed')));
     } finally {
       setBusyId(null);
     }

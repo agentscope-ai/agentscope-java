@@ -16,6 +16,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   AdminUserView,
   CreateUserResponse,
@@ -139,7 +140,7 @@ function InviteModal({
       });
       onCreated(res);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('teams.admin.failed'));
+      setErr(resolveApiErrorMessage(e, t('teams.admin.failed')));
     } finally {
       setSubmitting(false);
     }
@@ -229,7 +230,7 @@ function ResetPasswordModal({
       await resetPassword(user.userId, pwd);
       onDone();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('teams.admin.failed'));
+      setErr(resolveApiErrorMessage(e, t('teams.admin.failed')));
     } finally {
       setSubmitting(false);
     }
@@ -280,14 +281,14 @@ export default function AdminUsersPage() {
     if (!next.includes('user')) next.push('user');
     updateRoles(u.userId, next)
       .then(refresh)
-      .catch((e: unknown) => alert(e instanceof Error ? e.message : t('teams.admin.failed')));
+      .catch((e: unknown) => alert(resolveApiErrorMessage(e, t('teams.admin.failed'))));
   }
 
   function doDelete(u: AdminUserView) {
     if (!confirm(t('teams.admin.deleteConfirm', { username: u.username }))) return;
     deleteUser(u.userId)
       .then(refresh)
-      .catch((e: unknown) => alert(e instanceof Error ? e.message : t('teams.admin.failed')));
+      .catch((e: unknown) => alert(resolveApiErrorMessage(e, t('teams.admin.failed'))));
   }
 
   return (
@@ -302,7 +303,7 @@ export default function AdminUsersPage() {
 
       {loadErr != null && (
         <p style={{ color: '#dc2626' }}>
-          {loadErr instanceof Error ? loadErr.message : t('teams.admin.loadFailed')}
+          {resolveApiErrorMessage(loadErr, t('teams.admin.loadFailed'))}
         </p>
       )}
 

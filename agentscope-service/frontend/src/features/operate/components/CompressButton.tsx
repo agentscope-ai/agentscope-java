@@ -15,6 +15,7 @@
  */
 
 import { useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/apiClient';
 import { useT } from '@/i18n';
@@ -51,21 +52,22 @@ export function CompressButton({
       }
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        try {
-          const body = JSON.parse(e.body) as { code?: string; hint?: string; error?: string };
-          if (body.hint === 'force_confirm') {
-            setConfirmOpen(true);
-            return;
-          }
-          setNote(body.error ? { kind: 'raw', text: body.error } : { kind: 'busy' });
+        const details = e.details !== null && typeof e.details === 'object'
+          ? e.details as { hint?: unknown }
+          : undefined;
+        if (details?.hint === 'force_confirm') {
+          setConfirmOpen(true);
           return;
-        } catch {
-          /* fall through */
         }
+        setNote(e.source === 'server'
+          ? { kind: 'raw', text: resolveApiErrorMessage(e, t('operate.compress.busy')) }
+          : { kind: 'busy' });
+        return;
       }
-      setNote(e instanceof Error
-        ? { kind: 'raw', text: e.message }
-        : { kind: 'raw', text: t('operate.compress.failed') });
+      setNote({
+        kind: 'raw',
+        text: resolveApiErrorMessage(e, t('operate.compress.failed')),
+      });
     } finally {
       setWorking(false);
     }

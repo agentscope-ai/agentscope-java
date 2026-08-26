@@ -16,6 +16,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { createWorkspace, deleteWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
 import { useT } from '@/i18n';
 
@@ -32,7 +33,7 @@ export default function WorkspacesHubPage() {
       setItems(await listWorkspaces());
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.workspaces.loadFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.workspaces.loadFailed')));
     }
   }
 
@@ -50,7 +51,7 @@ export default function WorkspacesHubPage() {
       setName('');
       navigate(`/workspaces/${encodeURIComponent(ws.id)}`);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.workspaces.createFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.workspaces.createFailed')));
     } finally {
       setCreating(false);
     }
@@ -123,7 +124,7 @@ export default function WorkspacesHubPage() {
                   await deleteWorkspace(ws.id);
                   await reload();
                 } catch (e: unknown) {
-                  setErr(e instanceof Error ? e.message : t('managed.workspaces.deleteFailed'));
+                  setErr(resolveApiErrorMessage(e, t('managed.workspaces.deleteFailed')));
                 }
               }}
               style={{

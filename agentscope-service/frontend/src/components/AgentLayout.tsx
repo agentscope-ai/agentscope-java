@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AgentDefinition, getAgent, ShareTier } from '../api/agents';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { type TranslationKey, useT } from '../i18n';
 import ShareAgentDialog from './ShareAgentDialog';
 
@@ -40,6 +41,7 @@ function tierImplies(have: ShareTier | undefined | null, need: TierMin): boolean
 
 export default function AgentLayout() {
   const t = useT();
+  const tRef = useRef(t);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -48,12 +50,20 @@ export default function AgentLayout() {
   const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  useEffect(() => {
     if (!id) return;
     let cancelled = false;
     setErr(null);
     getAgent(id)
       .then(a => { if (!cancelled) setAgent(a); })
-      .catch(e => { if (!cancelled) setErr(e.message); });
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setErr(resolveApiErrorMessage(e, tRef.current('common.requestFailed')));
+        }
+      });
     return () => { cancelled = true; };
   }, [id]);
 

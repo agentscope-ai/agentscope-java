@@ -19,6 +19,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AgentDefinition, listAgents } from '../../../api/agents';
 import { cloneAgent } from '../../../api/clone';
 import { getUserId } from '../../../api/auth';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   type TranslationFunction,
   type TranslationKey,
@@ -78,7 +79,7 @@ export default function AgentsHubPage() {
       const list = await listAgents();
       setAgents(list);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     } finally {
       setLoading(false);
     }
@@ -108,7 +109,7 @@ export default function AgentsHubPage() {
       await refresh();
       navigate(`/agents/${encodeURIComponent(clone.id)}/chat`);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.agents.cloneFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.agents.cloneFailed')));
     } finally {
       setBusyId(null);
     }

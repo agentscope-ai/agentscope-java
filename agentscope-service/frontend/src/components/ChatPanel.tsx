@@ -27,6 +27,7 @@ import {
   SessionEvent,
   streamEvents,
 } from '../api/managedSessions';
+import { resolveApiErrorMessage } from '@/api/errors';
 import MessageBlock, { ContentBlock } from './MessageBlock';
 import { type TranslationFunction, useT } from '@/i18n';
 
@@ -582,11 +583,10 @@ export default function ChatPanel({
         );
       } catch (e: unknown) {
         if (!cancelled) {
-          setLoadError(
-            e instanceof Error
-              ? e.message
-              : tRef.current('chat.error.openSessionFailed'),
-          );
+          setLoadError(resolveApiErrorMessage(
+            e,
+            tRef.current('chat.error.openSessionFailed'),
+          ));
         }
       } finally {
         if (!cancelled) setRestoring(false);
@@ -693,10 +693,10 @@ export default function ChatPanel({
       const recorded = await postUserMessage(sessionId, text);
       adoptRecordedUserEvent(recorded);
     } catch (e: unknown) {
-      const msg =
-        e instanceof Error
-          ? e.message
-          : tRef.current('chat.error.sendFailed');
+      const msg = resolveApiErrorMessage(
+        e,
+        tRef.current('chat.error.sendFailed'),
+      );
       setMessages(prev => [...prev, {
         id: nextId(),
         role: 'system',
@@ -743,10 +743,10 @@ export default function ChatPanel({
         }],
       }]);
     } catch (e: unknown) {
-      const msg =
-        e instanceof Error
-          ? e.message
-          : tRef.current('chat.error.confirmationFailed');
+      const msg = resolveApiErrorMessage(
+        e,
+        tRef.current('chat.error.confirmationFailed'),
+      );
       setMessages(prev => [...prev, {
         id: nextId(),
         role: 'system',

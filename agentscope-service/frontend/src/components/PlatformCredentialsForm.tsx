@@ -42,6 +42,11 @@ interface Props {
   onToggleAdvanced?: () => void;
 }
 
+function ownValue<T>(record: Record<string, T> | undefined, key: string): T | undefined {
+  if (!record || !Object.prototype.hasOwnProperty.call(record, key)) return undefined;
+  return record[key];
+}
+
 export default function PlatformCredentialsForm({
   spec,
   values,
@@ -73,7 +78,7 @@ export default function PlatformCredentialsForm({
           style={S.input}
           type={inputType}
           autoComplete="off"
-          value={values[f.key] ?? ''}
+          value={ownValue(values, f.key) ?? ''}
           placeholder={f.secret ? '••••••••' : undefined}
           onChange={(e) => onChange({ ...values, [f.key]: e.target.value })}
         />
@@ -105,19 +110,19 @@ export function credentialsFromProperties(
   spec: ChannelTypeSpec | undefined,
   properties: Record<string, unknown> | undefined,
 ): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!spec) return out;
+  if (!spec) return {};
+  const entries: Array<[string, string]> = [];
   for (const f of spec.fields) {
-    const v = properties?.[f.key];
+    const v = ownValue(properties, f.key);
     if (v == null) {
-      out[f.key] = '';
+      entries.push([f.key, '']);
     } else if (f.secret && String(v) === '********') {
-      out[f.key] = '';
+      entries.push([f.key, '']);
     } else {
-      out[f.key] = String(v);
+      entries.push([f.key, String(v)]);
     }
   }
-  return out;
+  return Object.fromEntries(entries);
 }
 
 /** Merge form values into a properties payload; omit blank secrets so CP keeps existing. */
@@ -126,10 +131,10 @@ export function propertiesFromCredentials(
   values: Record<string, string>,
   isEdit: boolean,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  if (!spec) return out;
+  if (!spec) return {};
+  const entries: Array<[string, unknown]> = [];
   for (const f of spec.fields) {
-    const raw = values[f.key];
+    const raw = ownValue(values, f.key);
     if (raw == null || raw === '') {
       if (!isEdit || !f.secret) {
         // omit
@@ -138,10 +143,10 @@ export function propertiesFromCredentials(
     }
     if (f.inputType === 'number') {
       const n = Number(raw);
-      out[f.key] = Number.isFinite(n) ? n : raw;
+      entries.push([f.key, Number.isFinite(n) ? n : raw]);
     } else {
-      out[f.key] = raw;
+      entries.push([f.key, raw]);
     }
   }
-  return out;
+  return Object.fromEntries(entries);
 }

@@ -39,12 +39,12 @@ import {
   type TeamMember,
   type TeamTask,
 } from '@/api/teams';
+import { resolveApiErrorMessage } from '@/api/errors';
 import ChatPanel from '@/components/ChatPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
-import { ApiError } from '@/lib/apiClient';
 import { cn } from '@/lib/utils';
 import { useI18n, type TranslationFunction } from '@/i18n';
 import {
@@ -845,7 +845,5 @@ function MemberCard({
 }
 
 function errMsg(e: unknown, t: TranslationFunction) {
-  if (e instanceof ApiError) return e.body || e.message;
-  if (e instanceof Error) return e.message;
-  return t('common.requestFailed');
+  return resolveApiErrorMessage(e, t('common.requestFailed'));
 }

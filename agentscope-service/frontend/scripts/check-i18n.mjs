@@ -311,10 +311,105 @@ function checkUiCopy(englishMessages) {
       );
     };
 
+    const reportedErrorMessages = new Set();
+    const reportErrorMessage = (node) => {
+      const offset = node.getStart(sourceFile);
+      if (reportedErrorMessages.has(offset)) return;
+      reportedErrorMessages.add(offset);
+      const position = sourceFile.getLineAndCharacterOfPosition(offset);
+      errors.push(
+        `${fileName}:${position.line + 1}:${position.character + 1} ` +
+          'direct Error.message bypasses the localized error presenter',
+      );
+    };
+
+    const isMessageReadFrom = (node, variableName) => {
+      if (!ts.isPropertyAccessExpression(node) || node.name.text !== 'message') return false;
+      const target = unwrapExpression(node.expression);
+      return ts.isIdentifier(target) && target.text === variableName;
+    };
+
+    const checkMessageReads = (root, variableName, skipNestedCatches = false) => {
+      const visitMessageReads = (child) => {
+        if (skipNestedCatches && ts.isCatchClause(child)) return;
+        if (isMessageReadFrom(child, variableName)) reportErrorMessage(child);
+        ts.forEachChild(child, visitMessageReads);
+      };
+      visitMessageReads(root);
+    };
+
+    const checkErrorMessageBypasses = (node) => {
+      if (fileName.startsWith('src/api/')) return;
+
+      if (
+        ts.isCatchClause(node) &&
+        node.variableDeclaration &&
+        ts.isIdentifier(node.variableDeclaration.name)
+      ) {
+        // Nested catches have their own binding and are checked independently.
+        checkMessageReads(node.block, node.variableDeclaration.name.text, true);
+      }
+
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'catch'
+      ) {
+        const callback = unwrapExpression(node.arguments[0]);
+        if (
+          callback &&
+          (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
+          callback.parameters[0] &&
+          ts.isIdentifier(callback.parameters[0].name)
+        ) {
+          checkMessageReads(callback.body, callback.parameters[0].name.text, true);
+        }
+      }
+
+      if (ts.isConditionalExpression(node)) {
+        const condition = unwrapExpression(node.condition);
+        if (
+          condition &&
+          ts.isBinaryExpression(condition) &&
+          condition.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+          ts.isIdentifier(unwrapExpression(condition.left)) &&
+          ts.isIdentifier(unwrapExpression(condition.right)) &&
+          unwrapExpression(condition.right).text === 'Error'
+        ) {
+          checkMessageReads(node.whenTrue, unwrapExpression(condition.left).text);
+        }
+      }
+    };
+
+    const checkLocalizedErrorThrows = (node) => {
+      if (
+        fileName.startsWith('src/api/') ||
+        !ts.isNewExpression(node) ||
+        !ts.isIdentifier(node.expression) ||
+        node.expression.text !== 'Error' ||
+        !node.arguments?.[0]
+      ) {
+        return;
+      }
+
+      const message = unwrapExpression(node.arguments[0]);
+      if (!message || !ts.isCallExpression(message) || !isTranslationCall(message.expression)) {
+        return;
+      }
+
+      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      errors.push(
+        `${fileName}:${position.line + 1}:${position.character + 1} ` +
+          'translated text thrown as Error loses its localized ownership at the presenter',
+      );
+    };
+
     const visit = (node) => {
       if (ts.isJsxText(node)) report(node, 'jsx', node.text);
 
       if (ts.isCallExpression(node)) checkTranslationParams(node);
+      checkErrorMessageBypasses(node);
+      checkLocalizedErrorThrows(node);
 
       if (
         ts.isJsxAttribute(node) &&
@@ -385,6 +480,7 @@ if (errors.length > 0) {
 } else {
   console.log(
     `i18n check passed: ${englishMessages.size} paired messages, ` +
-      `${sourceFileCount} source files, no unapproved hard-coded UI copy or invalid params.`,
+      `${sourceFileCount} source files, no unapproved hard-coded UI copy, ` +
+      'invalid params, direct error-message bypasses, or translated Error throws.',
   );
 }

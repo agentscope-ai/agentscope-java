@@ -14,18 +14,11 @@
  * limitations under the License.
  */
 
+import { fallbackApiError, readApiError } from '@/api/errors';
+
+export { ApiError } from '@/api/errors';
+
 const TOKEN_KEY = 'claw_token';
-
-export class ApiError extends Error {
-  status: number;
-  body: string;
-
-  constructor(status: number, body: string) {
-    super(body || `HTTP ${status}`);
-    this.status = status;
-    this.body = body;
-  }
-}
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -61,11 +54,10 @@ export async function apiFetch<T = unknown>(
     if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
       window.location.assign('/login');
     }
-    throw new ApiError(401, 'Unauthorized');
+    throw fallbackApiError('Unauthorized', 401);
   }
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new ApiError(res.status, body || res.statusText);
+    throw await readApiError(res, 'Request failed');
   }
   if (res.status === 204) return undefined as T;
   const ct = res.headers.get('content-type') || '';

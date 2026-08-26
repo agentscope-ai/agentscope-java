@@ -15,6 +15,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   Vault,
   VaultCredential,
@@ -100,7 +101,7 @@ export default function VaultsPage() {
     try {
       setVaults(await listVaults());
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.loadFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.loadFailed')));
     } finally {
       setLoading(false);
     }
@@ -112,7 +113,7 @@ export default function VaultsPage() {
     try {
       setCredentials(await listCredentials(vault.id));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.loadCredentialsFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.loadCredentialsFailed')));
     }
   }
 
@@ -131,7 +132,7 @@ export default function VaultsPage() {
       await refreshVaults();
       await loadCredentials(created);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.createFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.createFailed')));
     } finally {
       setBusyId(null);
     }
@@ -148,7 +149,7 @@ export default function VaultsPage() {
         setSelected({ ...v, displayName: next.trim() });
       }
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.renameFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.renameFailed')));
     } finally {
       setBusyId(null);
     }
@@ -162,7 +163,7 @@ export default function VaultsPage() {
       if (selected?.id === id) { setSelected(null); setCredentials([]); }
       await refreshVaults();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.archiveFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.archiveFailed')));
     } finally {
       setBusyId(null);
     }
@@ -176,7 +177,7 @@ export default function VaultsPage() {
       if (selected?.id === id) { setSelected(null); setCredentials([]); }
       await refreshVaults();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.deleteFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.deleteFailed')));
     } finally {
       setBusyId(null);
     }
@@ -194,7 +195,7 @@ export default function VaultsPage() {
           : t('managed.vaults.invalidResult', { detail }),
       );
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.validateFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.validateFailed')));
     } finally {
       setBusyId(null);
     }
@@ -209,7 +210,7 @@ export default function VaultsPage() {
       await updateCredential(selected.id, credentialId, { secret });
       await loadCredentials(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.updateFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.updateFailed')));
     } finally {
       setBusyId(null);
     }
@@ -232,7 +233,7 @@ export default function VaultsPage() {
       setCredSecret('');
       await loadCredentials(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.addFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.addFailed')));
     } finally {
       setBusyId(null);
     }
@@ -245,7 +246,7 @@ export default function VaultsPage() {
       await deleteCredential(selected.id, credentialId);
       await loadCredentials(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.vaults.deleteFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.vaults.deleteFailed')));
     } finally {
       setBusyId(null);
     }

@@ -25,6 +25,7 @@ import {
 } from '../api/subagents';
 import { AgentDefinition, listAgents } from '../api/agents';
 import { readFile } from '../api/workspace';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { type TranslationFunction, useT } from '../i18n';
 
 interface Props {
@@ -194,7 +195,7 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
       const list = await listSubagents(agentId);
       setItems(list);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : tRef.current('subagent.error.load'));
+      setErr(resolveApiErrorMessage(e, tRef.current('subagent.error.load')));
     } finally {
       setLoading(false);
     }
@@ -256,7 +257,7 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
       await reload();
       onChanged?.();
     } catch (e: unknown) {
-      setFormErr(e instanceof Error ? e.message : t('subagent.error.save'));
+      setFormErr(resolveApiErrorMessage(e, t('subagent.error.save')));
     } finally {
       setSaving(false);
     }
@@ -270,7 +271,7 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
       await reload();
       onChanged?.();
     } catch (e: unknown) {
-      setFormErr(e instanceof Error ? e.message : t('subagent.error.delete'));
+      setFormErr(resolveApiErrorMessage(e, t('subagent.error.delete')));
     }
   }
 
@@ -295,7 +296,7 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
       await reload();
       onChanged?.();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('subagent.error.add'));
+      setErr(resolveApiErrorMessage(e, t('subagent.error.add')));
     }
   }
 

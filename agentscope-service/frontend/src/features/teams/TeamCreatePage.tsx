@@ -18,6 +18,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { listAgents, type AgentDefinition } from '@/api/agents';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   createTeam,
   type TeamCreateMember,
@@ -28,7 +29,6 @@ import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
 import { me } from '@/lib/auth';
 import { fetchDataPlanes } from '@/features/operate/api';
-import { ApiError } from '@/lib/apiClient';
 import { useT } from '@/i18n';
 
 type DeployPick = 'managed' | 'byo';
@@ -143,13 +143,7 @@ export default function TeamCreatePage() {
       const ns = res.team.namespace || body.namespace || 'default';
       navigate(`/teams/${encodeURIComponent(res.team.name)}?namespace=${encodeURIComponent(ns)}`);
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.body || err.message
-          : err instanceof Error
-            ? err.message
-            : t('teams.create.failed');
-      setError(msg);
+      setError(resolveApiErrorMessage(err, t('teams.create.failed')));
     } finally {
       setSubmitting(false);
     }

@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { readFile } from '../api/workspace';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { useT } from '../i18n';
 
 interface Props {
@@ -50,10 +51,15 @@ const TEXT_EXT = /\.(md|txt|json|jsonl|ndjson|log|yaml|yml|toml|properties|conf|
 
 export default function WorkspaceEditor({ agentId, path }: Props) {
   const tr = useT();
+  const trRef = useRef(tr);
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [errFallback, setErrFallback] = useState<'unsupported' | 'read' | null>(null);
+
+  useEffect(() => {
+    trRef.current = tr;
+  }, [tr]);
 
   const viewable = !!path && (TEXT_EXT.test(path) || path.endsWith('AGENTS.md'));
 
@@ -73,9 +79,8 @@ export default function WorkspaceEditor({ agentId, path }: Props) {
     setErrFallback(null);
     readFile(agentId, path)
       .then(text => setContent(text))
-      .catch(e => {
-        if (e instanceof Error && e.message) setErr(e.message);
-        else setErrFallback('read');
+      .catch((e: unknown) => {
+        setErr(resolveApiErrorMessage(e, trRef.current('workspaceEditor.errors.read')));
       })
       .finally(() => setLoading(false));
   }, [agentId, path, viewable]);

@@ -35,6 +35,7 @@ describe('team display localization', () => {
     expect(deployModeLabel(t, 'byo')).toBe('BYO');
     expect(planStatusLabel(t, 'approved')).toBe('Approved');
     expect(teamPhaseLabel(t, 'Experimental')).toBe('Experimental');
+    expect(teamPhaseLabel(t, 'constructor')).toBe('constructor');
   });
 
   it('formats display numbers and preserves invalid date strings', () => {

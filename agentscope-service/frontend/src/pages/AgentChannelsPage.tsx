@@ -16,6 +16,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   AgentPresence,
   ChannelTypeSpec,
@@ -85,7 +86,7 @@ export default function AgentChannelsPage() {
       setPresences(p);
       setTypes(t);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     }
   }
 
@@ -159,11 +160,7 @@ export default function AgentChannelsPage() {
                       await deleteAgentPresence(agentId, p.channelId);
                       await load();
                     } catch (e: unknown) {
-                      setErr(
-                        e instanceof Error
-                          ? e.message
-                          : t('managed.common.requestFailed'),
-                      );
+                      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
                     }
                   }}
                 >
@@ -267,7 +264,7 @@ function PresenceDialog({
       }
       onSaved();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.requestFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     } finally {
       setBusy(false);
     }

@@ -16,6 +16,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   browseMarketplaceSkills,
   createMarketplace,
@@ -124,7 +125,9 @@ export default function WorkspaceDetailPage() {
   // Reload for a different workspace, but not for translated fallback text.
   useEffect(() => {
     if (!id) return;
-    reloadMeta().catch(e => setErr(e.message));
+    reloadMeta().catch((e: unknown) =>
+      setErr(resolveApiErrorMessage(e, t('managed.workspaces.loadFailed'))),
+    );
     readWorkspaceFile(id, 'AGENTS.md')
       .then(f => setAgentsMd(f.content))
       .catch(() => setAgentsMd(''));
@@ -149,7 +152,7 @@ export default function WorkspaceDetailPage() {
       await reloadMeta();
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.common.saveFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.common.saveFailed')));
     } finally {
       setSaving(false);
     }
@@ -668,7 +671,7 @@ export default function WorkspaceDetailPage() {
                       setMktName('');
                       setErr(null);
                     } catch (e: unknown) {
-                      setErr(e instanceof Error ? e.message : t('managed.common.actionFailed'));
+                      setErr(resolveApiErrorMessage(e, t('managed.common.actionFailed')));
                     }
                   }}
                   style={{
@@ -722,7 +725,7 @@ export default function WorkspaceDetailPage() {
                       setNacosSkills('');
                       setErr(null);
                     } catch (e: unknown) {
-                      setErr(e instanceof Error ? e.message : t('managed.common.actionFailed'));
+                      setErr(resolveApiErrorMessage(e, t('managed.common.actionFailed')));
                     }
                   }}
                   style={{
@@ -827,7 +830,7 @@ export default function WorkspaceDetailPage() {
                         await reloadMeta();
                         setErr(null);
                       } catch (e: unknown) {
-                        setErr(e instanceof Error ? e.message : t('managed.workspaceDetail.installFailed'));
+                        setErr(resolveApiErrorMessage(e, t('managed.workspaceDetail.installFailed')));
                       }
                     }}
                     style={{

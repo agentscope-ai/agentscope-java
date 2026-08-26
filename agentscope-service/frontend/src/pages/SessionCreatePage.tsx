@@ -18,6 +18,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AgentDefinition, listAgents } from '../api/agents';
 import NewManagedSessionForm from '../components/NewManagedSessionForm';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
@@ -68,13 +69,12 @@ export default function SessionCreatePage() {
           setAgentId(list[0].id);
         }
       })
-      .catch(e => {
+      .catch((e: unknown) => {
         if (!cancelled) {
-          setLoadErr(
-            e instanceof Error
-              ? e.message
-              : tRef.current('managed.sessions.loadAgentsFailed'),
-          );
+          setLoadErr(resolveApiErrorMessage(
+            e,
+            tRef.current('managed.sessions.loadAgentsFailed'),
+          ));
         }
       });
     return () => { cancelled = true; };

@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getAgent } from '../api/agents';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   BuiltinToolInfo,
   McpCatalogEntry,
@@ -30,6 +31,7 @@ import {
   saveBuiltinToolConfig,
 } from '../api/tools';
 import { useT } from '../i18n';
+import { createRequiredEnvValues } from './toolsCatalogState';
 
 interface Props {
   agentId: string;
@@ -137,6 +139,7 @@ export default function ToolsCatalogPanel({ agentId, onSaved }: Props) {
 
 function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) {
   const tr = useT();
+  const trRef = useRef(tr);
   const [catalog, setCatalog] = useState<BuiltinToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -145,6 +148,10 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
   const [policies, setPolicies] = useState<Map<string, ToolPermissionType>>(new Map());
   const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    trRef.current = tr;
+  }, [tr]);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,8 +171,7 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
       })
       .catch(e => {
         if (cancelled) return;
-        if (e instanceof Error && e.message) setErr(e.message);
-        else setErrFallback('load');
+        setErr(resolveApiErrorMessage(e, trRef.current('toolsCatalog.errors.load')));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -197,8 +203,7 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
       setDirty(false);
       onSaved();
     } catch (e: unknown) {
-      if (e instanceof Error && e.message) setErr(e.message);
-      else setErrFallback('save');
+      setErr(resolveApiErrorMessage(e, tr('toolsCatalog.errors.save')));
     } finally {
       setSaving(false);
     }
@@ -287,12 +292,17 @@ function BuiltinTab({ agentId, onSaved }: { agentId: string; onSaved: () => void
 
 function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) {
   const tr = useT();
+  const trRef = useRef(tr);
   const [catalog, setCatalog] = useState<McpCatalogEntry[]>([]);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [hasLoadFallback, setHasLoadFallback] = useState(false);
   const [adding, setAdding] = useState<McpCatalogEntry | null>(null);
+
+  useEffect(() => {
+    trRef.current = tr;
+  }, [tr]);
 
   useEffect(() => {
     let cancelled = false;
@@ -305,8 +315,7 @@ function McpTab({ agentId, onSaved }: { agentId: string; onSaved: () => void }) 
       })
       .catch(e => {
         if (cancelled) return;
-        if (e instanceof Error && e.message) setErr(e.message);
-        else setHasLoadFallback(true);
+        setErr(resolveApiErrorMessage(e, trRef.current('toolsCatalog.errors.load')));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -381,11 +390,9 @@ interface AddFormProps {
 function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) {
   const tr = useT();
   const [name, setName] = useState(entry.id);
-  const [envValues, setEnvValues] = useState<Record<string, string>>(() => {
-    const out: Record<string, string> = {};
-    for (const k of entry.requiredEnv ?? []) out[k] = '';
-    return out;
-  });
+  const [envValues, setEnvValues] = useState<Record<string, string>>(
+    () => createRequiredEnvValues(entry.requiredEnv),
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [errFallback, setErrFallback] = useState<'nameRequired' | 'nameDuplicate' | 'add' | null>(null);
@@ -409,8 +416,7 @@ function McpAddForm({ entry, existingNames, onCancel, onSubmit }: AddFormProps) 
       }
       await onSubmit(name.trim(), server);
     } catch (e: unknown) {
-      if (e instanceof Error && e.message) setErr(e.message);
-      else setErrFallback('add');
+      setErr(resolveApiErrorMessage(e, tr('toolsCatalog.errors.add')));
     } finally {
       setBusy(false);
     }

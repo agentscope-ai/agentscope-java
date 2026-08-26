@@ -15,6 +15,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   Environment,
   archiveEnvironment,
@@ -24,7 +25,11 @@ import {
   updateEnvironment,
 } from '../api/environments';
 import { HandsStatus, fetchHandsStatus } from '../api/hands';
-import { type TranslationFunction, useI18n } from '@/i18n';
+import {
+  type TranslationFunction,
+  type TranslationKey,
+  useI18n,
+} from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -72,14 +77,16 @@ const S: Record<string, React.CSSProperties> = {
   },
 };
 
+const ENVIRONMENT_TYPE_LABELS = new Map<string, TranslationKey>([
+  ['local', 'managed.environments.types.local'],
+  ['sandbox', 'managed.environments.types.sandbox'],
+  ['remote', 'managed.environments.types.remote'],
+  ['self_hosted', 'managed.environments.types.selfHosted'],
+]);
+
 function environmentTypeLabel(type: string, t: TranslationFunction): string {
-  const labels: Record<string, Parameters<TranslationFunction>[0]> = {
-    local: 'managed.environments.types.local',
-    sandbox: 'managed.environments.types.sandbox',
-    remote: 'managed.environments.types.remote',
-    self_hosted: 'managed.environments.types.selfHosted',
-  };
-  return labels[type] ? t(labels[type]) : type;
+  const key = ENVIRONMENT_TYPE_LABELS.get(type);
+  return key ? t(key) : type;
 }
 
 export default function EnvironmentsHubPage() {
@@ -107,7 +114,7 @@ export default function EnvironmentsHubPage() {
         setHands(null);
       }
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.environments.loadFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.environments.loadFailed')));
     } finally {
       setLoading(false);
     }
@@ -129,7 +136,7 @@ export default function EnvironmentsHubPage() {
       setType('local');
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.environments.createFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.environments.createFailed')));
     } finally {
       setBusyId(null);
     }
@@ -159,7 +166,7 @@ export default function EnvironmentsHubPage() {
       setEditing(null);
       await refresh();
     } catch (ex: unknown) {
-      setErr(ex instanceof Error ? ex.message : t('managed.environments.updateFailed'));
+      setErr(resolveApiErrorMessage(ex, t('managed.environments.updateFailed')));
     } finally {
       setBusyId(null);
     }
@@ -172,7 +179,7 @@ export default function EnvironmentsHubPage() {
       await archiveEnvironment(id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.environments.archiveFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.environments.archiveFailed')));
     } finally {
       setBusyId(null);
     }
@@ -185,7 +192,7 @@ export default function EnvironmentsHubPage() {
       await deleteEnvironment(id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('managed.environments.deleteFailed'));
+      setErr(resolveApiErrorMessage(e, t('managed.environments.deleteFailed')));
     } finally {
       setBusyId(null);
     }

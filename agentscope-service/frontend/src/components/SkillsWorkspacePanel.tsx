@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   WorkspaceSkillInfo,
   WorkspaceSkillDetail,
@@ -23,6 +23,7 @@ import {
   upsertWorkspaceSkill,
   deleteWorkspaceSkill,
 } from '../api/skills';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { useT } from '../i18n';
 
 interface Props {
@@ -135,6 +136,7 @@ export default function SkillsWorkspacePanel({
   readOnly = false,
 }: Props) {
   const tr = useT();
+  const trRef = useRef(tr);
   const [allSkills, setAllSkills] = useState<WorkspaceSkillInfo[]>([]);
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkspaceSkillDetail | null>(null);
@@ -142,6 +144,10 @@ export default function SkillsWorkspacePanel({
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    trRef.current = tr;
+  }, [tr]);
 
   // The skills page surfaces every workspace skill — both marketplace-installed and
   // workspace-authored ("custom") entries — so a refresh accurately reflects on-disk state.
@@ -158,8 +164,8 @@ export default function SkillsWorkspacePanel({
       } else if (!selectedDir && list.length > 0) {
         setSelectedDir(list[0].dirName);
       }
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (e: unknown) {
+      setError(resolveApiErrorMessage(e, trRef.current('common.requestFailed')));
     }
   }, [agentId, selectedDir]);
 
@@ -182,8 +188,10 @@ export default function SkillsWorkspacePanel({
         setDraft(d.markdown);
         setDirty(false);
       })
-      .catch(e => {
-        if (!cancelled) setError((e as Error).message);
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError(resolveApiErrorMessage(e, trRef.current('common.requestFailed')));
+        }
       });
     return () => {
       cancelled = true;
@@ -199,8 +207,8 @@ export default function SkillsWorkspacePanel({
       setDirty(false);
       await refreshList();
       onChange();
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (e: unknown) {
+      setError(resolveApiErrorMessage(e, tr('agent.settings.error.save')));
     } finally {
       setBusy(false);
     }
@@ -220,8 +228,8 @@ export default function SkillsWorkspacePanel({
       setSelectedDir(null);
       await refreshList();
       onChange();
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (e: unknown) {
+      setError(resolveApiErrorMessage(e, tr('agent.settings.error.delete')));
     } finally {
       setBusy(false);
     }

@@ -73,4 +73,61 @@ describe('ChannelBindingTable translations', () => {
       });
     });
   });
+
+  it('preserves prototype-named enum values returned by the server', async () => {
+    channelApi.listChannels.mockResolvedValue([
+      {
+        channelId: 'discord',
+        defaultAgentId: null,
+        dmScope: 'constructor',
+        started: true,
+      },
+    ]);
+    channelApi.listAgentBindings.mockResolvedValue([
+      {
+        channelId: 'discord',
+        index: 0,
+        tier: 'constructor',
+        sessionScope: 'constructor',
+      },
+    ]);
+
+    render(
+      <I18nProvider>
+        <ChannelBindingTable agentId="agent-1" />
+      </I18nProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('constructor')).toHaveLength(4);
+    });
+  });
+
+  it('groups bindings under a prototype-named channel id', async () => {
+    channelApi.listChannels.mockResolvedValue([
+      {
+        channelId: 'constructor',
+        defaultAgentId: null,
+        dmScope: 'PER_PEER',
+        started: true,
+      },
+    ]);
+    channelApi.listAgentBindings.mockResolvedValue([
+      {
+        channelId: 'constructor',
+        index: 0,
+        tier: 'peer',
+        peer: 'peer-1',
+      },
+    ]);
+
+    render(
+      <I18nProvider>
+        <ChannelBindingTable agentId="agent-1" />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText('constructor')).toBeInTheDocument();
+    expect(await screen.findByText('peer = peer-1')).toBeInTheDocument();
+  });
 });

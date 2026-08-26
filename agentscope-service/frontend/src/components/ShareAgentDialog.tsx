@@ -24,6 +24,7 @@ import {
 import { addShare, listShares, revokeShare } from '../api/shares';
 import { AdminUserView, listUsers } from '../api/admin';
 import { isAdmin } from '../api/auth';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { type TranslationFunction, type TranslationKey, useT } from '../i18n';
 
 const S: Record<string, React.CSSProperties> = {
@@ -88,13 +89,18 @@ const S: Record<string, React.CSSProperties> = {
   empty: { color: '#94a3b8', fontSize: '0.9rem', fontStyle: 'italic' },
 };
 
+const TIER_BADGE_COLORS = new Map<string, { bg: string; fg: string; bd: string }>([
+  ['CLONE', { bg: '#fef3c7', fg: '#92400e', bd: '#fde68a' }],
+  ['RUN', { bg: '#dcfce7', fg: '#15803d', bd: '#bbf7d0' }],
+  ['EDIT', { bg: '#ede9fe', fg: '#6d28d9', bd: '#ddd6fe' }],
+]);
+
 function tierBadgeStyle(tier: string): React.CSSProperties {
-  const map: Record<ShareTier, { bg: string; fg: string; bd: string }> = {
-    CLONE: { bg: '#fef3c7', fg: '#92400e', bd: '#fde68a' },
-    RUN:   { bg: '#dcfce7', fg: '#15803d', bd: '#bbf7d0' },
-    EDIT:  { bg: '#ede9fe', fg: '#6d28d9', bd: '#ddd6fe' },
+  const colors = TIER_BADGE_COLORS.get(tier) ?? {
+    bg: '#f1f5f9',
+    fg: '#64748b',
+    bd: '#e2e8f0',
   };
-  const colors = map[tier as ShareTier] ?? { bg: '#f1f5f9', fg: '#64748b', bd: '#e2e8f0' };
   return {
     padding: '3px 10px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
     letterSpacing: '0.02em',
@@ -113,14 +119,14 @@ function tierChipStyle(active: boolean): React.CSSProperties {
 }
 
 const WORKSPACE_ID = '*';
-const TIER_LABELS: Record<ShareTier, TranslationKey> = {
-  CLONE: 'agent.shareDialog.tier.clone',
-  RUN: 'agent.shareDialog.tier.run',
-  EDIT: 'agent.shareDialog.tier.edit',
-};
+const TIER_LABELS = new Map<string, TranslationKey>([
+  ['CLONE', 'agent.shareDialog.tier.clone'],
+  ['RUN', 'agent.shareDialog.tier.run'],
+  ['EDIT', 'agent.shareDialog.tier.edit'],
+]);
 
 function tierLabel(t: TranslationFunction, tier: string): string {
-  const key = TIER_LABELS[tier as ShareTier];
+  const key = TIER_LABELS.get(tier);
   return key ? t(key) : tier;
 }
 
@@ -161,7 +167,10 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
       })
       .catch(e => {
         if (!cancelled) {
-          setErr(e instanceof Error ? e.message : tRef.current('agent.shareDialog.error.load'));
+          setErr(resolveApiErrorMessage(
+            e,
+            tRef.current('agent.shareDialog.error.load'),
+          ));
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -184,7 +193,10 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
       }
       setGrants(await listShares(agent.id));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('agent.shareDialog.error.updateWorkspace'));
+      setErr(resolveApiErrorMessage(
+        e,
+        t('agent.shareDialog.error.updateWorkspace'),
+      ));
     } finally {
       setBusy(false);
     }
@@ -203,7 +215,7 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
       setGrants(await listShares(agent.id));
       setNewGrantee('');
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('agent.shareDialog.error.addGrant'));
+      setErr(resolveApiErrorMessage(e, t('agent.shareDialog.error.addGrant')));
     } finally {
       setBusy(false);
     }
@@ -216,7 +228,7 @@ export default function ShareAgentDialog({ agent, onClose }: Props) {
       await revokeShare(agent.id, granteeType, granteeId);
       setGrants(await listShares(agent.id));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('agent.shareDialog.error.revoke'));
+      setErr(resolveApiErrorMessage(e, t('agent.shareDialog.error.revoke')));
     } finally {
       setBusy(false);
     }

@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { useI18n } from '@/i18n';
 import { fetchSessionEvents, type SessionEventItem } from '../api';
 import { formatToolInput } from '../lib/groupMessagesByTurns';
@@ -173,7 +174,7 @@ export function SessionEventsPanel({ sessionId, enabled }: { sessionId: string; 
       <CardContent className="space-y-2.5">
         {error != null && (
           <p className="text-sm text-red-600">
-            {error instanceof Error ? error.message : t('operate.events.loadFailed')}
+            {resolveApiErrorMessage(error, t('operate.events.loadFailed'))}
           </p>
         )}
         {loading && events.length === 0 ? (

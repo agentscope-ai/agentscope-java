@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getAgent } from '../api/agents';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   ActiveTool,
   ActiveToolsResponse,
@@ -115,6 +116,7 @@ export default function ToolsActivePanel({
   readOnly = false,
 }: Props) {
   const tr = useT();
+  const trRef = useRef(tr);
   const [data, setData] = useState<ActiveToolsResponse | null>(null);
   const [catalog, setCatalog] = useState<BuiltinToolInfo[]>([]);
   const [policies, setPolicies] = useState<Map<string, ToolPermissionType>>(new Map());
@@ -123,6 +125,10 @@ export default function ToolsActivePanel({
   const [hasLoadFallback, setHasLoadFallback] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [actionErrFallback, setActionErrFallback] = useState<'agent' | 'permission' | null>(null);
+
+  useEffect(() => {
+    trRef.current = tr;
+  }, [tr]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,8 +146,7 @@ export default function ToolsActivePanel({
       })
       .catch(e => {
         if (cancelled) return;
-        if (e instanceof Error && e.message) setErr(e.message);
-        else setHasLoadFallback(true);
+        setErr(resolveApiErrorMessage(e, trRef.current('toolsActive.errors.load')));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -164,8 +169,10 @@ export default function ToolsActivePanel({
       await disableConfiguredTool(agentId, t);
       onChange();
     } catch (e: unknown) {
-      if (e instanceof Error && e.message) setActionErr(e.message);
-      else setActionErrFallback('agent');
+      setActionErr(resolveApiErrorMessage(
+        e,
+        tr('toolsActive.errors.updateAgent'),
+      ));
     }
   }
 
@@ -185,8 +192,10 @@ export default function ToolsActivePanel({
       await saveBuiltinToolConfig(agentId, catalog, enabled, next);
       onChange();
     } catch (e: unknown) {
-      if (e instanceof Error && e.message) setActionErr(e.message);
-      else setActionErrFallback('permission');
+      setActionErr(resolveApiErrorMessage(
+        e,
+        tr('toolsActive.errors.updatePermission'),
+      ));
     }
   }
 

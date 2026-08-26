@@ -22,6 +22,7 @@ import { getWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspace
 import { Environment, listEnvironments } from '../api/environments';
 import { Vault, listVaults } from '../api/vaults';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { getUsername } from '../lib/auth';
 import {
   type TranslationFunction,
@@ -30,14 +31,14 @@ import {
   useT,
 } from '../i18n';
 
-const ACCESS_TIER_LABELS: Record<string, TranslationKey> = {
-  CLONE: 'agent.shareDialog.tier.clone',
-  RUN: 'agent.shareDialog.tier.run',
-  EDIT: 'agent.shareDialog.tier.edit',
-};
+const ACCESS_TIER_LABELS = new Map<string, TranslationKey>([
+  ['CLONE', 'agent.shareDialog.tier.clone'],
+  ['RUN', 'agent.shareDialog.tier.run'],
+  ['EDIT', 'agent.shareDialog.tier.edit'],
+]);
 
 function accessTierLabel(t: TranslationFunction, tier: string): string {
-  const key = ACCESS_TIER_LABELS[tier];
+  const key = ACCESS_TIER_LABELS.get(tier);
   return key ? t(key) : tier;
 }
 
@@ -187,16 +188,26 @@ export default function AgentSettingsForm({
     let cancelled = false;
     listVersions(agent.id)
       .then(v => { if (!cancelled) { setVersions(v); setVersionsErr(null); } })
-      .catch(e => { if (!cancelled) setVersionsErr(e instanceof Error ? e.message : tRef.current('agent.settings.error.loadVersions')); });
+      .catch(e => {
+        if (!cancelled) {
+          setVersionsErr(resolveApiErrorMessage(
+            e,
+            tRef.current('agent.settings.error.loadVersions'),
+          ));
+        }
+      });
     return () => { cancelled = true; };
   }, [agent.id, agent.scope, agent.ownerId, agent.version]);
 
   async function handleSave() {
     setOk(false);
     setErr(null);
+    if (version == null) {
+      setErr(t('agent.settings.error.missingVersion'));
+      return;
+    }
     setSaving(true);
     try {
-      if (version == null) throw new Error(t('agent.settings.error.missingVersion'));
       const iters = Number.parseInt(maxIters, 10);
       const updated = await updateAgent(agent.id, {
         name: name.trim() || agent.id,
@@ -219,7 +230,7 @@ export default function AgentSettingsForm({
       setOk(true);
       await onSaved?.();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('agent.settings.error.save'));
+      setErr(resolveApiErrorMessage(e, t('agent.settings.error.save')));
     } finally {
       setSaving(false);
     }
@@ -231,7 +242,7 @@ export default function AgentSettingsForm({
       await deleteAgent(agent.id);
       navigate('/agents', { replace: true });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('agent.settings.error.delete'));
+      setErr(resolveApiErrorMessage(e, t('agent.settings.error.delete')));
     }
   }
 
@@ -244,7 +255,7 @@ export default function AgentSettingsForm({
       await getAgent(agent.id);
       setOk(true);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('agent.settings.error.archive'));
+      setErr(resolveApiErrorMessage(e, t('agent.settings.error.archive')));
     } finally {
       setArchiving(false);
     }

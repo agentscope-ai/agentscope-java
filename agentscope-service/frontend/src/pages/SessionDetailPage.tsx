@@ -22,6 +22,7 @@ import {
   parseTeamExternalKey,
   teamDetailPath,
 } from '../api/managedSessions';
+import { resolveApiErrorMessage } from '@/api/errors';
 import ChatPanel from '../components/ChatPanel';
 import SessionTranscript from '../components/SessionTranscript';
 import { useT } from '@/i18n';
@@ -94,14 +95,13 @@ export default function SessionDetailPage() {
     setErr(null);
     getManagedSession(sessionId)
       .then(s => { if (!cancelled) setSession(s); })
-      .catch(e => {
+      .catch((e: unknown) => {
         if (!cancelled) {
           setSession(null);
-          setErr(
-            e instanceof Error
-              ? e.message
-              : tRef.current('managed.sessions.loadFailed'),
-          );
+          setErr(resolveApiErrorMessage(
+            e,
+            tRef.current('managed.sessions.loadFailed'),
+          ));
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });

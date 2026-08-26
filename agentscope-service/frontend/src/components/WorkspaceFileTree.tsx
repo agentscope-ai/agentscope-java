@@ -16,6 +16,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { FileNode, tree as fetchTree } from '../api/workspace';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { useT } from '../i18n';
 
 interface Props {
@@ -184,7 +185,7 @@ export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, ref
         return next;
       });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('workspace.files.loadFailed'));
+      setErr(resolveApiErrorMessage(e, t('workspace.files.loadFailed')));
     } finally {
       setLoading(false);
     }

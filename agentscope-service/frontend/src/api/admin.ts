@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { readApiError } from './http';
 
 export interface AdminUserView {
   userId: string;
@@ -41,8 +42,7 @@ function authHeaders(): Record<string, string> {
 }
 
 async function asError(res: Response): Promise<never> {
-  const msg = await res.text().catch(() => `${res.status}`);
-  throw new Error(msg || `${res.status}`);
+  throw await readApiError(res, 'Admin request failed');
 }
 
 export async function listUsers(): Promise<AdminUserView[]> {

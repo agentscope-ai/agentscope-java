@@ -31,6 +31,7 @@ import {
 import { CapabilityGate, DisabledAction } from '@/components/CapabilityGate';
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { canPlanMode, canQueryContext, canQuerySubagentTasks, canQueryTasks } from '@/lib/capabilities';
 import { useI18n } from '@/i18n';
 import {
@@ -192,7 +193,10 @@ export default function OperateSessionDetailPage() {
   if (session.isError) {
     return (
       <Page>
-        <EmptyState title={t('operate.sessionDetail.notFound')} description={String(session.error)} />
+        <EmptyState
+          title={t('operate.sessionDetail.notFound')}
+          description={resolveApiErrorMessage(session.error, t('common.requestFailed'))}
+        />
       </Page>
     );
   }
