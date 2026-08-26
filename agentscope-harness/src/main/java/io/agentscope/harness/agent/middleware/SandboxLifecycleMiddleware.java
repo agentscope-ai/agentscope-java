@@ -159,8 +159,8 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
         ctx.put(SandboxAcquireResult.class, null);
-        // Compare-and-clear the fallback field so a releasing call never nulls a concurrent
-        // sibling's binding (issue #2490); it only clears the field when it still points here.
+        // Remove this call's fallback binding. The proxy restores the most recently acquired
+        // binding that is still active, so a sibling call is neither cleared nor resurrected.
         filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
         SandboxContext sandboxContext = ctx.get(SandboxContext.class);
         try {

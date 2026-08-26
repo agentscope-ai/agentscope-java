@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -25,6 +26,7 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -43,6 +45,52 @@ import org.junit.jupiter.api.Test;
 class SandboxBackedFilesystemTest {
 
     private static final RuntimeContext RT = RuntimeContext.empty();
+
+    @Test
+    void contextFreeCallUsesRemainingSandboxWhenLatestCallReleases() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox first = new FakeSandbox(new ExecResult(0, "first", "", false));
+        FakeSandbox second = new FakeSandbox(new ExecResult(0, "second", "", false));
+        filesystem.setSandbox(first);
+        filesystem.setSandbox(second);
+
+        filesystem.clearSandboxIfCurrent(second);
+
+        assertEquals("first", filesystem.execute(RT, "whoami", null).output());
+    }
+
+    @Test
+    void releasingNonCurrentSandboxDoesNotRestoreItLater() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox first = new FakeSandbox(new ExecResult(0, "first", "", false));
+        FakeSandbox second = new FakeSandbox(new ExecResult(0, "second", "", false));
+        filesystem.setSandbox(first);
+        filesystem.setSandbox(second);
+
+        filesystem.clearSandboxIfCurrent(first);
+        assertEquals("second", filesystem.execute(RT, "whoami", null).output());
+
+        filesystem.clearSandboxIfCurrent(second);
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> filesystem.execute(RT, "whoami", null));
+    }
+
+    @Test
+    void sharedSandboxRemainsBoundUntilEveryCallReleases() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox shared = new FakeSandbox(new ExecResult(0, "shared", "", false));
+        filesystem.setSandbox(shared);
+        filesystem.setSandbox(shared);
+
+        filesystem.clearSandboxIfCurrent(shared);
+        assertEquals("shared", filesystem.execute(RT, "whoami", null).output());
+
+        filesystem.clearSandboxIfCurrent(shared);
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> filesystem.execute(RT, "whoami", null));
+    }
 
     @Test
     void downloadFiles_decodesWrappedBase64Output() {
