@@ -1,0 +1,20 @@
+# "postgres" profile: durable storage backed by PostgreSQL instead of the
+# default in-memory driver. The in-memory driver loses all session, event, and
+# team coordination data on every restart and does not work correctly with
+# more than one replica; use this profile for anything beyond local dev/test.
+#
+# Usage (existing Secret, e.g. one created by CloudNativePG -- see
+# config/samples/cnpg-cluster.yaml -- which publishes a "<cluster>-app" Secret
+# with a "uri" key):
+#   helm install aistio ./helm/aistio -f profiles/postgres.yaml \
+#     --set storage.postgres.existingSecret=aistio-pg-app \
+#     --set storage.postgres.existingSecretKey=uri
+#
+# Usage (inline DSN, stored in a chart-managed Secret):
+#   helm install aistio ./helm/aistio -f profiles/postgres.yaml \
+#     --set storage.postgres.dsn="postgres://aistio:CHANGEME@aistio-pg-rw:5432/aistio?sslmode=require"
+storage:
+  driver: postgres
+  maxOpenConns: 20
+  maxIdleConns: 5
+  connMaxLifetime: 30m

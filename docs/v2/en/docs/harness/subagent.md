@@ -107,8 +107,30 @@ No spec file needed; always available. Its role is "generic fallback" — it mir
 
 The parent creates a subagent with `agent_spawn`; the key knob is `timeout_seconds`:
 
-- `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result.
+- `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result. By default, when the wait expires the in-flight run is **promoted** to a background task (`status: timeout_promoted` + `task_id`) and keeps running.
 - `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
+
+**Force sync via `RuntimeContext`.** Application code can put `AgentSpawnTool.CTX_FORCE_SYNC = true` on the current call's `RuntimeContext` to override the LLM's async choice, and optionally `CTX_FORCE_SYNC_TIMEOUT_SECONDS` for a hard wait budget (seconds):
+
+```java
+RuntimeContext ctx = RuntimeContext.builder()
+    .sessionId("s-1")
+    .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+    .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120) // optional; overrides LLM timeout_seconds
+    .build();
+```
+
+When enabled:
+
+1. If `CTX_FORCE_SYNC_TIMEOUT_SECONDS` is set, it **fully replaces** the LLM's `timeout_seconds` (`<= 0` falls back to 30s; max 600s).
+2. Without that override, an LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s) — **no** background task is submitted — while a positive LLM timeout is preserved.
+3. If the sync wait expires, the tool returns `status: timeout` and interrupts the subagent — it is **not** promoted to a background `task_id`.
+
+`agent_send` honors the same switch. Multiple force-sync `agent_spawn` calls in one turn still run in parallel under the Toolkit default.
+
+If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. Toolkit defaults to parallel tool execution (`ToolkitConfig.parallel=true`), so those synchronous calls advance in parallel on both `ReActAgent` and `HarnessAgent`; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier. To serialize tool calls, pass a custom `Toolkit` built with `ToolkitConfig.builder().parallel(false).build()`.
+
+Decompose work by independence and dependency graph first: nodes without dependency edges are good candidates for parallel subagents; dependent nodes should wait for upstream results before dispatch or merge. Short or critical-path tasks are good candidates for synchronous waiting or an explicit barrier so the parent can continue reasoning with their results. Long tasks can run in the background while the parent continues other work, then be collected and merged later.
 
 ### Background tasks push back automatically
 
@@ -134,12 +156,21 @@ Behind the scenes, subagent lifecycle is split across two groups of tools:
 | `agent_send` | Send a follow-up message to an existing subagent |
 | `agent_list` | List active subagent instances |
 | `task_output` | Retrieve the result of a background task by `task_id` (blocking or non-blocking) |
+| `wait_async_results` | Wait for background results; can wait for specific `task_ids` to all finish, or use `wait_all=true` for a snapshot of unfinished tasks in the current session |
 | `task_cancel` | Cancel a running background task |
 | `task_list` | List all background tasks with their current statuses |
 
-`agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
+`agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `wait_async_results` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, wait, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
 
-> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
+> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, waiting for a set of results that must be available together, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
+
+There are three common ways to collect asynchronous results:
+
+- **Automatic push-back**: the default path when you do not block. Completed child tasks are injected as a `<system-reminder>` before the next reasoning step.
+- **Targeted task check**: call `task_output(task_id, block=false)` to inspect one task's current state or final result.
+- **Wait barrier (preferred for must-collect-all)**: call `wait_async_results(task_ids="id1,id2")` or `wait_async_results(wait_all=true)`. Barrier mode waits until the set is terminal and **embeds each task's result in the tool return**, so you can continue immediately. `wait_all=true` uses a snapshot of unfinished tasks at call start and does not add tasks created while waiting.
+
+> **Legacy inbox-any**: calling `wait_async_results` without `task_ids` and without `wait_all` only waits until *any* inbox message arrives. That is not a wait-all barrier — use `task_ids` or `wait_all=true` when every task in a group must finish.
 
 ## Send a follow-up to an existing subagent
 
@@ -306,10 +337,48 @@ Just set `url` + optional `headers` and the subagent runs through a remote HTTP 
     .description("Remote research subagent")
     .url("http://agent-task-server:8080")
     .headers(Map.of("Authorization", "Bearer xxx"))
+    .remoteStreaming(true)          // default when unset
+    .remoteStreamDetail(RemoteStreamDetail.VERBOSE)  // FULL when unset
+    .remoteAskPolicy(RemoteAskPolicy.DENY)  // default
+    .remoteContextAttributes(Map.of("region", "cn"))
     .build())
 ```
 
 Same sync (`timeout_seconds>0`) / background (`timeout_seconds=0`) semantics apply.
+
+Declaration knobs specific to remote mode:
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `remoteStreaming` | `true` (when unset) | When the parent uses `streamEvents()`, forward remote task SSE events into the parent stream with a `source` tag plus `metadata.taskId` / `metadata.parentSessionId` (same ids as the harness `TaskRecord` / parent session) |
+| `remoteStreamDetail` | `FULL` | How much of the remote event stream to forward — see [Remote streaming detail](#remote-streaming-detail) |
+| `remoteAskPolicy` | `DENY` | How to resolve remote tool-confirmation (HITL) requests — see [Remote authorization](#remote-authorization) |
+| `remoteContextAttributes` | none | Static caller attributes sent as `context.attributes` on every submission. Merge per-call values by putting a map under `AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES` on the parent's `RuntimeContext`; see [Context attributes](../../integration/protocol/agent-protocol.md#context-attributes) |
+
+### Remote streaming detail
+
+A local subagent forwards its child's events verbatim. A remote one has to cross the wire, and how much crosses is controlled by `remoteStreamDetail`, sent as `context.detail`:
+
+| Level | Forwards |
+|-------|----------|
+| `STATUS` | Run lifecycle, tool call boundaries, tool results, confirmation requests |
+| `FULL` (default) | `STATUS` plus text and thinking deltas |
+| `VERBOSE` | Every event the remote agent emits — block boundaries, tool argument deltas, **tool output deltas**, model calls with token usage, hints, agent results, custom events |
+
+Pick `VERBOSE` when the parent's stream should look the same whether the subagent is local or remote; that is the only level at which the remote subagent's tool output content and token usage reach the parent. It is not the default because the extra events are pure volume for callers that only render text.
+
+Events without a dedicated wire type travel as `AGENT_EVENT` with the original event serialized in the `payload` field, so the parent decodes the exact same class it would have received locally, ids, timestamps and metadata included. A client older than this field still reads the flat per-type fields and simply never sees the passthrough events.
+
+### Remote authorization
+
+Parent DENY permission rules are forwarded in the remote submit `context.deny_rules` (same inheritance as local children; opt out with `inheritParentPermissions(false)`).
+
+When the remote agent pauses for tool confirmation (`awaiting_confirm`):
+
+- **Streaming parent + `remoteAskPolicy=PROPAGATE`**: a `RequireUserConfirmEvent` is forwarded into the parent's `streamEvents()` stream with a non-null `source` tag. Resume the remote task via Agent Protocol [`POST /tasks/{id}/resume`](../../integration/protocol/agent-protocol.md) with `decisions[{toolCallId, approved}]`.
+- **Non-streaming parent (`call`) or `remoteAskPolicy=DENY` (default)**: pending confirmations are auto-denied. The tool result includes a note: `remote tool confirmation(s) were auto-denied`.
+
+While awaiting confirmation, task status stays `RUNNING` (`awaitingConfirm=true`). Barriers such as `wait_async_results` therefore keep waiting until the task is resumed and reaches a terminal status.
 
 ## Background task storage
 
@@ -327,7 +396,7 @@ When the parent is in Plan Mode, spawned subagents **automatically inherit the r
 
 > New code should use `streamEvents()` (returns `Flux<AgentEvent>`). The legacy `stream()` family (`Flux<Event>`) is `@Deprecated(forRemoval = true)` since 2.0.0 — see [Message & Event](../building-blocks/message-and-event.md) and [V1 Migration Guide B.4](../change-log.md).
 
-When the parent calls a synchronous subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field (a `/`-separated path like `"main/researcher"`) so you can tell parent events (`source == null`) from child events.
+When the parent calls a synchronous subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field (a `/`-separated path like `"main/researcher"`) so you can tell parent events (`source == null`) from child events. Remote Agent Protocol children additionally set `metadata.taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness task id and `metadata.parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session, so two concurrent / same-turn calls to the same remote agent remain distinguishable even when they share a `source` path.
 
 ```
 caller
@@ -418,7 +487,8 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 | `streamEvents()` + synchronous local child (`timeout_seconds > 0`) | ✔ |
 | `call()` mode (non-streaming) | ✗ (child result returns as `tool_result` string) |
 | `timeout_seconds = 0` background task | ✗ (result pushed via reverse notification to parent's next round) |
-| Remote subagent (Agent Protocol) | ✗ |
+| Remote subagent (Agent Protocol) + parent `streamEvents()` + `remoteStreaming=true` (default) | ✔ |
+| Remote subagent + parent `call()` or `remoteStreaming=false` | ✗ |
 
 ### Error handling
 
@@ -430,5 +500,6 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 - [Workspace](./workspace.md) — `subagents/` and `agents/<id>/tasks/` layout
 - [Plan Mode](./plan-mode.md) — restrictions on subagents during the plan phase
 - [Architecture](./architecture.md) — how parent and child cooperate
+- [Agent Protocol](../../integration/protocol/agent-protocol.md) — remote task endpoints (SSE + HITL resume)
 - [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
 - [V1 Migration Guide B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline

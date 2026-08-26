@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package agentscope.protocol.v1;
+
+option go_package = "github.com/agentscope/agentscope-go/control-plane/internal/asdp";
+
+// Java stubs are generated from this same file by the Java data-plane SDK
+// (agentscope-extensions-aistio), which copies it in at build time so the wire
+// contract has a single source of truth across Go / Python / Java.
+option java_package = "io.agentscope.aistio.proto";
+option java_outer_classname = "AsdpProto";
+option java_multiple_files = true;
+
+// AgentDataPlaneService is the ASDP gRPC service.
+// Single bidirectional stream multiplexing all message types (analogous to xDS ADS).
+service AgentDataPlaneService {
+  rpc Connect(stream Upstream) returns (stream Downstream);
+}
+
+// ConfigType identifies the type of configuration resource (analogous to xDS type_url).
+enum ConfigType {
+  CONFIG_TYPE_UNSPECIFIED = 0;
+  CONFIG_TYPE_AGENT       = 1;
+  CONFIG_TYPE_TOOL        = 2;
+  CONFIG_TYPE_SKILL       = 3;
+  CONFIG_TYPE_OVERRIDE    = 4;
+  CONFIG_TYPE_MODEL       = 5;
+}
+
+// ═══════════ Data Plane → Control Plane (Upstream) ═══════════
+
+message Upstream {
+  UpstreamMeta meta = 1;
+  oneof payload {
+    ConnectRequest   connect        = 10;
+    ConfigAck        config_ack     = 11;
+    SessionReport    session_report = 12;
+    TeamEventReport  team_event     = 13;
+    Heartbeat        heartbeat      = 14;
+    EventReport      event_report   = 15;  // Level 2 event stream
+    ContextReport    context_report = 16;  // Level 4 effective context
+    InventoryReport  inventory      = 17;  // instance inventory (subagents / workspaces / health)
+  }
+}
+
+message UpstreamMeta {
+  string agent_name  = 1;
+  string instance_id = 2;
+  string namespace   = 3;
+  int64  timestamp   = 4;
+}
+
+// Handshake (sent on connection establish, analogous to xDS initial DiscoveryRequest)
+message ConnectRequest {
+  string runtime            = 1;
+  string sdk_version        = 2;
+  repeated string capabilities = 3;
+  string session_affinity   = 4;
+}
+
+// Config acknowledgement (analogous to xDS ACK/NACK)
+message ConfigAck {
+  ConfigType config_type  = 1;
+  string version          = 2;
+  string nonce            = 3;
+  bool   accepted         = 4;
+  string reject_reason    = 5;
+}
+
+// Session state report (periodic batch, e.g. every 10s)
+message SessionReport {
+  repeated SessionSnapshot sessions = 1;
+}
+
+message SessionSnapshot {
+  string session_id       = 1;
+  string phase            = 2;
+  int32  message_count    = 3;
+  int64  prompt_tokens    = 4;
+  int64  completion_tokens = 5;
+  double context_pressure = 6;
+  TaskSummary task_summary = 7;
+  string team_id          = 8;
+  string team_role        = 9;
+
+  // Framework identification (Level 1 extension, see sdk-design.md §3.1)
+  string framework         = 10;  // "claude-agent-sdk" | "langchain" | "adk" | ...
+  string framework_version = 11;
+
+  // Context change detection
+  string context_hash      = 12;  // SHA-256 (first 16 hex) of the effective context
+  bool   is_compacted      = 13;  // whether the context has been compacted
+  int32  effective_message_count = 14;  // effective messages after compaction (!= message_count)
+}
+
+message TaskSummary {
+  int32 total       = 1;
+  int32 pending     = 2;
+  int32 in_progress = 3;
+  int32 completed   = 4;
+}
+
+// Team event report
+message TeamEventReport {
+  string team_id     = 1;
+  string event_type  = 2;
+  string member_name = 3;
+  string task_id     = 4;
+  bytes  detail      = 5;
+}
+
+// Heartbeat (bidirectional keepalive)
+message Heartbeat {
+  int64 timestamp = 1;
+}
+
+// Instance health reported by data plane
+message InstanceHealth {
+  bool   healthy     = 1;
+  string reason      = 2;
+  int32  active_sessions = 3;
+  double cpu_usage    = 4;
+  double memory_usage = 5;
+}
+
+// EventReport is the Level-2 event stream report (batched, e.g. every 5s or
+// every 20 events). Written by the control plane into the session_events table.
+message EventReport {
+  repeated SessionEventMsg events = 1;
+}
+
+message SessionEventMsg {
+  string session_id     = 1;
+  int32  seq            = 2;   // monotonically increasing per session; idempotency key
+  string event_type     = 3;   // session_start | message | tool_call | tool_result | session_end | compaction
+  int64  occurred_at    = 4;   // unix milliseconds
+  string role           = 5;   // user | assistant | system | tool
+  string content        = 6;   // summary (recommended <= 500 chars), not full text
+  string tool_name      = 7;
+  bytes  tool_input     = 8;   // JSON, may be truncated
+  string tool_output    = 9;   // summary
+  int32  tokens_in      = 10;
+  int32  tokens_out     = 11;
+  int32  duration_ms    = 12;
+  bytes  framework_meta = 13;  // framework-private JSON
+}
+
+// ContextReport is the Level-4 effective-context report, pushed on compaction
+// or when context_hash changes (debounced). Written into context_snapshots.
+message ContextReport {
+  string session_id              = 1;
+  string context_hash            = 2;
+  int64  captured_at             = 3;   // unix milliseconds
+  string system_prompt           = 4;
+  bytes  messages                = 5;   // JSON array of {role, content, is_compaction?}
+  bytes  tools                   = 6;   // JSON array of ToolInfo
+  bool   is_compacted            = 7;
+  string compaction_summary      = 8;
+  int32  original_message_count  = 9;
+  int64  compacted_at            = 10;  // unix milliseconds
+  int32  total_tokens            = 11;
+  int32  max_tokens              = 12;
+  string framework               = 13;
+  bytes  framework_state         = 14;  // framework-private JSON (graph state, session metadata, ...)
+}
+
+// InventoryReport carries the instance-level runtime inventory: subagents,
+// workspaces and health. Sent right after connect, then on change or at the
+// Level-1 cadence.
+message InventoryReport {
+  repeated SubagentInfo  subagents  = 1;
+  repeated WorkspaceInfo workspaces = 2;
+  InstanceHealth         health     = 3;
+}
+
+message SubagentInfo {
+  string name            = 1;
+  string description     = 2;
+  repeated string tools  = 3;
+  string workspace_mode  = 4;  // isolated | shared
+  string url             = 5;  // remote subagent endpoint, if any
+  int64  invoke_count    = 6;
+  int64  last_invoked_at = 7;  // unix milliseconds
+}
+
+message WorkspaceInfo {
+  string path       = 1;
+  string mode       = 2;  // isolated | shared | readonly
+  int64  size_bytes = 3;
+  string owner_ref  = 4;  // session_id or subagent name
+}
+
+// ═══════════ Control Plane → Data Plane (Downstream) ═══════════
+
+message Downstream {
+  oneof payload {
+    ConnectResponse  connect_ack = 10;
+    ConfigPush       config_push = 11;
+    SessionCommand   session_cmd = 12;
+    TeamEvent        team_event  = 13;
+    Heartbeat        heartbeat   = 14;
+  }
+}
+
+message ConnectResponse {
+  bool   accepted              = 1;
+  string reject_reason         = 2;
+  string control_plane_version = 3;
+}
+
+// Config push (analogous to xDS DiscoveryResponse)
+message ConfigPush {
+  ConfigType config_type = 1;
+  string version         = 2;
+  bytes  resources       = 3;
+  string nonce           = 4;
+}
+
+// SessionCommand is a control-plane → data-plane session instruction.
+// `command` is a string (not an enum) so new verbs can be added without
+// breaking wire compatibility. Known values and HTTP parity
+// (see docs/zh/controlplane/contract.md):
+//
+//   compress   ↔ POST /agentscope/sessions/{id}/compress   (capability: session-command)
+//   terminate  ↔ POST /agentscope/sessions/{id}/terminate  (capability: session-command)
+//   abort      ↔ POST /agentscope/sessions/{id}/abort      (capability: session-abort)
+//   undo       ↔ POST /agentscope/sessions/{id}/undo       (capability: session-undo, optional)
+//   redo       ↔ POST /agentscope/sessions/{id}/redo       (capability: session-redo, optional)
+//
+// Success / error semantics match the HTTP Command contract
+// (accepted/commandId/phase/result；501 unsupported, 409 busy/wait_idle,
+// 404 not_found, 503 unreachable on CP, 500 failed).
+message SessionCommand {
+  string session_id = 1;
+  string command    = 2;  // compress | terminate | abort | undo | redo | ...
+  bytes  params     = 3;
+}
+
+message TeamEvent {
+  string team_id     = 1;
+  string event_type  = 2;
+  string member_name = 3;
+  string task_id     = 4;
+  bytes  payload     = 5;
+  int64  timestamp   = 6;
+}

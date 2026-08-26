@@ -1,0 +1,131 @@
+replicaCount: 1
+
+image:
+  repository: registry.cn-hangzhou.aliyuncs.com/aistio/aistio
+  tag: "0.2.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 15010
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+leaderElection:
+  enabled: true
+
+# Runtime data storage for sessions, events, context snapshots, metrics, and
+# team messages/tasks. "memory" is the default and is NOT durable — all data
+# is lost on every restart and is NOT shared across replicas. Use "postgres"
+# for any deployment that needs durability or runs more than one replica.
+storage:
+  driver: memory
+  postgres:
+    # Inline DSN, e.g. "postgres://user:pass@host:5432/aistio?sslmode=require".
+    # Stored in a chart-managed Secret. Prefer existingSecret for production so
+    # credentials are not tracked in your values file / release history.
+    dsn: ""
+    # Reference an existing Secret containing the DSN instead of the inline
+    # value above (e.g. one created by CloudNativePG, see
+    # config/samples/cnpg-cluster.yaml). Takes precedence over storage.postgres.dsn.
+    existingSecret: ""
+    existingSecretKey: "dsn"
+  maxOpenConns: 20
+  maxIdleConns: 5
+  connMaxLifetime: 30m
+  # Retention windows for historical data purged by the background retention
+  # worker. Accepts Go duration strings (e.g. "168h"). Empty disables purging
+  # for that category.
+  retention:
+    sessionEvents: 168h
+    snapshots: 720h
+    contextSnapshots: 72h
+    metrics: 720h
+
+serviceAccount:
+  create: true
+  name: aistio-controller
+
+rbac:
+  create: true
+
+# NOTE: CRDs live in the chart's crds/ directory and are installed automatically
+# by Helm on first install (`helm install`). Per Helm's design, CRDs are NOT
+# upgraded or deleted on `helm upgrade` / `helm uninstall`; apply CRD changes
+# explicitly with `kubectl apply -f crds/` (or `kubectl apply -k config/crd`).
+
+# Managed Agents control plane (/api/*, console SPA), served on the same port
+# as the Kubernetes-native API. Requires PostgreSQL for the `cp` schema.
+# The secret must hold keys: dsn, jwtSecret, internalToken.
+product:
+  enabled: false
+  existingSecret: ""
+  staticDir: /ui
+  workspaceRoot: /data/workspaces
+
+metrics:
+  enabled: true
+  port: 8181
+  # Create a Prometheus Operator ServiceMonitor for scraping.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+  # Deploy a Grafana dashboard ConfigMap (requires the grafana_dashboard sidecar).
+  grafanaDashboard:
+    enabled: false
+  # Deploy PrometheusRule alerts (requires Prometheus Operator CRDs).
+  prometheusRule:
+    enabled: false
+
+healthCheck:
+  port: 8182
+
+# Experimental features: distributed AgentTeam orchestration and sandbox
+# provisioning. Off by default. NOTE: the ASDP gRPC server and config hot-reload
+# delivery are GA and enabled independently (see image args --enable-asdp), so
+# turning this off does NOT disable config push to the data plane.
+experimental:
+  enabled: false
+  grpcTLS:
+    enabled: false
+    certSecret: ""
+    caSecret: ""
+
+# Optional bearer-token auth for the REST API. When set, the token is stored in
+# a Secret and required on all /api/v1 requests.
+api:
+  authToken: ""
+
+# Admission webhooks (validation for all CRDs + Agent defaulting). Enabled by
+# default for GA. By default the chart generates a self-signed serving cert and
+# injects the CA bundle automatically, so no external dependency is required.
+# For production, prefer cert-manager (certManager.enabled=true) so the cert is
+# rotated and not regenerated on every `helm upgrade`.
+webhook:
+  enabled: true
+  port: 9443
+  certSecret: aistio-webhook-cert
+  # Explicit base64 CA bundle override. Leave empty to use the auto-generated
+  # self-signed CA, or cert-manager's ca-injection annotation when enabled.
+  caBundle: ""
+  certManager:
+    enabled: false
+    issuerRef: ""
+
+tracing:
+  endpoint: ""
+  sampling: 1.0
+
+networkPolicy:
+  enabled: false
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,19 @@
+# Generic service-dataplane image: packages one prebuilt Spring Boot jar.
+#
+# Build the jars first (compose does NOT run maven):
+#   mvn -pl agentscope-service -am install -DskipTests
+#
+# The JAR_FILE arg is repo-relative to the agentscope-service directory, e.g.
+#   JAR_FILE=service-dataplane/target/service-dataplane-2.0.1-SNAPSHOT.jar
+# Control plane is Go aistiod (see aistio/Dockerfile), not a Java jar.
+FROM eclipse-temurin:21-jre
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG JAR_FILE
+COPY ${JAR_FILE} /app.jar
+
+EXPOSE 8080 8081 8082 8083
+ENTRYPOINT ["java", "-jar", "/app.jar"]

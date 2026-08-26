@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -26,10 +27,17 @@ import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.AbstractMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.junit.jupiter.api.Test;
 
 class SandboxBackedFilesystemTest {
@@ -101,17 +109,190 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
-    void uploadFiles_fallsBackToExecForUnsupportedPaths() {
+    void uploadFiles_resolvesRelativePathForNativeTransfer() {
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
         filesystem.setSandbox(sandbox);
 
         List<FileUploadResponse> responses =
-                filesystem.uploadFiles(RT, List.of(Map.entry("/etc/other.txt", new byte[] {1})));
+                filesystem.uploadFiles(
+                        RT,
+                        List.of(
+                                Map.entry(
+                                        "agents/通用智能助手/sessions/sessions.json",
+                                        new byte[] {3, 1, 4})));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertArrayEquals(
+                new byte[] {3, 1, 4},
+                sandbox.uploaded.get("/workspace/agents/通用智能助手/sessions/sessions.json"));
+        assertNull(sandbox.lastCommand);
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
+    void uploadFiles_rejectsNullContentOnNativeTransferPath() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT, List.of(new AbstractMap.SimpleImmutableEntry<>("agents/a.txt", null)));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("File content must not be null", responses.get(0).error());
+        assertTrue(sandbox.uploaded.isEmpty());
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
+    void uploadFiles_fallsBackToHydrationWhenRootUnavailable() throws Exception {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        sandbox.state.setWorkspaceSpec(null);
+        filesystem.setSandbox(sandbox);
+        byte[] content = new byte[] {5};
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(RT, List.of(Map.entry("agents/a.jsonl", content)));
 
         assertTrue(responses.get(0).isSuccess());
         assertTrue(sandbox.uploaded.isEmpty());
-        assertTrue(sandbox.lastCommand.contains("base64 -d > '/etc/other.txt'"));
+        assertEquals(1, sandbox.hydrateCalls);
+        assertArchive(sandbox.hydratedArchive, "agents/a.jsonl", content);
+    }
+
+    @Test
+    void uploadFiles_usesTarHydrationForUnsupportedNativePaths() throws Exception {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        // File API rooted outside the workspace: resolved paths stay unsupported natively.
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/data");
+        filesystem.setSandbox(sandbox);
+        byte[] content = "session-data".getBytes(StandardCharsets.UTF_8);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(RT, List.of(Map.entry("./agents/session.jsonl", content)));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertTrue(sandbox.uploaded.isEmpty());
+        assertNull(sandbox.lastCommand);
+        assertEquals(1, sandbox.hydrateCalls);
+        assertArchive(sandbox.hydratedArchive, "agents/session.jsonl", content);
+    }
+
+    @Test
+    void uploadFiles_streamsLargeAbsoluteWorkspaceFileWithoutExec() throws Exception {
+        byte[] content = new byte[256 * 1024];
+        for (int i = 0; i < content.length; i++) {
+            content[i] = (byte) (i % 251);
+        }
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "", "", false));
+        sandbox.workspaceSpec.setRoot("\\workspace\\\\");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT,
+                        List.of(Map.entry("\\workspace\\agents\\large-session.jsonl", content)));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertNull(sandbox.lastCommand);
+        assertEquals(1, sandbox.hydrateCalls);
+        assertArchive(sandbox.hydratedArchive, "agents/large-session.jsonl", content);
+    }
+
+    @Test
+    void uploadFiles_reportsHydrationFailure() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "", "", false));
+        sandbox.failHydration = true;
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(RT, List.of(Map.entry("agents/a.jsonl", new byte[] {1})));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("hydrate down", responses.get(0).error());
+    }
+
+    @Test
+    void uploadFiles_rejectsNullContentAndUnsafePaths() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "", "", false));
+        filesystem.setSandbox(sandbox);
+
+        List<Map.Entry<String, byte[]>> files =
+                List.of(
+                        new AbstractMap.SimpleImmutableEntry<>("agents/null.jsonl", null),
+                        Map.entry("../outside.jsonl", new byte[] {1}),
+                        Map.entry("/etc/outside.jsonl", new byte[] {2}),
+                        Map.entry("/workspace", new byte[] {3}),
+                        Map.entry("./", new byte[] {4}));
+        List<FileUploadResponse> responses = filesystem.uploadFiles(RT, files);
+
+        assertEquals(5, responses.size());
+        assertTrue(responses.stream().noneMatch(FileUploadResponse::isSuccess));
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
+    void uploadFiles_requiresWorkspaceStateForAbsolutePath() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "", "", false));
+        sandbox.state = null;
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(RT, List.of(Map.entry("/workspace/a.txt", new byte[] {1})));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("Sandbox workspace root is unavailable", responses.get(0).error());
+    }
+
+    @Test
+    void uploadFiles_rejectsMissingBlankAndRelativeWorkspaceRoots() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "", "", false));
+        filesystem.setSandbox(sandbox);
+
+        sandbox.state.setWorkspaceSpec(null);
+        FileUploadResponse missingSpec =
+                filesystem
+                        .uploadFiles(RT, List.of(Map.entry("/workspace/a.txt", new byte[] {1})))
+                        .get(0);
+        sandbox.state.setWorkspaceSpec(sandbox.workspaceSpec);
+        sandbox.workspaceSpec.setRoot(" ");
+        FileUploadResponse blankRoot =
+                filesystem
+                        .uploadFiles(RT, List.of(Map.entry("/workspace/b.txt", new byte[] {2})))
+                        .get(0);
+        sandbox.workspaceSpec.setRoot("workspace");
+        FileUploadResponse relativeRoot =
+                filesystem
+                        .uploadFiles(RT, List.of(Map.entry("/workspace/c.txt", new byte[] {3})))
+                        .get(0);
+
+        assertEquals("Sandbox workspace root is unavailable", missingSpec.error());
+        assertEquals("Sandbox workspace root is unavailable", blankRoot.error());
+        assertEquals("Sandbox workspace root must be absolute: workspace", relativeRoot.error());
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
+    void uploadFiles_acceptsRootWorkspaceAndDotPrefix() throws Exception {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox sandbox = new FakeSandbox(new ExecResult(0, "", "", false));
+        sandbox.workspaceSpec.setRoot("/");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT, List.of(Map.entry("/agents/root.jsonl", new byte[] {4, 5})));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertArchive(sandbox.hydratedArchive, "agents/root.jsonl", new byte[] {4, 5});
     }
 
     @Test
@@ -141,6 +322,17 @@ class SandboxBackedFilesystemTest {
 
         assertTrue(!responses.get(0).isSuccess());
         assertEquals("transfer down", responses.get(0).error());
+    }
+
+    private static void assertArchive(byte[] archive, String expectedPath, byte[] expectedContent)
+            throws IOException {
+        try (TarArchiveInputStream tar =
+                new TarArchiveInputStream(new ByteArrayInputStream(archive))) {
+            TarArchiveEntry entry = tar.getNextTarEntry();
+            assertEquals(expectedPath, entry.getName());
+            assertArrayEquals(expectedContent, tar.readAllBytes());
+            assertNull(tar.getNextTarEntry());
+        }
     }
 
     private static final class FakeTransferSandbox extends BaseFakeSandbox
@@ -188,9 +380,16 @@ class SandboxBackedFilesystemTest {
 
         private final ExecResult execResult;
         protected String lastCommand;
+        protected WorkspaceSpec workspaceSpec = new WorkspaceSpec();
+        protected SandboxState state;
+        protected byte[] hydratedArchive;
+        protected int hydrateCalls;
+        protected boolean failHydration;
 
         protected BaseFakeSandbox(ExecResult execResult) {
             this.execResult = execResult;
+            this.state = new TestSandboxState();
+            this.state.setWorkspaceSpec(workspaceSpec);
         }
 
         @Override
@@ -212,7 +411,7 @@ class SandboxBackedFilesystemTest {
 
         @Override
         public SandboxState getState() {
-            return null;
+            return state;
         }
 
         @Override
@@ -228,6 +427,14 @@ class SandboxBackedFilesystemTest {
         }
 
         @Override
-        public void hydrateWorkspace(InputStream archive) {}
+        public void hydrateWorkspace(InputStream archive) throws Exception {
+            if (failHydration) {
+                throw new IOException("hydrate down");
+            }
+            hydrateCalls++;
+            hydratedArchive = archive.readAllBytes();
+        }
     }
+
+    private static final class TestSandboxState extends SandboxState {}
 }
