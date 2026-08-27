@@ -15,10 +15,14 @@
  */
 package io.agentscope.examples.copilotkit.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadInfo;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadMutationRequest;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadsResponse;
@@ -44,6 +48,12 @@ public final class DemoThreadStore {
 
     public static final String DEFAULT_AGENT_ID = "default";
 
+    /** Demo identity; matches {@code AgentConfiguration} when {@code X-Token} is absent. */
+    public static final String DEMO_USER_ID = "user-001";
+
+    private static final TypeReference<Map<String, Object>> AGUI_EVENT_JSON =
+            new TypeReference<>() {};
+
     private final ThreadSessionManager sessionManager;
     private final AguiAgentRegistry agentRegistry;
     private final InMemoryAgentEventStore eventStore;
@@ -67,9 +77,13 @@ public final class DemoThreadStore {
 
         List<ThreadInfo> all =
                 sessionManager.getSessions().entrySet().stream()
+                        .filter(entry -> DEMO_USER_ID.equals(entry.getValue().getUserId()))
                         .filter(entry -> agentId.equals(entry.getValue().getAgentId()))
                         .filter(entry -> includeArchived || !entry.getValue().isArchived())
-                        .map(entry -> toThreadInfo(entry.getKey(), entry.getValue()))
+                        .map(
+                                entry ->
+                                        toThreadInfo(
+                                                entry.getValue().getThreadId(), entry.getValue()))
                         .sorted(Comparator.comparing(ThreadInfo::lastRunAt).reversed())
                         .toList();
 
@@ -84,7 +98,8 @@ public final class DemoThreadStore {
         String name = resolveName(request, "New Thread");
         String threadId = "thread-" + UUID.randomUUID();
         ThreadSession session =
-                sessionManager.ensureSession(threadId, agentId, name, () -> createAgent(agentId));
+                sessionManager.ensureSession(
+                        DEMO_USER_ID, threadId, agentId, name, () -> createAgent(agentId));
         return toThreadInfo(threadId, session);
     }
 
@@ -107,28 +122,29 @@ public final class DemoThreadStore {
     }
 
     public Map<String, Object> delete(String threadId) {
-        sessionManager.removeSession(threadId);
+        sessionManager.removeSession(DEMO_USER_ID, threadId);
         eventStore.clear(threadId);
         return Map.of("deleted", true, "threadId", threadId);
     }
 
     public Map<String, Object> events(String threadId) {
+        List<Map<String, Object>> events =
+                eventReplayer.replay(threadId, null).stream()
+                        .map(DemoThreadStore::toEventPayload)
+                        .toList();
         Map<String, Object> payload = new LinkedHashMap<>();
-        // Source of truth: AgentScope AgentEvents.
-        payload.put("agentEvents", eventStore.snapshot(threadId));
-        // Protocol projection: same converter path as /connect.
-        payload.put("events", eventReplayer.replay(threadId, null));
+        payload.put("events", events);
         return payload;
     }
 
     public Map<String, Object> messages(String threadId) {
         List<Map<String, Object>> messages =
                 sessionManager
-                        .getSession(threadId)
+                        .getSession(DEMO_USER_ID, threadId)
                         .map(ThreadSession::getAgent)
                         .filter(ReActAgent.class::isInstance)
                         .map(ReActAgent.class::cast)
-                        .map(agent -> agent.getAgentState(null, threadId).getContext())
+                        .map(agent -> agent.getAgentState(DEMO_USER_ID, threadId).getContext())
                         .orElse(List.of())
                         .stream()
                         .map(this::toMessage)
@@ -139,11 +155,17 @@ public final class DemoThreadStore {
     public Map<String, Object> state(String threadId) {
         Map<String, Object> state = new LinkedHashMap<>();
         sessionManager
-                .getSession(threadId)
+                .getSession(DEMO_USER_ID, threadId)
                 .ifPresent(
                         session -> {
                             state.put("agentId", session.getAgentId());
-                            state.put("hasMemory", sessionManager.hasMemory(threadId));
+                            state.put(
+                                    "hasMemory",
+                                    sessionManager.hasMemory(
+                                            RuntimeContext.builder()
+                                                    .sessionId(threadId)
+                                                    .userId(DEMO_USER_ID)
+                                                    .build()));
                             state.put("archived", session.isArchived());
                             state.put("updatedAt", session.getLastAccess().toString());
                         });
@@ -153,7 +175,11 @@ public final class DemoThreadStore {
     private ThreadSession getOrCreateSession(String threadId, ThreadMutationRequest request) {
         String agentId = resolveAgentId(request);
         return sessionManager.ensureSession(
-                threadId, agentId, resolveName(request, null), () -> createAgent(agentId));
+                DEMO_USER_ID,
+                threadId,
+                agentId,
+                resolveName(request, null),
+                () -> createAgent(agentId));
     }
 
     private Agent createAgent(String agentId) {
@@ -189,6 +215,21 @@ public final class DemoThreadStore {
             return name;
         }
         return threadId;
+    }
+
+    /**
+     * Encode one AG-UI event the same way {@code /connect} does, and keep {@code type} even when
+     * Jackson serializes the concrete record ( {@link AguiEvent#getType()} is {@code @JsonIgnore} ).
+     */
+    private static Map<String, Object> toEventPayload(AguiEvent event) {
+        Map<String, Object> encoded =
+                JsonUtils.getJsonCodec()
+                        .fromJson(JsonUtils.getJsonCodec().toJson(event), AGUI_EVENT_JSON);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", event.getType().name());
+        encoded.remove("type");
+        payload.putAll(encoded);
+        return payload;
     }
 
     private Map<String, Object> toMessage(Msg msg) {
