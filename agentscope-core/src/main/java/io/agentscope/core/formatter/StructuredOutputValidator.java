@@ -38,7 +38,15 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class StructuredOutputValidator {
 
     private static final SchemaRegistry REGISTRY =
-            SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
+            SchemaRegistry.withDefaultDialect(
+                    SpecificationVersion.DRAFT_2020_12,
+                    builder ->
+                            // P2-2（维护者评审）：启用 format assertions（format: email / date-time
+                            // 等真实校验，默认关闭会放行非法格式值）
+                            builder.schemaRegistryConfig(
+                                    com.networknt.schema.SchemaRegistryConfig.builder()
+                                            .formatAssertionsEnabled(true)
+                                            .build()));
     private static final ConcurrentHashMap<String, Schema> CACHE = new ConcurrentHashMap<>();
 
     private StructuredOutputValidator() {}
@@ -51,8 +59,13 @@ public final class StructuredOutputValidator {
      * @return the list of validation errors; empty when the output conforms
      */
     public static List<ValidationError> validate(JsonNode output, JsonSchema schema) {
-        if (output == null || schema == null || schema.getSchema() == null) {
-            return List.of();
+        // P2-1（维护者评审）：fail-closed——schema 缺失是配置错误，直接抛出而非静默放行
+        if (schema == null || schema.getSchema() == null) {
+            throw new IllegalArgumentException(
+                    "structured_output_schema_required: schema must not be null");
+        }
+        if (output == null) {
+            return List.of(new ValidationError("$", "output is null"));
         }
         Schema compiled =
                 CACHE.computeIfAbsent(
