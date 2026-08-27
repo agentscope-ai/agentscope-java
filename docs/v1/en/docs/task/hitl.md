@@ -94,3 +94,42 @@ System.out.println(response.getTextContent());
 
 **Check pause reason**:
 - `response.getGenerateReason()` returns `REASONING_STOP_REQUESTED` or `ACTING_STOP_REQUESTED`
+
+## Ask the User for Input (Model-Initiated Questions)
+
+HITL also supports the reverse direction: the **model** proactively asks the user for input during a run. A tool whose `checkPermissions()` returns `PermissionDecision.askUser(...)` pauses the run with `GenerateReason.ASK_USER_ASKING` — in every `PermissionMode`, including `BYPASS` — and is **never executed**. The built-in harness `ask_user` tool does exactly this; enable it on the harness builder:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+        .model(model)
+        .enableAskUser()      // registers the built-in ask_user tool (opt-in)
+        .build();
+```
+
+The model calls `ask_user` with a `questions[]` payload (each question may offer `options` and always additionally accepts free-text input; the user may also skip a question). The run pauses instead of executing the tool:
+
+```java
+Msg response = agent.call(userMsg).block();
+
+if (response.getGenerateReason() == GenerateReason.ASK_USER_ASKING) {
+    // The returned Msg carries the ask_user ToolUseBlock (state ASKING); its input contains
+    // the questions the model wants answered.
+    ToolUseBlock ask = response.getContentBlocks(ToolUseBlock.class).get(0);
+    Map<String, Object> questions = ask.getInput();
+
+    // Render the questions to the user and collect answers keyed by question id.
+    Map<String, Object> answers = collectAnswers(questions);
+
+    // Resume with the answers; the framework formats them into the ask_user tool result and
+    // the agent continues without executing the tool.
+    Msg resumeMsg = Msg.builder()
+            .name("user")
+            .role(MsgRole.USER)
+            .metadata(Map.of(Msg.METADATA_ASK_USER_RESULTS,
+                    List.of(new AskUserResult(ask.getId(), answers))))
+            .build();
+    response = agent.call(List.of(resumeMsg)).block();
+}
+```
+
+Streaming callers receive `RequireUserAskEvent` for the pause and `UserAskResultEvent` on resume, correlated by `replyId` — the same shape as the permission-confirmation flow.

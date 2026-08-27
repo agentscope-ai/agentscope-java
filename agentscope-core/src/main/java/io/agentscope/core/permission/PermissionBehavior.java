@@ -26,6 +26,9 @@ import java.util.Locale;
  *   <li>{@link #ALLOW}: proceed without further checks.
  *   <li>{@link #DENY}: reject the tool invocation.
  *   <li>{@link #ASK}: defer to the user for a confirmation.
+ *   <li>{@link #ASK_USER}: pause the run and ask the user for <em>input</em> (a model-initiated
+ *       question, as opposed to a permission confirmation). Only a tool's own
+ *       {@code checkPermissions()} may emit this decision; it is not registerable as a rule.
  *   <li>{@link #PASSTHROUGH}: tool defers decision back to the engine for rule matching.
  * </ul>
  */
@@ -33,6 +36,7 @@ public enum PermissionBehavior {
     ALLOW("allow"),
     DENY("deny"),
     ASK("ask"),
+    ASK_USER("ask_user"),
     PASSTHROUGH("passthrough");
 
     private final String value;

@@ -97,6 +97,7 @@ import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.tool.AskUserTool;
 import io.agentscope.harness.agent.tool.FilesystemTool;
 import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySaveTool;
@@ -1206,6 +1207,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableDynamicSubagents = false;
         boolean disableToolsConfig = false;
 
+        boolean enableAskUser = false;
+
         boolean skillManageToolEnabled = false;
         SkillManageConfig skillManageConfig;
         SkillPromotionGate promotionGate;
@@ -1615,6 +1618,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         public Builder enableTaskList(boolean enabled) {
             inner.enableTaskList(enabled);
+            return this;
+        }
+
+        /**
+         * Registers the built-in {@code ask_user} tool so the model can proactively ask the user
+         * questions during a run (opt-in, disabled by default).
+         *
+         * <p>When the model calls {@code ask_user}, the agent pauses with
+         * {@code GenerateReason.ASK_USER_ASKING} and emits {@code RequireUserAskEvent}; the host
+         * application renders the questions and resumes with {@code List<AskUserResult>} under
+         * {@code Msg.METADATA_ASK_USER_RESULTS}.
+         */
+        public Builder enableAskUser() {
+            this.enableAskUser = true;
+            return this;
+        }
+
+        public Builder enableAskUser(boolean enabled) {
+            this.enableAskUser = enabled;
             return this;
         }
 
@@ -2583,6 +2605,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             agentToolkit.registerTool(new WebTools.WebFetchTool());
             agentToolkit.registerTool(new WebTools.WebSearchTool());
+
+            // ---- Ask-the-user (model-initiated questions) ----
+            if (enableAskUser) {
+                agentToolkit.registerTool(new AskUserTool());
+            }
 
             // ---- Plan mode (read-only design phase) ----
             PlanModeManager planModeManager = null;

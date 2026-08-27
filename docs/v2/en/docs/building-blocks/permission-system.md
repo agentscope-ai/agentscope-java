@@ -419,6 +419,38 @@ PermissionContextState headless =
 
 Full runnable example: `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`.
 
+### Ask the user (model-initiated questions)
+
+Besides confirming tools, HITL covers the reverse direction: the **model** proactively asks the user for input during a run. A tool whose `checkPermissions()` returns `PermissionDecision.askUser(...)` pauses the run in **every** mode (including `BYPASS` — it is a bypass-immune tool self-check, not a rule), and the tool is **never executed**.
+
+The harness ships a built-in `ask_user` tool for exactly this. Enable it via `HarnessAgent.Builder.enableAskUser()` (opt-in, disabled by default):
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+        .model(model)
+        .enableAskUser()
+        .build();
+```
+
+When the model calls `ask_user` (payload `{questions: [{question, options?, type, required?}...]}`), the run pauses with `GenerateReason.ASK_USER_ASKING`, the pending `ToolUseBlock` (state `ASKING`) carries the questions, and streaming callers receive `RequireUserAskEvent`. Resume by attaching `List<AskUserResult>` under `Msg.METADATA_ASK_USER_RESULTS`; the framework formats the answers into the `ask_user` tool result and the agent continues without executing it:
+
+```java
+Msg response = agent.call(userInput).block();
+if (response.getGenerateReason() == GenerateReason.ASK_USER_ASKING) {
+    ToolUseBlock ask = response.getContentBlocks(ToolUseBlock.class).get(0);
+    Map<String, Object> answers = collectAnswers((Map<String, Object>) ask.getInput().get("questions"));
+    Msg resumeMsg = Msg.builder()
+            .name("user")
+            .role(MsgRole.USER)
+            .metadata(Map.of(Msg.METADATA_ASK_USER_RESULTS,
+                    List.of(new AskUserResult(ask.getId(), answers))))
+            .build();
+    response = agent.call(List.of(resumeMsg)).block();
+}
+```
+
+Streaming resumes emit `UserAskResultEvent` correlated with the pause via `replyId`. Because `ASK_USER` is produced by the tool self-check, it is **not** registerable as a rule and is unaffected by `DONT_ASK` mode (unlike `ASK`); to make unattended runs skip questions entirely, simply do not register the `ask_user` tool.
+
 ## Common recipes
 
 The examples below show how to configure `permissionContext` for typical deployment scenarios. Each recipe combines a mode with a rule set tuned for one use case.

@@ -94,3 +94,40 @@ System.out.println(response.getTextContent());
 
 **判断暂停原因**：
 - `response.getGenerateReason()` 返回 `REASONING_STOP_REQUESTED` 或 `ACTING_STOP_REQUESTED`
+
+## 向用户提问（模型主动发起）
+
+HITL 还支持反向场景：**模型**在运行过程中主动向用户索取信息。工具的 `checkPermissions()` 返回 `PermissionDecision.askUser(...)` 时，运行会以 `GenerateReason.ASK_USER_ASKING` 暂停——在包括 `BYPASS` 在内的所有 `PermissionMode` 下都生效——并且该工具**永远不会被执行**。内建的 `ask_user` 工具正是这样实现的，在 harness builder 上开启即可：
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+        .model(model)
+        .enableAskUser()      // 注册内建 ask_user 工具（默认关闭，显式开启）
+        .build();
+```
+
+模型以 `questions[]` 载荷调用 `ask_user`（每个问题可带 `options` 选项，且始终额外接受自由文本输入；用户也可以跳过某个问题）。运行会暂停而不是执行该工具：
+
+```java
+Msg response = agent.call(userMsg).block();
+
+if (response.getGenerateReason() == GenerateReason.ASK_USER_ASKING) {
+    // 返回的 Msg 携带 ask_user 的 ToolUseBlock（state=ASKING），其 input 中即模型要问的问题
+    ToolUseBlock ask = response.getContentBlocks(ToolUseBlock.class).get(0);
+    Map<String, Object> questions = ask.getInput();
+
+    // 把问题展示给用户，按 question id 收集回答
+    Map<String, Object> answers = collectAnswers(questions);
+
+    // 携带回答恢复；框架会把回答格式化为 ask_user 的工具结果，智能体不执行该工具继续运行
+    Msg resumeMsg = Msg.builder()
+            .name("user")
+            .role(MsgRole.USER)
+            .metadata(Map.of(Msg.METADATA_ASK_USER_RESULTS,
+                    List.of(new AskUserResult(ask.getId(), answers))))
+            .build();
+    response = agent.call(List.of(resumeMsg)).block();
+}
+```
+
+流式调用方会在暂停时收到 `RequireUserAskEvent`、恢复时收到 `UserAskResultEvent`，通过 `replyId` 关联——与权限确认流程同构。

@@ -419,6 +419,38 @@ PermissionContextState headless =
 
 完整可运行示例：`agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`。
 
+### 向用户提问（模型主动发起）
+
+除了确认工具外，HITL 还覆盖反向场景：**模型**在运行过程中主动向用户索取信息。工具的 `checkPermissions()` 返回 `PermissionDecision.askUser(...)` 时，运行会在**所有** mode 下暂停（包括 `BYPASS`——这是绕过免疫的工具自检结果，不是规则），并且该工具**永远不会被执行**。
+
+harness 内置了 `ask_user` 工具，通过 `HarnessAgent.Builder.enableAskUser()` 开启（默认关闭）：
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+        .model(model)
+        .enableAskUser()
+        .build();
+```
+
+当模型调用 `ask_user`（载荷 `{questions: [{question, options?, type, required?}...]}`）时，运行以 `GenerateReason.ASK_USER_ASKING` 暂停，待确认的 `ToolUseBlock`（状态 `ASKING`）的 input 里携带问题；流式调用方会收到 `RequireUserAskEvent`。恢复方式是在 `Msg.METADATA_ASK_USER_RESULTS` 下附带 `List<AskUserResult>`；框架会把回答格式化为 `ask_user` 的工具结果，智能体不执行该工具继续运行：
+
+```java
+Msg response = agent.call(userInput).block();
+if (response.getGenerateReason() == GenerateReason.ASK_USER_ASKING) {
+    ToolUseBlock ask = response.getContentBlocks(ToolUseBlock.class).get(0);
+    Map<String, Object> answers = collectAnswers((Map<String, Object>) ask.getInput().get("questions"));
+    Msg resumeMsg = Msg.builder()
+            .name("user")
+            .role(MsgRole.USER)
+            .metadata(Map.of(Msg.METADATA_ASK_USER_RESULTS,
+                    List.of(new AskUserResult(ask.getId(), answers))))
+            .build();
+    response = agent.call(List.of(resumeMsg)).block();
+}
+```
+
+流式恢复时发出 `UserAskResultEvent`，通过 `replyId` 与暂停事件关联。由于 `ASK_USER` 来自工具自检，它**不能配置成规则**，也不受 `DONT_ASK` 模式影响（与 `ASK` 不同）；无人值守场景若不想让模型提问，直接不注册 `ask_user` 工具即可。
+
 ## 常见配方
 
 下面的示例展示了如何为常见部署场景配置 `permissionContext`。每个配方把一种 mode 与一组规则结合，匹配特定的使用场景。

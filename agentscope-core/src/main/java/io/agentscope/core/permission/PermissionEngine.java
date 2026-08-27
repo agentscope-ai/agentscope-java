@@ -156,6 +156,11 @@ public final class PermissionEngine {
         return toolCheckPermissions(tool, input)
                 .flatMap(
                         toolDecision -> {
+                            if (toolDecision.getBehavior() == PermissionBehavior.ASK_USER) {
+                                // Model-initiated question: pause and ask the user for input.
+                                // This is non-bypassable and short-circuits rule/BYPASS handling.
+                                return Mono.just(toolDecision);
+                            }
                             if (toolDecision.getBehavior() == PermissionBehavior.DENY) {
                                 return Mono.just(toolDecision);
                             }
