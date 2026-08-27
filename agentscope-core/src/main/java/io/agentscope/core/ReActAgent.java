@@ -3210,7 +3210,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     if (suggested != null && !suggested.isEmpty()) {
                                         toolUseBlock = use.withSuggestedRules(suggested);
                                     }
-                                    return new PermissionVerdict(toolUseBlock, decision.getBehavior());
+                                    return new PermissionVerdict(
+                                            toolUseBlock, decision.getBehavior());
                                 });
             }
             return tb.checkPermissions(input, state.getPermissionContext())

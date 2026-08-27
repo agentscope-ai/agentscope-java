@@ -179,7 +179,9 @@ public class PermissionHITLExample {
 
                 // Build ConfirmResult from the extracted ToolUseBlocks and resume
                 List<ConfirmResult> confirmResults =
-                        askingTools.stream().map(t -> new ConfirmResult(approved, t, t.getSuggestedRules())).toList();
+                        askingTools.stream()
+                                .map(t -> new ConfirmResult(approved, t, t.getSuggestedRules()))
+                                .toList();
                 Map<String, Object> meta = new HashMap<>();
                 meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
                 Msg resumeMsg =
