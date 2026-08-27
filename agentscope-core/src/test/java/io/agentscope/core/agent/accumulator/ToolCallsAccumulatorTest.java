@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.HashMap;
 import java.util.List;
@@ -116,8 +117,26 @@ class ToolCallsAccumulatorTest {
 
         ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
 
-        assertEquals("output.txt", toolCall.getInput().get("path"));
+        assertTrue(toolCall.getInput().isEmpty());
         assertEquals("{}", toolCall.getContent());
+        assertEquals(ToolCallState.PARSE_FAILED, toolCall.getState());
+    }
+
+    @Test
+    @DisplayName("Should allow an explicitly valid empty object")
+    void testValidEmptyObjectRemainsExecutable() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_empty")
+                        .name("noop")
+                        .input(Map.of())
+                        .content("{}")
+                        .build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertTrue(toolCall.getInput().isEmpty());
+        assertEquals(ToolCallState.PENDING, toolCall.getState());
     }
 
     @Test

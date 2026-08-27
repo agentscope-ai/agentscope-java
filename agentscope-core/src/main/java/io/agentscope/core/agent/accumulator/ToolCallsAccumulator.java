@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
@@ -99,6 +100,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
         ToolUseBlock build() {
             Map<String, Object> finalArgs = new HashMap<>(args);
+            ToolCallState state = ToolCallState.PENDING;
             String rawContentStr = this.rawContent.toString();
 
             // Always attempt to parse the fully accumulated raw JSON. Early stream chunks may
@@ -121,6 +123,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                         }
                     }
                 } catch (Exception e) {
+                    state = ToolCallState.PARSE_FAILED;
                     // Keep previously merged args, but retain enough context to diagnose the
                     // malformed arguments emitted by the model.
                     log.warn(
@@ -153,6 +156,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
+                    .state(state)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
         }
