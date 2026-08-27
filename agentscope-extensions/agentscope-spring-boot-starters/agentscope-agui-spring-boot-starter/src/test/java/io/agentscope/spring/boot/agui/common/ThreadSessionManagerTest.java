@@ -134,6 +134,12 @@ class ThreadSessionManagerTest {
         assertEquals("KeepMe", replaced.getName());
         assertTrue(replaced.isArchived());
         assertSame(second, replaced.getAgent());
+
+        ThreadSession renamed =
+                manager.ensureSession("thread-1", "agent-c", "NewName", () -> mock(Agent.class));
+        assertEquals("agent-c", renamed.getAgentId());
+        assertEquals("NewName", renamed.getName());
+        assertTrue(renamed.isArchived());
     }
 
     @Test
@@ -152,6 +158,12 @@ class ThreadSessionManagerTest {
         when(emptyState.getContext()).thenReturn(List.of());
         manager.getOrCreateAgent("thread-empty", "agent-a", () -> emptyAgent);
         assertFalse(manager.hasMemory(ctx("thread-empty")));
+
+        ReActAgent nullStateAgent = mock(ReActAgent.class);
+        when(nullStateAgent.getAgentState(any(RuntimeContext.class))).thenReturn(null);
+        manager.getOrCreateAgent("thread-null-state", "agent-a", () -> nullStateAgent);
+        assertFalse(manager.hasMemory(ctx("thread-null-state")));
+        assertFalse(manager.hasMemory(RuntimeContext.builder().userId("user-1").build()));
 
         ReActAgent filledAgent = mock(ReActAgent.class);
         AgentState filledState = mock(AgentState.class);
@@ -203,6 +215,32 @@ class ThreadSessionManagerTest {
     }
 
     @Test
+    void blankUserIdSharesAnonymousSessionAndEnsureSessionKeepsUserScope() {
+        ThreadSessionManager manager = new ThreadSessionManager(10, 30);
+        Agent first = mock(Agent.class);
+        Agent second = mock(Agent.class);
+
+        Agent created = manager.getOrCreateAgent("   ", "thread-1", "agent-a", () -> first);
+        Agent reused =
+                manager.getOrCreateAgent(null, "thread-1", "agent-a", () -> mock(Agent.class));
+        ThreadSession named =
+                manager.ensureSession("user-1", "thread-1", "agent-a", "Orders", () -> second);
+
+        assertSame(first, created);
+        assertSame(first, reused);
+        assertEquals(
+                ThreadSessionManager.ANON_USER,
+                manager.getSession("thread-1").orElseThrow().getUserId());
+        assertEquals("user-1", named.getUserId());
+        assertEquals("thread-1", named.getThreadId());
+        assertEquals("Orders", named.getName());
+        assertEquals(2, manager.getSessionCount());
+        assertTrue(manager.removeSession("user-1", "thread-1"));
+        assertTrue(manager.getSession("user-1", "thread-1").isEmpty());
+        assertEquals(1, manager.getSessionCount());
+    }
+
+    @Test
     void getSessionsReturnsUnmodifiableSnapshot() {
         ThreadSessionManager manager = new ThreadSessionManager(10, 30);
         Agent agent = mock(Agent.class);
@@ -213,6 +251,12 @@ class ThreadSessionManagerTest {
         assertThrows(
                 UnsupportedOperationException.class,
                 () -> snapshot.put("thread-2", mock(ThreadSession.class)));
+
+        manager.getOrCreateAgent("user-a", "thread-shared", "agent-a", () -> mock(Agent.class));
+        manager.getOrCreateAgent("user-b", "thread-shared", "agent-a", () -> mock(Agent.class));
+        Map<String, ThreadSession> overwritten = manager.getSessions();
+        assertEquals(2, overwritten.size());
+        assertEquals("thread-shared", overwritten.get("thread-shared").getThreadId());
     }
 
     @Test
@@ -250,6 +294,28 @@ class ThreadSessionManagerTest {
         field.set(session, java.time.Instant.now().minusSeconds(120));
 
         manager.cleanupExpiredSessions();
+        assertTrue(manager.getSession("thread-old").isEmpty());
+
+        manager.getOrCreateAgent("thread-fresh", "agent-a", () -> agent);
+        manager.cleanupExpiredSessions();
+        assertTrue(manager.getSession("thread-fresh").isPresent());
+    }
+
+    @Test
+    void ensureCapacityCleansExpiredSessionInsteadOfEvictingNewest() throws Exception {
+        ThreadSessionManager manager = new ThreadSessionManager(1, 1);
+        Agent first = mock(Agent.class);
+        Agent second = mock(Agent.class);
+        manager.getOrCreateAgent("thread-old", "agent-a", () -> first);
+
+        ThreadSession session = manager.getSession("thread-old").orElseThrow();
+        java.lang.reflect.Field field = ThreadSession.class.getDeclaredField("lastAccess");
+        field.setAccessible(true);
+        field.set(session, java.time.Instant.now().minusSeconds(120));
+
+        manager.getOrCreateAgent("thread-new", "agent-a", () -> second);
+        assertEquals(1, manager.getSessionCount());
+        assertTrue(manager.getSession("thread-new").isPresent());
         assertTrue(manager.getSession("thread-old").isEmpty());
     }
 

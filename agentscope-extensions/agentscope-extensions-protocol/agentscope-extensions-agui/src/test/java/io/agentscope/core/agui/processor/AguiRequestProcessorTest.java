@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -593,6 +594,48 @@ class AguiRequestProcessorTest {
 
         verify(resolver).hasMemory(any(RuntimeContext.class));
         assertEquals(List.of(tool, followUp), seenInput.get().getMessages());
+    }
+
+    @Test
+    void processResultInterruptTargetsReActSessionWithoutClosingTheAgent() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        RuntimeContext callerContext =
+                RuntimeContext.builder().userId("user-1").sessionId("caller-session").build();
+        AguiRequestProcessor.ProcessResult result =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .runtimeContextResolver(request -> callerContext)
+                        .build()
+                        .process(request(input("run-1")));
+
+        result.interrupt("thread-1");
+
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).interrupt(contextCaptor.capture());
+        verify(agent, never()).interrupt();
+        assertEquals("thread-1", contextCaptor.getValue().getSessionId());
+        assertEquals("user-1", contextCaptor.getValue().getUserId());
+    }
+
+    @Test
+    void processResultInterruptFallsBackForNonReActAgent() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        Agent agent = mock(Agent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        AguiRequestProcessor.ProcessResult result =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .build()
+                        .process(request(input("run-1")));
+
+        result.interrupt("thread-1");
+
+        verify(agent).interrupt();
     }
 
     private static final class RecordingAdapter extends AguiAgentAdapter {

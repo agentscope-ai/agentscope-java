@@ -16,6 +16,7 @@
 package io.agentscope.core.agui;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,13 +27,22 @@ import static org.mockito.Mockito.verify;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.harness.agent.HarnessAgent;
+import java.lang.reflect.Constructor;
 import org.junit.jupiter.api.Test;
 
 class AguiUtilTest {
 
     @Test
+    void constructorIsPackagePrivateUtility() throws Exception {
+        Constructor<AguiUtil> constructor = AguiUtil.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        assertNotNull(constructor.newInstance());
+    }
+
+    @Test
     void isHarnessAgentDetectsHarnessTypeAndIgnoresOthers() {
         assertTrue(AguiUtil.isHarnessAgent(new HarnessAgent()));
+        assertTrue(AguiUtil.isHarnessAgent(new DelegatingAgent(mock(ReActAgent.class))));
         assertFalse(AguiUtil.isHarnessAgent(mock(Agent.class)));
         assertFalse(AguiUtil.isHarnessAgent(mock(ReActAgent.class)));
         assertFalse(AguiUtil.isHarnessAgent(null));
@@ -60,6 +70,7 @@ class AguiUtilTest {
         assertNull(AguiUtil.asReActAgent(mock(Agent.class)));
         assertNull(AguiUtil.asReActAgent(null));
         assertNull(AguiUtil.asReActAgent(new HarnessAgent()));
+        assertNull(AguiUtil.asReActAgent(new NonReActDelegateAgent()));
     }
 
     private static final class DelegatingAgent extends HarnessAgent {
@@ -71,6 +82,12 @@ class AguiUtilTest {
 
         public ReActAgent getDelegate() {
             return delegate;
+        }
+    }
+
+    private static final class NonReActDelegateAgent extends HarnessAgent {
+        public Object getDelegate() {
+            return "not-a-react-agent";
         }
     }
 }
