@@ -15,19 +15,20 @@
  */
 package io.agentscope.examples.copilotkit.config;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
-import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEvents;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.CustomEvent;
-import io.agentscope.core.event.RequireExternalExecutionEvent;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ToolSchema;
@@ -36,7 +37,10 @@ import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JacksonJsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.examples.copilotkit.a2ui.A2uiComposer;
+import io.agentscope.examples.copilotkit.service.DemoThreadStore;
 import io.agentscope.examples.copilotkit.service.InMemoryAgentEventStore;
 import io.agentscope.examples.copilotkit.service.PersistingAgentEventEnricher;
 import io.agentscope.examples.copilotkit.workbench.RefundOrderTool;
@@ -47,12 +51,13 @@ import io.agentscope.examples.copilotkit.workbench.WorkbenchTools;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.spring.boot.agui.common.AguiAgentRegistryCustomizer;
+import jakarta.annotation.PostConstruct;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
@@ -115,31 +120,6 @@ public class AgentConfiguration {
     }
 
     @Bean
-    public AgentEventConverter requireExternalExecutionEventConverter() {
-        return new AgentEventConverter() {
-            @Override
-            public Set<Class<? extends AgentEvent>> eventTypes() {
-                return Set.of(RequireExternalExecutionEvent.class);
-            }
-
-            @Override
-            public void convert(AgentEvent event, AguiStreamContext context) {
-                RequireExternalExecutionEvent customEvent = (RequireExternalExecutionEvent) event;
-                for (ToolUseBlock toolCall : customEvent.getToolCalls()) {
-                    context.emit(
-                            new AguiEvent.ToolCallChunk(
-                                    context.getThreadId(),
-                                    context.getRunId(),
-                                    toolCall.getId(),
-                                    toolCall.getName(),
-                                    null,
-                                    toolCall.getContent()));
-                }
-            }
-        };
-    }
-
-    @Bean
     public AguiEventEnricher exampleAguiEventEnricher() {
         return (source, events, context) -> {
             long timestamp = System.currentTimeMillis();
@@ -161,6 +141,20 @@ public class AgentConfiguration {
             InMemoryAgentEventStore eventStore,
             ObjectProvider<WorkbenchAguiEventConverter> workbenchConverterProvider) {
         return new PersistingAgentEventEnricher(eventStore, workbenchConverterProvider);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AguiRuntimeContextResolver aguiRuntimeContextResolver() {
+        return request -> {
+            // Demo identity: treat X-Token as the user id when present.
+            String token = request.firstHeader("X-Token");
+            String userId = token == null || token.isBlank() ? DemoThreadStore.DEMO_USER_ID : token;
+            return RuntimeContext.builder()
+                    .sessionId(request.getInput().getThreadId())
+                    .userId(userId)
+                    .build();
+        };
     }
 
     /**
@@ -198,7 +192,7 @@ public class AgentConfiguration {
                 .model(
                         DashScopeChatModel.builder()
                                 .apiKey(getRequiredApiKey())
-                                .modelName("qwen3.5-plus")
+                                .modelName(getModelName())
                                 .stream(true)
                                 .enableThinking(true)
                                 .formatter(new DashScopeChatFormatter())
@@ -293,7 +287,7 @@ public class AgentConfiguration {
                 .model(
                         DashScopeChatModel.builder()
                                 .apiKey(apiKey)
-                                .modelName("qwen3.5-plus")
+                                .modelName(getModelName())
                                 .stream(true)
                                 .enableThinking(true)
                                 .formatter(new DashScopeChatFormatter())
@@ -339,8 +333,10 @@ public class AgentConfiguration {
                                 + "Engage in natural conversation and help users "
                                 + "with general questions and discussions.")
                 .model(
-                        DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-plus").stream(
-                                        true)
+                        DashScopeChatModel.builder()
+                                .apiKey(apiKey)
+                                .modelName(getModelName())
+                                .stream(true)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .middleware(exampleCustomEventMiddleware())
@@ -365,8 +361,10 @@ public class AgentConfiguration {
                                 + "Use the calculate tool to perform mathematical operations. "
                                 + "Always show your work and explain the results.")
                 .model(
-                        DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-plus").stream(
-                                        true)
+                        DashScopeChatModel.builder()
+                                .apiKey(apiKey)
+                                .modelName(getModelName())
+                                .stream(true)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .toolkit(toolkit)
@@ -427,5 +425,23 @@ public class AgentConfiguration {
                             + "Please set it before starting the application.");
         }
         return apiKey;
+    }
+
+    private String getModelName() {
+        String modelName = System.getenv("DASHSCOPE_MODEL");
+        if (modelName == null || modelName.isEmpty()) {
+            return "qwen3.5-flash";
+        }
+        return modelName;
+    }
+
+    @PostConstruct
+    public void init() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        // CopilotKit rejects JSON null fields on some AG-UI event payloads.
+        objectMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
+        JsonUtils.setJsonCodec(new JacksonJsonCodec(objectMapper));
     }
 }

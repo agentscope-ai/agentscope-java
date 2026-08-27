@@ -768,6 +768,110 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testSuspendedFrontendToolDoesNotEmitInterrupt() {
+            ToolUseBlock toolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            Msg suspendedResult =
+                    suspendedToolResult(
+                            "reply-frontend",
+                            toolUse,
+                            ToolResultBlock.builder()
+                                    .id("tool-1")
+                                    .name("lookup")
+                                    .output(
+                                            TextBlock.builder()
+                                                    .text("Execute lookup on the client")
+                                                    .build())
+                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .build());
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            inputWithTools(frontendTool("lookup")),
+                            new AgentStartEvent("thread-v2", "reply-frontend", "react"),
+                            new AgentResultEvent(suspendedResult),
+                            new AgentEndEvent("reply-frontend"));
+
+            assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_FINISHED), types(events));
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            assertNull(finished.outcome());
+        }
+
+        @Test
+        void testSuspendedBackendToolStillInterruptsWhenFrontendToolsArePresent() {
+            ToolUseBlock frontendToolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            ToolUseBlock backendToolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-2")
+                            .name("requestHumanApproval")
+                            .input(Map.of("summary", "refund"))
+                            .build();
+            Msg suspendedResult =
+                    AssistantMessage.builder()
+                            .id("reply-mixed")
+                            .content(
+                                    List.of(
+                                            frontendToolUse,
+                                            backendToolUse,
+                                            ToolResultBlock.builder()
+                                                    .id("tool-1")
+                                                    .name("lookup")
+                                                    .output(
+                                                            TextBlock.builder()
+                                                                    .text("client lookup")
+                                                                    .build())
+                                                    .metadata(
+                                                            Map.of(
+                                                                    ToolResultBlock
+                                                                            .METADATA_SUSPENDED,
+                                                                    true))
+                                                    .build(),
+                                            ToolResultBlock.builder()
+                                                    .id("tool-2")
+                                                    .name("requestHumanApproval")
+                                                    .output(
+                                                            TextBlock.builder()
+                                                                    .text("Approve refund?")
+                                                                    .build())
+                                                    .metadata(
+                                                            Map.of(
+                                                                    ToolResultBlock
+                                                                            .METADATA_SUSPENDED,
+                                                                    true))
+                                                    .build()))
+                            .generateReason(GenerateReason.TOOL_SUSPENDED)
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            inputWithTools(frontendTool("lookup")),
+                            new AgentStartEvent("thread-v2", "reply-mixed", "react"),
+                            new AgentResultEvent(suspendedResult),
+                            new AgentEndEvent("reply-mixed"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertEquals(1, outcome.interrupts().size());
+            assertEquals("tool-2", outcome.interrupts().get(0).toolCallId());
+            assertEquals(
+                    "requestHumanApproval", outcome.interrupts().get(0).metadata().get("toolName"));
+        }
+
+        @Test
         void testSuspendedToolResultWithoutStableToolCallIdFailsRun() {
             ToolUseBlock toolUse =
                     ToolUseBlock.builder()
@@ -1834,15 +1938,24 @@ class AguiAgentAdapterV2Test {
     }
 
     private static List<AguiEvent> runReActEvents(AgentEvent... agentEvents) {
-        return runReActEvents(AguiAdapterConfig.defaultConfig(), agentEvents);
+        return runReActEvents(AguiAdapterConfig.defaultConfig(), input(), agentEvents);
     }
 
     private static List<AguiEvent> runReActEvents(
             AguiAdapterConfig config, AgentEvent... agentEvents) {
+        return runReActEvents(config, input(), agentEvents);
+    }
+
+    private static List<AguiEvent> runReActEvents(RunAgentInput input, AgentEvent... agentEvents) {
+        return runReActEvents(AguiAdapterConfig.defaultConfig(), input, agentEvents);
+    }
+
+    private static List<AguiEvent> runReActEvents(
+            AguiAdapterConfig config, RunAgentInput input, AgentEvent... agentEvents) {
         ReActAgent agent = mock(ReActAgent.class);
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                 .thenReturn(Flux.fromArray(agentEvents));
-        return new AguiAgentAdapter(agent, config).run(input()).collectList().block();
+        return new AguiAgentAdapter(agent, config).run(input).collectList().block();
     }
 
     private static List<AguiEvent> runReActFlux(Flux<AgentEvent> agentEvents) {
