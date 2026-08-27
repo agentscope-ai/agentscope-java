@@ -84,6 +84,21 @@ public class Msg implements State {
             "agentscope_confirm_request_reply_id";
 
     /**
+     * Metadata key for carrying a {@code List<AskUserResult>} when resuming an ASK_USER pause.
+     *
+     * <p>When a run paused with {@code GenerateReason.ASK_USER_ASKING} (the model asked the user
+     * questions via an {@code ask_user} tool), the caller attaches the user's answers here. The
+     * agent formats them into the tool result and continues without executing the tool.
+     */
+    public static final String METADATA_ASK_USER_RESULTS = "agentscope_ask_user_results";
+
+    /**
+     * Metadata key storing the {@code replyId} of the {@code RequireUserAskEvent} that paused
+     * this assistant turn. Used to correlate the later {@code UserAskResultEvent}.
+     */
+    public static final String METADATA_ASK_REQUEST_REPLY_ID = "agentscope_ask_request_reply_id";
+
+    /**
      * Metadata key storing the {@code replyId} of the {@code RequireExternalExecutionEvent} that
      * paused this assistant turn. Used to correlate the later
      * {@code ExternalExecutionResultEvent}.

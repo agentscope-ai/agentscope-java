@@ -45,6 +45,7 @@ class GenerateReasonTest {
         assertNotNull(GenerateReason.REASONING_STOP_REQUESTED);
         assertNotNull(GenerateReason.ACTING_STOP_REQUESTED);
         assertNotNull(GenerateReason.PERMISSION_ASKING);
+        assertNotNull(GenerateReason.ASK_USER_ASKING);
         assertNotNull(GenerateReason.MIDDLEWARE_STOP_REQUESTED);
         assertNotNull(GenerateReason.ALL_TOOLS_DENIED);
         assertNotNull(GenerateReason.INTERRUPTED);
