@@ -32,14 +32,32 @@ public class StructuredOutputValidationException extends IllegalArgumentExceptio
 
     public StructuredOutputValidationException(
             String schemaName, List<StructuredOutputValidator.ValidationError> errors) {
-        super(buildMessage(schemaName, errors));
-        this.schemaName = schemaName;
-        this.errors = List.copyOf(errors);
+        this(schemaName, errors, null, List.of());
     }
 
+    public StructuredOutputValidationException(
+            String schemaName,
+            List<StructuredOutputValidator.ValidationError> errors,
+            String parseErrorMessage,
+            List<FailedAttempt> failedAttempts) {
+        super(buildMessage(schemaName, errors, parseErrorMessage));
+        this.schemaName = schemaName;
+        this.errors = errors == null ? List.of() : List.copyOf(errors);
+        this.parseErrorMessage = parseErrorMessage;
+        this.failedAttempts = failedAttempts == null ? List.of() : List.copyOf(failedAttempts);
+    }
+
+    private final String parseErrorMessage;
+    private final List<FailedAttempt> failedAttempts;
+
     private static String buildMessage(
-            String schemaName, List<StructuredOutputValidator.ValidationError> errors) {
+            String schemaName,
+            List<StructuredOutputValidator.ValidationError> errors,
+            String parseErrorMessage) {
         StringBuilder sb = new StringBuilder("structured_output_schema_invalid");
+        if (parseErrorMessage != null) {
+            sb.append(" | ").append(parseErrorMessage);
+        }
         if (schemaName != null && !schemaName.isBlank()) {
             sb.append(": schema=").append(schemaName);
         }
@@ -59,5 +77,14 @@ public class StructuredOutputValidationException extends IllegalArgumentExceptio
 
     public List<StructuredOutputValidator.ValidationError> getErrors() {
         return errors;
+    }
+
+    public String getParseErrorMessage() {
+        return parseErrorMessage;
+    }
+
+    /** All recorded failed attempts leading to this exception (chronological). */
+    public List<FailedAttempt> getFailedAttempts() {
+        return failedAttempts;
     }
 }

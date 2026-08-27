@@ -111,6 +111,36 @@ class StructuredOutputGeneratorTest {
     }
 
     @Test
+    void extractsJsonAfterMalformedCandidate() throws Exception {
+        // first balanced {...} is not valid JSON — extraction must scan on
+        JsonNode payload =
+                StructuredOutputGenerator.generateWithRetry(
+                        errors -> "noise { oops } tail {\"answer\": 5}", schema(), 3);
+        assertEquals(5, payload.path("answer").asInt());
+    }
+
+    @Test
+    void parseFailureEntersTheRetryLoopWithFeedback() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        JsonNode payload =
+                StructuredOutputGenerator.generateWithRetry(
+                        errors -> {
+                            int attempt = calls.incrementAndGet();
+                            if (attempt == 1) {
+                                return "I am thinking... no json";
+                            }
+                            assertTrue(
+                                    errors.stream()
+                                            .anyMatch(e -> e.message().contains("valid JSON")));
+                            return "{\"answer\": 8}";
+                        },
+                        schema(),
+                        3);
+        assertEquals(2, calls.get());
+        assertEquals(8, payload.path("answer").asInt());
+    }
+
+    @Test
     void retryPromptContainsErrorDetails() {
         List<StructuredOutputValidator.ValidationError> errors =
                 List.of(

@@ -71,15 +71,32 @@ public final class StructuredOutputGenerator {
         List<StructuredOutputValidator.ValidationError> lastErrors = List.of();
         for (int attempt = 1; ; attempt++) {
             String raw = generate.apply(lastErrors);
-            JsonNode payload = extractJsonObject(raw);
-            lastErrors = StructuredOutputValidator.validate(payload, schema);
-            if (lastErrors.isEmpty()) {
-                return payload;
+            List<StructuredOutputValidator.ValidationError> errors;
+            try {
+                JsonNode payload = extractJsonObject(raw);
+                errors = StructuredOutputValidator.validate(payload, schema);
+                if (errors.isEmpty()) {
+                    return payload;
+                }
+            } catch (StructuredOutputParseException parseException) {
+                errors = List.of(parseErrorAsValidationError(parseException.getMessage()));
             }
             if (attempt >= maxRetries) {
-                throw new StructuredOutputValidationException(schema.getName(), lastErrors);
+                throw new StructuredOutputValidationException(schema.getName(), errors);
             }
+            lastErrors = errors;
         }
+    }
+
+    /**
+     * Wraps a parse failure as a validation error so the correction prompt
+     * keeps the actionable {@code path: message} shape.
+     */
+    static StructuredOutputValidator.ValidationError parseErrorAsValidationError(
+            String parseErrorMessage) {
+        return new StructuredOutputValidator.ValidationError(
+                "$",
+                "output must be a valid JSON object (could not be parsed): " + parseErrorMessage);
     }
 
     /**
@@ -93,11 +110,14 @@ public final class StructuredOutputGenerator {
         if (errors == null || errors.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("\n\n你的上一次输出未通过 JSON Schema 校验，请修正后重新输出，不要解释：");
+        StringBuilder sb =
+                new StringBuilder(
+                        "\n\nYour previous output failed JSON Schema validation."
+                                + " Output the corrected JSON only, without explanation:");
         int shown = 0;
         for (StructuredOutputValidator.ValidationError error : errors) {
             if (shown++ >= 5) {
-                sb.append("\n- ... 等").append(errors.size()).append(" 处错误");
+                sb.append("\n- ... and ").append(errors.size()).append(" errors in total");
                 break;
             }
             sb.append("\n- ").append(error.instanceLocation()).append(": ").append(error.message());
@@ -108,7 +128,11 @@ public final class StructuredOutputGenerator {
     /**
      * Extracts a JSON object from raw model output: strips markdown code
      * fences and leading prose, then performs brace matching from the first
-     * '{'. Falls back to the raw text when no JSON object can be found.
+     * '{'. If a balanced candidate is not valid JSON, scanning continues with
+     * the next candidate instead of giving up.
+     *
+     * @throws StructuredOutputParseException when no valid JSON object can be
+     *     found (fail-closed: never synthesizes a payload from the raw text)
      */
     static JsonNode extractJsonObject(String raw) {
         String text = raw == null ? "" : raw.trim();
@@ -122,9 +146,11 @@ public final class StructuredOutputGenerator {
                 text = text.substring(0, closingFence).trim();
             }
         }
+        // P1-2（维护者评审）：fail-closed——提取不到 JSON 时抛出 ParseException 进入重试，
+        // 绝不合成 {"result": raw}（合成会让宽松 schema 静默放行非结构化文本，绕过整个保证）
         int start = text.indexOf('{');
         if (start < 0) {
-            return MAPPER.createObjectNode().put("result", raw == null ? "" : raw);
+            throw new StructuredOutputParseException("no JSON object found in model output");
         }
         int depth = 0;
         boolean inString = false;
@@ -149,14 +175,20 @@ public final class StructuredOutputGenerator {
                 try {
                     return MAPPER.readTree(text.substring(start, i + 1));
                 } catch (Exception e) {
-                    return MAPPER.createObjectNode().put("result", text.substring(start, i + 1));
+                    // This balanced candidate is not valid JSON — keep scanning for
+                    // a later candidate instead of giving up (review feedback)
+                    start = text.indexOf('{', i + 1);
+                    if (start < 0) {
+                        throw new StructuredOutputParseException(
+                                "no valid JSON object found in model output");
+                    }
+                    i = start - 1;
+                    depth = 0;
+                    inString = false;
+                    escaped = false;
                 }
             }
         }
-        try {
-            return MAPPER.readTree(text.substring(start));
-        } catch (Exception e) {
-            return MAPPER.createObjectNode().put("result", text.substring(start));
-        }
+        throw new StructuredOutputParseException("unbalanced braces in model output");
     }
 }

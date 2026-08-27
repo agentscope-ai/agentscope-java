@@ -17,6 +17,7 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.formatter.ResponseFormat;
+import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -53,6 +54,7 @@ public class GenerateOptions {
     private final Boolean cacheControl;
     private final Boolean parallelToolCalls;
     private final ResponseFormat responseFormat;
+    private final StructuredOutputRetryPolicy structuredOutputPolicy;
     private final Map<String, String> additionalHeaders;
     private final Map<String, Object> additionalBodyParams;
     private final Map<String, String> additionalQueryParams;
@@ -83,6 +85,7 @@ public class GenerateOptions {
         this.cacheControl = builder.cacheControl;
         this.parallelToolCalls = builder.parallelToolCalls;
         this.responseFormat = builder.responseFormat;
+        this.structuredOutputPolicy = builder.structuredOutputPolicy;
         this.additionalHeaders =
                 builder.additionalHeaders != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalHeaders))
@@ -350,6 +353,14 @@ public class GenerateOptions {
     }
 
     /**
+     * Returns the per-call retry policy for response-side structured output
+     * validation; {@code null} means the component default applies.
+     */
+    public StructuredOutputRetryPolicy structuredOutputPolicy() {
+        return structuredOutputPolicy;
+    }
+
+    /**
      * Gets the additional HTTP headers to include in API requests.
      *
      * <p>These headers will be merged with the default headers when making API calls.
@@ -486,6 +497,10 @@ public class GenerateOptions {
                         : fallback.parallelToolCalls);
         builder.responseFormat(
                 primary.responseFormat != null ? primary.responseFormat : fallback.responseFormat);
+        builder.structuredOutputPolicy(
+                primary.structuredOutputPolicy != null
+                        ? primary.structuredOutputPolicy
+                        : fallback.structuredOutputPolicy);
 
         // Merge map fields: fallback first, then override with primary
         mergeMaps(fallback.additionalHeaders, primary.additionalHeaders, builder::additionalHeader);
@@ -539,6 +554,7 @@ public class GenerateOptions {
         private Boolean cacheControl;
         private Boolean parallelToolCalls;
         private ResponseFormat responseFormat;
+        private StructuredOutputRetryPolicy structuredOutputPolicy;
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
         private Map<String, String> additionalQueryParams;
@@ -810,6 +826,20 @@ public class GenerateOptions {
          */
         public Builder responseFormat(ResponseFormat responseFormat) {
             this.responseFormat = responseFormat;
+            return this;
+        }
+
+        /**
+         * Sets the per-call retry policy applied by structured-output-aware
+         * middleware (e.g. {@code StructuredOutputValidationMiddleware}) when
+         * the call carries a JSON-schema response format; {@code null} (the
+         * default) lets the component default apply.
+         *
+         * @param policy the structured-output retry policy
+         * @return this builder instance
+         */
+        public Builder structuredOutputPolicy(StructuredOutputRetryPolicy policy) {
+            this.structuredOutputPolicy = policy;
             return this;
         }
 
