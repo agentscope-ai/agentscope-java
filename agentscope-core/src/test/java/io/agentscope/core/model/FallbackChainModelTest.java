@@ -310,6 +310,200 @@ class FallbackChainModelTest {
         assertEquals(8192, chain.getContextWindowSize());
     }
 
+    @Test
+    @DisplayName("ModelHttpException without retryable status fails fast (422)")
+    void modelHttpExceptionNonRetryableFailsFast() {
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new TestModelHttpException(422, "validation"));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectErrorSatisfies(
+                        error ->
+                                assertEquals(
+                                        Integer.valueOf(422),
+                                        ((ModelHttpException) error).getStatusCode()))
+                .verify();
+
+        assertEquals(0, fallback.callCount.get(), "422 must not consume the fallback chain");
+    }
+
+    @Test
+    @DisplayName("ModelHttpException with retryable status switches (429)")
+    void modelHttpExceptionRetryableSwitches() {
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new TestModelHttpException(429, "rate limited"));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(
+                1,
+                fallback.callCount.get(),
+                "429 ModelHttpException should fall back to next candidate");
+    }
+
+    @Test
+    @DisplayName("HttpTransportException without a status code switches (connection error)")
+    void transportExceptionWithoutStatusSwitches() {
+        CallRecordingModel primary =
+                new CallRecordingModel(
+                        "primary",
+                        new HttpTransportException(
+                                "connect failed", new java.io.IOException("reset")));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(1, fallback.callCount.get(), "status-less transport error should fall back");
+    }
+
+    @Test
+    @DisplayName("ModelHttpException without a status code switches (provider-level)")
+    void modelHttpExceptionWithoutStatusSwitches() {
+        // A ModelHttpException whose getStatusCode() returns null (no HTTP status available).
+        TestModelHttpException statusLess = new TestModelHttpException(null, "no status");
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new RuntimeException(statusLess));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(
+                1, fallback.callCount.get(), "status-less ModelHttpException should fall back");
+    }
+
+    @Test
+    @DisplayName("IO errors should switch to the next candidate")
+    void ioErrorSwitchesToNextCandidate() {
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new java.io.IOException("connect reset"));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(1, fallback.callCount.get(), "IO error should fall back");
+    }
+
+    @Test
+    @DisplayName("Unknown errors switch conservatively (same as legacy single-fallback)")
+    void unknownErrorSwitchesConservatively() {
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new IllegalStateException("boom"));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(1, fallback.callCount.get(), "unknown error should conservatively fall back");
+    }
+
+    @Test
+    @DisplayName("Wrapped (cause-chain) HTTP errors are classified by their inner status")
+    void wrappedHttpErrorClassifiedByCause() {
+        HttpTransportException inner = new HttpTransportException("inner 503", 503, "");
+        RuntimeException wrapper = new RuntimeException("wrapped transport failure", inner);
+        CallRecordingModel primary = new CallRecordingModel("primary", wrapper);
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(1, fallback.callCount.get(), "cause-chain 503 should be switchable");
+    }
+
+    @Test
+    @DisplayName("Wrapped request-side error fails fast without switching")
+    void wrappedRequestSideErrorFailsFast() {
+        HttpTransportException inner = new HttpTransportException("inner 400", 400, "");
+        RuntimeException wrapper = new RuntimeException("wrapped bad request", inner);
+        CallRecordingModel primary = new CallRecordingModel("primary", wrapper);
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+
+        StepVerifier.create(chain.stream(List.of(), null, null)).expectError().verify();
+
+        assertEquals(
+                0, fallback.callCount.get(), "wrapped 400 must not consume the fallback chain");
+    }
+
+    @Test
+    @DisplayName("Capability delegation reports native structured output with tools")
+    void capabilityDelegationIncludesWithTools() {
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
+        CallRecordingModel fallback =
+                new CallRecordingModel("fallback", null) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean supportsNativeStructuredOutputWithTools() {
+                        return true;
+                    }
+                };
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(fallback));
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(true, chain.supportsNativeStructuredOutputWithTools());
+    }
+
+    @Test
+    @DisplayName("Null shared cooldown table is rejected")
+    void nullSharedCooldownRejected() {
+        CallRecordingModel primary = new CallRecordingModel("primary", null);
+        assertThrows(
+                NullPointerException.class,
+                () -> new FallbackChainModel(primary, List.of(), Duration.ofSeconds(1), null));
+    }
+
+    /** ModelHttpException stub for classification tests (mirrors ExecutionConfigTest). */
+    private static final class TestModelHttpException extends RuntimeException
+            implements ModelHttpException {
+
+        private final Integer statusCode;
+
+        private TestModelHttpException(Integer statusCode, String message) {
+            super("HTTP " + statusCode + ": " + message);
+            this.statusCode = statusCode;
+        }
+
+        @Override
+        public Integer getStatusCode() {
+            return statusCode;
+        }
+    }
+
     /** Model that returns a canned success or error, and records how many times it was called. */
     private static class CallRecordingModel implements Model {
 
