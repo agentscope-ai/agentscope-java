@@ -140,8 +140,41 @@ class ModelUtilsRetryDefaultTest {
     }
 
     @Test
-    @DisplayName("Default retryOn must retry timeout errors")
-    void defaultRetryOnRetriesTimeouts() {
+    @DisplayName("Default retryOn must retry an actually timing-out source")
+    void defaultRetryOnRetriesTimingOutSource() {
+        AtomicInteger attempts = new AtomicInteger();
+
+        // A source that never emits: the timeout operator inside applyTimeoutAndRetry must
+        // fire, and the produced error (a ModelException carrying a TimeoutException cause)
+        // must be classified as retryable by the default predicate.
+        Flux<ChatResponse> source =
+                Flux.<ChatResponse>never().doOnSubscribe(s -> attempts.incrementAndGet());
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .timeout(Duration.ofMillis(50))
+                                        .maxAttempts(3)
+                                        .initialBackoff(Duration.ofMillis(5))
+                                        .maxBackoff(Duration.ofMillis(20))
+                                        .build())
+                        .build();
+
+        StepVerifier.create(ModelUtils.applyTimeoutAndRetry(source, options, null, MODEL, PROVIDER))
+                .expectError()
+                .verify(Duration.ofSeconds(10));
+
+        assertEquals(
+                3,
+                attempts.get(),
+                "the timeout produced by applyTimeoutAndRetry itself must be retried up to"
+                        + " maxAttempts");
+    }
+
+    @Test
+    @DisplayName("Default retryOn must retry explicit TimeoutException errors")
+    void defaultRetryOnRetriesExplicitTimeouts() {
         AtomicInteger attempts = new AtomicInteger();
 
         Flux<ChatResponse> source =
@@ -162,6 +195,44 @@ class ModelUtilsRetryDefaultTest {
                 .verify(Duration.ofSeconds(10));
 
         assertEquals(3, attempts.get(), "timeouts must be retried up to maxAttempts");
+    }
+
+    @Test
+    @DisplayName("Timeout errors produced by applyTimeoutAndRetry carry a TimeoutException cause")
+    void timeoutErrorFromApplyTimeoutAndRetryCarriesTimeoutCause() {
+        Flux<ChatResponse> source = Flux.never();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .timeout(Duration.ofMillis(50))
+                                        .maxAttempts(2)
+                                        .initialBackoff(Duration.ofMillis(5))
+                                        .maxBackoff(Duration.ofMillis(20))
+                                        .build())
+                        .build();
+
+        StepVerifier.create(ModelUtils.applyTimeoutAndRetry(source, options, null, MODEL, PROVIDER))
+                .expectErrorSatisfies(
+                        error -> {
+                            Throwable cause = error;
+                            boolean foundTimeout = false;
+                            while (cause != null) {
+                                if (cause instanceof TimeoutException) {
+                                    foundTimeout = true;
+                                    break;
+                                }
+                                cause = cause.getCause();
+                            }
+                            assertEquals(
+                                    true,
+                                    foundTimeout,
+                                    "timeout error must preserve TimeoutException on the cause"
+                                            + " chain so RETRYABLE_ERRORS classifies it as"
+                                            + " retryable: "
+                                            + error);
+                        })
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test

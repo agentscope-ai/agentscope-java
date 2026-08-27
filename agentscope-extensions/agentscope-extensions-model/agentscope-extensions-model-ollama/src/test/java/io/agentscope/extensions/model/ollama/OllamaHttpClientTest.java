@@ -257,4 +257,21 @@ class OllamaHttpClientTest {
         assertEquals(Integer.valueOf(500), exception.getStatusCode());
         assertEquals("Server Error", exception.getResponseBody());
     }
+
+    @Test
+    @DisplayName("OllamaHttpException implements the provider-neutral ModelHttpException contract")
+    void ollamaHttpExceptionImplementsModelHttpExceptionContract() {
+        OllamaHttpClient.OllamaHttpException rateLimited =
+                new OllamaHttpClient.OllamaHttpException(
+                        "rate limited", 429, "{\"error\":\"limit\"}");
+        OllamaHttpClient.OllamaHttpException badRequest =
+                new OllamaHttpClient.OllamaHttpException("bad request", 400, "{\"error\":\"bad\"}");
+
+        assertTrue(
+                io.agentscope.core.model.ExecutionConfig.RETRYABLE_ERRORS.test(rateLimited),
+                "429 must be classified as retryable via the ModelHttpException contract");
+        assertTrue(
+                !io.agentscope.core.model.ExecutionConfig.RETRYABLE_ERRORS.test(badRequest),
+                "400 must not be classified as retryable via the ModelHttpException contract");
+    }
 }

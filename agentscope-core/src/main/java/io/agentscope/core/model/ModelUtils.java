@@ -88,6 +88,8 @@ public final class ModelUtils {
             // Apply timeout if configured
             Duration timeout = execConfig.getTimeout();
             if (timeout != null) {
+                // Keep the TimeoutException type on the cause chain so the default retry
+                // predicate (RETRYABLE_ERRORS) classifies this produced timeout as retryable.
                 responseFlux =
                         responseFlux.timeout(
                                 timeout,

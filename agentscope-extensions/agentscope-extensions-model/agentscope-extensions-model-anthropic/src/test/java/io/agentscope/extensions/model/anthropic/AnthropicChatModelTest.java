@@ -17,14 +17,19 @@ package io.agentscope.extensions.model.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
+import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicMultiAgentFormatter;
@@ -503,5 +508,75 @@ class AnthropicChatModelTest {
         StepVerifier.create(model.stream(messages, null, null))
                 .expectError()
                 .verify(Duration.ofSeconds(60));
+    }
+
+    // ==========================================================================
+    // Anthropic SDK exception adaptation (provider-neutral ModelHttpException contract)
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Real Anthropic SDK RateLimitException (429) is adapted to retryable contract")
+    void realRateLimitExceptionIsAdaptedToRetryableContract() {
+        // Build a real SDK RateLimitException (like the SDK throws on HTTP 429).
+        com.anthropic.errors.RateLimitException sdk429 =
+                com.anthropic.errors.RateLimitException.builder()
+                        .headers(
+                                com.anthropic.core.http.Headers.builder()
+                                        .put("x-request-id", "req_123")
+                                        .build())
+                        .body(com.anthropic.core.JsonValue.from("{\"error\":\"rate_limit\"}"))
+                        .cause(new RuntimeException("underlying"))
+                        .build();
+
+        Throwable adapted = AnthropicChatModel.adaptSdkException(sdk429);
+
+        assertInstanceOf(
+                HttpTransportException.class,
+                adapted,
+                "SDK RateLimitException must be adapted to HttpTransportException");
+        HttpTransportException transport = (HttpTransportException) adapted;
+        assertEquals(
+                Integer.valueOf(429),
+                transport.getStatusCode(),
+                "Adapted exception must preserve status code 429");
+        assertEquals(
+                true,
+                ExecutionConfig.RETRYABLE_ERRORS.test(adapted),
+                "429 must be classified as retryable by the default predicate");
+    }
+
+    @Test
+    @DisplayName("Wrapped SDK exception is found through the cause chain")
+    void wrappedSdkExceptionAdaptedThroughCauseChain() {
+        com.anthropic.errors.RateLimitException sdk429 =
+                com.anthropic.errors.RateLimitException.builder()
+                        .headers(com.anthropic.core.http.Headers.builder().build())
+                        .body(com.anthropic.core.JsonValue.from("{}"))
+                        .build();
+        // The synchronous catch path wraps SDK exceptions in a ModelException.
+        ModelException wrapped =
+                new ModelException(
+                        "Failed to stream Anthropic API: " + sdk429.getMessage(),
+                        sdk429,
+                        "claude-sonnet-4-5-20250929",
+                        "anthropic");
+
+        Throwable adapted = AnthropicChatModel.adaptSdkException(wrapped);
+
+        assertInstanceOf(
+                HttpTransportException.class,
+                adapted,
+                "Wrapped SDK exception must be adapted through the cause chain");
+        assertEquals(
+                true,
+                ExecutionConfig.RETRYABLE_ERRORS.test(adapted),
+                "Cause-chain 429 must be classified as retryable");
+    }
+
+    @Test
+    @DisplayName("Non-HTTP exceptions are left unchanged by the adapter")
+    void nonHttpExceptionUnchanged() {
+        IllegalStateException plain = new IllegalStateException("plain failure");
+        assertSame(plain, AnthropicChatModel.adaptSdkException(plain));
     }
 }
