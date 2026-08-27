@@ -803,6 +803,23 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testDashScopeHttpExceptionImplementsModelHttpExceptionContract() {
+        DashScopeHttpClient.DashScopeHttpException rateLimited =
+                new DashScopeHttpClient.DashScopeHttpException(
+                        "rate limited", 429, "{\"error\":\"limit\"}");
+        DashScopeHttpClient.DashScopeHttpException badRequest =
+                new DashScopeHttpClient.DashScopeHttpException(
+                        "bad request", 400, "{\"error\":\"bad\"}");
+
+        assertTrue(
+                io.agentscope.core.model.ExecutionConfig.RETRYABLE_ERRORS.test(rateLimited),
+                "429 must be classified as retryable via the ModelHttpException contract");
+        assertTrue(
+                !io.agentscope.core.model.ExecutionConfig.RETRYABLE_ERRORS.test(badRequest),
+                "400 must not be classified as retryable via the ModelHttpException contract");
+    }
+
+    @Test
     void testConstructorWithNullApiKey() {
         assertThrows(
                 IllegalArgumentException.class,

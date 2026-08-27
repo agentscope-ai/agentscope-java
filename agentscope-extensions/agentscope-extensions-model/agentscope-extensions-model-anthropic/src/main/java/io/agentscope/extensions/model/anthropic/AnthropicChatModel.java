@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.anthropic;
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.core.http.StreamResponse;
+import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.RawMessageStreamEvent;
@@ -30,6 +31,7 @@ import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicBaseFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
@@ -256,7 +258,49 @@ public class AnthropicChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "anthropic");
+                // Adapt Anthropic SDK HTTP exceptions (RateLimitException and friends carry a
+                // status code but do not implement the provider-neutral ModelHttpException
+                // contract) to HttpTransportException so the default RETRYABLE_ERRORS predicate
+                // classifies real 429/5xx as retryable. Applies uniformly to errors raised by the
+                // synchronous call, the non-streaming CompletableFuture, and stream parsing.
+                responseFlux.onErrorResume(e -> Flux.error(adaptSdkException(e))),
+                options,
+                defaultOptions,
+                modelName,
+                "anthropic");
+    }
+
+    /**
+     * Adapts an Anthropic SDK exception to the provider-neutral {@link ModelHttpException}
+     * contract so the default retry predicate ({@link io.agentscope.core.model.ExecutionConfig
+     * #RETRYABLE_ERRORS}) can classify it correctly (429 / 5xx retryable, other 4xx not).
+     *
+     * <p>The Anthropic SDK's {@link AnthropicServiceException}s (e.g. {@code
+     * com.anthropic.errors.RateLimitException}) carry an HTTP status code but do not implement
+     * {@link ModelHttpException}; without this adaptation a real 429 would be classified as
+     * non-retryable and the retry/fallback machinery would stop after the first attempt. The
+     * original SDK exception is preserved as the cause for diagnostics.
+     *
+     * @param error the raw SDK exception (may be wrapped by the synchronous catch
+     *     {@link ModelException})
+     * @return an {@link HttpTransportException} when the cause chain carries an
+     *     {@link AnthropicServiceException}, otherwise the original error unchanged
+     */
+    static Throwable adaptSdkException(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof AnthropicServiceException ase) {
+                return new HttpTransportException(
+                        "Anthropic API request failed with status "
+                                + ase.statusCode()
+                                + (error.getMessage() != null ? ": " + error.getMessage() : ""),
+                        ase.statusCode(),
+                        ase.body() != null ? ase.body().toString() : null,
+                        error);
+            }
+            current = current.getCause();
+        }
+        return error;
     }
 
     /**
