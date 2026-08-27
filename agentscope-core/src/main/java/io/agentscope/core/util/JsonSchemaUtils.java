@@ -61,6 +61,8 @@ public class JsonSchemaUtils {
 
     private static final SchemaGenerator schemaGenerator;
 
+    private static final Object schemaGenerationLock = new Object();
+
     static {
         // JacksonModule to support @JsonProperty, @JsonPropertyDescription annotations
         JacksonModule jacksonModule =
@@ -95,7 +97,10 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
-            JsonNode schemaNode = schemaGenerator.generateSchema(clazz);
+            JsonNode schemaNode;
+            synchronized (schemaGenerationLock) {
+                schemaNode = schemaGenerator.generateSchema(clazz);
+            }
             return JsonUtils.getJsonCodec()
                     .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
@@ -130,7 +135,10 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
-            JsonNode schemaNode = schemaGenerator.generateSchema(type);
+            JsonNode schemaNode;
+            synchronized (schemaGenerationLock) {
+                schemaNode = schemaGenerator.generateSchema(type);
+            }
             return JsonUtils.getJsonCodec()
                     .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
