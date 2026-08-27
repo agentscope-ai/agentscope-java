@@ -82,7 +82,7 @@ public class AskUserTool extends ToolBase {
                 ToolResultBlock.text(
                         "This tool is handled interactively by the host application "
                                 + "and is not executed by the agent. Resume the run with answers "
-                                + "under Msg.METADATA_ASK_USER_RESULTS."));
+                                + "under the metadata key \"agentscope_ask_user_results\"."));
     }
 
     private static Map<String, Object> buildInputSchema() {

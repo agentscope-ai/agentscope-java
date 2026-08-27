@@ -274,4 +274,24 @@ class HarnessAgentAskUserTest {
                         .block()
                         .getBehavior());
     }
+
+    @Test
+    void askUserToolCallAsyncFallbacksToInteractivePlaceholder() {
+        // Normal operation never executes the tool (checkPermissions interrupts first); this
+        // direct fallback protects against a misconfigured host that bypasses the interrupt.
+        AskUserTool tool = new AskUserTool();
+        ToolResultBlock result =
+                tool.callAsync(
+                                io.agentscope.core.tool.ToolCallParam.builder()
+                                        .input(Map.of("questions", "x"))
+                                        .build())
+                        .block();
+        assertNotNull(result);
+        assertTrue(
+                result.getOutput().stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .anyMatch(t -> t.getText().contains(Msg.METADATA_ASK_USER_RESULTS)),
+                "fallback must point the host at the resume metadata key");
+    }
 }
