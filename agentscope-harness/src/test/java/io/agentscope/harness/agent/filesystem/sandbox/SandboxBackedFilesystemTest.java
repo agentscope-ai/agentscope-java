@@ -93,6 +93,21 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
+    void nullSandboxIsRejectedWithoutClearingActiveFallback() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox first = new FakeSandbox(new ExecResult(0, "first", "", false));
+        FakeSandbox second = new FakeSandbox(new ExecResult(0, "second", "", false));
+        filesystem.setSandbox(first);
+        filesystem.setSandbox(second);
+
+        assertThrows(NullPointerException.class, () -> filesystem.setSandbox(null));
+        assertEquals("second", filesystem.execute(RT, "whoami", null).output());
+
+        filesystem.clearSandboxIfCurrent(second);
+        assertEquals("first", filesystem.execute(RT, "whoami", null).output());
+    }
+
+    @Test
     void downloadFiles_decodesWrappedBase64Output() {
         byte[] expected = new byte[] {1, 2, 3, 4, 5, 6};
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();

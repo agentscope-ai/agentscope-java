@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
@@ -71,13 +72,15 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         this.fsId = "sandbox-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
+    /**
+     * Registers an active fallback binding.
+     *
+     * @param sandbox the active sandbox; must not be {@code null}
+     * @throws NullPointerException if {@code sandbox} is {@code null}
+     */
     @Override
     public synchronized void setSandbox(Sandbox sandbox) {
-        if (sandbox == null) {
-            fallbackBindings.clear();
-            this.sandbox = null;
-            return;
-        }
+        Objects.requireNonNull(sandbox, "sandbox");
         fallbackBindings.add(sandbox);
         this.sandbox = sandbox;
     }
