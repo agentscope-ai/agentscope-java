@@ -156,6 +156,43 @@ public @interface Tool {
     String[] dangerousDirectories() default {};
 
     /**
+     * Names of parameters that represent file paths operated on by this tool.
+     *
+     * <p>When non-empty, the default {@code checkPermissions} in {@code ToolBase} applies a
+     * path-aware evaluation to the declared parameters on the effective input (including preset
+     * parameters). In short:
+     *
+     * <ul>
+     *   <li>every declared parameter must be present as a non-blank string, otherwise the call is
+     *       never auto-allowed;</li>
+     *   <li>a dangerous path — evaluated at both the JVM-CWD-anchored form and the tool's
+     *       execution landing point (see {@link ToolFilePathResolver}) — returns a bypass-immune
+     *       Safety-ASK, and unresolvable paths fail closed as dangerous;</li>
+     *   <li>under {@code PermissionMode.ACCEPT_EDITS} the call is auto-allowed only when every
+     *       declared path provably resolves inside a configured working directory.</li>
+     * </ul>
+     *
+     * <p>Anything else returns PASSTHROUGH so the engine's rule tables and mode defaults decide;
+     * tools that leave this empty keep the plain PASSTHROUGH self-check. See {@code
+     * ToolBase#checkPermissions(Map, PermissionContextState)} for the full evaluation order.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * @Tool(
+     *     name = "write_file",
+     *     description = "Write content to a file",
+     *     filePathParams = {"path"})
+     * public String writeFile(@ToolParam(name = "path", ...) String path, ...) {
+     *     ...
+     * }
+     * }</pre>
+     *
+     * @return parameter names carrying file paths; empty means no path-aware self-check
+     */
+    String[] filePathParams() default {};
+
+    /**
      * Custom result converter for this tool.
      *
      * <p>Converters transform tool method return values into {@link io.agentscope.core.message.ToolResultBlock}

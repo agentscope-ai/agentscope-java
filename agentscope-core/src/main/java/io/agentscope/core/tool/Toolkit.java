@@ -770,6 +770,20 @@ public class Toolkit {
         logger.debug("Updated preset parameters for tool '{}'", toolName);
     }
 
+    /**
+     * Computes the effective input for a tool call by merging the raw caller/LLM input with the
+     * tool's registered preset parameters (preset values win). Both the permission gate and
+     * {@link ToolExecutor} route through here so permission decisions evaluate exactly the
+     * input that will be executed.
+     *
+     * @param toolName tool whose preset parameters apply
+     * @param rawInput the caller/LLM-supplied arguments; may be {@code null} or empty
+     * @return a new map containing the effective input; never {@code null}
+     */
+    public Map<String, Object> effectiveInput(String toolName, Map<String, Object> rawInput) {
+        return toolRegistry.effectiveInput(toolName, rawInput);
+    }
+
     // ==================== Deep Copy ====================
 
     /**

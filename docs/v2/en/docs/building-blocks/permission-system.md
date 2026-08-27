@@ -238,7 +238,7 @@ public class MyTool extends ToolBase {
 
 ### Dangerous-path protection
 
-The `ToolBase` dangerous-path list is maintained in `ToolDangerousPathConstants`. A custom tool can append more paths via the `dangerousFiles` / `dangerousDirectories` attributes on `@Tool`. Once matched, the path triggers ASK even in `BYPASS` mode.
+The `ToolBase` dangerous-path list is maintained in `ToolDangerousPathConstants`. A custom tool can append more paths via the `dangerousFiles` / `dangerousDirectories` attributes on `@Tool`. The list is consumed by the default `checkPermissions` of tools that declare `filePathParams` (see below); tools that override `checkPermissions` can still call the protected `isDangerousPath(path)` helper directly. Once matched, the path triggers ASK even in `BYPASS` mode.
 
 | Category | Examples |
 |----------|----------|
@@ -247,6 +247,35 @@ The `ToolBase` dangerous-path list is maintained in `ToolDangerousPathConstants`
 | SSH | `.ssh/config`, `.ssh/authorized_keys`, `id_rsa`, `id_ed25519` |
 | Credentials | `.env`, `.env.local`, `.npmrc`, `.pypirc`, `.aws/credentials` |
 | Directories | `.git/`, `.ssh/`, `.aws/`, `.kube/` |
+
+### File-path declaration: `filePathParams`
+
+`ACCEPT_EDITS` only auto-allows a tool call when the engine can tell that every operated path stays inside a working directory. Tools publish that information by declaring which parameters carry file paths — via `@Tool(filePathParams = ...)` or `ToolBase.builder().filePathParams(...)`:
+
+```java
+@Tool(
+        name = "write_file",
+        description = "Write content to a file",
+        filePathParams = {"path"})
+public String writeFile(...) { ... }
+```
+
+The default `checkPermissions` then evaluates the declared paths in order:
+
+1. **Extraction** — every declared parameter must be present; a missing or blank value returns `PASSTHROUGH` (never a subset auto-allow), a non-string value returns a bypass-immune Safety-ASK.
+2. **Dangerous path** — if *any* declared path matches the dangerous lists, an ASK with a `Safety check:` reason is returned (bypass-immune). Both the JVM-CWD-anchored form and the tool-resolved execution landing point are checked; a path that cannot be resolved with certainty is treated as dangerous (fail closed).
+3. **`ACCEPT_EDITS` working directory** — if the mode is `ACCEPT_EDITS` and *all* declared paths provably resolve inside a configured working directory, the call is auto-allowed. Multi-path tools (e.g. copy with `src`/`dst`) are only auto-allowed when every path stays in scope.
+4. Anything else returns `PASSTHROUGH`, deferring to the engine's rule tables and mode defaults.
+
+Path-matching details:
+
+- The permission gate evaluates the **effective input**: preset parameters registered on the `Toolkit` are merged exactly as `ToolExecutor` merges them (preset wins), so a preset-supplied path is checked too.
+- The execution landing point comes from the tool's own path resolver, never from a guess. Tool objects registered with `@Tool` methods may implement `ToolFilePathResolver` to mirror their exact execution semantics (`WriteFileTool` does, resolving relative paths against its `baseDir`); `ToolBase` subclasses can override `resolveExecutionPath`. Without a resolver, relative paths are **not** auto-allowed — they fall back to the engine's rules and mode defaults, and the process CWD is never implicitly authorised.
+- Paths are compared as normalised absolute paths after resolving `~` and eliminating `..` segments; `../` escapes out of the working directory are not auto-allowed.
+- Symlinks are resolved component by component — including **dangling** links, whose targets are expanded exactly as the kernel would resolve them — so a link cannot smuggle a write out of the scope. Cycles, unreadable links and unreasonably deep chains fail closed (no auto-allow, and the dangerous check treats them as dangerous).
+- Read-only tools do not need the declaration — `ACCEPT_EDITS` and `EXPLORE` already auto-allow them before the tool check runs.
+- The harness `FilesystemTool` cannot prove its execution landing point (it depends on the concrete `AbstractFilesystem` and the runtime context, neither of which is visible at permission-check time), so under `ACCEPT_EDITS` its operations fall back to ASK (fail-closed).
+- Tools that leave `filePathParams` empty keep the plain `PASSTHROUGH` self-check (no behaviour change).
 
 ## HITL integration
 

@@ -115,6 +115,7 @@ Common `@Tool` attributes:
 | `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `false`) |
 | `stateInjected` | `boolean` | Inject `AgentState` as an extra parameter (default `false`) |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
+| `filePathParams` | `String[]` | Parameter names carrying file paths; enables the built-in dangerous-path check and the `ACCEPT_EDITS` working-directory auto-allow (defaults to none) |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
 
 ### Custom tools (extending `ToolBase`)

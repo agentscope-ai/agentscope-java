@@ -238,7 +238,7 @@ public class MyTool extends ToolBase {
 
 ### 危险路径保护
 
-`ToolBase` 内置的危险路径列表通过 `ToolDangerousPathConstants` 维护，自定义 tool 可以在 `@Tool` 注解上追加 `dangerousFiles` / `dangerousDirectories` 把额外路径并入受保护集合。命中后即使在 `BYPASS` 模式下也会强制 ASK。
+`ToolBase` 内置的危险路径列表通过 `ToolDangerousPathConstants` 维护，自定义 tool 可以在 `@Tool` 注解上追加 `dangerousFiles` / `dangerousDirectories` 把额外路径并入受保护集合。该列表由声明了 `filePathParams`（见下文）的工具默认 `checkPermissions` 消费；重写 `checkPermissions` 的工具也可以直接调用 protected 的 `isDangerousPath(path)` 辅助方法。命中后即使在 `BYPASS` 模式下也会强制 ASK。
 
 | 类别 | 默认受保护示例 |
 |------|----------------|
@@ -247,6 +247,35 @@ public class MyTool extends ToolBase {
 | SSH | `.ssh/config`、`.ssh/authorized_keys`、`id_rsa`、`id_ed25519` |
 | 凭证 | `.env`、`.env.local`、`.npmrc`、`.pypirc`、`.aws/credentials` |
 | 目录 | `.git/`、`.ssh/`、`.aws/`、`.kube/` |
+
+### 文件路径声明：`filePathParams`
+
+`ACCEPT_EDITS` 只有在引擎能判断所有被操作路径都落在工作目录内时才会自动放行。工具通过声明哪些参数携带文件路径来提供这一信息——可以用 `@Tool(filePathParams = ...)` 或 `ToolBase.builder().filePathParams(...)`：
+
+```java
+@Tool(
+        name = "write_file",
+        description = "向文件写入内容",
+        filePathParams = {"path"})
+public String writeFile(...) { ... }
+```
+
+声明后，默认 `checkPermissions` 按以下顺序评估：
+
+1. **抽取** —— 每个声明参数都必须出现；缺失或空白返回 `PASSTHROUGH`（绝不按剩余子集自动放行），非字符串值返回不可绕过的 Safety-ASK。
+2. **危险路径** —— *任一* 声明路径命中危险列表，返回带 `Safety check:` 原因的 ASK（不可绕过）。JVM CWD 锚定的词法形式与工具 resolver 给出的执行落点**两个锚点**都会检查；无法确定解析的路径视为危险（fail-closed）。
+3. **`ACCEPT_EDITS` 工作目录** —— 模式为 `ACCEPT_EDITS` 且 *所有* 声明路径都可证明落在某个配置的工作目录内时自动放行。多路径工具（如带 `src`/`dst` 的 copy）必须全部路径都在范围内才会放行。
+4. 其余情况返回 `PASSTHROUGH`，交回引擎的规则表与模式默认值。
+
+路径匹配细节：
+
+- 权限门评估的是 **effective input**：注册在 `Toolkit` 上的 preset 参数按 `ToolExecutor` 完全相同的规则合并（preset 优先），因此由 preset 注入的路径同样会被检查。
+- 执行落点来自**工具自身的路径 resolver**，绝不猜测：通过 `@Tool` 方法注册的工具对象可实现 `ToolFilePathResolver` 精确镜像自身执行语义（`WriteFileTool` 已实现，相对路径锚定其 `baseDir`）；`ToolBase` 子类可覆写 `resolveExecutionPath`。没有 resolver 时相对路径**不会**被自动放行——交回引擎的规则与模式默认值处理，进程 CWD 也永远不会被隐式授权。
+- 路径先展开 `~`、消除 `..` 段，再以规范化绝对路径比较；通过 `../` 逃出工作目录的路径不会被放行。
+- 符号链接**逐组件**解析——包括**悬空**链接（其目标按内核语义展开，而非当作普通文件名）——链接无法把写操作带出授权范围。循环、不可读链接与超深链一律 fail-closed（不自动放行，且危险检查将其视为危险）。
+- 只读工具无需声明——`ACCEPT_EDITS` 与 `EXPLORE` 在工具检查之前就已放行只读工具。
+- harness 的 `FilesystemTool` 无法证明其执行落点（取决于具体 `AbstractFilesystem` 与运行时上下文，权限检查时刻均不可见），因此在 `ACCEPT_EDITS` 下其操作回落为 ASK（fail-closed）。
+- 未声明 `filePathParams` 的工具保持纯 `PASSTHROUGH` 自检（行为不变）。
 
 ## 结合 HITL
 
