@@ -102,7 +102,10 @@ class HarnessAgentAskUserTest {
                 .sysPrompt("You are a test agent.")
                 .model(model)
                 .workspace(workspace)
+                // Deterministic and quiet: no disk state, no background memory jobs.
                 .stateStore(new InMemoryAgentStateStore())
+                .disableCompaction()
+                .disableMemoryHooks()
                 .enableAskUser()
                 .build();
     }
@@ -116,6 +119,8 @@ class HarnessAgentAskUserTest {
                 .model(model)
                 .workspace(workspace)
                 .stateStore(new InMemoryAgentStateStore())
+                .disableCompaction()
+                .disableMemoryHooks()
                 .permissionContext(permCtx)
                 .enableAskUser()
                 .build();
