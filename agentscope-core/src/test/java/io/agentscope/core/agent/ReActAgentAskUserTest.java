@@ -324,6 +324,64 @@ class ReActAgentAskUserTest {
     }
 
     @Test
+    void resumeRejectsDuplicateAskUserResultIds() {
+        AskTool tool = new AskTool("ask_user");
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(askToolUseResponse("tc1"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+        assertEquals(GenerateReason.ASK_USER_ASKING, firstResult.getGenerateReason());
+
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                agent.call(
+                                                List.of(
+                                                        answerMsg(
+                                                                new AskUserResult(
+                                                                        "tc1", Map.of("q_1", "a")),
+                                                                new AskUserResult(
+                                                                        "tc1",
+                                                                        Map.of("q_1", "b")))))
+                                        .block(),
+                        "duplicate AskUserResult for one tool call must be rejected");
+        assertTrue(
+                ex.getMessage().contains("Duplicate AskUserResult"),
+                "error must name the duplicate rule, got: " + ex.getMessage());
+    }
+
+    @Test
+    void resumeRejectsAskUserResultForUnknownToolCall() {
+        AskTool tool = new AskTool("ask_user");
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(askToolUseResponse("tc1"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+        assertEquals(GenerateReason.ASK_USER_ASKING, firstResult.getGenerateReason());
+
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                agent.call(
+                                                List.of(
+                                                        answerMsg(
+                                                                new AskUserResult(
+                                                                        "no-such-call",
+                                                                        Map.of("q_1", "a")))))
+                                        .block(),
+                        "an answer for a tool call that is not ASKING must be rejected");
+        assertTrue(
+                ex.getMessage().contains("references non-ASKING tool call ID"),
+                "error must point at the stale id, got: " + ex.getMessage());
+    }
+
+    @Test
     void formatAnswersHandlesScalarsListsMapsAndSkips() {
         Map<String, Object> nullAnswer = new HashMap<>();
         nullAnswer.put("q_0", null);
