@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -77,6 +78,14 @@ class AgentSpawnToolCancelEndEventTest {
         long count(Class<? extends AgentEvent> type) {
             return events.stream().filter(type::isInstance).count();
         }
+
+        <T extends AgentEvent> T first(Class<T> type) {
+            return events.stream()
+                    .filter(type::isInstance)
+                    .map(type::cast)
+                    .findFirst()
+                    .orElseThrow();
+        }
     }
 
     @Test
@@ -129,6 +138,7 @@ class AgentSpawnToolCancelEndEventTest {
                         + " without a matching AgentEndEvent leaves consumers rendering the"
                         + " subagent as running forever (doOnTerminate does not fire on cancel)");
         verify(delegate).interrupt(eq("parent-user"), startsWith("sub-"));
+        assertReplyIdPair(emitter);
     }
 
     @Test
@@ -157,6 +167,14 @@ class AgentSpawnToolCancelEndEventTest {
 
         assertEquals(1, emitter.count(AgentStartEvent.class), "expected one start event");
         assertEquals(1, emitter.count(AgentEndEvent.class), "expected one end event");
+        assertReplyIdPair(emitter);
+    }
+
+    private static void assertReplyIdPair(RecordingEmitter emitter) {
+        AgentStartEvent start = emitter.first(AgentStartEvent.class);
+        AgentEndEvent end = emitter.first(AgentEndEvent.class);
+        assertNotNull(start.getReplyId(), "subagent start event should have a replyId");
+        assertEquals(start.getReplyId(), end.getReplyId());
     }
 
     private static final class NoopTaskRepository implements TaskRepository {
