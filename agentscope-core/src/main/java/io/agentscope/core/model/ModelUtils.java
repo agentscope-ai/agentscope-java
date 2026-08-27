@@ -55,7 +55,9 @@ public final class ModelUtils {
      * <ul>
      *   <li>If RetryConfig is provided, failed requests will be retried with exponential backoff
      *   <li>Retries respect the maxAttempts, initialBackoff, and maxBackoff settings
-     *   <li>Only errors matching the retryOn predicate will be retried
+     *   <li>Only errors matching the retryOn predicate will be retried; when no predicate is
+     *       configured, only retryable errors (HTTP 429/5xx, timeout, network/IO) are retried,
+     *       per {@link ExecutionConfig#RETRYABLE_ERRORS}
      *   <li>Each retry is logged with attempt number and failure reason
      * </ul>
      *
@@ -108,7 +110,10 @@ public final class ModelUtils {
                     maxBackoff = Duration.ofSeconds(10);
                 }
                 if (retryOn == null) {
-                    retryOn = error -> true; // retry all errors by default
+                    // Default to the documented retryable-error policy (429/5xx, timeout,
+                    // network/IO) instead of retrying every error, so that auth (401/403)
+                    // and other request-side failures fail fast
+                    retryOn = ExecutionConfig.RETRYABLE_ERRORS;
                 }
 
                 Retry retrySpec =
