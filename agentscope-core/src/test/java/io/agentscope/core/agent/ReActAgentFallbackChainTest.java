@@ -161,6 +161,88 @@ class ReActAgentFallbackChainTest {
         assertEquals("fallback", wrapper.getModelName(), "Active model should be the fallback");
     }
 
+    @Test
+    @DisplayName("Varargs fallbackModels(Model...) overload works")
+    void varargsFallbackModelsOverloadWorks() {
+        FailingModel primary =
+                new FailingModel("primary", new HttpTransportException("503", 503, ""));
+        SimpleModel fallback1 = new SimpleModel("fallback1");
+        SimpleModel fallback2 = new SimpleModel("fallback2");
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primary)
+                        .fallbackModels(fallback1, fallback2)
+                        .toolkit(new Toolkit())
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertTrue(
+                TestUtils.extractTextContent(response).contains("fallback1"),
+                "First varargs fallback should serve the turn: "
+                        + TestUtils.extractTextContent(response));
+        assertEquals(1, fallback1.callCount.get(), "fallback1 should be called once");
+        assertEquals(0, fallback2.callCount.get(), "fallback2 should not be needed");
+    }
+
+    @Test
+    @DisplayName("Empty varargs disables the chain (primary-only behaviour)")
+    void emptyVarargsDisablesChain() {
+        SimpleModel primary = new SimpleModel("primary");
+        SimpleModel fallback = new SimpleModel("fallback");
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primary)
+                        .fallbackModels() // empty: clears any configured chain
+                        .toolkit(new Toolkit())
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals(0, fallback.callCount.get(), "No fallback should be invoked");
+    }
+
+    @Test
+    @DisplayName("Builder.fromAgent copies the configured fallback chain")
+    void fromAgentCopiesFallbackChain() {
+        FailingModel primary =
+                new FailingModel("primary", new HttpTransportException("503", 503, ""));
+        SimpleModel fallback = new SimpleModel("fallback");
+
+        ReActAgent original =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primary)
+                        .fallbackModels(List.of(fallback))
+                        .toolkit(new Toolkit())
+                        .build();
+
+        ReActAgent copy = ReActAgent.Builder.fromAgent(original).build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        Msg response =
+                copy.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertTrue(
+                TestUtils.extractTextContent(response).contains("fallback"),
+                "fromAgent copy should preserve the fallback chain");
+        assertEquals(1, fallback.callCount.get(), "Fallback should serve the copied agent");
+    }
+
     /** Model that always fails with a fixed throwable and tracks call count. */
     private static class FailingModel implements Model {
 
