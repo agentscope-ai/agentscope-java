@@ -16,6 +16,7 @@
 package io.agentscope.examples.copilotkit.config;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agui.AguiUtil;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadInfo;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadMutationRequest;
@@ -112,6 +113,7 @@ public class CopilotKitRouteConfiguration {
                 .build();
     }
 
+    @SuppressWarnings("resource") // borrowed session agent; session owns lifecycle
     private Mono<ServerResponse> stopThread(
             ServerRequest request, ThreadSessionManager threadSessionManager) {
         String threadId = request.pathVariable("threadId");
@@ -120,10 +122,10 @@ public class CopilotKitRouteConfiguration {
                 .getSession(userId, threadId)
                 .ifPresent(
                         threadSession -> {
-                            if (threadSession.getAgent() instanceof ReActAgent reActAgent) {
-                                reActAgent.interrupt(userId, threadId);
+                            ReActAgent actAgent = AguiUtil.asReActAgent(threadSession.getAgent());
+                            if (actAgent != null) {
+                                actAgent.interrupt(userId, threadId);
                             } else {
-                                // todo Harness?
                                 threadSession.getAgent().interrupt();
                             }
                         });

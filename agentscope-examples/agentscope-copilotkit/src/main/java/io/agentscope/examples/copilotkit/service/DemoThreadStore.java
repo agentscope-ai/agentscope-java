@@ -15,11 +15,14 @@
  */
 package io.agentscope.examples.copilotkit.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadInfo;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadMutationRequest;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadsResponse;
@@ -47,6 +50,9 @@ public final class DemoThreadStore {
 
     /** Demo identity; matches {@code AgentConfiguration} when {@code X-Token} is absent. */
     public static final String DEMO_USER_ID = "user-001";
+
+    private static final TypeReference<Map<String, Object>> AGUI_EVENT_JSON =
+            new TypeReference<>() {};
 
     private final ThreadSessionManager sessionManager;
     private final AguiAgentRegistry agentRegistry;
@@ -122,11 +128,12 @@ public final class DemoThreadStore {
     }
 
     public Map<String, Object> events(String threadId) {
+        List<Map<String, Object>> events =
+                eventReplayer.replay(threadId, null).stream()
+                        .map(DemoThreadStore::toEventPayload)
+                        .toList();
         Map<String, Object> payload = new LinkedHashMap<>();
-        // Source of truth: AgentScope AgentEvents.
-        payload.put("agentEvents", eventStore.snapshot(threadId));
-        // Protocol projection: same converter path as /connect.
-        payload.put("events", eventReplayer.replay(threadId, null));
+        payload.put("events", events);
         return payload;
     }
 
@@ -208,6 +215,21 @@ public final class DemoThreadStore {
             return name;
         }
         return threadId;
+    }
+
+    /**
+     * Encode one AG-UI event the same way {@code /connect} does, and keep {@code type} even when
+     * Jackson serializes the concrete record ( {@link AguiEvent#getType()} is {@code @JsonIgnore} ).
+     */
+    private static Map<String, Object> toEventPayload(AguiEvent event) {
+        Map<String, Object> encoded =
+                JsonUtils.getJsonCodec()
+                        .fromJson(JsonUtils.getJsonCodec().toJson(event), AGUI_EVENT_JSON);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", event.getType().name());
+        encoded.remove("type");
+        payload.putAll(encoded);
+        return payload;
     }
 
     private Map<String, Object> toMessage(Msg msg) {
