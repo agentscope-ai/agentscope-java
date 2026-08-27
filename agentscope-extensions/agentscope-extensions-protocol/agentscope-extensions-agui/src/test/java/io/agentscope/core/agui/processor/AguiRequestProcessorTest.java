@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -131,26 +130,46 @@ class AguiRequestProcessorTest {
     }
 
     @Test
-    void extractLatestUserMessageClearsMessagesWhenAssistantIsLast() {
+    void extractLatestUserMessageFallsBackToLastUserWhenAssistantIsLast() {
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
+        AguiMessage firstUser = AguiMessage.userMessage("msg-1", "first");
         RunAgentInput input =
                 RunAgentInput.builder()
                         .threadId("thread-1")
                         .runId("run-1")
-                        .messages(
-                                List.of(
-                                        AguiMessage.userMessage("msg-1", "first"),
-                                        AguiMessage.assistantMessage("msg-2", "done")))
+                        .messages(List.of(firstUser, AguiMessage.assistantMessage("msg-2", "done")))
                         .state(Map.of("cursor", 8))
                         .forwardedProps(Map.of("agentId", "agent-a"))
                         .build();
 
         RunAgentInput extracted = processor.extractLatestUserMessage(input);
 
-        assertTrue(extracted.getMessages().isEmpty());
+        assertEquals(List.of(firstUser), extracted.getMessages());
         assertEquals(input.getState(), extracted.getState());
         assertEquals(input.getForwardedProps(), extracted.getForwardedProps());
+    }
+
+    @Test
+    void processCoalescesNullResolverResultWithoutNpe() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(false);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("ok")));
+
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .runtimeContextResolver(request -> null)
+                        .build();
+
+        List<AguiEvent> events =
+                processor.process(request(input("run-1"))).events().collectList().block();
+
+        assertNotNull(events);
     }
 
     @Test

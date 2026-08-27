@@ -135,13 +135,13 @@ public class AguiRequestProcessor {
         RunAgentInput input = request.getInput();
         String headerAgentId = request.getHeaderAgentId();
         String pathAgentId = request.getPathAgentId();
-        RuntimeContext runtimeContext =
-                runtimeContextResolver != null
-                        ? runtimeContextResolver.resolve(request)
-                        : RuntimeContext.builder().sessionId(input.getThreadId()).build();
-
         String threadId = input.getThreadId();
         String runId = input.getRunId();
+
+        RuntimeContext resolved =
+                runtimeContextResolver != null ? runtimeContextResolver.resolve(request) : null;
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder(resolved).sessionId(threadId).build();
 
         // Resolve agent ID
         String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
@@ -297,8 +297,9 @@ public class AguiRequestProcessor {
      * last assistant message. Only those trailing messages should be appended.
      *
      * <p>If the transcript has no assistant message yet, the original input is returned unchanged.
-     * If the last message is an assistant turn, metadata is preserved and the message list is
-     * cleared so history is not replayed into memory.
+     * If the transcript ends with an assistant turn (regenerate/continue flows) and there
+     * are no trailing follow-up messages, the last user message before that turn is returned so
+     * the agent has a prompt to regenerate from instead of receiving an empty input.
      *
      * @param input The original input
      * @return A new input containing only the follow-up messages, or the original input
@@ -324,6 +325,15 @@ public class AguiRequestProcessor {
                 lastAssistantIdx < messages.size() - 1
                         ? List.copyOf(messages.subList(lastAssistantIdx + 1, messages.size()))
                         : List.of();
+
+        if (after.isEmpty()) {
+            for (int i = lastAssistantIdx - 1; i >= 0; i--) {
+                if ("user".equalsIgnoreCase(messages.get(i).getRole())) {
+                    after = List.of(messages.get(i));
+                    break;
+                }
+            }
+        }
 
         return RunAgentInput.builder()
                 .threadId(input.getThreadId())

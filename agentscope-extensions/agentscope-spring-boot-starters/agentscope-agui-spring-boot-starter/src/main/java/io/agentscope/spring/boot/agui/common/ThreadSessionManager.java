@@ -60,7 +60,12 @@ public class ThreadSessionManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ThreadSessionManager.class);
 
-    /** Sentinel namespace for callers that pass {@code userId == null}. */
+    /**
+     * Sentinel namespace for callers that pass {@code userId == null}.
+     *
+     * <p>Must stay in sync with the anonymous sentinel used by {@code ReActAgent#slotKey}
+     * ({@value #ANON_USER}).
+     */
     static final String ANON_USER = "__anon__";
 
     private final Map<SessionKey, ThreadSession> sessions = new ConcurrentHashMap<>();
