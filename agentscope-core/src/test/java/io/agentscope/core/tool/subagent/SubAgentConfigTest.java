@@ -16,6 +16,7 @@
 package io.agentscope.core.tool.subagent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -49,6 +50,7 @@ class SubAgentConfigTest {
             assertNull(config.getStreamOptions());
             assertNotNull(config.getStateStore());
             assertInstanceOf(InMemoryAgentStateStore.class, config.getStateStore());
+            assertFalse(config.isImagePayloadOffloadingEnabled());
         }
 
         @Test
@@ -134,6 +136,7 @@ class SubAgentConfigTest {
                             .forwardEvents(true)
                             .streamOptions(streamOptions)
                             .stateStore(customSession)
+                            .imagePayloadOffloadingEnabled(true)
                             .build();
 
             assertEquals("expert_agent", config.getToolName());
@@ -141,6 +144,7 @@ class SubAgentConfigTest {
             assertTrue(config.isForwardEvents());
             assertEquals(streamOptions, config.getStreamOptions());
             assertEquals(customSession, config.getStateStore());
+            assertTrue(config.isImagePayloadOffloadingEnabled());
         }
 
         @Test
@@ -168,6 +172,7 @@ class SubAgentConfigTest {
                             .forwardEvents(true)
                             .streamOptions(null)
                             .stateStore(new InMemoryAgentStateStore())
+                            .imagePayloadOffloadingEnabled(true)
                             .build();
 
             assertNotNull(config);

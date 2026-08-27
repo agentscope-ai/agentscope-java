@@ -1381,6 +1381,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (srcSession != null) {
                 b.stateStore(srcSession);
             }
+            b.imagePayloadOffloadingEnabled(agent.isImagePayloadOffloadingEnabled());
             String srcDefaultSessionId = agent.getDefaultSessionId();
             if (srcDefaultSessionId != null) {
                 b.defaultSessionId(srcDefaultSessionId);
@@ -1568,6 +1569,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStoreOverride = stateStore;
             inner.stateStore(stateStore);
+            return this;
+        }
+
+        /**
+         * Enables separately persisted base64 image payloads for conversation state.
+         *
+         * <p>Defaults to {@code false} for mixed-version rolling-upgrade safety. Upgrade all nodes
+         * sharing the state store before enabling it.
+         */
+        public Builder imagePayloadOffloadingEnabled(boolean enabled) {
+            inner.imagePayloadOffloadingEnabled(enabled);
             return this;
         }
 

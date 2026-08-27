@@ -70,6 +70,8 @@ import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.ImagePayloadState;
+import io.agentscope.core.message.ImagePayloadTransformer;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -114,6 +116,7 @@ import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateLoadMode;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ConcurrentSessionModificationException;
 import io.agentscope.core.state.ConflictPolicy;
@@ -259,6 +262,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final AgentStateStore stateStore;
 
     /**
+     * Whether new saves replace inline base64 images with separately stored payload references.
+     * Disabled by default so mixed-version rolling deployments keep writing the legacy format
+     * until every node understands image references.
+     */
+    private final boolean imagePayloadOffloadingEnabled;
+
+    /**
      * Policy applied when an optimistic-concurrency save of {@code agent_state} conflicts.
      * Defaults to {@link ConflictPolicy#OVERWRITE} (legacy last-writer-wins).
      */
@@ -291,6 +301,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * AgentStateStore#UNVERSIONED}.
      */
     private final ConcurrentHashMap<String, Long> slotVersions = new ConcurrentHashMap<>();
+
+    /** Context size observed with each cached slot version, used by manual APPEND_MERGE saves. */
+    private final ConcurrentHashMap<String, Integer> slotLoadedContextSizes =
+            new ConcurrentHashMap<>();
 
     /** Count of CAS conflicts observed during agent_state saves (metric / diagnostics). */
     private final AtomicLong stateConflictCount = new AtomicLong();
@@ -344,6 +358,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.middlewares = List.copyOf(mws);
 
         this.stateStore = builder.stateStore;
+        this.imagePayloadOffloadingEnabled = builder.imagePayloadOffloadingEnabled;
         this.conflictPolicy =
                 builder.conflictPolicy != null ? builder.conflictPolicy : ConflictPolicy.OVERWRITE;
         this.defaultSessionId =
@@ -370,9 +385,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         String slot = slotKey(uid, sid);
                         long expected =
                                 slotVersions.getOrDefault(slot, AgentStateStore.UNVERSIONED);
-                        long newVersion =
-                                stateStore.saveIfVersion(
-                                        uid, sid, "agent_state", agentState, expected);
+                        long newVersion = writeAgentStateIfVersion(uid, sid, agentState, expected);
                         if (newVersion == AgentStateStore.UNVERSIONED
                                 && stateStore.supportsVersioning()
                                 && expected != AgentStateStore.UNVERSIONED) {
@@ -385,6 +398,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     expected);
                         } else if (newVersion != AgentStateStore.UNVERSIONED) {
                             slotVersions.put(slot, newVersion);
+                        }
+                        if (newVersion != AgentStateStore.UNVERSIONED
+                                || !stateStore.supportsVersioning()
+                                || expected == AgentStateStore.UNVERSIONED) {
+                            AgentState lightweight = lightweightState(agentState);
+                            stateCache.put(slot, lightweight);
+                            slotLoadedContextSizes.put(slot, lightweight.getContext().size());
                         }
                     });
         }
@@ -431,7 +451,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
         try {
             VersionedState<AgentState> versioned =
-                    stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
+                    stateStore.getAgentStateVersioned(userId, sessionId, AgentStateLoadMode.LEAN);
             if (versioned.isPresent()) {
                 return versioned;
             }
@@ -503,8 +523,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             if (newVersion != AgentStateStore.UNVERSIONED) {
                                 scope.loadedVersion = newVersion;
                             }
+                            AgentState persisted = stateCache.getOrDefault(scope.slotKey, toSave);
+                            AgentState lightweight = lightweightState(persisted);
+                            scope.state = lightweight;
+                            scope.loadedContextSize = lightweight.getContext().size();
+                            stateCache.put(scope.slotKey, lightweight);
+                            slotLoadedContextSizes.put(
+                                    scope.slotKey, lightweight.getContext().size());
+                            if (scope.rc != null) {
+                                scope.rc.setAgentState(lightweight);
+                            }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private AgentState lightweightState(AgentState state) {
+        if (!imagePayloadOffloadingEnabled) {
+            return state;
+        }
+        List<Msg> lightweight = ImagePayloadTransformer.offload(state.getContext()).messages();
+        state.contextMutable().clear();
+        state.contextMutable().addAll(lightweight);
+        return state;
     }
 
     /**
@@ -552,10 +592,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             long expectedVersion,
             int loadedContextSize) {
         if (!stateStore.supportsVersioning() || expectedVersion == AgentStateStore.UNVERSIONED) {
-            stateStore.save(userId, sessionId, "agent_state", toSave);
+            writeAgentState(userId, sessionId, toSave);
             if (stateStore.supportsVersioning()) {
                 VersionedState<AgentState> after =
-                        stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
+                        stateStore.getAgentStateVersioned(
+                                userId, sessionId, AgentStateLoadMode.LEAN);
                 if (after.version() != AgentStateStore.UNVERSIONED) {
                     slotVersions.put(slot, after.version());
                     return after.version();
@@ -564,8 +605,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return AgentStateStore.UNVERSIONED;
         }
 
-        long newVersion =
-                stateStore.saveIfVersion(userId, sessionId, "agent_state", toSave, expectedVersion);
+        long newVersion = writeAgentStateIfVersion(userId, sessionId, toSave, expectedVersion);
         if (newVersion != AgentStateStore.UNVERSIONED) {
             slotVersions.put(slot, newVersion);
             return newVersion;
@@ -575,12 +615,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         switch (conflictPolicy) {
             case OVERWRITE -> {
                 long overwritten =
-                        stateStore.saveIfVersion(
-                                userId,
-                                sessionId,
-                                "agent_state",
-                                toSave,
-                                AgentStateStore.UNVERSIONED);
+                        writeAgentStateIfVersion(
+                                userId, sessionId, toSave, AgentStateStore.UNVERSIONED);
                 if (overwritten != AgentStateStore.UNVERSIONED) {
                     slotVersions.put(slot, overwritten);
                     log.warn(
@@ -591,7 +627,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             expectedVersion);
                     return overwritten;
                 }
-                stateStore.save(userId, sessionId, "agent_state", toSave);
+                writeAgentState(userId, sessionId, toSave);
                 log.warn(
                         "agent_state CAS conflict — OVERWRITE applied"
                                 + " (userId={}, sessionId={}, expectedVersion={})",
@@ -602,10 +638,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             case FAIL ->
                     throw new ConcurrentSessionModificationException(
-                            userId, sessionId, "agent_state", expectedVersion);
+                            userId, sessionId, AgentStateStore.AGENT_STATE_KEY, expectedVersion);
             case APPEND_MERGE -> {
                 VersionedState<AgentState> latest =
-                        stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
+                        stateStore.getAgentStateVersioned(
+                                userId, sessionId, AgentStateLoadMode.LEAN);
                 AgentState baseline =
                         latest.isPresent()
                                 ? latest.value()
@@ -622,11 +659,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
                 baseline.setPermissionContext(toSave.getPermissionContext());
                 long merged =
-                        stateStore.saveIfVersion(
-                                userId, sessionId, "agent_state", baseline, latest.version());
+                        writeAgentStateIfVersion(userId, sessionId, baseline, latest.version());
                 if (merged == AgentStateStore.UNVERSIONED) {
                     throw new ConcurrentSessionModificationException(
-                            userId, sessionId, "agent_state", latest.version());
+                            userId, sessionId, AgentStateStore.AGENT_STATE_KEY, latest.version());
                 }
                 slotVersions.put(slot, merged);
                 stateCache.put(slot, baseline);
@@ -640,6 +676,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             default ->
                     throw new IllegalStateException("Unknown conflict policy: " + conflictPolicy);
         }
+    }
+
+    private void writeAgentState(String userId, String sessionId, AgentState state) {
+        if (imagePayloadOffloadingEnabled) {
+            stateStore.saveAgentState(userId, sessionId, state);
+        } else {
+            stateStore.save(userId, sessionId, AgentStateStore.AGENT_STATE_KEY, state);
+        }
+    }
+
+    private long writeAgentStateIfVersion(
+            String userId, String sessionId, AgentState state, long expectedVersion) {
+        return imagePayloadOffloadingEnabled
+                ? stateStore.saveAgentStateIfVersion(userId, sessionId, state, expectedVersion)
+                : stateStore.saveIfVersion(
+                        userId, sessionId, AgentStateStore.AGENT_STATE_KEY, state, expectedVersion);
     }
 
     /**
@@ -679,6 +731,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             loadedVersion = versioned.version();
             stateCache.put(slot, loaded);
             slotVersions.put(slot, loadedVersion);
+            slotLoadedContextSizes.put(slot, loaded.getContext().size());
         } else {
             loaded =
                     stateCache.computeIfAbsent(
@@ -1658,6 +1711,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}. */
         int loadedContextSize;
 
+        /** Image payloads restored during this call, keyed by content identifier. */
+        final Map<String, ImagePayloadState> hydratedImagePayloads = new HashMap<>();
+
         /**
          * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
          * PreSummaryEvent. Owned by a single logical execution: seeded to {@code null} at call
@@ -2269,6 +2325,43 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
 
+        /**
+         * Build a detached model-bound message list with persisted image references restored.
+         * The call-scoped {@link AgentState} remains lightweight so history inspection and
+         * subsequent saves do not retain duplicate base64 payloads in memory.
+         */
+        private List<Msg> hydrateModelMessages(List<Msg> messages, Set<String> payloadIds) {
+            if (stateStore == null || messages == null || messages.isEmpty()) {
+                return messages != null ? messages : List.of();
+            }
+            SlotRef ref = SlotRef.parse(slotKey);
+            Set<String> missing = new LinkedHashSet<>(payloadIds);
+            missing.removeAll(hydratedImagePayloads.keySet());
+            if (!missing.isEmpty()) {
+                hydratedImagePayloads.putAll(
+                        stateStore.getImagePayloads(ref.userId, ref.sessionId, missing));
+            }
+            return ImagePayloadTransformer.hydrate(messages, hydratedImagePayloads);
+        }
+
+        private Mono<List<Msg>> hydrateModelMessagesAsync(List<Msg> messages) {
+            List<Msg> safeMessages = messages != null ? messages : List.of();
+            if (stateStore == null || safeMessages.isEmpty()) {
+                return Mono.just(safeMessages);
+            }
+            return Mono.defer(
+                    () -> {
+                        Set<String> payloadIds =
+                                ImagePayloadTransformer.referencedPayloadIds(safeMessages);
+                        if (payloadIds.isEmpty()) {
+                            return Mono.just(List.copyOf(safeMessages));
+                        }
+                        return Mono.fromCallable(
+                                        () -> hydrateModelMessages(safeMessages, payloadIds))
+                                .subscribeOn(Schedulers.boundedElastic());
+                    });
+        }
+
         // ==================== Core ReAct Loop ====================
 
         /**
@@ -2510,17 +2603,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 GenerateOptions options) {
 
             Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
-                    mci -> modelCallStream(context, mci, true);
+                    mci ->
+                            hydrateModelMessagesAsync(mci.messages())
+                                    .flatMapMany(
+                                            hydrated ->
+                                                    modelCallStream(
+                                                            context,
+                                                            new ModelCallInput(
+                                                                    hydrated,
+                                                                    mci.tools(),
+                                                                    mci.options(),
+                                                                    mci.model()),
+                                                            true));
 
             StringBuilder transformedText = new StringBuilder();
             AtomicBoolean sawTransformedTextDelta = new AtomicBoolean(false);
-            return MiddlewareChain.build(
-                            middlewares,
-                            ReActAgent.this,
-                            rc,
-                            MiddlewareBase::onModelCall,
-                            modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()))
+            Flux<AgentEvent> modelCall =
+                    hydrateModelMessagesAsync(messages)
+                            .flatMapMany(
+                                    hydrated ->
+                                            MiddlewareChain.build(
+                                                            middlewares,
+                                                            ReActAgent.this,
+                                                            rc,
+                                                            MiddlewareBase::onModelCall,
+                                                            modelCallCore)
+                                                    .apply(
+                                                            new ModelCallInput(
+                                                                    hydrated,
+                                                                    tools,
+                                                                    options,
+                                                                    modelForCall())));
+            return modelCall
                     .doOnNext(
                             event -> {
                                 if (event instanceof TextBlockDeltaEvent textDelta) {
@@ -3609,15 +3723,31 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 Model model) {
 
             Function<ModelCallInput, Flux<AgentEvent>> summaryModelCallCore =
-                    mci -> summaryModelCallStream(context, mci, options);
+                    mci ->
+                            hydrateModelMessagesAsync(mci.messages())
+                                    .flatMapMany(
+                                            hydrated ->
+                                                    summaryModelCallStream(
+                                                            context,
+                                                            new ModelCallInput(
+                                                                    hydrated,
+                                                                    mci.tools(),
+                                                                    mci.options(),
+                                                                    mci.model()),
+                                                            options));
 
-            return MiddlewareChain.build(
-                            middlewares,
-                            ReActAgent.this,
-                            rc,
-                            MiddlewareBase::onModelCall,
-                            summaryModelCallCore)
-                    .apply(new ModelCallInput(messages, List.of(), options, model))
+            return hydrateModelMessagesAsync(messages)
+                    .flatMapMany(
+                            hydrated ->
+                                    MiddlewareChain.build(
+                                                    middlewares,
+                                                    ReActAgent.this,
+                                                    rc,
+                                                    MiddlewareBase::onModelCall,
+                                                    summaryModelCallCore)
+                                            .apply(
+                                                    new ModelCallInput(
+                                                            hydrated, List.of(), options, model)))
                     .doOnNext(this::publishEvent);
         }
 
@@ -4058,8 +4188,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     if (source == InterruptSource.SYSTEM) {
                         String requestId =
                                 (String) cv.getOrDefault(AgentBase.SHUTDOWN_REQUEST_ID_KEY, null);
-                        shutdownManager.saveOnInterruptObserved(requestId);
-                        return Mono.error(new AgentShuttingDownException());
+                        return Mono.fromRunnable(
+                                        () -> shutdownManager.saveOnInterruptObserved(requestId))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .then(Mono.error(new AgentShuttingDownException()));
                     }
                     // Reconcile any pending tool calls before appending the recovery message.
                     // The tool_use written during reasoning would otherwise be persisted with no
@@ -4176,6 +4308,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     getAgentId(),
                                     initialActiveToolGroups);
                     slotVersions.put(slot, versioned.version());
+                    slotLoadedContextSizes.put(slot, versioned.value().getContext().size());
                     return versioned.value();
                 });
     }
@@ -4194,6 +4327,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public void clearStateCache() {
         stateCache.clear();
         permissionEngineCache.clear();
+        slotVersions.clear();
+        slotLoadedContextSizes.clear();
     }
 
     /**
@@ -4224,6 +4359,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(userId, sid);
         stateCache.remove(slot);
         permissionEngineCache.remove(slot);
+        slotVersions.remove(slot);
+        slotLoadedContextSizes.remove(slot);
     }
 
     /**
@@ -4285,6 +4422,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 state = versioned.value();
                 stateCache.put(slot, state);
                 slotVersions.put(slot, versioned.version());
+                slotLoadedContextSizes.put(slot, state.getContext().size());
             } else {
                 state = stateCache.get(slot);
                 if (state == null) {
@@ -4412,7 +4550,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState s = stateCache.get(slot);
         if (s != null) {
             long expected = slotVersions.getOrDefault(slot, AgentStateStore.UNVERSIONED);
-            persistAgentStateCas(userId, sessionId, slot, s, expected, s.getContext().size());
+            int loadedContextSize =
+                    slotLoadedContextSizes.getOrDefault(slot, s.getContext().size());
+            persistAgentStateCas(userId, sessionId, slot, s, expected, loadedContextSize);
+            AgentState persisted = stateCache.getOrDefault(slot, s);
+            AgentState lightweight = lightweightState(persisted);
+            stateCache.put(slot, lightweight);
+            slotLoadedContextSizes.put(slot, lightweight.getContext().size());
         }
     }
 
@@ -4429,6 +4573,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** Returns the {@link AgentStateStore} configured for state persistence, or {@code null}. */
     public AgentStateStore getStateStore() {
         return stateStore;
+    }
+
+    /** Returns whether new AgentState saves offload inline base64 image payloads. */
+    public boolean isImagePayloadOffloadingEnabled() {
+        return imagePayloadOffloadingEnabled;
     }
 
     /**
@@ -4544,6 +4693,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Model flatFallbackModel;
         private Boolean flatStopOnReject;
         private AgentStateStore stateStore;
+        private boolean imagePayloadOffloadingEnabled;
         private ConflictPolicy conflictPolicy;
         private String defaultSessionId;
 
@@ -4883,6 +5033,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStore = stateStore;
+            return this;
+        }
+
+        /**
+         * Enables offloading inline base64 images from persisted AgentState messages.
+         *
+         * <p>Defaults to {@code false} for rolling-upgrade safety. Deploy the new version to all
+         * nodes before enabling this option; older nodes do not understand the lightweight image
+         * reference format. New code can always read legacy inline states.
+         */
+        public Builder imagePayloadOffloadingEnabled(boolean enabled) {
+            this.imagePayloadOffloadingEnabled = enabled;
             return this;
         }
 

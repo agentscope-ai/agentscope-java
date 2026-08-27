@@ -270,6 +270,23 @@ public final class AgentState implements State {
         return new Builder();
     }
 
+    /** Returns a new state instance whose conversation context is replaced by {@code newContext}. */
+    public AgentState copyWithContext(List<Msg> newContext) {
+        return builder()
+                .sessionId(sessionId)
+                .userId(userId)
+                .summary(summary)
+                .context(newContext)
+                .replyId(replyId)
+                .curIter(curIter)
+                .shutdownInterrupted(shutdownInterrupted)
+                .permissionContext(permissionContext)
+                .toolContext(toolContext)
+                .tasksContext(tasksContext)
+                .planModeContext(planModeContext)
+                .build();
+    }
+
     /**
      * Serialize this state to a pretty-printed JSON string.
      *

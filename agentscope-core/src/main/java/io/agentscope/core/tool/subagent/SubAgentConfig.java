@@ -65,6 +65,7 @@ public class SubAgentConfig {
     private final boolean forwardEvents;
     private final StreamOptions streamOptions;
     private final AgentStateStore stateStore;
+    private final boolean imagePayloadOffloadingEnabled;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
@@ -73,6 +74,7 @@ public class SubAgentConfig {
         this.streamOptions = builder.streamOptions;
         this.stateStore =
                 builder.stateStore != null ? builder.stateStore : new InMemoryAgentStateStore();
+        this.imagePayloadOffloadingEnabled = builder.imagePayloadOffloadingEnabled;
     }
 
     /**
@@ -149,6 +151,11 @@ public class SubAgentConfig {
         return stateStore;
     }
 
+    /** Returns whether sub-agent saves offload inline base64 image payloads. */
+    public boolean isImagePayloadOffloadingEnabled() {
+        return imagePayloadOffloadingEnabled;
+    }
+
     /** Builder for SubAgentConfig. */
     public static class Builder {
         private String toolName;
@@ -156,6 +163,7 @@ public class SubAgentConfig {
         private boolean forwardEvents = true;
         private StreamOptions streamOptions;
         private AgentStateStore stateStore;
+        private boolean imagePayloadOffloadingEnabled;
 
         private Builder() {}
 
@@ -227,6 +235,17 @@ public class SubAgentConfig {
          */
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStore = stateStore;
+            return this;
+        }
+
+        /**
+         * Enables offloading inline base64 images from persisted sub-agent state.
+         *
+         * <p>Defaults to {@code false}. Enable only after every process sharing the state store has
+         * been upgraded to a version that understands image payload references.
+         */
+        public Builder imagePayloadOffloadingEnabled(boolean enabled) {
+            this.imagePayloadOffloadingEnabled = enabled;
             return this;
         }
 

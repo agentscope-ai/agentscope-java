@@ -33,11 +33,11 @@ import java.nio.file.Paths;
  * <p><b>How auto-save/restore works:</b>
  * <ol>
  *   <li><b>Load:</b> When the agent is constructed with a {@code session} and {@code sessionKey},
- *       it calls {@code stateStore.get(userId, sessionId, "agent_state", AgentState.class)} to restore any
- *       previously persisted conversation history and toolkit state.</li>
+ *       it calls {@code stateStore.getAgentStateVersioned(userId, sessionId, LEAN)} to restore
+ *       lightweight conversation history and toolkit state.</li>
  *   <li><b>Save after each call:</b> After every {@code call()} or {@code stream()} the agent
- *       automatically calls {@code stateStore.save(userId, sessionId, "agent_state", agentState)} to persist
- *       the updated state. No manual save is needed.</li>
+ *       automatically calls {@code stateStore.saveAgentState(userId, sessionId, agentState)} to
+ *       persist the updated state. No manual save is needed.</li>
  *   <li><b>Shutdown save:</b> The {@link io.agentscope.core.shutdown.GracefulShutdownManager}
  *       registers a state saver at construction time, so state is also flushed on JVM shutdown.</li>
  * </ol>
@@ -150,6 +150,9 @@ public class StateAutoSaveExample {
                 // stateStore() + defaultSessionId() wires automatic load-on-start and
                 // save-after-call
                 .stateStore(stateStore)
+                // Enable only after all nodes sharing this store run a version that understands
+                // image payload references.
+                .imagePayloadOffloadingEnabled(true)
                 .defaultSessionId(SESSION_ID + "-" + userId)
                 .build();
     }

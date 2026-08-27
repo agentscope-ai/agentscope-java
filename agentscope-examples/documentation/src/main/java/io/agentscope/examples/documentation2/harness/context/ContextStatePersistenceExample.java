@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateLoadMode;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -69,6 +70,7 @@ public class ContextStatePersistenceExample {
                         .sysPrompt("You are a helpful assistant. Keep answers under two sentences.")
                         .model("dashscope:qwen-plus")
                         .stateStore(stateStore)
+                        .imagePayloadOffloadingEnabled(true)
                         .build();
 
         RuntimeContext aliceCtx =
@@ -95,9 +97,9 @@ public class ContextStatePersistenceExample {
         System.out.println("\n── Step 2: Inspect persisted AgentState ──\n");
 
         Optional<AgentState> aliceState =
-                stateStore.get("alice", "alice-session-1", "agent_state", AgentState.class);
+                stateStore.getAgentState("alice", "alice-session-1", AgentStateLoadMode.LEAN);
         Optional<AgentState> bobState =
-                stateStore.get("bob", "bob-session-1", "agent_state", AgentState.class);
+                stateStore.getAgentState("bob", "bob-session-1", AgentStateLoadMode.LEAN);
 
         System.out.println(
                 "Alice context size: "
@@ -120,6 +122,7 @@ public class ContextStatePersistenceExample {
                         .sysPrompt("You are a helpful assistant. Keep answers under two sentences.")
                         .model("dashscope:qwen-plus")
                         .stateStore(stateStore)
+                        .imagePayloadOffloadingEnabled(true)
                         .build();
 
         Msg resumed = agent2.call(new UserMessage("What is my name?"), aliceCtx).block();
@@ -127,7 +130,7 @@ public class ContextStatePersistenceExample {
                 "Resumed reply: " + (resumed != null ? resumed.getTextContent() : "(null)"));
 
         Optional<AgentState> resumedState =
-                stateStore.get("alice", "alice-session-1", "agent_state", AgentState.class);
+                stateStore.getAgentState("alice", "alice-session-1", AgentStateLoadMode.LEAN);
         System.out.println(
                 "Alice context after resume: "
                         + resumedState.map(s -> s.getContext().size()).orElse(0)

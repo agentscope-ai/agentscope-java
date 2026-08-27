@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * AgentTool implementation that wraps a sub-agent for multi-turn conversation.
@@ -149,68 +150,76 @@ public class SubAgentTool implements AgentTool {
                         // Create agent for this session
                         final String finalSessionId = sessionId;
                         Agent agent = agentProvider.provide();
+                        RuntimeContext subAgentRuntimeContext =
+                                createSubAgentRuntimeContext(
+                                        param.getRuntimeContext(), finalSessionId, agent);
 
-                        // Load existing state if continuing session
-                        if (!isNewSession) {
-                            loadAgentState(finalSessionId, agent);
-                        }
+                        Mono<Void> stateLoaded =
+                                isNewSession
+                                        ? Mono.empty()
+                                        : Mono.fromRunnable(
+                                                        () -> loadAgentState(finalSessionId, agent))
+                                                .subscribeOn(Schedulers.boundedElastic())
+                                                .then();
 
-                        // Build user message
-                        Msg userMsg =
-                                Msg.builder()
-                                        .role(MsgRole.USER)
-                                        .content(TextBlock.builder().text(message).build())
-                                        .build();
-                        RuntimeContext runtimeContext = param.getRuntimeContext();
+                        return stateLoaded.then(
+                                Mono.defer(
+                                        () -> {
+                                            Msg userMsg =
+                                                    Msg.builder()
+                                                            .role(MsgRole.USER)
+                                                            .content(
+                                                                    TextBlock.builder()
+                                                                            .text(message)
+                                                                            .build())
+                                                            .build();
 
-                        logger.debug(
-                                "AgentStateStore {} with agent '{}': {}",
-                                isNewSession ? "started" : "continued",
-                                agent.getName(),
-                                message.substring(0, Math.min(50, message.length())));
+                                            logger.debug(
+                                                    "AgentStateStore {} with agent '{}': {}",
+                                                    isNewSession ? "started" : "continued",
+                                                    agent.getName(),
+                                                    message.substring(
+                                                            0, Math.min(50, message.length())));
 
-                        // Get emitter for event forwarding
-                        ToolEmitter emitter = param.getEmitter();
+                                            ToolEmitter emitter = param.getEmitter();
+                                            Mono<ToolResultBlock> result =
+                                                    config.isForwardEvents()
+                                                            ? executeWithStreaming(
+                                                                    agent,
+                                                                    userMsg,
+                                                                    finalSessionId,
+                                                                    emitter,
+                                                                    subAgentRuntimeContext)
+                                                            : executeWithoutStreaming(
+                                                                    agent,
+                                                                    userMsg,
+                                                                    finalSessionId,
+                                                                    subAgentRuntimeContext);
 
-                        // Execute and save state after completion
-                        Mono<ToolResultBlock> result;
-                        if (config.isForwardEvents()) {
-                            result =
-                                    executeWithStreaming(
-                                            agent,
-                                            userMsg,
-                                            finalSessionId,
-                                            emitter,
-                                            runtimeContext);
-                        } else {
-                            result =
-                                    executeWithoutStreaming(
-                                            agent, userMsg, finalSessionId, runtimeContext);
-                        }
+                                            // Interrupt the sub-agent when the subscription is
+                                            // cancelled (e.g. a timeout-triggered retry).
+                                            result =
+                                                    result.doFinally(
+                                                            signal -> {
+                                                                if (signal == SignalType.CANCEL) {
+                                                                    interruptAgent(
+                                                                            agent,
+                                                                            subAgentRuntimeContext);
+                                                                }
+                                                            });
 
-                        // Interrupt the sub-agent when the subscription is cancelled
-                        // (e.g. ToolExecutor timeout triggers a retry on a new subscription).
-                        // Without this, the orphan agent keeps consuming LLM tokens, SSH
-                        // connections, and thread pool resources until it finishes naturally.
-                        //
-                        // Uses doFinally(CANCEL) rather than doOnCancel because doOnCancel
-                        // also fires on normal error propagation cleanup, which would
-                        // attempt to interrupt an already-failed agent.
-                        //
-                        // Uses interrupt(RuntimeContext) instead of the deprecated
-                        // interrupt(InterruptSource) because the latter only looks up
-                        // `defaultSessionId` which may differ from the session the call
-                        // actually runs in.
-                        result =
-                                result.doFinally(
-                                        signal -> {
-                                            if (signal == SignalType.CANCEL) {
-                                                interruptAgent(agent, runtimeContext);
-                                            }
-                                        });
-
-                        // Save state after execution
-                        return result.doOnSuccess(r -> saveAgentState(finalSessionId, agent));
+                                            return result.flatMap(
+                                                    toolResult ->
+                                                            Mono.fromRunnable(
+                                                                            () ->
+                                                                                    saveAgentState(
+                                                                                            finalSessionId,
+                                                                                            agent))
+                                                                    .subscribeOn(
+                                                                            Schedulers
+                                                                                    .boundedElastic())
+                                                                    .thenReturn(toolResult));
+                                        }));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
@@ -249,9 +258,14 @@ public class SubAgentTool implements AgentTool {
             return;
         }
         try {
-            subSession
-                    .get(null, sessionId, "agent_state", AgentState.class)
-                    .ifPresent(loaded -> applyLoadedState(ra, loaded));
+            (config.isImagePayloadOffloadingEnabled()
+                            ? subSession.getAgentState(null, sessionId)
+                            : subSession.get(
+                                    null,
+                                    sessionId,
+                                    AgentStateStore.AGENT_STATE_KEY,
+                                    AgentState.class))
+                    .ifPresent(loaded -> applyLoadedState(ra, sessionId, loaded));
             logger.debug("Loaded sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(
@@ -272,7 +286,12 @@ public class SubAgentTool implements AgentTool {
             return;
         }
         try {
-            subSession.save(null, sessionId, "agent_state", ra.getAgentState());
+            AgentState state = ra.getAgentState(null, sessionId);
+            if (config.isImagePayloadOffloadingEnabled()) {
+                subSession.saveAgentState(null, sessionId, state);
+            } else {
+                subSession.save(null, sessionId, AgentStateStore.AGENT_STATE_KEY, state);
+            }
             logger.debug("Saved sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(
@@ -280,8 +299,8 @@ public class SubAgentTool implements AgentTool {
         }
     }
 
-    private static void applyLoadedState(ReActAgent agent, AgentState loaded) {
-        AgentState live = agent.getAgentState();
+    private static void applyLoadedState(ReActAgent agent, String sessionId, AgentState loaded) {
+        AgentState live = agent.getAgentState(null, sessionId);
         if (live == null) {
             return;
         }
@@ -292,6 +311,22 @@ public class SubAgentTool implements AgentTool {
         live.setCurIter(loaded.getCurIter());
         live.setShutdownInterrupted(loaded.isShutdownInterrupted());
         live.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
+    }
+
+    /**
+     * Isolate the child conversation from the parent's user/session slot while retaining the
+     * parent's call-scoped attributes and tool execution context.
+     */
+    private static RuntimeContext createSubAgentRuntimeContext(
+            RuntimeContext parent, String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent)) {
+            return parent;
+        }
+        return RuntimeContext.builder(parent)
+                .userId(null)
+                .sessionId(sessionId)
+                .agentState(null)
+                .build();
     }
 
     /**
