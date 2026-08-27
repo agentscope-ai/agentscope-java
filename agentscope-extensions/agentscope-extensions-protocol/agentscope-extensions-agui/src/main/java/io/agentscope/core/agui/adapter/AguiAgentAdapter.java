@@ -21,6 +21,7 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agui.AguiUtil;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverterRegistry;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
@@ -207,7 +208,7 @@ public class AguiAgentAdapter {
             return new AgentStream(
                     convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
-        if (isHarnessAgent(agent)) {
+        if (AguiUtil.isHarnessAgent(agent)) {
             AguiStreamContext context = new AguiStreamContext(threadId, runId, config, input);
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
@@ -272,17 +273,6 @@ public class AguiAgentAdapter {
             throw new IllegalStateException(
                     "HarnessAgent does not expose streamEvents(List, RuntimeContext)", e);
         }
-    }
-
-    private static boolean isHarnessAgent(Agent agent) {
-        Class<?> type = agent.getClass();
-        while (type != null) {
-            if ("io.agentscope.harness.agent.HarnessAgent".equals(type.getName())) {
-                return true;
-            }
-            type = type.getSuperclass();
-        }
-        return false;
     }
 
     /**
