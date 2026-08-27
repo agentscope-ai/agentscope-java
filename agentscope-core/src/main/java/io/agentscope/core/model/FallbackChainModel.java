@@ -167,10 +167,10 @@ public class FallbackChainModel implements Model {
                 (signal, flux) -> {
                     if (signal.isOnError()) {
                         Throwable error = signal.getThrowable();
-                        switch (classify(error)) {
+                        return switch (classify(error)) {
                             case REQUEST_SIDE -> {
                                 // This failure will repeat identically on every candidate.
-                                return Flux.error(error);
+                                yield Flux.error(error);
                             }
                             case SWITCHABLE -> {
                                 recordFailure(candidateName);
@@ -182,13 +182,9 @@ public class FallbackChainModel implements Model {
                                                 .get(Math.min(index + 1, candidates.size() - 1))
                                                 .getModelName(),
                                         error);
-                                return attempt(index + 1, error, messages, tools, options);
+                                yield attempt(index + 1, error, messages, tools, options);
                             }
-                            default -> {
-                                // Unreachable: classify is exhaustive.
-                                return Flux.error(error);
-                            }
-                        }
+                        };
                     }
                     // First signal delivered OK — forward the remainder of the stream.
                     return flux.onErrorResume(
