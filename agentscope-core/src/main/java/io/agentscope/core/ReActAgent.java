@@ -2841,6 +2841,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .flatMapMany(
                             gate -> {
                                 List<ToolUseBlock> pending = gate.pendingAsk();
+                                Map<String, List<PermissionRule>> pendToolMap =
+                                        pending.stream()
+                                                .collect(
+                                                        Collectors.toMap(
+                                                                ToolUseBlock::getId,
+                                                                ToolUseBlock::getSuggestedRules,
+                                                                (a, b) -> a));
+
                                 Set<String> autoDenied = gate.autoDeniedIds();
 
                                 // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
@@ -2855,17 +2863,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     }
                                     stateUpdates.put(
                                             tc.getId(),
-                                            pending.stream()
-                                                            .anyMatch(
-                                                                    p ->
-                                                                            p.getId()
-                                                                                    .equals(
-                                                                                            tc
-                                                                                                    .getId()))
+                                            pendToolMap.containsKey(tc.getId())
                                                     ? ToolCallState.ASKING
                                                     : ToolCallState.ALLOWED);
                                 }
-                                updateToolCallStates(stateUpdates);
+                                updateToolCallStatesAndRules(stateUpdates, pendToolMap);
 
                                 if (pending.isEmpty()) {
                                     return runToolBatch(
@@ -3197,12 +3199,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return permissionEngine
                         .checkPermission(tb, input)
                         .map(
-                                decision ->
-                                        new PermissionVerdict(
-                                                use,
-                                                decision == null
-                                                        ? PermissionBehavior.ASK
-                                                        : decision.getBehavior()));
+                                decision -> {
+                                    if (decision == null) {
+                                        return new PermissionVerdict(use, PermissionBehavior.ASK);
+                                    }
+
+                                    // Carry the engine's suggested rules on the ToolUseBlock
+                                    List<PermissionRule> suggested = decision.getSuggestedRules();
+                                    ToolUseBlock toolUseBlock = use;
+                                    if (suggested != null && !suggested.isEmpty()) {
+                                        toolUseBlock = use.withSuggestedRules(suggested);
+                                    }
+                                    return new PermissionVerdict(toolUseBlock, decision.getBehavior());
+                                });
             }
             return tb.checkPermissions(input, state.getPermissionContext())
                     .map(
@@ -3913,11 +3922,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // ==================== Tool call state helpers (Permission HITL) ====================
 
         /**
-         * Locate the last assistant Msg in context and replace the {@code state} of every
+         * Locate the last assistant Msg in context and replace the {@code state,suggestedRules} of every
          * {@link ToolUseBlock} whose id matches the given map's key. Mirrors Python's
          * {@code _update_tool_call_state} but operates in bulk to minimise list rebuilds.
          */
-        private void updateToolCallStates(Map<String, ToolCallState> updates) {
+        private void updateToolCallStatesAndRules(
+                Map<String, ToolCallState> updates, Map<String, List<PermissionRule>> pendToolMap) {
             if (updates == null || updates.isEmpty()) {
                 return;
             }
@@ -3939,7 +3949,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
                 for (ContentBlock block : m.getContent()) {
                     if (block instanceof ToolUseBlock t && updates.containsKey(t.getId())) {
-                        rebuilt.add(t.withState(updates.get(t.getId())));
+                        List<PermissionRule> rules = pendToolMap.getOrDefault(t.getId(), List.of());
+                        rebuilt.add(t.withStateAndSuggestedRules(updates.get(t.getId()), rules));
                     } else {
                         rebuilt.add(block);
                     }
@@ -3951,7 +3962,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Convenience overload for a single tool call. */
         private void updateToolCallState(String toolCallId, ToolCallState newState) {
-            updateToolCallStates(Map.of(toolCallId, newState));
+            updateToolCallStatesAndRules(Map.of(toolCallId, newState), Map.of());
         }
 
         /** Whether any ToolUseBlock in the last assistant Msg is in ASKING state. */
