@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.event;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * The user's answer to one {@code ask_user} tool call.
  *
@@ -36,7 +39,10 @@ public class AskUserResult {
     private final String toolCallId;
     private final java.util.Map<String, Object> answers;
 
-    public AskUserResult(String toolCallId, java.util.Map<String, Object> answers) {
+    @JsonCreator
+    public AskUserResult(
+            @JsonProperty("toolCallId") String toolCallId,
+            @JsonProperty("answers") java.util.Map<String, Object> answers) {
         if (toolCallId == null || toolCallId.isEmpty()) {
             throw new IllegalArgumentException("AskUserResult.toolCallId must not be empty");
         }
@@ -44,10 +50,12 @@ public class AskUserResult {
         this.answers = answers != null ? java.util.Map.copyOf(answers) : java.util.Map.of();
     }
 
+    @JsonProperty("toolCallId")
     public String getToolCallId() {
         return toolCallId;
     }
 
+    @JsonProperty("answers")
     public java.util.Map<String, Object> getAnswers() {
         return answers;
     }
