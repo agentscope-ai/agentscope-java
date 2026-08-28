@@ -59,6 +59,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
         Map<String, Object> metadata = new HashMap<>();
+        // Name of the exception from the last failed JSON parse of rawContent, cleared on a
+        // successful parse; only used to report the failure once at finalization
+        String parseFailure;
+        boolean parseWarned;
 
         void merge(ToolUseBlock block) {
             // Update ID if present
@@ -106,6 +110,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> parsed =
                             JsonUtils.getJsonCodec().fromJson(rawContentStr, Map.class);
+                    parseFailure = null;
                     if (parsed != null) {
                         for (Map.Entry<String, Object> entry : parsed.entrySet()) {
                             if (entry.getValue() == null) {
@@ -118,15 +123,12 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                         }
                     }
                 } catch (Exception e) {
-                    // Parsing failed, keep previously merged args; log the raw string so a
-                    // malformed tool-call argument is diagnosable instead of silently lost
-                    LOG.warn(
-                            "Failed to parse accumulated tool call arguments as JSON for tool"
-                                    + " '{}'; falling back to previously merged args. Raw"
-                                    + " arguments: {}",
-                            name,
-                            rawContentStr,
-                            e);
+                    // Incomplete JSON prefixes are expected while streamed fragments are still
+                    // arriving, so build() stays silent here; buildAllToolCalls() reports the
+                    // failure once at finalization if the raw content never became valid JSON.
+                    // Only the exception name is kept: its message may quote raw arguments,
+                    // which can contain credentials or other sensitive data.
+                    parseFailure = e.getClass().getSimpleName();
                 }
             }
 
@@ -149,6 +151,28 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .content(contentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
+        }
+
+        /**
+         * Emits at most one sanitized warning when the accumulated raw content never parsed as
+         * valid JSON.
+         *
+         * <p>Called only from the finalization boundary ({@link #buildAllToolCalls()}), not from
+         * per-fragment builds, because incomplete JSON prefixes are normal mid-stream. The
+         * warning omits the raw arguments (they may contain credentials, PII, or user
+         * documents) and carries no stack trace.
+         */
+        private void warnIfMalformedOnce() {
+            if (parseFailure != null && !parseWarned) {
+                parseWarned = true;
+                LOG.warn(
+                        "Tool call '{}' arguments are not valid JSON after the stream ended"
+                                + " (raw length: {}); using partially accumulated arguments"
+                                + " instead. Cause: {}",
+                        name,
+                        rawContent.length(),
+                        parseFailure);
+            }
         }
 
         private boolean isPlaceholder(String name) {
@@ -258,6 +282,9 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * @return List of tool calls
      */
     public List<ToolUseBlock> buildAllToolCalls() {
+        // Finalization boundary: the stream has ended, so malformed accumulated JSON is a
+        // real defect worth reporting — once per tool call, sanitized
+        builders.values().forEach(ToolCallBuilder::warnIfMalformedOnce);
         return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
     }
 
