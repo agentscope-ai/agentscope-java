@@ -25,9 +25,14 @@ import java.util.List;
  * Input context for {@link MiddlewareBase#onModelCall}.
  *
  * @param messages the messages to send to the model
- * @param tools    the tool schemas
+ * @param tools    the non-null tool schemas, empty when no tools are available
  * @param options  generation options
  * @param model    the model instance to call
  */
 public record ModelCallInput(
-        List<Msg> messages, List<ToolSchema> tools, GenerateOptions options, Model model) {}
+        List<Msg> messages, List<ToolSchema> tools, GenerateOptions options, Model model) {
+
+    public ModelCallInput {
+        tools = tools == null ? List.of() : tools;
+    }
+}

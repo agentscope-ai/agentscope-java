@@ -441,7 +441,7 @@ RAGFlowConfig config = RAGFlowConfig.builder()
     // === Advanced Retrieval Features (Optional) ===
     .useKg(false)                               // Knowledge graph multi-hop query, default false
     .tocEnhance(false)                          // TOC-enhanced retrieval, default false
-    .rerankId(1)                                // Rerank model ID
+    .rerankId("BAAI/bge-reranker-v2-m3@BAAI")   // Rerank model ID (model name or hex UUID)
     .keyword(false)                             // Keyword matching, default false
     .highlight(false)                           // Highlight matched results, default false
     .addCrossLanguage("en")                     // Add target language
