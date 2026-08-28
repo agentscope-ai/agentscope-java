@@ -215,7 +215,9 @@
     <build>
         <plugins>
             <!-- Publish a test-jar so downstream modules (agentscope-harness) can reuse the
-                 shared test fixtures (MockModel, MockToolkit, TestConstants, TestUtils). -->
+                 shared test fixtures (MockModel, MockToolkit, TestConstants, TestUtils).
+                 logback-test.xml is excluded so it cannot override downstream modules'
+                 own test logging configuration. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -224,6 +226,11 @@
                         <goals>
                             <goal>test-jar</goal>
                         </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>logback-test.xml</exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

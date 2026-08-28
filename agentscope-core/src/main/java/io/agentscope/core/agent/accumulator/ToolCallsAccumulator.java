@@ -283,9 +283,18 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      */
     public List<ToolUseBlock> buildAllToolCalls() {
         // Finalization boundary: the stream has ended, so malformed accumulated JSON is a
-        // real defect worth reporting — once per tool call, sanitized
-        builders.values().forEach(ToolCallBuilder::warnIfMalformedOnce);
-        return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
+        // real defect worth reporting — once per tool call, sanitized. build() runs first so
+        // parseFailure reflects the FINAL raw content: a prefix that failed mid-stream but
+        // completed validly must not warn, and a call that was never built mid-stream must
+        // still warn on this first finalization.
+        return builders.values().stream()
+                .map(
+                        builder -> {
+                            ToolUseBlock block = builder.build();
+                            builder.warnIfMalformedOnce();
+                            return block;
+                        })
+                .collect(Collectors.toList());
     }
 
     /**

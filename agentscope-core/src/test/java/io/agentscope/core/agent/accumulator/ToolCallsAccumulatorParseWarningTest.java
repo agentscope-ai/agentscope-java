@@ -71,12 +71,14 @@ class ToolCallsAccumulatorParseWarningTest {
     void validMultiFragmentEmitsNoWarning() {
         accumulator.add(
                 ToolUseBlock.builder().id("call-1").name("get_weather").content("{\"ci").build());
-        accumulator.add(
-                ToolUseBlock.builder().name("__fragment__").content("ty\": \"Shanghai\"}").build());
 
         // Per-fragment build path (hook dispatch during streaming) sees an incomplete JSON
-        // prefix and must not warn
+        // prefix: parse fails here, but the prefix later completes, so finalization must not
+        // emit the stale failure
         assertNotNull(accumulator.getAccumulatedToolCall("call-1"));
+
+        accumulator.add(
+                ToolUseBlock.builder().name("__fragment__").content("ty\": \"Shanghai\"}").build());
 
         ToolUseBlock result = accumulator.buildAllToolCalls().get(0);
         assertEquals("{\"city\": \"Shanghai\"}", result.getContent());
@@ -113,5 +115,33 @@ class ToolCallsAccumulatorParseWarningTest {
         assertTrue(!message.contains("token"), "warning leaked argument keys: " + message);
         // No stack trace
         assertNull(warns.get(0).getThrowableProxy());
+    }
+
+    @Test
+    @DisplayName("Truncated call with no mid-stream builds warns on the first finalization")
+    void truncatedWithoutIntermediateBuildsWarnsOnFirstFinalization() {
+        // Issue #2841 reproduction shape: fragments are only added, never built mid-stream
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-3")
+                        .name("run_query")
+                        .content("{\"q\": \"sel")
+                        .build());
+        accumulator.add(
+                ToolUseBlock.builder().name("__fragment__").content("ect * from t\"").build());
+
+        ToolUseBlock result = accumulator.buildAllToolCalls().get(0);
+        assertEquals("{}", result.getContent());
+
+        List<ILoggingEvent> warns = warnings();
+        assertEquals(1, warns.size(), "expected exactly one warning, got: " + warns);
+        String message = warns.get(0).getFormattedMessage();
+        assertTrue(message.contains("run_query"), "warning should name the tool: " + message);
+        assertTrue(!message.contains("select"), "warning leaked raw arguments: " + message);
+        assertNull(warns.get(0).getThrowableProxy());
+
+        // A repeated finalization stays silent (warn-once per tool call)
+        accumulator.buildAllToolCalls();
+        assertEquals(1, warnings().size(), "warning repeated on second finalization");
     }
 }
