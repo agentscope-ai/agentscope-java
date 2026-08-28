@@ -113,6 +113,24 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
     }
 
     /**
+     * Returns the single in-flight {@link RuntimeContext}, or {@code null} when none is active.
+     * With concurrent calls on one instance there is no unambiguous "current" context, so this
+     * resolves to the sole active context only when exactly one call is in flight.
+     *
+     * <p>The base implementation returns {@code null}; agents that track per-call contexts (e.g.
+     * {@code ReActAgent}) override this to resolve the single active context and fail when several
+     * are in flight.
+     *
+     * @return the single active context, or {@code null} when none is in flight
+     * @throws IllegalStateException when more than one context is active (the context is ambiguous)
+     * @deprecated use {@link #getRuntimeContext(String)} with a concrete runId
+     */
+    @Deprecated
+    default RuntimeContext getRuntimeContext() {
+        return null;
+    }
+
+    /**
      * Returns the active {@link RuntimeContext} for the given runId, or {@code null} if no such
      * call is currently in flight. Use {@link RuntimeContext#getRunId()} to obtain the key.
      *

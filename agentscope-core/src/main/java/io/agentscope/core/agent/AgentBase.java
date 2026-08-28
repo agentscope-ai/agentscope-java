@@ -252,63 +252,92 @@ public abstract class AgentBase implements Agent {
             "io.agentscope.core.agent.AgentBase.shutdownRequestId";
 
     /**
-     * Shared {@code call()} lifecycle: acquire execution, then (inside {@code deferContextual} so
-     * the caller-supplied {@link RuntimeContext} is read per-subscription) run {@link
-     * #beforeAgentExecution(List, RuntimeContext)} (which returns this call's per-call scope), carry
-     * that scope on the Reactor Context, and run the preCall → doCall → postCall chain with error
-     * handling, releasing execution on terminate.
+     * Shared {@code call()} lifecycle: resolves the per-call {@link RuntimeContext} per-subscription
+     * (direct argument first, then {@link #RUNTIME_CONTEXT_KEY} on the Reactor Context — the
+     * deprecated {@code stream(..., context)} overloads only use {@code contextWrite}), registers
+     * it in {@link #activeContexts} for the duration of the call, and runs the preCall → doCall →
+     * postCall chain with error handling, releasing execution on terminate. The registration lets
+     * {@code getRuntimeContext(runId)} resolve mid-call; {@link Mono#using} cleanup evicts it on
+     * complete, error, or cancel.
      */
     protected Mono<Msg> runLifecycle(
             List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
-        return Mono.using(
-                () -> acquireExecution(context),
-                resource ->
-                        Mono.deferContextual(
-                                cv -> {
-                                    final RuntimeContext rc =
-                                            context != null ? context : RuntimeContext.empty();
-                                    // Track this call as a distinct shutdown request (keyed by its
-                                    // own requestId, not the shared agent id) so concurrent calls
-                                    // on one instance are interrupted/saved/unregistered
-                                    // independently.
-                                    String requestId =
-                                            GracefulShutdownManager.getInstance()
-                                                    .registerRequest(this);
-                                    Object gateKey = callSerializationKey(rc);
-                                    // Register the caller-supplied RC (if any) so
-                                    // getRuntimeContext(runId) resolves during the call. Removal
-                                    // is in releaseExecution (Mono.using cleanup, guaranteed on
-                                    // complete / error / cancel) — both use the same context.
-                                    if (context != null) {
-                                        activeContexts.put(context.getRunId(), context);
-                                    }
-                                    // Build the per-call lifecycle lazily so it only runs once the
-                                    // serialization gate (if any) admits this call:
-                                    // beforeAgentExecution resolves/loads the session slot and must
-                                    // not race a concurrent same-session call.
-                                    Mono<Msg> lifecycle =
-                                            Mono.defer(
-                                                    () ->
-                                                            runLifecycleBody(
-                                                                    msgs, rc, doCallFn, requestId));
-                                    Mono<Msg> gated =
-                                            gateKey == null
-                                                    ? lifecycle
-                                                    : serializeOnKey(gateKey, lifecycle);
-                                    return gated.contextWrite(
-                                                    c ->
-                                                            requestId == null || requestId.isEmpty()
-                                                                    ? c
-                                                                    : c.put(
-                                                                            SHUTDOWN_REQUEST_ID_KEY,
-                                                                            requestId))
-                                            .doFinally(
-                                                    sig ->
-                                                            GracefulShutdownManager.getInstance()
-                                                                    .unregisterRequest(requestId));
-                                }),
-                resource -> releaseExecution(resource, context),
-                true);
+        return Mono.deferContextual(
+                cv -> {
+                    // Admit before registering: a rejected shutdown request must not leave an
+                    // active context behind.
+                    GracefulShutdownManager.getInstance().ensureAcceptingRequests();
+                    final RuntimeContext supplied =
+                            context != null
+                                    ? context
+                                    : (RuntimeContext) cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
+                    final RuntimeContext rc = supplied != null ? supplied : RuntimeContext.empty();
+                    // Register before Mono.using so a duplicate runId (shared or copied
+                    // RuntimeContext) is rejected without ever reaching the cleanup path, which
+                    // would otherwise evict the original registration.
+                    if (supplied != null) {
+                        RuntimeContext previous =
+                                activeContexts.putIfAbsent(supplied.getRunId(), supplied);
+                        if (previous != null) {
+                            return Mono.error(
+                                    new IllegalStateException(
+                                            "RuntimeContext runId '"
+                                                    + supplied.getRunId()
+                                                    + "' is already active on this agent; a"
+                                                    + " RuntimeContext must not be reused across"
+                                                    + " concurrent calls. Build a fresh"
+                                                    + " RuntimeContext (or copy via"
+                                                    + " RuntimeContext.builder(rc)) per call."));
+                        }
+                    }
+                    return Mono.using(
+                            this::acquireExecution,
+                            resource ->
+                                    Mono.defer(
+                                            () -> {
+                                                // Track as a distinct shutdown request so
+                                                // concurrent calls on one instance are
+                                                // interrupted/saved independently.
+                                                String requestId =
+                                                        GracefulShutdownManager.getInstance()
+                                                                .registerRequest(this);
+                                                Object gateKey = callSerializationKey(rc);
+                                                // Lazy so the lifecycle starts only after the
+                                                // serialization gate admits this call — the session
+                                                // slot must not load while a same-session call
+                                                // is in flight.
+                                                Mono<Msg> lifecycle =
+                                                        Mono.defer(
+                                                                () ->
+                                                                        runLifecycleBody(
+                                                                                msgs, rc, doCallFn,
+                                                                                requestId));
+                                                Mono<Msg> gated =
+                                                        gateKey == null
+                                                                ? lifecycle
+                                                                : serializeOnKey(
+                                                                        gateKey, lifecycle);
+                                                return gated.contextWrite(
+                                                                c ->
+                                                                        requestId == null
+                                                                                        || requestId
+                                                                                                .isEmpty()
+                                                                                ? c
+                                                                                : c.put(
+                                                                                        SHUTDOWN_REQUEST_ID_KEY,
+                                                                                        requestId))
+                                                        .doFinally(
+                                                                sig ->
+                                                                        GracefulShutdownManager
+                                                                                .getInstance()
+                                                                                .unregisterRequest(
+                                                                                        requestId));
+                                            }),
+                            // rc (not supplied) is what beforeAgentExecution bound
+                            // (including the empty fallback), so identity-based cleanup matches.
+                            resource -> releaseExecution(resource, rc),
+                            true);
+                });
     }
 
     private Mono<Msg> runLifecycleBody(
@@ -487,16 +516,12 @@ public abstract class AgentBase implements Agent {
      * {@code resourceSupplier} in {@link Mono#using} to guarantee that {@link #releaseExecution}
      * is always called on completion, error, or cancellation.
      */
-    private AgentBase acquireExecution(RuntimeContext context) {
-        GracefulShutdownManager.getInstance().ensureAcceptingRequests();
+    private AgentBase acquireExecution() {
         return this;
     }
 
-    private void releaseExecution(AgentBase resource, RuntimeContext context) {
-        if (context != null) {
-            activeContexts.remove(context.getRunId());
-        }
-        afterAgentExecution(context);
+    private void releaseExecution(AgentBase resource, RuntimeContext rc) {
+        afterAgentExecution(rc);
     }
 
     /**
@@ -575,6 +600,31 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
+     * Returns the single in-flight {@link RuntimeContext}. With concurrent calls on one instance
+     * there is no unambiguous "current" context, so this resolves to {@code null} when none is
+     * active, the sole context when exactly one is active, and fails when several are in flight.
+     *
+     * @return the single active context, or {@code null} when none is in flight
+     * @throws IllegalStateException when more than one context is active (the context is ambiguous)
+     * @deprecated use {@link #getRuntimeContext(String)} with a concrete runId
+     */
+    @Override
+    @Deprecated
+    public RuntimeContext getRuntimeContext() {
+        List<RuntimeContext> active = getActiveRuntimeContexts();
+        if (active.isEmpty()) {
+            return null;
+        }
+        if (active.size() == 1) {
+            return active.get(0);
+        }
+        throw new IllegalStateException(
+                active.size()
+                        + " concurrent RuntimeContexts are active; the current context is"
+                        + " ambiguous. Use getRuntimeContext(runId) instead.");
+    }
+
+    /**
      * Returns the active {@link RuntimeContext} for the given runId, or {@code null} if no such
      * call is currently in flight. Looks up the runId in {@link #activeContexts}.
      *
@@ -617,15 +667,15 @@ public abstract class AgentBase implements Agent {
 
     /**
      * Invoked when a {@code call()} terminates (complete, error, or cancel), paired with {@link
-     * #beforeAgentExecution(List, RuntimeContext)}. Removes the call's RuntimeContext from
-     * {@link #activeContexts} and unbinds hooks.
+     * #beforeAgentExecution(List, RuntimeContext)}: removes exactly this call's context from
+     * {@link #activeContexts} and unbinds hooks if this call still owns the shared binding.
      *
      * @param rc the per-call {@link RuntimeContext} (never {@code null}; resolved to empty when the
      *     caller supplied none)
      */
     protected void afterAgentExecution(RuntimeContext rc) {
         if (rc != null) {
-            activeContexts.remove(rc.getRunId());
+            activeContexts.remove(rc.getRunId(), rc);
         }
         unbindRuntimeContextFromHooks();
     }
@@ -643,7 +693,8 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
-     * Clears the {@link RuntimeContext} previously pushed to all {@link RuntimeContextAware} hooks.
+     * Clears the {@link RuntimeContext} previously pushed to {@link RuntimeContextAware} hooks.
+     * See {@link RuntimeContextAware} for the contract's concurrency limitations.
      */
     protected void unbindRuntimeContextFromHooks() {
         for (RuntimeContextAware h : runtimeContextAwareHooks) {

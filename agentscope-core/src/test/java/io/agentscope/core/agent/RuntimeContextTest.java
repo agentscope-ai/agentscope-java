@@ -94,6 +94,20 @@ class RuntimeContextTest {
     }
 
     @Test
+    @DisplayName("reusing one builder yields distinct auto-generated runIds per build()")
+    void builderReuseYieldsDistinctRunIds() {
+        RuntimeContext.Builder builder = RuntimeContext.builder().userId("u").sessionId("s");
+        RuntimeContext first = builder.build();
+        RuntimeContext second = builder.build();
+        assertNotEquals(
+                first.getRunId(),
+                second.getRunId(),
+                "a reused builder must not hand out the same auto-generated runId twice");
+        assertNotNull(first.getRunId());
+        assertNotNull(second.getRunId());
+    }
+
+    @Test
     @DisplayName("builder sets session fields and string extras")
     void builderSessionAndStringExtras() {
         RuntimeContext ctx =

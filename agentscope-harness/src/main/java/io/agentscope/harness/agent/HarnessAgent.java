@@ -161,6 +161,7 @@ import reactor.core.publisher.Mono;
  * {@link io.agentscope.core.agent.RuntimeContext}'s {@code (userId, sessionId)} to isolate state.
  * Calls targeting the same session are serialized automatically; different sessions run in parallel.
  */
+@SuppressWarnings("deprecation")
 public class HarnessAgent implements Agent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
@@ -500,6 +501,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     public int getMaxIters() {
         return delegate.getMaxIters();
+    }
+
+    /**
+     * Returns the single in-flight {@link RuntimeContext} on the underlying agent, or {@code null}
+     * when none is active. Throws when several are in flight (the context is ambiguous).
+     *
+     * @deprecated use {@link #getRuntimeContext(String)} with a concrete runId
+     */
+    @Override
+    @Deprecated
+    public RuntimeContext getRuntimeContext() {
+        return delegate.getRuntimeContext();
     }
 
     /**
@@ -2649,7 +2662,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             Supplier<RuntimeContext> currentRcSupplier =
                     () -> {
                         ReActAgent self = selfRef.get();
-                        RuntimeContext rc = self != null ? self.getRuntimeContext(null) : null;
+                        RuntimeContext rc = self != null ? self.getRuntimeContext() : null;
                         return rc != null ? rc : RuntimeContext.empty();
                     };
             List<AgentSkillRepository> orderedSkillRepos =

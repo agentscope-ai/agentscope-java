@@ -1216,8 +1216,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     }
                     return scope.doCallInner(msgs)
                             .onErrorResume(error -> saveStateAfterCallFailure(scope, error))
-                            .flatMap(result -> saveStateToSession(scope).thenReturn(result))
-                            .doFinally(s -> activeContexts.remove(scope.runId));
+                            .flatMap(result -> saveStateToSession(scope).thenReturn(result));
                 });
     }
 
@@ -1320,8 +1319,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             ctx.remove(ctx.size() - 1);
                                         }
                                         scope.nativeResponseFormat = null;
-                                    })
-                            .doFinally(s -> activeContexts.remove(scope.runId));
+                                    });
                 });
     }
 
@@ -1374,8 +1372,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             scope.state.contextMutable().add(out);
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
-                                    })
-                            .doFinally(s -> activeContexts.remove(scope.runId));
+                                    });
                 });
     }
 
@@ -1641,9 +1638,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState state;
         PermissionEngine permissionEngine;
         String slotKey;
-
-        /** Per-call runId, captured at registration for reliable cleanup via doFinally. */
-        String runId;
 
         /**
          * Store version observed when this call loaded {@link #state}. Used for CAS on save.

@@ -26,6 +26,11 @@ import io.agentscope.core.agent.RuntimeContext;
  * cache the reference in a field, as the same {@link RuntimeContext} instance is mutably shared
  * for cross-hook/tool coordination.
  *
+ * <p><b>Concurrency limitation:</b> the context arrives through a single shared field, so under
+ * concurrent calls a hook observes whichever call bound it most recently — this deprecated
+ * contract is not concurrency-correct. Prefer the middleware {@code ctx} parameter or
+ * {@code ToolCallParam.getRuntimeContext()}.
+ *
  * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
 @Deprecated(forRemoval = true, since = "2.0.0")

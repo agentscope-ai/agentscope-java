@@ -64,10 +64,10 @@ public class RuntimeContext {
 
     private final ToolExecutionContext toolExecutionContext;
 
-    private RuntimeContext(Builder builder) {
+    private RuntimeContext(Builder builder, String runId) {
         this.sessionId = builder.sessionId;
         this.userId = builder.userId;
-        this.runId = builder.runId;
+        this.runId = runId;
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
@@ -241,6 +241,14 @@ public class RuntimeContext {
         }
     }
 
+    /**
+     * Creates a builder seeded from an existing context; the source's runId is copied so derived
+     * contexts stay correlated with the same call and must not be registered as another active
+     * call (duplicate runIds are rejected).
+     *
+     * @param source the context to copy session fields, runId, and attributes from
+     * @return a pre-populated builder
+     */
     public static Builder builder(RuntimeContext source) {
         return new Builder().from(source);
     }
@@ -439,11 +447,18 @@ public class RuntimeContext {
             return this;
         }
 
+        /**
+         * Builds the context. When runId was not set, an id is generated per call and never
+         * cached on this builder, so one builder can be reused to build several contexts with
+         * distinct runIds. An explicit runId (including one copied via {@link
+         * #builder(RuntimeContext)}) is reused verbatim.
+         */
         public RuntimeContext build() {
-            if (runId == null || runId.isBlank()) {
-                runId = UUID.randomUUID().toString().replace("-", "");
-            }
-            return new RuntimeContext(this);
+            String resolvedRunId =
+                    (runId == null || runId.isBlank())
+                            ? UUID.randomUUID().toString().replace("-", "")
+                            : runId;
+            return new RuntimeContext(this, resolvedRunId);
         }
     }
 
