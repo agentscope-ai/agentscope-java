@@ -127,7 +127,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -2658,16 +2657,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             // ---- Skills ----
-            final AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
-            Supplier<RuntimeContext> currentRcSupplier =
-                    () -> {
-                        ReActAgent self = selfRef.get();
-                        RuntimeContext rc = self != null ? self.getRuntimeContext() : null;
-                        return rc != null ? rc : RuntimeContext.empty();
-                    };
             List<AgentSkillRepository> orderedSkillRepos =
                     HarnessAgentBuilderSupport.composeSkillRepositories(
-                            this, wsManager, filesystem, currentRcSupplier);
+                            this, wsManager, filesystem);
 
             // ---- Skill self-learning: writable workspace skills + skill_manage tool ----
             SkillPromoter pendingSkillPromoter = null;
@@ -2689,10 +2681,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     if (r instanceof WorkspaceSkillRepository wsr && !wsr.isWriteable()) {
                         mainWritableRepo =
                                 new WorkspaceSkillRepository(
-                                        filesystem,
-                                        smConfig.mainDir(),
-                                        currentRcSupplier,
-                                        "workspace-writable");
+                                        filesystem, smConfig.mainDir(), "workspace-writable");
                         orderedSkillRepos.set(i, mainWritableRepo);
                         break;
                     }
@@ -2700,18 +2689,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (mainWritableRepo == null) {
                     mainWritableRepo =
                             new WorkspaceSkillRepository(
-                                    filesystem,
-                                    smConfig.mainDir(),
-                                    currentRcSupplier,
-                                    "workspace-writable");
+                                    filesystem, smConfig.mainDir(), "workspace-writable");
                     orderedSkillRepos.add(mainWritableRepo);
                 }
                 WorkspaceSkillRepository draftsWritableRepo =
                         new WorkspaceSkillRepository(
-                                filesystem,
-                                smConfig.draftsDir(),
-                                currentRcSupplier,
-                                "workspace-drafts");
+                                filesystem, smConfig.draftsDir(), "workspace-drafts");
                 SkillUsageStore usageStore =
                         distributedStore != null
                                 ? SkillUsageStore.baseStore(distributedStore.baseStore())
@@ -2845,7 +2828,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // ---- Build inner ReActAgent ----
             inner.toolkit(agentToolkit);
             ReActAgent delegate = inner.build();
-            selfRef.set(delegate);
 
             return new HarnessAgent(
                     delegate,

@@ -75,18 +75,47 @@ public class WorkspaceSkillRepository
 
     private final AbstractFilesystem filesystem;
     private final String skillsRelativeDir;
-    private final Supplier<RuntimeContext> contextSupplier;
+
+    /** @deprecated context-less operations now resolve to {@link RuntimeContext#empty()} */
+    @Deprecated private final Supplier<RuntimeContext> contextSupplier;
+
     private final String source;
 
     private volatile boolean writable;
 
     /**
-     * Creates a read-only repository.
-     *
-     * @param filesystem        backing filesystem (non-null)
-     * @param skillsRelativeDir relative directory holding {@code <skill>/SKILL.md} (non-null)
-     * @param contextSupplier   supplies the {@link RuntimeContext} on each call (non-null)
+     * Creates a read-only repository scoped to the default namespace; context-less operations
+     * resolve to {@link RuntimeContext#empty()} unless a request context is passed explicitly.
      */
+    public WorkspaceSkillRepository(AbstractFilesystem filesystem, String skillsRelativeDir) {
+        this(filesystem, skillsRelativeDir, null, null, false);
+    }
+
+    /**
+     * Creates a writable repository (matches the legacy
+     * {@code WritableFilesystemSkillRepository} default), scoped to the default namespace.
+     */
+    public WorkspaceSkillRepository(
+            AbstractFilesystem filesystem, String skillsRelativeDir, String source) {
+        this(filesystem, skillsRelativeDir, null, source, true);
+    }
+
+    /**
+     * Creates a repository with explicit source and writability, scoped to the default namespace.
+     */
+    public WorkspaceSkillRepository(
+            AbstractFilesystem filesystem,
+            String skillsRelativeDir,
+            String source,
+            boolean writable) {
+        this(filesystem, skillsRelativeDir, null, source, writable);
+    }
+
+    /**
+     * @deprecated pass the per-call {@link RuntimeContext} into the context-scoped methods instead
+     *     of binding a supplier at construction time.
+     */
+    @Deprecated
     public WorkspaceSkillRepository(
             AbstractFilesystem filesystem,
             String skillsRelativeDir,
@@ -94,10 +123,8 @@ public class WorkspaceSkillRepository
         this(filesystem, skillsRelativeDir, contextSupplier, null, false);
     }
 
-    /**
-     * Creates a writable repository (matches the legacy
-     * {@code WritableFilesystemSkillRepository} default).
-     */
+    /** @deprecated use {@link #WorkspaceSkillRepository(AbstractFilesystem, String, String)} */
+    @Deprecated
     public WorkspaceSkillRepository(
             AbstractFilesystem filesystem,
             String skillsRelativeDir,
@@ -111,11 +138,14 @@ public class WorkspaceSkillRepository
      *
      * @param filesystem        backing filesystem (non-null)
      * @param skillsRelativeDir relative directory holding {@code <skill>/SKILL.md} (non-null)
-     * @param contextSupplier   supplies the {@link RuntimeContext} on each call (non-null)
+     * @param contextSupplier   supplies the {@link RuntimeContext} on each call (may be null)
      * @param source            source identifier attached to loaded skills; falls back to
      *                          {@code "workspace"} when null or blank
      * @param writable          whether {@link #save} and {@link #delete} are permitted
+     * @deprecated pass the per-call {@link RuntimeContext} into the context-scoped methods instead
+     *     of binding a supplier at construction time.
      */
+    @Deprecated
     public WorkspaceSkillRepository(
             AbstractFilesystem filesystem,
             String skillsRelativeDir,
@@ -124,7 +154,7 @@ public class WorkspaceSkillRepository
             boolean writable) {
         this.filesystem = Objects.requireNonNull(filesystem, "filesystem");
         this.skillsRelativeDir = Objects.requireNonNull(skillsRelativeDir, "skillsRelativeDir");
-        this.contextSupplier = Objects.requireNonNull(contextSupplier, "contextSupplier");
+        this.contextSupplier = contextSupplier;
         this.source = (source == null || source.isBlank()) ? DEFAULT_SOURCE : source;
         this.writable = writable;
     }
@@ -435,6 +465,8 @@ public class WorkspaceSkillRepository
         return skillsRelativeDir;
     }
 
+    /** @deprecated context-less operations resolve to {@link RuntimeContext#empty()}; do not use */
+    @Deprecated
     public RuntimeContext resolveContext() {
         return currentContext();
     }
@@ -490,8 +522,10 @@ public class WorkspaceSkillRepository
         return skillsRelativeDir + "/" + ARCHIVE_PREFIX + "/" + name + "-" + ts;
     }
 
+    /** @deprecated context-less operations resolve to {@link RuntimeContext#empty()} */
+    @Deprecated
     private RuntimeContext currentContext() {
-        RuntimeContext ctx = contextSupplier.get();
+        RuntimeContext ctx = contextSupplier != null ? contextSupplier.get() : null;
         return ctx != null ? ctx : RuntimeContext.empty();
     }
 

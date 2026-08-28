@@ -801,10 +801,7 @@ final class HarnessAgentBuilderSupport {
      * Assembles the ordered list of skill repositories used by this build (low-to-high priority).
      */
     static List<AgentSkillRepository> composeSkillRepositories(
-            HarnessAgent.Builder b,
-            WorkspaceManager wsManager,
-            AbstractFilesystem filesystem,
-            Supplier<RuntimeContext> currentRcSupplier) {
+            HarnessAgent.Builder b, WorkspaceManager wsManager, AbstractFilesystem filesystem) {
         List<AgentSkillRepository> ordered = new ArrayList<>();
 
         // Layer 1 (lowest priority): project-global skills directory.
@@ -841,13 +838,22 @@ final class HarnessAgentBuilderSupport {
         if (filesystem != null && !b.disableDefaultWorkspaceSkills) {
             ordered.add(
                     new io.agentscope.harness.agent.skill.WorkspaceSkillRepository(
-                            filesystem,
-                            "skills",
-                            currentRcSupplier,
-                            "workspace-namespaced",
-                            false));
+                            filesystem, "skills", "workspace-namespaced", false));
         }
 
         return ordered;
+    }
+
+    /**
+     * @deprecated use {@link #composeSkillRepositories(HarnessAgent.Builder, WorkspaceManager,
+     *     AbstractFilesystem)}; the context is now resolved per-call, not via a shared supplier.
+     */
+    @Deprecated
+    static List<AgentSkillRepository> composeSkillRepositories(
+            HarnessAgent.Builder b,
+            WorkspaceManager wsManager,
+            AbstractFilesystem filesystem,
+            Supplier<RuntimeContext> currentRcSupplier) {
+        return composeSkillRepositories(b, wsManager, filesystem);
     }
 }
