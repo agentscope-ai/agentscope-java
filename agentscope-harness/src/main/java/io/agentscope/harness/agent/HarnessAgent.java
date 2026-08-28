@@ -109,6 +109,7 @@ import io.agentscope.harness.agent.tool.SkillManageConfig;
 import io.agentscope.harness.agent.tool.SkillManageTool;
 import io.agentscope.harness.agent.tool.WebTools;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
+import io.agentscope.harness.agent.tools.McpServerRegistrationListener;
 import io.agentscope.harness.agent.tools.ToolFilter;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import io.agentscope.harness.agent.tools.ToolsConfigLoader;
@@ -1220,6 +1221,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         String planFileDir = PlanModeManager.DEFAULT_PLAN_DIR;
 
         ToolsConfig toolsConfigOverride;
+        McpServerRegistrationListener mcpServerRegistrationListener;
 
         SandboxFilesystemSpec sandboxFilesystemSpec;
         RemoteFilesystemSpec remoteFilesystemSpec;
@@ -1348,7 +1350,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <li>Context engineering: {@link #additionalContextFile(String)},
          *       {@link #maxContextTokens(int)}, {@link #compaction(CompactionConfig)},
          *       {@link #toolResultEviction(ToolResultEvictionConfig)},
-         *       {@link #toolsConfig(ToolsConfig)}</li>
+         *       {@link #toolsConfig(ToolsConfig)},
+         *       {@link #mcpServerRegistrationListener(McpServerRegistrationListener)}</li>
          *   <li>All {@code disableXxx()} toggles and {@link #enableAgentTracingLog(boolean)}</li>
          * </ul>
          *
@@ -1832,6 +1835,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Programmatic override for {@code workspace/tools.json}. */
         public Builder toolsConfig(ToolsConfig toolsConfig) {
             this.toolsConfigOverride = toolsConfig;
+            return this;
+        }
+
+        /**
+         * Sets the listener for terminal MCP server registration results produced while building
+         * this agent. The listener is not propagated to dynamically created subagents. Passing
+         * {@code null} disables result delivery.
+         */
+        public Builder mcpServerRegistrationListener(
+                McpServerRegistrationListener mcpServerRegistrationListener) {
+            this.mcpServerRegistrationListener = mcpServerRegistrationListener;
             return this;
         }
 
@@ -2616,7 +2630,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
             }
             if (resolvedToolsConfig != null) {
-                McpServerRegistrar.register(agentToolkit, resolvedToolsConfig.getMcpServers());
+                McpServerRegistrar.register(
+                        agentToolkit,
+                        resolvedToolsConfig.getMcpServers(),
+                        mcpServerRegistrationListener);
             }
 
             // ---- Skills ----
