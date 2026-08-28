@@ -15,7 +15,13 @@
  */
 package io.agentscope.core.state;
 
+import io.agentscope.core.message.ImagePayloadState;
+import io.agentscope.core.message.ImagePayloadTransformer;
+import io.agentscope.core.message.Msg;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -45,20 +51,26 @@ import java.util.Set;
  * AgentStateStore store = new JsonFileAgentStateStore(Path.of("state"));
  *
  * // Save state for an anonymous session
- * store.save(null, "session-1", "agent_state", state);
+ * store.saveAgentState(null, "session-1", state);
  *
  * // Save state scoped to a user
- * store.save("alice", "session-1", "agent_state", state);
+ * store.saveAgentState("alice", "session-1", state);
  *
  * // Load state
- * Optional<AgentState> loaded =
- *         store.get("alice", "session-1", "agent_state", AgentState.class);
+ * Optional<AgentState> loaded = store.getAgentState(
+ *         "alice", "session-1", AgentStateLoadMode.LEAN);
  *
  * // List all sessions owned by a user (null lists anonymous sessions)
  * Set<String> mySessions = store.listSessionIds("alice");
  * }</pre>
  */
 public interface AgentStateStore {
+
+    /** Canonical key used for the per-session {@link AgentState}. */
+    String AGENT_STATE_KEY = "agent_state";
+
+    /** Prefix for content-addressed image payload entries stored outside {@link #AGENT_STATE_KEY}. */
+    String IMAGE_PAYLOAD_KEY_PREFIX = "agent_state_image_payload_";
 
     /**
      * Sentinel version for backends that do not support optimistic concurrency. Also returned by
@@ -132,6 +144,164 @@ public interface AgentStateStore {
             String userId, String sessionId, String key, State value, long expectedVersion) {
         save(userId, sessionId, key, value);
         return UNVERSIONED;
+    }
+
+    /**
+     * Save an agent state after replacing inline base64 images with lightweight references.
+     *
+     * <p>Content-addressed image entries are persisted before the lightweight agent state. A
+     * failure therefore cannot publish a state that references a payload this call failed to
+     * persist; a later failure may leave harmless unreferenced payloads.
+     *
+     * <p>The default implementation is an ordered write, not a transaction spanning multiple
+     * keys. Backends that permit {@link #delete(String, String)} to race with writes and require
+     * strict atomicity should override this method with a backend-native transaction.
+     */
+    default void saveAgentState(String userId, String sessionId, AgentState value) {
+        saveAgentStateIfVersion(userId, sessionId, value, UNVERSIONED);
+    }
+
+    /**
+     * Compare-and-swap variant of {@link #saveAgentState(String, String, AgentState)}.
+     *
+     * <p>The returned version and conflict behavior apply to {@link #AGENT_STATE_KEY}. Image
+     * payloads are immutable content-addressed entries and may be safely shared by retries.
+     * Backends overriding the non-versioned variant for transactional behavior should override
+     * this method as well.
+     */
+    default long saveAgentStateIfVersion(
+            String userId, String sessionId, AgentState value, long expectedVersion) {
+        Objects.requireNonNull(value, "value must not be null");
+        ImagePayloadTransformer.OffloadResult offloaded =
+                ImagePayloadTransformer.offload(value.getContext());
+
+        for (Map.Entry<String, ImagePayloadState> entry : offloaded.payloads().entrySet()) {
+            saveImagePayload(userId, sessionId, entry.getKey(), entry.getValue());
+        }
+
+        AgentState lightweight = value.copyWithContext(offloaded.messages());
+        return saveIfVersion(userId, sessionId, AGENT_STATE_KEY, lightweight, expectedVersion);
+    }
+
+    /** Load an agent state, resolving image payloads only when {@code mode == FULL}. */
+    default Optional<AgentState> getAgentState(
+            String userId, String sessionId, AgentStateLoadMode mode) {
+        return Optional.ofNullable(getAgentStateVersioned(userId, sessionId, mode).value());
+    }
+
+    /** Load a full, image-hydrated agent state. */
+    default Optional<AgentState> getAgentState(String userId, String sessionId) {
+        return getAgentState(userId, sessionId, AgentStateLoadMode.FULL);
+    }
+
+    /**
+     * Load an agent state and its optimistic-concurrency version.
+     *
+     * <p>{@link AgentStateLoadMode#LEAN} performs only the {@link #AGENT_STATE_KEY} read. {@link
+     * AgentStateLoadMode#FULL} additionally loads every referenced image payload and fails if one is
+     * missing or fails the Phase 1 integrity checks.
+     */
+    default VersionedState<AgentState> getAgentStateVersioned(
+            String userId, String sessionId, AgentStateLoadMode mode) {
+        Objects.requireNonNull(mode, "mode must not be null");
+        VersionedState<AgentState> stored =
+                getVersioned(userId, sessionId, AGENT_STATE_KEY, AgentState.class);
+        if (!stored.isPresent() || mode == AgentStateLoadMode.LEAN) {
+            return stored;
+        }
+
+        AgentState hydrated =
+                stored.value()
+                        .copyWithContext(
+                                hydrateImagePayloads(
+                                        userId, sessionId, stored.value().getContext()));
+        return new VersionedState<>(hydrated, stored.version());
+    }
+
+    /**
+     * Restore image payload references in a detached message list.
+     *
+     * <p>This is the model-boundary counterpart to {@link #saveAgentState}. It reads only payloads
+     * referenced by {@code messages}, leaves inline base64 and URL images unchanged, and never
+     * mutates the supplied list or the cached {@link AgentState}. Callers that only inspect history
+     * should keep the lightweight messages and avoid this method.
+     */
+    default List<Msg> hydrateImagePayloads(String userId, String sessionId, List<Msg> messages) {
+        Objects.requireNonNull(messages, "messages must not be null");
+        Set<String> payloadIds = ImagePayloadTransformer.referencedPayloadIds(messages);
+        if (payloadIds.isEmpty()) {
+            return List.copyOf(messages);
+        }
+        return ImagePayloadTransformer.hydrate(
+                messages, getImagePayloads(userId, sessionId, payloadIds));
+    }
+
+    /**
+     * Load image payloads by content identifier.
+     *
+     * <p>The default implementation performs one generic state read per distinct identifier.
+     * Remote backends may override this method with a native batch operation. The returned map
+     * must contain every requested identifier; a missing payload is treated as corrupted state.
+     */
+    default Map<String, ImagePayloadState> getImagePayloads(
+            String userId, String sessionId, Set<String> payloadIds) {
+        Objects.requireNonNull(payloadIds, "payloadIds must not be null");
+        if (payloadIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, ImagePayloadState> payloads = new LinkedHashMap<>();
+        for (String payloadId : payloadIds) {
+            Objects.requireNonNull(payloadId, "payloadIds must not contain null elements");
+            ImagePayloadState payload =
+                    get(userId, sessionId, imagePayloadKey(payloadId), ImagePayloadState.class)
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "Missing image payload: " + payloadId));
+            payloads.put(payloadId, payload);
+        }
+        return Map.copyOf(payloads);
+    }
+
+    /** Load a full, image-hydrated agent state together with its store version. */
+    default VersionedState<AgentState> getAgentStateVersioned(String userId, String sessionId) {
+        return getAgentStateVersioned(userId, sessionId, AgentStateLoadMode.FULL);
+    }
+
+    private void saveImagePayload(
+            String userId, String sessionId, String payloadId, ImagePayloadState payload) {
+        String key = imagePayloadKey(payloadId);
+        if (!supportsVersioning()) {
+            Optional<ImagePayloadState> existing =
+                    get(userId, sessionId, key, ImagePayloadState.class);
+            if (existing.isPresent()) {
+                if (!existing.get().equals(payload)) {
+                    throw new IllegalStateException("Image payload collision: " + payloadId);
+                }
+                return;
+            }
+            save(userId, sessionId, key, payload);
+            return;
+        }
+        long version = saveIfVersion(userId, sessionId, key, payload, 0L);
+        if (version != UNVERSIONED) {
+            return;
+        }
+        ImagePayloadState concurrent =
+                get(userId, sessionId, key, ImagePayloadState.class)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Image payload write conflicted but no value"
+                                                        + " exists: "
+                                                        + payloadId));
+        if (!concurrent.equals(payload)) {
+            throw new IllegalStateException("Image payload collision: " + payloadId);
+        }
+    }
+
+    private static String imagePayloadKey(String payloadId) {
+        return IMAGE_PAYLOAD_KEY_PREFIX + payloadId;
     }
 
     /**

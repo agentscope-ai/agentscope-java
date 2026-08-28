@@ -433,17 +433,11 @@ public final class SessionOperations {
     }
 
     private Mono<Void> persist(ReActAgent react, AgentState state) {
-        AgentStateStore stateStore = react.getStateStore();
-        if (stateStore == null) {
+        if (react.getStateStore() == null) {
             return Mono.empty();
         }
         return Mono.fromRunnable(
-                        () ->
-                                stateStore.save(
-                                        state.getUserId(),
-                                        react.getDefaultSessionId(),
-                                        "agent_state",
-                                        state))
+                        () -> react.saveAgentState(state.getUserId(), state.getSessionId()))
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();
     }

@@ -250,6 +250,21 @@ public class Msg implements State {
     }
 
     /**
+     * Creates a copy of this message with replacement content.
+     *
+     * <p>Framework transformations use this hook when they need to rewrite content blocks while
+     * preserving a public {@code Msg} subtype. Custom message subclasses may override it to retain
+     * subtype-specific fields; the default implementation preserves all standard {@link Msg}
+     * fields and returns a base message.
+     *
+     * @param newContent replacement content blocks
+     * @return a detached message carrying {@code newContent}
+     */
+    protected Msg copyWithContent(List<ContentBlock> newContent) {
+        return new Msg(id, name, role, newContent, metadata, timestamp, usage);
+    }
+
+    /**
      * Generates a random UUID string for use as a message ID.
      * Exposed to subclasses so their convenience constructors can mirror the
      * behaviour of {@link Builder} without re-implementing UUID logic.

@@ -251,10 +251,11 @@ class ReActAgentPerSessionStateTest {
 
         agent.clearContext("u1", "sessA");
 
-        assertEquals("sessA", target.getSessionId());
-        assertTrue(target.getContext().isEmpty());
-        assertEquals("", target.getSummary());
-        assertTrue(target.getPlanModeContext().isPlanActive(), "non-context state is preserved");
+        AgentState cleared = agent.getAgentState("u1", "sessA");
+        assertEquals("sessA", cleared.getSessionId());
+        assertTrue(cleared.getContext().isEmpty());
+        assertEquals("", cleared.getSummary());
+        assertTrue(cleared.getPlanModeContext().isPlanActive(), "non-context state is preserved");
         assertEquals(List.of("keep this"), allText(other));
         assertEquals("other summary", other.getSummary());
 
