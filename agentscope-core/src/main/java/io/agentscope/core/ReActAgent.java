@@ -32,6 +32,7 @@ import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
@@ -55,6 +56,11 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
+import io.agentscope.core.formatter.StructuredOutputGenerator;
+import io.agentscope.core.formatter.StructuredOutputParseException;
+import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
+import io.agentscope.core.formatter.StructuredOutputValidationException;
+import io.agentscope.core.formatter.StructuredOutputValidator;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.LegacyHookDispatcher;
 import io.agentscope.core.hook.PostActingEvent;
@@ -2287,7 +2293,161 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private Mono<Msg> executeIteration(int iter) {
-            return reasoning(iter, false);
+            return reasoningWithOutputValidation(iter, false);
+        }
+
+        /**
+         * Reasoning wrapped with response-side structured output validation
+         * (native path only: json_schema response format, no fallback tool).
+         *
+         * <p>When the final reasoning message does not conform to the schema,
+         * the failed attempt is discarded (its reasoning context never reaches
+         * the conversation state), an error-feedback correction message is
+         * appended to the conversation, and reasoning restarts with a fresh
+         * context — so no failed-turn thinking or tool state leaks into the
+         * final result. Token usage from failed attempts is carried forward
+         * and aggregated into the final message so retried tokens are still
+         * accounted for. Exhausting {@code maxAttempts} fails the call with
+         * {@link StructuredOutputValidationException}.
+         *
+         * <p>Note: streaming hooks have already observed the failed turn's
+         * events by the time validation runs (process-level visibility);
+         * only the final conforming message is persisted.
+         */
+        private Mono<Msg> reasoningWithOutputValidation(int iter, boolean ignoreMaxIters) {
+            return reasoningWithOutputValidation(iter, ignoreMaxIters, 1, null);
+        }
+
+        private Mono<Msg> reasoningWithOutputValidation(
+                int iter, boolean ignoreMaxIters, int attempt, ChatUsage carriedUsage) {
+            Mono<Msg> base = reasoning(iter, ignoreMaxIters);
+            if (nativeResponseFormat == null
+                    || soTool != null
+                    || nativeResponseFormat.getJsonSchema() == null) {
+                // Fallback path is guarded by ToolValidator on the
+                // generate_response tool arguments; non-structured calls pass through.
+                return base;
+            }
+            JsonSchema schema = nativeResponseFormat.getJsonSchema();
+            StructuredOutputRetryPolicy policy = effectiveStructuredOutputRetryPolicy();
+            return base.flatMap(
+                    msg -> {
+                        String text = extractTextContent(msg);
+                        JsonNode payload;
+                        List<StructuredOutputValidator.ValidationError> errors;
+                        try {
+                            payload =
+                                    new com.fasterxml.jackson.databind.ObjectMapper()
+                                            .readTree(text);
+                            errors = StructuredOutputValidator.validate(payload, schema);
+                        } catch (StructuredOutputParseException parseFailure) {
+                            errors =
+                                    List.of(
+                                            new StructuredOutputValidator.ValidationError(
+                                                    "$",
+                                                    "output is not a valid JSON object: "
+                                                            + parseFailure.getMessage()));
+                            payload = null;
+                        } catch (Exception jsonFailure) {
+                            errors =
+                                    List.of(
+                                            new StructuredOutputValidator.ValidationError(
+                                                    "$",
+                                                    "output is not a valid JSON object: "
+                                                            + jsonFailure.getMessage()));
+                            payload = null;
+                        }
+                        if (errors.isEmpty()) {
+                            if (carriedUsage == null) {
+                                return Mono.just(msg);
+                            }
+                            return Mono.just(
+                                    mergeCollectedMetadata(
+                                            msg, sumUsage(carriedUsage, msg.getChatUsage()), null));
+                        }
+                        publishEvent(
+                                new CustomEvent(
+                                        "structured_output.failed_attempt",
+                                        Map.of(
+                                                "attempt",
+                                                attempt,
+                                                "agent",
+                                                getName(),
+                                                "errors",
+                                                errors.stream()
+                                                        .map(
+                                                                e ->
+                                                                        e.instanceLocation()
+                                                                                + ": "
+                                                                                + e.message())
+                                                        .limit(5)
+                                                        .toList())));
+                        if (attempt >= policy.maxAttempts()) {
+                            return Mono.error(
+                                    new StructuredOutputValidationException(
+                                            schema.getName(), errors));
+                        }
+                        // Error feedback: append a synthetic correction turn, then
+                        // restart reasoning with a fresh context (failed attempt discarded).
+                        Msg correction =
+                                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER)
+                                        .name("structured_output_correction")
+                                        .content(
+                                                io.agentscope.core.message.TextBlock.builder()
+                                                        .text(
+                                                                StructuredOutputGenerator
+                                                                        .retryPrompt(errors))
+                                                        .build())
+                                        .build();
+                        state.contextMutable().add(correction);
+                        return reasoningWithOutputValidation(
+                                iter,
+                                true,
+                                attempt + 1,
+                                sumUsage(carriedUsage, msg.getChatUsage()));
+                    });
+        }
+
+        /** Null-safe aggregation of two {@link ChatUsage} values. */
+        private static ChatUsage sumUsage(ChatUsage a, ChatUsage b) {
+            if (a == null) {
+                return b;
+            }
+            if (b == null) {
+                return a;
+            }
+            return ChatUsage.builder()
+                    .inputTokens(a.getInputTokens() + b.getInputTokens())
+                    .outputTokens(a.getOutputTokens() + b.getOutputTokens())
+                    .cachedTokens(a.getCachedTokens() + b.getCachedTokens())
+                    .time(a.getTime() + b.getTime())
+                    .build();
+        }
+
+        private StructuredOutputRetryPolicy effectiveStructuredOutputRetryPolicy() {
+            io.agentscope.core.formatter.StructuredOutputRetryPolicy configured = null;
+            try {
+                configured = buildGenerateOptions().structuredOutputPolicy();
+            } catch (RuntimeException ignored) {
+                configured = null;
+            }
+            return configured != null
+                    ? configured
+                    : io.agentscope.core.formatter.StructuredOutputRetryPolicy.defaults();
+        }
+
+        private static String extractTextContent(Msg msg) {
+            if (msg == null) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            for (io.agentscope.core.message.ContentBlock block : msg.getContent()) {
+                if (block instanceof io.agentscope.core.message.TextBlock tb
+                        && tb.getText() != null) {
+                    sb.append(tb.getText());
+                }
+            }
+            return sb.toString();
         }
 
         /**
@@ -2458,7 +2618,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     if (gotoMsgs != null) {
                                         state.contextMutable().addAll(gotoMsgs);
                                     }
-                                    return reasoning(iter + 1, true);
+                                    return reasoningWithOutputValidation(iter + 1, true);
                                 }
 
                                 // Check finish conditions
