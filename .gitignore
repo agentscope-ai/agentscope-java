@@ -27,6 +27,8 @@ target/
 build/
 !**/src/main/**/build/
 !**/src/test/**/build/
+# frontend source lives under src/features/build/ — do not let the generic rule above eat it
+!agentscope-service/frontend/src/features/build/
 ### VS Code ###
 .vscode/
 .claude/
