@@ -273,7 +273,7 @@ public class DashScopeMessageConverter {
      * @param msg the source message with metadata
      * @param result the converted DashScope message
      */
-    private void applyCacheControlFromMetadata(Msg msg, DashScopeMessage result) {
+    void applyCacheControlFromMetadata(Msg msg, DashScopeMessage result) {
         if (msg.getMetadata() == null) {
             return;
         }

@@ -534,7 +534,7 @@ public class OpenAIMessageConverter {
      * @param msg the source message with metadata
      * @param result the converted OpenAI message
      */
-    private void applyCacheControlFromMetadata(Msg msg, OpenAIMessage result) {
+    void applyCacheControlFromMetadata(Msg msg, OpenAIMessage result) {
         if (msg.getMetadata() == null) {
             return;
         }

@@ -311,6 +311,46 @@ class OpenAICacheControlTest {
         }
     }
 
+    @Nested
+    @DisplayName("OpenAIMultiAgentFormatter cache_control")
+    class MultiAgentFormatterTest {
+
+        @Test
+        @DisplayName("should preserve true metadata on a merged multi-agent message")
+        void mergedMessageMetadataTrueMarksContentBlock() {
+            OpenAIMultiAgentFormatter multiFormatter = new OpenAIMultiAgentFormatter();
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Remember this")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                            .build();
+
+            List<OpenAIMessage> messages = multiFormatter.format(List.of(msg));
+
+            assertCacheControlOnLastContentPart(messages.get(0), EPHEMERAL);
+        }
+
+        @Test
+        @DisplayName("should preserve false metadata on a merged multi-agent message")
+        void mergedMessageMetadataFalseBlocksRepeatedAutomaticMarker() {
+            OpenAIMultiAgentFormatter multiFormatter = new OpenAIMultiAgentFormatter();
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Do not mark this message")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+
+            List<OpenAIMessage> messages = multiFormatter.format(List.of(msg));
+            multiFormatter.applyCacheControl(messages);
+            multiFormatter.applyCacheControl(messages);
+
+            assertEquals(NO_CACHE, messages.get(0).getCacheControl());
+            assertNoSerializedCacheControl(messages.get(0));
+        }
+    }
+
     private static Map<String, Object> serialize(OpenAIMessage message) {
         return JsonUtils.getJsonCodec()
                 .fromJson(

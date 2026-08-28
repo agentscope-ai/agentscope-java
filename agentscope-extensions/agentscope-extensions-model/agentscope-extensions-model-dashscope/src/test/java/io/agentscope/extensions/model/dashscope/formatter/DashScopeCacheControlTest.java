@@ -334,6 +334,61 @@ class DashScopeCacheControlTest {
             assertCacheControlOnLastContentPart(messages.get(0), EPHEMERAL);
             assertCacheControlOnLastContentPart(messages.get(1), EPHEMERAL);
         }
+
+        @Test
+        @DisplayName("should preserve false metadata on a multi-agent system message")
+        void systemMetadataFalseBlocksAutomaticMarker() {
+            DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
+            Msg systemMsg =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .textContent("Do not mark this prompt")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+            Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("Hello").build();
+
+            List<DashScopeMessage> messages = multiFormatter.format(List.of(systemMsg, userMsg));
+            multiFormatter.applyCacheControl(messages);
+
+            assertEquals(NO_CACHE, messages.get(0).getCacheControl());
+            assertNoSerializedCacheControl(messages.get(0));
+            assertCacheControlOnLastContentPart(messages.get(1), EPHEMERAL);
+        }
+
+        @Test
+        @DisplayName("should preserve true metadata on a merged multi-agent message")
+        void mergedMessageMetadataTrueMarksContentBlock() {
+            DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Remember this")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                            .build();
+
+            List<DashScopeMessage> messages = multiFormatter.format(List.of(msg));
+
+            assertCacheControlOnLastContentPart(messages.get(0), EPHEMERAL);
+        }
+
+        @Test
+        @DisplayName("should preserve false metadata on a merged multi-agent message")
+        void mergedMessageMetadataFalseBlocksRepeatedAutomaticMarker() {
+            DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Do not mark this message")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+
+            List<DashScopeMessage> messages = multiFormatter.format(List.of(msg));
+            multiFormatter.applyCacheControl(messages);
+            multiFormatter.applyCacheControl(messages);
+
+            assertEquals(NO_CACHE, messages.get(0).getCacheControl());
+            assertNoSerializedCacheControl(messages.get(0));
+        }
     }
 
     private static Map<String, Object> serialize(DashScopeMessage message) {
