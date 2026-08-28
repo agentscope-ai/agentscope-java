@@ -7,6 +7,7 @@
 - [GLM](glm.md)
 - [Kimi](kimi.md)
 - [MiniMax](minimax.md)
+- [OrcaRouter](orcarouter.md)
 - [DashScope](dashscope.md)
 - [Gemini](gemini.md)
 - [Anthropic](anthropic.md)
