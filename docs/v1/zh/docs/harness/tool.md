@@ -29,8 +29,8 @@ graph LR
 | `read_file` | 读文件内容 | `path`, `offset`（0-indexed）, `limit`（0 = 读全） |
 | `write_file` | 创建新文件 | `path`, `content`（已存在会报错） |
 | `edit_file` | 精确字符串替换 | `path`, `old_string`（默认唯一）, `new_string`, `replace_all`（默认 false） |
-| `grep_files` | 指定路径中搜字符串（非正则）| `pattern`, `path`, `glob`（如 `*.java`） |
-| `glob_files` | 按 glob 查文件 | `pattern`（如 `**/*.md`）, `path` |
+| `grep_files` | 指定路径中搜字符串（非正则）| `pattern`, `path`, `glob`（如 `*.java`）, `limit`（默认 100，最大 1000） |
+| `glob_files` | 按 glob 查文件 | `pattern`（如 `**/*.md`）, `path`, `limit`（默认 200，最大 1000） |
 | `list_files` | 列目录 | `path` |
 
 ## 记忆·`MemorySearchTool` / `MemoryGetTool`
