@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.openai.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Map;
 
 /**
  * OpenAI content part DTO for multimodal messages.
@@ -65,6 +66,11 @@ public class OpenAIContentPart {
     @JsonProperty("video_url")
     private OpenAIVideoUrl videoUrl;
 
+    /** Cache control configuration for this content part. */
+    @JsonProperty("cache_control")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, String> cacheControl;
+
     public OpenAIContentPart() {}
 
     public String getType() {
@@ -105,6 +111,24 @@ public class OpenAIContentPart {
 
     public void setVideoUrl(OpenAIVideoUrl videoUrl) {
         this.videoUrl = videoUrl;
+    }
+
+    /**
+     * Get the cache control configuration.
+     *
+     * @return the cache control configuration, or null when not configured
+     */
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    /**
+     * Set the cache control configuration.
+     *
+     * @param cacheControl the cache control configuration
+     */
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
     }
 
     /**
@@ -203,6 +227,17 @@ public class OpenAIContentPart {
 
         public Builder videoUrl(OpenAIVideoUrl videoUrl) {
             part.setVideoUrl(videoUrl);
+            return this;
+        }
+
+        /**
+         * Set the cache control configuration.
+         *
+         * @param cacheControl the cache control configuration
+         * @return this builder
+         */
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            part.setCacheControl(cacheControl);
             return this;
         }
 

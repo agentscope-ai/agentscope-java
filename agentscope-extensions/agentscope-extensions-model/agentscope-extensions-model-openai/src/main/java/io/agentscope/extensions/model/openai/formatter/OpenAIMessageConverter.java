@@ -541,7 +541,8 @@ public class OpenAIMessageConverter {
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
             if (result.getCacheControl() == null || result.getCacheControl().isEmpty()) {
-                result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+                OpenAIBaseFormatter.setCacheControlOnContent(
+                        result, OpenAIBaseFormatter.getEphemeralCacheControl());
             }
         } else if (Boolean.FALSE.equals(cacheFlag)) {
             result.setCacheControl(OpenAIBaseFormatter.getNoCacheControl());

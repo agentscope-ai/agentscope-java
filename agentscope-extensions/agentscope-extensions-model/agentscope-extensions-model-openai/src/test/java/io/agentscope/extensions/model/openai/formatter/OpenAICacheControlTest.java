@@ -17,12 +17,17 @@ package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openai.dto.OpenAIContentPart;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -64,10 +69,12 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertNull(messages.get(1).getCacheControl());
-            assertNull(messages.get(2).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(3).getCacheControl());
+            assertCacheControlOnLastContentPart(messages.get(0), EPHEMERAL);
+            assertNoSerializedCacheControl(messages.get(1));
+            assertNoSerializedCacheControl(messages.get(2));
+            assertCacheControlOnLastContentPart(messages.get(3), EPHEMERAL);
+            assertEquals("You are helpful.", messages.get(0).getContentAsList().get(0).getText());
+            assertEquals("Question", messages.get(3).getContentAsList().get(0).getText());
         }
 
         @Test
@@ -79,8 +86,8 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertNull(messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
+            assertNoSerializedCacheControl(messages.get(0));
+            assertCacheControlOnLastContentPart(messages.get(1), EPHEMERAL);
         }
 
         @Test
@@ -107,12 +114,12 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
+            assertCacheControlOnLastContentPart(messages.get(0), EPHEMERAL);
         }
 
         @Test
-        @DisplayName("should not overwrite manually marked cache_control")
-        void manuallyMarkedNotOverridden() {
+        @DisplayName("should migrate a legacy system cache_control to its last content block")
+        void legacySystemMarkerMigrated() {
             Map<String, String> customCacheControl = Map.of("type", "custom");
 
             List<OpenAIMessage> messages = new ArrayList<>();
@@ -126,15 +133,13 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            // System message keeps its custom cache_control
-            assertEquals(customCacheControl, messages.get(0).getCacheControl());
-            // Last message gets ephemeral
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
+            assertCacheControlOnLastContentPart(messages.get(0), customCacheControl);
+            assertCacheControlOnLastContentPart(messages.get(1), EPHEMERAL);
         }
 
         @Test
-        @DisplayName("should not overwrite last message with existing cache_control")
-        void lastMessageManuallyMarkedNotOverridden() {
+        @DisplayName("should migrate a legacy last-message cache_control without overwriting it")
+        void legacyLastMessageMarkerMigrated() {
             Map<String, String> customCacheControl = Map.of("type", "custom");
 
             List<OpenAIMessage> messages = new ArrayList<>();
@@ -148,10 +153,8 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            // System message gets ephemeral
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            // Last message keeps its custom cache_control
-            assertEquals(customCacheControl, messages.get(1).getCacheControl());
+            assertCacheControlOnLastContentPart(messages.get(0), EPHEMERAL);
+            assertCacheControlOnLastContentPart(messages.get(1), customCacheControl);
         }
 
         @Test
@@ -164,9 +167,30 @@ class OpenAICacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(2).getCacheControl());
+            assertCacheControlOnLastContentPart(messages.get(0), EPHEMERAL);
+            assertCacheControlOnLastContentPart(messages.get(1), EPHEMERAL);
+            assertCacheControlOnLastContentPart(messages.get(2), EPHEMERAL);
+        }
+
+        @Test
+        @DisplayName("should mark only the last existing multimodal content part")
+        void existingMultimodalContent() {
+            OpenAIContentPart text = OpenAIContentPart.text("Look at this image");
+            OpenAIContentPart image =
+                    OpenAIContentPart.imageUrl("https://example.com/image.png", "high");
+            List<OpenAIContentPart> content = new ArrayList<>(List.of(text, image));
+            OpenAIMessage message = OpenAIMessage.builder().role("user").content(content).build();
+
+            formatter.applyCacheControl(List.of(message));
+
+            assertSame(content, message.getContent());
+            assertEquals("Look at this image", content.get(0).getText());
+            assertEquals("https://example.com/image.png", content.get(1).getImageUrl().getUrl());
+            assertEquals("high", content.get(1).getImageUrl().getDetail());
+            assertCacheControlOnLastContentPart(message, EPHEMERAL);
+            Map<String, Object> payload = serialize(message);
+            List<?> parts = (List<?>) payload.get("content");
+            assertFalse(((Map<?, ?>) parts.get(0)).containsKey("cache_control"));
         }
     }
 
@@ -189,7 +213,8 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(msg));
 
             assertEquals(1, result.size());
-            assertEquals(EPHEMERAL, result.get(0).getCacheControl());
+            assertCacheControlOnLastContentPart(result.get(0), EPHEMERAL);
+            assertEquals("Important context", result.get(0).getContentAsList().get(0).getText());
         }
 
         @Test
@@ -201,6 +226,7 @@ class OpenAICacheControlTest {
 
             assertEquals(1, result.size());
             assertNull(result.get(0).getCacheControl());
+            assertNoSerializedCacheControl(result.get(0));
         }
 
         @Test
@@ -219,6 +245,7 @@ class OpenAICacheControlTest {
 
             assertEquals(1, result.size());
             assertEquals(NO_CACHE, result.get(0).getCacheControl());
+            assertNoSerializedCacheControl(result.get(0));
         }
 
         @Test
@@ -236,9 +263,11 @@ class OpenAICacheControlTest {
 
             List<OpenAIMessage> result = formatter.format(List.of(systemMsg, userMsg));
             formatter.applyCacheControl(result);
+            formatter.applyCacheControl(result);
 
             assertEquals(NO_CACHE, result.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, result.get(1).getCacheControl());
+            assertNoSerializedCacheControl(result.get(0));
+            assertCacheControlOnLastContentPart(result.get(1), EPHEMERAL);
         }
 
         @Test
@@ -277,8 +306,42 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(systemMsg, userMsg));
 
             assertEquals(2, result.size());
-            assertEquals(EPHEMERAL, result.get(0).getCacheControl());
-            assertNull(result.get(1).getCacheControl());
+            assertCacheControlOnLastContentPart(result.get(0), EPHEMERAL);
+            assertNoSerializedCacheControl(result.get(1));
+        }
+    }
+
+    private static Map<String, Object> serialize(OpenAIMessage message) {
+        return JsonUtils.getJsonCodec()
+                .fromJson(
+                        JsonUtils.getJsonCodec().toJson(message),
+                        new TypeReference<Map<String, Object>>() {});
+    }
+
+    private static void assertCacheControlOnLastContentPart(
+            OpenAIMessage message, Map<String, String> expected) {
+        assertNull(message.getCacheControl());
+        Map<String, Object> payload = serialize(message);
+        assertFalse(payload.containsKey("cache_control"));
+        assertTrue(payload.get("content") instanceof List<?>);
+        List<?> content = (List<?>) payload.get("content");
+        assertFalse(content.isEmpty());
+        assertTrue(content.get(content.size() - 1) instanceof Map<?, ?>);
+        Map<?, ?> lastPart = (Map<?, ?>) content.get(content.size() - 1);
+        assertEquals(expected, lastPart.get("cache_control"));
+    }
+
+    private static void assertNoSerializedCacheControl(OpenAIMessage message) {
+        Map<String, Object> payload = serialize(message);
+        assertFalse(payload.containsKey("cache_control"));
+        Object content = payload.get("content");
+        if (content instanceof List<?> parts) {
+            for (Object part : parts) {
+                assertNotNull(part);
+                if (part instanceof Map<?, ?> partMap) {
+                    assertFalse(partMap.containsKey("cache_control"));
+                }
+            }
         }
     }
 }

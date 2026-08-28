@@ -33,7 +33,6 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * DashScope formatter for multi-agent conversations.
@@ -366,25 +365,13 @@ public class DashScopeMultiAgentFormatter
     /**
      * Apply cache control to DashScope messages.
      *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that are explicitly excluded from caching or that already carry
-     * a cache_control value are left untouched.
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to the last content part of all
+     * system messages and the last message in the list. Legacy message-level values are migrated to
+     * the last content part. Messages explicitly excluded from caching are left untouched.
      *
      * @param messages the list of formatted DashScope messages
      */
     public void applyCacheControl(List<DashScopeMessage> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return;
-        }
-        Map<String, String> ephemeral = DashScopeChatFormatter.getEphemeralCacheControl();
-        for (DashScopeMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && DashScopeChatFormatter.shouldAutoCache(msg)) {
-                msg.setCacheControl(ephemeral);
-            }
-        }
-        DashScopeMessage lastMsg = messages.get(messages.size() - 1);
-        if (DashScopeChatFormatter.shouldAutoCache(lastMsg)) {
-            lastMsg.setCacheControl(ephemeral);
-        }
+        DashScopeChatFormatter.applyCacheControlToMessages(messages);
     }
 }
