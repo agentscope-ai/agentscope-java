@@ -174,21 +174,21 @@ type ToolInfo struct {
 // ContextSnapshot is the Level-4 effective context returned by
 // GET /agentscope/sessions/{id}/context (mirrors the ASDP ContextReport).
 type ContextSnapshot struct {
-	SessionID            string          `json:"sessionId"`
-	CapturedAt           string          `json:"capturedAt,omitempty"`
-	ContextHash          string          `json:"contextHash"`
-	SystemPrompt         string          `json:"systemPrompt,omitempty"`
+	SessionID            string           `json:"sessionId"`
+	CapturedAt           string           `json:"capturedAt,omitempty"`
+	ContextHash          string           `json:"contextHash"`
+	SystemPrompt         string           `json:"systemPrompt,omitempty"`
 	Messages             []ContextMessage `json:"messages"`
-	Tools                []ToolInfo      `json:"tools,omitempty"`
-	IsCompacted          bool            `json:"isCompacted,omitempty"`
-	CompactionSummary    string          `json:"compactionSummary,omitempty"`
-	OriginalMessageCount int32           `json:"originalMessageCount,omitempty"`
-	CompactedAt          string          `json:"compactedAt,omitempty"`
-	TotalTokens          int32           `json:"totalTokens,omitempty"`
-	MaxTokens            int32           `json:"maxTokens,omitempty"`
-	Framework            string          `json:"framework,omitempty"`
-	Model                string          `json:"model,omitempty"`
-	FrameworkState       json.RawMessage `json:"frameworkState,omitempty"`
+	Tools                []ToolInfo       `json:"tools,omitempty"`
+	IsCompacted          bool             `json:"isCompacted,omitempty"`
+	CompactionSummary    string           `json:"compactionSummary,omitempty"`
+	OriginalMessageCount int32            `json:"originalMessageCount,omitempty"`
+	CompactedAt          string           `json:"compactedAt,omitempty"`
+	TotalTokens          int32            `json:"totalTokens,omitempty"`
+	MaxTokens            int32            `json:"maxTokens,omitempty"`
+	Framework            string           `json:"framework,omitempty"`
+	Model                string           `json:"model,omitempty"`
+	FrameworkState       json.RawMessage  `json:"frameworkState,omitempty"`
 }
 
 // MessageItem is one full-content history entry (Level 3).

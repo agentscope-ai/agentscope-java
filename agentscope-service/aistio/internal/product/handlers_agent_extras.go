@@ -100,14 +100,14 @@ func skillInfoFromDir(dir, dirName string) gin.H {
 		return nil
 	})
 	out := gin.H{
-		"dirName":        dirName,
-		"name":           name,
-		"description":    nullStr(desc),
-		"sizeBytes":      size,
-		"resourceCount":  resourceCount,
-		"hasReferences":  hasRefs,
-		"hasScripts":     hasScripts,
-		"origin":         "custom",
+		"dirName":       dirName,
+		"name":          name,
+		"description":   nullStr(desc),
+		"sizeBytes":     size,
+		"resourceCount": resourceCount,
+		"hasReferences": hasRefs,
+		"hasScripts":    hasScripts,
+		"origin":        "custom",
 	}
 	return out
 }

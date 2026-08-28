@@ -44,6 +44,7 @@ import (
 func (s *Server) resolveSession(c *gin.Context) (sess *store.Session, ok bool) {
 	sessionIDParam := c.Param("sessionId")
 	ctx := c.Request.Context()
+	tenant := c.DefaultQuery("tenant", "default")
 
 	var err error
 	if id, parseErr := uuid.Parse(sessionIDParam); parseErr == nil {
@@ -55,7 +56,10 @@ func (s *Server) resolveSession(c *gin.Context) (sess *store.Session, ok bool) {
 			return nil, false
 		}
 		namespace := c.DefaultQuery("namespace", defaultNamespace)
-		sess, err = s.store.Sessions().Get(ctx, agentName, namespace, sessionIDParam)
+		sess, err = s.store.Sessions().Get(ctx, tenant, agentName, namespace, sessionIDParam)
+	}
+	if err == nil && sess.Tenant != tenant {
+		err = store.ErrNotFound
 	}
 
 	if err != nil {
@@ -136,7 +140,7 @@ func (s *Server) getSessionMessages(c *gin.Context) {
 	fromEnd := parseTruthyQuery(c.Query("fromEnd"))
 
 	if s.transcriptMessages != nil {
-		page, hit, err := s.transcriptMessages(c.Request.Context(), sess.AgentName, sess.Namespace, sess.SessionID, offset, limit, fromEnd)
+		page, hit, err := s.transcriptMessages(c.Request.Context(), sess.Tenant, sess.AgentName, sess.Namespace, sess.SessionID, offset, limit, fromEnd)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to read transcript: " + err.Error()})
 			return
@@ -581,6 +585,57 @@ func (s *Server) postSessionPlanMode(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"accepted": true, "active": active, "phase": sess.Phase})
 }
 
+func (s *Server) postSessionUserMessage(c *gin.Context) {
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	dp, ok := s.requireHealthyInstance(c, sess)
+	if !ok {
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Content) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "content is required"})
+		return
+	}
+	if err := s.prober.SendUserMessage(c.Request.Context(), dp.BaseURL, sess.SessionID, body.Content); err != nil {
+		if err == prober.ErrNotFoundOnDataPlane {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: "session not found on data plane", Code: sessionops.CodeNotFound})
+			return
+		}
+		if err == prober.ErrBusyOnDataPlane {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "session busy on data plane", Code: sessionops.CodeBusy, Hint: sessionops.HintWaitIdle})
+			return
+		}
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to inject user message: " + err.Error(), Code: sessionops.CodeFailed})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"accepted": true, "phase": sess.Phase})
+}
+
+// requireHealthyInstance returns the registered instance that holds this session.
+func (s *Server) requireHealthyInstance(c *gin.Context, sess *store.Session) (*dataplane.Entry, bool) {
+	if s.registry == nil || sess.InstanceRef == "" {
+		c.JSON(http.StatusNotImplemented, ErrorResponse{
+			Error: "user-message requires a registered instanceRef",
+			Code:  sessionops.CodeUnsupported,
+		})
+		return nil, false
+	}
+	dp := s.registry.Get(sess.InstanceRef)
+	if dp == nil || !dp.Healthy {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{
+			Error: "instance unreachable",
+			Code:  sessionops.CodeUnreachable,
+		})
+		return nil, false
+	}
+	return dp, true
+}
+
 // requireSessionDP returns a healthy registry entry that advertises capability.
 func (s *Server) requireSessionDP(c *gin.Context, sess *store.Session, capability string) (*dataplane.Entry, bool) {
 	if s.registry == nil || sess.InstanceRef == "" {
@@ -697,7 +752,7 @@ func (s *Server) writeSessionOpsError(c *gin.Context, err error) {
 func (s *Server) dispatchSessionCommand(c *gin.Context, sess *store.Session, command string) bool {
 	// 1) ASDP fast path: the instance holds a live gRPC stream.
 	if s.asdpCommands != nil && sess.InstanceRef != "" {
-		if err := s.asdpCommands.SendSessionCommand(sess.Namespace, sess.InstanceRef, sess.SessionID, command); err == nil {
+		if err := s.asdpCommands.SendSessionCommand(sess.Tenant, sess.Namespace, sess.InstanceRef, sess.SessionID, command); err == nil {
 			return true
 		}
 	}
@@ -760,7 +815,7 @@ func (s *Server) resolveSessionAgent(c *gin.Context, sess *store.Session) (*v1al
 		return &agent, true
 	}
 	if s.registry != nil {
-		for _, dp := range s.registry.ListByAgent(sess.AgentName, sess.Namespace) {
+		for _, dp := range s.registry.ListByAgent(sess.Tenant, sess.AgentName, sess.Namespace) {
 			agent := &v1alpha1.Agent{}
 			agent.Name = sess.AgentName
 			agent.Namespace = sess.Namespace
@@ -784,7 +839,7 @@ func (s *Server) resolveSessionEndpoint(c *gin.Context, sess *store.Session) (st
 				return dp.BaseURL, true
 			}
 		}
-		for _, dp := range s.registry.ListByAgent(sess.AgentName, sess.Namespace) {
+		for _, dp := range s.registry.ListByAgent(sess.Tenant, sess.AgentName, sess.Namespace) {
 			if dp.Healthy && dp.BaseURL != "" {
 				return dp.BaseURL, true
 			}

@@ -28,7 +28,13 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from .adapters.base import COMMAND_ABORT, COMMAND_COMPRESS, COMMAND_TERMINATE, FrameworkAdapter
+from .adapters.base import (
+    AgentTaskAssignment,
+    COMMAND_ABORT,
+    COMMAND_COMPRESS,
+    COMMAND_TERMINATE,
+    FrameworkAdapter,
+)
 from .context import ContextSnapshot, ContextTracker
 from .events import (
     EVENT_COMPACTION,
@@ -66,6 +72,8 @@ class SessionBridge:
         *,
         control_plane: str,
         agent_name: str,
+        tenant: str = "default",
+        internal_token: str = "",
         namespace: str = "default",
         instance_id: str = "",
         enable_events: bool = False,
@@ -76,6 +84,8 @@ class SessionBridge:
         start_grpc: bool = True,
     ) -> None:
         self._control_plane = control_plane
+        self._tenant = tenant
+        self._internal_token = internal_token
         self._agent_name = agent_name
         self._namespace = namespace
         self._instance_id = instance_id
@@ -134,6 +144,8 @@ class SessionBridge:
         if self._start_grpc:
             self._grpc = GrpcTransport(
                 self._control_plane,
+                tenant=self._tenant,
+                internal_token=self._internal_token,
                 agent_name=self._agent_name,
                 namespace=self._namespace,
                 instance_id=self._instance_id,
@@ -142,6 +154,7 @@ class SessionBridge:
                 session_affinity=self._session_affinity,
             )
             self._grpc.set_session_command_handler(self._on_session_command)
+            self._grpc.set_execution_attempt_handler(self._on_execution_attempt)
             self._grpc.start()
 
         if self._start_http:
@@ -265,8 +278,8 @@ class SessionBridge:
         if self._grpc is None:
             return
         now = time.monotonic()
-        last = self._last_context_push.get(session_id, 0.0)
-        if not force and now - last < CONTEXT_PUSH_COOLDOWN:
+        last = self._last_context_push.get(session_id)
+        if not force and last is not None and now - last < CONTEXT_PUSH_COOLDOWN:
             return
         with self._lock:
             tracker = self._trackers.get(session_id)
@@ -376,6 +389,66 @@ class SessionBridge:
 
     def _on_session_command(self, session_id: str, command: str, params: bytes) -> None:
         self._dispatch_command(session_id, command, params or None)
+
+    def _on_execution_attempt(
+        self,
+        attempt_id: str,
+        agent_task_id: str,
+        run_id: str,
+        node_id: str,
+        generation: int,
+        command: str,
+        context_url: str,
+        task_token: str,
+        attempt_token: str,
+        payload: bytes,
+        timestamp: int,
+    ) -> None:
+        if self._adapter is None or not self._adapter.supports("handle_agent_task"):
+            return
+        base = dict(
+            attempt_id=attempt_id,
+            agent_task_id=agent_task_id,
+            run_id=run_id,
+            node_id=node_id,
+            generation=generation,
+            attempt_token=attempt_token,
+        )
+        self._grpc.report_execution_attempt(
+            asdp_pb2.ExecutionAttemptReport(**base, action="ack")
+        )
+        if command == "cancel":
+            self._grpc.report_execution_attempt(
+                asdp_pb2.ExecutionAttemptReport(**base, action="cancelled")
+            )
+            return
+        assignment = AgentTaskAssignment(
+            attempt_id,
+            agent_task_id,
+            run_id,
+            node_id,
+            generation,
+            command,
+            context_url,
+            task_token,
+            attempt_token,
+            payload,
+            timestamp,
+        )
+        self._grpc.report_execution_attempt(
+            asdp_pb2.ExecutionAttemptReport(**base, action="start")
+        )
+        try:
+            self._run_async(self._adapter.handle_agent_task(assignment))
+        except Exception as exc:
+            self._grpc.report_execution_attempt(
+                asdp_pb2.ExecutionAttemptReport(
+                    **base,
+                    action="fail",
+                    error_code="adapter_execution_failed",
+                    error_message=str(exc),
+                )
+            )
 
     def _dispatch_command(
         self, session_id: str, command: str, params: Optional[bytes] = None

@@ -267,7 +267,7 @@ export default function AdminUsersPage() {
   useEffect(() => { if (admin) refresh(); }, [admin]);
 
   if (!admin) {
-    return <Navigate to="/agents" replace />;
+    return <Navigate to="/managed/agents" replace />;
   }
 
   function toggleAdmin(u: AdminUserView) {

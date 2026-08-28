@@ -79,6 +79,16 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("postgres migrate: read %s: %w", name, err)
 		}
+		if strings.Contains(string(body), "-- +migrate NoTransaction") {
+			if _, err := conn.Exec(ctx, string(body)); err != nil {
+				return fmt.Errorf("postgres migrate: apply %s: %w", name, err)
+			}
+			if _, err := conn.Exec(ctx,
+				`INSERT INTO schema_migrations(version) VALUES ($1)`, version); err != nil {
+				return fmt.Errorf("postgres migrate: record %s: %w", name, err)
+			}
+			continue
+		}
 		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return fmt.Errorf("postgres migrate: begin %s: %w", name, err)

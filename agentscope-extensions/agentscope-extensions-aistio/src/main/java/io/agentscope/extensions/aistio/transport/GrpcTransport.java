@@ -20,6 +20,8 @@ import io.agentscope.aistio.proto.ConnectRequest;
 import io.agentscope.aistio.proto.ContextReport;
 import io.agentscope.aistio.proto.Downstream;
 import io.agentscope.aistio.proto.EventReport;
+import io.agentscope.aistio.proto.ExecutionAttemptCommand;
+import io.agentscope.aistio.proto.ExecutionAttemptReport;
 import io.agentscope.aistio.proto.Heartbeat;
 import io.agentscope.aistio.proto.InventoryReport;
 import io.agentscope.aistio.proto.SessionEventMsg;
@@ -29,6 +31,8 @@ import io.agentscope.aistio.proto.Upstream;
 import io.agentscope.aistio.proto.UpstreamMeta;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Metadata;
+import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 import java.util.Collection;
 import java.util.List;
@@ -62,17 +66,21 @@ public final class GrpcTransport implements AutoCloseable {
         void onCommand(String sessionId, String command, byte[] params);
     }
 
-    /** Receives downstream {@code TeamEvent} notifications from the control plane. */
+    /** Receives a fenced execution-attempt command from the control plane. */
     @FunctionalInterface
-    public interface TeamEventHandler {
-        void onTeamEvent(
-                String teamId, String eventType, String memberName, String taskId, byte[] payload);
+    public interface ExecutionAttemptCommandHandler {
+        void onExecutionAttempt(ExecutionAttemptCommand command);
     }
 
     private final String target;
-    private final String agentName;
+    private final String credential;
+    private final String agentId;
+    private final String agentKey;
+    private final String bindingId;
+    private final String tenant;
     private final String namespace;
-    private final String instanceId;
+    private final String instanceKey;
+    private final long generation;
     private final String runtime;
     private final String sdkVersion;
     private final List<String> capabilities;
@@ -93,21 +101,31 @@ public final class GrpcTransport implements AutoCloseable {
 
     private volatile ManagedChannel channel;
     private volatile SessionCommandHandler commandHandler;
-    private volatile TeamEventHandler teamEventHandler;
+    private volatile ExecutionAttemptCommandHandler executionAttemptHandler;
 
     public GrpcTransport(
             String target,
-            String agentName,
+            String credential,
+            String agentId,
+            String agentKey,
+            String bindingId,
+            String tenant,
             String namespace,
-            String instanceId,
+            String instanceKey,
+            long generation,
             String runtime,
             String sdkVersion,
             Collection<String> capabilities,
             String sessionAffinity) {
         this.target = target;
-        this.agentName = agentName;
+        this.credential = credential == null ? "" : credential;
+        this.agentId = agentId;
+        this.agentKey = agentKey;
+        this.bindingId = bindingId;
+        this.tenant = tenant;
         this.namespace = namespace;
-        this.instanceId = instanceId;
+        this.instanceKey = instanceKey;
+        this.generation = generation;
         this.runtime = runtime;
         this.sdkVersion = sdkVersion;
         this.capabilities = List.copyOf(capabilities);
@@ -118,8 +136,8 @@ public final class GrpcTransport implements AutoCloseable {
         this.commandHandler = handler;
     }
 
-    public void setTeamEventHandler(TeamEventHandler handler) {
-        this.teamEventHandler = handler;
+    public void setExecutionAttemptHandler(ExecutionAttemptCommandHandler handler) {
+        this.executionAttemptHandler = handler;
     }
 
     public boolean isConnected() {
@@ -146,6 +164,13 @@ public final class GrpcTransport implements AutoCloseable {
         try {
             AgentDataPlaneServiceGrpc.AgentDataPlaneServiceStub stub =
                     AgentDataPlaneServiceGrpc.newStub(channel);
+            if (!credential.isBlank()) {
+                Metadata metadata = new Metadata();
+                metadata.put(
+                        Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
+                        "Bearer " + credential);
+                stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+            }
             StreamObserver<Upstream> requests = stub.connect(new DownstreamObserver());
             stream.set(requests);
             requests.onNext(
@@ -180,8 +205,12 @@ public final class GrpcTransport implements AutoCloseable {
 
     private UpstreamMeta meta() {
         return UpstreamMeta.newBuilder()
-                .setAgentName(agentName)
-                .setInstanceId(instanceId)
+                .setAgentId(agentId)
+                .setAgentKey(agentKey)
+                .setBindingId(bindingId)
+                .setTenant(tenant)
+                .setInstanceKey(instanceKey)
+                .setGeneration(generation)
                 .setNamespace(namespace)
                 .setTimestamp(System.currentTimeMillis())
                 .build();
@@ -218,6 +247,10 @@ public final class GrpcTransport implements AutoCloseable {
 
     public void reportInventory(InventoryReport report) {
         send(Upstream.newBuilder().setMeta(meta()).setInventory(report).build());
+    }
+
+    public void reportExecutionAttempt(ExecutionAttemptReport report) {
+        send(Upstream.newBuilder().setMeta(meta()).setExecutionAttempt(report).build());
     }
 
     private void sendHeartbeat() {
@@ -293,21 +326,15 @@ public final class GrpcTransport implements AutoCloseable {
                 } catch (RuntimeException e) {
                     LOG.log(Level.FINE, "aistio: session command handler failed", e);
                 }
-            } else if (message.hasTeamEvent()) {
-                TeamEventHandler handler = teamEventHandler;
+            } else if (message.hasExecutionAttempt()) {
+                ExecutionAttemptCommandHandler handler = executionAttemptHandler;
                 if (handler == null) {
                     return;
                 }
                 try {
-                    var ev = message.getTeamEvent();
-                    handler.onTeamEvent(
-                            ev.getTeamId(),
-                            ev.getEventType(),
-                            ev.getMemberName(),
-                            ev.getTaskId(),
-                            ev.getPayload().toByteArray());
+                    handler.onExecutionAttempt(message.getExecutionAttempt());
                 } catch (RuntimeException e) {
-                    LOG.log(Level.FINE, "aistio: team event handler failed", e);
+                    LOG.log(Level.FINE, "aistio: ExecutionAttempt command handler failed", e);
                 }
             } else if (message.hasConnectAck() && !message.getConnectAck().getAccepted()) {
                 LOG.log(

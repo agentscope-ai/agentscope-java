@@ -44,7 +44,7 @@ export default function WorkspacesHubPage() {
     try {
       const ws = await createWorkspace({ name: name.trim() });
       setName('');
-      navigate(`/workspaces/${encodeURIComponent(ws.id)}`);
+      navigate(`/managed/workspaces/${encodeURIComponent(ws.id)}`);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Create failed');
     } finally {
@@ -98,7 +98,7 @@ export default function WorkspacesHubPage() {
             }}
           >
             <button
-              onClick={() => navigate(`/workspaces/${encodeURIComponent(ws.id)}`)}
+              onClick={() => navigate(`/managed/workspaces/${encodeURIComponent(ws.id)}`)}
               style={{
                 flex: 1, textAlign: 'left', background: 'transparent', border: 'none',
                 cursor: 'pointer', padding: 0,

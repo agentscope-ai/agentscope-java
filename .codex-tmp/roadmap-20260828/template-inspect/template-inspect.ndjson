@@ -1,0 +1,94 @@
+{"kind":"slide","id":"sl/y90nupkv","slide":1,"title":"基于 AgentScope 2.0 Harness 构建","textShapes":3}
+{"kind":"textbox","id":"sh/3ehsve1w","slide":1,"textChars":39,"textLines":2}
+{"kind":"textbox","id":"sh/2d8rm9kb","slide":1,"textChars":2,"textLines":1}
+{"kind":"textbox","id":"sh/qhsbq9k7","slide":1,"textChars":204,"textLines":2}
+{"kind":"slide","id":"sl/hwbqtkby","slide":2,"title":"CONTENT","textShapes":9}
+{"kind":"shape","id":"sh/hg32ho7e","slide":2,"name":"圆角矩形","bbox":[292.67,306.67,1974.67,906.67]}
+{"kind":"textbox","id":"sh/uts3698n","slide":2,"textChars":7,"textLines":1}
+{"kind":"textbox","id":"sh/vulkfep8","slide":2,"textChars":2,"textLines":1}
+{"kind":"textbox","id":"sh/4julcjq5","slide":2,"textChars":17,"textLines":1}
+{"kind":"textbox","id":"sh/ihc3at8z","slide":2,"textChars":2,"textLines":1}
+{"kind":"shape","id":"sh/3ilkjepk","slide":2,"name":"线条","bbox":[933.33,408.99,1253.33,0]}
+{"kind":"textbox","id":"sh/kna10zql","slide":2,"textChars":23,"textLines":1}
+{"kind":"textbox","id":"sh/nu9wvmd0","slide":2,"textChars":2,"textLines":1}
+{"kind":"shape","id":"sh/mt0f2hwf","slide":2,"name":"线条","bbox":[933.29,665.53,1253.33,0]}
+{"kind":"textbox","id":"sh/ovix4rel","slide":2,"textChars":28,"textLines":1}
+{"kind":"textbox","id":"sh/epgfyhwj","slide":2,"textChars":2,"textLines":1}
+{"kind":"shape","id":"sh/1sretwvu","slide":2,"name":"线条","bbox":[933.29,921.68,1253.33,0]}
+{"kind":"textbox","id":"sh/i50zu5sv","slide":2,"textChars":204,"textLines":2}
+{"kind":"slide","id":"sl/ofy9wn61","slide":3,"title":"01 AgentScope 2.0 介绍","textShapes":2}
+{"kind":"textbox","id":"sh/edkny1cb","slide":3,"textChars":20,"textLines":1}
+{"kind":"textbox","id":"sh/0f250buh","slide":3,"textChars":204,"textLines":2}
+{"kind":"slide","id":"sl/jyx0ra1s","slide":4,"title":"BBAAD9C20180234D78A0072836F0BC9042B9B20210378B20A1D98E34B1532B7E1B46B0385169D...","textShapes":4}
+{"kind":"textbox","id":"sh/e5076pov","slide":4,"textChars":204,"textLines":2}
+{"kind":"textbox","id":"sh/rm1k7yt4","slide":4,"textChars":13,"textLines":1}
+{"kind":"textbox","id":"sh/ql8jytsj","slide":4,"textChars":83,"textLines":1}
+{"kind":"textbox","id":"sh/doj29oba","slide":4,"textChars":74,"textLines":2}
+{"kind":"image","id":"im/wvapwnq9","slide":4,"name":"Picture 2","bbox":[397.11,410.09,1463.22,1029.91]}
+{"kind":"slide","id":"sl/i107q5of","slide":5,"title":"ReactAgent 核心组件","textShapes":1}
+{"kind":"textbox","id":"sh/dgbulwnm","slide":5,"textChars":15,"textLines":1}
+{"kind":"image","id":"im/tkjutw7u","slide":5,"name":"图片 2","bbox":[103.21,272.04,2353.59,987.12]}
+{"kind":"slide","id":"sl/x8f69ofe","slide":6,"title":"1.0 -> 2.0 迁移指南","textShapes":1}
+{"kind":"textbox","id":"sh/87ipkzal","slide":6,"textChars":15,"textLines":1}
+{"kind":"image","id":"im/8jyl8rmd","slide":6,"name":"图片 1","bbox":[186.29,276.17,2264.88,1042.69]}
+{"kind":"slide","id":"sl/gnmp4jqx","slide":7,"title":"02 AgentScope Harness 核心设计","textShapes":2}
+{"kind":"textbox","id":"sh/9sv2psjq","slide":7,"textChars":26,"textLines":1}
+{"kind":"textbox","id":"sh/ilonmhkn","slide":7,"textChars":204,"textLines":2}
+{"kind":"slide","id":"sl/fu1gfa1s","slide":8,"title":"BBAAD9C20180234D78A0072836F0BC9042B9B20210378B20A1D98E34B1532B7E1B46B0385169D...","textShapes":2}
+{"kind":"textbox","id":"sh/i94r2h87","slide":8,"textChars":204,"textLines":2}
+{"kind":"textbox","id":"sh/ri9g7uhw","slide":8,"textChars":23,"textLines":1}
+{"kind":"image","id":"im/e14raxsj","slide":8,"name":"图片 2","bbox":[88,166.6,2303.77,1188.83]}
+{"kind":"slide","id":"sl/udsvah03","slide":9,"title":"AgentScope Harness 快速体验","textShapes":1}
+{"kind":"textbox","id":"sh/nex4jq5k","slide":9,"textChars":24,"textLines":1}
+{"kind":"image","id":"im/3qxkz2do","slide":9,"name":"图片 1","bbox":[1056.47,329.54,1258.82,969.4]}
+{"kind":"image","id":"im/4r6187e9","slide":9,"name":"图片 2","bbox":[41.41,660.59,908.94,262.44]}
+{"kind":"slide","id":"sl/m90b6t0r","slide":10,"title":"Workspace -- 智能体进化的 Source of Truth","textShapes":1}
+{"kind":"textbox","id":"sh/cbu58j2h","slide":10,"textChars":35,"textLines":1}
+{"kind":"image","id":"im/6xgry54n","slide":10,"name":"图片 1","bbox":[21.71,258.46,2466.46,1035.25]}
+{"kind":"slide","id":"sl/jetc3ut0","slide":11,"title":"抽象文件系统 – Workspace 的物理载体","textShapes":1}
+{"kind":"textbox","id":"sh/wbih4b6d","slide":11,"textChars":24,"textLines":1}
+{"kind":"image","id":"im/exczy10r","slide":11,"name":"图片 1","bbox":[33.06,270.51,2484.93,1043.37]}
+{"kind":"slide","id":"sl/8f2psfyx","slide":12,"title":"内置上下文压缩策略 – 四道防线","textShapes":1}
+{"kind":"textbox","id":"sh/0f2lgnmp","slide":12,"textChars":16,"textLines":1}
+{"kind":"image","id":"im/m1sb6pgf","slide":12,"name":"图片 1","bbox":[0,234.39,2538.98,1130.19]}
+{"kind":"slide","id":"sl/hgzapcr6","slide":13,"title":"双层长期记忆– 事实自动沉淀","textShapes":1}
+{"kind":"textbox","id":"sh/bq9orito","slide":13,"textChars":14,"textLines":1}
+{"kind":"image","id":"im/dcvmdk7y","slide":13,"name":"图片 1","bbox":[31.43,238.56,2497.14,1169.95]}
+{"kind":"slide","id":"sl/6lsnupw7","slide":14,"title":"子智能体编排、委派、并行、异步通知","textShapes":1}
+{"kind":"textbox","id":"sh/wbydknq1","slide":14,"textChars":17,"textLines":1}
+{"kind":"image","id":"im/i5wjyxwn","slide":14,"name":"图片 1","bbox":[7.3,269.71,2539.42,1099.43]}
+{"kind":"slide","id":"sl/vaxsvy10","slide":15,"title":"沙箱管理：隔离、恢复与分布式","textShapes":1}
+{"kind":"textbox","id":"sh/k3y5ov21","slide":15,"textChars":14,"textLines":1}
+{"kind":"image","id":"im/apcb2xov","slide":15,"name":"图片 1","bbox":[0,237.39,2528.89,1092.89]}
+{"kind":"slide","id":"sl/gny5sjyp","slide":16,"title":"Skills：四层注册中心 & 沙箱内执行","textShapes":1}
+{"kind":"textbox","id":"sh/9kby1g7m","slide":16,"textChars":21,"textLines":1}
+{"kind":"image","id":"im/by5kzaxk","slide":16,"name":"图片 1","bbox":[0,346.94,2522.61,921.63]}
+{"kind":"slide","id":"sl/14bup87q","slide":17,"title":"计划模式：想清楚 -> 写下来 -> 再动手","textShapes":1}
+{"kind":"textbox","id":"sh/gbedwfmx","slide":17,"textChars":22,"textLines":1}
+{"kind":"image","id":"im/yh4n6tor","slide":17,"name":"图片 1","bbox":[19.9,263.21,2520.21,1099.07]}
+{"kind":"slide","id":"sl/y5wne50z","slide":18,"title":"Channel：消息平台 -> Gateway -> Agent","textShapes":1}
+{"kind":"textbox","id":"sh/itw3upcf","slide":18,"textChars":32,"textLines":1}
+{"kind":"image","id":"im/2h0bax0b","slide":18,"name":"图片 2","bbox":[0,287.04,2538.29,1058.28]}
+{"kind":"slide","id":"sl/nid43ytk","slide":19,"title":"3 AgentScope Service 企业级智能体控制面","textShapes":2}
+{"kind":"textbox","id":"sh/gj6xsb21","slide":19,"textChars":30,"textLines":1}
+{"kind":"textbox","id":"sh/zq9cvih4","slide":19,"textChars":204,"textLines":2}
+{"kind":"slide","id":"sl/zyxsni5k","slide":20,"title":"AgentScope Service -企业级智能体编排控制面","textShapes":2}
+{"kind":"textbox","id":"sh/rq50vmp8","slide":20,"textChars":31,"textLines":1}
+{"kind":"textbox","id":"sh/4nu1krqh","slide":20,"textChars":137,"textLines":1}
+{"kind":"image","id":"im/0n2xcry9","slide":20,"name":"图片 1","bbox":[144.63,335.69,2150.51,1104.31]}
+{"kind":"slide","id":"sl/m1wvqtk3","slide":21,"title":"控制面 & Dashboard","textShapes":1}
+{"kind":"textbox","id":"sh/0f2lon6p","slide":21,"textChars":15,"textLines":1}
+{"kind":"image","id":"im/ud0vypwf","slide":21,"name":"图片 1","bbox":[208.71,210.26,2003.06,1199.62]}
+{"kind":"slide","id":"sl/5onypobq","slide":22,"title":"Managed Agents 实现 Harness 全托管","textShapes":1}
+{"kind":"textbox","id":"sh/7a18rydc","slide":22,"textChars":29,"textLines":1}
+{"kind":"image","id":"im/p076dwjy","slide":22,"name":"图片 1","bbox":[359.22,162.63,1590.9,1277.37]}
+{"kind":"slide","id":"sl/c7uhcr6t","slide":23,"title":"Slide 23","textShapes":0}
+{"kind":"image","id":"im/jyloj2lo","slide":23,"name":"图片 1","bbox":[416.25,126.35,1511.28,1313.65]}
+{"kind":"slide","id":"sl/7qto7e10","slide":24,"title":"实现多 Agent 协作","textShapes":1}
+{"kind":"textbox","id":"sh/0r6p4nul","slide":24,"textChars":12,"textLines":1}
+{"kind":"image","id":"im/ml83ap43","slide":24,"name":"图片 1","bbox":[51.49,244.16,2209.09,1165.73]}
+{"kind":"slide","id":"sl/69wfm9o7","slide":25,"title":"BBAAD9C20180234D78A0072836F0BC9042B9B20210378B20A1D98E34B1532B7E1B46B0385169D...","textShapes":2}
+{"kind":"textbox","id":"sh/xg7axgf2","slide":25,"textChars":204,"textLines":2}
+{"kind":"textbox","id":"sh/29wby1wf","slide":25,"textChars":7,"textLines":1}
+{"kind":"image","id":"im/0re9czu5","slide":25,"name":"图片 8","bbox":[989.91,184.07,535.93,535.93]}
+{"kind":"notice","message":"Truncated: omitted 0 lines. Increase maxChars or narrow target."}

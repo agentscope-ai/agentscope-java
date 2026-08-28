@@ -17,16 +17,98 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
+	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
+
+func TestApplyExecutionAttemptReportRequiresSelectedTenantInstance(t *testing.T) {
+	ctx := context.Background()
+	st := newSinkTestStore(t)
+	sink := &SessionEventSink{Store: st}
+	actor := controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: "tenant-a", Namespace: "ns-a", Title: "work", Creator: actor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := st.AgentCatalog().CreateAgent(ctx, &controlmodel.Agent{Tenant: "tenant-a", Namespace: "ns-a",
+		AgentKey: "agent-a", Status: controlmodel.AgentActive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := json.RawMessage(`{"instanceSelector":{}}`)
+	catalogBinding, err := st.AgentCatalog().CreateBinding(ctx, &controlmodel.AgentBinding{AgentID: agent.ID,
+		Tenant: agent.Tenant, Namespace: agent.Namespace, Kind: controlmodel.DataPlaneExternalApplication,
+		Configuration: configuration, Priority: 100, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, task, err := st.Collaboration().AssignIssue(ctx, issue.ID, issue.Version,
+		controlmodel.AssigneeAgent, agent.ID.String(), actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := st.RuntimeRegistry().UpsertAgentInstance(ctx, &controlmodel.AgentInstance{
+		Tenant: "tenant-a", Namespace: "ns-a", AgentID: agent.ID, BindingID: catalogBinding.ID,
+		BackendKind: controlmodel.DataPlaneExternalApplication, InstanceKey: "instance-a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := json.Marshal(controlmodel.RuntimeDispatchSnapshot{
+		Binding:         controlmodel.RuntimeBinding{AgentID: agent.ID, BindingID: catalogBinding.ID, Kind: controlmodel.DataPlaneExternalApplication},
+		AgentInstanceID: &selected.ID, ResolvedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx, store.TaskClaim{
+		TaskID: task.ID, ExpectedVersion: task.Version, RuntimeBinding: binding,
+	}, &controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneExternalApplication,
+		AgentInstanceID: &selected.ID, State: controlmodel.ExecutionAssigned})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name, tenant, instance string
+	}{
+		{name: "wrong tenant", tenant: "tenant-b", instance: "instance-a"},
+		{name: "wrong instance", tenant: "tenant-a", instance: "instance-b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := sink.ApplyExecutionAttemptReport(ctx, tc.tenant, "ns-a", agent.ID.String(), catalogBinding.ID.String(), tc.instance, selected.Generation,
+				attempt.ID, task.ID, task.OrchestrationRunID, task.RunNodeID, attempt.DispatchGeneration,
+				"start", nil, "", nil, nil, nil, "", "", "")
+			if !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("expected not found, got %v", err)
+			}
+		})
+	}
+	if err := sink.ApplyExecutionAttemptReport(ctx, "tenant-a", "ns-a", agent.ID.String(), catalogBinding.ID.String(), "instance-a", selected.Generation,
+		attempt.ID, task.ID, task.OrchestrationRunID, task.RunNodeID, attempt.DispatchGeneration,
+		"start", nil, "", nil, nil, nil, "", "", ""); err != nil {
+		t.Fatalf("selected instance report rejected: %v", err)
+	}
+	started, err := st.Collaboration().GetAgentTask(ctx, task.ID)
+	if err != nil || started.Status != controlmodel.AgentTaskRunning {
+		t.Fatalf("task was not started: task=%+v err=%v", started, err)
+	}
+	if started.ID == uuid.Nil {
+		t.Fatal("task ID is nil")
+	}
+}
 
 func newSinkTestStore(t *testing.T) store.Store {
 	t.Helper()
@@ -50,7 +132,7 @@ func TestApplySessionReportNewFields(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(agent).Build()
 	sink := &SessionEventSink{Client: c, Store: st}
 
-	sink.ApplySessionReport(context.Background(), "default", "agent-1", "pod-0", []ObservedSession{{
+	sink.ApplySessionReport(context.Background(), "admin", "default", "agent-1", "pod-0", []ObservedSession{{
 		ID:                    "sess-1",
 		Phase:                 "active",
 		MessageCount:          12,
@@ -61,7 +143,7 @@ func TestApplySessionReportNewFields(t *testing.T) {
 		EffectiveMessageCount: 3,
 	}})
 
-	sess, err := st.Sessions().Get(context.Background(), "agent-1", "default", "sess-1")
+	sess, err := st.Sessions().Get(context.Background(), "admin", "agent-1", "default", "sess-1")
 	if err != nil {
 		t.Fatalf("session not stored: %v", err)
 	}
@@ -70,6 +152,21 @@ func TestApplySessionReportNewFields(t *testing.T) {
 	}
 	if sess.InstanceRef != "pod-0" {
 		t.Errorf("instanceRef = %q", sess.InstanceRef)
+	}
+}
+
+func TestApplySessionReportWithoutKubernetes(t *testing.T) {
+	st := newSinkTestStore(t)
+	sink := &SessionEventSink{Store: st}
+	sink.ApplySessionReport(context.Background(), "admin", "standalone", "external-agent", "process-1", []ObservedSession{{
+		ID: "session-standalone", Phase: "idle", Framework: "agentscope-java",
+	}})
+	sess, err := st.Sessions().Get(context.Background(), "admin", "external-agent", "standalone", "session-standalone")
+	if err != nil {
+		t.Fatalf("standalone session not stored: %v", err)
+	}
+	if sess.InstanceRef != "process-1" || sess.Framework != "agentscope-java" {
+		t.Fatalf("unexpected standalone session: %+v", sess)
 	}
 }
 
@@ -82,10 +179,10 @@ func TestApplyEventReportIdempotent(t *testing.T) {
 		{SessionID: "sess-x", Seq: 1, EventType: "message", Role: "user", Content: "hi", OccurredAt: time.Now().UTC()},
 		{SessionID: "sess-x", Seq: 2, EventType: "message", Role: "assistant", Content: "hello", OccurredAt: time.Now().UTC()},
 	}
-	sink.ApplyEventReport(ctx, "default", "agent-1", "pod-0", events)
+	sink.ApplyEventReport(ctx, "admin", "default", "agent-1", "pod-0", events)
 
 	// Placeholder session must have been created for the unknown session ID.
-	sess, err := st.Sessions().Get(ctx, "agent-1", "default", "sess-x")
+	sess, err := st.Sessions().Get(ctx, "admin", "agent-1", "default", "sess-x")
 	if err != nil {
 		t.Fatalf("placeholder session not created: %v", err)
 	}
@@ -99,7 +196,7 @@ func TestApplyEventReportIdempotent(t *testing.T) {
 	}
 
 	// Re-applying the same batch must be idempotent (no duplicates).
-	sink.ApplyEventReport(ctx, "default", "agent-1", "pod-0", events)
+	sink.ApplyEventReport(ctx, "admin", "default", "agent-1", "pod-0", events)
 	list, err = st.Events().List(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("Events.List: %v", err)
@@ -115,15 +212,15 @@ func TestApplyContextReportDedup(t *testing.T) {
 	ctx := context.Background()
 
 	report := ObservedContext{
-		SessionID:   "sess-c",
-		ContextHash: "hash-1",
+		SessionID:    "sess-c",
+		ContextHash:  "hash-1",
 		SystemPrompt: "sys",
-		Messages:    json.RawMessage(`[{"role":"user","content":"hi"}]`),
-		Framework:   "claude-agent-sdk",
+		Messages:     json.RawMessage(`[{"role":"user","content":"hi"}]`),
+		Framework:    "claude-agent-sdk",
 	}
-	sink.ApplyContextReport(ctx, "default", "agent-1", "pod-0", report)
+	sink.ApplyContextReport(ctx, "admin", "default", "agent-1", "pod-0", report)
 
-	sess, err := st.Sessions().Get(ctx, "agent-1", "default", "sess-c")
+	sess, err := st.Sessions().Get(ctx, "admin", "agent-1", "default", "sess-c")
 	if err != nil {
 		t.Fatalf("placeholder session not created: %v", err)
 	}
@@ -150,7 +247,7 @@ func TestApplyContextReportDedup(t *testing.T) {
 
 	// Changed hash: Latest reflects the new row.
 	report.ContextHash = "hash-2"
-	sink.ApplyContextReport(ctx, "default", "agent-1", "pod-0", report)
+	sink.ApplyContextReport(ctx, "admin", "default", "agent-1", "pod-0", report)
 	latest, err = st.ContextSnapshots().Latest(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("ContextSnapshots.Latest: %v", err)
@@ -165,7 +262,7 @@ func TestApplyInventoryReportRecordsMetric(t *testing.T) {
 	sink := &SessionEventSink{Store: st}
 
 	// Must not panic with a full inventory payload.
-	sink.ApplyInventoryReport(context.Background(), "default", "agent-1", "pod-0", ObservedInventory{
+	sink.ApplyInventoryReport(context.Background(), "admin", "default", "agent-1", "pod-0", ObservedInventory{
 		Subagents:      []ObservedSubagent{{Name: "researcher", InvokeCount: 2}},
 		Workspaces:     []ObservedWorkspace{{Path: "/tmp/ws", Mode: "shared"}},
 		Healthy:        true,

@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
 import { PressureGauge } from '@/components/PressureGauge';
 import { fetchManagedAgents, fetchRuntimeSessions, phaseTone, sessionDetailPath } from './api';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 
 const PAGE_SIZE = 50;
 const PHASES = ['active', 'idle', 'compressing', 'archived', 'terminated'] as const;
@@ -33,6 +34,7 @@ function isPhase(v: string): v is (typeof PHASES)[number] {
 }
 
 export default function OperateSessionsPage() {
+  const scope = useControlPlaneScope();
   const [params, setParams] = useSearchParams();
   const [agent, setAgent] = useState(() => params.get('agent') || '');
   const [phase, setPhase] = useState(() => {
@@ -65,17 +67,18 @@ export default function OperateSessionsPage() {
   }
 
   const agents = useQuery({
-    queryKey: ['v1-agents', 'all'],
-    queryFn: () => fetchManagedAgents({ presence: 'all' }),
+    queryKey: ['v1-agents', scope.namespace, 'all'],
+    queryFn: () => fetchManagedAgents({ presence: 'all', namespace: scope.namespace }),
     refetchInterval: 30_000,
   });
 
   const sessions = useQuery({
-    queryKey: ['runtime-sessions', agent, phase, offset],
+    queryKey: ['runtime-sessions', scope.namespace, agent, phase, offset],
     queryFn: () =>
       fetchRuntimeSessions({
         agent: agent || undefined,
         phase: phase || undefined,
+        namespace: scope.namespace,
         limit: PAGE_SIZE,
         offset,
       }),
@@ -175,7 +178,7 @@ export default function OperateSessionsPage() {
                   <tr key={s.id || `${s.agentName}/${s.sessionId}`} className="hover:bg-muted/40">
                     <td className="px-5 py-3.5 font-medium">{s.agentName}</td>
                     <td className="px-5 py-3.5">
-                      <Link className="text-primary hover:underline" to={sessionDetailPath(s)}>
+                      <Link className="text-primary hover:underline" to={scope.scopedPath(sessionDetailPath(s))}>
                         {s.sessionId}
                       </Link>
                     </td>

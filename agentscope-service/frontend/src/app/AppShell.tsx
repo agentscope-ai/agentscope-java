@@ -1,192 +1,192 @@
 /*
  * Copyright 2024-2026 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Licensed under the Apache License, Version 2.0.
  */
 
-import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState, type ComponentType } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
+  Activity,
   Bot,
-  ChevronRight,
-  LayoutDashboard,
+  Boxes,
+  BriefcaseBusiness,
+  CircleGauge,
+  ClipboardCheck,
+  Cpu,
+  Database,
+  FileStack,
   LogOut,
+  Menu,
+  MessageSquare,
+  Network,
+  PlayCircle,
+  Search,
+  Server,
+  Settings2,
+  ShieldCheck,
   UsersRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { clearToken, getUsername, isAdmin } from '@/lib/auth';
+import { clearToken, getRoles, getUsername, isAdmin } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
-
-type ZoneId = 'dashboard' | 'managed' | 'teams';
+import { useControlPlaneScope } from './ScopeContext';
+import { CommandPalette, useCommandPaletteShortcut } from './CommandPalette';
+import { useCollaborationEvents } from './useCollaborationEvents';
 
 type NavItem = {
   to: string;
   label: string;
+  icon: ComponentType<{ className?: string }>;
   end?: boolean;
   admin?: boolean;
 };
 
-type NavSection = {
-  id: ZoneId;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  match: (pathname: string) => boolean;
-  home: string;
-  items: NavItem[];
-};
+type NavGroup = { label?: string; items: NavItem[] };
 
-const managedPrefixes = [
-  '/agents',
-  '/sessions',
-  '/workspaces',
-  '/environments',
-  '/memory-stores',
-  '/vaults',
-  '/deployments',
-  '/channels',
-];
-
-const navSections: NavSection[] = [
+const workNavigation: NavGroup[] = [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    icon: LayoutDashboard,
-    match: (pathname) => pathname.startsWith('/operate'),
-    home: '/operate',
-    items: [
-      { to: '/operate', label: 'Overview', end: true },
-      { to: '/operate/agents', label: 'Agents' },
-      { to: '/operate/sessions', label: 'Sessions' },
-      { to: '/operate/governance', label: 'Governance' },
-    ],
+    items: [{ to: '/work/overview', label: 'Overview', icon: CircleGauge, end: true }],
   },
   {
-    id: 'managed',
-    label: 'Managed Agents',
-    icon: Bot,
-    match: (pathname) =>
-      managedPrefixes.some(
-        (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-      ),
-    home: '/agents',
+    label: 'Work',
     items: [
-      { to: '/agents', label: 'Agents' },
-      { to: '/sessions', label: 'Sessions' },
-      { to: '/workspaces', label: 'Workspaces' },
-      { to: '/environments', label: 'Environments' },
-      { to: '/memory-stores', label: 'Memory' },
-      { to: '/vaults', label: 'Vaults' },
-      { to: '/deployments', label: 'Deployments' },
-      { to: '/channels', label: 'Channels', admin: true },
-    ],
-  },
-  {
-    id: 'teams',
-    label: 'Teams',
-    icon: UsersRound,
-    match: (pathname) => pathname.startsWith('/teams'),
-    home: '/teams',
-    items: [
-      { to: '/teams', label: 'Overview', end: true },
-      { to: '/teams/list', label: 'Teams' },
-      { to: '/teams/templates', label: 'Templates' },
+      { to: '/work/issues', label: 'Issues', icon: FileStack },
+      { to: '/work/approvals', label: 'Inbox & approvals', icon: ClipboardCheck },
+      { to: '/work/automations', label: 'Schedules / automations', icon: BriefcaseBusiness },
+      { to: '/work/activity', label: 'Activity', icon: Activity },
     ],
   },
 ];
 
-function resolveZone(pathname: string): ZoneId | null {
-  for (const section of navSections) {
-    if (section.match(pathname)) return section.id;
-  }
-  return null;
+const agentCenterNavigation: NavGroup[] = [
+  {
+    label: 'Catalog & design',
+    items: [
+      { to: '/agent-center/agents', label: 'Agents', icon: Bot },
+      { to: '/agent-center/teams', label: 'Teams', icon: UsersRound },
+      { to: '/agent-center/workflows', label: 'Workflows', icon: Network },
+      { to: '/agent-center/endpoints', label: 'Applications / endpoints', icon: PlayCircle },
+      { to: '/agent-center/entrypoints', label: 'Entrypoints / channels', icon: Network },
+    ],
+  },
+  {
+    label: 'Resources',
+    items: [
+      { to: '/agent-center/workspaces', label: 'Workspaces', icon: FileStack },
+      { to: '/agent-center/environments', label: 'Skills & tools', icon: Settings2 },
+      { to: '/agent-center/memory', label: 'Memory', icon: Database },
+      { to: '/agent-center/vaults', label: 'Vault', icon: ShieldCheck },
+    ],
+  },
+];
+
+const operationsNavigation: NavGroup[] = [
+  {
+    items: [{ to: '/operations/overview', label: 'Overview', icon: CircleGauge, end: true }],
+  },
+  {
+    label: 'Fleet',
+    items: [
+      { to: '/operations/instances', label: 'Agent instances / fleet', icon: Boxes },
+      { to: '/operations/runtime/hosts', label: 'Runtime hosts', icon: Server },
+      { to: '/operations/runtime/profiles', label: 'Profiles / pools', icon: Cpu },
+    ],
+  },
+  {
+    label: 'Execution',
+    items: [
+      { to: '/operations/sessions', label: 'Sessions', icon: MessageSquare },
+      { to: '/operations/runs', label: 'Runs', icon: PlayCircle },
+      { to: '/operations/tasks', label: 'AgentTasks / attempts', icon: Activity },
+    ],
+  },
+  {
+    label: 'Governance',
+    items: [
+      { to: '/operations/runtime/policy', label: 'Usage / budget / policy', icon: ShieldCheck },
+      { to: '/operations/governance', label: 'Audit / dead letters', icon: ClipboardCheck },
+    ],
+  },
+];
+
+const routeLabels: Array<[string, string, string]> = [
+  ['/work/overview', 'Work Hub', 'Overview'],
+  ['/work/issues', 'Work Hub', 'Issues'],
+  ['/work/approvals', 'Work Hub', 'Inbox & approvals'],
+  ['/work/automations', 'Work Hub', 'Schedules / automations'],
+  ['/work/activity', 'Work Hub', 'Activity'],
+  ['/agent-center/agents', 'Agent Center', 'Agents'],
+  ['/agent-center/teams', 'Agent Center', 'Teams'],
+  ['/agent-center/workflows', 'Agent Center', 'Workflows'],
+  ['/agent-center/endpoints', 'Agent Center', 'Applications / endpoints'],
+  ['/operations/overview', 'Operations', 'Overview'],
+  ['/operations/instances', 'Operations', 'Agent instances'],
+  ['/operations/sessions', 'Operations', 'Sessions'],
+  ['/operations/runs', 'Operations', 'Runs'],
+  ['/operations/tasks', 'Operations', 'AgentTasks / attempts'],
+  ['/operations/runtime', 'Operations', 'Runtime fleet'],
+  ['/operations/governance', 'Operations', 'Audit / dead letters'],
+];
+
+function matches(pathname: string, to: string, end?: boolean): boolean {
+  if (end) return pathname === to;
+  return pathname === to || pathname.startsWith(`${to}/`);
 }
 
-function SideLink({
-  to,
-  label,
-  end,
-}: {
-  to: string;
-  label: string;
-  end?: boolean;
-}) {
+function SidebarLink({ item }: { item: NavItem }) {
+  const { scopedPath } = useControlPlaneScope();
+  const location = useLocation();
+  const Icon = item.icon;
+  const active = matches(location.pathname, item.to, item.end);
   return (
     <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) =>
-        cn(
-          'relative flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-          isActive
-            ? 'bg-accent text-accent-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-primary'
-            : 'text-slate-600 hover:bg-muted hover:text-foreground',
-        )
-      }
+	  to={scopedPath(item.to)}
+      className={cn(
+        'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+        active
+          ? 'bg-accent text-accent-foreground'
+          : 'text-slate-600 hover:bg-muted hover:text-foreground',
+      )}
     >
-      {label}
+      <Icon className="h-[18px] w-[18px] shrink-0 text-slate-500 group-hover:text-current" />
+      <span className="truncate">{item.label}</span>
     </NavLink>
   );
 }
 
-function NavGroup({
-  section,
-  open,
-  onToggle,
-  admin,
-}: {
-  section: NavSection;
-  open: boolean;
-  onToggle: () => void;
-  admin: boolean;
-}) {
-  const Icon = section.icon;
-  const items = section.items.filter((item) => !item.admin || admin);
+function ScopeSelector({ title }: { title?: string }) {
+  const { tenant, namespace, setScope } = useControlPlaneScope();
+  const [draftTenant, setDraftTenant] = useState(tenant);
+  const [draftNamespace, setDraftNamespace] = useState(namespace);
+
+  useEffect(() => setDraftTenant(tenant), [tenant]);
+  useEffect(() => setDraftNamespace(namespace), [namespace]);
 
   return (
-    <div className="space-y-0.5">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className={cn(
-          'flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors',
-          open
-            ? 'bg-slate-100 text-foreground'
-            : 'text-slate-700 hover:bg-muted hover:text-foreground',
-        )}
-      >
-        <ChevronRight
-          className={cn(
-            'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
-            open && 'rotate-90',
-          )}
+    <div className="grid grid-cols-2 gap-2 border-b border-border px-3 py-3">
+      {title && <div className="col-span-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{title}</div>}
+      <label className="grid gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Tenant
+        <input
+          aria-label="Tenant"
+          className="h-8 min-w-0 rounded-md border border-border bg-muted px-2 text-xs normal-case tracking-normal text-foreground"
+          value={draftTenant}
+          onChange={(event) => setDraftTenant(event.target.value)}
+          onBlur={() => setScope(draftTenant, draftNamespace)}
+          onKeyDown={(event) => { if (event.key === 'Enter') setScope(draftTenant, draftNamespace); }}
         />
-        <Icon className="h-5 w-5 shrink-0" />
-        <span className="truncate text-left">{section.label}</span>
-      </button>
-
-      {open && (
-        <div className="ml-3 space-y-0.5 border-l border-border pl-2">
-          {items.map((item) => (
-            <SideLink
-              key={item.to}
-              to={item.to}
-              label={item.label}
-              end={item.end}
-            />
-          ))}
-        </div>
-      )}
+      </label>
+      <label className="grid gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Namespace
+        <input
+          aria-label="Namespace"
+          className="h-8 min-w-0 rounded-md border border-border bg-muted px-2 text-xs normal-case tracking-normal text-foreground"
+          value={draftNamespace}
+          onChange={(event) => setDraftNamespace(event.target.value)}
+          onBlur={() => setScope(draftTenant, draftNamespace)}
+          onKeyDown={(event) => { if (event.key === 'Enter') setScope(draftTenant, draftNamespace); }}
+        />
+      </label>
     </div>
   );
 }
@@ -196,91 +196,75 @@ export default function AppShell() {
   const navigate = useNavigate();
   const username = getUsername();
   const admin = isAdmin();
-  const activeZone = resolveZone(location.pathname);
-  const activeHome =
-    navSections.find((s) => s.id === activeZone)?.home ?? '/agents';
-
-  // Default all collapsed; auto-expand the section that owns the current route.
-  const [openSections, setOpenSections] = useState<Record<ZoneId, boolean>>({
-    dashboard: false,
-    managed: false,
-    teams: false,
-  });
-
-  useEffect(() => {
-    if (!activeZone) return;
-    setOpenSections((prev) => {
-      if (prev[activeZone]) return prev;
-      return { ...prev, [activeZone]: true };
-    });
-  }, [activeZone]);
-
-  const toggleSection = (id: ZoneId) => {
-    setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  const roles = getRoles().map((role) => role.toLowerCase());
+  const scope = useControlPlaneScope();
+	useCollaborationEvents(scope.tenant, scope.namespace);
+  const area = location.pathname.startsWith('/agent-center')
+    ? 'agent-center'
+    : location.pathname.startsWith('/operations') ? 'operations' : 'work';
+  const canAgentCenter = admin || roles.includes('agent_developer') || roles.includes('operator');
+  const canOperations = admin || roles.includes('operator');
+  const navigation = area === 'agent-center'
+    ? agentCenterNavigation
+    : area === 'operations' ? operationsNavigation : workNavigation;
+  const home = area === 'agent-center' ? '/agent-center/agents' : area === 'operations' ? '/operations/overview' : '/work/overview';
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const openCommand = useCallback(() => {
+    if (area === 'work') setCommandOpen(true);
+  }, [area]);
+  useCommandPaletteShortcut(openCommand);
+  useEffect(() => setMobileNavOpen(false), [location.pathname]);
+  const context = routeLabels.find(([prefix]) => matches(location.pathname, prefix));
 
   return (
     <div className="flex h-full min-h-0 bg-canvas">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-white">
-        <div className="border-b border-border px-5 py-5">
-          <button className="flex items-center gap-3 text-left" onClick={() => navigate(activeHome)}>
-            <img
-              src="/logo.svg"
-              alt="AgentScope"
-              className="h-9 w-9 shrink-0"
-              width={36}
-              height={36}
-            />
-            <div>
-              <div className="text-lg font-bold tracking-tight text-foreground">aistio</div>
-              <div className="mt-0.5 text-sm text-muted-foreground">Control plane console</div>
+      <a
+        href="#main-content"
+        className="fixed left-3 top-3 z-50 -translate-y-20 rounded-md bg-primary px-3 py-2 text-sm text-white focus:translate-y-0"
+      >
+        Skip to content
+      </a>
+      {mobileNavOpen && <button type="button" aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" onClick={() => setMobileNavOpen(false)} />}
+      <aside className={cn('fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-border bg-white transition-transform lg:static lg:z-auto lg:translate-x-0', mobileNavOpen ? 'translate-x-0' : '-translate-x-full')}>
+        <div className="border-b border-border px-4 py-4">
+          <Link className="flex items-center gap-3 rounded-lg" to={home}>
+            <img src="/logo.svg" alt="AgentScope" className="h-9 w-9 shrink-0" width={36} height={36} />
+            <div className="min-w-0">
+              <div className="text-lg font-bold tracking-tight text-foreground">AgentScope Service</div>
+              <div className="truncate text-xs text-muted-foreground">{area === 'work' ? 'Work Hub' : area === 'agent-center' ? 'Agent Center' : 'Operations'}</div>
             </div>
-          </button>
+          </Link>
         </div>
 
-        <nav className="flex-1 space-y-2 overflow-y-auto p-3">
-          {navSections.map((section) => (
-            <NavGroup
-              key={section.id}
-              section={section}
-              open={openSections[section.id]}
-              onToggle={() => toggleSection(section.id)}
-              admin={admin}
-            />
+        <ScopeSelector />
+
+        <nav aria-label="Primary navigation" className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+          {navigation.map((group, index) => (
+            <div key={group.label || `primary-${index}`} className="space-y-1">
+              {group.label && (
+                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  {group.label}
+                </div>
+              )}
+              {group.items.filter((item) => !item.admin || admin).map((item) => (
+                <SidebarLink key={item.to} item={item} />
+              ))}
+            </div>
           ))}
         </nav>
 
-        <div className="border-t border-border p-4">
-          <div className="mb-2.5 truncate px-2 text-sm text-muted-foreground">
-            {username || 'guest'}
-          </div>
+        <div className="border-t border-border p-3">
+          <div className="mb-2 truncate px-2 text-xs text-muted-foreground">Signed in as {username || 'guest'}</div>
           <div className="flex gap-1">
-            {admin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1 justify-start"
-                onClick={() => navigate('/admin/users')}
-              >
-                Users
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex-1 justify-start"
-              onClick={() => navigate('/profile')}
-            >
-              Profile
-            </Button>
+            {admin && <Button variant="ghost" size="sm" className="flex-1" onClick={() => navigate('/managed/admin/users')}>Users</Button>}
+            <Button variant="ghost" size="sm" className="flex-1" onClick={() => navigate('/managed/profile')}>Profile</Button>
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Sign out"
               title="Sign out"
-              onClick={() => {
-                clearToken();
-                navigate('/login');
-              }}
+              onClick={() => { clearToken(); navigate('/login'); }}
             >
               <LogOut className="h-4 w-4" />
             </Button>
@@ -288,9 +272,45 @@ export default function AppShell() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-auto bg-canvas">
-        <Outlet />
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-3 py-2 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu className="h-4 w-4" /></Button>
+            <nav aria-label="Product area" className="flex rounded-lg border border-border bg-muted p-1 text-xs font-medium">
+              <Link
+                to="/work/overview"
+                aria-current={area === 'work' ? 'page' : undefined}
+                className={cn('rounded-md px-3 py-1.5 transition-colors', area === 'work' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+              >
+                Work Hub
+              </Link>
+              {canAgentCenter && <Link
+                to="/agent-center/agents"
+                aria-current={area === 'agent-center' ? 'page' : undefined}
+                className={cn('rounded-md px-3 py-1.5 transition-colors', area === 'agent-center' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+              >Agent Center</Link>}
+              {canOperations && <Link
+                to="/operations/overview"
+                aria-current={area === 'operations' ? 'page' : undefined}
+                className={cn('rounded-md px-3 py-1.5 transition-colors', area === 'operations' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+              >Operations</Link>}
+            </nav>
+            <div className="hidden min-w-0 items-center gap-2 text-sm xl:flex">
+              <span className="text-muted-foreground">{context?.[1] || 'Console'}</span>
+              <span className="text-slate-300">/</span>
+              <span className="truncate font-medium text-foreground">{context?.[2] || 'Resource'}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {area === 'work' && <button type="button" onClick={openCommand} className="flex h-8 items-center gap-2 rounded-lg border border-border bg-muted px-2 text-xs text-muted-foreground hover:bg-slate-100 sm:min-w-52 sm:px-3" aria-label="Search work"><Search className="h-3.5 w-3.5" /><span className="hidden flex-1 text-left sm:block">Search work</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] sm:block">⌘K</kbd></button>}
+            <div className="hidden font-mono text-xs text-muted-foreground md:block">{scope.tenant} / {scope.namespace}</div>
+          </div>
+        </header>
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-auto bg-canvas focus:outline-none">
+          <Outlet />
+        </main>
+      </div>
+      {area === 'work' && <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />}
     </div>
   );
 }

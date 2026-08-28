@@ -125,15 +125,16 @@ func (r *SessionPollerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if probeTruncated {
 			logger.Info("skipping ArchiveMissing: sessions probe appears truncated",
 				"agent", agent.Name, "count", len(snapshots), "maxPage", prober.MaxSessionsProbePage)
-		} else if _, err := r.Store.Sessions().ArchiveMissing(ctx, agent.Name, agent.Namespace, keepIDs, 60*time.Second); err != nil {
+		} else if _, err := r.Store.Sessions().ArchiveMissing(ctx, "default", agent.Name, agent.Namespace, keepIDs, 60*time.Second); err != nil {
 			logger.Error(err, "failed to archive sessions missing from data plane")
 		}
 	}
 
 	var activeSessions int32
 	if r.Store != nil {
-		activeSessions, _ = r.Store.Sessions().CountActive(ctx, agent.Name, agent.Namespace)
+		activeSessions, _ = r.Store.Sessions().CountActive(ctx, "default", agent.Name, agent.Namespace)
 		_ = r.Store.Metrics().RecordAgentMetric(ctx, &store.AgentMetric{
+			Tenant:         "default",
 			AgentName:      agent.Name,
 			Namespace:      agent.Namespace,
 			ActiveSessions: activeSessions,
@@ -168,7 +169,7 @@ func (r *SessionPollerReconciler) syncSession(ctx context.Context, agent *v1alph
 		o.PromptTokens = snap.TokenUsage.PromptTokens
 		o.CompletionTokens = snap.TokenUsage.CompletionTokens
 	}
-	saved, err := upsertObservedSession(ctx, r.Store, agent, o)
+	saved, err := upsertObservedSession(ctx, r.Store, "default", agent, o)
 	if err != nil {
 		return err
 	}

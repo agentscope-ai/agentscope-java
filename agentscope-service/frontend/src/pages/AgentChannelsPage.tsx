@@ -132,7 +132,7 @@ export default function AgentChannelsPage() {
                 }}>
                   {p.enabled ? (p.started ? 'connected' : 'stopped') : 'disabled'}
                 </span>
-                <Link style={{ ...S.btn, textDecoration: 'none' }} to={`/channels/${encodeURIComponent(p.channelId)}`}>
+                <Link style={{ ...S.btn, textDecoration: 'none' }} to={`/managed/channels/${encodeURIComponent(p.channelId)}`}>
                   Advanced
                 </Link>
                 <button style={S.btn} onClick={() => setEdit(p)}>Edit</button>

@@ -40,11 +40,11 @@ func (s *Server) registerDeployments(r gin.IRouter) {
 }
 
 type createDeployReq struct {
-	Name          string `json:"name"`
-	AgentID       string `json:"agentId"`
-	AgentVersion  *int   `json:"agentVersion"`
-	EnvironmentID string `json:"environmentId"`
-	TriggerType   string `json:"triggerType"`
+	Name           string `json:"name"`
+	AgentID        string `json:"agentId"`
+	AgentVersion   *int   `json:"agentVersion"`
+	EnvironmentID  string `json:"environmentId"`
+	TriggerType    string `json:"triggerType"`
 	CronExpression string `json:"cronExpression"`
 }
 
@@ -57,23 +57,23 @@ type updateDeployReq struct {
 }
 
 type deployRow struct {
-	DeploymentID      string
-	OwnerID           string
-	Name              string
-	AgentID           string
-	AgentVersion      *int
-	EnvironmentID     string
-	TriggerType       string
-	CronExpression    *string
-	WebhookToken      *string
-	Enabled           bool
-	LastRunAt         *int64
-	LastSessionID     *string
-	LastStatus        *string
+	DeploymentID       string
+	OwnerID            string
+	Name               string
+	AgentID            string
+	AgentVersion       *int
+	EnvironmentID      string
+	TriggerType        string
+	CronExpression     *string
+	WebhookToken       *string
+	Enabled            bool
+	LastRunAt          *int64
+	LastSessionID      *string
+	LastStatus         *string
 	LastHandsStatsJSON *string
-	ArchivedAt        *int64
-	CreatedAt         int64
-	UpdatedAt         int64
+	ArchivedAt         *int64
+	CreatedAt          int64
+	UpdatedAt          int64
 }
 
 func (d deployRow) toJSON() gin.H {
@@ -82,23 +82,23 @@ func (d deployRow) toJSON() gin.H {
 		hands = parseJSONRaw(*d.LastHandsStatsJSON)
 	}
 	return gin.H{
-		"id":              d.DeploymentID,
-		"ownerId":         d.OwnerID,
-		"name":            d.Name,
-		"agentId":         d.AgentID,
-		"agentVersion":    d.AgentVersion,
-		"environmentId":   d.EnvironmentID,
-		"triggerType":     d.TriggerType,
-		"cronExpression":  nullStrPtr(d.CronExpression),
-		"webhookToken":    nullStrPtr(d.WebhookToken),
-		"enabled":         d.Enabled,
-		"lastRunAt":       nullMillis(d.LastRunAt),
-		"lastSessionId":   nullStrPtr(d.LastSessionID),
-		"lastStatus":      nullStrPtr(d.LastStatus),
-		"lastHandsStats":  hands,
-		"createdAt":       d.CreatedAt,
-		"updatedAt":       d.UpdatedAt,
-		"archivedAt":      nullMillis(d.ArchivedAt),
+		"id":             d.DeploymentID,
+		"ownerId":        d.OwnerID,
+		"name":           d.Name,
+		"agentId":        d.AgentID,
+		"agentVersion":   d.AgentVersion,
+		"environmentId":  d.EnvironmentID,
+		"triggerType":    d.TriggerType,
+		"cronExpression": nullStrPtr(d.CronExpression),
+		"webhookToken":   nullStrPtr(d.WebhookToken),
+		"enabled":        d.Enabled,
+		"lastRunAt":      nullMillis(d.LastRunAt),
+		"lastSessionId":  nullStrPtr(d.LastSessionID),
+		"lastStatus":     nullStrPtr(d.LastStatus),
+		"lastHandsStats": hands,
+		"createdAt":      d.CreatedAt,
+		"updatedAt":      d.UpdatedAt,
+		"archivedAt":     nullMillis(d.ArchivedAt),
 	}
 }
 

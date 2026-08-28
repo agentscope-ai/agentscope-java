@@ -30,12 +30,12 @@ import (
 // Also carries resolved instance capability metadata when available.
 type SessionWithSnapshot struct {
 	*store.Session
-	Snapshot         *store.SessionSnapshot `json:"snapshot,omitempty"`
-	InstanceHealthy  *bool                  `json:"instanceHealthy,omitempty"`
-	InstanceBaseURL  string                 `json:"instanceBaseUrl,omitempty"`
-	Capabilities     []string               `json:"capabilities,omitempty"`
-	ContractLevel    int32                  `json:"contractLevel,omitempty"`
-	Model            string                 `json:"model,omitempty"`
+	Snapshot        *store.SessionSnapshot `json:"snapshot,omitempty"`
+	InstanceHealthy *bool                  `json:"instanceHealthy,omitempty"`
+	InstanceBaseURL string                 `json:"instanceBaseUrl,omitempty"`
+	Capabilities    []string               `json:"capabilities,omitempty"`
+	ContractLevel   int32                  `json:"contractLevel,omitempty"`
+	Model           string                 `json:"model,omitempty"`
 }
 
 // listSessions handles GET /api/v1/sessions. Each row includes the latest
@@ -43,11 +43,11 @@ type SessionWithSnapshot struct {
 // second round-trip.
 func (s *Server) listSessions(c *gin.Context) {
 	filter := store.SessionFilter{
+		Tenant:    c.DefaultQuery("tenant", "default"),
 		AgentName: c.Query("agent"),
 		Namespace: c.Query("namespace"),
 		Phase:     c.Query("phase"),
 		Framework: c.Query("framework"),
-		TeamID:    c.Query("team"),
 		Limit:     parseLimit(c, 100),
 		Offset:    parseOffset(c),
 	}
@@ -131,7 +131,7 @@ func (s *Server) enrichSessionInstance(sess *store.Session, item *SessionWithSna
 		h := false
 		item.InstanceHealthy = &h
 	}
-	for _, dp := range s.registry.ListByAgent(sess.AgentName, sess.Namespace) {
+	for _, dp := range s.registry.ListByAgent(sess.Tenant, sess.AgentName, sess.Namespace) {
 		if !dp.Healthy {
 			continue
 		}
@@ -151,6 +151,7 @@ func (s *Server) enrichSessionInstance(sess *store.Session, item *SessionWithSna
 // queryTokenMetrics handles GET /api/v1/metrics/tokens.
 func (s *Server) queryTokenMetrics(c *gin.Context) {
 	filter := store.TokenFilter{
+		Tenant:    c.DefaultQuery("tenant", "default"),
 		AgentName: c.Query("agent"),
 		Namespace: c.Query("namespace"),
 		Model:     c.Query("model"),
@@ -186,6 +187,7 @@ func (s *Server) queryTokenMetrics(c *gin.Context) {
 // queryAgentMetrics handles GET /api/v1/metrics/agents.
 func (s *Server) queryAgentMetrics(c *gin.Context) {
 	filter := store.AgentMetricFilter{
+		Tenant:    c.DefaultQuery("tenant", "default"),
 		AgentName: c.Query("agent"),
 		Namespace: c.Query("namespace"),
 		Limit:     parseLimit(c, 500),
@@ -224,22 +226,23 @@ type overviewCacheEntry struct {
 
 var (
 	overviewCacheMu sync.Mutex
-	overviewCache   *overviewCacheEntry
+	overviewCache   = map[string]*overviewCacheEntry{}
 )
 
 const overviewCacheTTL = 5 * time.Second
 
 func invalidateOverviewCache() {
 	overviewCacheMu.Lock()
-	overviewCache = nil
+	overviewCache = map[string]*overviewCacheEntry{}
 	overviewCacheMu.Unlock()
 }
 
 // fleetOverview handles GET /api/v1/overview using store aggregations.
 func (s *Server) fleetOverview(c *gin.Context) {
+	tenant := c.DefaultQuery("tenant", "default")
 	overviewCacheMu.Lock()
-	if overviewCache != nil && time.Since(overviewCache.at) < overviewCacheTTL {
-		body := overviewCache.body
+	if cached := overviewCache[tenant]; cached != nil && time.Since(cached.at) < overviewCacheTTL {
+		body := cached.body
 		overviewCacheMu.Unlock()
 		c.JSON(http.StatusOK, body)
 		return
@@ -247,7 +250,7 @@ func (s *Server) fleetOverview(c *gin.Context) {
 	overviewCacheMu.Unlock()
 
 	ctx := c.Request.Context()
-	byPhase, err := s.store.Sessions().CountByPhase(ctx, store.SessionFilter{})
+	byPhase, err := s.store.Sessions().CountByPhase(ctx, store.SessionFilter{Tenant: tenant})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -272,28 +275,28 @@ func (s *Server) fleetOverview(c *gin.Context) {
 
 	since24h := time.Now().UTC().Add(-24 * time.Hour)
 	since5m := time.Now().UTC().Add(-5 * time.Minute)
-	tokenTotal, _ := s.store.Metrics().SumTokenUsage(ctx, store.TokenFilter{Since: &since24h})
-	errorCount, _ := s.store.Metrics().SumErrorCount(ctx, store.AgentMetricFilter{Since: &since24h})
-	topAgents, _ := s.store.Metrics().TopAgents(ctx, since24h, 10)
+	tokenTotal, _ := s.store.Metrics().SumTokenUsage(ctx, store.TokenFilter{Tenant: tenant, Since: &since24h})
+	errorCount, _ := s.store.Metrics().SumErrorCount(ctx, store.AgentMetricFilter{Tenant: tenant, Since: &since24h})
+	topAgents, _ := s.store.Metrics().TopAgents(ctx, tenant, since24h, 10)
 	if topAgents == nil {
 		topAgents = []store.AgentUsage{}
 	}
-	topSessionsByTokens, _ := s.store.Metrics().TopSessionsByTokens(ctx, since24h, 10)
+	topSessionsByTokens, _ := s.store.Metrics().TopSessionsByTokens(ctx, tenant, since24h, 10)
 	if topSessionsByTokens == nil {
 		topSessionsByTokens = []store.SessionUsage{}
 	}
-	topSessionsByDuration, _ := s.store.Metrics().TopSessionsByDuration(ctx, since24h, 10)
+	topSessionsByDuration, _ := s.store.Metrics().TopSessionsByDuration(ctx, tenant, since24h, 10)
 	if topSessionsByDuration == nil {
 		topSessionsByDuration = []store.SessionDuration{}
 	}
-	topAgentsByActive, _ := s.store.Metrics().TopAgentsByActiveSessions(ctx, since5m, 10)
+	topAgentsByActive, _ := s.store.Metrics().TopAgentsByActiveSessions(ctx, tenant, since5m, 10)
 	if topAgentsByActive == nil {
 		topAgentsByActive = []store.AgentUsage{}
 	}
 
-	sessions, _ := s.store.Sessions().List(ctx, store.SessionFilter{Limit: 5000})
+	sessions, _ := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: tenant, Limit: 5000})
 
-	liveAgents, offlineAgents, registryKeys, _ := registryAgentBuckets(s.registry)
+	liveAgents, offlineAgents, registryKeys, _ := registryAgentBuckets(s.registry, tenant)
 	historicalAgents := historicalAgentKeys(sessions, registryKeys)
 
 	dataplaneCount := 0
@@ -302,8 +305,11 @@ func (s *Server) fleetOverview(c *gin.Context) {
 	stalePlanes := []gin.H{}
 	if s.registry != nil {
 		planes := s.registry.List()
-		dataplaneCount = len(planes)
 		for _, dp := range planes {
+			if dp.Tenant != tenant {
+				continue
+			}
+			dataplaneCount++
 			ns := dp.Namespace
 			if ns == "" {
 				ns = "default"
@@ -350,28 +356,28 @@ func (s *Server) fleetOverview(c *gin.Context) {
 	}
 
 	body := gin.H{
-		"agentCount":             len(liveAgents),
-		"offlineAgentCount":      len(offlineAgents),
-		"historicalAgentCount":   len(historicalAgents),
-		"instanceCount":          dataplaneCount,
-		"healthyInstanceCount":   healthyCount,
-		"staleInstanceCount":     staleCount,
-		"dataplaneCount":         dataplaneCount,
-		"sessionCount":           sessionCount,
-		"activeSessionCount":     activeOnly,
-		"sessionsByPhase":        phases,
-		"tokenUsage24h":          tokenTotal,
-		"errorCount24h":          errorCount,
-		"topAgents":              topAgents,
-		"topSessionsByTokens":    topSessionsByTokens,
-		"topSessionsByDuration":  topSessionsByDuration,
-		"topAgentsByActive":      topAgentsByActive,
-		"staleDataplanes":        stalePlanes,
-		"orphanSessions":         orphanSessions,
+		"agentCount":            len(liveAgents),
+		"offlineAgentCount":     len(offlineAgents),
+		"historicalAgentCount":  len(historicalAgents),
+		"instanceCount":         dataplaneCount,
+		"healthyInstanceCount":  healthyCount,
+		"staleInstanceCount":    staleCount,
+		"dataplaneCount":        dataplaneCount,
+		"sessionCount":          sessionCount,
+		"activeSessionCount":    activeOnly,
+		"sessionsByPhase":       phases,
+		"tokenUsage24h":         tokenTotal,
+		"errorCount24h":         errorCount,
+		"topAgents":             topAgents,
+		"topSessionsByTokens":   topSessionsByTokens,
+		"topSessionsByDuration": topSessionsByDuration,
+		"topAgentsByActive":     topAgentsByActive,
+		"staleDataplanes":       stalePlanes,
+		"orphanSessions":        orphanSessions,
 	}
 
 	overviewCacheMu.Lock()
-	overviewCache = &overviewCacheEntry{at: time.Now(), body: body}
+	overviewCache[tenant] = &overviewCacheEntry{at: time.Now(), body: body}
 	overviewCacheMu.Unlock()
 
 	c.JSON(http.StatusOK, body)
@@ -402,6 +408,7 @@ func (s *Server) overviewTimeseries(c *gin.Context) {
 	switch metric {
 	case "tokens":
 		rows, err := s.store.Metrics().AggregateTokens(c.Request.Context(), store.TokenFilter{
+			Tenant:    c.DefaultQuery("tenant", "default"),
 			AgentName: c.Query("agent"),
 			Namespace: c.Query("namespace"),
 			Since:     &since,
@@ -417,6 +424,7 @@ func (s *Server) overviewTimeseries(c *gin.Context) {
 	case "active_sessions":
 		// Approximate from agent_metrics time series.
 		rows, err := s.store.Metrics().QueryAgentMetrics(c.Request.Context(), store.AgentMetricFilter{
+			Tenant:    c.DefaultQuery("tenant", "default"),
 			AgentName: c.Query("agent"),
 			Namespace: c.Query("namespace"),
 			Since:     &since,

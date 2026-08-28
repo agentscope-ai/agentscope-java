@@ -31,6 +31,7 @@ import {
 import { CapabilityGate, DisabledAction } from '@/components/CapabilityGate';
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 import { canPlanMode, canQueryContext, canQuerySubagentTasks, canQueryTasks } from '@/lib/capabilities';
 import {
   abortSession,
@@ -50,12 +51,14 @@ import {
 import { CompressButton } from './components/CompressButton';
 import { ContextPanel, contextSummary } from './components/ContextPanel';
 import { ConversationHistoryPanel } from './components/ConversationHistoryPanel';
+import { ByoSessionChat } from './components/ByoSessionChat';
 import { SessionEventsPanel } from './components/SessionEventsPanel';
 import { StatusStrip } from './components/StatusStrip';
 import { useSessionMessages } from './lib/useSessionMessages';
 
 export default function OperateSessionDetailPage() {
   const { sessionId = '' } = useParams();
+  const scope = useControlPlaneScope();
   const [params, setParams] = useSearchParams();
   const agent = params.get('agent') || undefined;
   const namespace = params.get('namespace') || undefined;
@@ -219,7 +222,7 @@ export default function OperateSessionDetailPage() {
   return (
     <Page>
       <div>
-        <Link to="/operate/sessions" className="text-sm text-muted-foreground hover:text-foreground">
+        <Link to={scope.scopedPath('/control/sessions')} className="text-sm text-muted-foreground hover:text-foreground">
           ← Sessions
         </Link>
         <PageHeader
@@ -476,6 +479,21 @@ export default function OperateSessionDetailPage() {
         }
         onSelectTurn={selectTurn}
       />
+
+      {!readOnlyOps && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Send message</CardTitle>
+            <CardDescription>
+              Inject a user turn into this session. BYO agents receive it over the data-plane
+              contract; replies appear in the history after the next poll.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ByoSessionChat sessionId={sessionId} readOnly={readOnlyOps} composerOnly />
+          </CardContent>
+        </Card>
+      )}
 
       {(commands.data?.commands || []).length > 0 && (
         <Card>

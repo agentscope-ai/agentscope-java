@@ -1,0 +1,445 @@
+{
+  "sourcePptx": "/Users/ken/agentscope-2/agentscope-java/docs/AgentScope Java 2.0 v1.pptx",
+  "workspace": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828",
+  "outDir": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect",
+  "generatedAt": "2026-08-28T06:20:36.623Z",
+  "slideCount": 25,
+  "slideArtifacts": [
+    {
+      "slide": 1,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-01.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-01.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-01.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-01.layout.json"
+    },
+    {
+      "slide": 2,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-02.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-02.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-02.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-02.layout.json"
+    },
+    {
+      "slide": 3,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-03.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-03.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-03.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-03.layout.json"
+    },
+    {
+      "slide": 4,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-04.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-04.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-04.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-04.layout.json"
+    },
+    {
+      "slide": 5,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-05.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-05.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-05.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-05.layout.json"
+    },
+    {
+      "slide": 6,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-06.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-06.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-06.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-06.layout.json"
+    },
+    {
+      "slide": 7,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-07.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-07.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-07.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-07.layout.json"
+    },
+    {
+      "slide": 8,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-08.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-08.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-08.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-08.layout.json"
+    },
+    {
+      "slide": 9,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-09.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-09.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-09.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-09.layout.json"
+    },
+    {
+      "slide": 10,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-10.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-10.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-10.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-10.layout.json"
+    },
+    {
+      "slide": 11,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-11.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-11.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-11.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-11.layout.json"
+    },
+    {
+      "slide": 12,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-12.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-12.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-12.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-12.layout.json"
+    },
+    {
+      "slide": 13,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-13.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-13.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-13.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-13.layout.json"
+    },
+    {
+      "slide": 14,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-14.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-14.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-14.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-14.layout.json"
+    },
+    {
+      "slide": 15,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-15.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-15.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-15.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-15.layout.json"
+    },
+    {
+      "slide": 16,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-16.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-16.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-16.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-16.layout.json"
+    },
+    {
+      "slide": 17,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-17.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-17.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-17.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-17.layout.json"
+    },
+    {
+      "slide": 18,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-18.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-18.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-18.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-18.layout.json"
+    },
+    {
+      "slide": 19,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-19.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-19.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-19.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-19.layout.json"
+    },
+    {
+      "slide": 20,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-20.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-20.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-20.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-20.layout.json"
+    },
+    {
+      "slide": 21,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-21.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-21.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-21.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-21.layout.json"
+    },
+    {
+      "slide": 22,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-22.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-22.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-22.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-22.layout.json"
+    },
+    {
+      "slide": 23,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-23.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-23.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-23.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-23.layout.json"
+    },
+    {
+      "slide": 24,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-24.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-24.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-24.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-24.layout.json"
+    },
+    {
+      "slide": 25,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/source-slides/source-slide-25.png",
+      "previewRelativePath": "template-inspect/source-slides/source-slide-25.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/layouts/source-slide-25.layout.json",
+      "layoutRelativePath": "template-inspect/layouts/source-slide-25.layout.json"
+    }
+  ],
+  "inspectPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/template-inspect.ndjson",
+  "inspectRelativePath": "template-inspect/template-inspect.ndjson",
+  "inspectTruncated": true,
+  "inspectMetadata": {
+    "revision": "1owuef",
+    "target": {
+      "id": "pr/ft45xa"
+    },
+    "kind": {
+      "requested": "slide,textbox,shape,image,table,chart",
+      "tokens": [
+        "slide",
+        "textbox",
+        "shape",
+        "image",
+        "table",
+        "chart"
+      ]
+    },
+    "include": {
+      "tokens": []
+    },
+    "exclude": {
+      "tokens": []
+    },
+    "notices": []
+  },
+  "extractedMedia": [
+    {
+      "entry": "ppt/media/image29.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image29.png",
+      "relativePath": "template-inspect/assets/ppt/media/image29.png",
+      "bytes": 156721
+    },
+    {
+      "entry": "ppt/media/image8.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image8.png",
+      "relativePath": "template-inspect/assets/ppt/media/image8.png",
+      "bytes": 34161
+    },
+    {
+      "entry": "ppt/media/image7.jpeg",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image7.jpeg",
+      "relativePath": "template-inspect/assets/ppt/media/image7.jpeg",
+      "bytes": 690950
+    },
+    {
+      "entry": "ppt/media/image6.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image6.png",
+      "relativePath": "template-inspect/assets/ppt/media/image6.png",
+      "bytes": 578251
+    },
+    {
+      "entry": "ppt/media/image5.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image5.png",
+      "relativePath": "template-inspect/assets/ppt/media/image5.png",
+      "bytes": 365140
+    },
+    {
+      "entry": "ppt/media/image4.jpeg",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image4.jpeg",
+      "relativePath": "template-inspect/assets/ppt/media/image4.jpeg",
+      "bytes": 73802
+    },
+    {
+      "entry": "ppt/media/image3.jpeg",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image3.jpeg",
+      "relativePath": "template-inspect/assets/ppt/media/image3.jpeg",
+      "bytes": 890648
+    },
+    {
+      "entry": "ppt/media/image2.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image2.png",
+      "relativePath": "template-inspect/assets/ppt/media/image2.png",
+      "bytes": 9140
+    },
+    {
+      "entry": "ppt/media/image1.jpeg",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image1.jpeg",
+      "relativePath": "template-inspect/assets/ppt/media/image1.jpeg",
+      "bytes": 751495
+    },
+    {
+      "entry": "ppt/media/image28.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image28.png",
+      "relativePath": "template-inspect/assets/ppt/media/image28.png",
+      "bytes": 2899842
+    },
+    {
+      "entry": "ppt/media/image27.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image27.png",
+      "relativePath": "template-inspect/assets/ppt/media/image27.png",
+      "bytes": 357238
+    },
+    {
+      "entry": "ppt/media/image26.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image26.png",
+      "relativePath": "template-inspect/assets/ppt/media/image26.png",
+      "bytes": 1782069
+    },
+    {
+      "entry": "ppt/media/image25.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image25.png",
+      "relativePath": "template-inspect/assets/ppt/media/image25.png",
+      "bytes": 2172949
+    },
+    {
+      "entry": "ppt/media/image24.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image24.png",
+      "relativePath": "template-inspect/assets/ppt/media/image24.png",
+      "bytes": 173535
+    },
+    {
+      "entry": "ppt/media/image23.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image23.png",
+      "relativePath": "template-inspect/assets/ppt/media/image23.png",
+      "bytes": 2307225
+    },
+    {
+      "entry": "ppt/media/image22.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image22.png",
+      "relativePath": "template-inspect/assets/ppt/media/image22.png",
+      "bytes": 2423594
+    },
+    {
+      "entry": "ppt/media/image21.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image21.png",
+      "relativePath": "template-inspect/assets/ppt/media/image21.png",
+      "bytes": 2082331
+    },
+    {
+      "entry": "ppt/media/image20.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image20.png",
+      "relativePath": "template-inspect/assets/ppt/media/image20.png",
+      "bytes": 2209338
+    },
+    {
+      "entry": "ppt/media/image19.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image19.png",
+      "relativePath": "template-inspect/assets/ppt/media/image19.png",
+      "bytes": 2627662
+    },
+    {
+      "entry": "ppt/media/image18.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image18.png",
+      "relativePath": "template-inspect/assets/ppt/media/image18.png",
+      "bytes": 2662903
+    },
+    {
+      "entry": "ppt/media/image17.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image17.png",
+      "relativePath": "template-inspect/assets/ppt/media/image17.png",
+      "bytes": 2248596
+    },
+    {
+      "entry": "ppt/media/image16.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image16.png",
+      "relativePath": "template-inspect/assets/ppt/media/image16.png",
+      "bytes": 2320039
+    },
+    {
+      "entry": "ppt/media/image15.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image15.png",
+      "relativePath": "template-inspect/assets/ppt/media/image15.png",
+      "bytes": 2254702
+    },
+    {
+      "entry": "ppt/media/image14.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image14.png",
+      "relativePath": "template-inspect/assets/ppt/media/image14.png",
+      "bytes": 135489
+    },
+    {
+      "entry": "ppt/media/image13.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image13.png",
+      "relativePath": "template-inspect/assets/ppt/media/image13.png",
+      "bytes": 1073588
+    },
+    {
+      "entry": "ppt/media/image12.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image12.png",
+      "relativePath": "template-inspect/assets/ppt/media/image12.png",
+      "bytes": 2205949
+    },
+    {
+      "entry": "ppt/media/image11.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image11.png",
+      "relativePath": "template-inspect/assets/ppt/media/image11.png",
+      "bytes": 2125184
+    },
+    {
+      "entry": "ppt/media/image10.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image10.png",
+      "relativePath": "template-inspect/assets/ppt/media/image10.png",
+      "bytes": 1118244
+    },
+    {
+      "entry": "ppt/media/image9.png",
+      "path": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-inspect/assets/ppt/media/image9.png",
+      "relativePath": "template-inspect/assets/ppt/media/image9.png",
+      "bytes": 652417
+    }
+  ],
+  "fonts": [
+    "+mn-cs",
+    "+mn-ea",
+    "+mn-lt",
+    "Alibaba PuHuiTi R",
+    "Angsana New",
+    "Arial",
+    "Cordia New",
+    "DaunPenh",
+    "DokChampa",
+    "Ebrima",
+    "Estrangelo Edessa",
+    "Euphemia",
+    "FZLanTingHei-B-GBK",
+    "FZLanTingHei-M-GBK",
+    "Gautami",
+    "Iskoola Pota",
+    "Javanese Text",
+    "Kalinga",
+    "Kartika",
+    "Latha",
+    "Leelawadee UI",
+    "MV Boli",
+    "Mangal",
+    "Microsoft Himalaya",
+    "Microsoft JhengHei",
+    "Microsoft New Tai Lue",
+    "Microsoft Tai Le",
+    "Microsoft Uighur",
+    "Microsoft Yi Baiti",
+    "Mongolian Baiti",
+    "MoolBoran",
+    "Myanmar Text",
+    "Nirmala UI",
+    "Nyala",
+    "Phagspa",
+    "Plantagenet Cherokee",
+    "Raavi",
+    "Segoe UI",
+    "Shruti",
+    "Sylfaen",
+    "Times New Roman",
+    "Tunga",
+    "Univers LT Std 65 Bold",
+    "Vrinda",
+    "新細明體",
+    "游ゴシック",
+    "游ゴシック Light",
+    "等线",
+    "等线 Light",
+    "맑은 고딕"
+  ],
+  "packageParts": {
+    "mediaCount": 29,
+    "slideXmlCount": 25,
+    "chartCount": 0,
+    "tableSlideCount": 0
+  }
+}

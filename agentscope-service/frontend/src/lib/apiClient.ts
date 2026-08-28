@@ -44,19 +44,32 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function scopedApiPath(path: string): string {
+  if (typeof window === 'undefined' || !path.startsWith('/api/v1/')) return path;
+  const current = new URLSearchParams(window.location.search);
+  const tenant = current.get('tenant');
+  const namespace = current.get('namespace');
+  if (!tenant && !namespace) return path;
+  const url = new URL(path, window.location.origin);
+  if (tenant && !url.searchParams.has('tenant')) url.searchParams.set('tenant', tenant);
+  if (namespace && !url.searchParams.has('namespace')) url.searchParams.set('namespace', namespace);
+  return `${url.pathname}${url.search}`;
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+	const requestPath = scopedApiPath(path);
   const headers = new Headers(init.headers);
   const auth = authHeaders();
   Object.entries(auth).forEach(([k, v]) => headers.set(k, v));
-  if (init.body && !headers.has('Content-Type')) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const res = await fetch(path, { ...init, headers });
-  if (res.status === 401 && !path.includes('/api/auth/login')) {
+	const res = await fetch(requestPath, { ...init, headers });
+	if (res.status === 401 && !requestPath.includes('/api/auth/login')) {
     clearToken();
     if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
       window.location.assign('/login');

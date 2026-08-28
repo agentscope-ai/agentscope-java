@@ -73,7 +73,7 @@ export default function SessionCreatePage() {
 
   return (
     <div style={S.root}>
-      <Link to={agentId ? `/sessions?agentId=${encodeURIComponent(agentId)}` : '/sessions'} style={S.back}>
+      <Link to={agentId ? `/managed/sessions?agentId=${encodeURIComponent(agentId)}` : '/managed/sessions'} style={S.back}>
         ← Sessions
       </Link>
       <h1 style={S.title}>New session</h1>
@@ -102,10 +102,10 @@ export default function SessionCreatePage() {
             agentId={agentId}
             modal={false}
             onCancel={() => navigate(agentId
-              ? `/sessions?agentId=${encodeURIComponent(agentId)}`
-              : '/sessions')}
+              ? `/managed/sessions?agentId=${encodeURIComponent(agentId)}`
+              : '/managed/sessions')}
             onCreated={session => {
-              navigate(`/sessions/${encodeURIComponent(session.id)}`, { replace: true });
+              navigate(`/managed/sessions/${encodeURIComponent(session.id)}`, { replace: true });
             }}
           />
         </div>

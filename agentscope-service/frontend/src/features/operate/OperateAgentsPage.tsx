@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
 import { AgentPresence, fetchManagedAgents } from './api';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 
 function parsePresence(v: string | null, healthLegacy: string | null): AgentPresence {
   if (v === 'live' || v === 'offline' || v === 'historical' || v === 'all') return v;
@@ -59,6 +60,7 @@ function presenceTone(p?: string): 'success' | 'warning' | 'default' | 'info' {
 }
 
 export default function OperateAgentsPage() {
+  const scope = useControlPlaneScope();
   const [params, setParams] = useSearchParams();
   const [presence, setPresence] = useState<AgentPresence>(() =>
     parsePresence(params.get('presence'), params.get('health')),
@@ -66,8 +68,8 @@ export default function OperateAgentsPage() {
   const [q, setQ] = useState('');
 
   const agents = useQuery({
-    queryKey: ['v1-agents', presence],
-    queryFn: () => fetchManagedAgents({ presence }),
+    queryKey: ['v1-agents', scope.namespace, presence],
+    queryFn: () => fetchManagedAgents({ presence, namespace: scope.namespace }),
     refetchInterval: 10_000,
   });
 
@@ -113,8 +115,8 @@ export default function OperateAgentsPage() {
   return (
     <Page>
       <PageHeader
-        title="Agents"
-        description="Live data planes by default. Use Presence to inspect offline or historical agents."
+        title="Registered agents"
+        description="Logical Agents discovered from Application SDK and Runtime Host registrations. Live data planes are shown by default; use Presence for offline or historical records."
       />
 
       <div className="flex flex-wrap items-end gap-3">
@@ -159,7 +161,7 @@ export default function OperateAgentsPage() {
           {filtered.map((a) => (
             <Link
               key={`${a.namespace}/${a.name}`}
-              to={`/operate/agents/${encodeURIComponent(a.name)}?namespace=${encodeURIComponent(a.namespace || 'default')}${a.presence === 'offline' ? '&tab=instances' : ''}`}
+              to={scope.scopedPath(`/managed/registered-agents/${encodeURIComponent(a.name)}?namespace=${encodeURIComponent(a.namespace || scope.namespace)}${a.presence === 'offline' ? '&tab=instances' : ''}`)}
             >
               <Card className="h-full transition hover:border-indigo-200 hover:shadow-md">
                 <CardHeader>

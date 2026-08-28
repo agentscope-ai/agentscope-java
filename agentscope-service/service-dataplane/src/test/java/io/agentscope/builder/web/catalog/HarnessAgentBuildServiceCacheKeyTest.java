@@ -54,33 +54,15 @@ class HarnessAgentBuildServiceCacheKeyTest {
     }
 
     @Test
-    void teamMemberSessionsNeverShareAnInstance() {
+    void externalKeysDoNotCreateRuntimeSpecificAgentVariants() {
         String worker =
-                HarnessAgentBuildService.cacheKey(session("s1", "team|default/aaa|w1"), SPEC);
+                HarnessAgentBuildService.cacheKey(
+                        session("s1", "agent-task|f92cf745-82f5-45f3-a273-8ad96a87aa5a"), SPEC);
         String lead =
-                HarnessAgentBuildService.cacheKey(session("s2", "team|default/ccc|lead"), SPEC);
+                HarnessAgentBuildService.cacheKey(
+                        session("s2", "agent-task|85254b55-1a6d-4e5c-9499-d913561930c2"), SPEC);
         String plain = HarnessAgentBuildService.cacheKey(session("s3", null), SPEC);
 
-        assertThat(worker).isNotEqualTo(lead).isNotEqualTo(plain);
-        assertThat(lead).isNotEqualTo(plain);
-    }
-
-    @Test
-    void deletedTeamSessionEvictsOnlyItsOwnInstance() {
-        String mine =
-                HarnessAgentBuildService.cacheKey(session("s1", "team|default/ccc|lead"), SPEC);
-        String other =
-                HarnessAgentBuildService.cacheKey(session("s2", "team|default/ccc|worker-d"), SPEC);
-        String plain = HarnessAgentBuildService.cacheKey(session("s3", null), SPEC);
-
-        assertThat(HarnessAgentBuildService.isTeamSessionKey(mine, "s1")).isTrue();
-        assertThat(HarnessAgentBuildService.isTeamSessionKey(other, "s1")).isFalse();
-        assertThat(HarnessAgentBuildService.isTeamSessionKey(plain, "s3")).isFalse();
-    }
-
-    @Test
-    void teamKeyIsStillEvictableByOwnerAndAgentPrefix() {
-        assertThat(HarnessAgentBuildService.cacheKey(session("s1", "team|default/aaa|w1"), SPEC))
-                .startsWith("owner-1/bbb/");
+        assertThat(worker).isEqualTo(lead).isEqualTo(plain);
     }
 }

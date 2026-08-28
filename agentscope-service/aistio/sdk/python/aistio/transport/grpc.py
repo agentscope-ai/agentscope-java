@@ -47,6 +47,8 @@ class GrpcTransport:
         self,
         addr: str,
         *,
+        tenant: str = "default",
+        internal_token: str = "",
         agent_name: str,
         namespace: str = "default",
         instance_id: str = "",
@@ -55,6 +57,8 @@ class GrpcTransport:
         session_affinity: str = "",
     ) -> None:
         self._addr = addr
+        self._tenant = tenant
+        self._internal_token = internal_token
         self._agent_name = agent_name
         self._namespace = namespace
         self._instance_id = instance_id
@@ -72,6 +76,9 @@ class GrpcTransport:
         self._dropped = 0
         self._on_session_command: Optional[Callable[[str, str, bytes], None]] = None
         self._on_config_push: Optional[Callable[[int, str, bytes, str], None]] = None
+        self._on_execution_attempt: Optional[
+            Callable[[str, str, str, str, int, str, str, str, bytes, bytes, int], None]
+        ] = None
         #: 握手成功后控制面回报的版本号。
         self.control_plane_version = ""
 
@@ -122,6 +129,13 @@ class GrpcTransport:
         """``fn(config_type, version, resources, nonce)``；异常 → ConfigAck(accepted=False)。"""
         self._on_config_push = fn
 
+    def set_execution_attempt_handler(
+        self,
+        fn: Callable[[str, str, str, str, int, str, str, str, bytes, bytes, int], None],
+    ) -> None:
+        """Handle a fenced ``ExecutionAttemptCommand`` delivery."""
+        self._on_execution_attempt = fn
+
     # ─── 上行发送（best-effort）───
 
     def _enqueue(self, msg: asdp_pb2.Upstream) -> bool:
@@ -134,6 +148,7 @@ class GrpcTransport:
 
     def _meta(self) -> "asdp_pb2.UpstreamMeta":
         return asdp_pb2.UpstreamMeta(
+            tenant=self._tenant,
             agent_name=self._agent_name,
             instance_id=self._instance_id,
             namespace=self._namespace,
@@ -160,6 +175,14 @@ class GrpcTransport:
 
     def report_inventory(self, report: "asdp_pb2.InventoryReport") -> bool:
         return self._enqueue(asdp_pb2.Upstream(meta=self._meta(), inventory=report))
+
+    def report_execution_attempt(
+        self, report: "asdp_pb2.ExecutionAttemptReport"
+    ) -> bool:
+        """Report a fenced attempt transition to the control plane."""
+        return self._enqueue(
+            asdp_pb2.Upstream(meta=self._meta(), execution_attempt=report)
+        )
 
     def send_config_ack(
         self,
@@ -224,7 +247,12 @@ class GrpcTransport:
             self._channel = channel
             try:
                 stub = asdp_pb2_grpc.AgentDataPlaneServiceStub(channel)
-                responses = stub.Connect(iter(self._outgoing()))
+                metadata = (
+                    (("authorization", f"Bearer {self._internal_token}"),)
+                    if self._internal_token
+                    else None
+                )
+                responses = stub.Connect(iter(self._outgoing()), metadata=metadata)
                 for down in responses:
                     if self._stop.is_set():
                         return
@@ -267,6 +295,21 @@ class GrpcTransport:
                     except Exception as exc:  # 配置应用失败 → NACK
                         accepted, reason = False, str(exc)
                 self.send_config_ack(push.config_type, push.version, push.nonce, accepted, reason)
-            # heartbeat / team_event 下行目前无需处理。
+            elif kind == "execution_attempt" and self._on_execution_attempt is not None:
+                command = down.execution_attempt
+                self._on_execution_attempt(
+                    command.attempt_id,
+                    command.agent_task_id,
+                    command.run_id,
+                    command.node_id,
+                    command.generation,
+                    command.command,
+                    command.context_url,
+                    command.task_token,
+                    command.attempt_token,
+                    command.payload,
+                    command.timestamp,
+                )
+            # heartbeat 下行无需处理。
         except Exception:
             pass  # 旁路原则：任何处理异常都不扩散

@@ -13,7 +13,8 @@
 #
 # Usage:
 #   scripts/dev-up.sh
-#   BUILDER_REBUILD=1 scripts/dev-up.sh   # full monorepo mvn install + aistiod rebuild
+#   BUILDER_REBUILD=1 scripts/dev-up.sh   # rebuild binaries and reset the disposable dev schemas
+#   BUILDER_REBUILD=1 BUILDER_RESET_DB=0 scripts/dev-up.sh  # rebuild while preserving local data
 #   scripts/dev-down.sh
 #
 set -euo pipefail
@@ -24,12 +25,23 @@ LOG_DIR="$RUN_DIR/logs"
 PID_DIR="$RUN_DIR/pids"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
+STARTUP_SUCCEEDED=0
+cleanup_failed_startup() {
+    local status=$?
+    if [ "$status" -ne 0 ] && [ "$STARTUP_SUCCEEDED" != "1" ] && [ "${BUILDER_KEEP_FAILED_STACK:-0}" != "1" ]; then
+        echo "==> Startup failed; stopping partially started planes" >&2
+        "$ROOT/scripts/dev-down.sh" || true
+    fi
+}
+trap cleanup_failed_startup EXIT
+
 GATEWAY_PORT="${BUILDER_GATEWAY_PORT:-8080}"
 CONTROL_PORT="${BUILDER_CONTROL_PORT:-8081}"
 DATA_PORT="${BUILDER_DATA_PORT:-8082}"
 SCHED_PORT="${BUILDER_SCHEDULER_PORT:-8083}"
 PG_PORT="${BUILDER_PG_PORT:-5432}"
 PG_CONTAINER="${BUILDER_PG_CONTAINER:-agentscope-dev-pg}"
+RESET_DB="${BUILDER_RESET_DB:-${BUILDER_REBUILD:-0}}"
 
 # jdbc profile requires >=32 chars and rejects known short defaults (see InternalTokenStartupValidator)
 export BUILDER_INTERNAL_TOKEN="${BUILDER_INTERNAL_TOKEN:-local-dev-internal-token-at-least-32chars}"
@@ -138,9 +150,27 @@ for i in $(seq 1 60); do
     fi
 done
 
-# Ensure schemas exist even if volume was created before init script
-docker exec "$PG_CONTAINER" psql -U builder -d builder -c \
-    "CREATE SCHEMA IF NOT EXISTS cp; CREATE SCHEMA IF NOT EXISTS rt; CREATE SCHEMA IF NOT EXISTS dp;" >/dev/null
+# v4 intentionally has no compatibility migration from the unpublished legacy
+# Issue/OrchestrationRun/AgentTask/ExecutionAttempt schema. A full local rebuild therefore recreates the
+# disposable development schemas before either Hibernate or aistiod starts.
+# Set BUILDER_RESET_DB=0 explicitly when the current v4 development data should be kept.
+if [ "$RESET_DB" = "1" ]; then
+    echo "==> Resetting disposable Postgres schemas cp, rt, dp"
+    docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder -c \
+        "DROP SCHEMA IF EXISTS cp CASCADE; DROP SCHEMA IF EXISTS rt CASCADE; DROP SCHEMA IF EXISTS dp CASCADE;" >/dev/null
+fi
+
+# Apply the bootstrap on every start, not only when Docker first creates the
+# volume. This also restores grants and the role search_path after a reset.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder \
+    <"$ROOT/docker/postgres-init.sql" >/dev/null
+
+schema_count="$(docker exec "$PG_CONTAINER" psql -U builder -d builder -Atc \
+    "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('cp','rt','dp')")"
+if [ "$schema_count" != "3" ]; then
+    echo "Expected cp, rt, and dp schemas, found ${schema_count}" >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------- planes
 mkdir -p "$LOG_DIR" "$PID_DIR"
@@ -172,6 +202,7 @@ start control "$PID_DIR/control.pid" \
         BUILDER_INTERNAL_TOKEN="$BUILDER_INTERNAL_TOKEN" \
         BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
         AISTIO_WORKSPACE_ROOT="$RUN_DIR/workspaces" \
+        AISTIO_ARTIFACT_ROOT="$RUN_DIR/artifacts" \
         AISTIO_STATIC_DIR="$ROOT/aistio/ui" \
     "$AISTIO_BIN" \
         --storage-driver=postgres \
@@ -210,6 +241,18 @@ wait_health data "$DATA_PORT"
 wait_health scheduler "$SCHED_PORT"
 wait_health gateway "$GATEWAY_PORT" 30
 
+echo "==> Verifying database schemas and v4 terminal migrations"
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder \
+    <"$ROOT/docker/postgres-dev-verify.sql" >/dev/null
+echo "  OK cp/rt/dp schemas and v4 collaboration/orchestration/runtime tables"
+
+if [ "${BUILDER_SMOKE_TEST:-0}" = "1" ]; then
+    echo "==> Running API smoke test"
+    BASE="http://localhost:${GATEWAY_PORT}" "$ROOT/scripts/smoke.sh"
+fi
+
+STARTUP_SUCCEEDED=1
+
 cat <<EOF
 
 ==> AgentScope Service stack is up (aistiod + Java DP)
@@ -220,5 +263,6 @@ cat <<EOF
   Frontend HMR (optional):    cd frontend && npm run dev
 
   Logs:   ${LOG_DIR}
+  Verify: scripts/smoke.sh
   Stop:   scripts/dev-down.sh
 EOF

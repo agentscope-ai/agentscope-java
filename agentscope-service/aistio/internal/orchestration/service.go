@@ -1,0 +1,478 @@
+// Copyright 2024-2026 the original author or authors.
+// Licensed under the Apache License, Version 2.0.
+
+package orchestration
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+
+	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/store"
+	"github.com/spring-ai-alibaba/aistio/internal/taskplane"
+)
+
+type Service struct {
+	Store     store.Store
+	CEL       *CEL
+	TaskPlane *taskplane.Service
+}
+
+type StartRequest struct {
+	RevisionID     *uuid.UUID          `json:"revisionId,omitempty"`
+	IdempotencyKey string              `json:"idempotencyKey"`
+	Input          json.RawMessage     `json:"input,omitempty"`
+	IssueID        *uuid.UUID          `json:"issueId,omitempty"`
+	Issue          *controlmodel.Issue `json:"issue,omitempty"`
+	TriggerType    string              `json:"triggerType,omitempty"`
+	TriggerRef     string              `json:"triggerRef,omitempty"`
+	Actor          controlmodel.Actor  `json:"-"`
+	RerunOfRunID   *uuid.UUID          `json:"-"`
+}
+
+type Graph struct {
+	Run      *controlmodel.OrchestrationRun   `json:"run"`
+	Nodes    []*controlmodel.RunNode          `json:"nodes"`
+	Edges    []*controlmodel.RunEdge          `json:"edges"`
+	Tasks    []*controlmodel.AgentTask        `json:"tasks,omitempty"`
+	Attempts []*controlmodel.ExecutionAttempt `json:"attempts,omitempty"`
+}
+
+func (s *Service) evaluator() (*CEL, error) {
+	if s.CEL != nil {
+		return s.CEL, nil
+	}
+	return NewCEL()
+}
+
+func (s *Service) ValidateDefinition(raw json.RawMessage) (*DefinitionSpec, error) {
+	e, err := s.evaluator()
+	if err != nil {
+		return nil, err
+	}
+	return ParseAndValidateSpec(raw, e)
+}
+
+func (s *Service) Publish(ctx context.Context, definitionID uuid.UUID, actor controlmodel.Actor) (*controlmodel.OrchestrationRevision, error) {
+	d, err := s.Store.Orchestration().GetDefinition(ctx, definitionID)
+	if err != nil {
+		return nil, err
+	}
+	spec, err := s.ValidateDefinition(d.DraftSpec)
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := json.Marshal(spec)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(normalized)
+	return s.Store.Orchestration().CreateRevision(ctx, &controlmodel.OrchestrationRevision{DefinitionID: d.ID, Tenant: d.Tenant, Namespace: d.Namespace, Spec: normalized, Checksum: hex.EncodeToString(sum[:]), PublishedBy: actor})
+}
+
+func (s *Service) Start(ctx context.Context, definitionID uuid.UUID, req StartRequest) (*controlmodel.OrchestrationRun, error) {
+	if req.IdempotencyKey == "" {
+		return nil, fmt.Errorf("idempotencyKey is required")
+	}
+	if (req.IssueID == nil) == (req.Issue == nil) {
+		return nil, fmt.Errorf("exactly one of issueId or issue is required")
+	}
+	definition, err := s.Store.Orchestration().GetDefinition(ctx, definitionID)
+	if err != nil {
+		return nil, err
+	}
+	var revision *controlmodel.OrchestrationRevision
+	if req.RevisionID != nil {
+		revision, err = s.Store.Orchestration().GetRevision(ctx, *req.RevisionID)
+	} else {
+		var revisions []*controlmodel.OrchestrationRevision
+		revisions, err = s.Store.Orchestration().ListRevisions(ctx, definitionID)
+		if err == nil && len(revisions) > 0 {
+			revision = revisions[0]
+		} else if err == nil {
+			err = fmt.Errorf("definition has no published revision")
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if revision.DefinitionID != definitionID {
+		return nil, store.ErrConflict
+	}
+	spec, err := s.ValidateDefinition(revision.Spec)
+	if err != nil {
+		return nil, err
+	}
+	var issue *controlmodel.Issue
+	if req.IssueID != nil {
+		issue, err = s.Store.Collaboration().GetIssue(ctx, *req.IssueID)
+	} else {
+		copy := *req.Issue
+		copy.Tenant, copy.Namespace = definition.Tenant, definition.Namespace
+		copy.AssigneeType, copy.AssigneeRef = "", ""
+		if copy.Creator.Type == "" {
+			copy.Creator = req.Actor
+		}
+		issue, err = s.Store.Collaboration().CreateIssue(ctx, &copy)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if issue.Tenant != definition.Tenant || issue.Namespace != definition.Namespace {
+		return nil, store.ErrConflict
+	}
+	trigger := req.TriggerType
+	if trigger == "" {
+		trigger = "definition"
+	}
+	run, err := s.Store.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{Tenant: definition.Tenant, Namespace: definition.Namespace, RootIssueID: issue.ID, Mode: controlmodel.RunModeDeclared, DefinitionRevisionID: &revision.ID, RerunOfRunID: req.RerunOfRunID, TriggerType: trigger, TriggerRef: req.TriggerRef, IdempotencyKey: req.IdempotencyKey, Input: req.Input, Variables: json.RawMessage(`{}`), PolicySnapshot: json.RawMessage(`{}`), State: controlmodel.RunRunning, CreatedBy: req.Actor})
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.Store.Orchestration().ListNodes(ctx, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(existing) > 0 {
+		return run, nil
+	}
+	incoming := map[string]int{}
+	for _, edge := range spec.Edges {
+		incoming[edge.To]++
+	}
+	byKey := map[string]*controlmodel.RunNode{}
+	for _, n := range spec.Nodes {
+		state := controlmodel.RunNodePending
+		if incoming[n.Key] == 0 {
+			state = controlmodel.RunNodeReady
+		}
+		config, _ := json.Marshal(n)
+		nodeIssueID := issue.ID
+		if n.IssueMode == "child" {
+			child, childErr := s.Store.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+				Tenant: run.Tenant, Namespace: run.Namespace, Title: issue.Title + " / " + n.Key,
+				Description: "Work item for orchestration node " + n.Key, Status: controlmodel.IssueTodo,
+				Priority: issue.Priority, Creator: run.CreatedBy, ParentIssueID: &issue.ID,
+				SourceType: "orchestration-run-node", SourceRef: run.ID.String() + ":" + n.Key})
+			if childErr != nil {
+				return nil, childErr
+			}
+			nodeIssueID = child.ID
+		}
+		node, createErr := s.Store.Orchestration().CreateNode(ctx, &controlmodel.RunNode{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, NodeKey: n.Key, DefinitionNodeKey: n.Key, Type: n.Type, Role: n.Role, IssueID: &nodeIssueID, State: state, Config: config, Input: json.RawMessage(`{}`), Iteration: 1})
+		if createErr != nil {
+			return nil, createErr
+		}
+		byKey[n.Key] = node
+	}
+	edges := make([]*controlmodel.RunEdge, 0, len(spec.Edges))
+	for _, e := range spec.Edges {
+		on := e.On
+		if len(on) == 0 {
+			on = []controlmodel.RunNodeState{controlmodel.RunNodeSucceeded}
+		}
+		edges = append(edges, &controlmodel.RunEdge{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, FromNodeID: byKey[e.From].ID, ToNodeID: byKey[e.To].ID, OnStates: on, Condition: e.Condition, Ordinal: e.Ordinal})
+	}
+	if err = s.Store.Orchestration().CreateEdges(ctx, edges); err != nil {
+		return nil, err
+	}
+	_, _ = s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, Type: "run.started", Actor: req.Actor, IdempotencyKey: "run-started:" + run.ID.String()})
+	engine := &Engine{Store: s.Store, CEL: s.CEL}
+	if err = engine.ReconcileRun(ctx, run.ID); err != nil {
+		return nil, err
+	}
+	return s.Store.Orchestration().GetRun(ctx, run.ID)
+}
+
+// Rerun starts a fresh declared Run pinned to the original immutable revision.
+// It never reopens or mutates the terminal source Run.
+func (s *Service) Rerun(ctx context.Context, runID uuid.UUID, idempotencyKey string,
+	input json.RawMessage, actor controlmodel.Actor) (*controlmodel.OrchestrationRun, error) {
+	source, err := s.Store.Orchestration().GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if !controlmodel.IsOrchestrationRunTerminal(source.State) {
+		return nil, fmt.Errorf("only a terminal Run can be rerun")
+	}
+	if source.DefinitionRevisionID == nil {
+		return nil, fmt.Errorf("direct/adaptive Runs are rerun through AgentTask retry")
+	}
+	revision, err := s.Store.Orchestration().GetRevision(ctx, *source.DefinitionRevisionID)
+	if err != nil {
+		return nil, err
+	}
+	if len(input) == 0 {
+		input = source.Input
+	}
+	return s.Start(ctx, revision.DefinitionID, StartRequest{RevisionID: &revision.ID,
+		IdempotencyKey: idempotencyKey, Input: input, IssueID: &source.RootIssueID,
+		TriggerType: "rerun", TriggerRef: source.ID.String(), Actor: actor, RerunOfRunID: &source.ID})
+}
+
+func (s *Service) Graph(ctx context.Context, runID uuid.UUID) (*Graph, error) {
+	run, err := s.Store.Orchestration().GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := s.Store.Orchestration().ListNodes(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	edges, err := s.Store.Orchestration().ListEdges(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: run.Tenant, Namespace: run.Namespace, RunID: runID, Limit: 500})
+	if err != nil {
+		return nil, err
+	}
+	attempts := []*controlmodel.ExecutionAttempt{}
+	for _, task := range tasks {
+		list, _ := s.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{AgentTaskID: task.ID, Limit: 100})
+		attempts = append(attempts, list...)
+	}
+	return &Graph{Run: run, Nodes: nodes, Edges: edges, Tasks: tasks, Attempts: attempts}, nil
+}
+
+func (s *Service) Pause(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
+	run, err := s.Store.Orchestration().GetRun(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.Store.Orchestration().TransitionRun(ctx, id, run.Version, controlmodel.RunPaused, nil, "", "")
+}
+func (s *Service) Resume(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
+	run, err := s.Store.Orchestration().GetRun(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	target := controlmodel.RunRunning
+	if run.WaitReason != "" {
+		target = controlmodel.RunWaiting
+	}
+	run, err = s.Store.Orchestration().TransitionRun(ctx, id, run.Version, target, nil, "", "")
+	if err == nil {
+		err = (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, id)
+	}
+	return run, err
+}
+func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
+	run, err := s.Store.Orchestration().GetRun(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if controlmodel.IsOrchestrationRunTerminal(run.State) {
+		return run, nil
+	}
+	run, err = s.Store.Orchestration().TransitionRun(ctx, id, run.Version, controlmodel.RunCancelling, nil, "", "")
+	if err != nil {
+		return nil, err
+	}
+	nodes, _ := s.Store.Orchestration().ListNodes(ctx, id)
+	// Stop descendants and gates before closing their owning nodes.
+	for _, n := range nodes {
+		if n.Type == controlmodel.RunNodeSubrun && n.State == controlmodel.RunNodeWaiting {
+			var output struct {
+				SubrunID uuid.UUID `json:"subrunId"`
+			}
+			if json.Unmarshal(n.Output, &output) == nil && output.SubrunID != uuid.Nil {
+				if _, cancelErr := s.Cancel(ctx, output.SubrunID); cancelErr != nil && cancelErr != store.ErrConflict {
+					return nil, cancelErr
+				}
+			}
+		}
+		if n.Type == controlmodel.RunNodeApproval && n.State == controlmodel.RunNodeWaiting {
+			approvals, _ := s.Store.Collaboration().ListApprovals(ctx, store.ApprovalFilter{Tenant: run.Tenant,
+				Namespace: run.Namespace, TargetType: "run-node", TargetRef: n.ID.String(), Limit: 100})
+			for _, approval := range approvals {
+				if approval.Status == controlmodel.ApprovalPending {
+					_, _ = s.Store.Collaboration().DecideApproval(ctx, approval.ID, approval.Version,
+						controlmodel.ApprovalCancelled, controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-cancel"}, nil)
+				}
+			}
+		}
+	}
+	for _, n := range nodes {
+		if !controlmodel.IsRunNodeTerminal(n.State) {
+			_, _ = s.Store.Orchestration().TransitionNode(ctx, n.ID, n.Version, controlmodel.RunNodeCancelled, nil, "", "")
+		}
+	}
+	tasks, _ := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: run.Tenant, Namespace: run.Namespace, RunID: id, Limit: 500})
+	for _, t := range tasks {
+		if !controlmodel.IsAgentTaskTerminal(t.Status) {
+			tasks := s.TaskPlane
+			if tasks == nil {
+				tasks = &taskplane.Service{Store: s.Store}
+			}
+			if _, cancelErr := tasks.CancelTask(ctx, t.ID, t.Version); cancelErr != nil && cancelErr != store.ErrConflict {
+				return nil, cancelErr
+			}
+		}
+	}
+	run, _ = s.Store.Orchestration().GetRun(ctx, id)
+	return s.Store.Orchestration().TransitionRun(ctx, id, run.Version, controlmodel.RunCancelled, nil, "", "")
+}
+
+func (s *Service) Signal(ctx context.Context, id uuid.UUID, name, key string, payload json.RawMessage, actor controlmodel.Actor) error {
+	if name == "" || key == "" {
+		return fmt.Errorf("signal name and idempotencyKey are required")
+	}
+	run, err := s.Store.Orchestration().GetRun(ctx, id)
+	if err != nil {
+		return err
+	}
+	event, err := s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: id, Tenant: run.Tenant, Namespace: run.Namespace, Type: "run.signal." + name, Actor: actor, Payload: payload, IdempotencyKey: "signal:" + name + ":" + key})
+	if err != nil {
+		return err
+	}
+	_ = event
+	nodes, err := s.Store.Orchestration().ListNodes(ctx, id)
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes {
+		if node.Type != controlmodel.RunNodeSignal || node.State != controlmodel.RunNodeWaiting {
+			continue
+		}
+		var cfg DefinitionNode
+		if json.Unmarshal(node.Config, &cfg) == nil && cfg.SignalName == name {
+			if _, err = s.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, payload, "", ""); err != nil {
+				return err
+			}
+		}
+	}
+	return (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, id)
+}
+
+func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID, output json.RawMessage, actor controlmodel.Actor) (*controlmodel.RunNode, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !task.LeaderTask {
+		return nil, fmt.Errorf("only a Team leader task can complete a coordinator node")
+	}
+	node, err := s.Store.Orchestration().GetNode(ctx, task.RunNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if node.Type != controlmodel.RunNodeTeam || node.State != controlmodel.RunNodeWaiting {
+		return nil, store.ErrConflict
+	}
+	tasks, err := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 500})
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range tasks {
+		if candidate.ID != task.ID && !controlmodel.IsAgentTaskTerminal(candidate.Status) {
+			return nil, fmt.Errorf("coordinator has active worker task %s", candidate.ID)
+		}
+	}
+	nodes, err := s.Store.Orchestration().ListNodes(ctx, task.OrchestrationRunID)
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range nodes {
+		if candidate.ID != node.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
+			return nil, fmt.Errorf("coordinator has active node %s", candidate.NodeKey)
+		}
+	}
+	children, err := s.Store.Collaboration().ListIssues(ctx, store.IssueFilter{Tenant: task.Tenant, Namespace: task.Namespace, ParentID: &task.IssueID, Limit: 500})
+	if err != nil {
+		return nil, err
+	}
+	for _, child := range children {
+		if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
+			return nil, fmt.Errorf("coordinator has active child issue %s", child.ID)
+		}
+	}
+	completed, err := s.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, output, "", "")
+	if err != nil {
+		return nil, err
+	}
+	_, _ = s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
+		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &node.ID, AgentTaskID: &task.ID,
+		Type: "node.succeeded", Actor: actor, Payload: output,
+		IdempotencyKey: "coordinator-complete:" + node.ID.String()})
+	if err = (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, task.OrchestrationRunID); err != nil {
+		return nil, err
+	}
+	return completed, nil
+}
+
+func (s *Service) FailCoordinatorNode(ctx context.Context, taskID uuid.UUID, code, message string, actor controlmodel.Actor) (*controlmodel.RunNode, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !task.LeaderTask {
+		return nil, fmt.Errorf("only a Team leader task can fail a coordinator node")
+	}
+	node, err := s.Store.Orchestration().GetNode(ctx, task.RunNodeID)
+	if err != nil {
+		return nil, err
+	}
+	failed, err := s.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeFailed, nil, code, message)
+	if err != nil {
+		return nil, err
+	}
+	_, _ = s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
+		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &node.ID, AgentTaskID: &task.ID,
+		Type: "node.failed", Actor: actor, IdempotencyKey: "coordinator-fail:" + node.ID.String()})
+	if err = (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, task.OrchestrationRunID); err != nil {
+		return nil, err
+	}
+	return failed, nil
+}
+
+func (s *Service) Replan(ctx context.Context, taskID uuid.UUID, definition DefinitionNode, actor controlmodel.Actor) (*controlmodel.RunNode, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !task.LeaderTask || (definition.Type != controlmodel.RunNodeAgent && definition.Type != controlmodel.RunNodeTeam) {
+		return nil, fmt.Errorf("replan requires a Team leader and an agent or team node")
+	}
+	run, err := s.Store.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil {
+		return nil, err
+	}
+	if run.Mode != controlmodel.RunModeAdaptive || controlmodel.IsOrchestrationRunTerminal(run.State) || run.State == controlmodel.RunCancelling {
+		return nil, fmt.Errorf("replan is only available in a non-terminal adaptive Run")
+	}
+	if definition.Type == controlmodel.RunNodeAgent {
+		if _, err := uuid.Parse(definition.AgentID); err != nil {
+			return nil, fmt.Errorf("dynamic agent node requires a valid agentId")
+		}
+	}
+	if definition.Type == controlmodel.RunNodeTeam && definition.TeamRef == "" {
+		return nil, fmt.Errorf("dynamic team node requires teamRef")
+	}
+	if definition.Key == "" {
+		definition.Key = "dynamic-" + uuid.NewString()
+	}
+	config, _ := json.Marshal(definition)
+	node, err := s.Store.Orchestration().CreateNode(ctx, &controlmodel.RunNode{RunID: task.OrchestrationRunID,
+		Tenant: task.Tenant, Namespace: task.Namespace, NodeKey: definition.Key, Type: definition.Type,
+		Role: definition.Role, IssueID: &task.IssueID, State: controlmodel.RunNodeReady,
+		Config: config, Iteration: 1})
+	if err != nil {
+		return nil, err
+	}
+	_, _ = s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
+		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &node.ID, Type: "run.replanned",
+		Actor: actor, Payload: config, IdempotencyKey: "replan:" + node.ID.String()})
+	if err = (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, task.OrchestrationRunID); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
+var _ = time.Second

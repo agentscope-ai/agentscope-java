@@ -33,6 +33,7 @@ import {
   phaseTone,
   sessionDetailPath,
 } from './api';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 
 type TabId = 'definition' | 'instances' | 'sessions' | 'usage' | 'inventory';
 
@@ -55,6 +56,7 @@ function isActiveOps(phase?: string) {
 }
 
 export default function OperateAgentDetailPage({ name }: { name: string }) {
+  const scope = useControlPlaneScope();
   const [params, setParams] = useSearchParams();
   const namespace = params.get('namespace') || 'default';
   const tabParam = params.get('tab');
@@ -72,8 +74,8 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
     queryFn: () => fetchManagedAgent(name, namespace),
   });
   const sessions = useQuery({
-    queryKey: ['runtime-sessions', name],
-    queryFn: () => fetchRuntimeSessions({ agent: name }),
+    queryKey: ['runtime-sessions', name, namespace],
+    queryFn: () => fetchRuntimeSessions({ agent: name, namespace }),
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
   });
@@ -127,7 +129,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
   return (
     <Page>
       <div>
-        <Link to="/operate/agents" className="text-sm text-muted-foreground hover:text-foreground">
+        <Link to={scope.scopedPath('/managed/registered-agents')} className="text-sm text-muted-foreground hover:text-foreground">
           ← Agents
         </Link>
         <PageHeader
@@ -246,7 +248,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
                 active.map((s) => (
                   <Link
                     key={s.id}
-                    to={sessionDetailPath(s)}
+                    to={scope.scopedPath(sessionDetailPath(s))}
                     className="flex items-center justify-between rounded-lg border border-border px-4 py-3 text-sm hover:bg-muted/50"
                   >
                     <div className="min-w-0">
@@ -273,7 +275,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
                 history.map((s) => (
                   <Link
                     key={s.id}
-                    to={sessionDetailPath(s)}
+                    to={scope.scopedPath(sessionDetailPath(s))}
                     className="flex items-center justify-between rounded-lg border border-border px-4 py-3 text-sm hover:bg-muted/50"
                   >
                     <div className="min-w-0">
@@ -298,7 +300,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
             <CardDescription>
               One row per control-plane poll (last 24h). Tokens = usage observed in that interval
               (delta), not a running total ·{' '}
-              <Link className="text-primary hover:underline" to="/operate">
+              <Link className="text-primary hover:underline" to={scope.scopedPath('/control/overview')}>
                 Fleet overview
               </Link>
             </CardDescription>

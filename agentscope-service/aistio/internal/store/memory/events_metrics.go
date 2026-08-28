@@ -156,6 +156,9 @@ type metricsRepo struct{ s *Store }
 func (r *metricsRepo) RecordTokenUsage(_ context.Context, m *store.TokenUsageMetric) error {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
+	if m.Tenant == "" {
+		m.Tenant = "default"
+	}
 	if m.RecordedAt.IsZero() {
 		m.RecordedAt = time.Now().UTC()
 	}
@@ -182,6 +185,9 @@ func (r *metricsRepo) RecordSnapshot(_ context.Context, snap *store.SessionSnaps
 func (r *metricsRepo) RecordAgentMetric(_ context.Context, m *store.AgentMetric) error {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
+	if m.Tenant == "" {
+		m.Tenant = "default"
+	}
 	if m.RecordedAt.IsZero() {
 		m.RecordedAt = time.Now().UTC()
 	}
@@ -196,6 +202,9 @@ func (r *metricsRepo) QueryTokenUsage(_ context.Context, f store.TokenFilter) ([
 	var out []*store.TokenUsageMetric
 	for i := range r.s.tokens {
 		m := r.s.tokens[i]
+		if f.Tenant != "" && m.Tenant != f.Tenant {
+			continue
+		}
 		if f.AgentName != "" && m.AgentName != f.AgentName {
 			continue
 		}
@@ -268,6 +277,9 @@ func (r *metricsRepo) QueryAgentMetrics(_ context.Context, f store.AgentMetricFi
 	var out []*store.AgentMetric
 	for i := range r.s.agents {
 		m := r.s.agents[i]
+		if f.Tenant != "" && m.Tenant != f.Tenant {
+			continue
+		}
 		if f.AgentName != "" && m.AgentName != f.AgentName {
 			continue
 		}
@@ -306,6 +318,9 @@ func (r *metricsRepo) AggregateTokens(_ context.Context, f store.TokenFilter, bu
 	var order []time.Time
 	for i := range r.s.tokens {
 		m := r.s.tokens[i]
+		if f.Tenant != "" && m.Tenant != f.Tenant {
+			continue
+		}
 		if f.AgentName != "" && m.AgentName != f.AgentName {
 			continue
 		}
@@ -359,7 +374,7 @@ func truncBucket(t time.Time, bucket time.Duration) time.Time {
 	}
 }
 
-func (r *metricsRepo) TopAgents(_ context.Context, since time.Time, limit int) ([]store.AgentUsage, error) {
+func (r *metricsRepo) TopAgents(_ context.Context, tenant string, since time.Time, limit int) ([]store.AgentUsage, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -370,7 +385,7 @@ func (r *metricsRepo) TopAgents(_ context.Context, since time.Time, limit int) (
 	totals := map[agentKey]int64{}
 	for i := range r.s.tokens {
 		m := r.s.tokens[i]
-		if m.RecordedAt.Before(since) {
+		if m.Tenant != tenant || m.RecordedAt.Before(since) {
 			continue
 		}
 		k := agentKey{m.AgentName, m.Namespace}
@@ -380,6 +395,9 @@ func (r *metricsRepo) TopAgents(_ context.Context, since time.Time, limit int) (
 	latestAgent := map[agentKey]*store.AgentMetric{}
 	for i := range r.s.agents {
 		m := &r.s.agents[i]
+		if m.Tenant != tenant {
+			continue
+		}
 		k := agentKey{m.AgentName, m.Namespace}
 		if prev, ok := latestAgent[k]; ok && !m.RecordedAt.After(prev.RecordedAt) {
 			continue
@@ -415,7 +433,7 @@ func (r *metricsRepo) TopAgents(_ context.Context, since time.Time, limit int) (
 	return out, nil
 }
 
-func (r *metricsRepo) TopSessionsByTokens(_ context.Context, since time.Time, limit int) ([]store.SessionUsage, error) {
+func (r *metricsRepo) TopSessionsByTokens(_ context.Context, tenant string, since time.Time, limit int) ([]store.SessionUsage, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -425,7 +443,7 @@ func (r *metricsRepo) TopSessionsByTokens(_ context.Context, since time.Time, li
 	totals := map[uuid.UUID]int64{}
 	for i := range r.s.tokens {
 		m := r.s.tokens[i]
-		if m.SessionFK == nil || m.RecordedAt.Before(since) {
+		if m.Tenant != tenant || m.SessionFK == nil || m.RecordedAt.Before(since) {
 			continue
 		}
 		totals[*m.SessionFK] += m.TotalTokens
@@ -433,7 +451,7 @@ func (r *metricsRepo) TopSessionsByTokens(_ context.Context, since time.Time, li
 	out := make([]store.SessionUsage, 0, len(totals))
 	for fk, total := range totals {
 		s, ok := r.s.sessions[fk]
-		if !ok || s == nil {
+		if !ok || s == nil || s.Tenant != tenant {
 			continue
 		}
 		out = append(out, store.SessionUsage{
@@ -458,7 +476,7 @@ func (r *metricsRepo) TopSessionsByTokens(_ context.Context, since time.Time, li
 	return out, nil
 }
 
-func (r *metricsRepo) TopSessionsByDuration(_ context.Context, since time.Time, limit int) ([]store.SessionDuration, error) {
+func (r *metricsRepo) TopSessionsByDuration(_ context.Context, tenant string, since time.Time, limit int) ([]store.SessionDuration, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -469,7 +487,7 @@ func (r *metricsRepo) TopSessionsByDuration(_ context.Context, since time.Time, 
 	now := time.Now().UTC()
 	out := make([]store.SessionDuration, 0)
 	for _, s := range r.s.sessions {
-		if s == nil || strings.ToLower(s.Phase) != store.SessionPhaseActive {
+		if s == nil || s.Tenant != tenant || strings.ToLower(s.Phase) != store.SessionPhaseActive {
 			continue
 		}
 		var running *store.SessionTurn
@@ -515,7 +533,7 @@ func (r *metricsRepo) TopSessionsByDuration(_ context.Context, since time.Time, 
 	return out, nil
 }
 
-func (r *metricsRepo) TopAgentsByActiveSessions(_ context.Context, since time.Time, limit int) ([]store.AgentUsage, error) {
+func (r *metricsRepo) TopAgentsByActiveSessions(_ context.Context, tenant string, since time.Time, limit int) ([]store.AgentUsage, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -526,7 +544,7 @@ func (r *metricsRepo) TopAgentsByActiveSessions(_ context.Context, since time.Ti
 	peaks := map[agentKey]int32{}
 	for i := range r.s.agents {
 		m := r.s.agents[i]
-		if m.RecordedAt.Before(since) {
+		if m.Tenant != tenant || m.RecordedAt.Before(since) {
 			continue
 		}
 		k := agentKey{m.AgentName, m.Namespace}
@@ -617,6 +635,9 @@ func (r *metricsRepo) SumTokenUsage(_ context.Context, f store.TokenFilter) (int
 	var total int64
 	for i := range r.s.tokens {
 		m := r.s.tokens[i]
+		if f.Tenant != "" && m.Tenant != f.Tenant {
+			continue
+		}
 		if f.AgentName != "" && m.AgentName != f.AgentName {
 			continue
 		}
@@ -643,6 +664,9 @@ func (r *metricsRepo) SumErrorCount(_ context.Context, f store.AgentMetricFilter
 	var total int32
 	for i := range r.s.agents {
 		m := r.s.agents[i]
+		if f.Tenant != "" && m.Tenant != f.Tenant {
+			continue
+		}
 		if f.AgentName != "" && m.AgentName != f.AgentName {
 			continue
 		}

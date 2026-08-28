@@ -107,7 +107,7 @@ export default function AgentCreatePage() {
         defaultEnvironmentId: defaultEnvironmentId || undefined,
       };
       const created = await createAgent(req);
-      navigate(`/agents/${encodeURIComponent(created.id)}/settings`, { replace: true });
+      navigate(`/managed/agents/${encodeURIComponent(created.id)}/settings`, { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to create');
     } finally {
@@ -234,7 +234,7 @@ export default function AgentCreatePage() {
           >
             {submitting ? 'Creating…' : 'Create agent'}
           </button>
-          <button style={S.cancel} onClick={() => navigate('/agents')}>Cancel</button>
+          <button style={S.cancel} onClick={() => navigate('/managed/agents')}>Cancel</button>
           {err && <span style={S.err}>{err}</span>}
         </div>
       </div>

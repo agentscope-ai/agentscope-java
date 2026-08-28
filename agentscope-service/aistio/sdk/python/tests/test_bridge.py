@@ -425,6 +425,7 @@ def test_http_session_state_includes_frozen_fields(fake_cp, claude, fast_periods
 def test_event_buffer_bounded_drops_oldest(fake_cp, claude, fast_periods, monkeypatch):
     # 关闭满批 flush，让 buffer 涨过上限以验证丢最旧。
     monkeypatch.setattr(bridge_mod, "EVENT_BATCH_SIZE", bridge_mod.EVENT_BUFFER_MAX * 10)
+    monkeypatch.setattr(bridge_mod, "EVENT_FLUSH_INTERVAL", 60.0)
     bridge = _make_bridge(fake_cp, claude, enable_events=True)
     try:
         total = bridge_mod.EVENT_BUFFER_MAX + 100

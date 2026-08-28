@@ -59,7 +59,7 @@ export function TopAgentsByTokensTable({ agents = [] }: { agents?: AgentUsage[] 
                     <td className="px-4 py-3">
                       <Link
                         className="font-medium text-primary hover:underline"
-                        to={`/operate/agents/${encodeURIComponent(a.agentName)}?namespace=${encodeURIComponent(a.namespace || 'default')}`}
+                        to={`/managed/registered-agents/${encodeURIComponent(a.agentName)}?namespace=${encodeURIComponent(a.namespace || 'default')}`}
                       >
                         {a.agentName}
                       </Link>
@@ -106,7 +106,7 @@ export function TopAgentsByActiveTable({ agents = [] }: { agents?: AgentUsage[] 
                     <td className="px-4 py-3">
                       <Link
                         className="font-medium text-primary hover:underline"
-                        to={`/operate/agents/${encodeURIComponent(a.agentName)}?namespace=${encodeURIComponent(a.namespace || 'default')}`}
+                        to={`/managed/registered-agents/${encodeURIComponent(a.agentName)}?namespace=${encodeURIComponent(a.namespace || 'default')}`}
                       >
                         {a.agentName}
                       </Link>

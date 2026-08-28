@@ -1,7 +1,7 @@
 # Aistio
 
 IMG ?= aistio:latest
-CONTROLLER_GEN ?= $(shell which controller-gen)
+CONTROLLER_GEN ?= $(shell command -v controller-gen 2>/dev/null || printf '%s/bin/controller-gen' "$$(go env GOPATH)")
 HELM_CHART ?= helm/aistio
 
 .PHONY: all build test run generate manifests fmt vet ci verify sync-helm helm-lint helm-template docker-build docker-push clean install-tools proto
@@ -32,6 +32,8 @@ all: build
 
 build:
 	go build -o bin/aistiod ./cmd/aistiod
+	go build -o bin/aistio-runtime-host ./cmd/aistio-runtime-host
+	go build -o bin/aistioctl ./cmd/aistioctl
 
 run: build
 	./bin/aistiod
@@ -40,16 +42,25 @@ test:
 	go test ./... -coverprofile cover.out
 
 ENVTEST_K8S_VERSION ?= 1.32.x
+ENVTEST_K8S_INSTALLED_VERSION ?= 1.32.0
 LOCALBIN ?= $(shell pwd)/bin
 ENVTEST ?= $(shell which setup-envtest 2>/dev/null || echo "$(LOCALBIN)/setup-envtest")
 
 .PHONY: envtest
 envtest: ## Download setup-envtest if necessary.
-	@test -x $(ENVTEST) || go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	@test -x $(ENVTEST) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 .PHONY: test-integration
 test-integration: envtest ## Run envtest integration tests.
-	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./internal/controller/... -v -count=1
+	@set -e; assets=""; \
+	if ! assets="$$($(ENVTEST) use -i $(ENVTEST_K8S_INSTALLED_VERSION) --bin-dir $(LOCALBIN) -p path 2>/dev/null)"; then \
+		for attempt in 1 2 3; do \
+			if assets="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; then break; fi; \
+		done; \
+	fi; \
+	test -x "$$assets/etcd"; \
+	test -x "$$assets/kube-apiserver"; \
+	KUBEBUILDER_ASSETS="$$assets" go test ./internal/controller/... -v -count=1
 
 fmt:
 	go fmt ./...

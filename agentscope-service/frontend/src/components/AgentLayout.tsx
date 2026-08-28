@@ -63,7 +63,7 @@ export default function AgentLayout() {
   const canEdit = !isGlobal && tier === 'EDIT';
 
   const activeTab =
-    TABS.find(t => location.pathname.startsWith(`/agents/${id}/${t.key}`))?.key ?? 'settings';
+    TABS.find(t => location.pathname.startsWith(`/managed/agents/${id}/${t.key}`))?.key ?? 'settings';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -100,7 +100,7 @@ export default function AgentLayout() {
           )}
           {agent?.workspaceId && (
             <Link
-              to={`/workspaces/${encodeURIComponent(agent.workspaceId)}`}
+              to={`/managed/workspaces/${encodeURIComponent(agent.workspaceId)}`}
               style={{
                 marginLeft: 4, padding: '4px 12px', borderRadius: 999, fontSize: '0.74rem',
                 fontWeight: 600, letterSpacing: '0.02em', textDecoration: 'none',
@@ -155,7 +155,7 @@ export default function AgentLayout() {
             </div>
           </div>
           <button
-            onClick={() => navigate(`/operate/agents/${encodeURIComponent(agent?.name || id)}?namespace=default`)}
+            onClick={() => navigate(`/managed/registered-agents/${encodeURIComponent(agent?.name || id)}?namespace=default`)}
             style={{
               padding: '7px 12px',
               background: '#ffffff',
@@ -187,7 +187,7 @@ export default function AgentLayout() {
               return (
                 <button
                   key={t.key}
-                  onClick={() => navigate(`/agents/${encodeURIComponent(id)}/${t.key}`)}
+                  onClick={() => navigate(`/managed/agents/${encodeURIComponent(id)}/${t.key}`)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     background: 'transparent', border: 'none',
@@ -227,7 +227,7 @@ export default function AgentLayout() {
                 {agent?.description || 'The owner has granted you Clone access. Copy this agent into your own namespace to run or edit it.'}
               </p>
               <button
-                onClick={() => navigate(`/agents?clone=${encodeURIComponent(id)}`)}
+                onClick={() => navigate(`/managed/agents?clone=${encodeURIComponent(id)}`)}
                 style={{
                   padding: '11px 22px',
                   background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',

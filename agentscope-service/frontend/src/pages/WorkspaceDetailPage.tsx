@@ -219,7 +219,7 @@ export default function WorkspaceDetailPage() {
   return (
     <div style={{ padding: '36px 40px', maxWidth: 1040 }}>
       <button
-        onClick={() => navigate('/workspaces')}
+        onClick={() => navigate('/managed/workspaces')}
         style={{
           background: 'transparent',
           border: 'none',

@@ -1,0 +1,1 @@
+function u(t){if(!t)return"—";const r=Date.parse(t);if(Number.isNaN(r))return t;const o=Date.now()-r,n=Math.round(o/1e3);if(n<60)return`${n}s ago`;const e=Math.round(n/60);if(e<60)return`${e}m ago`;const a=Math.round(e/60);return a<48?`${a}h ago`:new Date(r).toLocaleString()}export{u as f};

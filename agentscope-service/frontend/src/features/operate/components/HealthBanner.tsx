@@ -41,7 +41,7 @@ export function HealthBanner({
             {staleDataplanes.slice(0, 5).map((dp) => (
               <li key={dp.instanceId}>
                 <Link
-                  to={`/operate/agents/${encodeURIComponent(dp.agentName)}?namespace=${encodeURIComponent(dp.namespace || 'default')}`}
+                  to={`/managed/registered-agents/${encodeURIComponent(dp.agentName)}?namespace=${encodeURIComponent(dp.namespace || 'default')}`}
                   className="hover:underline"
                 >
                   {dp.agentName}

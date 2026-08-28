@@ -38,17 +38,17 @@ func (s *Server) registerAgents(r gin.IRouter) {
 }
 
 type agentCreateReq struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	System        string `json:"system"`
-	SysPrompt     string `json:"sysPrompt"`
-	Model         string `json:"model"`
-	MaxIters      *int   `json:"maxIters"`
-	Tools         any    `json:"tools"`
-	McpServers    any    `json:"mcpServers"`
-	Skills        any    `json:"skills"`
-	Multiagent    any    `json:"multiagent"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Description   string  `json:"description"`
+	System        string  `json:"system"`
+	SysPrompt     string  `json:"sysPrompt"`
+	Model         string  `json:"model"`
+	MaxIters      *int    `json:"maxIters"`
+	Tools         any     `json:"tools"`
+	McpServers    any     `json:"mcpServers"`
+	Skills        any     `json:"skills"`
+	Multiagent    any     `json:"multiagent"`
 	WorkspacePath string  `json:"workspacePath"`
 	WorkspaceID   *string `json:"workspaceId"`
 	Version       *int    `json:"version"`
@@ -59,26 +59,26 @@ type agentCreateReq struct {
 }
 
 type agentRow struct {
-	OwnerID                    string
-	AgentID                    string
-	WorkspacePath              *string
-	WorkspaceID                *string
-	Name                       string
-	Description                *string
-	SysPrompt                  *string
-	Model                      *string
-	MaxIters                   *int
-	ToolsJSON                  *string
-	McpServersJSON             *string
-	SkillsJSON                 *string
-	MultiagentJSON             *string
-	DefaultEnvironmentID       *string
-	DefaultVaultIDsJSON        *string
-	DefaultMemoryStoreIDsJSON  *string
-	HeadVersion                int
-	ArchivedAt                 *int64
-	CreatedAt                  int64
-	UpdatedAt                  int64
+	OwnerID                   string
+	AgentID                   string
+	WorkspacePath             *string
+	WorkspaceID               *string
+	Name                      string
+	Description               *string
+	SysPrompt                 *string
+	Model                     *string
+	MaxIters                  *int
+	ToolsJSON                 *string
+	McpServersJSON            *string
+	SkillsJSON                *string
+	MultiagentJSON            *string
+	DefaultEnvironmentID      *string
+	DefaultVaultIDsJSON       *string
+	DefaultMemoryStoreIDsJSON *string
+	HeadVersion               int
+	ArchivedAt                *int64
+	CreatedAt                 int64
+	UpdatedAt                 int64
 }
 
 func (a agentRow) toJSON() gin.H {
@@ -103,26 +103,26 @@ func (a agentRow) toJSON() gin.H {
 		wsID = *a.WorkspaceID
 	}
 	out := gin.H{
-		"id":            a.AgentID,
-		"name":          a.Name,
-		"description":   desc,
-		"system":        system,
-		"model":         model,
-		"maxIters":      a.MaxIters,
-		"tools":         parseJSONRaw(deref(a.ToolsJSON)),
-		"mcpServers":    parseJSONRaw(deref(a.McpServersJSON)),
-		"skills":        parseJSONRaw(deref(a.SkillsJSON)),
-		"scope":         "user",
-		"ownerId":       a.OwnerID,
-		"createdAt":     a.CreatedAt,
-		"updatedAt":     a.UpdatedAt,
-		"workspacePath": ws,
-		"workspaceId":   nullStr(wsID),
+		"id":                    a.AgentID,
+		"name":                  a.Name,
+		"description":           desc,
+		"system":                system,
+		"model":                 model,
+		"maxIters":              a.MaxIters,
+		"tools":                 parseJSONRaw(deref(a.ToolsJSON)),
+		"mcpServers":            parseJSONRaw(deref(a.McpServersJSON)),
+		"skills":                parseJSONRaw(deref(a.SkillsJSON)),
+		"scope":                 "user",
+		"ownerId":               a.OwnerID,
+		"createdAt":             a.CreatedAt,
+		"updatedAt":             a.UpdatedAt,
+		"workspacePath":         ws,
+		"workspaceId":           nullStr(wsID),
 		"defaultEnvironmentId":  nullStr(deref(a.DefaultEnvironmentID)),
 		"defaultVaultIds":       parseStringSlice(deref(a.DefaultVaultIDsJSON)),
 		"defaultMemoryStoreIds": parseStringSlice(deref(a.DefaultMemoryStoreIDsJSON)),
-		"version":       a.HeadVersion,
-		"archivedAt":    nullMillis(a.ArchivedAt),
+		"version":               a.HeadVersion,
+		"archivedAt":            nullMillis(a.ArchivedAt),
 	}
 	if a.MultiagentJSON != nil && *a.MultiagentJSON != "" && *a.MultiagentJSON != "null" {
 		out["multiagent"] = parseJSONRaw(*a.MultiagentJSON)
@@ -313,11 +313,11 @@ func (s *Server) agentSnapshot(owner, id, name, desc, system, model string, maxI
 		"id": id, "name": name, "description": desc, "system": system, "model": model,
 		"maxIters": maxIters, "tools": tools, "mcpServers": mcp, "skills": skills,
 		"multiagent": multi, "scope": "user", "ownerId": owner, "workspacePath": ws,
-		"workspaceId":             nullStr(workspaceID),
-		"defaultEnvironmentId":    nullStr(defaultEnv),
-		"defaultVaultIds":         defaultVault,
-		"defaultMemoryStoreIds":   defaultMem,
-		"version":                 version, "createdAt": created, "updatedAt": updated,
+		"workspaceId":           nullStr(workspaceID),
+		"defaultEnvironmentId":  nullStr(defaultEnv),
+		"defaultVaultIds":       defaultVault,
+		"defaultMemoryStoreIds": defaultMem,
+		"version":               version, "createdAt": created, "updatedAt": updated,
 	}
 }
 

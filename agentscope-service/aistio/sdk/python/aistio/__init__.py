@@ -43,6 +43,7 @@ __version__ = "0.1.0"
 from .adapters.base import FrameworkAdapter
 from .adapters.registry import find_adapter, register_adapter, registered_adapters
 from .bridge import SessionBridge
+from .collaboration import CollaborationClient, CollaborationError
 from .context import ContextMessage, ContextSnapshot, ContextTracker, ToolInfo
 from .events import (
     EVENT_COMPACTION,
@@ -56,6 +57,7 @@ from .events import (
     SessionEvent,
 )
 from .inventory import InstanceHealth, Inventory, SubagentInfo, WorkspaceInfo
+from .orchestration import OrchestrationClient, OrchestrationError
 
 
 def instrument(
@@ -63,6 +65,8 @@ def instrument(
     *,
     control_plane: str,
     agent_name: str,
+    tenant: str = "default",
+    internal_token: Optional[str] = None,
     namespace: str = "default",
     instance_id: Optional[str] = None,
     enable_events: bool = False,
@@ -85,9 +89,13 @@ def instrument(
             raise ValueError(f"unsupported framework: {type(target).__name__}")
     if not instance_id:
         instance_id = os.environ.get("HOSTNAME") or socket.gethostname()
+    if internal_token is None:
+        internal_token = os.environ.get("AISTIO_INTERNAL_TOKEN", "")
     bridge = SessionBridge(
         control_plane=control_plane,
         agent_name=agent_name,
+        tenant=tenant,
+        internal_token=internal_token,
         namespace=namespace,
         instance_id=instance_id,
         enable_events=enable_events,
@@ -105,6 +113,10 @@ __all__ = [
     # 入口
     "instrument",
     "SessionBridge",
+	"CollaborationClient",
+	"CollaborationError",
+	"OrchestrationClient",
+	"OrchestrationError",
     "FrameworkAdapter",
     "register_adapter",
     "registered_adapters",

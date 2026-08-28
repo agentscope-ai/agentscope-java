@@ -134,7 +134,7 @@ export default function ChannelsHubPage() {
   );
 
   if (!admin) {
-    return <Navigate to="/agents" replace />;
+    return <Navigate to="/managed/agents" replace />;
   }
 
   return (
@@ -159,7 +159,7 @@ export default function ChannelsHubPage() {
             <div
               key={c.channelId}
               style={S.card}
-              onClick={() => navigate(`/channels/${encodeURIComponent(c.channelId)}`)}
+              onClick={() => navigate(`/managed/channels/${encodeURIComponent(c.channelId)}`)}
               onMouseEnter={e => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
                 e.currentTarget.style.boxShadow = '0 8px 24px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04)';
@@ -228,7 +228,7 @@ export default function ChannelsHubPage() {
           onCreated={(id) => {
             setCreating(false);
             void refresh();
-            navigate(`/channels/${encodeURIComponent(id)}`);
+            navigate(`/managed/channels/${encodeURIComponent(id)}`);
           }}
         />
       )}

@@ -28,7 +28,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
+	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
+	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
+	"github.com/spring-ai-alibaba/aistio/internal/taskauth"
 )
 
 // ObservedSession is a neutral, transport-agnostic session snapshot reported by
@@ -45,13 +48,103 @@ type ObservedSession struct {
 	LastActiveAt          string
 	Framework             string
 	FrameworkVersion      string
-	TeamID                string
-	TeamRole              string
 	ContextHash           string
 	IsCompacted           bool
 	EffectiveMessageCount int32
 	InstanceRef           string
 	InstanceIP            string
+}
+
+// ApplyExecutionAttemptReport projects a fenced external-runtime report into
+// the shared Attempt/Task/Node/Run transaction boundary.
+func (s *SessionEventSink) ApplyExecutionAttemptReport(ctx context.Context, tenant, namespace, agentIDRaw, bindingIDRaw, instanceKey string, instanceGeneration int64,
+	attemptID, taskID, runID, nodeID uuid.UUID, generation int64, action string, inputIDs []uuid.UUID,
+	content string, result, checkpoint, usage json.RawMessage, errorCode, errorMessage, attemptToken string) error {
+	if s == nil || s.Store == nil {
+		return fmt.Errorf("session event sink store is required")
+	}
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	agentID, parseErr := uuid.Parse(agentIDRaw)
+	bindingID, bindingParseErr := uuid.Parse(bindingIDRaw)
+	if parseErr != nil || task.Tenant != tenant || task.Namespace != namespace || task.AgentRef != agentID.String() ||
+		bindingParseErr != nil ||
+		task.OrchestrationRunID != runID || task.RunNodeID != nodeID || task.CurrentAttemptID == nil || *task.CurrentAttemptID != attemptID {
+		return store.ErrNotFound
+	}
+	attempt, err := s.Store.ExecutionAttempts().Get(ctx, attemptID)
+	if err != nil || attempt.DispatchGeneration != generation || attempt.BackendKind != controlmodel.DataPlaneExternalApplication ||
+		attempt.AgentID != agentID || attempt.BindingID != bindingID || attempt.AgentInstanceID == nil {
+		return store.ErrNotFound
+	}
+	if s.AttemptTokens != nil {
+		if err := s.AttemptTokens.VerifyAttempt(attemptToken, attempt.ID, generation,
+			string(controlmodel.DataPlaneExternalApplication), attempt.AgentInstanceID.String(), time.Now()); err != nil {
+			return store.ErrNotFound
+		}
+	}
+	instances, err := s.Store.RuntimeRegistry().ListAgentInstances(ctx, tenant, namespace, agentID)
+	if err != nil {
+		return err
+	}
+	selected := false
+	for _, instance := range instances {
+		if instance.ID == *attempt.AgentInstanceID && instance.BindingID == bindingID && instance.InstanceKey == instanceKey &&
+			instance.Generation == instanceGeneration {
+			selected = true
+			break
+		}
+	}
+	if !selected {
+		return store.ErrNotFound
+	}
+	service := &collaboration.Service{Store: s.Store}
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	switch action {
+	case "ack":
+		_, err = s.Store.Collaboration().AcknowledgeTaskInputs(ctx, task.ID, inputIDs)
+	case "preparing":
+		_, err = s.Store.ExecutionAttempts().Report(ctx, store.ExecutionAttemptReport{AttemptID: attempt.ID,
+			AgentInstanceID: *attempt.AgentInstanceID, DispatchGeneration: generation,
+			BackendKind: controlmodel.DataPlaneExternalApplication, State: controlmodel.ExecutionPreparing})
+	case "start":
+		_, err = s.Store.Collaboration().StartAgentTask(ctx, task.ID, task.Version)
+	case "heartbeat":
+		_, err = s.Store.ExecutionAttempts().Report(ctx, store.ExecutionAttemptReport{AttemptID: attempt.ID,
+			AgentInstanceID: *attempt.AgentInstanceID, DispatchGeneration: generation,
+			BackendKind: controlmodel.DataPlaneExternalApplication, Checkpoint: checkpoint, Usage: usage})
+	case "waiting":
+		_, err = s.Store.ExecutionAttempts().Report(ctx, store.ExecutionAttemptReport{AttemptID: attempt.ID,
+			AgentInstanceID: *attempt.AgentInstanceID, DispatchGeneration: generation,
+			BackendKind: controlmodel.DataPlaneExternalApplication, State: controlmodel.ExecutionWaiting,
+			Checkpoint: checkpoint, Usage: usage})
+	case "progress", "respond":
+		commentType := controlmodel.CommentResult
+		if action == "progress" {
+			commentType = controlmodel.CommentProgress
+		}
+		_, err = service.AddComment(ctx, collaboration.AddCommentRequest{IssueID: task.IssueID,
+			Author: actor, Content: content, Type: commentType, SourceTaskID: &task.ID, SourceAttemptID: &attempt.ID})
+	case "complete":
+		_, _, err = service.CompleteTask(ctx, task.ID, store.TaskCompletion{
+			ExpectedVersion: task.Version, AttemptID: attempt.ID, DispatchGeneration: generation,
+			Result: result, Checkpoint: checkpoint, Usage: usage, Summary: content,
+			ProcessedInputIDs: inputIDs,
+		}, actor)
+	case "fail":
+		_, _, err = s.Store.Collaboration().FailAgentTaskWithAttempt(ctx, task.ID, store.TaskFailure{
+			ExpectedVersion: task.Version, AttemptID: attempt.ID, DispatchGeneration: generation,
+			Code: errorCode, Message: errorMessage, Checkpoint: checkpoint, Usage: usage})
+	case "cancelled":
+		_, err = s.Store.ExecutionAttempts().Report(ctx, store.ExecutionAttemptReport{AttemptID: attempt.ID,
+			AgentInstanceID: *attempt.AgentInstanceID, DispatchGeneration: generation,
+			BackendKind: controlmodel.DataPlaneExternalApplication, State: controlmodel.ExecutionCancelled})
+	default:
+		return fmt.Errorf("unsupported ExecutionAttempt action %q", action)
+	}
+	return err
 }
 
 // ObservedEvent is a neutral, transport-agnostic Level-2 session event
@@ -121,20 +214,101 @@ type ObservedInventory struct {
 
 // SessionEventSink applies data-plane session reports to the runtime Store.
 type SessionEventSink struct {
-	Client client.Client
-	Store  store.Store
+	Client        client.Client
+	Store         store.Store
+	AttemptTokens *taskauth.Manager
+}
+
+// ApplyInstanceConnect observes an already registered ASDP application. ASDP
+// never creates or claims a logical Agent; registration credentials do that.
+func (s *SessionEventSink) ApplyInstanceConnect(ctx context.Context, tenant, namespace, agentIDRaw, bindingIDRaw, agentKey, instanceKey string, generation int64, runtimeName, sdkVersion string, capabilities []string) {
+	if s == nil || s.Store == nil || agentIDRaw == "" || bindingIDRaw == "" || instanceKey == "" || generation <= 0 {
+		return
+	}
+	if tenant == "" {
+		tenant = "default"
+	}
+	if namespace == "" {
+		namespace = "default"
+	}
+	agentID, err := uuid.Parse(agentIDRaw)
+	if err != nil {
+		return
+	}
+	bindingID, err := uuid.Parse(bindingIDRaw)
+	if err != nil {
+		return
+	}
+	agent, err := s.Store.AgentCatalog().GetAgent(ctx, agentID)
+	if err != nil || agent.Status != controlmodel.AgentActive || agent.AgentKey != agentKey ||
+		agent.Tenant != tenant || agent.Namespace != namespace {
+		return
+	}
+	encoded, _ := json.Marshal(capabilities)
+	instances, err := s.Store.RuntimeRegistry().ListAgentInstances(ctx, tenant, namespace, agentID)
+	if err != nil {
+		return
+	}
+	var instance *controlmodel.AgentInstance
+	for _, candidate := range instances {
+		if candidate.BindingID == bindingID && candidate.InstanceKey == instanceKey && candidate.Generation == generation {
+			instance = candidate
+			break
+		}
+	}
+	if instance == nil {
+		return
+	}
+	_, err = s.Store.RuntimeRegistry().HeartbeatAgentInstance(ctx, instance.ID, generation, instance.ActiveSessions, encoded)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to update registered ASDP application", "instance", instanceKey,
+			"runtime", runtimeName, "sdkVersion", sdkVersion)
+	}
+}
+
+func (s *SessionEventSink) ApplyInstanceDisconnect(ctx context.Context, tenant, namespace, agentIDRaw, bindingIDRaw, instanceKey string, generation int64) {
+	if s == nil || s.Store == nil {
+		return
+	}
+	if tenant == "" {
+		tenant = "default"
+	}
+	agentID, err := uuid.Parse(agentIDRaw)
+	if err != nil {
+		return
+	}
+	bindingID, err := uuid.Parse(bindingIDRaw)
+	if err != nil {
+		return
+	}
+	instances, err := s.Store.RuntimeRegistry().ListAgentInstances(ctx, tenant, namespace, agentID)
+	if err != nil {
+		return
+	}
+	for _, instance := range instances {
+		if instance.BindingID == bindingID && instance.InstanceKey == instanceKey && instance.Generation == generation {
+			_, _ = s.Store.RuntimeRegistry().SetAgentInstanceHealth(ctx, instance.ID, generation, controlmodel.RuntimeHealthUnhealthy)
+			return
+		}
+	}
 }
 
 // ApplySessionReport upserts each reported session into the Store.
-func (s *SessionEventSink) ApplySessionReport(ctx context.Context, namespace, agentName, instanceID string, sessions []ObservedSession) {
+func (s *SessionEventSink) ApplySessionReport(ctx context.Context, tenant, namespace, agentName, instanceID string, sessions []ObservedSession) {
 	logger := log.FromContext(ctx).WithName("asdp-session-sink")
+	logger = logger.WithValues("tenant", tenant)
 
 	var agent v1alpha1.Agent
-	if err := s.Client.Get(ctx, types.NamespacedName{Name: agentName, Namespace: namespace}, &agent); err != nil {
-		logger.V(1).Info("agent not found for session report; skipping",
-			"agent", agentName, "namespace", namespace, "error", err.Error())
-		return
+	if s.Client != nil {
+		if err := s.Client.Get(ctx, types.NamespacedName{Name: agentName, Namespace: namespace}, &agent); err != nil {
+			logger.V(1).Info("agent definition not found; accepting standalone application session report",
+				"agent", agentName, "namespace", namespace, "error", err.Error())
+		}
 	}
+	// Application ASDP is independent of Kubernetes. A self-registered
+	// application can report sessions before an Agent definition is projected.
+	agent.Name = agentName
+	agent.Namespace = namespace
 
 	for i := range sessions {
 		o := sessions[i]
@@ -144,16 +318,18 @@ func (s *SessionEventSink) ApplySessionReport(ctx context.Context, namespace, ag
 		if o.InstanceRef == "" {
 			o.InstanceRef = instanceID
 		}
-		if _, err := upsertObservedSession(ctx, s.Store, &agent, o); err != nil {
+		if _, err := upsertObservedSession(ctx, s.Store, tenant, &agent, o); err != nil {
 			logger.Error(err, "failed to upsert reported session", "sessionID", o.ID)
+			continue
 		}
 	}
 }
 
 // ApplyEventReport appends a batch of Level-2 events to the Store.
 // Duplicate (session, seq) appends are treated as idempotent success.
-func (s *SessionEventSink) ApplyEventReport(ctx context.Context, namespace, agentName, instanceID string, events []ObservedEvent) {
+func (s *SessionEventSink) ApplyEventReport(ctx context.Context, tenant, namespace, agentName, instanceID string, events []ObservedEvent) {
 	logger := log.FromContext(ctx).WithName("asdp-event-sink")
+	logger = logger.WithValues("tenant", tenant)
 	if s.Store == nil || len(events) == 0 {
 		return
 	}
@@ -168,7 +344,7 @@ func (s *SessionEventSink) ApplyEventReport(ctx context.Context, namespace, agen
 		}
 		fk, ok := fks[e.SessionID]
 		if !ok {
-			resolved, err := s.resolveSessionFK(ctx, namespace, agentName, instanceID, e.SessionID)
+			resolved, err := s.resolveSessionFK(ctx, tenant, namespace, agentName, instanceID, e.SessionID)
 			if err != nil {
 				logger.Error(err, "failed to resolve session for events", "sessionID", e.SessionID)
 				failed[e.SessionID] = true
@@ -208,13 +384,14 @@ func (s *SessionEventSink) ApplyEventReport(ctx context.Context, namespace, agen
 
 // ApplyContextReport writes a Level-4 effective-context snapshot to the Store.
 // Snapshots with an unchanged context_hash are skipped by the Store.
-func (s *SessionEventSink) ApplyContextReport(ctx context.Context, namespace, agentName, instanceID string, oc ObservedContext) {
+func (s *SessionEventSink) ApplyContextReport(ctx context.Context, tenant, namespace, agentName, instanceID string, oc ObservedContext) {
 	logger := log.FromContext(ctx).WithName("asdp-context-sink")
+	logger = logger.WithValues("tenant", tenant)
 	if s.Store == nil || oc.SessionID == "" {
 		return
 	}
 
-	fk, err := s.resolveSessionFK(ctx, namespace, agentName, instanceID, oc.SessionID)
+	fk, err := s.resolveSessionFK(ctx, tenant, namespace, agentName, instanceID, oc.SessionID)
 	if err != nil {
 		logger.Error(err, "failed to resolve session for context report", "sessionID", oc.SessionID)
 		return
@@ -255,16 +432,17 @@ func (s *SessionEventSink) ApplyContextReport(ctx context.Context, namespace, ag
 // ApplyInventoryReport processes an instance inventory report. The transport
 // registry (asdp.Server) retains the latest report for queries; here we log
 // and record the reported active session count as an agent metric.
-func (s *SessionEventSink) ApplyInventoryReport(ctx context.Context, namespace, agentName, instanceID string, inv ObservedInventory) {
+func (s *SessionEventSink) ApplyInventoryReport(ctx context.Context, tenant, namespace, agentName, instanceID string, inv ObservedInventory) {
 	logger := log.FromContext(ctx).WithName("asdp-inventory-sink")
 	logger.V(1).Info("inventory report",
-		"agent", agentName, "instance", instanceID,
+		"tenant", tenant, "agent", agentName, "instance", instanceID,
 		"subagents", len(inv.Subagents), "workspaces", len(inv.Workspaces),
 		"healthy", inv.Healthy, "activeSessions", inv.ActiveSessions)
 	if s.Store == nil {
 		return
 	}
 	if err := s.Store.Metrics().RecordAgentMetric(ctx, &store.AgentMetric{
+		Tenant:         tenant,
 		AgentName:      agentName,
 		Namespace:      namespace,
 		ActiveSessions: inv.ActiveSessions,
@@ -276,8 +454,8 @@ func (s *SessionEventSink) ApplyInventoryReport(ctx context.Context, namespace, 
 // resolveSessionFK maps a framework-reported session ID to the store primary
 // key, creating a minimal session row when the session is not known yet
 // (events/context may arrive before the first Level-1 snapshot).
-func (s *SessionEventSink) resolveSessionFK(ctx context.Context, namespace, agentName, instanceID, sessionID string) (uuid.UUID, error) {
-	sess, err := s.Store.Sessions().Get(ctx, agentName, namespace, sessionID)
+func (s *SessionEventSink) resolveSessionFK(ctx context.Context, tenant, namespace, agentName, instanceID, sessionID string) (uuid.UUID, error) {
+	sess, err := s.Store.Sessions().Get(ctx, tenant, agentName, namespace, sessionID)
 	if err == nil {
 		return sess.ID, nil
 	}
@@ -285,6 +463,7 @@ func (s *SessionEventSink) resolveSessionFK(ctx context.Context, namespace, agen
 		return uuid.Nil, err
 	}
 	saved, err := s.Store.Sessions().Upsert(ctx, &store.Session{
+		Tenant:      tenant,
 		SessionID:   sessionID,
 		AgentName:   agentName,
 		Namespace:   namespace,
@@ -300,7 +479,7 @@ func (s *SessionEventSink) resolveSessionFK(ctx context.Context, namespace, agen
 // upsertObservedSession writes a session + Level-1 snapshot (+ optional token metric)
 // into the Store. Shared by SessionPoller (HTTP pull) and ASDP gRPC sink (push).
 // It returns the saved session so callers can chain context/event writes.
-func upsertObservedSession(ctx context.Context, st store.Store, agent *v1alpha1.Agent, o ObservedSession) (*store.Session, error) {
+func upsertObservedSession(ctx context.Context, st store.Store, tenant string, agent *v1alpha1.Agent, o ObservedSession) (*store.Session, error) {
 	if st == nil {
 		return nil, fmt.Errorf("store is nil")
 	}
@@ -311,6 +490,7 @@ func upsertObservedSession(ctx context.Context, st store.Store, agent *v1alpha1.
 	}
 
 	sess := &store.Session{
+		Tenant:           tenant,
 		SessionID:        o.ID,
 		AgentName:        agent.Name,
 		Namespace:        agent.Namespace,
@@ -320,8 +500,6 @@ func upsertObservedSession(ctx context.Context, st store.Store, agent *v1alpha1.
 		Busy:             resolveObservedBusy(o.Busy, phase),
 		InstanceRef:      o.InstanceRef,
 		InstanceIP:       o.InstanceIP,
-		TeamID:           o.TeamID,
-		TeamRole:         o.TeamRole,
 		StartedAt:        parseTimePtr(o.StartedAt),
 		LastActiveAt:     parseTimePtr(o.LastActiveAt),
 	}
@@ -355,6 +533,7 @@ func upsertObservedSession(ctx context.Context, st store.Store, agent *v1alpha1.
 	if dPrompt > 0 || dCompletion > 0 {
 		fk := saved.ID
 		if err := st.Metrics().RecordTokenUsage(ctx, &store.TokenUsageMetric{
+			Tenant:           tenant,
 			SessionFK:        &fk,
 			AgentName:        agent.Name,
 			Namespace:        agent.Namespace,

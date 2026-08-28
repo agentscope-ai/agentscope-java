@@ -58,18 +58,18 @@ func (s *Server) registerChannels(r gin.IRouter) {
 }
 
 type channelRow struct {
-	ChannelID       string
-	OwnerID         string
-	Type            string
-	DmScope         *string
-	DefaultAgentID  *string
-	Disabled        bool
-	PropertiesJSON  *string
-	BindingsJSON    *string
-	RuntimeStarted  bool
-	RuntimeError    *string
-	CreatedAt       int64
-	UpdatedAt       int64
+	ChannelID      string
+	OwnerID        string
+	Type           string
+	DmScope        *string
+	DefaultAgentID *string
+	Disabled       bool
+	PropertiesJSON *string
+	BindingsJSON   *string
+	RuntimeStarted bool
+	RuntimeError   *string
+	CreatedAt      int64
+	UpdatedAt      int64
 }
 
 const channelSelect = `SELECT channel_id, owner_id, type, dm_scope, default_agent_id, disabled,
@@ -207,13 +207,13 @@ func (s *Server) getChannel(c *gin.Context) {
 }
 
 type channelUpsertReq struct {
-	ChannelID      string `json:"channelId"`
-	Type           string `json:"type"`
+	ChannelID      string  `json:"channelId"`
+	Type           string  `json:"type"`
 	DmScope        *string `json:"dmScope"`
 	DefaultAgentID *string `json:"defaultAgentId"`
-	Disabled       *bool  `json:"disabled"`
-	Properties     any    `json:"properties"`
-	Bindings       any    `json:"bindings"`
+	Disabled       *bool   `json:"disabled"`
+	Properties     any     `json:"properties"`
+	Bindings       any     `json:"bindings"`
 }
 
 func mergeChannelProperties(existingJSON *string, incoming any) string {
@@ -465,18 +465,18 @@ func (s *Server) setChannelDefault(c *gin.Context) {
 // --- agent bindings ---
 
 type bindingPayload struct {
-	ChannelID   string   `json:"channelId"`
-	Index       int      `json:"index"`
-	Tier        string   `json:"tier"`
-	Peer        string   `json:"peer"`
-	ParentPeer  string   `json:"parentPeer"`
-	Guild       string   `json:"guild"`
-	Roles       []string `json:"roles"`
-	Team        string   `json:"team"`
-	Account     string   `json:"account"`
-	Channel     string   `json:"channel"`
-	SessionScope string  `json:"sessionScope"`
-	AgentID     string   `json:"agentId"`
+	ChannelID    string   `json:"channelId"`
+	Index        int      `json:"index"`
+	Tier         string   `json:"tier"`
+	Peer         string   `json:"peer"`
+	ParentPeer   string   `json:"parentPeer"`
+	Guild        string   `json:"guild"`
+	Roles        []string `json:"roles"`
+	Team         string   `json:"team"`
+	Account      string   `json:"account"`
+	Channel      string   `json:"channel"`
+	SessionScope string   `json:"sessionScope"`
+	AgentID      string   `json:"agentId"`
 }
 
 func bindingView(channelID string, index int, tier string, p map[string]any) gin.H {
