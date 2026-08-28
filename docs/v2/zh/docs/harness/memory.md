@@ -58,7 +58,7 @@ Flush（路径 1）会在以下三个时机被触发：
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
-Flush 和 offload 都是**异步执行**的：它们在响应流结束后通过 `doOnComplete` 以 fire-and-forget 方式启动，不会阻塞当前 `call()` 的返回。换句话说，调用方拿到完整响应之后，flush LLM 调用和 JSONL offload 才在后台开始。
+Per-call flush 和 transcript offload 会在下游响应事件发送完成后执行，但默认情况下它们仍属于响应流程的一部分，因此 `call()` 会等待其完成。设置 `MemoryConfig.asyncFlush(true)` 后，只有 per-call flush 会脱离当前响应流程，以 fire-and-forget 方式在后台执行；transcript offload 以及另外两个 flush 路径仍保持现有的完成语义。
 
 ## 开启压缩
 
@@ -211,7 +211,7 @@ HarnessAgent.builder()
 异步 flush 是 fire-and-forget：
 
 - 失败只记日志，不会让已完成的 agent 响应失败；
-- 专用调度器每次运行一个 flush，最多再排队三个；队列饱和时，新 flush 会被拒绝并记录日志，避免待执行任务无限增长；
+- 进程级专用调度器每次运行一个 flush，最多再排队三个；队列饱和时，新 flush 会被拒绝并记录日志，避免待执行任务无限增长；
 - `HarnessAgent.close()` 不会等待进行中的 flush，因此应用立即退出时，记忆写入可能尚未完成。
 
 如果每个已返回响应都必须保证当次记忆 flush 已完成，请保持 `asyncFlush` 的默认值 `false`。

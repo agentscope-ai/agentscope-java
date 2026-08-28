@@ -58,7 +58,7 @@ Flush (path 1) is triggered at three different moments:
 
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.
 
-Both flush and offload are **asynchronous**: they are launched in a fire-and-forget fashion via `doOnComplete` after the response stream has ended, so they never block the current `call()` return. The caller receives the full response first; the flush LLM call and JSONL offload run in the background afterward.
+The per-call flush and transcript offload run after the downstream response events have been emitted, but by default they remain part of the response pipeline, so `call()` completion waits for them. Set `MemoryConfig.asyncFlush(true)` to detach only the per-call flush and run it in a fire-and-forget fashion; transcript offload and the other two flush paths retain their existing completion semantics.
 
 ## Enable compaction
 
@@ -211,7 +211,7 @@ This option only changes **path 1** (the per-call flush). It captures a message 
 Async flush is fire-and-forget:
 
 - failures are logged and do not fail the completed agent response;
-- a dedicated scheduler runs one flush at a time and queues up to three more; when saturated, new flushes are rejected and logged instead of growing the backlog without bound;
+- a process-wide dedicated scheduler runs one flush at a time and queues up to three more; when saturated, new flushes are rejected and logged instead of growing the backlog without bound;
 - in-flight flushes are not awaited during `HarnessAgent.close()`, so an application that exits immediately may stop before the memory write completes.
 
 Leave `asyncFlush` at its default `false` when every accepted response must guarantee that its per-call memory flush has completed.
