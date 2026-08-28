@@ -17,6 +17,7 @@ package io.agentscope.core.agui.adapter.strategy;
 
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +62,8 @@ public class AguiStreamContext {
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
+    private final Set<String> frontTools;
+    private final Map<String, String> startedToolCallNames = new LinkedHashMap<>();
 
     public AguiStreamContext(String threadId, String runId, AguiAdapterConfig config) {
         this(threadId, runId, config, null);
@@ -71,6 +75,7 @@ public class AguiStreamContext {
         this.runId = Objects.requireNonNull(runId, "runId cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.runInput = runInput;
+        this.frontTools = frontendToolNames(runInput);
     }
 
     public String getThreadId() {
@@ -187,6 +192,9 @@ public class AguiStreamContext {
             return;
         }
         if (startedToolCalls.add(toolCallId)) {
+            if (toolCallName != null && !toolCallName.isBlank()) {
+                startedToolCallNames.put(toolCallId, toolCallName);
+            }
             emit(
                     new AguiEvent.ToolCallStart(
                             threadId, runId, toolCallId, normalizeToolCallName(toolCallName)));
@@ -334,6 +342,24 @@ public class AguiStreamContext {
                 "Ignoring {}: null/blank toolCallId. Upstream must supply a stable toolCallId per"
                         + " AG-UI protocol.",
                 eventName);
+    }
+
+    /**
+     * Whether the started tool call is a frontend tool.
+     *
+     * <p>Streaming argument chunks often use a placeholder name such as {@code __fragment__}.
+     * Frontend-tool matching must therefore use the real name recorded on {@code ToolCallStart}.
+     */
+    public boolean isFrontendToolCall(String toolCallId) {
+        String toolCallName = startedToolCallNames.get(toolCallId);
+        return toolCallName != null && frontTools.contains(toolCallName);
+    }
+
+    private Set<String> frontendToolNames(RunAgentInput runInput) {
+        if (runInput == null || runInput.getTools() == null || runInput.getTools().isEmpty()) {
+            return Set.of();
+        }
+        return runInput.getTools().stream().map(AguiTool::getName).collect(Collectors.toSet());
     }
 
     static final class TokenUsageAccumulator {

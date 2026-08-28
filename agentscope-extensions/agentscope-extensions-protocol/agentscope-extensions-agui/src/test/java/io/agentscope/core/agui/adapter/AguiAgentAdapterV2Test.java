@@ -522,6 +522,50 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testFrontendToolFragmentDeltaEmitsArgsWhenEmitToolCallArgsDisabled() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().emitToolCallArgs(false).build(),
+                            inputWithTools(frontendTool("lookup")),
+                            new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", "{\"q\""),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", ":\"agent\"}"),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "lookup"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_ARGS,
+                            AguiEventType.TOOL_CALL_ARGS,
+                            AguiEventType.TOOL_CALL_END),
+                    types(events));
+            AguiEvent.ToolCallArgs firstArgs =
+                    assertInstanceOf(AguiEvent.ToolCallArgs.class, events.get(1));
+            AguiEvent.ToolCallArgs secondArgs =
+                    assertInstanceOf(AguiEvent.ToolCallArgs.class, events.get(2));
+            assertEquals("{\"q\"", firstArgs.delta());
+            assertEquals(":\"agent\"}", secondArgs.delta());
+        }
+
+        @Test
+        void testBackendToolFragmentDeltaDoesNotEmitArgsWhenEmitToolCallArgsDisabled() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().emitToolCallArgs(false).build(),
+                            inputWithTools(frontendTool("lookup")),
+                            new ToolCallStartEvent("reply-tool", "tool-1", "search"),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", "{\"q\""),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "search"));
+
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_START, AguiEventType.TOOL_CALL_END),
+                    types(events));
+        }
+
+        @Test
         void testToolResultDeltasAreAggregatedIntoToolCallResult() {
             List<AguiEvent> events =
                     runReActEvents(

@@ -31,7 +31,9 @@ final class ToolCallEventConverter implements AgentEventConverter {
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
         if (event instanceof ToolCallDeltaEvent delta) {
-            if (context.getConfig().isEmitToolCallArgs()) {
+            // Frontend tools always need args; streaming deltas often use a placeholder name.
+            if (context.getConfig().isEmitToolCallArgs()
+                    || context.isFrontendToolCall(delta.getToolCallId())) {
                 context.appendToolCallArgs(delta.getToolCallId(), delta.getDelta());
             }
         } else if (event instanceof ToolCallStartEvent start) {
