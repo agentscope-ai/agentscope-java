@@ -103,6 +103,10 @@ public class AguiMessageConverter {
             for (InputContent input : blocksContent.parts()) {
                 blocks.add(toContentBlock(input));
             }
+        } else if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+            // Tool message with no content (e.g. frontend tool returning nothing): still
+            // emit a ToolResultBlock so the pending tool call is resolved downstream.
+            addTextBlock(blocks, "", aguiMessage);
         }
 
         // Add tool calls if present (for assistant messages)
@@ -255,18 +259,22 @@ public class AguiMessageConverter {
      * @param aguiMessage the source message (for role/tool-call-id context)
      */
     private void addTextBlock(List<ContentBlock> blocks, String text, AguiMessage aguiMessage) {
+        if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+            // Tool results must always carry a ToolResultBlock, even when the frontend
+            // returned empty content.
+            String resultText = text != null ? text : "";
+            blocks.add(
+                    ToolResultBlock.builder()
+                            .id(aguiMessage.getToolCallId())
+                            .output(TextBlock.builder().text(resultText).build())
+                            .state(ToolResultState.SUCCESS)
+                            .build());
+            return;
+        }
         if (text == null || text.isEmpty()) {
             return;
         }
-        if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
-            blocks.add(
-                    ToolResultBlock.of(
-                            aguiMessage.getToolCallId(),
-                            null,
-                            TextBlock.builder().text(text).build()));
-        } else {
-            blocks.add(TextBlock.builder().text(text).build());
-        }
+        blocks.add(TextBlock.builder().text(text).build());
     }
 
     /**
