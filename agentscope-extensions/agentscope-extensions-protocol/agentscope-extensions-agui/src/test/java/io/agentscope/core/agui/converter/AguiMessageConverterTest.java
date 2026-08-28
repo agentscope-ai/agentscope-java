@@ -205,7 +205,36 @@ class AguiMessageConverterTest {
 
         assertEquals("msg-t1", msg.getId());
         assertEquals(MsgRole.TOOL, msg.getRole());
-        assertTrue(msg.hasContentBlocks(ToolResultBlock.class));
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-1", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+    }
+
+    @Test
+    void testConvertToolMessageWithEmptyContentStillProducesResultBlock() {
+        AguiMessage aguiMsg = AguiMessage.toolMessage("msg-t1", "tc-1", "");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-1", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+    }
+
+    @Test
+    void testConvertToolMessageWithNullContentStillProducesResultBlock() {
+        AguiMessage aguiMsg = new AguiMessage("msg-t1", "tool", null, null, "tc-1");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.TOOL, msg.getRole());
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-1", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
     }
 
     @Test
