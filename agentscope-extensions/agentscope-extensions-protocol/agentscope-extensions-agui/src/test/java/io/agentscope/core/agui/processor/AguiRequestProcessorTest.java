@@ -46,6 +46,9 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -375,6 +378,75 @@ class AguiRequestProcessorTest {
         } finally {
             nextRun.dispose();
         }
+    }
+
+    @Test
+    void processExecutesOnlyOneOfTwoConcurrentDuplicateResumes() throws Exception {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        BlockingClaimStore sharedStore = new BlockingClaimStore("run-a");
+        assertTrue(sharedStore.claimRun("thread-1", "seed-run").claimed());
+        assertTrue(
+                sharedStore.replacePendingInterrupts(
+                        "thread-1",
+                        "seed-run",
+                        Map.of("interrupt-1", interrupt("interrupt-1", "tool-call-1"))));
+        sharedStore.releaseRun("thread-1", "seed-run");
+        AtomicInteger executionCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .resumeStateStore(sharedStore)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        new CompletingAdapter(
+                                                resolvedAgent, config, executionCount))
+                        .build();
+        RunAgentInput firstInput = resumeInput("run-a", "interrupt-1");
+        RunAgentInput secondInput = resumeInput("run-b", "interrupt-1");
+
+        CompletableFuture<List<AguiEvent>> firstEvents =
+                CompletableFuture.supplyAsync(
+                        () ->
+                                processor
+                                        .process(request(firstInput))
+                                        .events()
+                                        .collectList()
+                                        .block());
+        sharedStore.awaitBlockedClaim();
+        try {
+            processor.process(request(secondInput)).events().collectList().block();
+        } finally {
+            sharedStore.allowBlockedClaim();
+        }
+
+        List<AguiEvent> rejectedEvents = firstEvents.get(5, TimeUnit.SECONDS);
+        assertEquals(1, executionCount.get());
+        assertResumeContractErrorLifecycle(rejectedEvents);
+    }
+
+    @Test
+    void processPreservesResumeReadFailureWhenClaimCleanupAlsoFails() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .resumeStateStore(new ResumeReadAndCleanupFailingStore())
+                        .build();
+
+        List<AguiEvent> events =
+                processor
+                        .process(request(resumeInput("run-1", "interrupt-1")))
+                        .events()
+                        .collectList()
+                        .block();
+
+        assertProcessorErrorLifecycle(events, "pending read failed", "INVALID_INPUT_ERROR");
     }
 
     @Test
@@ -780,6 +852,107 @@ class AguiRequestProcessorTest {
         }
     }
 
+    private static final class CompletingAdapter extends AguiAgentAdapter {
+
+        private final AtomicInteger executionCount;
+
+        private CompletingAdapter(
+                Agent agent, AguiAdapterConfig config, AtomicInteger executionCount) {
+            super(agent, config);
+            this.executionCount = executionCount;
+        }
+
+        @Override
+        public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+            executionCount.incrementAndGet();
+            return Flux.just(new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
+        }
+    }
+
+    private static final class BlockingClaimStore implements AguiResumeStateStore {
+
+        private final AguiResumeStateStore delegate = new InMemoryAguiResumeStateStore();
+        private final String blockedRunId;
+        private final CountDownLatch claimBlocked = new CountDownLatch(1);
+        private final CountDownLatch claimAllowed = new CountDownLatch(1);
+
+        private BlockingClaimStore(String blockedRunId) {
+            this.blockedRunId = blockedRunId;
+        }
+
+        @Override
+        public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
+            return delegate.getPendingInterrupts(threadId);
+        }
+
+        @Override
+        public RunClaim claimRun(String threadId, String runId) {
+            if (blockedRunId.equals(runId)) {
+                claimBlocked.countDown();
+                await(claimAllowed);
+            }
+            return delegate.claimRun(threadId, runId);
+        }
+
+        @Override
+        public void releaseRun(String threadId, String runId) {
+            delegate.releaseRun(threadId, runId);
+        }
+
+        @Override
+        public boolean replacePendingInterrupts(
+                String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
+            return delegate.replacePendingInterrupts(threadId, runId, pendingInterrupts);
+        }
+
+        private void awaitBlockedClaim() {
+            await(claimBlocked);
+        }
+
+        private void allowBlockedClaim() {
+            claimAllowed.countDown();
+        }
+
+        private static void await(CountDownLatch latch) {
+            try {
+                assertTrue(
+                        latch.await(5, TimeUnit.SECONDS), "timed out waiting for test interleave");
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("interrupted while waiting for test interleave", error);
+            }
+        }
+    }
+
+    private static final class ResumeReadAndCleanupFailingStore implements AguiResumeStateStore {
+
+        private final AtomicInteger pendingReads = new AtomicInteger();
+
+        @Override
+        public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
+            if (pendingReads.getAndIncrement() == 0) {
+                return Map.of("interrupt-1", interrupt("interrupt-1", "tool-call-1"));
+            }
+            throw new IllegalStateException("pending read failed");
+        }
+
+        @Override
+        public RunClaim claimRun(String threadId, String runId) {
+            return RunClaim.acquired();
+        }
+
+        @Override
+        public void releaseRun(String threadId, String runId) {
+            throw new IllegalStateException("claim cleanup failed");
+        }
+
+        @Override
+        public boolean replacePendingInterrupts(
+                String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
     private static void assertResumeContractErrorLifecycle(List<AguiEvent> events) {
         assertEquals(
                 List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
@@ -810,6 +983,19 @@ class AguiRequestProcessorTest {
                 .threadId("thread-1")
                 .runId(runId)
                 .messages(List.of(AguiMessage.userMessage("msg-1", "hello")))
+                .build();
+    }
+
+    private static RunAgentInput resumeInput(String runId, String interruptId) {
+        return RunAgentInput.builder()
+                .threadId("thread-1")
+                .runId(runId)
+                .resume(
+                        List.of(
+                                new AguiResume(
+                                        interruptId,
+                                        AguiResume.STATUS_RESOLVED,
+                                        Map.of("approved", true))))
                 .build();
     }
 

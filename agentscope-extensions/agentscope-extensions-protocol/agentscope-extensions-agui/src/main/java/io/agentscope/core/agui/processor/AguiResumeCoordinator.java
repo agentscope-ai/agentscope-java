@@ -112,23 +112,34 @@ final class AguiResumeCoordinator {
      * AgentScope session state are both scoped by {@code threadId}. Allowing multiple active runs
      * for one thread would make the final interrupt state depend on completion order.
      *
+     * <p>The run is claimed before resume validation. Pending interrupt mutations are owner
+     * checked, so a successful claim freezes the pending state against other runs while validation
+     * and resume injection complete.
+     *
      * @param input The run input to begin
      * @return A validation result describing whether the run can start
      */
     ResumeContractResult beginRun(RunAgentInput input) {
-        ResumeContractResult resumeContract = validate(input);
-        if (resumeContract.isError()) {
-            return resumeContract;
-        }
         AguiResumeStateStore.RunClaim runClaim =
                 stateStore.claimRun(input.getThreadId(), input.getRunId());
-        if (runClaim.claimed()) {
-            return ResumeContractResult.proceed();
+        if (!runClaim.claimed()) {
+            return ResumeContractResult.error(
+                    "Thread already has an active run; wait for run "
+                            + runClaim.activeRunId()
+                            + " to finish before starting another run on the same thread");
         }
-        return ResumeContractResult.error(
-                "Thread already has an active run; wait for run "
-                        + runClaim.activeRunId()
-                        + " to finish before starting another run on the same thread");
+
+        ResumeContractResult resumeContract;
+        try {
+            resumeContract = validate(input);
+        } catch (RuntimeException | Error failure) {
+            releaseClaimAfterFailure(input.getThreadId(), input.getRunId(), failure);
+            throw failure;
+        }
+        if (resumeContract.isError()) {
+            stateStore.releaseRun(input.getThreadId(), input.getRunId());
+        }
+        return resumeContract;
     }
 
     /**
@@ -244,6 +255,16 @@ final class AguiResumeCoordinator {
             return interrupt.toolCallId() != null && !interrupt.toolCallId().isBlank();
         }
         return false;
+    }
+
+    private void releaseClaimAfterFailure(String threadId, String runId, Throwable failure) {
+        try {
+            stateStore.releaseRun(threadId, runId);
+        } catch (RuntimeException | Error cleanupFailure) {
+            if (cleanupFailure != failure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+        }
     }
 
     record ResumeContractResult(boolean error, String message) {

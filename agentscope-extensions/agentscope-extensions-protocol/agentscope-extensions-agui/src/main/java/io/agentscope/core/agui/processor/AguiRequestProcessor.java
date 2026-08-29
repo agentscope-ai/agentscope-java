@@ -205,7 +205,13 @@ public class AguiRequestProcessor {
                                                         resumeCoordinator.finishRun(
                                                                 threadId, runId));
                             } catch (Throwable error) {
-                                resumeCoordinator.finishRun(threadId, runId);
+                                try {
+                                    resumeCoordinator.finishRun(threadId, runId);
+                                } catch (Throwable cleanupError) {
+                                    if (cleanupError != error) {
+                                        error.addSuppressed(cleanupError);
+                                    }
+                                }
                                 return processorErrorEvents(input, error);
                             }
                         });
