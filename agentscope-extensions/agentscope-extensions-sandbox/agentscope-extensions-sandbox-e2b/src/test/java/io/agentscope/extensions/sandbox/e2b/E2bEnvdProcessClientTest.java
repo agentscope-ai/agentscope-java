@@ -194,6 +194,23 @@ class E2bEnvdProcessClientTest {
     }
 
     @Test
+    void jsonCodecRejectsEndWithoutExitCode() throws Exception {
+        E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+
+        IOException exception =
+                assertThrows(
+                        IOException.class,
+                        () ->
+                                drainStartStream(
+                                        client,
+                                        connectFrame("{\"event\":{\"end\":{}}}"),
+                                        new ByteArrayOutputStream(),
+                                        new ByteArrayOutputStream()));
+
+        assertTrue(exception.getMessage().contains("before receiving a process exit code"));
+    }
+
+    @Test
     void jsonCodecPreservesSuccessfulExitCode() throws Exception {
         E2bEnvdProcessClient client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
