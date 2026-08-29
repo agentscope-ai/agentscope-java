@@ -55,17 +55,19 @@
 
 AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框架，提供与模型能力相匹配的核心 Harness 抽象，可支持长期、稳定、安全可控的智能体任务执行。
 
-- [**事件系统** →](https://java.agentscope.io/v2/zh/docs/building-blocks/message-and-event.html) 统一的事件流，28 种类型化事件，服务于前端实时渲染与 human-in-the-loop。
+- [**事件系统** →](https://java.agentscope.io/v2/zh/docs/building-blocks/message-and-event.html) 统一的事件流，31 种类型化事件，服务于前端实时渲染与 human-in-the-loop。
 - [**权限系统** →](https://java.agentscope.io/v2/zh/docs/building-blocks/permission-system.html) 工具调用决策机制：允许 / 用户审批 / 拒绝。
 - [**Middleware** →](https://java.agentscope.io/v2/zh/docs/building-blocks/middleware.html) 基于 AOP 模式的 hook 事件拦截机制，灵活扩展推理-行动循环。
 - [**Workspace 与沙箱** →](https://java.agentscope.io/v2/zh/docs/harness/workspace.html) 在隔离环境中执行工具 —— 本地、Docker、Kubernetes 或 AgentRun 云沙箱。
 - [**多智能体编排** →](https://java.agentscope.io/v2/zh/docs/harness/subagent.html) 多种子智能体定义模式，`agent_spawn` / `agent_send` + 事件流实时转发。
 - [**分布式部署** →](https://java.agentscope.io/v2/zh/docs/others/going-to-production.html) 真正的分布式 session 与 memory 管理（Redis / MySQL / PostgreSQL / OSS / COS），跨副本 session 恢复。
+- [**智能体进化** →](https://help.aliyun.com/zh/document_detail/3042583.html) 提供 Agent 全栈观测与审计、Agent 评估与实验、Agent 资产管理与持续优化等能力。
 
 <img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
 
 ## 新闻
 <!-- BEGIN NEWS -->
+- **[2026-08] [AgentScope Service](./agentscope-service)：** Agent 控制面与 Dashboard，面向 Agent 观测、注册与编排，兼容 AgentScope、LangChain、ADK、Claude / Qoder 等。
 - **[2026-07] `v2.0.0 GA`：** 首个正式版本发布！双层 Agent 架构、事件流、权限系统、Middleware、Workspace 沙箱、多智能体编排、分布式部署全面就绪。 [文档](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`：** 模型提供商模块化拆分；统一 DataBlock 多模态支持；原生结构化输出；Channel IM 平台接入；腾讯云 COS 状态持久化。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`：** 异步工具执行与定时唤醒调度；子 agent 跨副本路由与 session 恢复。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -95,7 +97,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-harness</artifactId>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
 </dependency>
 ```
 
@@ -105,7 +107,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-model-dashscope</artifactId>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
 </dependency>
 ```
 
@@ -129,10 +131,10 @@ public class FirstAgent {
                 .name("assistant")
                 .sysPrompt("你是一个有用的 AI 助手。")
                 // ModelRegistry 按字符串解析，自动读取对应环境变量
-                // （如 OPENAI_API_KEY）。
+                // （如 OPENAI_API_KEY 或 DEEPSEEK_API_KEY）。
                 // 示例："openai:gpt-4.1"、"openai:o3"、
-                // "deepseek:deepseek-chat"、"dashscope:qwen-plus"、
-                // "anthropic:claude-sonnet-4-5"、"ollama:llama3"
+                // "deepseek:deepseek-v4-flash"、"dashscope:qwen-plus"、
+                // "anthropic:claude-sonnet-4-7"、"ollama:llama3"
                 .model("dashscope:qwen-plus")
                 // 也可以直接传入 ChatModel 对象：
                 // .model(OpenAIChatModel.builder().model("gpt-4.1").build())
@@ -161,6 +163,16 @@ public class FirstAgent {
 }
 ```
 
+## AgentScope Service
+
+**[AgentScope Service](./agentscope-service)** — 基于 AgentScope Harness 构建的 Agent 控制面，提供：
+
++ **控制面（Control Plane）。** 为企业内的所有 Agent 提供智能体注册、查询、分布式协调服务，兼容 AgentScope、LangChain、ADK、Claude / Qoder 等主流 Agent 运行时；企业可以有一个集中的 Agent 指标查看入口，同时可以对运行中的 Session 进行上下文压缩等操作。
++ **Managed Agents 平台。** 底层基于 AgentScope Harness 运行时，可快速将多个 Agent 运行在一套统一管理的托管平台上；平台提供 Harness 能力托管，工具执行则可委托给用户自己控制的 Sandbox。
++ **Agent Teams。** 注册在 AgentScope Service 中的智能体可以被组建为一个或多个 Teams；不论是自行部署的 AgentScope 运行时，还是低代码托管的 Agent Harness 运行时，都可以被编排在一起，共同协作完成更复杂的任务。
+
+![](./docs/imgs/agentservice/agentscope-service-architecture.png)
+
 ## 核心设计
 
 AgentScope Java 2.0 从"构建一个智能体"的工具箱，迈向**面向生产环境运行智能体**的完整平台。升级围绕三大主题展开：
@@ -188,7 +200,7 @@ AgentScope Java 2.0 从"构建一个智能体"的工具箱，迈向**面向生�
 
 消息、事件、扩展机制更小、更正交；HITL 与事件流式是框架运行的一部分，不是外挂层：
 
-- **事件流** —— 28 种类型化事件，模型调用、文本增量、工具执行、用户确认全部实时流出
+- **事件流** —— 31 种类型化事件，模型调用、文本增量、工具执行、用户确认全部实时流出
 - **消息模型** —— 文本 / 文件 / 图片 / 音视频 / 工具结果统一收敛到 `ContentBlock`，按 role 严格校验
 - **Middleware** —— `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` 五阶段取代 v1 扁平 hook
 - **HITL 一等公民** —— 确认工具参数、审批敏感操作、交给外部系统执行，智能体在暂停点精确恢复

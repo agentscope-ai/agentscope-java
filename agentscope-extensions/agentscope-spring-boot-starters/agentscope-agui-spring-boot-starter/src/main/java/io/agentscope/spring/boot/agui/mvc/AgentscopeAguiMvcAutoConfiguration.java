@@ -17,9 +17,15 @@ package io.agentscope.spring.boot.agui.mvc;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
+import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
+import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -63,6 +69,21 @@ public class AgentscopeAguiMvcAutoConfiguration {
     }
 
     /**
+     * Creates the default AG-UI request body parser bean.
+     *
+     * <p>The parser decodes request bodies with AgentScope's Jackson 2 codec so that Spring Boot
+     * 4's Jackson 3 converters do not touch AG-UI's Jackson 2-annotated models. Applications can
+     * override this bean to customize request body parsing.
+     *
+     * @return A new AguiRequestBodyParser
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public AguiRequestBodyParser aguiRequestBodyParser() {
+        return new AguiRequestBodyParser();
+    }
+
+    /**
      * Creates the AG-UI MVC controller bean.
      *
      * @param registry The agent registry
@@ -73,15 +94,25 @@ public class AgentscopeAguiMvcAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public AguiMvcController aguiMvcController(
-            AguiAgentRegistry registry, ThreadSessionManager sessionManager, AguiProperties props) {
+            AguiAgentRegistry registry,
+            ThreadSessionManager sessionManager,
+            AguiProperties props,
+            ObjectProvider<AgentEventConverter> eventConvertersProvider,
+            ObjectProvider<AguiEventEnricher> eventEnrichersProvider,
+            ObjectProvider<AguiRuntimeContextResolver> runtimeContextResolverProvider,
+            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider) {
         AguiAdapterConfig config =
                 AguiAdapterConfig.builder()
                         .toolMergeMode(props.getDefaultToolMergeMode())
                         .runTimeout(props.getRunTimeout())
                         .emitStateEvents(props.isEmitStateEvents())
                         .emitToolCallArgs(props.isEmitToolCallArgs())
+                        .emitTokenUsage(props.isEmitTokenUsage())
                         .enableReasoning(props.isEnableReasoning())
+                        .emitRunFinishedAfterError(props.isEmitRunFinishedAfterError())
                         .defaultAgentId(props.getDefaultAgentId())
+                        .eventConverters(eventConvertersProvider.orderedStream().toList())
+                        .eventEnrichers(eventEnrichersProvider.orderedStream().toList())
                         .build();
 
         return AguiMvcController.builder()
@@ -90,6 +121,9 @@ public class AgentscopeAguiMvcAutoConfiguration {
                 .serverSideMemory(props.isServerSideMemory())
                 .agentIdHeader(props.getAgentIdHeader())
                 .sseTimeout(props.getSseTimeout())
+                .interruptOnDisconnect(props.isInterruptOnDisconnect())
+                .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
+                .adapterFactory(adapterFactoryProvider.getIfAvailable())
                 .config(config)
                 .build();
     }
@@ -104,8 +138,13 @@ public class AgentscopeAguiMvcAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public AguiRestController aguiRestController(
-            AguiMvcController aguiMvcController, AguiProperties props) {
+            AguiMvcController aguiMvcController,
+            AguiProperties props,
+            AguiRequestBodyParser requestBodyParser) {
         return new AguiRestController(
-                aguiMvcController, props.getPathPrefix(), props.isEnablePathRouting());
+                aguiMvcController,
+                props.getPathPrefix(),
+                props.isEnablePathRouting(),
+                requestBodyParser);
     }
 }

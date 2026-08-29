@@ -30,7 +30,8 @@ build/
 ### VS Code ###
 .vscode/
 .claude/
-
+.codex
+.cursor
 ### Mac OS ###
 .DS_Store
 
@@ -53,6 +54,9 @@ docs/_build
 openspec
 AGENTS.md
 CLAUDE.md
+.omc/
+.qoder/
+.cursor/
 
 ##Log
 logs/
@@ -86,5 +90,14 @@ logs/
 ## harness db
 **/*.db
 
-## oh-my-claudecode
-.omc/
+.dev-stack/
+
+# aistio local build artifacts
+agentscope-service/aistio/bin/
+agentscope-service/aistio/aistiod
+agentscope-service/aistio/aistiod.exe
+agentscope-service/aistio/*.test
+agentscope-service/aistio/cover.out
+agentscope-service/aistio/coverage.*
+agentscope-service/aistio/.idea/
+agentscope-service/.dev-stack/

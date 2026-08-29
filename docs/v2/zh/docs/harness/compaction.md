@@ -4,7 +4,7 @@ description: "在不丢失关键信息的前提下,把对话上下文控制在�
 ---
 
 :::{note}
-本页讲的是**上下文压缩**——`HarnessAgent` 用来把对话控制在模型 token 预算内的几种策略。它建立在[上下文与 AgentState](../building-blocks/context) 所描述的无状态引擎和 `AgentState` 持久化基础之上。如果还没有读过那一页,建议先看——压缩操作的对象正是持久化链路保存和恢复的同一份 `AgentState`。
+本页讲的是**上下文压缩**——`HarnessAgent` 用来把对话控制在模型 token 预算内的几种策略。它建立在[上下文与 AgentState](../building-blocks/context.md) 所描述的无状态引擎和 `AgentState` 持久化基础之上。如果还没有读过那一页,建议先看——压缩操作的对象正是持久化链路保存和恢复的同一份 `AgentState`。
 
 **两条链路如何配合**:压缩在内存里更新 `AgentState.contextMutable()`,状态存储在 call 结束时把更新后的 `AgentState` 整体持久化存储。两条路径独立但按顺序执行——状态存储拿到的永远是压缩后的版本。
 :::
@@ -35,7 +35,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-默认摘要 prompt 会把内容组织成 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四个小节,适合工程/编排类 agent。`CompactionConfig` 还支持 `.model(...)` 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(`triggerTokens`、`keepTokens`、`flushBeforeCompact`、`offloadBeforeCompact`、`model`、`TruncateArgsConfig`)与摘要 prompt 模板在[记忆](./memory#开启压缩)文档里有详细列表,这里不重复。
+默认摘要 prompt 会把内容组织成 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四个小节,适合工程/编排类 agent。`CompactionConfig` 还支持 `.model(...)` 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(`triggerTokens`、`keepTokens`、`flushBeforeCompact`、`offloadBeforeCompact`、`model`、`TruncateArgsConfig`)与摘要 prompt 模板在[记忆](./memory.md#开启压缩)文档里有详细列表,这里不重复。
 
 ### 2. 大工具结果卸载 (`ToolResultEvictionMiddleware`)
 
@@ -47,9 +47,9 @@ HarnessAgent.builder()
     .build();
 ```
 
-默认排除 `read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files` / `memory_*` / `session_search`——这些工具要么自带分页、要么返回值很小。**Shell `execute` 默认不排除**,因为命令输出可能非常大。
+默认排除 `read_file` / `write_file` / `edit_file` / `list_files` / `memory_*` / `session_search`——这些工具要么自带分页、要么返回值很小。`grep_files` 和 `glob_files` 会强制限制结果条数，但仍可触发大结果卸载，作为单条结果异常大时的第二道保护。**Shell `execute` 默认不排除**,因为命令输出可能非常大。
 
-详情见[记忆 - 大工具结果卸载](./memory#大工具结果卸载)。
+详情见[记忆 - 大工具结果卸载](./memory.md#大工具结果卸载)。
 
 ### 3. 上下文溢出兜底
 
@@ -79,15 +79,15 @@ CompactionConfig.builder()
 
 类似地,`offloadBeforeCompact`(默认 `true`)在摘要前把**原始消息**整段写到永不压缩的 `*.log.jsonl`,供 `session_search` 检索。
 
-> Memory 子系统的完整工作机制——双层结构、后台维护任务(归档、合并)、记忆工具——见 [记忆](./memory) 文档。压缩与 memory 是一对常常一起用的组件,但有各自独立的开关。
+> Memory 子系统的完整工作机制——双层结构、后台维护任务(归档、合并)、记忆工具——见 [记忆](./memory.md) 文档。压缩与 memory 是一对常常一起用的组件,但有各自独立的开关。
 
 ## 压缩不会触碰的内容
 
 `ConversationCompactor` 只处理 `AgentState.contextMutable()` 里的**对话消息列表**。下面这些活在 `AgentState` 其他字段里,**完全不会被摘要压缩波及**:
 
-- **Plan Mode 状态**(`AgentState.getPlanModeContext()`):是否在 plan 阶段、当前计划文件路径。计划文件本身在工作区 `plans/` 下,生命周期由 Plan Mode 自己管理。详见 [Plan Mode](./plan-mode)。
-- **子 agent 后台任务**(`task_id`、状态、结果):住在 `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json` 里,由 `TaskRepository` 单独维护;主 agent 下一轮推理前通过 system reminder 反向注入完成结果,**不进入对话消息流**,所以摘要也无从压缩。详见 [子 Agent - 异步任务的存储位置](./subagent#异步任务的存储位置)。
-- **`todo_write` 任务清单**(`AgentState.getTasksContext()`):独立字段,跟着 `AgentState` 一起持久化,但不参与对话压缩。详见 [Plan Mode - 与 `todo_write` 的协作](./plan-mode#与-todo_write-的协作)。
+- **Plan Mode 状态**(`AgentState.getPlanModeContext()`):是否在 plan 阶段、当前计划文件路径。计划文件本身在工作区 `plans/` 下,生命周期由 Plan Mode 自己管理。详见 [Plan Mode](./plan-mode.md)。
+- **子 agent 后台任务**(`task_id`、状态、结果):住在 `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json` 里,由 `TaskRepository` 单独维护;主 agent 下一轮推理前通过 system reminder 反向注入完成结果,**不进入对话消息流**,所以摘要也无从压缩。详见 [子 Agent - 异步任务的存储位置](./subagent.md#异步任务的存储位置)。
+- **`todo_write` 任务清单**(`AgentState.getTasksContext()`):独立字段,跟着 `AgentState` 一起持久化,但不参与对话压缩。详见 [Plan Mode - 与 `todo_write` 的协作](./plan-mode.md#与-todo_write-的协作)。
 - **权限规则**(`getPermissionContext()`):独立字段,自带持久化。
 
 这些组件各有自己的状态机和恢复机制,压缩通路对它们是透明的——你可以放心开启 `.compaction(...)` 而不用担心丢 plan / 丢未完成的后台 task。
@@ -106,9 +106,9 @@ CompactionConfig.builder()
 
 ## 相关文档
 
-- [上下文与 AgentState](../building-blocks/context) —— 无状态引擎设计、`AgentState` 结构、状态持久化、`RuntimeContext`
-- [架构](./architecture) —— Context、状态持久化、工作区在一次 call 内如何协作
-- [记忆](./memory) —— 长期记忆、对话压缩的详细配置、大工具结果卸载、后台维护
-- [Plan Mode](./plan-mode) —— plan 状态的独立持久化与恢复
-- [子 Agent](./subagent) —— 后台任务的存储位置与跨节点恢复
-- [文件系统](./filesystem) —— `userId` 多租户路径隔离
+- [上下文与 AgentState](../building-blocks/context.md) —— 无状态引擎设计、`AgentState` 结构、状态持久化、`RuntimeContext`
+- [架构](./architecture.md) —— Context、状态持久化、工作区在一次 call 内如何协作
+- [记忆](./memory.md) —— 长期记忆、对话压缩的详细配置、大工具结果卸载、后台维护
+- [Plan Mode](./plan-mode.md) —— plan 状态的独立持久化与恢复
+- [子 Agent](./subagent.md) —— 后台任务的存储位置与跨节点恢复
+- [文件系统](./filesystem.md) —— `userId` 多租户路径隔离

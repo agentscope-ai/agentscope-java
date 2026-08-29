@@ -29,6 +29,20 @@ DistributedStore store = DistributedStore.builder()
     .build();
 ```
 
+### 备选：aistio 托管 Store
+
+若已部署 aistio 控制面，可由其托管 BaseStore / 沙箱锁与快照 / MessageBus / AsyncToolRegistry / **TaskRepository** / 可选 **SessionTurnGate**。**仍需自备一个 `AgentStateStore`**（Redis/MySQL/Postgres/OSS）；core 提供 `getVersioned` / `saveIfVersion`，但存储不在控制面：
+
+```java
+ControlPlaneStores cp = ControlPlaneStores.fromEnv();
+HarnessAgent.builder()
+    .distributedStore(cp.withAgentStateStore(redis.agentStateStore()))
+    .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
+    .build();
+```
+
+控制面开启 `--enable-hosted-store`（生产建议 Postgres）。`withAgentStateStore` 已含托管 TaskRepository；**SandboxFilesystem 模式下的子 agent 后台任务**需此路径。AgentStateStore 的 Redis/Postgres/MySQL/InMemory 支持 versioning CAS，其余后端仍为 LWW；多副本可选 turn gate + `ConflictPolicy.FAIL` 减少重复 turn，正确性靠 CAS。鉴权为共享 internal token，租户取自请求体——不适用于同一控制面上互不信任的多租户。`queueDrain` 为 destructive（读即 ack）。详见 [分布式存储 — aistio 托管 Store](../../integration/distributed/index.md#aistio-托管-store)。
+
 ## 一图速览：单机默认 vs 分布式生产
 
 | 维度 | 单机默认（开发 / demo） | 分布式生产替换 |

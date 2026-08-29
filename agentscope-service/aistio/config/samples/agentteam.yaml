@@ -1,0 +1,41 @@
+apiVersion: agentscope.io/v1alpha1
+kind: AgentTeam
+metadata:
+  name: pr-review-team
+  namespace: production
+spec:
+  objective: "Review PR #142, covering security, performance, and test coverage"
+  lead:
+    agentRef:
+      name: senior-reviewer
+    prompt: "You are the team lead. Coordinate the review, synthesize findings."
+  members:
+    - name: security-reviewer
+      agentRef:
+        name: security-agent
+      prompt: "Focus on security: auth, injection, data exposure."
+      planApproval: false
+    - name: perf-reviewer
+      agentRef:
+        name: perf-agent
+      prompt: "Focus on performance: N+1 queries, memory leaks, hot paths."
+      planApproval: true
+  dynamicMembers:
+    enabled: true
+    maxTotal: 8
+    allowedAgentRefs:
+      - name: security-agent
+      - name: perf-agent
+      - name: test-agent
+  recovery:
+    reschedulePolicy: Auto
+    maxRestarts: 3
+    restartBackoff: "30s"
+    graceWindow: "10s"
+  lifecycle:
+    maxDuration: "2h"
+    ttlAfterCompleted: "1h"
+    ttlAfterFailed: "24h"
+  config:
+    taskClaimStrategy: self-claim
+    shutdownPolicy: lead-decides

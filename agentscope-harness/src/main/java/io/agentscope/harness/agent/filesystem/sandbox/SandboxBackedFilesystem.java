@@ -16,27 +16,46 @@
 package io.agentscope.harness.agent.filesystem.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
+import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * A {@link BaseSandboxFilesystem} that delegates execution to a live {@link Sandbox}.
  *
- * <p>Stable proxy created at agent build time; a fresh {@link Sandbox} is injected on each call
- * via the volatile {@code sandbox} field by {@link
- * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware}.
+ * <p>Stable proxy created once per agent bean. The live {@link Sandbox} for a call is bound
+ * <em>per-call</em> on the invocation's {@link RuntimeContext} by {@link
+ * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} and resolved here via {@link
+ * #requireSandbox(RuntimeContext)} — this per-call binding takes precedence and is what keeps
+ * concurrent distinct-session calls on the same agent bean isolated (issue #2490). The legacy
+ * {@code volatile sandbox} field is retained only as a best-effort fallback for context-free
+ * internal callers that resolve the filesystem with a shared empty {@link RuntimeContext} (e.g.
+ * {@link io.agentscope.harness.agent.bus.WorkspaceMessageBus}, which carries no per-call binding).
+ * The middleware still maintains that field via {@link #setSandbox} on acquire and {@link
+ * #clearSandboxIfCurrent} on release, so it remains last-writer-wins under concurrency and must not
+ * be relied on for isolation.
  */
 public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements SandboxAware {
 
@@ -50,13 +69,26 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     @Override
-    public void setSandbox(Sandbox sandbox) {
+    public synchronized void setSandbox(Sandbox sandbox) {
         this.sandbox = sandbox;
     }
 
     @Override
     public Sandbox getSandbox() {
         return sandbox;
+    }
+
+    /**
+     * Clears the fallback {@code sandbox} field only if it still points at {@code expected}. Used by
+     * {@link io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} on release so a
+     * finishing call never nulls a concurrent sibling call's fallback binding (issue #2490).
+     *
+     * @param expected the sandbox this call bound at acquire time
+     */
+    public synchronized void clearSandboxIfCurrent(Sandbox expected) {
+        if (this.sandbox == expected) {
+            this.sandbox = null;
+        }
     }
 
     @Override
@@ -67,7 +99,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public ExecuteResponse execute(
             RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         try {
             ExecResult result = active.exec(runtimeContext, command, timeoutSeconds);
             return new ExecuteResponse(
@@ -90,38 +122,49 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         List<FileUploadResponse> results = new ArrayList<>(files.size());
 
         for (Map.Entry<String, byte[]> file : files) {
             String path = file.getKey();
             byte[] content = file.getValue();
+            if (content == null) {
+                results.add(FileUploadResponse.fail(path, "File content must not be null"));
+                continue;
+            }
+
+            if (active instanceof SandboxFileTransfer transfer) {
+                String transferPath = null;
+                try {
+                    transferPath = resolveTransferPath(active, path);
+                } catch (IllegalArgumentException e) {
+                    // Same contract as the archive fallback: an invalid path fails this file.
+                    log.warn("[sandbox-fs] uploadFiles failed for path: {}", path, e);
+                    results.add(FileUploadResponse.fail(path, e.getMessage()));
+                    continue;
+                } catch (IOException e) {
+                    log.debug(
+                            "[sandbox-fs] Workspace root unavailable, keeping archive fallback: {}",
+                            path);
+                }
+                if (transferPath != null && transfer.supportsFileTransfer(transferPath)) {
+                    try {
+                        transfer.uploadFile(transferPath, content);
+                        results.add(FileUploadResponse.success(path));
+                    } catch (Exception e) {
+                        log.warn("[sandbox-fs] native upload failed for path: {}", path, e);
+                        results.add(FileUploadResponse.fail(path, e.getMessage()));
+                    }
+                    continue;
+                }
+            }
 
             try {
-                String base64Content = Base64.getEncoder().encodeToString(content);
-                String escapedPath = shellSingleQuote(path);
-                String cmd =
-                        "mkdir -p $(dirname "
-                                + escapedPath
-                                + ") && "
-                                + "printf '%s' '"
-                                + base64Content
-                                + "' | base64 -d > "
-                                + escapedPath;
-
-                ExecResult result = active.exec(runtimeContext, cmd, null);
-                if (result.ok()) {
-                    results.add(FileUploadResponse.success(path));
-                } else {
-                    results.add(FileUploadResponse.fail(path, result.combinedOutput()));
+                byte[] archive = buildSingleFileArchive(active, path, content);
+                try (InputStream archiveStream = new ByteArrayInputStream(archive)) {
+                    active.hydrateWorkspace(archiveStream);
                 }
-            } catch (SandboxException.ExecException e) {
-                String combined =
-                        (e.getStdout() != null ? e.getStdout() : "")
-                                + (e.getStderr() != null && !e.getStderr().isBlank()
-                                        ? "\n" + e.getStderr()
-                                        : "");
-                results.add(FileUploadResponse.fail(path, combined));
+                results.add(FileUploadResponse.success(path));
             } catch (Exception e) {
                 log.warn("[sandbox-fs] uploadFiles failed for path: {}", path, e);
                 results.add(FileUploadResponse.fail(path, e.getMessage()));
@@ -134,10 +177,23 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        Sandbox active = requireSandbox();
+        Sandbox active = requireSandbox(runtimeContext);
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 
         for (String path : paths) {
+            // Reads keep the raw-path probe, unlike uploads: no shared temp state to race on,
+            // and the exec fallback below stays a single round trip.
+            if (active instanceof SandboxFileTransfer transfer
+                    && transfer.supportsFileTransfer(path)) {
+                try {
+                    results.add(FileDownloadResponse.success(path, transfer.downloadFile(path)));
+                } catch (Exception e) {
+                    log.warn("[sandbox-fs] native download failed for path: {}", path, e);
+                    results.add(FileDownloadResponse.fail(path, e.getMessage()));
+                }
+                continue;
+            }
+
             try {
                 String escapedPath = shellSingleQuote(path);
                 String cmd = "base64 " + escapedPath;
@@ -168,8 +224,23 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         return results;
     }
 
-    private Sandbox requireSandbox() {
-        Sandbox s = sandbox;
+    /**
+     * Resolves the {@link Sandbox} bound to the current call, preferring the per-call binding
+     * carried on {@code runtimeContext} (concurrency-safe under parallel distinct-session calls,
+     * issue #2490) and falling back to the legacy {@code sandbox} field for direct
+     * {@link #setSandbox} callers that do not thread a per-call context.
+     */
+    private Sandbox requireSandbox(RuntimeContext runtimeContext) {
+        Sandbox s = null;
+        if (runtimeContext != null) {
+            SandboxAcquireResult bound = runtimeContext.get(SandboxAcquireResult.class);
+            if (bound != null) {
+                s = bound.getSandbox();
+            }
+        }
+        if (s == null) {
+            s = sandbox;
+        }
         if (s == null) {
             throw new SandboxException.SandboxConfigurationException(
                     "No active sandbox — sandbox filesystem used outside of a call context");
@@ -179,5 +250,90 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
     private String shellSingleQuote(String s) {
         return "'" + s.replace("'", "'\\''") + "'";
+    }
+
+    /** Builds a single-file tar archive relative to the workspace root. */
+    private byte[] buildSingleFileArchive(Sandbox active, String path, byte[] content)
+            throws IOException {
+        if (content == null) {
+            throw new IOException("File content must not be null");
+        }
+
+        String archivePath = resolveArchivePath(active, path);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(output)) {
+            tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
+            TarArchiveEntry entry = new TarArchiveEntry(archivePath);
+            entry.setSize(content.length);
+            tar.putArchiveEntry(entry);
+            tar.write(content);
+            tar.closeArchiveEntry();
+            tar.finish();
+        }
+        return output.toByteArray();
+    }
+
+    /** Constrains an upload path to the workspace and converts it to an archive path. */
+    private String resolveArchivePath(Sandbox active, String path) throws IOException {
+        AbstractFilesystem.validatePath(path);
+        String normalized = normalizeUploadPath(path);
+
+        if (normalized.startsWith("/")) {
+            String workspaceRoot = resolveWorkspaceRoot(active);
+            String rootPrefix = "/".equals(workspaceRoot) ? "/" : workspaceRoot + "/";
+            if (!normalized.startsWith(rootPrefix)) {
+                throw new IOException("Upload path is outside the sandbox workspace: " + path);
+            }
+            normalized = normalized.substring(rootPrefix.length());
+        }
+
+        if (normalized.isBlank()) {
+            throw new IOException("Upload path must identify a file: " + path);
+        }
+        return normalized;
+    }
+
+    /**
+     * Normalizes an upload path and resolves it to its sandbox-absolute form so
+     * workspace-relative paths can ride the native single-file transfer
+     * ({@link SandboxFileTransfer#uploadFile}) instead of the archive-hydrate fallback. Throws
+     * {@link IllegalArgumentException} for invalid paths — the caller fails just that file,
+     * matching the archive fallback's validation contract.
+     */
+    private String resolveTransferPath(Sandbox active, String path) throws IOException {
+        AbstractFilesystem.validatePath(path);
+        String normalized = normalizeUploadPath(path);
+        if (normalized.startsWith("/")) {
+            return normalized;
+        }
+        return resolveWorkspaceRoot(active) + "/" + normalized;
+    }
+
+    /** Normalizes separators and strips leading {@code ./} segments. */
+    private static String normalizeUploadPath(String path) {
+        String normalized = path.replace('\\', '/');
+        while (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
+        }
+        return normalized;
+    }
+
+    /** Resolves the normalized workspace root used to convert absolute upload paths. */
+    private String resolveWorkspaceRoot(Sandbox active) throws IOException {
+        SandboxState state = active.getState();
+        WorkspaceSpec workspaceSpec = state != null ? state.getWorkspaceSpec() : null;
+        String root = workspaceSpec != null ? workspaceSpec.getRoot() : null;
+        if (root == null || root.isBlank()) {
+            throw new IOException("Sandbox workspace root is unavailable");
+        }
+
+        String normalized = root.replace('\\', '/');
+        while (normalized.endsWith("/") && normalized.length() > 1) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (!normalized.startsWith("/")) {
+            throw new IOException("Sandbox workspace root must be absolute: " + root);
+        }
+        return normalized;
     }
 }

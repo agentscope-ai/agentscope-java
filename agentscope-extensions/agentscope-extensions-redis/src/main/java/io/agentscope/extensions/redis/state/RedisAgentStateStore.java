@@ -18,6 +18,7 @@ package io.agentscope.extensions.redis.state;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.redis.state.jedis.JedisClientAdapter;
 import io.agentscope.extensions.redis.state.lettuce.LettuceClientAdapter;
@@ -209,17 +210,83 @@ public class RedisAgentStateStore implements AgentStateStore {
     }
 
     @Override
+    public boolean supportsVersioning() {
+        return true;
+    }
+
+    @Override
     public void save(String userId, String sessionId, String key, State value) {
+        saveVersioned(userId, sessionId, key, value, UNCONDITIONAL_EXPECTED);
+    }
+
+    private static final long UNCONDITIONAL_EXPECTED = Long.MIN_VALUE;
+
+    private void saveVersioned(
+            String userId, String sessionId, String key, State value, long expectedVersion) {
         String slotId = slotId(userId, sessionId);
         String redisKey = getStateKey(slotId, key);
+        String versionKey = RedisStateVersionSupport.versionKey(redisKey);
         String keysKey = getKeysKey(slotId);
         try {
             String json = JsonUtils.getJsonCodec().toJson(value);
-            client.set(redisKey, json);
-            // Track this key in the session's key set
-            client.addToSet(keysKey, key);
+            long result =
+                    client.evalScript(
+                            RedisStateVersionSupport.SAVE_SCRIPT,
+                            RedisStateVersionSupport.saveScriptKeys(redisKey, versionKey, keysKey),
+                            expectedVersion == UNCONDITIONAL_EXPECTED
+                                    ? RedisStateVersionSupport.unconditionalSaveArgs(json, key)
+                                    : RedisStateVersionSupport.saveScriptArgs(
+                                            json, expectedVersion, key));
+            if (result == -1L) {
+                throw new RuntimeException("Version conflict saving state: " + key);
+            }
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
+        }
+    }
+
+    @Override
+    public <T extends State> VersionedState<T> getVersioned(
+            String userId, String sessionId, String key, Class<T> type) {
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getStateKey(slotId, key);
+        String versionKey = RedisStateVersionSupport.versionKey(redisKey);
+        try {
+            String json = client.get(redisKey);
+            if (json == null) {
+                return new VersionedState<>(null, 0L);
+            }
+            long version = RedisStateVersionSupport.parseVersion(json, client.get(versionKey));
+            return new VersionedState<>(JsonUtils.getJsonCodec().fromJson(json, type), version);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get versioned state: " + key, e);
+        }
+    }
+
+    @Override
+    public long saveIfVersion(
+            String userId, String sessionId, String key, State value, long expectedVersion) {
+        if (expectedVersion == UNVERSIONED) {
+            save(userId, sessionId, key, value);
+            VersionedState<State> after = getVersioned(userId, sessionId, key, State.class);
+            return after.version();
+        }
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getStateKey(slotId, key);
+        String versionKey = RedisStateVersionSupport.versionKey(redisKey);
+        String keysKey = getKeysKey(slotId);
+        try {
+            String json = JsonUtils.getJsonCodec().toJson(value);
+            long result =
+                    client.evalScript(
+                            RedisStateVersionSupport.SAVE_SCRIPT,
+                            RedisStateVersionSupport.saveScriptKeys(redisKey, versionKey, keysKey),
+                            RedisStateVersionSupport.saveScriptArgs(json, expectedVersion, key));
+            return result == -1L ? UNVERSIONED : result;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save state if version: " + key, e);
         }
     }
 
@@ -332,6 +399,9 @@ public class RedisAgentStateStore implements AgentStateStore {
                         keysToDelete.add(getListKey(slotId, baseKey) + HASH_SUFFIX);
                     } else {
                         keysToDelete.add(getStateKey(slotId, trackedKey));
+                        keysToDelete.add(
+                                RedisStateVersionSupport.versionKey(
+                                        getStateKey(slotId, trackedKey)));
                     }
                 }
 

@@ -26,6 +26,7 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -33,8 +34,17 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.core.state.legacy.ToolkitState;
+import io.agentscope.core.tool.Toolkit;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +55,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -69,13 +80,70 @@ class ReActAgentPerSessionStateTest {
         }
     }
 
-    private ReActAgent agent(InMemoryAgentStateStore store) {
+    private ReActAgent agent(AgentStateStore store) {
         return ReActAgent.builder()
                 .name("asst")
                 .sysPrompt("hi")
                 .model(new NoopModel())
                 .stateStore(store)
                 .build();
+    }
+
+    @Test
+    @DisplayName("fresh slots inherit default tool groups without overriding persisted state")
+    void freshSlotsInheritDefaultToolGroupsWithoutOverridingPersistedState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save(
+                "u1",
+                "persisted-empty",
+                "agent_state",
+                AgentState.builder().userId("u1").sessionId("persisted-empty").build());
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("default-active", "Enabled during agent construction");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        assertEquals(
+                List.of("default-active"),
+                agent.getAgentState("u1", "fresh").getToolContext().getActivatedGroups());
+        assertTrue(
+                agent.getAgentState("u1", "persisted-empty")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .isEmpty(),
+                "An explicitly persisted empty group list must remain empty");
+    }
+
+    @Test
+    @DisplayName("legacy empty tool groups remain explicitly empty")
+    void legacyEmptyToolGroupsAreNotMistakenForMissingState() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save("u1", "legacy-empty", "toolkit_activeGroups", new ToolkitState(List.of()));
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("default-active", "Enabled during agent construction");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new NoopModel())
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        assertTrue(
+                agent.getAgentState("u1", "legacy-empty")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .isEmpty(),
+                "A present v1 toolkit_activeGroups=[] value must override fresh defaults");
     }
 
     @Test
@@ -98,6 +166,52 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearStateCache releases all local session state and permission engines")
+    void clearStateCacheReleasesAllLocalCaches() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState sessA = agent.getAgentState("u1", "sessA");
+        AgentState sessB = agent.getAgentState("u1", "sessB");
+        var defaultPermissionEngine = agent.getPermissionEngine();
+
+        agent.clearStateCache();
+
+        assertNotSame(sessA, agent.getAgentState("u1", "sessA"));
+        assertNotSame(sessB, agent.getAgentState("u1", "sessB"));
+        assertNotSame(defaultPermissionEngine, agent.getPermissionEngine());
+    }
+
+    @Test
+    @DisplayName("clearStateCache removes only the targeted session")
+    void clearStateCacheRemovesOnlyTargetedSession() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState target = agent.getAgentState("u1", "sessA");
+        AgentState other = agent.getAgentState("u1", "sessB");
+
+        agent.clearStateCache(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+        assertNotSame(target, agent.getAgentState("u1", "sessA"));
+        assertSame(other, agent.getAgentState("u1", "sessB"));
+    }
+
+    @Test
+    @DisplayName("clearStateCache preserves persisted session state")
+    void clearStateCachePreservesPersistedState(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent agent = agent(store);
+        AgentState state = agent.getAgentState("u1", "sessA");
+        state.setSummary("remembered");
+        agent.saveAgentState("u1", "sessA");
+
+        agent.clearStateCache("u1", "sessA");
+
+        AgentState reloaded = agent.getAgentState("u1", "sessA");
+        assertNotSame(state, reloaded);
+        assertEquals("remembered", reloaded.getSummary());
+    }
+
+    @Test
     @DisplayName("saveAgentState(uid,sid) round-trips through the store into a fresh engine")
     void savePersistsPerSlot() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
@@ -117,6 +231,162 @@ class ReActAgentPerSessionStateTest {
         AgentState other = reborn.getAgentState("u1", "other");
         assertFalse(other.getPlanModeContext().isPlanActive());
         assertEquals("", other.getSummary());
+    }
+
+    @Test
+    @DisplayName("clearContext removes one session's conversation and persists the same session")
+    void clearContextClearsAndPersistsOneSession() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(store);
+        AgentState target = agent.getAgentState("u1", "sessA");
+        target.contextMutable().add(userMsg("forget this"));
+        target.setSummary("old summary");
+        target.getPlanModeContext().setPlanActive(true);
+        agent.saveAgentState("u1", "sessA");
+
+        AgentState other = agent.getAgentState("u1", "sessB");
+        other.contextMutable().add(userMsg("keep this"));
+        other.setSummary("other summary");
+        agent.saveAgentState("u1", "sessB");
+
+        agent.clearContext("u1", "sessA");
+
+        assertEquals("sessA", target.getSessionId());
+        assertTrue(target.getContext().isEmpty());
+        assertEquals("", target.getSummary());
+        assertTrue(target.getPlanModeContext().isPlanActive(), "non-context state is preserved");
+        assertEquals(List.of("keep this"), allText(other));
+        assertEquals("other summary", other.getSummary());
+
+        ReActAgent reborn = agent(store);
+        AgentState restored = reborn.getAgentState("u1", "sessA");
+        assertEquals("sessA", restored.getSessionId());
+        assertTrue(restored.getContext().isEmpty());
+        assertEquals("", restored.getSummary());
+        assertTrue(restored.getPlanModeContext().isPlanActive());
+    }
+
+    @Test
+    @DisplayName("clearContext uses the session from RuntimeContext")
+    void clearContextUsesRuntimeContext() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        agent.getAgentState("u1", "sessA").contextMutable().add(userMsg("forget this"));
+        agent.getAgentState("u1", "sessB").contextMutable().add(userMsg("keep this"));
+
+        agent.clearContext(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+        assertTrue(agent.getAgentState("u1", "sessA").getContext().isEmpty());
+        assertEquals(List.of("keep this"), allText(agent.getAgentState("u1", "sessB")));
+    }
+
+    @Test
+    @DisplayName("clearContext reloads persisted state before clearing conversation")
+    void clearContextReloadsPersistedStateBeforeClearingConversation(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent staleAgent = agent(store);
+        AgentState staleState = staleAgent.getAgentState("u1", "sessA");
+        staleState.contextMutable().add(userMsg("stale context"));
+        staleAgent.saveAgentState("u1", "sessA");
+
+        ReActAgent writerAgent = agent(store);
+        AgentState latestState = writerAgent.getAgentState("u1", "sessA");
+        latestState.contextMutable().add(userMsg("latest context"));
+        latestState.setSummary("latest summary");
+        latestState.getPlanModeContext().setPlanActive(true);
+        writerAgent.saveAgentState("u1", "sessA");
+
+        staleAgent.clearContext("u1", "sessA");
+
+        ReActAgent restoredAgent = agent(store);
+        AgentState restoredState = restoredAgent.getAgentState("u1", "sessA");
+        assertTrue(restoredState.getContext().isEmpty());
+        assertEquals("", restoredState.getSummary());
+        assertTrue(
+                restoredState.getPlanModeContext().isPlanActive(),
+                "the latest non-conversation state must be preserved");
+    }
+
+    @Test
+    @DisplayName("clearContext can clear a persisted session not cached in this agent")
+    void clearContextClearsPersistedSessionWithoutLocalCache(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent writerAgent = agent(store);
+        AgentState persistedState = writerAgent.getAgentState("u1", "sessA");
+        persistedState.contextMutable().add(userMsg("persisted context"));
+        persistedState.setSummary("persisted summary");
+        persistedState.getPlanModeContext().setPlanActive(true);
+        writerAgent.saveAgentState("u1", "sessA");
+
+        ReActAgent freshAgent = agent(store);
+        freshAgent.clearContext("u1", "sessA");
+
+        ReActAgent restoredAgent = agent(store);
+        AgentState restoredState = restoredAgent.getAgentState("u1", "sessA");
+        assertTrue(restoredState.getContext().isEmpty());
+        assertEquals("", restoredState.getSummary());
+        assertTrue(restoredState.getPlanModeContext().isPlanActive());
+    }
+
+    @Test
+    @DisplayName("clearContext preserves in-memory non-conversation state without a store")
+    void clearContextPreservesInMemoryNonConversationStateWithoutStore() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState state = agent.getAgentState("u1", "sessA");
+        state.contextMutable().add(userMsg("forget this"));
+        state.setSummary("old summary");
+        state.getPlanModeContext().setPlanActive(true);
+
+        agent.clearContext("u1", "sessA");
+
+        AgentState restored = agent.getAgentState("u1", "sessA");
+        assertSame(state, restored);
+        assertTrue(restored.getContext().isEmpty());
+        assertEquals("", restored.getSummary());
+        assertTrue(restored.getPlanModeContext().isPlanActive());
+    }
+
+    @Test
+    @DisplayName("clearContext falls back to the default session for absent session identity")
+    void clearContextFallsBackToDefaultSession() {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+        String defaultSessionId = agent.getDefaultSessionId();
+        AgentState defaultState = agent.getAgentState(null, defaultSessionId);
+
+        defaultState.contextMutable().add(userMsg("clear through null context"));
+        agent.clearContext((RuntimeContext) null);
+        assertTrue(agent.getAgentState(null, defaultSessionId).getContext().isEmpty());
+
+        defaultState.contextMutable().add(userMsg("clear through blank session id"));
+        agent.clearContext(null, " ");
+        assertTrue(agent.getAgentState(null, defaultSessionId).getContext().isEmpty());
+    }
+
+    @Test
+    @DisplayName("replacePermissionContext updates and persists only the targeted slot")
+    void replacePermissionContextUpdatesOnlyTargetSlot() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(store);
+        PermissionRule denyRule =
+                new PermissionRule("blocked_tool", null, PermissionBehavior.DENY, "parent-policy");
+        PermissionContextState replacement =
+                PermissionContextState.builder()
+                        .mode(PermissionMode.BYPASS)
+                        .addDenyRule("blocked_tool", denyRule)
+                        .build();
+
+        agent.replacePermissionContext("u1", "sessA", replacement);
+
+        assertEquals(replacement, agent.getAgentState("u1", "sessA").getPermissionContext());
+        assertTrue(
+                agent.getAgentState("u1", "sessB").getPermissionContext().isTrivial(),
+                "replacing one slot must not alter another slot");
+
+        ReActAgent reborn = agent(store);
+        assertEquals(
+                replacement,
+                reborn.getAgentState("u1", "sessA").getPermissionContext(),
+                "the replacement must survive state-store reload");
     }
 
     @Test
@@ -145,13 +415,24 @@ class ReActAgentPerSessionStateTest {
         assertEquals(
                 "I noticed that you have interrupted me. What can I do for you?",
                 reply.getTextContent());
+        assertEquals(GenerateReason.INTERRUPTED, reply.getGenerateReason());
 
         ReActAgent reborn = agent(store);
-        List<String> texts = allText(reborn.getAgentState("u1", "sessA"));
+        AgentState restoredState = reborn.getAgentState("u1", "sessA");
+        List<String> texts = allText(restoredState);
         assertTrue(texts.contains("hello"), "user input should remain in persisted session state");
         assertTrue(
                 texts.contains("I noticed that you have interrupted me. What can I do for you?"),
                 "interrupt recovery message should be persisted to the state store");
+        Msg restoredRecovery =
+                restoredState.getContext().stream()
+                        .filter(
+                                msg ->
+                                        "I noticed that you have interrupted me. What can I do for you?"
+                                                .equals(msg.getTextContent()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
     }
 
     private static final class DelayedFirstChunkModel extends ChatModelBase {

@@ -223,6 +223,183 @@ class AnthropicToolsHelperTest {
     }
 
     @Test
+    void testApplyToolChoiceAutoWithParallelDisabled() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .toolChoice(new ToolChoice.Auto())
+                        .parallelToolCalls(false)
+                        .build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isAuto());
+        // parallelToolCalls=false -> disable_parallel_tool_use=true
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().isPresent());
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().get());
+    }
+
+    @Test
+    void testApplyToolChoiceAutoWithParallelEnabled() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .toolChoice(new ToolChoice.Auto())
+                        .parallelToolCalls(true)
+                        .build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isAuto());
+        // parallelToolCalls=true -> disable_parallel_tool_use=false
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().isPresent());
+        assertTrue(!params.toolChoice().get().asAuto().disableParallelToolUse().get());
+    }
+
+    @Test
+    void testApplyToolChoiceRequiredWithParallelDisabled() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .toolChoice(new ToolChoice.Required())
+                        .parallelToolCalls(false)
+                        .build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isAny());
+        // Required maps to "any"; disable_parallel_tool_use=true
+        assertTrue(params.toolChoice().get().asAny().disableParallelToolUse().isPresent());
+        assertTrue(params.toolChoice().get().asAny().disableParallelToolUse().get());
+    }
+
+    @Test
+    void testApplyToolChoiceSpecificWithParallelDisabled() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .toolChoice(new ToolChoice.Specific("search"))
+                        .parallelToolCalls(false)
+                        .build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isTool());
+        assertEquals("search", params.toolChoice().get().asTool().name());
+        // disable_parallel_tool_use=true
+        assertTrue(params.toolChoice().get().asTool().disableParallelToolUse().isPresent());
+        assertTrue(params.toolChoice().get().asTool().disableParallelToolUse().get());
+    }
+
+    @Test
+    void testApplyToolChoiceNoneWithParallelDisabled() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .toolChoice(new ToolChoice.None())
+                        .parallelToolCalls(false)
+                        .build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.toolChoice().isPresent());
+        // None correctly maps to "none"; disable_parallel_tool_use is not supported and ignored
+        assertTrue(params.toolChoice().get().isNone());
+        assertTrue(!params.toolChoice().get().isAny());
+        assertTrue(!params.toolChoice().get().isAuto());
+    }
+
+    @Test
+    void testApplyToolsParallelDisabledWithoutToolChoice() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        // Only parallelToolCalls is set, no explicit toolChoice
+        GenerateOptions options = GenerateOptions.builder().parallelToolCalls(false).build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+
+        MessageCreateParams params = builder.build();
+        // An implicit "auto" tool_choice is created to carry disable_parallel_tool_use
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isAuto());
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().isPresent());
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().get());
+    }
+
+    @Test
+    void testApplyToolChoiceAutoWithoutParallel() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        // toolChoice set, but parallelToolCalls left null (default behavior)
+        GenerateOptions options =
+                GenerateOptions.builder().toolChoice(new ToolChoice.Auto()).build();
+        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isAuto());
+        // No disable_parallel_tool_use set -> Anthropic default (parallel enabled)
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().isEmpty());
+    }
+
+    @Test
     void testApplyOptionsWithTemperature() {
         MessageCreateParams.Builder builder = createBuilder();
 
