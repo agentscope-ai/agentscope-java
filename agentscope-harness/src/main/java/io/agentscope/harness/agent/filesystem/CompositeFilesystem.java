@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
@@ -29,9 +30,11 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.nio.file.FileSystems;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -60,11 +63,18 @@ import java.util.Map;
  * fs.read(RuntimeContext.empty(), "/memories/notes.md", 0, 100);  // → storeFs.read(...)
  * fs.read(RuntimeContext.empty(), "/src/Main.java", 0, 100);      // → localFs.read(...)
  * }</pre>
+ *
+ * <p>Absolute paths that fall under a host mount (extra {@link
+ * io.agentscope.harness.agent.workspace.PathPolicy} roots on a {@link LocalFilesystem} default
+ * backend, or roots passed to {@link #CompositeFilesystem(AbstractFilesystem, Map, Collection)})
+ * skip prefix routing. Otherwise {@code /knowledge/file.md} would match the {@code knowledge/}
+ * store after the leading slash is stripped, and a host file at that mount would never be read.
  */
 public class CompositeFilesystem implements AbstractFilesystem {
 
     private final AbstractFilesystem defaultBackend;
     private final List<RouteEntry> sortedRoutes;
+    private final List<Path> hostRoots;
 
     /**
      * Creates a composite filesystem with a default backend and prefix-based routes.
@@ -75,6 +85,21 @@ public class CompositeFilesystem implements AbstractFilesystem {
      */
     public CompositeFilesystem(
             AbstractFilesystem defaultBackend, Map<String, AbstractFilesystem> routes) {
+        this(defaultBackend, routes, null);
+    }
+
+    /**
+     * Same as {@link #CompositeFilesystem(AbstractFilesystem, Map)}, plus extra host-mount roots
+     * that must not be claimed by a same-named route prefix.
+     *
+     * @param hostRoots absolute directories that should stay on {@code defaultBackend}; {@code
+     *     null} entries are ignored. Roots already advertised on a {@link LocalFilesystem}
+     *     {@code PathPolicy} (other than the workspace cwd) are included automatically.
+     */
+    public CompositeFilesystem(
+            AbstractFilesystem defaultBackend,
+            Map<String, AbstractFilesystem> routes,
+            Collection<Path> hostRoots) {
         if (defaultBackend == null) {
             throw new IllegalArgumentException("defaultBackend must not be null");
         }
@@ -88,6 +113,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
         }
         entries.sort(Comparator.comparingInt((RouteEntry e) -> e.prefix().length()).reversed());
         this.sortedRoutes = List.copyOf(entries);
+        this.hostRoots = resolveHostRoots(defaultBackend, hostRoots);
     }
 
     // ==================== Routing ====================
@@ -98,6 +124,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
             AbstractFilesystem backend, String backendPath, String routePrefix) {}
 
     private RouteResult routeForPath(String path) {
+        if (isHostMountPath(path)) {
+            return new RouteResult(defaultBackend, path, null);
+        }
         // Canonicalize both sides by stripping any leading slash before matching so callers can
         // pass either "/skills/foo" (the {@link AbstractFilesystem} contract) or "skills/foo"
         // (the convention used by {@code WorkspaceManager.writeUtf8WorkspaceRelative}) and route
@@ -137,6 +166,72 @@ public class CompositeFilesystem implements AbstractFilesystem {
             i++;
         }
         return s.substring(i);
+    }
+
+    /**
+     * {@code true} when {@code path} is an absolute location under a configured host mount, so
+     * prefix routing must not rewrite it into a same-named workspace segment.
+     */
+    private boolean isHostMountPath(String path) {
+        if (hostRoots.isEmpty() || path == null || path.isBlank()) {
+            return false;
+        }
+        Path candidate;
+        try {
+            candidate = Path.of(path);
+        } catch (InvalidPathException e) {
+            return false;
+        }
+        if (!candidate.isAbsolute()) {
+            return false;
+        }
+        Path normalized = candidate.normalize();
+        for (Path root : hostRoots) {
+            if (normalized.startsWith(root)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Collects host-mount directories that must bypass route prefixes: extra {@code PathPolicy}
+     * roots on a local default backend (excluding the workspace cwd) plus any caller-supplied
+     * roots.
+     */
+    private static List<Path> resolveHostRoots(
+            AbstractFilesystem defaultBackend, Collection<Path> extra) {
+        List<Path> roots = new ArrayList<>();
+        Path cwd = null;
+        if (defaultBackend instanceof LocalFilesystem local) {
+            cwd = local.getCwd();
+            for (Path root : local.getPathPolicy().roots()) {
+                addHostRoot(roots, root, cwd);
+            }
+        }
+        if (extra != null) {
+            for (Path root : extra) {
+                addHostRoot(roots, root, cwd);
+            }
+        }
+        return List.copyOf(roots);
+    }
+
+    private static void addHostRoot(List<Path> roots, Path root, Path cwd) {
+        if (root == null) {
+            return;
+        }
+        Path normalized = root.toAbsolutePath().normalize();
+        if (cwd != null && (normalized.equals(cwd) || cwd.startsWith(normalized))) {
+            // Workspace itself, or a parent of the workspace, is not a colliding host mount.
+            return;
+        }
+        if (cwd != null && normalized.startsWith(cwd)) {
+            return;
+        }
+        if (!roots.contains(normalized)) {
+            roots.add(normalized);
+        }
     }
 
     // ==================== Path remapping helpers ====================
