@@ -216,6 +216,7 @@ public class AguiStreamContext {
         }
         if (endedToolCalls.add(toolCallId)) {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
+            startedToolCallNames.remove(toolCallId);
         }
     }
 
