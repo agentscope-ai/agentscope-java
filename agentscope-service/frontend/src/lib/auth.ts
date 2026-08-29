@@ -58,14 +58,17 @@ export function getUsername(): string {
   }
 }
 
-export function isAdmin(): boolean {
+export function getRoles(): string[] {
   try {
     const token = getToken();
-    if (!token) return false;
+    if (!token) return [];
     const payload = JSON.parse(atob(token.split('.')[1]));
-    const roles: string[] = payload.roles || [];
-    return roles.map((r) => r.toLowerCase()).includes('admin');
+    return Array.isArray(payload.roles) ? payload.roles.map(String) : [];
   } catch {
-    return false;
+    return [];
   }
+}
+
+export function isAdmin(): boolean {
+	return getRoles().map((role) => role.toLowerCase()).includes('admin');
 }

@@ -30,7 +30,11 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	now := time.Now().UTC()
-	key := sessCompositeKey(in.AgentName, in.Namespace, in.SessionID)
+	tenant := in.Tenant
+	if tenant == "" {
+		tenant = "default"
+	}
+	key := sessCompositeKey(tenant, in.AgentName, in.Namespace, in.SessionID)
 	if id, ok := r.s.sessKey[key]; ok {
 		existing := r.s.sessions[id]
 		if in.Framework != "" {
@@ -55,14 +59,12 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 		if in.InstanceIP != "" {
 			existing.InstanceIP = in.InstanceIP
 		}
-		if in.TeamID != "" {
-			existing.TeamID = in.TeamID
+		if in.AgentTaskID != nil {
+			id := *in.AgentTaskID
+			existing.AgentTaskID = &id
 		}
-		if in.TeamRole != "" {
-			existing.TeamRole = in.TeamRole
-		}
-		if len(in.TeamContext) > 0 {
-			existing.TeamContext = append([]byte(nil), in.TeamContext...)
+		if len(in.TaskContext) > 0 {
+			existing.TaskContext = append([]byte(nil), in.TaskContext...)
 		}
 		if in.StartedAt != nil {
 			existing.StartedAt = in.StartedAt
@@ -86,6 +88,7 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 	}
 	s := &store.Session{
 		ID:               id,
+		Tenant:           tenant,
 		SessionID:        in.SessionID,
 		AgentName:        in.AgentName,
 		Namespace:        in.Namespace,
@@ -95,9 +98,8 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 		Busy:             busy,
 		InstanceRef:      in.InstanceRef,
 		InstanceIP:       in.InstanceIP,
-		TeamID:           in.TeamID,
-		TeamRole:         in.TeamRole,
-		TeamContext:      append([]byte(nil), in.TeamContext...),
+		AgentTaskID:      in.AgentTaskID,
+		TaskContext:      append([]byte(nil), in.TaskContext...),
 		StartedAt:        in.StartedAt,
 		LastActiveAt:     in.LastActiveAt,
 		TerminatedAt:     in.TerminatedAt,
@@ -109,10 +111,10 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 	return cloneSession(s), nil
 }
 
-func (r *sessionRepo) Get(_ context.Context, agentName, namespace, sessionID string) (*store.Session, error) {
+func (r *sessionRepo) Get(_ context.Context, tenant, agentName, namespace, sessionID string) (*store.Session, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
-	id, ok := r.s.sessKey[sessCompositeKey(agentName, namespace, sessionID)]
+	id, ok := r.s.sessKey[sessCompositeKey(tenant, agentName, namespace, sessionID)]
 	if !ok {
 		return nil, store.ErrNotFound
 	}
@@ -134,6 +136,9 @@ func (r *sessionRepo) List(_ context.Context, f store.SessionFilter) ([]*store.S
 	defer r.s.mu.RUnlock()
 	var out []*store.Session
 	for _, s := range r.s.sessions {
+		if f.Tenant != "" && s.Tenant != f.Tenant {
+			continue
+		}
 		if f.AgentName != "" && s.AgentName != f.AgentName {
 			continue
 		}
@@ -149,10 +154,7 @@ func (r *sessionRepo) List(_ context.Context, f store.SessionFilter) ([]*store.S
 		if f.Framework != "" && s.Framework != f.Framework {
 			continue
 		}
-		if f.TeamID != "" && s.TeamID != f.TeamID {
-			continue
-		}
-		if f.TeamRole != "" && s.TeamRole != f.TeamRole {
+		if f.AgentTaskID != uuid.Nil && (s.AgentTaskID == nil || *s.AgentTaskID != f.AgentTaskID) {
 			continue
 		}
 		out = append(out, cloneSession(s))
@@ -193,7 +195,7 @@ func (r *sessionRepo) UpdatePhase(_ context.Context, id uuid.UUID, phase string)
 	return nil
 }
 
-func (r *sessionRepo) ArchiveMissing(_ context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error) {
+func (r *sessionRepo) ArchiveMissing(_ context.Context, tenant, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	keep := map[string]bool{}
@@ -204,7 +206,7 @@ func (r *sessionRepo) ArchiveMissing(_ context.Context, agentName, namespace str
 	n := 0
 	now := time.Now().UTC()
 	for _, s := range r.s.sessions {
-		if s.AgentName != agentName || s.Namespace != namespace {
+		if s.Tenant != tenant || s.AgentName != agentName || s.Namespace != namespace {
 			continue
 		}
 		if s.Phase == store.SessionPhaseTerminated || s.Phase == store.SessionPhaseArchived {
@@ -257,12 +259,12 @@ func (r *sessionRepo) ArchiveIdleOlderThan(_ context.Context, olderThan time.Dur
 	return n, nil
 }
 
-func (r *sessionRepo) CountActive(_ context.Context, agentName, namespace string) (int32, error) {
+func (r *sessionRepo) CountActive(_ context.Context, tenant, agentName, namespace string) (int32, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	var n int32
 	for _, s := range r.s.sessions {
-		if s.AgentName == agentName && s.Namespace == namespace &&
+		if s.Tenant == tenant && s.AgentName == agentName && s.Namespace == namespace &&
 			s.Phase != store.SessionPhaseTerminated && s.Phase != store.SessionPhaseArchived {
 			n++
 		}
@@ -331,6 +333,9 @@ func (r *sessionRepo) ListByPressure(_ context.Context, f store.SessionFilter, m
 }
 
 func sessionMatchesFilter(s *store.Session, f store.SessionFilter) bool {
+	if f.Tenant != "" && s.Tenant != f.Tenant {
+		return false
+	}
 	if f.AgentName != "" && s.AgentName != f.AgentName {
 		return false
 	}
@@ -346,33 +351,18 @@ func sessionMatchesFilter(s *store.Session, f store.SessionFilter) bool {
 	if f.Framework != "" && s.Framework != f.Framework {
 		return false
 	}
-	if f.TeamID != "" && s.TeamID != f.TeamID {
-		return false
-	}
-	if f.TeamRole != "" && s.TeamRole != f.TeamRole {
+	if f.AgentTaskID != uuid.Nil && (s.AgentTaskID == nil || *s.AgentTaskID != f.AgentTaskID) {
 		return false
 	}
 	return true
 }
 
-func (r *sessionRepo) DeleteByAgent(_ context.Context, agentName, namespace string) error {
+func (r *sessionRepo) DeleteByAgent(_ context.Context, tenant, agentName, namespace string) error {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	for id, s := range r.s.sessions {
-		if s.AgentName == agentName && s.Namespace == namespace {
-			delete(r.s.sessKey, sessCompositeKey(s.AgentName, s.Namespace, s.SessionID))
-			delete(r.s.sessions, id)
-		}
-	}
-	return nil
-}
-
-func (r *sessionRepo) DeleteByTeam(_ context.Context, teamName, namespace string) error {
-	r.s.mu.Lock()
-	defer r.s.mu.Unlock()
-	for id, s := range r.s.sessions {
-		if s.TeamID == teamName && s.Namespace == namespace {
-			delete(r.s.sessKey, sessCompositeKey(s.AgentName, s.Namespace, s.SessionID))
+		if s.Tenant == tenant && s.AgentName == agentName && s.Namespace == namespace {
+			delete(r.s.sessKey, sessCompositeKey(s.Tenant, s.AgentName, s.Namespace, s.SessionID))
 			delete(r.s.sessions, id)
 		}
 	}

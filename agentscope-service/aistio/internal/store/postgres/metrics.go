@@ -32,15 +32,18 @@ type metricsRepo struct {
 }
 
 func (r *metricsRepo) RecordTokenUsage(ctx context.Context, m *store.TokenUsageMetric) error {
+	if m.Tenant == "" {
+		m.Tenant = "default"
+	}
 	if m.RecordedAt.IsZero() {
 		m.RecordedAt = time.Now().UTC()
 	}
 	return r.pool.QueryRow(ctx, `
 		INSERT INTO token_usage_metrics (
-			session_fk, agent_name, namespace, model, provider,
+			tenant, session_fk, agent_name, namespace, model, provider,
 			prompt_tokens, completion_tokens, total_tokens, recorded_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-		m.SessionFK, m.AgentName, m.Namespace, nullStr(m.Model), nullStr(m.Provider),
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+		m.Tenant, m.SessionFK, m.AgentName, m.Namespace, nullStr(m.Model), nullStr(m.Provider),
 		m.PromptTokens, m.CompletionTokens, m.TotalTokens, m.RecordedAt,
 	).Scan(&m.ID)
 }
@@ -62,15 +65,18 @@ func (r *metricsRepo) RecordSnapshot(ctx context.Context, s *store.SessionSnapsh
 }
 
 func (r *metricsRepo) RecordAgentMetric(ctx context.Context, m *store.AgentMetric) error {
+	if m.Tenant == "" {
+		m.Tenant = "default"
+	}
 	if m.RecordedAt.IsZero() {
 		m.RecordedAt = time.Now().UTC()
 	}
 	return r.pool.QueryRow(ctx, `
 		INSERT INTO agent_metrics (
-			agent_name, namespace, recorded_at, active_sessions, total_messages,
+			tenant, agent_name, namespace, recorded_at, active_sessions, total_messages,
 			total_tokens, avg_context_pressure, error_count, uptime_seconds
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-		m.AgentName, m.Namespace, m.RecordedAt, m.ActiveSessions, m.TotalMessages,
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+		m.Tenant, m.AgentName, m.Namespace, m.RecordedAt, m.ActiveSessions, m.TotalMessages,
 		m.TotalTokens, m.AvgContextPressure, m.ErrorCount, m.UptimeSeconds,
 	).Scan(&m.ID)
 }
@@ -139,7 +145,7 @@ func (r *metricsRepo) LatestSnapshots(ctx context.Context, sessionFKs []uuid.UUI
 
 func (r *metricsRepo) QueryTokenUsage(ctx context.Context, f store.TokenFilter) ([]*store.TokenUsageMetric, error) {
 	conds, args := tokenFilterConds(f)
-	q := `SELECT id, session_fk, agent_name, namespace, model, provider,
+	q := `SELECT id, tenant, session_fk, agent_name, namespace, model, provider,
 		prompt_tokens, completion_tokens, total_tokens, recorded_at FROM token_usage_metrics`
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")
@@ -159,7 +165,7 @@ func (r *metricsRepo) QueryTokenUsage(ctx context.Context, f store.TokenFilter) 
 		m := &store.TokenUsageMetric{}
 		var model, provider *string
 		if err := rows.Scan(
-			&m.ID, &m.SessionFK, &m.AgentName, &m.Namespace, &model, &provider,
+			&m.ID, &m.Tenant, &m.SessionFK, &m.AgentName, &m.Namespace, &model, &provider,
 			&m.PromptTokens, &m.CompletionTokens, &m.TotalTokens, &m.RecordedAt,
 		); err != nil {
 			return nil, err
@@ -180,6 +186,9 @@ func (r *metricsRepo) QueryAgentMetrics(ctx context.Context, f store.AgentMetric
 		args = append(args, v)
 		conds = append(conds, fmt.Sprintf(cond, len(args)))
 	}
+	if f.Tenant != "" {
+		add("tenant=$%d", f.Tenant)
+	}
 	if f.AgentName != "" {
 		add("agent_name=$%d", f.AgentName)
 	}
@@ -192,7 +201,7 @@ func (r *metricsRepo) QueryAgentMetrics(ctx context.Context, f store.AgentMetric
 	if f.Until != nil {
 		add("recorded_at<=$%d", *f.Until)
 	}
-	q := `SELECT id, agent_name, namespace, recorded_at, active_sessions, total_messages,
+	q := `SELECT id, tenant, agent_name, namespace, recorded_at, active_sessions, total_messages,
 		total_tokens, avg_context_pressure, error_count, uptime_seconds FROM agent_metrics`
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")
@@ -211,7 +220,7 @@ func (r *metricsRepo) QueryAgentMetrics(ctx context.Context, f store.AgentMetric
 	for rows.Next() {
 		m := &store.AgentMetric{}
 		if err := rows.Scan(
-			&m.ID, &m.AgentName, &m.Namespace, &m.RecordedAt, &m.ActiveSessions, &m.TotalMessages,
+			&m.ID, &m.Tenant, &m.AgentName, &m.Namespace, &m.RecordedAt, &m.ActiveSessions, &m.TotalMessages,
 			&m.TotalTokens, &m.AvgContextPressure, &m.ErrorCount, &m.UptimeSeconds,
 		); err != nil {
 			return nil, err
@@ -260,7 +269,7 @@ func (r *metricsRepo) AggregateTokens(ctx context.Context, f store.TokenFilter, 
 	return out, rows.Err()
 }
 
-func (r *metricsRepo) TopAgents(ctx context.Context, since time.Time, limit int) ([]store.AgentUsage, error) {
+func (r *metricsRepo) TopAgents(ctx context.Context, tenant string, since time.Time, limit int) ([]store.AgentUsage, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -270,18 +279,18 @@ func (r *metricsRepo) TopAgents(ctx context.Context, since time.Time, limit int)
 		FROM (
 			SELECT agent_name, namespace, SUM(total_tokens)::bigint AS total_tokens
 			FROM token_usage_metrics
-			WHERE recorded_at >= $1
+			WHERE tenant = $1 AND recorded_at >= $2
 			GROUP BY agent_name, namespace
 		) t
 		LEFT JOIN LATERAL (
 			SELECT active_sessions, avg_context_pressure AS avg_pressure, error_count
 			FROM agent_metrics am
-			WHERE am.agent_name = t.agent_name AND am.namespace = t.namespace
+			WHERE am.tenant = $1 AND am.agent_name = t.agent_name AND am.namespace = t.namespace
 			ORDER BY recorded_at DESC
 			LIMIT 1
 		) a ON true
 		ORDER BY t.total_tokens DESC
-		LIMIT $2`, since, limit)
+		LIMIT $3`, tenant, since, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +306,7 @@ func (r *metricsRepo) TopAgents(ctx context.Context, since time.Time, limit int)
 	return out, rows.Err()
 }
 
-func (r *metricsRepo) TopSessionsByTokens(ctx context.Context, since time.Time, limit int) ([]store.SessionUsage, error) {
+func (r *metricsRepo) TopSessionsByTokens(ctx context.Context, tenant string, since time.Time, limit int) ([]store.SessionUsage, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -305,10 +314,10 @@ func (r *metricsRepo) TopSessionsByTokens(ctx context.Context, since time.Time, 
 		SELECT s.id, s.session_id, s.agent_name, s.namespace, s.phase, SUM(t.total_tokens)::bigint
 		FROM token_usage_metrics t
 		INNER JOIN sessions s ON s.id = t.session_fk
-		WHERE t.recorded_at >= $1 AND t.session_fk IS NOT NULL
+		WHERE s.tenant = $1 AND t.tenant = $1 AND t.recorded_at >= $2 AND t.session_fk IS NOT NULL
 		GROUP BY s.id, s.session_id, s.agent_name, s.namespace, s.phase
 		ORDER BY SUM(t.total_tokens) DESC
-		LIMIT $2`, since, limit)
+		LIMIT $3`, tenant, since, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +333,7 @@ func (r *metricsRepo) TopSessionsByTokens(ctx context.Context, since time.Time, 
 	return out, rows.Err()
 }
 
-func (r *metricsRepo) TopSessionsByDuration(ctx context.Context, since time.Time, limit int) ([]store.SessionDuration, error) {
+func (r *metricsRepo) TopSessionsByDuration(ctx context.Context, tenant string, since time.Time, limit int) ([]store.SessionDuration, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -336,10 +345,10 @@ func (r *metricsRepo) TopSessionsByDuration(ctx context.Context, since time.Time
 			(EXTRACT(EPOCH FROM (now() AT TIME ZONE 'utc' - t.started_at)) * 1000)::bigint AS duration_ms,
 			t.turn_index
 		FROM sessions s
-		INNER JOIN session_turns t ON t.session_fk = s.id AND t.status = $1
-		WHERE lower(s.phase) = $2
+		INNER JOIN session_turns t ON t.session_fk = s.id AND t.status = $2
+		WHERE s.tenant = $1 AND lower(s.phase) = $3
 		ORDER BY duration_ms DESC
-		LIMIT $3`, store.TurnStatusRunning, store.SessionPhaseActive, limit)
+		LIMIT $4`, tenant, store.TurnStatusRunning, store.SessionPhaseActive, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -358,17 +367,17 @@ func (r *metricsRepo) TopSessionsByDuration(ctx context.Context, since time.Time
 	return out, rows.Err()
 }
 
-func (r *metricsRepo) TopAgentsByActiveSessions(ctx context.Context, since time.Time, limit int) ([]store.AgentUsage, error) {
+func (r *metricsRepo) TopAgentsByActiveSessions(ctx context.Context, tenant string, since time.Time, limit int) ([]store.AgentUsage, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT agent_name, namespace, MAX(active_sessions)::int
 		FROM agent_metrics
-		WHERE recorded_at >= $1
+		WHERE tenant = $1 AND recorded_at >= $2
 		GROUP BY agent_name, namespace
 		ORDER BY MAX(active_sessions) DESC
-		LIMIT $2`, since, limit)
+		LIMIT $3`, tenant, since, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -424,6 +433,9 @@ func (r *metricsRepo) SumErrorCount(ctx context.Context, f store.AgentMetricFilt
 		args = append(args, v)
 		conds = append(conds, fmt.Sprintf(cond, len(args)))
 	}
+	if f.Tenant != "" {
+		add("tenant=$%d", f.Tenant)
+	}
 	if f.AgentName != "" {
 		add("agent_name=$%d", f.AgentName)
 	}
@@ -449,6 +461,9 @@ func tokenFilterConds(f store.TokenFilter) (conds []string, args []any) {
 	add := func(cond string, v any) {
 		args = append(args, v)
 		conds = append(conds, fmt.Sprintf(cond, len(args)))
+	}
+	if f.Tenant != "" {
+		add("tenant=$%d", f.Tenant)
 	}
 	if f.AgentName != "" {
 		add("agent_name=$%d", f.AgentName)

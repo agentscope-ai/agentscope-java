@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -27,9 +28,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/spring-ai-alibaba/aistio/internal/team"
 )
+
+var errManagedSessionBusy = errors.New("managed session is busy")
 
 func (s *Server) registerInternal(r gin.IRouter) {
 	r.GET("/api/internal/sessions", s.internalListSessions)
@@ -285,7 +286,7 @@ func (s *Server) FindOrCreateSession(ctx context.Context, ownerID, agentID, envi
 		a.HeadVersion, "latest", envID, externalKey, memIDs, vaultIDs, nil, nil)
 }
 
-// FindOrCreateSessionID returns only the session id (implements team.ManagedSessionAPI).
+// FindOrCreateSessionID returns the session selected by the runtime binding resolver.
 func (s *Server) FindOrCreateSessionID(ctx context.Context, ownerID, agentID, environmentID, externalKey string) (string, error) {
 	sess, err := s.FindOrCreateSession(ctx, ownerID, agentID, environmentID, externalKey)
 	if err != nil {
@@ -295,9 +296,7 @@ func (s *Server) FindOrCreateSessionID(ctx context.Context, ownerID, agentID, en
 }
 
 // DeleteManagedSession removes a product session row and asks the data plane to
-// drop its event rows. Implements team.ManagedSessionAPI so tearing a team down
-// does not leave its member sessions behind: the store rows go away with the
-// team, but the product session it allocated would otherwise outlive it.
+// drop its event rows.
 func (s *Server) DeleteManagedSession(ctx context.Context, ownerID, sessionID string) error {
 	if sessionID == "" || ownerID == "" {
 		return nil
@@ -315,13 +314,13 @@ func (s *Server) DeleteManagedSession(ctx context.Context, ownerID, sessionID st
 }
 
 // PostSessionWakeEvent posts a user.message to the data plane to start a managed turn.
-// Implements team.ManagedSessionAPI. Requires BUILDER_DATA_URL and InternalToken.
+// Requires BUILDER_DATA_URL and InternalToken.
 func (s *Server) PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, text string) error {
 	if s.cfg.DataURL == "" {
 		return fmt.Errorf("BUILDER_DATA_URL not configured")
 	}
 	if text == "" {
-		text = "Team session started."
+		text = "AgentTask is ready."
 	}
 	payload := map[string]any{
 		"events": []map[string]any{
@@ -351,13 +350,44 @@ func (s *Server) PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, t
 	// The data plane rejects a wake while the session is mid-turn; the caller must
 	// keep the notice queued rather than spend a delivery attempt on it.
 	if resp.StatusCode == http.StatusConflict {
-		return team.ErrMemberBusy
+		return errManagedSessionBusy
 	}
 	if resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("wake event %s: %s", resp.Status, string(msg))
 	}
-	log.Printf("team managed wake posted session=%s status=%d", sessionID, resp.StatusCode)
+	log.Printf("managed AgentTask wake posted session=%s status=%d", sessionID, resp.StatusCode)
+	return nil
+}
+
+// AbortManagedSession interrupts the active managed Turn through the same
+// authenticated event ingress used by ordinary user messages.
+func (s *Server) AbortManagedSession(ctx context.Context, sessionID, ownerID string) error {
+	if s.cfg.DataURL == "" {
+		return fmt.Errorf("BUILDER_DATA_URL not configured")
+	}
+	payload, _ := json.Marshal(map[string]any{"events": []map[string]any{{
+		"type": "user.interrupt", "payload": map[string]any{"source": "execution-attempt-cancel"},
+	}}})
+	url := strings.TrimRight(s.cfg.DataURL, "/") + "/api/sessions/" + sessionID + "/events"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Builder-Internal-Token", s.cfg.InternalToken)
+	if ownerID != "" {
+		req.Header.Set("X-Builder-Internal-User", ownerID)
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("abort managed session %s: %s", resp.Status, string(message))
+	}
 	return nil
 }
 

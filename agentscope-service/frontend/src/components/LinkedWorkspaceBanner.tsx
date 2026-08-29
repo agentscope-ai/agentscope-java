@@ -36,7 +36,7 @@ export default function LinkedWorkspaceBanner({
 }) {
   const label = workspaceName || workspaceId;
   const tab = TAB_FOR[resource] || 'agentsmd';
-  const href = `/workspaces/${encodeURIComponent(workspaceId)}?tab=${encodeURIComponent(tab)}`;
+  const href = `/managed/workspaces/${encodeURIComponent(workspaceId)}?tab=${encodeURIComponent(tab)}`;
   return (
     <div
       style={{

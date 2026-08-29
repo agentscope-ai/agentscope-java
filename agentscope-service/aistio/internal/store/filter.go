@@ -22,13 +22,13 @@ import (
 
 // SessionFilter selects sessions for List.
 type SessionFilter struct {
-	AgentName string
-	Namespace string
-	SessionID string
-	Phase     string
-	Framework string
-	TeamID    string
-	TeamRole  string
+	Tenant      string
+	AgentName   string
+	Namespace   string
+	SessionID   string
+	Phase       string
+	Framework   string
+	AgentTaskID uuid.UUID
 	// Limit / Offset for pagination. Zero Limit means no limit.
 	Limit  int
 	Offset int
@@ -36,6 +36,7 @@ type SessionFilter struct {
 
 // TokenFilter selects token-usage metrics for QueryTokenUsage.
 type TokenFilter struct {
+	Tenant    string
 	AgentName string
 	Namespace string
 	Model     string
@@ -46,6 +47,7 @@ type TokenFilter struct {
 
 // AgentMetricFilter selects agent_metrics rows for QueryAgentMetrics.
 type AgentMetricFilter struct {
+	Tenant    string
 	AgentName string
 	Namespace string
 	Since     *time.Time
@@ -147,15 +149,15 @@ func applyEventOptions(opts []EventOption) eventListOpts {
 // RetentionConfig controls how long historical data is kept.
 // Note: dp_kv (hosted BaseStore) is user-persistent data and is NEVER purged.
 type RetentionConfig struct {
-	SessionEvents     time.Duration // default 7d
-	Snapshots         time.Duration // default 30d
-	ContextSnapshots  time.Duration // default 14d
-	Metrics           time.Duration // default 90d
-	BusQueue          time.Duration // default 7d — undrained queue entries
-	BusLog            time.Duration // default 3d — replay log entries
-	AsyncTools        time.Duration // default 7d — async tool records
-	SandboxSnapshots  time.Duration // default 7d — hosted sandbox blobs
-	Tasks             time.Duration // default 7d — terminal hosted subagent tasks
+	SessionEvents    time.Duration // default 7d
+	Snapshots        time.Duration // default 30d
+	ContextSnapshots time.Duration // default 14d
+	Metrics          time.Duration // default 90d
+	BusQueue         time.Duration // default 7d — undrained queue entries
+	BusLog           time.Duration // default 3d — replay log entries
+	AsyncTools       time.Duration // default 7d — async tool records
+	SandboxSnapshots time.Duration // default 7d — hosted sandbox blobs
+	Tasks            time.Duration // default 7d — terminal hosted subagent tasks
 }
 
 // DefaultRetention returns the retention defaults from the design doc.

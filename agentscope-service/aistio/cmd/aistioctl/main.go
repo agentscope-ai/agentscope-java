@@ -24,6 +24,7 @@ import (
 var (
 	apiEndpoint string
 	apiToken    string
+	tenant      string
 	namespace   string
 )
 
@@ -36,6 +37,7 @@ func main() {
 
 	rootCmd.PersistentFlags().StringVar(&apiEndpoint, "api-endpoint", "http://localhost:8080", "Control plane REST API endpoint")
 	rootCmd.PersistentFlags().StringVar(&apiToken, "api-token", os.Getenv("AGENTSCOPE_API_TOKEN"), "Bearer token for API authentication")
+	rootCmd.PersistentFlags().StringVar(&tenant, "tenant", "default", "Collaboration tenant")
 	rootCmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "default", "Kubernetes namespace")
 
 	rootCmd.AddCommand(initCmd())
@@ -44,6 +46,14 @@ func main() {
 	rootCmd.AddCommand(agentCmd())
 	rootCmd.AddCommand(sessionCmd())
 	rootCmd.AddCommand(teamCmd())
+	rootCmd.AddCommand(issueCmd())
+	rootCmd.AddCommand(taskCmd())
+	rootCmd.AddCommand(artifactCmd())
+	rootCmd.AddCommand(automationCmd())
+	rootCmd.AddCommand(runtimeCmd())
+	rootCmd.AddCommand(orchestrationCmd())
+	rootCmd.AddCommand(approvalCmd())
+	rootCmd.AddCommand(inboxCmd())
 	rootCmd.AddCommand(proxyStatusCmd())
 	rootCmd.AddCommand(versionCmd())
 

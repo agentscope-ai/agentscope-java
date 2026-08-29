@@ -1,0 +1,11 @@
+# Bundle layer inserted when this package is installed with `dsh plugin add`.
+# Override controlHttp / internalToken / agentName in the profile's own
+# cordis.patch.yml or via environment variables (see README).
+- insert:
+    - id: aistio
+      name: '@agentscope/dsh-aistio'
+      config:
+        controlHttp: http://localhost:8081
+        contractPort: 18091
+        agentName: deepseek-harness
+        namespace: default

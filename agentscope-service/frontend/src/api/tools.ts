@@ -147,7 +147,7 @@ export function computeToolPolicies(
   return out;
 }
 
-/** Persist built-in enablement + per-tool permission policy via PUT /api/agents/{id}. */
+/** Persist built-in enablement + per-tool permission policy through the v5 Managed definition. */
 export async function saveBuiltinToolConfig(
   agentId: string,
   catalog: BuiltinToolInfo[],

@@ -32,6 +32,17 @@ class SessionBridgeContractTest {
 
     private static final String SESSION = "sess-1";
 
+    @Test
+    void configCarriesTenantSeparatelyFromNamespace() {
+        AistioConfig config =
+                AistioConfig.builder("test-agent")
+                        .tenant("tenant-a")
+                        .namespace("namespace-a")
+                        .build();
+        assertEquals("tenant-a", config.tenant());
+        assertEquals("namespace-a", config.namespace());
+    }
+
     private SessionBridge bridgeWith(AgentScopeAdapter adapter, StubAgent agent) {
         SessionBridge bridge =
                 new SessionBridge(

@@ -16,9 +16,15 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AgentCreateRequest, createAgent } from '../api/agents';
+import {
+  AgentCreateRequest,
+  HostedRuntimeOption,
+  createAgent,
+  listHostedRuntimeOptions,
+} from '../api/agents';
 import { listEnvironments } from '../api/environments';
 import { getWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
+import { useControlPlaneScope } from '../app/ScopeContext';
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '36px 40px', maxWidth: 880 },
@@ -61,7 +67,15 @@ const S: Record<string, React.CSSProperties> = {
 
 export default function AgentCreatePage() {
   const navigate = useNavigate();
+  const scope = useControlPlaneScope();
   const [name, setName] = useState('');
+  const [agentKey, setAgentKey] = useState('');
+  const [agentKeyCustomized, setAgentKeyCustomized] = useState(false);
+  const [runtimeKind, setRuntimeKind] = useState<'managed' | 'hosted-runtime'>('managed');
+  const [runtimeProfileId, setRuntimeProfileId] = useState('');
+  const [runtimePoolId, setRuntimePoolId] = useState('');
+  const [runtimeProfiles, setRuntimeProfiles] = useState<HostedRuntimeOption[]>([]);
+  const [runtimePools, setRuntimePools] = useState<HostedRuntimeOption[]>([]);
   const [description, setDescription] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
   const [workspaceId, setWorkspaceId] = useState('');
@@ -77,7 +91,11 @@ export default function AgentCreatePage() {
   useEffect(() => {
     listWorkspaces().then(setWorkspaces).catch(() => undefined);
     listEnvironments().then(setEnvironments).catch(() => undefined);
-  }, []);
+    listHostedRuntimeOptions(scope.tenant, scope.namespace).then(result => {
+      setRuntimeProfiles(result.profiles);
+      setRuntimePools(result.pools);
+    }).catch(() => undefined);
+  }, [scope.tenant, scope.namespace]);
 
   useEffect(() => {
     if (!workspaceId) {
@@ -91,7 +109,9 @@ export default function AgentCreatePage() {
     return () => { cancelled = true; };
   }, [workspaceId]);
 
-  const canSubmit = !submitting && !!name.trim();
+  const canSubmit = !submitting && !!name.trim() && !!agentKey.trim() && (
+    runtimeKind === 'managed' || (!!runtimeProfileId && !!runtimePoolId)
+  );
 
   async function handleSubmit() {
     setErr(null);
@@ -99,6 +119,12 @@ export default function AgentCreatePage() {
     try {
       const req: AgentCreateRequest = {
         name: name.trim(),
+        agentKey: agentKey.trim(),
+        tenant: scope.tenant,
+        namespace: scope.namespace,
+        runtimeKind,
+        runtimeProfileId: runtimeKind === 'hosted-runtime' ? runtimeProfileId : undefined,
+        runtimePoolId: runtimeKind === 'hosted-runtime' ? runtimePoolId : undefined,
         description: description.trim() || undefined,
         model: model.trim() || undefined,
         system: sysPrompt.trim() || undefined,
@@ -107,7 +133,7 @@ export default function AgentCreatePage() {
         defaultEnvironmentId: defaultEnvironmentId || undefined,
       };
       const created = await createAgent(req);
-      navigate(`/agents/${encodeURIComponent(created.id)}/settings`, { replace: true });
+      navigate(`/agent-center/agents/${encodeURIComponent(created.id)}`, { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to create');
     } finally {
@@ -120,18 +146,78 @@ export default function AgentCreatePage() {
       <h1 style={S.title}>New agent</h1>
       <div style={S.card}>
         <div style={S.tip}>
-          Prefer linking a Workspace so AGENTS.md / skills / tools / subagents are authored once and
-          rematerialized into this agent. Or leave Workspace empty for an agent-private definition.
+          Create one logical Agent and choose where it runs. External Applications register themselves
+          through the SDK and therefore are not created here.
         </div>
+
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Runtime binding *</label>
+          <select
+            style={S.input}
+            value={runtimeKind}
+            onChange={e => setRuntimeKind(e.target.value as 'managed' | 'hosted-runtime')}
+          >
+            <option value="managed">Managed Agent</option>
+            <option value="hosted-runtime">Hosted Runtime</option>
+          </select>
+          <div style={S.hint}>
+            Managed keeps its definition in the control plane. Hosted runs an explicitly created Agent on a registered runtime pool.
+          </div>
+        </div>
+
+        {runtimeKind === 'hosted-runtime' && (
+          <>
+            <div style={S.row}>
+              <label style={S.fieldLabel}>Runtime profile *</label>
+              <select style={S.input} value={runtimeProfileId} onChange={e => setRuntimeProfileId(e.target.value)}>
+                <option value="">Select a runtime profile</option>
+                {runtimeProfiles.map(profile => (
+                  <option key={profile.id} value={profile.id}>{profile.name} ({profile.provider})</option>
+                ))}
+              </select>
+            </div>
+            <div style={S.row}>
+              <label style={S.fieldLabel}>Runtime pool *</label>
+              <select style={S.input} value={runtimePoolId} onChange={e => setRuntimePoolId(e.target.value)}>
+                <option value="">Select a runtime pool</option>
+                {runtimePools.map(pool => (
+                  <option key={pool.id} value={pool.id}>{pool.name}</option>
+                ))}
+              </select>
+              {(!runtimeProfiles.length || !runtimePools.length) && (
+                <div style={S.hint}>Create a Runtime Profile and Runtime Pool in Operations before creating a Hosted Agent.</div>
+              )}
+            </div>
+          </>
+        )}
 
         <div style={S.row}>
           <label style={S.fieldLabel}>Name *</label>
           <input
             style={S.input}
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={e => {
+              setName(e.target.value);
+              if (!agentKeyCustomized) {
+                setAgentKey(e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''));
+              }
+            }}
             placeholder="e.g. Research Assistant"
           />
+        </div>
+
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Agent key *</label>
+          <input
+            style={S.input}
+            value={agentKey}
+            onChange={e => {
+              setAgentKeyCustomized(true);
+              setAgentKey(e.target.value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-'));
+            }}
+            placeholder="research-assistant"
+          />
+          <div style={S.hint}>Stable identity within this tenant and namespace. Reuse the same key when retrying provisioning.</div>
         </div>
 
         <div style={S.row}>
@@ -144,7 +230,7 @@ export default function AgentCreatePage() {
           />
         </div>
 
-        <div style={S.row}>
+        {runtimeKind === 'managed' && <div style={S.row}>
           <label style={S.fieldLabel}>Workspace</label>
           <select
             style={S.input}
@@ -171,9 +257,9 @@ export default function AgentCreatePage() {
               Leave system prompt blank to use the workspace AGENTS.md.
             </div>
           )}
-        </div>
+        </div>}
 
-        <div style={S.row}>
+        {runtimeKind === 'managed' && <div style={S.row}>
           <label style={S.fieldLabel}>Default environment (optional)</label>
           <select
             style={S.input}
@@ -188,9 +274,9 @@ export default function AgentCreatePage() {
           <div style={S.hint}>
             Used when opening Chat / Channel sessions. Vaults and memory stores can be attached later in Settings.
           </div>
-        </div>
+        </div>}
 
-        <div style={S.row}>
+        {runtimeKind === 'managed' && <div style={S.row}>
           <label style={S.fieldLabel}>Workspace path (optional override)</label>
           <input
             style={S.input}
@@ -201,9 +287,9 @@ export default function AgentCreatePage() {
           <div style={S.hint}>
             Leave blank to use the control-plane default path. Absolute paths are used as-is.
           </div>
-        </div>
+        </div>}
 
-        <div style={S.row}>
+        {runtimeKind === 'managed' && <div style={S.row}>
           <label style={S.fieldLabel}>Model</label>
           <input
             style={S.input}
@@ -214,9 +300,9 @@ export default function AgentCreatePage() {
           <div style={S.hint}>
             Provider-qualified model id resolved via ModelRegistry; empty falls back to the data-plane default model.
           </div>
-        </div>
+        </div>}
 
-        <div style={S.row}>
+        {runtimeKind === 'managed' && <div style={S.row}>
           <label style={S.fieldLabel}>System prompt</label>
           <textarea
             style={S.textarea}
@@ -224,7 +310,7 @@ export default function AgentCreatePage() {
             onChange={e => setSysPrompt(e.target.value)}
             placeholder="High-level behavior. You can also edit AGENTS.md after creation."
           />
-        </div>
+        </div>}
 
         <div style={S.actions}>
           <button
@@ -234,7 +320,7 @@ export default function AgentCreatePage() {
           >
             {submitting ? 'Creating…' : 'Create agent'}
           </button>
-          <button style={S.cancel} onClick={() => navigate('/agents')}>Cancel</button>
+          <button style={S.cancel} onClick={() => navigate('/agent-center/agents')}>Cancel</button>
           {err && <span style={S.err}>{err}</span>}
         </div>
       </div>

@@ -204,7 +204,7 @@ export default function AgentSettingsForm({
     if (!confirm(`Delete agent "${agent.name}"? This removes its workspace and sessions.`)) return;
     try {
       await deleteAgent(agent.id);
-      navigate('/agents', { replace: true });
+      navigate('/managed/agents', { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Delete failed');
     }
@@ -324,7 +324,7 @@ export default function AgentSettingsForm({
           }}>
             <div style={{ fontWeight: 650, color: '#0f172a', marginBottom: 6 }}>
               {linkedSummary.name}{' '}
-              <Link to={`/workspaces/${encodeURIComponent(linkedSummary.id)}`} style={{ color: '#4338ca' }}>
+              <Link to={`/managed/workspaces/${encodeURIComponent(linkedSummary.id)}`} style={{ color: '#4338ca' }}>
                 Open →
               </Link>
             </div>

@@ -704,7 +704,7 @@ export default function ChatPanel({
 
   function handleNewChat() {
     if (busy) return;
-    navigate(`/sessions/new?agentId=${encodeURIComponent(agentId)}`);
+    navigate(`/managed/sessions/new?agentId=${encodeURIComponent(agentId)}`);
   }
 
   const sessionLabel = sessionId.slice(0, 24);
@@ -716,9 +716,9 @@ export default function ChatPanel({
           {loadError}
           {!embedded && (
             <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
-              <Link to="/sessions" style={{ ...S.iconBtn, color: '#6366f1' }}>Sessions</Link>
+              <Link to="/managed/sessions" style={{ ...S.iconBtn, color: '#6366f1' }}>Conversations</Link>
               <Link
-                to={`/sessions/new?agentId=${encodeURIComponent(agentId)}`}
+                to={`/managed/sessions/new?agentId=${encodeURIComponent(agentId)}`}
                 style={{ ...S.iconBtn, color: '#6366f1' }}
               >
                 New session
@@ -739,7 +739,7 @@ export default function ChatPanel({
         </span>
         {!embedded && mountLabel && (
           <Link
-            to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
+            to={`/managed/sessions/${encodeURIComponent(sessionId)}?tab=details`}
             style={{ ...S.iconBtn, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             title="View / edit mounts on Details"
           >
@@ -750,13 +750,13 @@ export default function ChatPanel({
         {!embedded && (
           <>
             <Link
-              to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
+              to={`/managed/sessions/${encodeURIComponent(sessionId)}?tab=details`}
               style={S.iconBtn}
               title="Session details and event timeline"
             >
               📊 Details
             </Link>
-            <Link to="/sessions" style={S.iconBtn}>
+            <Link to="/managed/sessions" style={S.iconBtn}>
               📋 All sessions
             </Link>
             <button type="button" style={S.iconBtn} onClick={handleNewChat} disabled={busy}>
@@ -766,7 +766,7 @@ export default function ChatPanel({
         )}
         {embedded && (
           <Link
-            to={`/sessions/${encodeURIComponent(sessionId)}`}
+            to={`/managed/sessions/${encodeURIComponent(sessionId)}`}
             style={S.iconBtn}
             title="Open full session page"
           >

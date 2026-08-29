@@ -18,9 +18,9 @@ flowchart TB
     GW1 --> DP1[data_8082]
     SCH1[scheduler_8083] --> CP1
     SCH1 --> DP1
-    CP1 --> H2[(H2_TCP_9092)]
-    DP1 --> H2
-    SCH1 --> H2
+    CP1 --> PG1[(PostgreSQL_cp_rt_dp)]
+    DP1 --> PG1
+    SCH1 --> PG1
   end
   subgraph prod [生产_docker_compose_或等效编排]
     GW2[gateway] --> CP2[control_xN]
@@ -35,8 +35,8 @@ flowchart TB
 
 | 形态 | 数据库 | 进程 | 适用 |
 |---|---|---|---|
-| 本地试跑 | H2 TCP（脚本自带） | `scripts/dev-up.sh` 起四平面 | 开发 / Demo |
-| 单机生产 | MySQL / PostgreSQL | `docker compose up --build` | 小流量上线 |
+| 本地试跑 | Docker PostgreSQL（`cp` / `rt` / `dp`） | `scripts/dev-up.sh` 起四平面 | 开发 / Demo |
+| 单机生产 | PostgreSQL | `docker compose up --build` | 小流量上线 |
 | 多副本 | **同一** JDBC DataSource | control / data 各 N 副本；gateway 前置 LB | 水平扩展 |
 
 四条边界，记牢就不会配错：
@@ -51,13 +51,17 @@ flowchart TB
 ```bash
 export DASHSCOPE_API_KEY=sk-xxx
 
-# 按需编译 + 起全部四个平面（共享 H2 TCP 库）
-agentscope-service/scripts/dev-up.sh
+# 全量编译、重建可丢弃的本地 schema、启动全部四个平面
+cd agentscope-service
+scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
+
+# API 级验收：Managed Agent + v4 Issue/Run/ExecutionAttempt + Artifact/Approval/Automation
+scripts/smoke.sh
 ```
 
 - 控制台（经网关）：`http://localhost:8080`
 - 默认账号：`admin` / `admin`（另有 demo：`bob`/`bob`、`alice`/`alice`）
-- 停止：`scripts/dev-down.sh`；运行状态（pid / 日志 / H2 数据文件）在 `agentscope-service/.dev-stack/`
+- 停止：`scripts/dev-down.sh`；运行状态（pid / 日志 / workspace / Artifact）在 `agentscope-service/.dev-stack/`，数据库位于 Docker 容器 `agentscope-dev-pg`
 - 前端热更：`cd agentscope-service/frontend && npm run dev`（vite 把 `/api` 代理到 :8080 网关）
 
 Docker 替代路径：
@@ -92,22 +96,23 @@ docker compose -f agentscope-service/docker-compose.yml up --build
 
 属性前缀统一为 `builder.*` / `BUILDER_*`（旧 `claw.*` 仅兼容迁移）。
 
-## 3. 数据库：H2 → MySQL / PostgreSQL
+## 3. 数据库：本地 PostgreSQL 与生产数据库
 
-本地 H2 适合开发。生产直接覆盖 `BUILDER_DB_*`（无需激活额外 profile）：
+本地脚本固定使用 PostgreSQL，并把产品控制面、运行事实、Java 数据面分别放在 `cp`、`rt`、`dp`。生产环境通过 `BUILDER_DB_*` 和 aistiod DSN 指向受管 PostgreSQL：
 
 ```bash
-export BUILDER_DB_URL='jdbc:mysql://db:3306/agentscope_builder?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC'
+export BUILDER_DB_URL='jdbc:postgresql://db:5432/builder?currentSchema=dp'
 export BUILDER_DB_USER=agentscope
 export BUILDER_DB_PASSWORD='***'
-export BUILDER_DB_DRIVER=com.mysql.cj.jdbc.Driver
-# PostgreSQL 示例：改 URL + BUILDER_DB_DRIVER=org.postgresql.Driver
+export BUILDER_DB_DRIVER=org.postgresql.Driver
+export AISTIO_PRODUCT_DSN='postgres://agentscope:***@db:5432/builder?sslmode=require'
+export AISTIO_STORAGE_DSN='postgres://agentscope:***@db:5432/builder?sslmode=require&search_path=rt'
 ```
 
 要点：
 
-- MySQL / PostgreSQL 驱动已在各平面 classpath；Hibernate 按 URL 选方言。
-- **schema 种子由 control 面负责**；其余平面 `spring.sql.init.mode=never`，只管连同一个库。
+- PostgreSQL 驱动已在各平面 classpath；Hibernate 固定使用 `dp` schema。
+- `aistiod` 管理 `cp` 产品表和 `rt` migration，Java Data/Scheduler 通过 Hibernate 管理 `dp` 表；`dev-up.sh` 会在启动成功前验证三者。
 - `BUILDER_JPA_DDL_AUTO` 默认 `update`；严肃生产建议改 `validate` 并自管 Flyway/Liquibase。
 - **所有平面必须指向同一 DataSource**：共享 Agent 目录、Session 事件、`builder_agent_state`、以及 `builder_coord_*`（turn 租约 / HITL / work 队列 / cron fire）。
 

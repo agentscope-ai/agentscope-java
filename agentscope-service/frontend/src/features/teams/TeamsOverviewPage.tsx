@@ -1,112 +1,166 @@
-/*
- * Copyright 2024-2026 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { useState, type FormEvent } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  addTeamMember,
+  createTeam,
+  listTeams,
+  removeTeamMember,
+  type RuntimeBinding,
+  type RuntimeBindingPolicy,
+  type Team,
+} from '@/api/collaboration';
+import { useControlPlaneScope } from '@/app/ScopeContext';
+import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
-import { listTeams, teamPhaseTone } from '@/api/teams';
+import { Button } from '@/components/ui/button';
+import { Input, Textarea } from '@/components/ui/input';
+
+function TeamCard({ team, refresh }: { team: Team; refresh: () => void }) {
+  const [agentId, setAgentId] = useState('');
+  const [role, setRole] = useState('worker');
+  const [instructions, setInstructions] = useState('');
+  const [backend, setBackend] = useState<'auto' | 'managed' | 'external-application' | 'hosted-runtime'>('auto');
+  const [bindingRefA, setBindingRefA] = useState('');
+  const [requiredCapabilities, setRequiredCapabilities] = useState('{}');
+  const [securityConstraints, setSecurityConstraints] = useState('{}');
+  const runtimeBindingPolicy = (): RuntimeBindingPolicy | undefined => {
+    let binding: RuntimeBinding | undefined;
+    if (backend !== 'auto') binding = { agentId, bindingId: bindingRefA, kind: backend };
+    return binding ? { selectionMode: 'ordered', fallbackMode: 'disabled', candidates: [{ binding, requiredCapabilities: JSON.parse(requiredCapabilities), securityConstraints: JSON.parse(securityConstraints) }] } : undefined;
+  };
+  const add = useMutation({
+    mutationFn: () => addTeamMember(team.id, { agentId, role, instructions, runtimeBindingPolicy: runtimeBindingPolicy() }),
+    onSuccess: () => {
+      setAgentId('');
+      setRole('worker');
+      setInstructions('');
+      setBackend('auto');
+      setBindingRefA('');
+      refresh();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (memberId: string) => removeTeamMember(team.id, memberId),
+    onSuccess: refresh,
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    add.mutate();
+  };
+
+  return (
+    <article className="rounded-xl border bg-white p-5">
+      <h2 className="font-semibold">{team.name}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{team.description || 'No description'}</p>
+      <div className="mt-4 text-sm">Leader: <strong>{team.leaderAgentId}</strong></div>
+      <div className="mt-4 space-y-2">
+        {(team.members || []).map((member) => (
+          <div key={member.id} className="flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-sm">
+            <div>
+              <div><strong>{member.role}</strong> · {member.agentId}</div>
+              {member.instructions && <div className="mt-1 text-muted-foreground">{member.instructions}</div>}
+              {member.runtimeBindingPolicy && (
+                <div className="mt-1 text-xs text-muted-foreground">Runtime policy: {member.runtimeBindingPolicy.candidates.map((candidate) => candidate.binding.kind).join(' → ')}</div>
+              )}
+            </div>
+            <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => remove.mutate(member.id)}>
+              Remove
+            </Button>
+          </div>
+        ))}
+        {!(team.members || []).length && <p className="text-sm text-muted-foreground">No worker roles yet.</p>}
+      </div>
+      <form onSubmit={submit} className="mt-4 grid gap-2 border-t pt-4">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Input value={role} onChange={(event) => setRole(event.target.value)} placeholder="Unique role" required />
+          <Input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="Agent ID" required />
+        </div>
+        <Textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Role instructions" />
+        <label className="grid gap-1 text-sm">
+          Runtime binding policy
+          <select
+            className="h-10 rounded-md border bg-background px-3"
+            value={backend}
+            onChange={(event) => {
+              setBackend(event.target.value as typeof backend);
+              setBindingRefA('');
+            }}
+          >
+            <option value="auto">Inherit Agent Runtime Policy</option>
+            <option value="external-application">External application</option>
+            <option value="managed">Managed Agent</option>
+            <option value="hosted-runtime">Hosted Runtime</option>
+          </select>
+        </label>
+        {backend !== 'auto' && <Input value={bindingRefA} onChange={(event) => setBindingRefA(event.target.value)} placeholder="Binding ID" required />}
+        {backend !== 'auto' && <div className="grid gap-2 sm:grid-cols-2"><Textarea className="font-mono text-xs" value={requiredCapabilities} onChange={event=>setRequiredCapabilities(event.target.value)} placeholder="Required capabilities JSON"/><Textarea className="font-mono text-xs" value={securityConstraints} onChange={event=>setSecurityConstraints(event.target.value)} placeholder="Security constraints JSON"/></div>}
+        <Button type="submit" variant="outline" disabled={add.isPending}>Add member</Button>
+        {(add.error || remove.error) && <p className="text-sm text-destructive">{String(add.error || remove.error)}</p>}
+      </form>
+    </article>
+  );
+}
 
 export default function TeamsOverviewPage() {
+  const scope = useControlPlaneScope();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [leader, setLeader] = useState('');
+  const [description, setDescription] = useState('');
   const teams = useQuery({
-    queryKey: ['teams', 'overview'],
-    queryFn: () => listTeams(),
-    refetchInterval: 15_000,
+    queryKey: ['teams', scope.tenant, scope.namespace],
+    queryFn: () => listTeams(scope.tenant, scope.namespace),
   });
-
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['teams', scope.tenant, scope.namespace] });
+  };
+  const create = useMutation({
+    mutationFn: () => createTeam({
+      tenant: scope.tenant,
+      namespace: scope.namespace,
+      name,
+      description,
+      leaderAgentId: leader,
+      policy: { maxActiveTasks: 32, maxFanout: 8, maxHops: 8, maxChildDepth: 8, maxChildIssues: 64 },
+    }),
+    onSuccess: () => {
+      setOpen(false);
+      setName('');
+      setLeader('');
+      setDescription('');
+      refresh();
+    },
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    create.mutate();
+  };
   const items = teams.data?.items || [];
-  const running = items.filter((t) => t.phase === 'Running').length;
-  const idle = items.filter((t) => t.phase === 'Idle').length;
-  const pending = items.filter((t) => t.phase === 'Pending').length;
-  const completed = items.filter((t) => t.phase === 'Completed').length;
-  const failed = items.filter((t) => t.phase === 'Failed').length;
 
   return (
     <Page>
       <PageHeader
         title="Teams"
-        description="Claude-parity Agent Teams: shared task board, peer mailbox, Managed + BYO members."
-        actions={
-          <Button asChild>
-            <Link to="/teams/new">New team</Link>
-          </Button>
-        }
+        description="Persistent leader-first Agent squads. All work and communication lives in Issues and Comments."
+        actions={<Button onClick={() => setOpen(!open)}>New Team</Button>}
       />
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {[
-          { label: 'Total', value: items.length },
-          { label: 'Running', value: running },
-          { label: 'Idle', value: idle },
-          { label: 'Pending', value: pending },
-          { label: 'Done / Failed', value: `${completed} / ${failed}` },
-        ].map((c) => (
-          <div
-            key={c.label}
-            className="rounded-xl border border-border bg-white px-5 py-4 shadow-sm"
-          >
-            <div className="text-sm text-muted-foreground">{c.label}</div>
-            <div className="mt-1 text-2xl font-semibold tracking-tight">{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Recent teams</h2>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/teams/list">View all</Link>
-          </Button>
+      {open && (
+        <form onSubmit={submit} className="grid gap-3 rounded-xl border bg-white p-5">
+          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Team name" required />
+          <Input value={leader} onChange={(event) => setLeader(event.target.value)} placeholder="Leader Agent ID" required />
+          <Textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />
+          <Button type="submit" disabled={create.isPending}>Create Team</Button>
+          {create.error && <p className="text-sm text-destructive">{String(create.error)}</p>}
+        </form>
+      )}
+      {!teams.isLoading && !items.length ? (
+        <EmptyState title="No Teams" description="Create a persistent Team with a leader Agent." />
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {items.map((team) => <TeamCard key={team.id} team={team} refresh={refresh} />)}
         </div>
-        {teams.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading teams…</p>
-        )}
-        {teams.isError && (
-          <p className="text-sm text-red-600">Failed to load teams.</p>
-        )}
-        {!teams.isLoading && items.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border bg-white px-6 py-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              No teams yet. Create a lead + workers to start coordinating.
-            </p>
-            <Button className="mt-4" asChild>
-              <Link to="/teams/new">Create team</Link>
-            </Button>
-          </div>
-        )}
-        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-white shadow-sm">
-          {items.slice(0, 8).map((t) => (
-            <li key={`${t.namespace}/${t.name}`}>
-              <Link
-                to={`/teams/${encodeURIComponent(t.name)}?namespace=${encodeURIComponent(t.namespace || 'default')}`}
-                className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-muted/40"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{t.name}</div>
-                  <div className="truncate text-sm text-muted-foreground">
-                    {t.objective || '—'}
-                  </div>
-                </div>
-                <Badge tone={teamPhaseTone(t.phase)}>{t.phase || 'unknown'}</Badge>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+      )}
     </Page>
   );
 }

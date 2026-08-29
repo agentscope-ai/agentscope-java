@@ -229,7 +229,7 @@ export default function ChannelDetailPage() {
     if (!confirm(`Delete channel '${channelId}'? This removes its entry and all bindings.`)) return;
     try {
       await deleteChannel(channelId);
-      navigate('/channels');
+      navigate('/managed/channels');
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -272,7 +272,7 @@ export default function ChannelDetailPage() {
   }, [detail]);
 
   if (!admin) {
-    return <Navigate to="/agents" replace />;
+    return <Navigate to="/managed/agents" replace />;
   }
 
   if (!detail && !err) {
@@ -281,7 +281,7 @@ export default function ChannelDetailPage() {
 
   return (
     <div style={S.root}>
-      <button style={S.backLink} onClick={() => navigate('/channels')}>← All channels</button>
+      <button style={S.backLink} onClick={() => navigate('/managed/channels')}>← All channels</button>
       <h1 style={S.title}>{channelId}</h1>
       <div style={S.subtle}>IM identity configuration. Credentials switch with the selected platform.</div>
 

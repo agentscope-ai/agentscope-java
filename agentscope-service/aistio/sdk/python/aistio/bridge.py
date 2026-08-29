@@ -24,11 +24,18 @@ compaction 后立即推）、Inventory（连接建立后立即一次，之后低
 from __future__ import annotations
 
 import asyncio
+import socket
 import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from .adapters.base import COMMAND_ABORT, COMMAND_COMPRESS, COMMAND_TERMINATE, FrameworkAdapter
+from .adapters.base import (
+    AgentTaskAssignment,
+    COMMAND_ABORT,
+    COMMAND_COMPRESS,
+    COMMAND_TERMINATE,
+    FrameworkAdapter,
+)
 from .context import ContextSnapshot, ContextTracker
 from .events import (
     EVENT_COMPACTION,
@@ -41,6 +48,7 @@ from .inventory import InstanceHealth, Inventory
 from .proto import asdp_pb2
 from .transport.grpc import GrpcTransport
 from .transport.http_server import ContractHTTPServer, ContractNotFoundError
+from .transport.registration import RegisteredIdentity, register_external_agent
 
 #: SDK 版本（握手时上报）。
 SDK_VERSION = "0.1.0"
@@ -65,23 +73,39 @@ class SessionBridge:
         self,
         *,
         control_plane: str,
-        agent_name: str,
+        agent_key: str,
+        tenant: str = "default",
+        internal_token: str = "",
+        registration_credential: str = "",
+        control_plane_http: str = "",
+        agent_id: str = "",
+        binding_id: str = "",
         namespace: str = "default",
-        instance_id: str = "",
+        instance_key: str = "",
+        generation: int = 0,
         enable_events: bool = False,
         contract_http_port: int = 8080,
         contract_http_host: str = "",
+        contract_http_base_url: str = "",
         session_affinity: str = "",
         start_http: bool = True,
         start_grpc: bool = True,
     ) -> None:
         self._control_plane = control_plane
-        self._agent_name = agent_name
+        self._tenant = tenant
+        self._internal_token = internal_token
+        self._registration_credential = registration_credential
+        self._control_plane_http = control_plane_http
+        self._agent_id = agent_id
+        self._agent_key = agent_key
+        self._binding_id = binding_id
         self._namespace = namespace
-        self._instance_id = instance_id
+        self._instance_key = instance_key
+        self._generation = generation
         self._enable_events = enable_events
         self._http_port = contract_http_port
         self._http_host = contract_http_host
+        self._http_base_url = contract_http_base_url
         self._session_affinity = session_affinity
         self._start_http = start_http
         self._start_grpc = start_grpc
@@ -107,6 +131,7 @@ class SessionBridge:
 
         self._grpc: Optional[GrpcTransport] = None
         self._http: Optional[ContractHTTPServer] = None
+        self._registered_identity: Optional[RegisteredIdentity] = None
         self._started = False
 
     # ─── 适配器挂载 ───
@@ -131,22 +156,12 @@ class SessionBridge:
         self._started = True
         self._loop_thread.start()
 
-        if self._start_grpc:
-            self._grpc = GrpcTransport(
-                self._control_plane,
-                agent_name=self._agent_name,
-                namespace=self._namespace,
-                instance_id=self._instance_id,
-                sdk_version=SDK_VERSION,
-                capabilities=self.capabilities(),
-                session_affinity=self._session_affinity,
-            )
-            self._grpc.set_session_command_handler(self._on_session_command)
-            self._grpc.start()
-
         if self._start_http:
             self._http = ContractHTTPServer(self._http_host, self._http_port, provider=self)
             self._http.start()
+
+        if self._start_grpc:
+            self._ensure_grpc_transport()
 
         self._sched_thread = threading.Thread(
             target=self._schedule_loop, name="aistio-sched", daemon=True
@@ -188,6 +203,63 @@ class SessionBridge:
     @property
     def grpc_transport(self) -> Optional[GrpcTransport]:
         return self._grpc
+
+    @property
+    def registered_identity(self) -> Optional[RegisteredIdentity]:
+        """The stable v5 identity obtained from registration, if any."""
+        return self._registered_identity
+
+    def _routing_key(self) -> str:
+        if self._http_base_url:
+            return self._http_base_url.rstrip("/")
+        host = self._http_host or socket.getfqdn() or "127.0.0.1"
+        return f"http://{host}:{self.http_port}"
+
+    def _ensure_grpc_transport(self) -> None:
+        if self._grpc is not None or not self._start_grpc:
+            return
+        if not (self._agent_id and self._binding_id and self._generation > 0):
+            if not self._control_plane_http:
+                return
+            try:
+                identity = register_external_agent(
+                    self._control_plane_http,
+                    bootstrap_token=self._internal_token,
+                    registration_credential=self._registration_credential,
+                    tenant=self._tenant,
+                    namespace=self._namespace,
+                    agent_key=self._agent_key,
+                    instance_key=self._instance_key,
+                    routing_key=self._routing_key(),
+                    framework=self._adapter.framework_name() if self._adapter else "python",
+                    sdk_version=SDK_VERSION,
+                    capabilities=self.capabilities(),
+                )
+            except Exception:
+                return
+            self._registered_identity = identity
+            self._agent_id = identity.agent_id
+            self._binding_id = identity.binding_id
+            self._generation = identity.generation
+            self._registration_credential = identity.registration_credential
+
+        self._grpc = GrpcTransport(
+            self._control_plane,
+            tenant=self._tenant,
+            credential=self._registration_credential or self._internal_token,
+            agent_id=self._agent_id,
+            agent_key=self._agent_key,
+            binding_id=self._binding_id,
+            namespace=self._namespace,
+            instance_key=self._instance_key,
+            generation=self._generation,
+            sdk_version=SDK_VERSION,
+            capabilities=self.capabilities(),
+            session_affinity=self._session_affinity,
+        )
+        self._grpc.set_session_command_handler(self._on_session_command)
+        self._grpc.set_execution_attempt_handler(self._on_execution_attempt)
+        self._grpc.start()
 
     # ─── capabilities ───
 
@@ -265,8 +337,8 @@ class SessionBridge:
         if self._grpc is None:
             return
         now = time.monotonic()
-        last = self._last_context_push.get(session_id, 0.0)
-        if not force and now - last < CONTEXT_PUSH_COOLDOWN:
+        last = self._last_context_push.get(session_id)
+        if not force and last is not None and now - last < CONTEXT_PUSH_COOLDOWN:
             return
         with self._lock:
             tracker = self._trackers.get(session_id)
@@ -362,6 +434,8 @@ class SessionBridge:
         next_inventory = now  # 连接建立后立即一次
         while not self._stop.wait(0.5):
             now = time.monotonic()
+            if self._start_grpc and self._grpc is None:
+                self._ensure_grpc_transport()
             if now >= next_events:
                 next_events = now + EVENT_FLUSH_INTERVAL
                 self._flush_events()
@@ -376,6 +450,66 @@ class SessionBridge:
 
     def _on_session_command(self, session_id: str, command: str, params: bytes) -> None:
         self._dispatch_command(session_id, command, params or None)
+
+    def _on_execution_attempt(
+        self,
+        attempt_id: str,
+        agent_task_id: str,
+        run_id: str,
+        node_id: str,
+        generation: int,
+        command: str,
+        context_url: str,
+        task_token: str,
+        attempt_token: str,
+        payload: bytes,
+        timestamp: int,
+    ) -> None:
+        if self._adapter is None or not self._adapter.supports("handle_agent_task"):
+            return
+        base = dict(
+            attempt_id=attempt_id,
+            agent_task_id=agent_task_id,
+            run_id=run_id,
+            node_id=node_id,
+            generation=generation,
+            attempt_token=attempt_token,
+        )
+        self._grpc.report_execution_attempt(
+            asdp_pb2.ExecutionAttemptReport(**base, action="ack")
+        )
+        if command == "cancel":
+            self._grpc.report_execution_attempt(
+                asdp_pb2.ExecutionAttemptReport(**base, action="cancelled")
+            )
+            return
+        assignment = AgentTaskAssignment(
+            attempt_id,
+            agent_task_id,
+            run_id,
+            node_id,
+            generation,
+            command,
+            context_url,
+            task_token,
+            attempt_token,
+            payload,
+            timestamp,
+        )
+        self._grpc.report_execution_attempt(
+            asdp_pb2.ExecutionAttemptReport(**base, action="start")
+        )
+        try:
+            self._run_async(self._adapter.handle_agent_task(assignment))
+        except Exception as exc:
+            self._grpc.report_execution_attempt(
+                asdp_pb2.ExecutionAttemptReport(
+                    **base,
+                    action="fail",
+                    error_code="adapter_execution_failed",
+                    error_message=str(exc),
+                )
+            )
 
     def _dispatch_command(
         self, session_id: str, command: str, params: Optional[bytes] = None
@@ -439,7 +573,7 @@ class SessionBridge:
             except Exception:
                 version = ""
         return {
-            "name": self._agent_name,
+            "name": self._agent_key,
             "runtime": framework,
             "version": version,
             "sdkVersion": SDK_VERSION,

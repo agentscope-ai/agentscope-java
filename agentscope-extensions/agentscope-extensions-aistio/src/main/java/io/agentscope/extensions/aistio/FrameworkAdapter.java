@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.aistio;
 
+import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.model.ContextSnapshot;
 import io.agentscope.extensions.aistio.model.Inventory;
 import io.agentscope.extensions.aistio.model.MessagePage;
@@ -49,13 +50,12 @@ public interface FrameworkAdapter {
     String CAP_SUBAGENT_TASK_QUERY = "subagent-task-query";
     String CAP_SUBAGENT_TASK_COMMAND = "subagent-task-command";
     String CAP_PLAN_MODE = "plan-mode";
-    String CAP_TEAM_COORDINATION = "team-coordination";
+    String CAP_AGENT_TASK = "agent-task";
+    String CAP_EXPORT_TRANSCRIPT = "export-transcript";
 
     String COMMAND_COMPRESS = "compress";
     String COMMAND_TERMINATE = "terminate";
     String COMMAND_ABORT = "abort";
-    String COMMAND_TEAM_JOIN = "team_join";
-    String COMMAND_TEAM_LEAVE = "team_leave";
 
     /** Framework identifier reported on every snapshot, e.g. {@code agentscope-java}. */
     String frameworkName();
@@ -132,6 +132,14 @@ public interface FrameworkAdapter {
         return Mono.error(unsupported("plan-mode"));
     }
 
+    /**
+     * Inject a console/control-plane user message into the live session. Must use the framework's
+     * official continue-turn API.
+     */
+    default Mono<Void> injectUserMessage(String sessionId, String content) {
+        return Mono.error(unsupported("inbound-message"));
+    }
+
     /** Effective Definition snapshot for {@code GET /agentscope/info} → {@code agentConfig}. */
     default Map<String, Object> buildAgentConfig() {
         return Map.of();
@@ -143,6 +151,11 @@ public interface FrameworkAdapter {
      */
     default Mono<Void> handleCommand(String sessionId, String command, byte[] params) {
         return Mono.error(unsupported("session-command"));
+    }
+
+    /** Materializes a downstream AgentTask delivery as an isolated execution. */
+    default Mono<Void> handleAgentTask(AgentTaskAssignment assignment) {
+        return Mono.error(unsupported(CAP_AGENT_TASK));
     }
 
     /**

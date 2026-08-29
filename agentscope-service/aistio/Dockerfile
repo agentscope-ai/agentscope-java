@@ -11,6 +11,8 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a \
     -ldflags="-s -w" -o aistiod ./cmd/aistiod
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a \
     -ldflags="-s -w" -o aistioctl ./cmd/aistioctl
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a \
+    -ldflags="-s -w" -o aistio-runtime-host ./cmd/aistio-runtime-host
 # Distroless has no shell, so the writable workspace root is staged here.
 RUN mkdir -p /staging/workspaces
 
@@ -18,6 +20,7 @@ FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/aistiod .
 COPY --from=builder /workspace/aistioctl .
+COPY --from=builder /workspace/aistio-runtime-host .
 # Console SPA served by aistiod on the same port as the APIs.
 COPY --from=builder /workspace/ui /ui
 COPY --from=builder --chown=65532:65532 /staging/workspaces /data/workspaces

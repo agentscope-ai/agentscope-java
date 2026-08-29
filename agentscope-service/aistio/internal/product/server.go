@@ -104,7 +104,6 @@ func (s *Server) Middlewares() []gin.HandlerFunc {
 // Register mounts every product route onto the given router.
 func (s *Server) Register(r gin.IRouter) {
 	s.registerAuth(r)
-	s.registerAgents(r)
 	s.registerAgentExtras(r)
 	s.registerWorkspace(r)
 	s.registerWorkspaces(r)

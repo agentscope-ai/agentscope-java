@@ -15,10 +15,12 @@
  */
 package io.agentscope.extensions.aistio;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.aistio.proto.ExecutionAttemptCommand;
+import io.agentscope.aistio.proto.ExecutionAttemptReport;
 import io.agentscope.aistio.proto.SessionEventMsg;
 import io.agentscope.aistio.proto.SessionSnapshot;
+import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.model.ContextSnapshot;
 import io.agentscope.extensions.aistio.model.ContextTracker;
 import io.agentscope.extensions.aistio.model.Inventory;
@@ -28,7 +30,6 @@ import io.agentscope.extensions.aistio.transport.ContractHttpServer;
 import io.agentscope.extensions.aistio.transport.ContractProvider;
 import io.agentscope.extensions.aistio.transport.GrpcTransport;
 import io.agentscope.extensions.aistio.transport.HttpSelfRegistration;
-import io.agentscope.harness.agent.middleware.TeamsMiddleware;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -87,7 +88,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     private static final long INVENTORY_INTERVAL_MS = 30_000L;
     private static final Duration ADAPTER_CALL_TIMEOUT = Duration.ofSeconds(10);
 
-    private static final ObjectMapper TEAM_EVENT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final AistioConfig config;
     private final Object lock = new Object();
@@ -153,28 +154,14 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         }
         started = true;
 
-        if (config.startGrpc()) {
-            grpc =
-                    new GrpcTransport(
-                            config.controlPlane(),
-                            config.agentName(),
-                            config.namespace(),
-                            config.instanceId(),
-                            frameworkName(),
-                            SDK_VERSION,
-                            capabilities(),
-                            config.sessionAffinity());
-            grpc.setSessionCommandHandler(
-                    (sessionId, command, params) -> dispatchCommand(sessionId, command, params));
-            grpc.setTeamEventHandler(this::onTeamEvent);
-            grpc.start();
-        }
-
         if (config.startHttp()) {
             try {
                 http =
                         new ContractHttpServer(
-                                config.contractHttpHost(), config.contractHttpPort(), this);
+                                config.contractHttpHost(),
+                                config.contractHttpPort(),
+                                this,
+                                config.internalToken());
                 http.start();
             } catch (IOException e) {
                 throw new UncheckedIOException("aistio: contract HTTP server failed to bind", e);
@@ -182,20 +169,23 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         }
 
         if (config.startHttpRegister()) {
-            String token = config.internalToken();
-            if (token == null || token.isBlank()) {
+            String bootstrapToken = config.internalToken();
+            if ((bootstrapToken == null || bootstrapToken.isBlank())
+                    && config.registrationCredential().isBlank()) {
                 LOG.warning(
-                        "aistio: HTTP self-register enabled but internalToken is blank; skipping"
-                                + " (set BUILDER_INTERNAL_TOKEN / AistioConfig.internalToken)");
+                        "aistio: registration enabled but neither bootstrap token nor registration"
+                                + " credential is configured; skipping");
             } else {
                 String baseUrl = resolvePublicBaseUrl();
                 httpRegister =
                         new HttpSelfRegistration(
                                 config.controlPlaneHttp(),
-                                token,
-                                config.agentName(),
+                                bootstrapToken,
+                                config.registrationCredential(),
+                                config.agentKey(),
+                                config.tenant(),
                                 config.namespace(),
-                                config.instanceId(),
+                                config.instanceKey(),
                                 baseUrl,
                                 frameworkName(),
                                 frameworkName(),
@@ -204,6 +194,47 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                                 15_000L);
                 httpRegister.start();
             }
+        }
+
+        if (config.startGrpc()) {
+            HttpSelfRegistration.RegisteredIdentity registered =
+                    httpRegister == null ? null : httpRegister.identity();
+            String agentId = registered == null ? config.agentId() : registered.agentId();
+            String bindingId = registered == null ? config.bindingId() : registered.bindingId();
+            String instanceKey =
+                    registered == null ? config.instanceKey() : registered.instanceKey();
+            long generation = registered == null ? config.generation() : registered.generation();
+            String credential =
+                    registered == null
+                            ? (!config.registrationCredential().isBlank()
+                                    ? config.registrationCredential()
+                                    : config.internalToken())
+                            : registered.registrationCredential();
+            if (agentId.isBlank() || bindingId.isBlank() || generation <= 0) {
+                started = false;
+                throw new IllegalStateException(
+                        "aistio: ASDP requires a successful registration or an explicit stable"
+                                + " identity");
+            }
+            grpc =
+                    new GrpcTransport(
+                            config.controlPlane(),
+                            credential,
+                            agentId,
+                            config.agentKey(),
+                            bindingId,
+                            config.tenant(),
+                            config.namespace(),
+                            instanceKey,
+                            generation,
+                            frameworkName(),
+                            SDK_VERSION,
+                            capabilities(),
+                            config.sessionAffinity());
+            grpc.setSessionCommandHandler(
+                    (sessionId, command, params) -> dispatchCommand(sessionId, command, params));
+            grpc.setExecutionAttemptHandler(this::onExecutionAttempt);
+            grpc.start();
         }
 
         scheduler =
@@ -566,54 +597,59 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         grpc.reportInventory(inventory.toProto());
     }
 
-    // ─── team events (ASDP downstream) ───
+    // ─── AgentTask delivery (ASDP downstream) ───
 
-    /**
-     * Wakes the local teammate session addressed by a control-plane TeamEvent. The event names the
-     * member; the payload may additionally carry the concrete session id.
-     */
-    private void onTeamEvent(
-            String teamId, String eventType, String memberName, String taskId, byte[] payload) {
+    private void onExecutionAttempt(ExecutionAttemptCommand command) {
         LOG.log(
                 Level.FINE,
-                "aistio: downstream team event team={0} type={1} member={2} task={3}",
-                new Object[] {teamId, eventType, memberName, taskId});
-        String notice = readNotice(payload);
-        TeamsMiddleware.wakeupTeamMember(teamId, memberName, notice);
-        String sessionId = readSessionId(payload);
-        if (!sessionId.isEmpty()) {
-            TeamsMiddleware.wakeupSession(sessionId, notice);
+                "aistio: downstream ExecutionAttempt attempt={0} task={1}",
+                new Object[] {command.getAttemptId(), command.getAgentTaskId()});
+        reportAttempt(command, "ack");
+        if ("cancel".equals(command.getCommand())) {
+            reportAttempt(command, "cancelled");
+            return;
         }
+        if (adapter == null) {
+            return;
+        }
+        reportAttempt(command, "start");
+        adapter.handleAgentTask(
+                        new AgentTaskAssignment(
+                                command.getAttemptId(),
+                                command.getAgentTaskId(),
+                                command.getRunId(),
+                                command.getNodeId(),
+                                command.getGeneration(),
+                                command.getCommand(),
+                                command.getContextUrl(),
+                                command.getTaskToken(),
+                                command.getAttemptToken(),
+                                command.getPayload().toByteArray(),
+                                command.getTimestamp()))
+                .subscribe(
+                        ignored -> {},
+                        error ->
+                                LOG.log(
+                                        Level.WARNING,
+                                        "aistio: ExecutionAttempt delivery failed attempt="
+                                                + command.getAttemptId(),
+                                        error));
     }
 
-    /**
-     * Extracts the human-readable body of a team event so the woken turn starts with the content.
-     * The control plane sends the message text as the raw payload; JSON payloads carry it under
-     * {@code content}.
-     */
-    private static String readNotice(byte[] payload) {
-        if (payload == null || payload.length == 0) {
-            return "";
+    private void reportAttempt(ExecutionAttemptCommand command, String action) {
+        if (grpc == null) {
+            return;
         }
-        try {
-            JsonNode root = TEAM_EVENT_MAPPER.readTree(payload);
-            String content = root.path("content").asText("");
-            return content.isEmpty() ? root.toString() : content;
-        } catch (IOException e) {
-            return new String(payload, StandardCharsets.UTF_8);
-        }
-    }
-
-    private static String readSessionId(byte[] payload) {
-        if (payload == null || payload.length == 0) {
-            return "";
-        }
-        try {
-            return TEAM_EVENT_MAPPER.readTree(payload).path("sessionId").asText("");
-        } catch (IOException e) {
-            LOG.log(Level.FINE, "aistio: team event payload is not JSON", e);
-            return "";
-        }
+        grpc.reportExecutionAttempt(
+                ExecutionAttemptReport.newBuilder()
+                        .setAttemptId(command.getAttemptId())
+                        .setAgentTaskId(command.getAgentTaskId())
+                        .setRunId(command.getRunId())
+                        .setNodeId(command.getNodeId())
+                        .setGeneration(command.getGeneration())
+                        .setAction(action)
+                        .setAttemptToken(command.getAttemptToken())
+                        .build());
     }
 
     // ─── command dispatch (ASDP push and HTTP both land here) ───
@@ -630,7 +666,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     @Override
     public Map<String, Object> info() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("name", config.agentName());
+        out.put("name", config.agentKey());
         out.put("runtime", frameworkName());
         out.put("version", frameworkVersion());
         out.put("sdkVersion", SDK_VERSION);
@@ -822,6 +858,10 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
 
     @Override
     public void compress(String sessionId) {
+        if (Boolean.TRUE.equals(busyFlags.get(sessionId))
+                || PHASE_ACTIVE.equals(phases.getOrDefault(sessionId, PHASE_IDLE))) {
+            throw new BusyException("session is busy");
+        }
         setPhase(sessionId, PHASE_COMPRESSING);
         try {
             dispatchCommand(sessionId, FrameworkAdapter.COMMAND_COMPRESS, null);
@@ -897,51 +937,42 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     }
 
     @Override
-    public void teamJoin(byte[] body) {
+    public void postMessage(String sessionId, byte[] body) {
         if (adapter == null) {
             throw new UnsupportedOperationException("no framework adapter attached");
         }
-        if (body == null || body.length == 0) {
-            throw new IllegalArgumentException("team join body required");
+        if (Boolean.TRUE.equals(busyFlags.get(sessionId))
+                || PHASE_ACTIVE.equals(phases.getOrDefault(sessionId, PHASE_IDLE))) {
+            throw new BusyException("session is busy");
         }
-        dispatchTeamCommand(body, FrameworkAdapter.COMMAND_TEAM_JOIN, "team join");
+        String content = readNotice(body);
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("content is required");
+        }
+        adapter.injectUserMessage(sessionId, content).block(ADAPTER_CALL_TIMEOUT);
+    }
+
+    private static String readNotice(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return "";
+        }
+        try {
+            var root = JSON.readTree(payload);
+            String content = root.path("content").asText("");
+            return content.isEmpty() ? root.toString() : content;
+        } catch (IOException e) {
+            return new String(payload, StandardCharsets.UTF_8);
+        }
     }
 
     @Override
-    public void teamLeave(byte[] body) {
-        if (adapter == null) {
-            throw new UnsupportedOperationException("no framework adapter attached");
-        }
-        if (body == null || body.length == 0) {
-            throw new IllegalArgumentException("team leave body required");
-        }
-        dispatchTeamCommand(body, FrameworkAdapter.COMMAND_TEAM_LEAVE, "team leave");
-    }
-
-    /** Unwraps the {@code {sessionId, params}} envelope shared by the team HTTP endpoints. */
-    private void dispatchTeamCommand(byte[] body, String command, String label) {
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> root = TEAM_EVENT_MAPPER.readValue(body, Map.class);
-            Object sid = root.get("sessionId");
-            if (sid == null || String.valueOf(sid).isBlank()) {
-                throw new IllegalArgumentException("sessionId required");
-            }
-            byte[] params;
-            Object rawParams = root.get("params");
-            if (rawParams == null) {
-                params = new byte[0];
-            } else if (rawParams instanceof String s) {
-                params = s.getBytes(StandardCharsets.UTF_8);
-            } else {
-                params = TEAM_EVENT_MAPPER.writeValueAsBytes(rawParams);
-            }
-            dispatchCommand(String.valueOf(sid), command, params);
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalArgumentException("invalid " + label + " body: " + e.getMessage(), e);
-        }
+    public Map<String, Object> exportTranscript(String sessionId) {
+        Map<String, Object> page = messages(sessionId, 0, Integer.MAX_VALUE);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("sessionId", sessionId);
+        out.put("format", "json");
+        out.put("messages", page.getOrDefault("messages", List.of()));
+        return out;
     }
 
     @Override

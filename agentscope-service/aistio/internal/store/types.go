@@ -36,71 +36,29 @@ const (
 	SessionPhaseTerminated  = "terminated"
 )
 
-// Team task states. Completed and Failed are terminal.
-const (
-	TaskStatePending    = "pending"
-	TaskStateInProgress = "in_progress"
-	TaskStateCompleted  = "completed"
-	TaskStateFailed     = "failed"
-)
-
-// IsTaskTerminal reports whether a task state accepts no further transitions.
-func IsTaskTerminal(state string) bool {
-	return state == TaskStateCompleted || state == TaskStateFailed
-}
-
-// Team / member lifecycle phases (store-backed; CRD enums map 1:1).
-const (
-	TeamPhasePending   = "Pending"
-	TeamPhaseRunning   = "Running"
-	TeamPhaseIdle      = "Idle" // alive; all active members idle (not Completed)
-	TeamPhaseCompleted = "Completed"
-	TeamPhaseFailed    = "Failed"
-
-	MemberPhaseJoining  = "Joining"
-	MemberPhaseWorking  = "Working"
-	MemberPhaseIdle     = "Idle"
-	MemberPhaseLost     = "Lost"
-	MemberPhaseFailed   = "Failed"
-	MemberPhaseShutdown = "Shutdown"
-
-	MemberOriginStatic  = "static"
-	MemberOriginDynamic = "dynamic"
-
-	MemberDeployManaged = "managed"
-	MemberDeployBYO     = "byo"
-
-	// PlanStatusPending marks a submitted member plan awaiting lead review.
-	PlanStatusPending = "pending"
-	// PlanStatusApproved marks a member plan the lead accepted.
-	PlanStatusApproved = "approved"
-	// PlanStatusRejected marks a member plan the lead sent back.
-	PlanStatusRejected = "rejected"
-)
-
 // Session is a runtime session on an agent.
 type Session struct {
-	ID               uuid.UUID       `json:"id"`
-	SessionID        string          `json:"sessionId"`
-	AgentName        string          `json:"agentName"`
-	Namespace        string          `json:"namespace"`
-	Framework        string          `json:"framework"`
-	FrameworkVersion string          `json:"frameworkVersion,omitempty"`
-	Phase            string          `json:"phase"`
+	ID               uuid.UUID `json:"id"`
+	Tenant           string    `json:"tenant"`
+	SessionID        string    `json:"sessionId"`
+	AgentName        string    `json:"agentName"`
+	Namespace        string    `json:"namespace"`
+	Framework        string    `json:"framework"`
+	FrameworkVersion string    `json:"frameworkVersion,omitempty"`
+	Phase            string    `json:"phase"`
 	// Busy is derived from phase when reported by modern data planes
 	// (busy := phase == "active"). Kept for backward compatibility; prefer Phase.
 	// nil means the data plane did not report busy (unknown).
-	Busy             *bool           `json:"busy,omitempty"`
-	InstanceRef      string          `json:"instanceRef,omitempty"`
-	InstanceIP       string          `json:"instanceIP,omitempty"`
-	TeamID           string          `json:"teamId,omitempty"`
-	TeamRole         string          `json:"teamRole,omitempty"`
-	TeamContext      json.RawMessage `json:"teamContext,omitempty"`
-	StartedAt        *time.Time      `json:"startedAt,omitempty"`
-	LastActiveAt     *time.Time      `json:"lastActiveAt,omitempty"`
-	TerminatedAt     *time.Time      `json:"terminatedAt,omitempty"`
-	CreatedAt        time.Time       `json:"createdAt"`
-	UpdatedAt        time.Time       `json:"updatedAt"`
+	Busy         *bool           `json:"busy,omitempty"`
+	InstanceRef  string          `json:"instanceRef,omitempty"`
+	InstanceIP   string          `json:"instanceIP,omitempty"`
+	AgentTaskID  *uuid.UUID      `json:"agentTaskId,omitempty"`
+	TaskContext  json.RawMessage `json:"taskContext,omitempty"`
+	StartedAt    *time.Time      `json:"startedAt,omitempty"`
+	LastActiveAt *time.Time      `json:"lastActiveAt,omitempty"`
+	TerminatedAt *time.Time      `json:"terminatedAt,omitempty"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
 }
 
 // SessionWithSnapshot pairs a session with its latest Level-1 snapshot.
@@ -185,23 +143,23 @@ const (
 
 // SessionCommand is an audit row for a control-plane session operation.
 type SessionCommand struct {
-	ID           uuid.UUID  `json:"id"`
-	SessionFK    *uuid.UUID `json:"sessionFk,omitempty"`
-	AgentName    string     `json:"agentName"`
-	Namespace    string     `json:"namespace"`
-	SessionID    string     `json:"sessionId"`
-	Command      string     `json:"command"`
-	Operator     string     `json:"operator,omitempty"`
-	Source       string     `json:"source,omitempty"`
-	InstanceRef  string     `json:"instanceRef,omitempty"`
-	Status       string     `json:"status"`
-	Code         string     `json:"code,omitempty"`
-	Error        string     `json:"error,omitempty"`
-	Forced       bool       `json:"forced,omitempty"`
-	CommandID    string     `json:"commandId,omitempty"`
-	RequestedAt  time.Time  `json:"requestedAt"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty"`
-	DurationMs   int64      `json:"durationMs,omitempty"`
+	ID          uuid.UUID  `json:"id"`
+	SessionFK   *uuid.UUID `json:"sessionFk,omitempty"`
+	AgentName   string     `json:"agentName"`
+	Namespace   string     `json:"namespace"`
+	SessionID   string     `json:"sessionId"`
+	Command     string     `json:"command"`
+	Operator    string     `json:"operator,omitempty"`
+	Source      string     `json:"source,omitempty"`
+	InstanceRef string     `json:"instanceRef,omitempty"`
+	Status      string     `json:"status"`
+	Code        string     `json:"code,omitempty"`
+	Error       string     `json:"error,omitempty"`
+	Forced      bool       `json:"forced,omitempty"`
+	CommandID   string     `json:"commandId,omitempty"`
+	RequestedAt time.Time  `json:"requestedAt"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	DurationMs  int64      `json:"durationMs,omitempty"`
 }
 
 // SessionSnapshot is a Level-1 summary captured on each poll / report.
@@ -273,6 +231,7 @@ type ContextSnapshot struct {
 // TokenUsageMetric is a time-series token-usage sample.
 type TokenUsageMetric struct {
 	ID               int64      `json:"id"`
+	Tenant           string     `json:"tenant"`
 	SessionFK        *uuid.UUID `json:"sessionFk,omitempty"`
 	AgentName        string     `json:"agentName"`
 	Namespace        string     `json:"namespace"`
@@ -287,6 +246,7 @@ type TokenUsageMetric struct {
 // AgentMetric is an agent-level aggregate sample.
 type AgentMetric struct {
 	ID                 int64     `json:"id"`
+	Tenant             string    `json:"tenant"`
 	AgentName          string    `json:"agentName"`
 	Namespace          string    `json:"namespace"`
 	RecordedAt         time.Time `json:"recordedAt"`
@@ -296,95 +256,6 @@ type AgentMetric struct {
 	AvgContextPressure float64   `json:"avgContextPressure,omitempty"`
 	ErrorCount         int32     `json:"errorCount,omitempty"`
 	UptimeSeconds      int64     `json:"uptimeSeconds,omitempty"`
-}
-
-// Team is the store-backed team runtime resource (authoritative; CRD is optional projection).
-type Team struct {
-	ID         int64           `json:"id"`
-	Name       string          `json:"name"`
-	Namespace  string          `json:"namespace"`
-	Objective  string          `json:"objective"`
-	Phase      string          `json:"phase"`
-	LeadRef    string          `json:"leadRef"` // registry agentName of the lead
-	LeadPrompt string          `json:"leadPrompt,omitempty"`
-	Config     json.RawMessage `json:"config,omitempty"` // TeamConfig JSON
-	SpecExtra  json.RawMessage `json:"specExtra,omitempty"` // dynamicMembers/sharedContext/recovery/lifecycle
-	StartedAt  *time.Time      `json:"startedAt,omitempty"`
-	CreatedAt  time.Time       `json:"createdAt"`
-	UpdatedAt  time.Time       `json:"updatedAt"`
-}
-
-// TeamMember is one role slot on a team (lead or worker).
-type TeamMember struct {
-	ID               int64      `json:"id"`
-	TeamName         string     `json:"teamName"`
-	Namespace        string     `json:"namespace"`
-	MemberName       string     `json:"memberName"` // "lead" for the lead role
-	AgentRef         string     `json:"agentRef"`   // registry agentName
-	Prompt           string     `json:"prompt,omitempty"`
-	PlanApproval     bool       `json:"planApproval,omitempty"`
-	PlanText         string     `json:"planText,omitempty"`
-	PlanStatus       string     `json:"planStatus,omitempty"` // pending | approved | rejected | ""
-	Origin           string     `json:"origin,omitempty"`     // static | dynamic
-	DeployMode       string     `json:"deployMode,omitempty"` // managed | byo
-	ManagedAgentID   string     `json:"managedAgentId,omitempty"`
-	OwnerID          string     `json:"ownerId,omitempty"` // product owner for managed find-or-create
-	Phase            string     `json:"phase"`
-	SessionID        string     `json:"sessionId,omitempty"`
-	ManagedSessionID string     `json:"managedSessionId,omitempty"`
-	InstanceRef      string     `json:"instanceRef,omitempty"`
-	CurrentTask      string     `json:"currentTask,omitempty"`
-	RestartCount     int32      `json:"restartCount,omitempty"`
-	LastRestartAt    *time.Time `json:"lastRestartAt,omitempty"`
-	LastRestartReason string    `json:"lastRestartReason,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
-}
-
-// TeamMessage is a team collaboration message (outbox).
-type TeamMessage struct {
-	ID          int64      `json:"id"`
-	TeamName    string     `json:"teamName"`
-	Namespace   string     `json:"namespace"`
-	FromMember  string     `json:"fromMember"`
-	ToMember    string     `json:"toMember,omitempty"` // empty = broadcast recipient already resolved
-	Content     string     `json:"content"`
-	Kind        string     `json:"kind,omitempty"`
-	Nonce       string     `json:"nonce,omitempty"`
-	Delivered   bool       `json:"delivered"`
-	DeliveredAt *time.Time `json:"deliveredAt,omitempty"`
-	Attempts    int32      `json:"attempts"`
-	CreatedAt   time.Time  `json:"createdAt"`
-}
-
-// TeamTask is a dynamic team work item.
-type TeamTask struct {
-	ID          int64           `json:"id"`
-	TaskID      string          `json:"taskId"` // logical id exposed to callers (e.g. "task-1")
-	TeamName    string          `json:"teamName"`
-	Namespace   string          `json:"namespace"`
-	Subject     string          `json:"subject"`
-	Description string          `json:"description,omitempty"`
-	State       string          `json:"state"`
-	Owner       string          `json:"owner,omitempty"`
-	BlockedBy   json.RawMessage `json:"blockedBy,omitempty"`
-	Result      string          `json:"result,omitempty"`
-	Version     int64           `json:"version"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
-	CompletedAt *time.Time      `json:"completedAt,omitempty"`
-}
-
-// TeamTaskHistory is an audit row for task state transitions.
-type TeamTaskHistory struct {
-	ID             int64     `json:"id"`
-	TaskFK         int64     `json:"taskFk"`
-	TeamName       string    `json:"teamName"`
-	Namespace      string    `json:"namespace"`
-	FromState      string    `json:"fromState,omitempty"`
-	ToState        string    `json:"toState"`
-	Owner          string    `json:"owner,omitempty"`
-	TransitionedAt time.Time `json:"transitionedAt"`
 }
 
 // NamespacePathSeparator joins BaseStore namespace segments for Postgres TEXT
@@ -489,26 +360,26 @@ func IsTerminalTaskStatus(status string) bool {
 
 // DPTask is a hosted subagent background task record.
 type DPTask struct {
-	Tenant           string          `json:"tenant,omitempty"`
-	ParentAgentID    string          `json:"parentAgentId"`
-	ParentSessionID  string          `json:"parentSessionId"`
-	TaskID           string          `json:"taskId"`
-	SubAgentID       string          `json:"subAgentId,omitempty"`
-	SubSessionID     string          `json:"subSessionId,omitempty"`
-	Status           string          `json:"status"`
-	Terminal         bool            `json:"terminal"`
-	Result           string          `json:"result,omitempty"`
-	ErrorMessage     string          `json:"errorMessage,omitempty"`
-	CancelRequested  bool            `json:"cancelRequested"`
-	TransportType    string          `json:"transportType,omitempty"`
-	RemoteBaseURL    string          `json:"remoteBaseUrl,omitempty"`
-	RemoteHeaders    json.RawMessage `json:"remoteHeaders,omitempty"`
-	UserID           string          `json:"userId,omitempty"`
-	CreatedAt        time.Time       `json:"createdAt"`
-	LastCheckedAt    *time.Time      `json:"lastCheckedAt,omitempty"`
-	LastUpdatedAt    time.Time       `json:"lastUpdatedAt"`
-	DeliveredAt      *time.Time      `json:"deliveredAt,omitempty"`
-	Version          int64           `json:"version"`
+	Tenant          string          `json:"tenant,omitempty"`
+	ParentAgentID   string          `json:"parentAgentId"`
+	ParentSessionID string          `json:"parentSessionId"`
+	TaskID          string          `json:"taskId"`
+	SubAgentID      string          `json:"subAgentId,omitempty"`
+	SubSessionID    string          `json:"subSessionId,omitempty"`
+	Status          string          `json:"status"`
+	Terminal        bool            `json:"terminal"`
+	Result          string          `json:"result,omitempty"`
+	ErrorMessage    string          `json:"errorMessage,omitempty"`
+	CancelRequested bool            `json:"cancelRequested"`
+	TransportType   string          `json:"transportType,omitempty"`
+	RemoteBaseURL   string          `json:"remoteBaseUrl,omitempty"`
+	RemoteHeaders   json.RawMessage `json:"remoteHeaders,omitempty"`
+	UserID          string          `json:"userId,omitempty"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	LastCheckedAt   *time.Time      `json:"lastCheckedAt,omitempty"`
+	LastUpdatedAt   time.Time       `json:"lastUpdatedAt"`
+	DeliveredAt     *time.Time      `json:"deliveredAt,omitempty"`
+	Version         int64           `json:"version"`
 }
 
 // DPTaskRef identifies a task for heartbeat batch updates.

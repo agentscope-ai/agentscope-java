@@ -38,8 +38,6 @@ func (s *Server) registerAgentExtras(r gin.IRouter) {
 	r.GET("/api/agents/:id/tools/catalog/mcp-servers", s.toolsMcpCatalog)
 	r.GET("/api/agents/:id/tools/active", s.toolsActive)
 
-	r.POST("/api/agents/:id/clone", s.cloneAgent)
-
 	r.GET("/api/agents/:id/shares", s.listShares)
 	r.POST("/api/agents/:id/shares", s.addShare)
 	r.DELETE("/api/agents/:id/shares/:granteeType/:granteeId", s.revokeShare)
@@ -100,14 +98,14 @@ func skillInfoFromDir(dir, dirName string) gin.H {
 		return nil
 	})
 	out := gin.H{
-		"dirName":        dirName,
-		"name":           name,
-		"description":    nullStr(desc),
-		"sizeBytes":      size,
-		"resourceCount":  resourceCount,
-		"hasReferences":  hasRefs,
-		"hasScripts":     hasScripts,
-		"origin":         "custom",
+		"dirName":       dirName,
+		"name":          name,
+		"description":   nullStr(desc),
+		"sizeBytes":     size,
+		"resourceCount": resourceCount,
+		"hasReferences": hasRefs,
+		"hasScripts":    hasScripts,
+		"origin":        "custom",
 	}
 	return out
 }

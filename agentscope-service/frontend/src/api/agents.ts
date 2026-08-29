@@ -103,6 +103,10 @@ export interface AgentDefinition {
   tierForCurrentUser?: ShareTier;
   version?: number;
   archivedAt?: number | null;
+  agentKey?: string;
+  status?: string;
+  runtimeKind?: 'managed' | 'external-application' | 'hosted-runtime' | string;
+  catalogVersion?: number;
 }
 
 export interface AgentVersionEntry {
@@ -114,6 +118,12 @@ export interface AgentVersionEntry {
 
 export interface AgentCreateRequest {
   id?: string;
+  tenant?: string;
+  namespace?: string;
+  agentKey?: string;
+  runtimeKind?: 'managed' | 'hosted-runtime';
+  runtimeProfileId?: string;
+  runtimePoolId?: string;
   name: string;
   description?: string;
   system?: string;
@@ -139,70 +149,283 @@ function authHeaders() {
   };
 }
 
-export async function listAgents(): Promise<AgentDefinition[]> {
-  const res = await fetch('/api/agents', { headers: authHeaders() });
+export async function listAgents(tenant = 'default', namespace = 'default'): Promise<AgentDefinition[]> {
+  const params = new URLSearchParams({ tenant, namespace });
+  const res = await fetch(`/api/v1/agents?${params}`, { headers: authHeaders() });
   if (!res.ok) throw await readApiError(res, 'Failed to list agents');
-  return res.json();
+  const body = await res.json() as { items?: CatalogAgent[] };
+  return Promise.all((body.items ?? []).map(async (agent) => {
+    let runtimeKind = '';
+    try {
+      const bindings = await listCatalogBindings(agent.id);
+      runtimeKind = bindings.find(binding => binding.enabled)?.kind ?? bindings[0]?.kind ?? '';
+    } catch {
+      // The identity remains useful even when binding details are unavailable.
+    }
+    return catalogToDefinition(agent, runtimeKind);
+  }));
 }
 
 export async function getAgent(id: string): Promise<AgentDefinition> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  if (!res.ok) throw await readApiError(res, 'Failed to load agent');
-  return res.json();
+  const [catalogRes, definitionRes, bindings] = await Promise.all([
+    fetch(`/api/v1/agents/${encodeURIComponent(id)}`, { headers: authHeaders() }),
+    fetch(`/api/v1/agents/${encodeURIComponent(id)}/definition`, { headers: authHeaders() }),
+    listCatalogBindings(id),
+  ]);
+  if (!catalogRes.ok) throw await readApiError(catalogRes, 'Failed to load agent');
+  const catalogBody = await catalogRes.json() as { agent: CatalogAgent };
+  if (!definitionRes.ok) {
+    if (definitionRes.status === 404) {
+      return catalogToDefinition(catalogBody.agent, bindings.find(binding => binding.enabled)?.kind ?? bindings[0]?.kind ?? '');
+    }
+    throw await readApiError(definitionRes, 'Failed to load Managed definition');
+  }
+  const definitionBody = await definitionRes.json() as { definition: AgentDefinition };
+  return mergeCatalogDefinition(catalogBody.agent, definitionBody.definition, bindings);
 }
 
 export async function createAgent(req: AgentCreateRequest): Promise<AgentDefinition> {
-  const res = await fetch('/api/agents', {
+  const agentKey = req.agentKey || (req.name || 'agent').trim().toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') + `-${crypto.randomUUID().slice(0, 8)}`;
+  const runtimeKind = req.runtimeKind ?? 'managed';
+  const configuration = runtimeKind === 'hosted-runtime'
+    ? { runtimeProfileId: req.runtimeProfileId, runtimePoolId: req.runtimePoolId }
+    : undefined;
+  const res = await fetch('/api/v1/agents', {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify(req),
+    body: JSON.stringify({
+      tenant: req.tenant ?? 'default',
+      namespace: req.namespace ?? 'default',
+      agentKey,
+      displayName: req.name,
+      description: req.description,
+      ownerType: 'user',
+      binding: { kind: runtimeKind, priority: 100, configuration },
+      definition: runtimeKind === 'managed' ? req : undefined,
+    }),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to create agent');
-  return res.json();
+  const body = await res.json() as { agent: CatalogAgent; definition?: AgentDefinition; binding?: CatalogBinding };
+  const bindings = body.binding ? [body.binding] : [];
+  return body.definition
+    ? mergeCatalogDefinition(body.agent, body.definition, bindings)
+    : catalogToDefinition(body.agent, body.binding?.kind ?? runtimeKind);
 }
 
 export async function updateAgent(
   id: string,
   req: AgentCreateRequest,
 ): Promise<AgentDefinition> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, {
-    method: 'PUT',
+  // Definition editors update different slices independently. Materialize a
+  // complete definition before PATCH so an omitted tools/skills/workspace
+  // field cannot erase configuration owned by another editor.
+  const current = await getAgent(id);
+  const complete = {
+    name: req.name || current.name,
+    description: req.description ?? current.description,
+    system: req.system ?? current.system,
+    model: req.model ?? current.model,
+    maxIters: req.maxIters ?? current.maxIters,
+    tools: req.tools ?? current.tools,
+    mcpServers: req.mcpServers ?? current.mcpServers,
+    skills: req.skills ?? current.skills,
+    workspacePath: req.workspacePath ?? current.workspacePath,
+    workspaceId: req.workspaceId ?? current.workspaceId,
+    defaultEnvironmentId: req.defaultEnvironmentId ?? current.defaultEnvironmentId,
+    defaultVaultIds: req.defaultVaultIds ?? current.defaultVaultIds,
+    defaultMemoryStoreIds: req.defaultMemoryStoreIds ?? current.defaultMemoryStoreIds,
+    version: req.version ?? current.version,
+  };
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}/definition`, {
+    method: 'PATCH',
     headers: authHeaders(),
-    body: JSON.stringify(req),
+    body: JSON.stringify(complete),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to update agent');
-  return res.json();
+  const body = await res.json() as { agent: CatalogAgent; definition: AgentDefinition };
+  const bindings = await listCatalogBindings(id);
+  return mergeCatalogDefinition(body.agent, body.definition, bindings);
 }
 
 export async function deleteAgent(id: string): Promise<void> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  });
-  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete agent');
+  await archiveAgent(id);
 }
 
 export async function archiveAgent(id: string): Promise<AgentDefinition> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(id)}/archive`, {
-    method: 'POST',
+  const current = await getCatalogAgent(id);
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
     headers: authHeaders(),
+    body: JSON.stringify({ status: 'archived', version: current.version }),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to archive agent');
-  return res.json();
+  const body = await res.json() as { agent: CatalogAgent };
+  return catalogToDefinition(body.agent, '');
 }
 
 export async function listVersions(id: string): Promise<AgentVersionEntry[]> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(id)}/versions`, { headers: authHeaders() });
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}/versions`, { headers: authHeaders() });
   if (!res.ok) throw await readApiError(res, 'Failed to list versions');
-  return res.json();
+  const body = await res.json() as { versions?: AgentVersionEntry[] };
+  return body.versions ?? [];
 }
 
 export async function getVersion(id: string, version: number): Promise<AgentVersionEntry> {
   const res = await fetch(
-    `/api/agents/${encodeURIComponent(id)}/versions/${version}`,
+    `/api/v1/agents/${encodeURIComponent(id)}/versions/${version}`,
     { headers: authHeaders() },
   );
   if (!res.ok) throw await readApiError(res, 'Failed to load version');
+  const body = await res.json() as { version: AgentVersionEntry };
+  return body.version;
+}
+
+interface CatalogAgent {
+  id: string;
+  agentKey: string;
+  displayName: string;
+  description?: string;
+  ownerType?: string;
+  ownerRef?: string;
+  status: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt?: string | null;
+}
+
+export interface CatalogBinding {
+  id: string;
+  agentId: string;
+  kind: string;
+  configuration?: unknown;
+  priority: number;
+  enabled: boolean;
+  version: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CatalogAgentInstance {
+  id: string;
+  agentId: string;
+  bindingId: string;
+  instanceKey: string;
+  health: string;
+  capacity: number;
+  activeSessions: number;
+  generation: number;
+  framework?: string;
+  frameworkVersion?: string;
+  sdkVersion?: string;
+  lastSeenAt?: string;
+}
+
+export interface HostedRuntimeOption {
+  id: string;
+  name: string;
+  provider?: string;
+}
+
+async function getCatalogAgent(id: string): Promise<CatalogAgent> {
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}`, { headers: authHeaders() });
+  if (!res.ok) throw await readApiError(res, 'Failed to load Agent identity');
+  return ((await res.json()) as { agent: CatalogAgent }).agent;
+}
+
+export async function listCatalogBindings(id: string): Promise<CatalogBinding[]> {
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}/bindings?includeDisabled=true`, { headers: authHeaders() });
+  if (!res.ok) throw await readApiError(res, 'Failed to load Agent bindings');
+  return ((await res.json()) as { items?: CatalogBinding[] }).items ?? [];
+}
+
+export async function listCatalogAgentInstances(id: string): Promise<CatalogAgentInstance[]> {
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}/instances`, { headers: authHeaders() });
+  if (!res.ok) throw await readApiError(res, 'Failed to load Agent instances');
+  return ((await res.json()) as { items?: CatalogAgentInstance[] }).items ?? [];
+}
+
+export async function listHostedRuntimeOptions(tenant = 'default', namespace = 'default'): Promise<{
+  profiles: HostedRuntimeOption[];
+  pools: HostedRuntimeOption[];
+}> {
+  const params = new URLSearchParams({ tenant, namespace });
+  const res = await fetch(`/api/v1/agents/runtime-options?${params}`, { headers: authHeaders() });
+  if (!res.ok) throw await readApiError(res, 'Failed to load Hosted runtime options');
   return res.json();
 }
 
+export async function setCatalogBindingEnabled(
+  agentId: string,
+  binding: CatalogBinding,
+  enabled: boolean,
+): Promise<CatalogBinding> {
+  const res = await fetch(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/bindings/${encodeURIComponent(binding.id)}`,
+    {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        configuration: binding.configuration,
+        priority: binding.priority,
+        enabled,
+        version: binding.version,
+      }),
+    },
+  );
+  if (!res.ok) throw await readApiError(res, `Failed to ${enabled ? 'enable' : 'disable'} binding`);
+  return ((await res.json()) as { binding: CatalogBinding }).binding;
+}
+
+export async function rotateAgentRegistrationCredential(agentId: string, ttlSeconds?: number): Promise<string> {
+  const res = await fetch(
+    `/api/v1/agent-registrations/${encodeURIComponent(agentId)}/credentials/rotate`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ ttlSeconds }),
+    },
+  );
+  if (!res.ok) throw await readApiError(res, 'Failed to rotate registration credential');
+  return ((await res.json()) as { registrationCredential: string }).registrationCredential;
+}
+
+function millis(value?: string | null): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function catalogToDefinition(agent: CatalogAgent, runtimeKind: string): AgentDefinition {
+  return {
+    id: agent.id,
+    name: agent.displayName || agent.agentKey,
+    description: agent.description,
+    scope: 'user',
+    ownerId: agent.ownerRef,
+    createdAt: millis(agent.createdAt) ?? 0,
+    updatedAt: millis(agent.updatedAt) ?? 0,
+    archivedAt: millis(agent.archivedAt),
+    tierForCurrentUser: 'EDIT',
+    agentKey: agent.agentKey,
+    status: agent.status,
+    runtimeKind,
+    catalogVersion: agent.version,
+  };
+}
+
+function mergeCatalogDefinition(agent: CatalogAgent, definition: AgentDefinition, bindings: CatalogBinding[]): AgentDefinition {
+  return {
+    ...catalogToDefinition(agent, bindings.find(binding => binding.enabled)?.kind ?? bindings[0]?.kind ?? 'managed'),
+    ...definition,
+    id: agent.id,
+    name: definition.name || agent.displayName || agent.agentKey,
+    description: definition.description ?? agent.description,
+    agentKey: agent.agentKey,
+    status: agent.status,
+    catalogVersion: agent.version,
+    runtimeKind: bindings.find(binding => binding.enabled)?.kind ?? bindings[0]?.kind ?? 'managed',
+  };
+}

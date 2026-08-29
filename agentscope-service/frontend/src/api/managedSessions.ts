@@ -70,35 +70,24 @@ export interface InboundEvent {
   payload?: Record<string, unknown>;
 }
 
-/** Parsed from product `externalKey` = `team|{namespace}/{teamName}|{memberName}`. */
-export interface TeamSessionRef {
-  namespace: string;
-  teamName: string;
-  memberName: string;
+/** Parsed from product `externalKey` = `agent-task|{agentTaskId}`. */
+export interface AgentTaskSessionRef {
+  agentTaskId: string;
 }
 
-export function parseTeamExternalKey(key?: string | null): TeamSessionRef | null {
-  if (!key || !key.startsWith('team|')) return null;
-  const rest = key.slice('team|'.length);
-  const pipe = rest.lastIndexOf('|');
-  if (pipe <= 0) return null;
-  const nsTeam = rest.slice(0, pipe);
-  const memberName = rest.slice(pipe + 1);
-  const slash = nsTeam.indexOf('/');
-  if (slash <= 0 || !memberName) return null;
-  return {
-    namespace: nsTeam.slice(0, slash),
-    teamName: nsTeam.slice(slash + 1),
-    memberName,
-  };
+export function parseAgentTaskExternalKey(key?: string | null): AgentTaskSessionRef | null {
+  if (!key || !key.startsWith('agent-task|')) return null;
+  const [agentTaskId, ...extra] = key.slice('agent-task|'.length).split('|');
+  if (!agentTaskId || extra.length > 0) return null;
+  return { agentTaskId };
 }
 
-export function isTeamOriginatedSession(s: Pick<ManagedSession, 'externalKey'>): boolean {
-  return parseTeamExternalKey(s.externalKey) != null;
+export function isAgentTaskSession(s: Pick<ManagedSession, 'externalKey'>): boolean {
+  return parseAgentTaskExternalKey(s.externalKey) != null;
 }
 
-export function teamDetailPath(ref: TeamSessionRef): string {
-  return `/teams/${encodeURIComponent(ref.teamName)}?namespace=${encodeURIComponent(ref.namespace)}`;
+export function agentTaskDetailPath(ref: AgentTaskSessionRef): string {
+  return `/control/tasks/${encodeURIComponent(ref.agentTaskId)}`;
 }
 
 

@@ -44,29 +44,38 @@ func freePort(t *testing.T) int {
 type testEventSink struct {
 	mu               sync.Mutex
 	sessionReports   []capturedSessionReport
-	teamEventReports []capturedTeamEventReport
+	attemptReports   []capturedExecutionAttemptReport
 	eventReports     []*asdp.EventReport
 	contextReports   []*asdp.ContextReport
 	inventoryReports []*asdp.InventoryReport
 }
 
+func (s *testEventSink) HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtimeName, sdkVersion string, capabilities []string) {
+}
+
+func (s *testEventSink) HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64) {
+}
+
 type capturedSessionReport struct {
+	Tenant     string
 	Namespace  string
 	AgentName  string
 	InstanceID string
 	Report     *asdp.SessionReport
 }
 
-type capturedTeamEventReport struct {
+type capturedExecutionAttemptReport struct {
+	Tenant    string
 	Namespace string
 	AgentName string
-	Report    *asdp.TeamEventReport
+	Report    *asdp.ExecutionAttemptReport
 }
 
-func (s *testEventSink) HandleSessionReport(namespace, agentName, instanceID string, report *asdp.SessionReport) {
+func (s *testEventSink) HandleSessionReport(tenant, namespace, agentName, instanceID string, report *asdp.SessionReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessionReports = append(s.sessionReports, capturedSessionReport{
+		Tenant:     tenant,
 		Namespace:  namespace,
 		AgentName:  agentName,
 		InstanceID: instanceID,
@@ -74,29 +83,30 @@ func (s *testEventSink) HandleSessionReport(namespace, agentName, instanceID str
 	})
 }
 
-func (s *testEventSink) HandleTeamEventReport(namespace, agentName string, report *asdp.TeamEventReport) {
+func (s *testEventSink) HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *asdp.ExecutionAttemptReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.teamEventReports = append(s.teamEventReports, capturedTeamEventReport{
+	s.attemptReports = append(s.attemptReports, capturedExecutionAttemptReport{
+		Tenant:    tenant,
 		Namespace: namespace,
-		AgentName: agentName,
+		AgentName: agentID,
 		Report:    report,
 	})
 }
 
-func (s *testEventSink) HandleEventReport(namespace, agentName, instanceID string, report *asdp.EventReport) {
+func (s *testEventSink) HandleEventReport(tenant, namespace, agentName, instanceID string, report *asdp.EventReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.eventReports = append(s.eventReports, report)
 }
 
-func (s *testEventSink) HandleContextReport(namespace, agentName, instanceID string, report *asdp.ContextReport) {
+func (s *testEventSink) HandleContextReport(tenant, namespace, agentName, instanceID string, report *asdp.ContextReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.contextReports = append(s.contextReports, report)
 }
 
-func (s *testEventSink) HandleInventoryReport(namespace, agentName, instanceID string, report *asdp.InventoryReport) {
+func (s *testEventSink) HandleInventoryReport(tenant, namespace, agentName, instanceID string, report *asdp.InventoryReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.inventoryReports = append(s.inventoryReports, report)
@@ -190,10 +200,14 @@ func doHandshake(t *testing.T, client asdp.AgentDataPlaneServiceClient, meta *as
 
 func validMeta() *asdp.UpstreamMeta {
 	return &asdp.UpstreamMeta{
-		AgentName:  "test-agent",
-		InstanceId: "inst-001",
-		Namespace:  "default",
-		Timestamp:  time.Now().Unix(),
+		Tenant:      "admin",
+		AgentId:     "11111111-1111-1111-1111-111111111111",
+		AgentKey:    "test-agent",
+		BindingId:   "22222222-2222-2222-2222-222222222222",
+		InstanceKey: "inst-001",
+		Generation:  1,
+		Namespace:   "default",
+		Timestamp:   time.Now().Unix(),
 	}
 }
 
@@ -270,9 +284,9 @@ func TestHandshakeRejectedEmptyFields(t *testing.T) {
 
 	// Send meta with empty required fields — connect handler rejects.
 	_, ack := doHandshake(t, client, &asdp.UpstreamMeta{
-		AgentName:  "",
-		InstanceId: "",
-		Namespace:  "",
+		AgentKey:    "",
+		InstanceKey: "",
+		Namespace:   "",
 	}, validConnectReq())
 
 	if ack.Accepted {
@@ -280,6 +294,76 @@ func TestHandshakeRejectedEmptyFields(t *testing.T) {
 	}
 	if ack.RejectReason == "" {
 		t.Error("expected a reject reason")
+	}
+}
+
+func TestConnectionIdentityIncludesTenant(t *testing.T) {
+	srv, client, cleanup := startTestServer(t, nil)
+	defer cleanup()
+
+	metaA := validMeta()
+	metaA.Tenant = "tenant-a"
+	streamA, ack := doHandshake(t, client, metaA, validConnectReq())
+	if !ack.Accepted {
+		t.Fatalf("tenant-a handshake rejected: %s", ack.RejectReason)
+	}
+	metaB := validMeta()
+	metaB.Tenant = "tenant-b"
+	streamB, ack := doHandshake(t, client, metaB, validConnectReq())
+	if !ack.Accepted {
+		t.Fatalf("tenant-b handshake rejected: %s", ack.RejectReason)
+	}
+	t.Cleanup(func() {
+		_ = streamA.CloseSend()
+		_ = streamB.CloseSend()
+	})
+
+	deadline := time.Now().Add(time.Second)
+	for srv.ConnectionCount() != 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if srv.ConnectionCount() != 2 {
+		t.Fatalf("same namespace/instance in two tenants collapsed to %d connection(s)", srv.ConnectionCount())
+	}
+	connA, okA := srv.GetConnectionForTenant("tenant-a", metaA.Namespace, metaA.InstanceKey)
+	connB, okB := srv.GetConnectionForTenant("tenant-b", metaB.Namespace, metaB.InstanceKey)
+	if !okA || !okB || connA == connB || connA.Tenant != "tenant-a" || connB.Tenant != "tenant-b" {
+		t.Fatalf("tenant connection lookup failed: a=%+v/%v b=%+v/%v", connA, okA, connB, okB)
+	}
+	if _, ok := srv.GetConnection(metaA.Namespace, metaA.InstanceKey); ok {
+		t.Fatal("tenant-ambiguous connection lookup must fail closed")
+	}
+	srv.UpdateInventory("tenant-a", metaA.Namespace, metaA.InstanceKey, &asdp.InventoryReport{
+		Subagents: []*asdp.SubagentInfo{{Name: "worker-a"}},
+	})
+	srv.UpdateInventory("tenant-b", metaB.Namespace, metaB.InstanceKey, &asdp.InventoryReport{
+		Subagents: []*asdp.SubagentInfo{{Name: "worker-b"}},
+	})
+	invA := srv.GetInventoriesForAgent("tenant-a", metaA.Namespace, metaA.AgentKey)
+	invB := srv.GetInventoriesForAgent("tenant-b", metaB.Namespace, metaB.AgentKey)
+	if len(invA) != 1 || invA[0].Report.GetSubagents()[0].GetName() != "worker-a" {
+		t.Fatalf("tenant-a inventory = %+v", invA)
+	}
+	if len(invB) != 1 || invB[0].Report.GetSubagents()[0].GetName() != "worker-b" {
+		t.Fatalf("tenant-b inventory = %+v", invB)
+	}
+}
+
+func TestConfigSnapshotsAreTenantIsolated(t *testing.T) {
+	store := asdp.NewSnapshotStore()
+	a, changed, err := store.UpdateSnapshot("tenant-a", "shared", "same-agent", asdp.ConfigType_CONFIG_TYPE_AGENT, map[string]string{"model": "a"})
+	if err != nil || !changed {
+		t.Fatalf("tenant-a snapshot: changed=%v err=%v", changed, err)
+	}
+	b, changed, err := store.UpdateSnapshot("tenant-b", "shared", "same-agent", asdp.ConfigType_CONFIG_TYPE_AGENT, map[string]string{"model": "b"})
+	if err != nil || !changed {
+		t.Fatalf("tenant-b snapshot: changed=%v err=%v", changed, err)
+	}
+	if a.Version != "v1" || b.Version != "v1" || string(a.Resources) == string(b.Resources) {
+		t.Fatalf("snapshots collided: a=%+v b=%+v", a, b)
+	}
+	if got := store.GetAllSnapshots("tenant-a", "shared", "same-agent"); len(got) != 1 || string(got[0].Resources) != string(a.Resources) {
+		t.Fatalf("tenant-a snapshots = %+v", got)
 	}
 }
 
@@ -296,7 +380,7 @@ func TestConfigPushAndAck(t *testing.T) {
 	// Drain any initial full-sync pushes (the server pushes existing snapshots
 	// after handshake, but there are none yet so this may be empty).
 	// Push a config through the distributor.
-	err := srv.Distributor().PushConfig(meta.Namespace, meta.AgentName,
+	err := srv.Distributor().PushConfig(meta.Tenant, meta.Namespace, meta.AgentKey,
 		asdp.ConfigType_CONFIG_TYPE_AGENT, map[string]string{"key": "value"})
 	if err != nil {
 		t.Fatalf("PushConfig failed: %v", err)
@@ -345,7 +429,7 @@ func TestConfigPushAndNack(t *testing.T) {
 		t.Fatalf("handshake rejected: %s", ack.RejectReason)
 	}
 
-	err := srv.Distributor().PushConfig(meta.Namespace, meta.AgentName,
+	err := srv.Distributor().PushConfig(meta.Tenant, meta.Namespace, meta.AgentKey,
 		asdp.ConfigType_CONFIG_TYPE_TOOL, map[string]string{"tool": "search"})
 	if err != nil {
 		t.Fatalf("PushConfig failed: %v", err)
@@ -430,11 +514,11 @@ func TestSessionReport(t *testing.T) {
 	if got.Namespace != meta.Namespace {
 		t.Errorf("namespace: want %q, got %q", meta.Namespace, got.Namespace)
 	}
-	if got.AgentName != meta.AgentName {
-		t.Errorf("agentName: want %q, got %q", meta.AgentName, got.AgentName)
+	if got.AgentName != meta.AgentId {
+		t.Errorf("agentId: want %q, got %q", meta.AgentId, got.AgentName)
 	}
-	if got.InstanceID != meta.InstanceId {
-		t.Errorf("instanceID: want %q, got %q", meta.InstanceId, got.InstanceID)
+	if got.InstanceID != meta.InstanceKey {
+		t.Errorf("instanceKey: want %q, got %q", meta.InstanceKey, got.InstanceID)
 	}
 	if len(got.Report.Sessions) != 2 {
 		t.Errorf("expected 2 session snapshots, got %d", len(got.Report.Sessions))
@@ -584,14 +668,17 @@ func TestEventContextInventoryReports(t *testing.T) {
 	}
 
 	// The inventory registry must hold the latest report for this instance.
-	inv, ok := srv.GetInventory(meta.Namespace, meta.InstanceId)
+	inv, ok := srv.GetInventory(meta.Namespace, meta.InstanceKey)
 	if !ok {
 		t.Fatal("inventory not registered")
 	}
-	if inv.AgentName != meta.AgentName || len(inv.Report.Subagents) != 1 {
+	if inv.AgentName != meta.AgentKey || len(inv.Report.Subagents) != 1 {
 		t.Errorf("registry inventory = %+v", inv)
 	}
-	invs := srv.GetInventoriesForAgent(meta.Namespace, meta.AgentName)
+	if inv.Tenant != meta.Tenant {
+		t.Errorf("inventory tenant = %q, want %q", inv.Tenant, meta.Tenant)
+	}
+	invs := srv.GetInventoriesForAgent(meta.Tenant, meta.Namespace, meta.AgentKey)
 	if len(invs) != 1 {
 		t.Errorf("GetInventoriesForAgent returned %d entries", len(invs))
 	}

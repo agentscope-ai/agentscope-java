@@ -18,7 +18,7 @@ These paths are not mutually exclusive. Inside one company, R&D may use Coding A
 
 ### Control Plane
 
-The Control Plane (component name: Aistio) is the core of AgentScope Service. Every Agent application registers through it. Via SDK or Sidecar, it supports mainstream Agent Frameworks (AgentScope, LangChain, ADK) as well as Claude, Qoder, and similar runtimes.
+The Control Plane (component name: Aistio) is the core of AgentScope Service. User-operated Agent applications register through the Application SDK / ASDP. Managed Agents, external applications, and user-operated Runtime Hosts all execute the same durable `ExecutionAttempt` contract.
 
 The Dashboard is the Control Plane's visual console. It gives the whole fleet a live view of online agents, deployment instances, active sessions, token usage, and other global signals so operators can see how the cluster is doing.
 
@@ -52,12 +52,11 @@ One point worth calling out: AgentScope Framework natively supports Agent Teams.
 
 ### How it works
 
-Humans reach the Control Plane through the Dashboard (browser) or the REST API (SDK / curl / third-party integration). Under the control plane, four Agent attachment models are managed together:
+Humans reach the Control Plane through the Dashboard (browser) or the REST API (SDK / curl / third-party integration). Three data-plane kinds are managed together:
 
-- Native AgentScope attachment
-- LangChain via `instrument()`
-- Claude via Sidecar
-- QwenPaw via Sidecar
+- `managed`: hosted AgentScope Harness execution;
+- `external-application`: user applications built with AgentScope, LangChain, Claude Agent SDK, and others, registered through Application SDK / ASDP;
+- `hosted-runtime`: task-scoped Codex, Claude Code, and similar processes run by Runtime Host daemons;
 
 ![AgentScope Service](/docs/imgs/agentservice/agentscope-service-architecture.png)
 
@@ -81,7 +80,7 @@ In production, the recommended AgentScope Service deployment looks like this:
 AgentScope Service serves two kinds of users at once:
 
 1. **Platform / platform-services teams**: create Managed Agents through the Console / API and build hosted agents quickly.
-2. **Business engineering teams**: already have Agents built with different stacks and want them under unified governance — attach to the control plane through extensions / SDKs / Sidecar.
+2. **Business engineering teams**: already have Agents built with different stacks and want them under unified governance — attach through the Application SDK / ASDP.
 
 Currently supports Agent Framework, Coding Agent,
 
@@ -111,6 +110,7 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 ```
 
 This starts PostgreSQL, `aistiod`, the data plane, scheduler, and gateway. Local development sets `AISTIO_ENABLE_KUBERNETES=false`; CRD reconcilers and ASDP gRPC are not required for the hosted product flow.
+Because the project has not been released and v4 deliberately replaces the legacy execution schema, `BUILDER_REBUILD=1` also recreates the disposable `cp`, `rt`, and `dp` development schemas. Use `BUILDER_RESET_DB=0` only when an already-v4 local database must be preserved. The startup script verifies all three schemas and the terminal collaboration/orchestration migrations before reporting success; run `scripts/smoke.sh` for the API-level end-to-end check.
 
 | Item | Value |
 | --- | --- |
@@ -128,9 +128,11 @@ Default users and development secrets are for local use only.
 3. Create a `local` Environment.
 4. Open **Sessions**, create a session bound to the Agent and Environment, and send the first message.
 5. In **Dashboard**, inspect online status, events, and runtime state.
-6. For collaboration, open **Agent Teams**, create a team, and watch tasks and member state.
+6. For collaboration, create a persistent **Team**, assign an Issue, and inspect discussion routes and AgentTasks.
 
-To try BYO Agent registration, use the sample at `agentscope-samples/agents/agentscope-paw` in the repository. After it starts, you should see the agent registered successfully in the Dashboard.
+To try BYO Agent registration, use the sample at `agentscope-examples/agents/agentscope-paw`. After it starts, the agent should appear in the Dashboard.
+
+To bring **DeepSeek Harness** into the same fleet, load the Cordis plugin at `agentscope-service/aistio/sdk/dsh` (`@agentscope/dsh-aistio`). It self-registers with aistiod, serves `/agentscope/*`, receives AgentTask events, and uses the same Issue/Comment/Artifact contract as other runtimes. See that directory's [README](aistio/sdk/dsh/README.md).
 
 
 ### 3. Stop the stack
@@ -197,7 +199,9 @@ Java services use `builder.*` properties and `BUILDER_*` environment variables. 
 | `BUILDER_E2B_API_KEY` | E2B credential for `sandbox` environments |
 | `AISTIO_PRODUCT_DSN` | Product database used by `aistiod` |
 | `AISTIO_ENABLE_KUBERNETES` | Enables Aistio CRD reconcilers and Kubernetes integration |
-| `BUILDER_REBUILD=1` | Forces a full local rebuild before `dev-up` |
+| `BUILDER_REBUILD=1` | Rebuilds the monorepo/aistiod and, by default, recreates the disposable local `cp`/`rt`/`dp` schemas |
+| `BUILDER_RESET_DB=0` | Preserves an already-v4 local database during a full binary rebuild |
+| `BUILDER_SMOKE_TEST=1` | Runs `scripts/smoke.sh` automatically after health and SQL-schema verification |
 
 Production deployments must replace all development credentials and use durable PostgreSQL.
 
@@ -211,7 +215,7 @@ Near-term focus includes:
 1. **Continue iterating on AgentScope Framework-native capabilities**
 2. **Support more Agent frameworks and Coding Agents** — deepen adapters for LangChain, ADK, Claude, Qoder, OpenAI Agents, and more, and lower BYO attachment cost
 3. **Automation** — extend automatic triggers and closed-loop execution around Deployment, Cron, Webhook, and Channel, so Agents move toward event-driven task handling
-4. **More event-driven integrations** — attach GitHub / GitLab, DingTalk, WeCom, and other entry points, turning code changes, tickets, and group messages directly into Agent Turns or Team Tasks
+4. **More event-driven integrations** — attach GitHub / GitLab, DingTalk, WeCom, and other entry points, turning code changes, tickets, and group messages directly into Issues, Comments, or AgentTasks
 
 For enterprise cloud offerings, also see Alibaba Cloud [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview) and [Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html).
 

@@ -38,8 +38,6 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.team.TeamClient;
-import io.agentscope.harness.agent.team.TeamContext;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -80,10 +78,10 @@ public class HarnessAgentBuildService {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgentBuildService.class);
 
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
     /** Prefix for locally-built data-plane agent instance ids. */
     private static final String DP_AGENT_PREFIX = "dpa-";
-
-    private static final ObjectMapper TOOLS_JSON_MAPPER = new ObjectMapper();
 
     private final Model model;
     private final ToolEventBus toolEventBus;
@@ -96,12 +94,8 @@ public class HarnessAgentBuildService {
     private final SessionResourceMountService sessionResourceMountService;
     private final DefinitionStore definitionStore;
     private final ControlPlaneClient controlPlaneClient;
-    private final Optional<TeamClient> teamClient;
 
     private final ConcurrentHashMap<String, HarnessAgent> agentCache = new ConcurrentHashMap<>();
-
-    /** Separates the session-scoped part of a team member's cache key from its owner/agent base. */
-    private static final String TEAM_KEY_INFIX = "/team-";
 
     public HarnessAgentBuildService(
             Optional<Model> modelOpt,
@@ -114,8 +108,7 @@ public class HarnessAgentBuildService {
             AgentStateStore agentStateStore,
             SessionResourceMountService sessionResourceMountService,
             DefinitionStore definitionStore,
-            ControlPlaneClient controlPlaneClient,
-            Optional<TeamClient> teamClient) {
+            ControlPlaneClient controlPlaneClient) {
         this.model = modelOpt.orElse(null);
         this.toolEventBus = toolEventBus;
         this.sharedWorkspacePaths = sharedWorkspacePaths;
@@ -127,7 +120,6 @@ public class HarnessAgentBuildService {
         this.sessionResourceMountService = sessionResourceMountService;
         this.definitionStore = definitionStore;
         this.controlPlaneClient = controlPlaneClient;
-        this.teamClient = teamClient == null ? Optional.empty() : teamClient;
     }
 
     /** Resolves (and caches) the {@link HarnessAgent} for a managed-session turn. */
@@ -136,21 +128,9 @@ public class HarnessAgentBuildService {
         return agentCache.computeIfAbsent(cacheKey, k -> build(session, spec));
     }
 
-    /**
-     * A team member's {@code TeamContext} (team, role, allowed actions) and its wakeup-bound
-     * session id are baked into the agent at build time, so a team session must get its own
-     * instance instead of sharing one keyed only by owner/agent/spec — otherwise the second team
-     * to run inherits the first team's role.
-     */
+    /** Returns the immutable-definition cache key for a managed agent instance. */
     static String cacheKey(ManagedSessionDto session, SessionAgentBuildSpec spec) {
-        String base = session.ownerId() + "/" + session.agentId() + "/" + spec.cacheSuffix();
-        return isTeamSession(session) ? base + TEAM_KEY_INFIX + session.id() : base;
-    }
-
-    /** Team member sessions are allocated by the control plane with a {@code team|...} key. */
-    private static boolean isTeamSession(ManagedSessionDto session) {
-        String externalKey = session.externalKey();
-        return externalKey != null && externalKey.startsWith("team|");
+        return session.ownerId() + "/" + session.agentId() + "/" + spec.cacheSuffix();
     }
 
     /** Evicts all cached instance variants for a session-owner/agent pair. */
@@ -160,25 +140,18 @@ public class HarnessAgentBuildService {
     }
 
     /**
-     * Drops what the data plane holds for a deleted session: the instance built for it and its
-     * persisted agent state. Only the session-scoped team entries can be evicted by session id —
-     * plain sessions share one instance per owner/agent/spec.
+     * Drops the persisted state for a deleted session. Agent instances are immutable-definition
+     * scoped and remain cached until their owner/agent definition is evicted.
      */
     public void discardSession(String ownerId, String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return;
         }
-        agentCache.keySet().removeIf(k -> isTeamSessionKey(k, sessionId));
         try {
             agentStateStore.delete(ownerId, sessionId);
         } catch (RuntimeException ex) {
             log.warn("Agent state cleanup failed for session {}: {}", sessionId, ex.getMessage());
         }
-    }
-
-    /** True when {@code cacheKey} is the team-session variant built for {@code sessionId}. */
-    static boolean isTeamSessionKey(String cacheKey, String sessionId) {
-        return cacheKey.endsWith(TEAM_KEY_INFIX + sessionId);
     }
 
     /**
@@ -312,8 +285,6 @@ public class HarnessAgentBuildService {
         b.middleware(toolConfirmationMiddleware);
 
         applyManagedSessionBuildOptions(b, buildOwnerId, agentId, workspace, spec, sysPrompt);
-        attachTeamsMiddlewareIfPresent(b, session, resolved);
-
         HarnessAgent agent = b.build();
         log.info(
                 "Built data-plane agent from control-plane snapshot: sessionOwner={}, agentId={},"
@@ -359,27 +330,6 @@ public class HarnessAgentBuildService {
                 definitionStore, buildOwnerId, agentId, spec.resources());
     }
 
-    private void attachTeamsMiddlewareIfPresent(
-            HarnessAgent.Builder b, ManagedSessionDto session, SessionResolveResult resolved) {
-        TeamClient client = teamClient.orElse(null);
-        if (client == null) {
-            return;
-        }
-        if (resolved == null
-                || resolved.teamContext() == null
-                || resolved.teamContext().isEmpty()) {
-            return;
-        }
-        TeamContext teamContext =
-                TOOLS_JSON_MAPPER.convertValue(resolved.teamContext(), TeamContext.class);
-        b.teamsMode(client, teamContext, session.id());
-        log.info(
-                "Enabled teamsMode for session {} team={} role={}",
-                session.id(),
-                teamContext.teamName(),
-                teamContext.myRole());
-    }
-
     /**
      * Extracts a {@code storeId -> "read_only"|"read_write"} map from {@code
      * environment.config().memoryAccess}, if present, so a session's environment can pin some
@@ -417,8 +367,7 @@ public class HarnessAgentBuildService {
             return null;
         }
         try {
-            return TOOLS_JSON_MAPPER.convertValue(
-                    resolved.agentSnapshot(), AgentVersionSnapshot.class);
+            return JSON_MAPPER.convertValue(resolved.agentSnapshot(), AgentVersionSnapshot.class);
         } catch (Exception ex) {
             log.warn("Failed to parse control-plane agentSnapshot: {}", ex.toString());
             return null;
@@ -457,7 +406,7 @@ public class HarnessAgentBuildService {
             return null;
         }
         try {
-            return TOOLS_JSON_MAPPER.readValue(Files.readString(file), ToolsConfig.class);
+            return JSON_MAPPER.readValue(Files.readString(file), ToolsConfig.class);
         } catch (Exception ex) {
             return null;
         }
@@ -466,7 +415,7 @@ public class HarnessAgentBuildService {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseOverrides(String overridesJson) {
         try {
-            return new ObjectMapper().readValue(overridesJson, Map.class);
+            return JSON_MAPPER.readValue(overridesJson, Map.class);
         } catch (Exception ex) {
             return Map.of();
         }

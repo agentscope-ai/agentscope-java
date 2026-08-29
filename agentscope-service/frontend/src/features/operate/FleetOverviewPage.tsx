@@ -99,26 +99,26 @@ export default function FleetOverviewPage() {
 
       {o && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          <Stat label="Agents" value={o.agentCount} to="/operate/agents" />
+          <Stat label="Agents" value={o.agentCount} to="/managed/registered-agents" />
           <Stat
             label="Healthy instances"
             value={healthy}
-            to="/operate/agents?presence=live"
+            to="/managed/registered-agents?presence=live"
           />
           <Stat
             label="Stale instances"
             value={stale}
-            to="/operate/agents?presence=offline"
+            to="/managed/registered-agents?presence=offline"
           />
           <Stat
             label="Active sessions"
             value={o.activeSessionCount}
-            to="/operate/sessions?phase=active"
+            to="/control/sessions?phase=active"
           />
           <Stat
             label="Idle sessions"
             value={idleCount}
-            to="/operate/sessions?phase=idle"
+            to="/control/sessions?phase=idle"
           />
           <Stat label="Tokens (24h, Δ)" value={o.tokenUsage24h.toLocaleString()} />
           <Stat label="Errors (24h)" value={o.errorCount24h ?? 0} />
@@ -131,7 +131,7 @@ export default function FleetOverviewPage() {
           {(o.offlineAgentCount ?? 0) > 0 && (
             <>
               {' '}
-              <Link className="text-primary underline-offset-2 hover:underline" to="/operate/agents?presence=offline">
+              <Link className="text-primary underline-offset-2 hover:underline" to="/managed/registered-agents?presence=offline">
                 {o.offlineAgentCount} offline
               </Link>
             </>
@@ -139,7 +139,7 @@ export default function FleetOverviewPage() {
           {(o.historicalAgentCount ?? 0) > 0 && (
             <>
               {(o.offlineAgentCount ?? 0) > 0 ? ' · ' : ' '}
-              <Link className="text-primary underline-offset-2 hover:underline" to="/operate/agents?presence=historical">
+              <Link className="text-primary underline-offset-2 hover:underline" to="/managed/registered-agents?presence=historical">
                 {o.historicalAgentCount} historical
               </Link>
             </>
@@ -168,7 +168,7 @@ export default function FleetOverviewPage() {
           description="Start a data plane that implements /agentscope/* and self-registers with aistiod, or connect Kubernetes for CRD discovery."
           action={
             <Button asChild variant="outline">
-              <Link to="/operate/agents">Open agents</Link>
+              <Link to="/managed/registered-agents">Open agents</Link>
             </Button>
           }
         />

@@ -168,7 +168,7 @@ export default function SessionTranscript({
     try {
       await deleteManagedSession(sessionId);
       if (onDeleted) onDeleted();
-      else navigate(`/sessions?agentId=${encodeURIComponent(agentId)}`, { replace: true });
+      else navigate(`/managed/sessions?agentId=${encodeURIComponent(agentId)}`, { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
@@ -221,12 +221,12 @@ export default function SessionTranscript({
     <div style={S.root}>
       {!embedded && (
         <div style={S.bar}>
-          <Link to={`/sessions?agentId=${encodeURIComponent(agentId)}`} style={S.back}>← Back</Link>
+          <Link to={`/managed/sessions?agentId=${encodeURIComponent(agentId)}`} style={S.back}>← Back</Link>
           <h2 style={S.title}>Details</h2>
           <span style={{ flex: 1 }} />
           {!archived && (
             <Link
-              to={`/sessions/${encodeURIComponent(sessionId)}`}
+              to={`/managed/sessions/${encodeURIComponent(sessionId)}`}
               style={{ ...S.btn, ...S.primary }}
               title="Open Chat for this session"
             >

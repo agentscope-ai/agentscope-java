@@ -15,6 +15,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spring-ai-alibaba/aistio/internal/dataplane"
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/store/memory"
@@ -48,7 +50,7 @@ func TestGetSessionMessages_TranscriptHitSkipsCapability(t *testing.T) {
 			calledProber = true
 			return nil, nil
 		}},
-		TranscriptMessages: func(ctx context.Context, agentName, namespace, sessionID string, offset, limit int, fromEnd bool) (*prober.MessagePage, bool, error) {
+		TranscriptMessages: func(ctx context.Context, tenant, agentName, namespace, sessionID string, offset, limit int, fromEnd bool) (*prober.MessagePage, bool, error) {
 			return &prober.MessagePage{
 				SessionID: sessionID,
 				Offset:    offset,
@@ -78,6 +80,52 @@ func TestGetSessionMessages_TranscriptHitSkipsCapability(t *testing.T) {
 	}
 }
 
+func TestPostSessionUserMessage_ForwardsToHoldingInstance(t *testing.T) {
+	st, err := memory.Open(context.Background(), store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Sessions().Upsert(context.Background(), &store.Session{
+		SessionID: "byo-1", AgentName: "dsh", Namespace: "default",
+		Framework: "deepseek-harness", Phase: store.SessionPhaseIdle,
+		InstanceRef: "inst-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := dataplane.NewRegistry()
+	reg.Upsert(dataplane.Entry{
+		InstanceID: "inst-1",
+		AgentName:  "dsh",
+		Namespace:  "default",
+		BaseURL:    "http://127.0.0.1:18091",
+		Healthy:    true,
+	})
+	var gotEndpoint, gotSession, gotContent string
+	s := NewServer(ServerOptions{
+		Store:    st,
+		Registry: reg,
+		Prober: &stubProber{sendUserMessage: func(endpoint, sessionID, content string) error {
+			gotEndpoint, gotSession, gotContent = endpoint, sessionID, content
+			return nil
+		}},
+	})
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/sessions/"+sess.ID.String()+"/user-message",
+		bytes.NewBufferString(`{"content":"hello from console"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if gotEndpoint != "http://127.0.0.1:18091" || gotSession != "byo-1" || gotContent != "hello from console" {
+		t.Fatalf("forward mismatch endpoint=%s session=%s content=%s", gotEndpoint, gotSession, gotContent)
+	}
+}
+
 func TestGetSessionMessages_MissFallsBackWithCapabilityGate(t *testing.T) {
 	st, err := memory.Open(context.Background(), store.Config{})
 	if err != nil {
@@ -95,7 +143,7 @@ func TestGetSessionMessages_MissFallsBackWithCapabilityGate(t *testing.T) {
 		Store: st,
 		// No registry / kube → resolveSessionAgent fails after transcript miss
 		// unless we only test the miss path returning NotImplemented via missing agent.
-		TranscriptMessages: func(ctx context.Context, agentName, namespace, sessionID string, offset, limit int, fromEnd bool) (*prober.MessagePage, bool, error) {
+		TranscriptMessages: func(ctx context.Context, tenant, agentName, namespace, sessionID string, offset, limit int, fromEnd bool) (*prober.MessagePage, bool, error) {
 			return nil, false, nil
 		},
 	})
@@ -164,7 +212,7 @@ func TestFilesystemTranscriptMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	fn := FilesystemTranscriptMessages(root)
-	page, ok, err := fn(context.Background(), "agent-a", "default", "sess-1", 0, 10, false)
+	page, ok, err := fn(context.Background(), "default", "agent-a", "default", "sess-1", 0, 10, false)
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
@@ -179,7 +227,7 @@ func TestFilesystemTranscriptMessages(t *testing.T) {
 	}
 
 	// fromEnd with limit=1 should return only the newest entry.
-	tail, ok, err := fn(context.Background(), "agent-a", "default", "sess-1", 0, 1, true)
+	tail, ok, err := fn(context.Background(), "default", "agent-a", "default", "sess-1", 0, 1, true)
 	if err != nil || !ok {
 		t.Fatalf("tail ok=%v err=%v", ok, err)
 	}
@@ -213,7 +261,8 @@ func TestTranscriptIndexUpsertFromSnapshot(t *testing.T) {
 }
 
 type stubProber struct {
-	fetchMessages func() (*prober.MessagePage, error)
+	fetchMessages   func() (*prober.MessagePage, error)
+	sendUserMessage func(endpoint, sessionID, content string) error
 }
 
 func (s *stubProber) ProbeInfo(context.Context, string) (*prober.DataPlaneInfo, error) {
@@ -251,3 +300,9 @@ func (s *stubProber) FetchSubagentTasks(context.Context, string, string) ([]prob
 }
 func (s *stubProber) CancelSubagentTask(context.Context, string, string, string) error { return nil }
 func (s *stubProber) SendPlanMode(context.Context, string, string, bool) error         { return nil }
+func (s *stubProber) SendUserMessage(_ context.Context, endpoint, sessionID, content string) error {
+	if s.sendUserMessage != nil {
+		return s.sendUserMessage(endpoint, sessionID, content)
+	}
+	return nil
+}

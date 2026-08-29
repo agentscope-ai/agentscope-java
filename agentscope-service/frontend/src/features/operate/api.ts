@@ -279,13 +279,13 @@ export function sessionDetailPath(s: {
   namespace?: string;
 }): string {
   if (s.id) {
-    return `/operate/sessions/${encodeURIComponent(s.id)}`;
+    return `/control/sessions/${encodeURIComponent(s.id)}`;
   }
   const q = new URLSearchParams();
   if (s.agentName) q.set('agent', s.agentName);
   if (s.namespace) q.set('namespace', s.namespace);
   const qs = q.toString();
-  return `/operate/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
+  return `/control/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
 }
 
 export function fetchRuntimeSession(
@@ -377,6 +377,13 @@ export function fetchSessionMessages(
   const qs = q.toString();
   return api.get<SessionMessagePage>(
     `/api/v1/sessions/${encodeURIComponent(id)}/messages${qs ? `?${qs}` : ''}`,
+  );
+}
+
+export function sendSessionUserMessage(id: string, content: string) {
+  return api.post<{ accepted?: boolean; phase?: string }>(
+    `/api/v1/sessions/${encodeURIComponent(id)}/user-message`,
+    { content },
   );
 }
 
@@ -475,9 +482,10 @@ export function phaseHint(phase?: string): string {
 
 export type AgentPresence = 'live' | 'offline' | 'historical' | 'all';
 
-export function fetchManagedAgents(opts?: { presence?: AgentPresence }) {
+export function fetchManagedAgents(opts?: { presence?: AgentPresence; namespace?: string }) {
   const presence = opts?.presence ?? 'live';
   const qs = new URLSearchParams({ presence });
+  if (opts?.namespace) qs.set('namespace', opts.namespace);
   return api.get<{ items: ManagedAgentSummary[] }>(`/api/v1/agents?${qs}`);
 }
 

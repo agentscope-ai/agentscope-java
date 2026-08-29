@@ -104,7 +104,7 @@ class SessionTurnAdmissionTest {
                 null,
                 null,
                 null,
-                "team|default/research|lead",
+                "agent-task|f92cf745-82f5-45f3-a273-8ad96a87aa5a",
                 List.of(),
                 List.of(),
                 List.of(),
