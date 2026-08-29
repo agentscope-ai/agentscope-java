@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -246,6 +247,56 @@ class AguiRequestProcessorTest {
 
         processor.process(request(resumeInput)).events().collectList().block();
 
+        ToolResultBlock result =
+                msgsCaptor.getValue().get(0).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tool-call-from-server", result.getId());
+    }
+
+    @Test
+    void processResumesInterruptRecordedByAnotherProcessor() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(false);
+        ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
+        when(agent.streamEvents(msgsCaptor.capture(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
+        AguiResumeStateStore sharedStore = new InMemoryAguiResumeStateStore();
+        AguiRequestProcessor firstProcessor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(InterruptingAdapter::new)
+                        .resumeStateStore(sharedStore)
+                        .build();
+        AguiRequestProcessor secondProcessor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(AguiAgentAdapter::new)
+                        .resumeStateStore(sharedStore)
+                        .build();
+
+        firstProcessor.process(request(input("run-1"))).events().collectList().block();
+        List<AguiEvent> resumeEvents =
+                secondProcessor
+                        .process(
+                                request(
+                                        RunAgentInput.builder()
+                                                .threadId("thread-1")
+                                                .runId("run-2")
+                                                .resume(
+                                                        List.of(
+                                                                new AguiResume(
+                                                                        "interrupt-from-server",
+                                                                        AguiResume.STATUS_RESOLVED,
+                                                                        Map.of("approved", true))))
+                                                .build()))
+                        .events()
+                        .collectList()
+                        .block();
+
+        assertTrue(resumeEvents.stream().noneMatch(event -> event instanceof AguiEvent.RunError));
         ToolResultBlock result =
                 msgsCaptor.getValue().get(0).getFirstContentBlock(ToolResultBlock.class);
         assertNotNull(result);

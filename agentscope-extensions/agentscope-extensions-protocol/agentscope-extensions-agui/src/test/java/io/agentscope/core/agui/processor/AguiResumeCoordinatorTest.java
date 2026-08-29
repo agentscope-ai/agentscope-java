@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -183,6 +184,90 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
+    void pendingInterruptCanBeResumedByAnotherCoordinator() {
+        AguiResumeStateStore sharedStore = new InMemoryAguiResumeStateStore();
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator(sharedStore);
+        track(
+                firstCoordinator,
+                "run-1",
+                interruptedFinished("run-1", interrupt("interrupt-1")),
+                false);
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator(sharedStore);
+
+        AguiResumeCoordinator.ResumeContractResult result =
+                secondCoordinator.validate(
+                        RunAgentInput.builder()
+                                .threadId("thread-1")
+                                .runId("run-2")
+                                .resume(
+                                        List.of(
+                                                new AguiResume(
+                                                        "interrupt-1",
+                                                        AguiResume.STATUS_RESOLVED,
+                                                        Map.of("approved", true))))
+                                .build());
+
+        assertFalse(result.isError());
+    }
+
+    @Test
+    void defaultStoresRemainCoordinatorLocal() {
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator();
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator();
+        track(
+                firstCoordinator,
+                "run-1",
+                interruptedFinished("run-1", interrupt("interrupt-1")),
+                false);
+
+        AguiResumeCoordinator.ResumeContractResult result =
+                secondCoordinator.validate(resumeInput("run-2", "interrupt-1"));
+
+        assertTrue(result.isError());
+    }
+
+    @Test
+    void sharedStoreSerializesRunsAcrossCoordinatorsAndAllowsClaimAfterRelease() {
+        AguiResumeStateStore sharedStore = new InMemoryAguiResumeStateStore();
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator(sharedStore);
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator(sharedStore);
+
+        assertFalse(firstCoordinator.beginRun(input("run-1")).isError());
+        assertTrue(secondCoordinator.beginRun(input("run-2")).isError());
+
+        firstCoordinator.finishRun("thread-1", "run-1");
+
+        assertFalse(secondCoordinator.beginRun(input("run-2")).isError());
+    }
+
+    @Test
+    void staleCoordinatorCannotReleaseAnotherCoordinatorsRun() {
+        AguiResumeStateStore sharedStore = new InMemoryAguiResumeStateStore();
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator(sharedStore);
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator(sharedStore);
+
+        firstCoordinator.beginRun(input("run-1"));
+        firstCoordinator.finishRun("thread-1", "run-1");
+        secondCoordinator.beginRun(input("run-2"));
+
+        firstCoordinator.finishRun("thread-1", "run-1");
+
+        assertTrue(firstCoordinator.beginRun(input("run-3")).isError());
+    }
+
+    @Test
+    void storeFailureIsNotTreatedAsMissingResumeState() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator(new FailingStore());
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> coordinator.validate(resumeInput("run-2", "interrupt-1")));
+
+        assertEquals("shared store unavailable", error.getMessage());
+    }
+
+    @Test
     void beginRunRejectsConcurrentRunOnSameThread() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
 
@@ -215,20 +300,18 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
-    void trackIgnoresEventsFromInactiveRun() {
+    void staleRunFinishedCannotOverwriteCurrentRunsPendingInterrupts() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
         coordinator.beginRun(input("run-2"));
+        coordinator.trackPendingInterrupts(
+                "thread-1", "run-2", interruptedFinished("run-2", interrupt("interrupt-2")), false);
 
         coordinator.trackPendingInterrupts(
                 "thread-1", "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
+        coordinator.finishRun("thread-1", "run-2");
 
         AguiResumeCoordinator.ResumeContractResult result =
-                coordinator.validate(
-                        RunAgentInput.builder()
-                                .threadId("thread-1")
-                                .runId("run-3")
-                                .messages(List.of(AguiMessage.userMessage("msg-1", "hello")))
-                                .build());
+                coordinator.validate(resumeInput("run-3", "interrupt-2"));
 
         assertFalse(result.isError());
     }
@@ -294,5 +377,46 @@ class AguiResumeCoordinatorTest {
 
     private static RunAgentInput input(String runId) {
         return RunAgentInput.builder().threadId("thread-1").runId(runId).build();
+    }
+
+    private static RunAgentInput resumeInput(String runId, String interruptId) {
+        return RunAgentInput.builder()
+                .threadId("thread-1")
+                .runId(runId)
+                .resume(
+                        List.of(
+                                new AguiResume(
+                                        interruptId,
+                                        AguiResume.STATUS_RESOLVED,
+                                        Map.of("approved", true))))
+                .build();
+    }
+
+    private static final class FailingStore implements AguiResumeStateStore {
+
+        @Override
+        public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
+            throw failure();
+        }
+
+        @Override
+        public RunClaim claimRun(String threadId, String runId) {
+            throw failure();
+        }
+
+        @Override
+        public void releaseRun(String threadId, String runId) {
+            throw failure();
+        }
+
+        @Override
+        public boolean replacePendingInterrupts(
+                String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
+            throw failure();
+        }
+
+        private IllegalStateException failure() {
+            return new IllegalStateException("shared store unavailable");
+        }
     }
 }
