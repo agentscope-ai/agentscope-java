@@ -105,8 +105,8 @@ class ToolCallsAccumulatorTest {
     }
 
     @Test
-    @DisplayName("Should preserve merged arguments and fallback content for malformed JSON")
-    void testMalformedJsonFallsBackWithoutDroppingMergedArguments() {
+    @DisplayName("Should fail closed and fallback content for malformed JSON")
+    void testMalformedJsonFailsClosedWithFallbackContent() {
         accumulator.add(
                 ToolUseBlock.builder()
                         .id("call_malformed")
@@ -117,6 +117,7 @@ class ToolCallsAccumulatorTest {
 
         ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
 
+        // Partial arguments must not remain executable after final JSON parsing fails.
         assertTrue(toolCall.getInput().isEmpty());
         assertEquals("{}", toolCall.getContent());
         assertEquals(ToolCallState.PARSE_FAILED, toolCall.getState());

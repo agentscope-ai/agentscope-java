@@ -124,8 +124,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     }
                 } catch (Exception e) {
                     state = ToolCallState.PARSE_FAILED;
-                    // Keep previously merged args, but retain enough context to diagnose the
-                    // malformed arguments emitted by the model.
+                    // Do not leave stale or partial arguments executable after final parsing
+                    // fails. The PARSE_FAILED state prevents dispatch through ReActAgent, and
+                    // clearing the map keeps the block fail-closed for other consumers too.
+                    finalArgs.clear();
                     log.warn(
                             "Failed to parse accumulated tool call arguments: "
                                     + "toolId={}, toolName={}, byteLength={}, sha256={}, "

@@ -3336,7 +3336,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         toolCall,
                                                         ToolResultBlock.error(
                                                                 toolCall.getId(),
-                                                                "Tool execution rejected: malformed tool arguments")))
+                                                                "Tool execution rejected: malformed"
+                                                                        + " tool arguments")))
                                 .toList());
             }
             return dispatchToolCalls(toolCalls)
