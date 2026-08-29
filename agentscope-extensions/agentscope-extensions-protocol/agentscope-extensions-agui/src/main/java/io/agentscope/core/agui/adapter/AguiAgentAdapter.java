@@ -27,7 +27,6 @@ import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -37,6 +36,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -347,7 +347,7 @@ public class AguiAgentAdapter {
         ToolMergeMode mergeMode =
                 config.getToolMergeMode() != null
                         ? config.getToolMergeMode()
-                        : ToolMergeMode.MERGE_FRONTEND_PRIORITY;
+                        : ToolMergeMode.MERGE_EXTERNAL_PRIORITY;
         if (mergeMode == ToolMergeMode.AGENT_ONLY) {
             return null;
         }
@@ -360,7 +360,7 @@ public class AguiAgentAdapter {
         // Deep copy: mutate only the copy, never the shared toolkit.
         Toolkit perCallToolkit = source.copy();
 
-        if (mergeMode == ToolMergeMode.FRONTEND_ONLY) {
+        if (mergeMode == ToolMergeMode.EXTERNAL_ONLY) {
             for (String toolName : perCallToolkit.getToolNames()) {
                 perCallToolkit.removeTool(toolName);
             }

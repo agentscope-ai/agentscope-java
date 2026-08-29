@@ -40,7 +40,6 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -77,6 +76,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.lang.reflect.Field;
@@ -1374,7 +1374,7 @@ class AguiAgentAdapterV2Test {
                     new AguiAgentAdapter(
                             agent,
                             AguiAdapterConfig.builder()
-                                    .toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
+                                    .toolMergeMode(ToolMergeMode.EXTERNAL_ONLY)
                                     .build());
 
             frontendOnlyAdapter
@@ -1406,7 +1406,7 @@ class AguiAgentAdapterV2Test {
                     new AguiAgentAdapter(
                             agent,
                             AguiAdapterConfig.builder()
-                                    .toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
+                                    .toolMergeMode(ToolMergeMode.EXTERNAL_ONLY)
                                     .build());
 
             frontendOnlyAdapter

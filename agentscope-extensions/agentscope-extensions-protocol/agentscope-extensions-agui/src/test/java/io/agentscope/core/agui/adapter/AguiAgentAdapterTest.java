@@ -36,7 +36,6 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -45,6 +44,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import java.util.Map;
@@ -306,7 +306,7 @@ class AguiAgentAdapterTest {
                 new AguiAgentAdapter(
                         mockAgent,
                         AguiAdapterConfig.builder()
-                                .toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
+                                .toolMergeMode(ToolMergeMode.EXTERNAL_ONLY)
                                 .build());
         RunAgentInput input =
                 RunAgentInput.builder()
@@ -351,7 +351,7 @@ class AguiAgentAdapterTest {
                 new AguiAgentAdapter(
                         mockAgent,
                         AguiAdapterConfig.builder()
-                                .toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
+                                .toolMergeMode(ToolMergeMode.EXTERNAL_ONLY)
                                 .build());
         RunAgentInput input =
                 RunAgentInput.builder()
