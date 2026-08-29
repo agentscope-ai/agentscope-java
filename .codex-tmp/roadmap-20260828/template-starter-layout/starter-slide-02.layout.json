@@ -1,0 +1,1041 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/4gvujw",
+    "id": "4gvujw",
+    "slide": 2,
+    "layoutId": "/ppt/slideLayouts/slideLayout2.xml",
+    "layoutName": "目录",
+    "layoutType": "tx",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 2560,
+      "height": 1440
+    }
+  },
+  "theme": {
+    "colorSchemeName": "21_BasicWhite",
+    "colors": {
+      "accent1": "#00A2FF",
+      "accent2": "#16E7CF",
+      "accent3": "#61D836",
+      "accent4": "#FFD932",
+      "accent5": "#FF644E",
+      "accent6": "#FF42A1",
+      "dk1": "#5E5E5E",
+      "lt1": "#005E00",
+      "dk2": "#5E5E5E",
+      "lt2": "#D5D5D5",
+      "hlink": "#0000FF",
+      "folHlink": "#FF00FF"
+    },
+    "fontScheme": {
+      "name": "21_BasicWhite",
+      "majorFont": {
+        "latinTypeface": "FZLanTingHei-M-GBK",
+        "eastAsianTypeface": "FZLanTingHei-M-GBK",
+        "complexScriptTypeface": "FZLanTingHei-M-GBK"
+      },
+      "minorFont": {
+        "latinTypeface": "FZLanTingHei-M-GBK",
+        "eastAsianTypeface": "FZLanTingHei-M-GBK",
+        "complexScriptTypeface": "FZLanTingHei-M-GBK"
+      }
+    },
+    "typefaces": [
+      "Alibaba PuHuiTi R",
+      "FZLanTingHei-B-GBK",
+      "FZLanTingHei-M-GBK",
+      "Univers LT Std 65 Bold"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout2.xml",
+      "name": "目录",
+      "type": "tx",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "image",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout2.xml/23",
+          "id": "23",
+          "name": "目录.jpeg",
+          "bbox": [
+            0,
+            0,
+            2560,
+            1440
+          ],
+          "contentType": "image/jpeg",
+          "asset": {
+            "assetId": "/ppt/media/image3.jpeg",
+            "contentType": "image/jpeg",
+            "byteLength": 890648
+          },
+          "fillImage": {
+            "assetId": "/ppt/media/image3.jpeg",
+            "contentType": "image/jpeg",
+            "byteLength": 890648
+          }
+        },
+        {
+          "order": 2,
+          "kind": "image",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout2.xml/24",
+          "id": "24",
+          "name": "image3.pdf",
+          "bbox": [
+            96,
+            79.67,
+            197.55,
+            43.12
+          ],
+          "contentType": "image/png",
+          "asset": {
+            "assetId": "/ppt/media/image2.png",
+            "contentType": "image/png",
+            "byteLength": 9140
+          },
+          "fillImage": {
+            "assetId": "/ppt/media/image2.png",
+            "contentType": "image/png",
+            "byteLength": 9140
+          }
+        },
+        {
+          "order": 3,
+          "kind": "shape",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout2.xml/22",
+          "id": "22",
+          "name": "幻灯片编号",
+          "bbox": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "geometry": "rect",
+          "text": "‹#›",
+          "textPreview": "‹#›",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "‹#›",
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "‹#›"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "type": "master",
+      "backgroundColor": "#FFFFFF",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/4",
+          "id": "4",
+          "name": "幻灯片标题",
+          "bbox": [
+            126.67,
+            113.33,
+            1100,
+            150.67
+          ],
+          "geometry": "rect",
+          "text": "幻灯片标题",
+          "textPreview": "幻灯片标题",
+          "resolvedTextStyle": {
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 5.33,
+              "right": 5.33,
+              "bottom": 5.33,
+              "left": 5.33
+            }
+          },
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "幻灯片标题",
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "幻灯片标题"
+                }
+              ]
+            }
+          ],
+          "lineWidth": 1.33
+        },
+        {
+          "order": 2,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/5",
+          "id": "5",
+          "name": "正文级别 1…",
+          "bbox": [
+            126.67,
+            446.04,
+            1100,
+            866.77
+          ],
+          "geometry": "rect",
+          "text": "幻灯片项目符号文本\n\n\n\n",
+          "textPreview": "幻灯片项目符号文本 |  |  |  |",
+          "resolvedTextStyle": {
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 5.33,
+              "right": 5.33,
+              "bottom": 5.33,
+              "left": 5.33
+            }
+          },
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "幻灯片项目符号文本",
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "幻灯片项目符号文本"
+                }
+              ]
+            }
+          ],
+          "lineWidth": 1.33
+        },
+        {
+          "order": 3,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/6",
+          "id": "6",
+          "name": "幻灯片编号",
+          "bbox": [
+            1258.72,
+            1373.99,
+            41.25,
+            38.67
+          ],
+          "geometry": "rect",
+          "text": "‹#›",
+          "textPreview": "‹#›",
+          "resolvedTextStyle": {
+            "anchor": 3,
+            "verticalAlignment": "bottom",
+            "wrap": "none",
+            "autoFit": "resizeShapeToFitText",
+            "insets": {
+              "top": 5.33,
+              "right": 5.33,
+              "bottom": 5.33,
+              "left": 5.33
+            }
+          },
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "‹#›",
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "‹#›"
+                }
+              ]
+            }
+          ],
+          "lineWidth": 1.33
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/cr2lkv29",
+      "id": "121",
+      "name": "圆角矩形",
+      "bbox": [
+        292.67,
+        306.67,
+        1974.67,
+        906.67
+      ],
+      "geometry": "roundRect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "FZLanTingHei-M-GBK",
+        "color": "tx1",
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D5D5D5",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/bqt4ba1o",
+      "id": "122",
+      "name": "CONTENT",
+      "bbox": [
+        372,
+        404.15,
+        368.56,
+        107.71
+      ],
+      "geometry": "rect",
+      "text": "CONTENT",
+      "textPreview": "CONTENT",
+      "resolvedFontSize": 80,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 80,
+        "typeface": "Univers LT Std 65 Bold",
+        "color": "#0033CC",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "CONTENT"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "CONTENT",
+          "runs": [
+            {
+              "index": 1,
+              "text": "CONTENT",
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 100000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qp03i5k3",
+      "id": "123",
+      "name": "目录",
+      "bbox": [
+        372,
+        483.48,
+        169.64,
+        107.71
+      ],
+      "geometry": "rect",
+      "text": "目录",
+      "textPreview": "目录",
+      "resolvedFontSize": 80,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 80,
+        "typeface": "FZLanTingHei-B-GBK",
+        "color": "#0033CC",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "目录"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "目录",
+          "runs": [
+            {
+              "index": 1,
+              "text": "目录",
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 100000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/lwbmhkjq",
+      "id": "124",
+      "name": "请添加大章节标题内容-方正兰亭粗黑36磅",
+      "bbox": [
+        1021.08,
+        412.94,
+        635.31,
+        98.77
+      ],
+      "rotation": 0,
+      "geometry": "rect",
+      "text": "AgentScope 2.0 介绍",
+      "textPreview": "AgentScope 2.0 介绍",
+      "resolvedFontSize": 48,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 48,
+        "typeface": "FZLanTingHei-B-GBK",
+        "color": "#0033CC",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "AgentScope 2.0 介绍"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "AgentScope 2.0 介绍",
+          "runs": [
+            {
+              "index": 1,
+              "text": "AgentScope",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 2,
+              "text": " ",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 3,
+              "text": "2.0 ",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 4,
+              "text": "介绍",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 120000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/zut4fa10",
+      "id": "126",
+      "name": "01",
+      "bbox": [
+        933.33,
+        421.77,
+        85.16,
+        88.32
+      ],
+      "rotation": 0,
+      "geometry": "rect",
+      "text": "01",
+      "textPreview": "01",
+      "resolvedFontSize": 50.67,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 50.67,
+        "typeface": "Univers LT Std 65 Bold",
+        "color": "#0033CC",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "01"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "01",
+          "runs": [
+            {
+              "index": 1,
+              "text": "01",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 100000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ytk3m5kf",
+      "id": "127",
+      "name": "线条",
+      "bbox": [
+        933.33,
+        408.99,
+        1253.33,
+        0
+      ],
+      "rotation": 0,
+      "geometry": "line",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "FZLanTingHei-M-GBK",
+        "color": "tx1",
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "lineColor": "#D5D5D5",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9kvmlkj2",
+      "id": "128",
+      "name": "请添加大章节标题内容-方正兰亭粗黑36磅",
+      "bbox": [
+        1021.04,
+        669.48,
+        950.02,
+        98.77
+      ],
+      "rotation": 0,
+      "geometry": "rect",
+      "text": "AgentScope Harness 核心设计",
+      "textPreview": "AgentScope Harness 核心设计",
+      "resolvedFontSize": 48,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 48,
+        "typeface": "FZLanTingHei-B-GBK",
+        "color": "#0033CC",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "AgentScope Harness 核心设计"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "AgentScope Harness 核心设计",
+          "runs": [
+            {
+              "index": 1,
+              "text": "AgentScope",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 2,
+              "text": " Harness ",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 3,
+              "text": "核心设计",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 120000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6tcrqxwn",
+      "id": "130",
+      "name": "02",
+      "bbox": [
+        933.29,
+        678.31,
+        85.16,
+        88.32
+      ],
+      "rotation": 0,
+      "geometry": "rect",
+      "text": "02",
+      "textPreview": "02",
+      "resolvedFontSize": 50.67,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 50.67,
+        "typeface": "Univers LT Std 65 Bold",
+        "color": "#0033CC",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "02"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "02",
+          "runs": [
+            {
+              "index": 1,
+              "text": "02",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 100000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7u5sz2d8",
+      "id": "131",
+      "name": "线条",
+      "bbox": [
+        933.29,
+        665.53,
+        1253.33,
+        0
+      ],
+      "rotation": 0,
+      "geometry": "line",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "FZLanTingHei-M-GBK",
+        "color": "tx1",
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "lineColor": "#D5D5D5",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tgna1sve",
+      "id": "133",
+      "name": "请添加大章节标题内容-方正兰亭粗黑36磅",
+      "bbox": [
+        1021.04,
+        925.63,
+        1206,
+        98.77
+      ],
+      "rotation": 0,
+      "geometry": "rect",
+      "text": "AgentScope Service 企业级智能体控制面",
+      "textPreview": "AgentScope Service 企业级智能体控制面",
+      "resolvedFontSize": 48,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 48,
+        "typeface": "FZLanTingHei-B-GBK",
+        "color": "#0033CC",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "AgentScope Service 企业级智能体控制面"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "AgentScope Service 企业级智能体控制面",
+          "runs": [
+            {
+              "index": 1,
+              "text": "AgentScope",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 2,
+              "text": " ",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 3,
+              "text": "Service",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 4,
+              "text": " 企业级智能体控制面",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 120000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vi5s32d4",
+      "id": "135",
+      "name": "03",
+      "bbox": [
+        933.29,
+        934.45,
+        85.16,
+        88.32
+      ],
+      "rotation": 0,
+      "geometry": "rect",
+      "text": "03",
+      "textPreview": "03",
+      "resolvedFontSize": 50.67,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 50.67,
+        "typeface": "Univers LT Std 65 Bold",
+        "color": "#0033CC",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "03"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "03",
+          "runs": [
+            {
+              "index": 1,
+              "text": "03",
+              "fontSize": 64,
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 100000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gje9w7ep",
+      "id": "136",
+      "name": "线条",
+      "bbox": [
+        933.29,
+        921.68,
+        1253.33,
+        0
+      ],
+      "rotation": 0,
+      "geometry": "line",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "FZLanTingHei-M-GBK",
+        "color": "tx1",
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "lineColor": "#D5D5D5",
+      "lineWidth": 1.33
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/z6lsvm5g",
+      "id": "144",
+      "name": "文本框 1",
+      "bbox": [
+        -31.5,
+        0,
+        0,
+        0
+      ],
+      "text": "\nBBAAD9C20180234D78A0072836F0BC9042B9B20210378B20A1D98E34B1532B7E1B46B0385169DB0C22C926089846AAEB89F921DAE1D0EB611BBFC2F37F7E39DC24FBC6AD672579F7E49F2BF76E9241919E20EA517747061698AEA19721E4DCA8D8B624976E3",
+      "textPreview": "| BBAAD9C20180234D78A0072836F0BC9042B9B20210378B20A1D98E34B1532B7E1B46B0385169DB0C22C926089846AAEB89F921DAE1D0EB611BBFC2F37F7E39DC24FBC6A...",
+      "paragraphs": [
+        {
+          "index": 2,
+          "text": "BBAAD9C20180234D78A0072836F0BC9042B9B20210378B20A1D98E34B1532B7E1B46B0385169DB0C22C926089846AAEB89F921DAE1D0EB611BBFC2F37F7E39DC24FBC6AD672579F7E49F2BF76E9241919E20EA517747061698AEA19721E4DCA8D8B624976E3",
+          "runs": [
+            {
+              "index": 1,
+              "text": "BBAAD9C20180234D78A0072836F0BC9042B9B20210378B20A1D98E34B1532B7E1B46B0385169DB0C22C926089846AAEB89F921DAE1D0EB611BBFC2F37F7E39DC24FBC6AD672579F7E49F2BF76E9241919E20EA517747061698AEA19721E4DCA8D8B624976E3",
+              "color": "#FFFFFF"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "composeRuns": []
+}

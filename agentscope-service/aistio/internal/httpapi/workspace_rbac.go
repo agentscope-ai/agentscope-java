@@ -38,7 +38,7 @@ func requestWorkspace(path string) string {
 	switch resource {
 	case "overview", "metrics", "agent-instances", "runtime-profiles", "runtime-pools", "runtime-hosts",
 		"sessions", "orchestration-runs", "agent-tasks", "execution-attempts", "agent-runtime-policies",
-		"dataplanes", "audit", "dead-letters", "usage", "budgets":
+		"runtime-bindings", "dataplanes", "audit", "dead-letters", "usage", "budgets":
 		return workspaceOperations
 	default:
 		return ""

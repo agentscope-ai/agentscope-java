@@ -12,6 +12,7 @@ import {
   listRuntimeHosts,
   listRuntimePools,
   listRuntimeProfiles,
+  setRuntimeHostDraining,
   upsertRuntimePool,
   upsertRuntimeProfile,
   type RuntimeHost,
@@ -88,14 +89,28 @@ function HostCard({ host }: { host: RuntimeHost }) {
 export function RuntimeHostDetailPage() {
   const { hostId = '' } = useParams();
   const scope = useControlPlaneScope();
+  const queryClient = useQueryClient();
   const detail = useQuery({ queryKey: ['runtime-host', hostId], queryFn: () => getRuntimeHost(hostId), enabled: !!hostId, refetchInterval: 5_000 });
+  const changeState = useMutation({
+    mutationFn: (draining: boolean) => setRuntimeHostDraining(hostId, draining),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['runtime-host', hostId] });
+      void queryClient.invalidateQueries({ queryKey: ['runtime-hosts'] });
+    },
+  });
   if (detail.isError) return <Page><EmptyState title="Runtime Host unavailable" description="The host was not found or the registry is unavailable." /></Page>;
   if (!detail.data) return <Page><p className="text-sm text-muted-foreground">Loading Runtime Host…</p></Page>;
   const host = detail.data.host;
   return (
     <Page className="max-w-[1200px]">
       <Link to={scope.scopedPath('/runtime/hosts')} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" />Back to Runtime Hosts</Link>
-      <PageHeader title={<span className="flex flex-wrap items-center gap-3">{host.hostKey}<Badge tone={tone(host.state)}>{host.state}</Badge></span>} description="A Runtime Host owns local provider processes and workspaces; it is not an application deployment controller." />
+      <PageHeader
+        title={<span className="flex flex-wrap items-center gap-3">{host.hostKey}<Badge tone={tone(host.state)}>{host.state}</Badge></span>}
+        description="A Runtime Host owns local provider processes and workspaces; it is not an application deployment controller."
+        actions={host.state === 'draining'
+          ? <Button disabled={changeState.isPending} onClick={() => changeState.mutate(false)}>Resume scheduling</Button>
+          : <Button variant="outline" disabled={changeState.isPending || host.state === 'offline'} onClick={() => changeState.mutate(true)}>Drain host</Button>}
+      />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Active executions" value={host.active} detail={`${host.capacity} total capacity`} /><Metric label="Available slots" value={Math.max(0, host.capacity - host.active)} detail={`Pool ${host.poolName}`} /><Fact icon={Cpu} label="Machine" value={`${host.os || 'unknown'} / ${host.arch || 'unknown'}`} /><Fact icon={CheckCircle2} label="Heartbeat" value={formatRelative(host.lastSeenAt)} /></div>
       <div className="grid gap-6 lg:grid-cols-2">
         <JsonCard title="Advertised capabilities" description="Providers and runtime capabilities reported by the daemon." value={host.capabilities} />

@@ -48,20 +48,26 @@ class GrpcTransport:
         addr: str,
         *,
         tenant: str = "default",
-        internal_token: str = "",
-        agent_name: str,
+        credential: str = "",
+        agent_id: str,
+        agent_key: str,
+        binding_id: str,
         namespace: str = "default",
-        instance_id: str = "",
+        instance_key: str,
+        generation: int,
         sdk_version: str = "",
         capabilities: Iterable[str] = (),
         session_affinity: str = "",
     ) -> None:
         self._addr = addr
         self._tenant = tenant
-        self._internal_token = internal_token
-        self._agent_name = agent_name
+        self._credential = credential
+        self._agent_id = agent_id
+        self._agent_key = agent_key
+        self._binding_id = binding_id
         self._namespace = namespace
-        self._instance_id = instance_id
+        self._instance_key = instance_key
+        self._generation = generation
         self._sdk_version = sdk_version
         self._capabilities: List[str] = list(capabilities)
         self._session_affinity = session_affinity
@@ -149,8 +155,11 @@ class GrpcTransport:
     def _meta(self) -> "asdp_pb2.UpstreamMeta":
         return asdp_pb2.UpstreamMeta(
             tenant=self._tenant,
-            agent_name=self._agent_name,
-            instance_id=self._instance_id,
+            agent_id=self._agent_id,
+            agent_key=self._agent_key,
+            binding_id=self._binding_id,
+            instance_key=self._instance_key,
+            generation=self._generation,
             namespace=self._namespace,
             timestamp=now_ms(),
         )
@@ -248,8 +257,8 @@ class GrpcTransport:
             try:
                 stub = asdp_pb2_grpc.AgentDataPlaneServiceStub(channel)
                 metadata = (
-                    (("authorization", f"Bearer {self._internal_token}"),)
-                    if self._internal_token
+                    (("authorization", f"Bearer {self._credential}"),)
+                    if self._credential
                     else None
                 )
                 responses = stub.Connect(iter(self._outgoing()), metadata=metadata)

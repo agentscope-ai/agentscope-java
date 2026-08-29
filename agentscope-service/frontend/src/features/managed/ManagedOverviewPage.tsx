@@ -32,7 +32,10 @@ function updatedAt(value: number): string {
 
 export default function ManagedOverviewPage() {
   const scope = useControlPlaneScope();
-  const agents = useQuery({ queryKey: ['managed-overview', 'agents'], queryFn: listAgents });
+  const agents = useQuery({
+    queryKey: ['managed-overview', 'agents', scope.tenant, scope.namespace],
+    queryFn: () => listAgents(scope.tenant, scope.namespace),
+  });
   const registeredAgents = useQuery({
     queryKey: ['managed-overview', 'registered-agents', scope.namespace],
     queryFn: () => fetchManagedAgents({ presence: 'all', namespace: scope.namespace }),

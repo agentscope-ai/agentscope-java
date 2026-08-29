@@ -338,12 +338,16 @@ CREATE TABLE comment_external_refs (
     work_source_id UUID NOT NULL REFERENCES work_sources(id),
     comment_id UUID NOT NULL REFERENCES comments(id),
     external_id TEXT,
+    external_version TEXT,
     sync_state TEXT NOT NULL,
     last_error TEXT,
     attempts INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (work_source_id, comment_id)
 );
+CREATE UNIQUE INDEX uq_comment_external_refs_external_id
+    ON comment_external_refs(work_source_id, external_id)
+    WHERE external_id IS NOT NULL;
 
 CREATE TABLE external_links (
     id UUID PRIMARY KEY,

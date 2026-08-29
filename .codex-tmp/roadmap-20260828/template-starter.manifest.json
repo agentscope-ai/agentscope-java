@@ -1,0 +1,34 @@
+{
+  "sourcePptx": "/Users/ken/agentscope-2/agentscope-java/docs/AgentScope Java 2.0 v1.pptx",
+  "mapPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-frame-map.json",
+  "output": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter.pptx",
+  "outputBytes": 3445714,
+  "sourceSlideCount": 25,
+  "slideCount": 2,
+  "previewDir": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter-preview-2",
+  "layoutDir": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter-layout-2",
+  "slides": [
+    {
+      "outputSlide": 1,
+      "sourceSlide": 20,
+      "narrativeRole": "roadmap thesis and capability map",
+      "reuseMode": "duplicate-slide",
+      "editTargetCount": 4,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter-preview-2/starter-slide-01.png",
+      "previewRelativePath": "template-starter-preview-2/starter-slide-01.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter-layout-2/starter-slide-01.layout.json",
+      "layoutRelativePath": "template-starter-layout-2/starter-slide-01.layout.json"
+    },
+    {
+      "outputSlide": 2,
+      "sourceSlide": 20,
+      "narrativeRole": "unified Agent production lifecycle map",
+      "reuseMode": "duplicate-slide",
+      "editTargetCount": 4,
+      "previewPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter-preview-2/starter-slide-02.png",
+      "previewRelativePath": "template-starter-preview-2/starter-slide-02.png",
+      "layoutPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter-layout-2/starter-slide-02.layout.json",
+      "layoutRelativePath": "template-starter-layout-2/starter-slide-02.layout.json"
+    }
+  ]
+}

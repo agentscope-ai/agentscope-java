@@ -140,17 +140,89 @@ func (r *workSourceRepo) PutIssueExternalRef(ctx context.Context, in *controlmod
 func (r *workSourceRepo) GetIssueExternalRef(ctx context.Context, sourceID uuid.UUID, externalID string) (*controlmodel.IssueExternalRef, error) {
 	return scanIssueExternalRef(r.pool.QueryRow(ctx, `SELECT work_source_id,issue_id,external_id,external_number,external_url,external_version,projection,updated_at FROM issue_external_refs WHERE work_source_id=$1 AND external_id=$2`, sourceID, externalID))
 }
+func (r *workSourceRepo) GetIssueExternalRefByIssue(ctx context.Context, sourceID, issueID uuid.UUID) (*controlmodel.IssueExternalRef, error) {
+	return scanIssueExternalRef(r.pool.QueryRow(ctx, `SELECT work_source_id,issue_id,external_id,external_number,external_url,external_version,projection,updated_at FROM issue_external_refs WHERE work_source_id=$1 AND issue_id=$2`, sourceID, issueID))
+}
+func (r *workSourceRepo) ListIssueExternalRefs(ctx context.Context, sourceID uuid.UUID, limit int) ([]*controlmodel.IssueExternalRef, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 500
+	}
+	rows, err := r.pool.Query(ctx, `SELECT work_source_id,issue_id,external_id,external_number,external_url,external_version,projection,updated_at FROM issue_external_refs WHERE work_source_id=$1 ORDER BY updated_at LIMIT $2`, sourceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*controlmodel.IssueExternalRef, 0)
+	for rows.Next() {
+		ref, scanErr := scanIssueExternalRef(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
+}
 func (r *workSourceRepo) PutCommentExternalRef(ctx context.Context, in *controlmodel.CommentExternalRef) (*controlmodel.CommentExternalRef, error) {
 	v := &controlmodel.CommentExternalRef{}
-	var externalID, lastError *string
-	err := r.pool.QueryRow(ctx, `INSERT INTO comment_external_refs(work_source_id,comment_id,external_id,sync_state,last_error,attempts) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(work_source_id,comment_id) DO UPDATE SET external_id=EXCLUDED.external_id,sync_state=EXCLUDED.sync_state,last_error=EXCLUDED.last_error,attempts=EXCLUDED.attempts,updated_at=now() RETURNING work_source_id,comment_id,external_id,sync_state,last_error,attempts,updated_at`, in.WorkSourceID, in.CommentID, nullStr(in.ExternalID), in.SyncState, nullStr(in.LastError), in.Attempts).Scan(&v.WorkSourceID, &v.CommentID, &externalID, &v.SyncState, &lastError, &v.Attempts, &v.UpdatedAt)
+	var externalID, externalVersion, lastError *string
+	err := r.pool.QueryRow(ctx, `INSERT INTO comment_external_refs(work_source_id,comment_id,external_id,external_version,sync_state,last_error,attempts) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(work_source_id,comment_id) DO UPDATE SET external_id=EXCLUDED.external_id,external_version=EXCLUDED.external_version,sync_state=EXCLUDED.sync_state,last_error=EXCLUDED.last_error,attempts=EXCLUDED.attempts,updated_at=now() RETURNING work_source_id,comment_id,external_id,external_version,sync_state,last_error,attempts,updated_at`, in.WorkSourceID, in.CommentID, nullStr(in.ExternalID), nullStr(in.ExternalVersion), in.SyncState, nullStr(in.LastError), in.Attempts).Scan(&v.WorkSourceID, &v.CommentID, &externalID, &externalVersion, &v.SyncState, &lastError, &v.Attempts, &v.UpdatedAt)
 	if externalID != nil {
 		v.ExternalID = *externalID
+	}
+	if externalVersion != nil {
+		v.ExternalVersion = *externalVersion
 	}
 	if lastError != nil {
 		v.LastError = *lastError
 	}
 	return v, err
+}
+func scanCommentExternalRef(row scannable) (*controlmodel.CommentExternalRef, error) {
+	v := &controlmodel.CommentExternalRef{}
+	var externalID, externalVersion, lastError *string
+	err := row.Scan(&v.WorkSourceID, &v.CommentID, &externalID, &externalVersion, &v.SyncState, &lastError, &v.Attempts, &v.UpdatedAt)
+	if err != nil {
+		return nil, workSourceError(err)
+	}
+	if externalID != nil {
+		v.ExternalID = *externalID
+	}
+	if externalVersion != nil {
+		v.ExternalVersion = *externalVersion
+	}
+	if lastError != nil {
+		v.LastError = *lastError
+	}
+	return v, nil
+}
+func (r *workSourceRepo) GetCommentExternalRef(ctx context.Context, sourceID, commentID uuid.UUID) (*controlmodel.CommentExternalRef, error) {
+	return scanCommentExternalRef(r.pool.QueryRow(ctx, `SELECT work_source_id,comment_id,external_id,external_version,sync_state,last_error,attempts,updated_at FROM comment_external_refs WHERE work_source_id=$1 AND comment_id=$2`, sourceID, commentID))
+}
+func (r *workSourceRepo) GetCommentExternalRefByExternalID(ctx context.Context, sourceID uuid.UUID, externalID string) (*controlmodel.CommentExternalRef, error) {
+	return scanCommentExternalRef(r.pool.QueryRow(ctx, `SELECT work_source_id,comment_id,external_id,external_version,sync_state,last_error,attempts,updated_at FROM comment_external_refs WHERE work_source_id=$1 AND external_id=$2`, sourceID, externalID))
+}
+func (r *workSourceRepo) ListCommentExternalRefs(ctx context.Context, states []controlmodel.CommentSyncState, limit int) ([]*controlmodel.CommentExternalRef, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	stateNames := make([]string, len(states))
+	for i := range states {
+		stateNames[i] = string(states[i])
+	}
+	rows, err := r.pool.Query(ctx, `SELECT work_source_id,comment_id,external_id,external_version,sync_state,last_error,attempts,updated_at FROM comment_external_refs WHERE (cardinality($1::text[])=0 OR sync_state=ANY($1::text[])) ORDER BY updated_at LIMIT $2`, stateNames, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*controlmodel.CommentExternalRef, 0)
+	for rows.Next() {
+		v, scanErr := scanCommentExternalRef(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
 }
 func (r *workSourceRepo) ListExternalLinks(ctx context.Context, issueID uuid.UUID) ([]*controlmodel.ExternalLink, error) {
 	rows, err := r.pool.Query(ctx, `SELECT id,work_source_id,issue_id,type,external_id,url,title,metadata,created_at,updated_at FROM external_links WHERE issue_id=$1 ORDER BY created_at`, issueID)

@@ -1,0 +1,24 @@
+Source deck: /Users/ken/agentscope-2/agentscope-java/docs/AgentScope Java 2.0 v1.pptx
+Slide size: 2560 x 1440 px (16:9)
+Slides inspected: all 25 source slides, including rendered PNGs and per-slide layout JSON.
+
+Visual system:
+- Alibaba Cloud orange wordmark at upper left on light content slides.
+- White/light-gray architectural background with subtle geometric accents.
+- Blue centered one-line titles, FZLanTingHei-M-GBK theme typography.
+- Content is commonly supplied as one large diagram image below the title; the deck preserves editability mainly for title/subtitle text.
+- Section dividers use a dark navy gradient and centered white text.
+
+Reusable pattern selected:
+- Source slide 20, layout “内容页-浅色1”. It provides three inherited content slots: a title textbox, a subtitle textbox, and one large diagram image.
+- The image slot is the correct inherited frame for dense architecture/roadmap content without covering brand chrome or rebuilding the slide.
+
+Output contract:
+- Produce a standalone two-slide Roadmap deck by duplicating source slide 20 twice.
+- Omit the rest of the source deck from the deliverable; selected slides remain content references only.
+- Rewrite only the inherited title and subtitle textboxes and replace only the inherited diagram image on the two inserted slides.
+- Preserve the layout/master hierarchy, font family, font sizes, text insets, alignment, brand mark, background, and slide-number furniture.
+
+Inherited placeholders:
+- The source content slide uses imported slide-local content elements rather than empty title/body placeholders.
+- Slide number furniture is inherited and already populated by PowerPoint field content; no empty visible placeholders are introduced.

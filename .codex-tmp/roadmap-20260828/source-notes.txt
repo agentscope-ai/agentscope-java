@@ -1,0 +1,20 @@
+Primary source deck:
+- /Users/ken/agentscope-2/agentscope-java/docs/AgentScope Java 2.0 v1.pptx
+  Relevant source slides: 8 (Harness architecture), 13 (memory), 14 (subagents), 15 (sandbox), 18 (Channel/Gateway), 20 (control plane), 22 (Managed Agents), 24 (multi-Agent collaboration).
+
+Official documentation:
+- https://docs.agentscope.io/versions/2.0.8dev/en/building-blocks/pipeline/overview
+  PipelineProtocol, unified event stream, and GoalPipeline availability.
+- https://docs.agentscope.io/versions/2.0.8dev/en/building-blocks/pipeline/goal
+  Executor/verifier goal loop, retry behavior, and interruption/resume semantics.
+- https://docs.agentscope.io/versions/2.0.8dev/en/deploy/rag
+  RAG Service positioning as multi-tenant and distribution-ready.
+
+Repository references:
+- docs/v2/en/docs/harness/filesystem.md and docs/v2/en/docs/harness/sandbox.md for E2B-backed sandbox support.
+- docs/v2/en/docs/harness/subagent.md for remote subagent orchestration and event forwarding.
+- agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java for AgentTeams mode.
+
+Roadmap scope note:
+- Agentic/static memory, AgentLoop evaluation integration, AgentCore lifecycle hosting, and the grouping/order of roadmap workstreams are roadmap directions supplied by the user; they are not represented as committed release dates.
+

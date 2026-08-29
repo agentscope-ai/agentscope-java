@@ -173,4 +173,6 @@ type OutboxRepository interface {
 	Claim(ctx context.Context, worker string, now time.Time, ttl time.Duration, limit int) ([]*controlmodel.OutboxEvent, error)
 	MarkDelivered(ctx context.Context, id uuid.UUID, worker string) error
 	MarkFailed(ctx context.Context, id uuid.UUID, worker, lastError string, retryAt time.Time) error
+	ListDeadLetters(ctx context.Context, tenant, namespace string, limit int) ([]*controlmodel.OutboxEvent, error)
+	ReplayDeadLetter(ctx context.Context, id uuid.UUID) (*controlmodel.OutboxEvent, error)
 }

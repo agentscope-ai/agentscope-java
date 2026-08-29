@@ -155,6 +155,31 @@ func (r *workSourceRepo) GetIssueExternalRef(_ context.Context, sourceID uuid.UU
 	}
 	return cloneIssueRef(v), nil
 }
+func (r *workSourceRepo) GetIssueExternalRefByIssue(_ context.Context, sourceID, issueID uuid.UUID) (*controlmodel.IssueExternalRef, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	for _, v := range r.s.issueExternalRefs {
+		if v.WorkSourceID == sourceID && v.IssueID == issueID {
+			return cloneIssueRef(v), nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+func (r *workSourceRepo) ListIssueExternalRefs(_ context.Context, sourceID uuid.UUID, limit int) ([]*controlmodel.IssueExternalRef, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	out := make([]*controlmodel.IssueExternalRef, 0)
+	for _, ref := range r.s.issueExternalRefs {
+		if ref.WorkSourceID == sourceID {
+			out = append(out, cloneIssueRef(ref))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.Before(out[j].UpdatedAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
 func (r *workSourceRepo) PutCommentExternalRef(_ context.Context, in *controlmodel.CommentExternalRef) (*controlmodel.CommentExternalRef, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
@@ -162,6 +187,48 @@ func (r *workSourceRepo) PutCommentExternalRef(_ context.Context, in *controlmod
 	c.UpdatedAt = time.Now().UTC()
 	r.s.commentExternalRefs[c.CommentID] = &c
 	return &c, nil
+}
+func (r *workSourceRepo) GetCommentExternalRef(_ context.Context, sourceID, commentID uuid.UUID) (*controlmodel.CommentExternalRef, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	v := r.s.commentExternalRefs[commentID]
+	if v == nil || v.WorkSourceID != sourceID {
+		return nil, store.ErrNotFound
+	}
+	c := *v
+	return &c, nil
+}
+func (r *workSourceRepo) GetCommentExternalRefByExternalID(_ context.Context, sourceID uuid.UUID, externalID string) (*controlmodel.CommentExternalRef, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	for _, v := range r.s.commentExternalRefs {
+		if v.WorkSourceID == sourceID && v.ExternalID == externalID {
+			c := *v
+			return &c, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+func (r *workSourceRepo) ListCommentExternalRefs(_ context.Context, states []controlmodel.CommentSyncState, limit int) ([]*controlmodel.CommentExternalRef, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	allowed := make(map[controlmodel.CommentSyncState]bool, len(states))
+	for _, state := range states {
+		allowed[state] = true
+	}
+	out := make([]*controlmodel.CommentExternalRef, 0)
+	for _, v := range r.s.commentExternalRefs {
+		if len(allowed) > 0 && !allowed[v.SyncState] {
+			continue
+		}
+		c := *v
+		out = append(out, &c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.Before(out[j].UpdatedAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 func (r *workSourceRepo) ListExternalLinks(_ context.Context, issueID uuid.UUID) ([]*controlmodel.ExternalLink, error) {
 	r.s.mu.RLock()

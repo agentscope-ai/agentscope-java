@@ -108,6 +108,16 @@ func ValidateContentPolicy(policy controlmodel.TeamPolicy, content string) error
 // repository records a state transition. A physical runtime/task finishing is
 // deliberately insufficient to close an Issue.
 func (s *Service) TransitionIssue(ctx context.Context, id uuid.UUID, expectedVersion int64, status controlmodel.IssueStatus, actor controlmodel.Actor, reason string) (*controlmodel.Issue, error) {
+	if _, err := s.ValidateIssueTransition(ctx, id, expectedVersion, status, actor); err != nil {
+		return nil, err
+	}
+	return s.Store.Collaboration().TransitionIssue(ctx, id, expectedVersion, status, actor, reason)
+}
+
+// ValidateIssueTransition performs acceptance and optimistic concurrency checks
+// without mutating the local projection. External Work Sources use it before
+// sending the authoritative command.
+func (s *Service) ValidateIssueTransition(ctx context.Context, id uuid.UUID, expectedVersion int64, status controlmodel.IssueStatus, actor controlmodel.Actor) (*controlmodel.Issue, error) {
 	issue, err := s.Store.Collaboration().GetIssue(ctx, id)
 	if err != nil {
 		return nil, err
@@ -117,7 +127,10 @@ func (s *Service) TransitionIssue(ctx context.Context, id uuid.UUID, expectedVer
 			return nil, err
 		}
 	}
-	return s.Store.Collaboration().TransitionIssue(ctx, id, expectedVersion, status, actor, reason)
+	if expectedVersion > 0 && issue.Version != expectedVersion || !controlmodel.CanTransitionIssue(issue.Status, status) {
+		return nil, store.ErrConflict
+	}
+	return issue, nil
 }
 
 func (s *Service) validateAcceptance(ctx context.Context, issue *controlmodel.Issue, actor controlmodel.Actor) error {

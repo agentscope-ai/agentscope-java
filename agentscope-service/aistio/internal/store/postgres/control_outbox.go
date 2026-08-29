@@ -184,3 +184,35 @@ func (r *outboxRepo) MarkFailed(ctx context.Context, id uuid.UUID, worker, lastE
 	}
 	return tx.Commit(ctx)
 }
+
+func (r *outboxRepo) ListDeadLetters(ctx context.Context, tenant, namespace string, limit int) ([]*controlmodel.OutboxEvent, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+outboxColumns+` FROM control_outbox
+		WHERE dead_lettered_at IS NOT NULL AND ($1='' OR tenant=$1) AND ($2='' OR namespace=$2)
+		ORDER BY dead_lettered_at DESC LIMIT $3`, tenant, namespace, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*controlmodel.OutboxEvent, 0)
+	for rows.Next() {
+		event, scanErr := scanOutboxEvent(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, event)
+	}
+	return out, rows.Err()
+}
+
+func (r *outboxRepo) ReplayDeadLetter(ctx context.Context, id uuid.UUID) (*controlmodel.OutboxEvent, error) {
+	event, err := scanOutboxEvent(r.pool.QueryRow(ctx, `UPDATE control_outbox SET
+		dead_lettered_at=NULL,claimed_by=NULL,claimed_until=NULL,last_error=NULL,attempts=0,available_at=now()
+		WHERE id=$1 AND dead_lettered_at IS NOT NULL AND delivered_at IS NULL RETURNING `+outboxColumns, id))
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, store.ErrConflict
+	}
+	return event, err
+}

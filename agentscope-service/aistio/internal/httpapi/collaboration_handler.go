@@ -258,6 +258,24 @@ func (s *Server) updateIssue(c *gin.Context) {
 	if req.ExpectedVersion <= 0 {
 		req.ExpectedVersion = current.Version
 	}
+	if current.Version != req.ExpectedVersion {
+		s.writeCollaborationError(c, store.ErrConflict)
+		return
+	}
+	if req.Title != nil || req.Description != nil {
+		command := map[string]any{}
+		if req.Title != nil {
+			command["title"] = current.Title
+		}
+		if req.Description != nil {
+			command["body"] = current.Description
+		}
+		payload, _ := json.Marshal(command)
+		if err := s.workSources.ApplyIssueCommand(c.Request.Context(), id, "update", payload); err != nil {
+			c.JSON(http.StatusBadGateway, ErrorResponse{Error: err.Error()})
+			return
+		}
+	}
 	updated, err := s.store.Collaboration().UpdateIssue(c.Request.Context(), current, req.ExpectedVersion, humanActor(c, s))
 	if err != nil {
 		s.writeCollaborationError(c, err)
@@ -309,8 +327,18 @@ func (s *Server) transitionIssue(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "status is required"})
 		return
 	}
+	actor := humanActor(c, s)
+	if _, err := s.collaborationService().ValidateIssueTransition(c.Request.Context(), id, req.ExpectedVersion, req.Status, actor); err != nil {
+		s.writeCollaborationError(c, err)
+		return
+	}
+	payload, _ := json.Marshal(gin.H{"status": req.Status, "reason": req.Reason, "expectedVersion": req.ExpectedVersion})
+	if err := s.workSources.ApplyIssueCommand(c.Request.Context(), id, "transition", payload); err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: err.Error()})
+		return
+	}
 	issue, err := s.collaborationService().TransitionIssue(c.Request.Context(), id,
-		req.ExpectedVersion, req.Status, humanActor(c, s), req.Reason)
+		req.ExpectedVersion, req.Status, actor, req.Reason)
 	if err != nil {
 		s.writeCollaborationError(c, err)
 		return
@@ -343,8 +371,18 @@ func (s *Server) reviewIssue(c *gin.Context, status controlmodel.IssueStatus, de
 	if strings.TrimSpace(req.Reason) == "" {
 		req.Reason = defaultReason
 	}
+	actor := humanActor(c, s)
+	if _, err := s.collaborationService().ValidateIssueTransition(c.Request.Context(), id, req.ExpectedVersion, status, actor); err != nil {
+		s.writeCollaborationError(c, err)
+		return
+	}
+	payload, _ := json.Marshal(gin.H{"status": status, "reason": req.Reason, "expectedVersion": req.ExpectedVersion})
+	if err := s.workSources.ApplyIssueCommand(c.Request.Context(), id, "transition", payload); err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: err.Error()})
+		return
+	}
 	issue, err := s.collaborationService().TransitionIssue(c.Request.Context(), id,
-		req.ExpectedVersion, status, humanActor(c, s), req.Reason)
+		req.ExpectedVersion, status, actor, req.Reason)
 	if err != nil {
 		s.writeCollaborationError(c, err)
 		return
@@ -566,6 +604,9 @@ func (s *Server) addIssueComment(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	if s.workSources != nil {
+		_ = s.workSources.QueueComment(c.Request.Context(), result.Comment)
+	}
 	c.JSON(http.StatusCreated, result)
 }
 
@@ -610,6 +651,21 @@ func (s *Server) listIssueComments(c *gin.Context) {
 		next = encodeCollaborationCursor(last.CreatedAt, last.ID)
 	}
 	response := gin.H{"items": items, "nextCursor": next}
+	if s.workSources != nil {
+		if issue, loadErr := s.store.Collaboration().GetIssue(c.Request.Context(), issueID); loadErr == nil {
+			if sourceID, parseErr := uuid.Parse(issue.SourceRef); parseErr == nil {
+				syncStates := make(map[string]*controlmodel.CommentExternalRef)
+				for _, comment := range items {
+					if ref, refErr := s.store.WorkSources().GetCommentExternalRef(c.Request.Context(), sourceID, comment.ID); refErr == nil {
+						syncStates[comment.ID.String()] = ref
+					}
+				}
+				if len(syncStates) > 0 {
+					response["externalSync"] = syncStates
+				}
+			}
+		}
+	}
 	if c.Query("summary") == "true" {
 		roots, unresolved, results := 0, 0, 0
 		for _, comment := range items {
@@ -1080,6 +1136,9 @@ func (s *Server) progressAgentTask(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	if s.workSources != nil {
+		_ = s.workSources.QueueComment(c.Request.Context(), result.Comment)
+	}
 	c.JSON(http.StatusCreated, result)
 }
 
@@ -1155,6 +1214,9 @@ func (s *Server) respondAgentTask(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	if s.workSources != nil {
+		_ = s.workSources.QueueComment(c.Request.Context(), result.Comment)
+	}
 	c.JSON(http.StatusCreated, result)
 }
 
@@ -1202,6 +1264,9 @@ func (s *Server) completeAgentTask(c *gin.Context) {
 		return
 	}
 	recordAgentTaskState(completed)
+	if s.workSources != nil && comment != nil {
+		_ = s.workSources.QueueComment(c.Request.Context(), comment)
+	}
 	selected := append(append([]uuid.UUID(nil), req.ProcessedInputIDs...), req.DeferredInputIDs...)
 	if current, loadErr := s.store.Collaboration().GetAgentTask(c.Request.Context(), completed.ID); loadErr == nil {
 		observeInputStates(current.Inputs, selected)

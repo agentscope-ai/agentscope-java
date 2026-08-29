@@ -23,7 +23,12 @@ type WorkSourceRepository interface {
 
 	PutIssueExternalRef(context.Context, *controlmodel.IssueExternalRef) (*controlmodel.IssueExternalRef, error)
 	GetIssueExternalRef(context.Context, uuid.UUID, string) (*controlmodel.IssueExternalRef, error)
+	GetIssueExternalRefByIssue(context.Context, uuid.UUID, uuid.UUID) (*controlmodel.IssueExternalRef, error)
+	ListIssueExternalRefs(context.Context, uuid.UUID, int) ([]*controlmodel.IssueExternalRef, error)
 	PutCommentExternalRef(context.Context, *controlmodel.CommentExternalRef) (*controlmodel.CommentExternalRef, error)
+	GetCommentExternalRef(context.Context, uuid.UUID, uuid.UUID) (*controlmodel.CommentExternalRef, error)
+	GetCommentExternalRefByExternalID(context.Context, uuid.UUID, string) (*controlmodel.CommentExternalRef, error)
+	ListCommentExternalRefs(context.Context, []controlmodel.CommentSyncState, int) ([]*controlmodel.CommentExternalRef, error)
 	ListExternalLinks(context.Context, uuid.UUID) ([]*controlmodel.ExternalLink, error)
 	PutExternalLink(context.Context, *controlmodel.ExternalLink) (*controlmodel.ExternalLink, error)
 }

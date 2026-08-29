@@ -89,3 +89,113 @@ func (s *Service) HandleEvent(ctx context.Context, source *controlmodel.WorkSour
 	}
 	return s.Store.WorkSources().CompleteWebhookDelivery(ctx, delivery.ID)
 }
+
+func (s *Service) sourceForIssue(ctx context.Context, issueID uuid.UUID) (*controlmodel.Issue, *controlmodel.WorkSource, error) {
+	issue, err := s.Store.Collaboration().GetIssue(ctx, issueID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if issue.SourceType == "" {
+		return issue, nil, nil
+	}
+	if _, ok := s.Adapters.Resolve(issue.SourceType); !ok {
+		return issue, nil, nil
+	}
+	sourceID, err := uuid.Parse(issue.SourceRef)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid Work Source reference: %w", err)
+	}
+	source, err := s.Store.WorkSources().GetWorkSource(ctx, sourceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !source.Enabled || source.Kind != issue.SourceType {
+		return nil, nil, fmt.Errorf("Work Source is disabled or mismatched")
+	}
+	return issue, source, nil
+}
+
+// ApplyIssueCommand changes an externally authoritative Issue before its local
+// projection is updated. A transport failure therefore leaves the projection
+// unchanged.
+func (s *Service) ApplyIssueCommand(ctx context.Context, issueID uuid.UUID, action string, payload json.RawMessage) error {
+	_, source, err := s.sourceForIssue(ctx, issueID)
+	if err != nil || source == nil {
+		return err
+	}
+	adapter, ok := s.Adapters.Resolve(source.Kind)
+	if !ok {
+		return fmt.Errorf("unsupported work source kind %q", source.Kind)
+	}
+	return adapter.ApplyIssueCommand(ctx, source, IssueCommand{IssueID: issueID, Action: action, Payload: payload})
+}
+
+// QueueComment records the durable pending_sync state after the local Comment
+// transaction commits. The periodic publisher owns retries and final IDs.
+func (s *Service) QueueComment(ctx context.Context, comment *controlmodel.Comment) error {
+	if comment == nil {
+		return nil
+	}
+	_, source, err := s.sourceForIssue(ctx, comment.IssueID)
+	if err != nil || source == nil {
+		return err
+	}
+	_, err = s.Store.WorkSources().PutCommentExternalRef(ctx, &controlmodel.CommentExternalRef{
+		WorkSourceID: source.ID,
+		CommentID:    comment.ID,
+		SyncState:    controlmodel.CommentPendingSync,
+	})
+	return err
+}
+
+// FlushPendingComments publishes a bounded page of pending/failed comments.
+// Failure state is durable and retried on a later pass.
+func (s *Service) FlushPendingComments(ctx context.Context, limit int) (int, error) {
+	refs, err := s.Store.WorkSources().ListCommentExternalRefs(ctx, []controlmodel.CommentSyncState{
+		controlmodel.CommentPendingSync, controlmodel.CommentSyncFailed,
+	}, limit)
+	if err != nil {
+		return 0, err
+	}
+	published := 0
+	for _, ref := range refs {
+		comment, loadErr := s.Store.Collaboration().GetComment(ctx, ref.CommentID)
+		if loadErr != nil {
+			ref.Attempts++
+			ref.SyncState, ref.LastError = controlmodel.CommentSyncFailed, loadErr.Error()
+			_, _ = s.Store.WorkSources().PutCommentExternalRef(ctx, ref)
+			continue
+		}
+		source, loadErr := s.Store.WorkSources().GetWorkSource(ctx, ref.WorkSourceID)
+		if loadErr != nil || !source.Enabled {
+			if loadErr == nil {
+				loadErr = fmt.Errorf("Work Source is disabled")
+			}
+			ref.Attempts++
+			ref.SyncState, ref.LastError = controlmodel.CommentSyncFailed, loadErr.Error()
+			_, _ = s.Store.WorkSources().PutCommentExternalRef(ctx, ref)
+			continue
+		}
+		adapter, ok := s.Adapters.Resolve(source.Kind)
+		if !ok {
+			loadErr = fmt.Errorf("unsupported work source kind %q", source.Kind)
+		} else {
+			var result *PublishedComment
+			result, loadErr = adapter.PublishComment(ctx, source, comment)
+			if loadErr == nil && result != nil {
+				ref.ExternalID = result.ExternalID
+			}
+		}
+		ref.Attempts++
+		if loadErr != nil {
+			ref.SyncState, ref.LastError = controlmodel.CommentSyncFailed, loadErr.Error()
+		} else {
+			ref.SyncState, ref.LastError = controlmodel.CommentSynced, ""
+			published++
+		}
+		if _, saveErr := s.Store.WorkSources().PutCommentExternalRef(ctx, ref); saveErr != nil && err == nil {
+			err = saveErr
+		}
+	}
+	return published, err
+}

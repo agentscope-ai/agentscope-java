@@ -5,6 +5,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -16,6 +17,7 @@ import (
 
 type githubWorkSourceConfig struct {
 	WebhookSecret string `json:"webhookSecret"`
+	Token         string `json:"token,omitempty"`
 }
 
 func (s *Server) createWorkSource(c *gin.Context) {
@@ -43,7 +45,14 @@ func (s *Server) createWorkSource(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"workSource": redactWorkSource(v)})
 }
 func (s *Server) listWorkSources(c *gin.Context) {
-	items, err := s.store.WorkSources().ListWorkSources(c.Request.Context(), c.Query("tenant"), c.Query("namespace"))
+	tenant, namespace := c.Query("tenant"), c.Query("namespace")
+	if tenant == "" {
+		tenant = "default"
+	}
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+	items, err := s.store.WorkSources().ListWorkSources(c.Request.Context(), tenant, namespace)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
@@ -93,7 +102,12 @@ func (s *Server) patchWorkSource(c *gin.Context) {
 		current.Name = *in.Name
 	}
 	if in.Configuration != nil {
-		current.Configuration = *in.Configuration
+		configuration, mergeErr := preserveRedactedWorkSourceSecrets(current.Configuration, *in.Configuration)
+		if mergeErr != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: mergeErr.Error()})
+			return
+		}
+		current.Configuration = configuration
 	}
 	if in.Enabled != nil {
 		current.Enabled = *in.Enabled
@@ -106,6 +120,24 @@ func (s *Server) patchWorkSource(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"workSource": redactWorkSource(v)})
 }
 
+func preserveRedactedWorkSourceSecrets(current, replacement json.RawMessage) (json.RawMessage, error) {
+	var oldConfig, nextConfig map[string]any
+	if err := json.Unmarshal(replacement, &nextConfig); err != nil {
+		return nil, errors.New("configuration must be a JSON object")
+	}
+	_ = json.Unmarshal(current, &oldConfig)
+	for _, key := range []string{"token", "webhookSecret"} {
+		if value, exists := nextConfig[key]; exists && value == "***" {
+			if original, ok := oldConfig[key]; ok {
+				nextConfig[key] = original
+			} else {
+				delete(nextConfig, key)
+			}
+		}
+	}
+	return json.Marshal(nextConfig)
+}
+
 func redactWorkSource(in *controlmodel.WorkSource) *controlmodel.WorkSource {
 	if in == nil {
 		return nil
@@ -116,9 +148,51 @@ func redactWorkSource(in *controlmodel.WorkSource) *controlmodel.WorkSource {
 		if _, ok := cfg["webhookSecret"]; ok {
 			cfg["webhookSecret"] = "***"
 		}
+		if _, ok := cfg["token"]; ok {
+			cfg["token"] = "***"
+		}
 		out.Configuration, _ = json.Marshal(cfg)
 	}
 	return &out
+}
+
+func (s *Server) flushWorkSourceCommentOutbox(c *gin.Context) {
+	if s.workSources == nil {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Work Source service is unavailable"})
+		return
+	}
+	published, err := s.workSources.FlushPendingComments(c.Request.Context(), 100)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"published": published})
+}
+
+func (s *Server) reconcileWorkSource(c *gin.Context) {
+	if s.workSources == nil {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Work Source service is unavailable"})
+		return
+	}
+	id, ok := parseUUIDParam(c, "workSourceId")
+	if !ok {
+		return
+	}
+	source, err := s.store.WorkSources().GetWorkSource(c.Request.Context(), id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	adapter, found := s.workSources.Adapters.Resolve(source.Kind)
+	if !found {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "unsupported Work Source kind"})
+		return
+	}
+	if err = adapter.Reconcile(c.Request.Context(), source); err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"reconciled": true})
 }
 
 func (s *Server) githubWorkSourceWebhook(c *gin.Context) {

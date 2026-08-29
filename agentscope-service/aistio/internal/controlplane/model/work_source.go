@@ -44,13 +44,14 @@ const (
 )
 
 type CommentExternalRef struct {
-	WorkSourceID uuid.UUID        `json:"workSourceId"`
-	CommentID    uuid.UUID        `json:"commentId"`
-	ExternalID   string           `json:"externalId,omitempty"`
-	SyncState    CommentSyncState `json:"syncState"`
-	LastError    string           `json:"lastError,omitempty"`
-	Attempts     int32            `json:"attempts"`
-	UpdatedAt    time.Time        `json:"updatedAt"`
+	WorkSourceID    uuid.UUID        `json:"workSourceId"`
+	CommentID       uuid.UUID        `json:"commentId"`
+	ExternalID      string           `json:"externalId,omitempty"`
+	ExternalVersion string           `json:"externalVersion,omitempty"`
+	SyncState       CommentSyncState `json:"syncState"`
+	LastError       string           `json:"lastError,omitempty"`
+	Attempts        int32            `json:"attempts"`
+	UpdatedAt       time.Time        `json:"updatedAt"`
 }
 
 type ExternalLink struct {

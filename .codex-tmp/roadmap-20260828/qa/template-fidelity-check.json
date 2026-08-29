@@ -1,0 +1,13 @@
+{
+  "status": "pass",
+  "checkedAt": "2026-08-28T06:34:58.157Z",
+  "workspace": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828",
+  "finalPptx": "/Users/ken/agentscope-2/agentscope-java/docs/AgentScope Java 2.0 Roadmap.pptx",
+  "starterPptx": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter.pptx",
+  "mapPath": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-frame-map.json",
+  "starterLayoutDir": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/template-starter-layout-2",
+  "finalLayoutDir": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/final-render-3",
+  "editDir": "/Users/ken/agentscope-2/agentscope-java/.codex-tmp/roadmap-20260828/edit-only",
+  "issueCount": 0,
+  "issues": []
+}

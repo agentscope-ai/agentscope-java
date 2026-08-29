@@ -4,20 +4,34 @@
  */
 
 import { FileClock, Gauge, KeyRound, Network, ShieldCheck, Users } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { listDeadLetters, replayDeadLetter } from '@/api/operations';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 import { Page, PageHeader } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const capabilities = [
   { icon: Users, title: 'Identity & access', description: 'Tenant and namespace-scoped console and machine identities.', state: 'available' },
-  { icon: ShieldCheck, title: 'Runtime policy', description: 'Provider, tool, filesystem, sandbox, and executable allowlists.', state: 'planned' },
-  { icon: KeyRound, title: 'Secret references', description: 'Task-scoped credentials without exposing plaintext in templates.', state: 'planned' },
-  { icon: Gauge, title: 'Quotas & budgets', description: 'Concurrent executions, Host capacity, token and cost limits.', state: 'planned' },
+  { icon: ShieldCheck, title: 'Runtime policy', description: 'Ordered Runtime Binding candidates with capability and security constraints.', state: 'available' },
+  { icon: KeyRound, title: 'Secret references', description: 'Hashed registration and Endpoint credentials plus task-scoped attempt tokens.', state: 'available' },
+  { icon: Gauge, title: 'Quotas & budgets', description: 'Host capacity, Endpoint rate limits, usage and budget foundations.', state: 'foundation' },
   { icon: FileClock, title: 'Audit trail', description: 'Task, approval, runtime command, and credential-use audit events.', state: 'foundation' },
   { icon: Network, title: 'Infrastructure integrations', description: 'Optional Kubernetes CRDs and future Launcher integrations.', state: 'optional' },
 ];
 
 export default function GovernancePage() {
+  const scope = useControlPlaneScope();
+  const queryClient = useQueryClient();
+  const deadLetters = useQuery({
+    queryKey: ['dead-letters', scope.tenant, scope.namespace],
+    queryFn: () => listDeadLetters(scope.tenant, scope.namespace),
+  });
+  const replay = useMutation({
+    mutationFn: replayDeadLetter,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['dead-letters'] }),
+  });
   return (
     <Page className="max-w-[1200px]">
       <PageHeader title="Policies & audit" description="Governance belongs to the control plane and remains available without Kubernetes. Infrastructure integrations are optional projections." />
@@ -29,6 +43,18 @@ export default function GovernancePage() {
           </Card>
         ))}
       </div>
+      <section className="grid gap-3">
+        <div><h2 className="text-lg font-semibold">Dead letters</h2><p className="text-sm text-muted-foreground">Durable control-plane events that exhausted delivery retries.</p></div>
+        <div className="divide-y overflow-hidden rounded-xl border bg-white">
+          {(deadLetters.data?.items ?? []).map(event => (
+            <div key={event.id} className="flex flex-wrap items-center gap-3 p-4 text-sm">
+              <div className="min-w-0 flex-1"><div className="font-medium">{event.eventType}</div><div className="truncate text-xs text-muted-foreground">{event.aggregateType}/{event.aggregateId} · attempts {event.attempts} · {event.lastError}</div></div>
+              <Button size="sm" variant="outline" disabled={replay.isPending} onClick={() => replay.mutate(event.id)}>Replay</Button>
+            </div>
+          ))}
+          {!deadLetters.isLoading && !(deadLetters.data?.items.length) && <p className="p-6 text-center text-sm text-muted-foreground">No dead letters in this scope.</p>}
+        </div>
+      </section>
       <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 text-sm text-indigo-900"><strong>Boundary:</strong> Runtime Host security governs task-scoped coding processes. Future user Agent containers are governed through WorkloadTemplate, AgentDeployment, and a separate Launcher—not through Runtime Host.</div>
     </Page>
   );

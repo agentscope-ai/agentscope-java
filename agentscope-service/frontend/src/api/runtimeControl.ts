@@ -121,6 +121,13 @@ export function getRuntimeHost(id: string) {
   return api.get<{ host: RuntimeHost }>(`/api/v1/runtime-hosts/${encodeURIComponent(id)}`);
 }
 
+export function setRuntimeHostDraining(id: string, draining: boolean) {
+  return api.post<{ host: RuntimeHost }>(
+    `/api/v1/runtime-hosts/${encodeURIComponent(id)}/${draining ? 'drain' : 'resume'}`,
+    {},
+  );
+}
+
 export function listRuntimeProfiles(tenant?: string, namespace?: string) {
   return api.get<{ items: RuntimeProfile[] }>(`/api/v1/runtime-profiles${scopeQuery(tenant, namespace)}`);
 }

@@ -23,6 +23,7 @@ import (
 type Service struct {
 	Store         store.Store
 	CancelBackend func(context.Context, *controlmodel.ExecutionAttempt) error
+	CommentSink   func(context.Context, *controlmodel.Comment) error
 }
 
 // DispatchHosted freezes a hosted-runtime binding on a queued AgentTask and
@@ -140,7 +141,7 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, leaseToken string,
 	if err != nil {
 		return nil, err
 	}
-	completed, _, err := (&collaboration.Service{Store: s.Store}).CompleteTask(ctx, task.ID,
+	completed, comment, err := (&collaboration.Service{Store: s.Store}).CompleteTask(ctx, task.ID,
 		store.TaskCompletion{ExpectedVersion: task.Version, AttemptID: execution.ID,
 			DispatchGeneration: execution.DispatchGeneration, LeaseToken: leaseToken,
 			FencingToken: fencingToken, Result: result, Checkpoint: checkpoint,
@@ -148,6 +149,9 @@ func (s *Service) Complete(ctx context.Context, id uuid.UUID, leaseToken string,
 		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef})
 	if err != nil {
 		return nil, err
+	}
+	if s.CommentSink != nil && comment != nil {
+		_ = s.CommentSink(ctx, comment)
 	}
 	execution, err = s.Store.ExecutionAttempts().Get(ctx, id)
 	if err != nil {

@@ -17,11 +17,13 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -107,6 +109,7 @@ type ServerOptions struct {
 	Features            features.Gates
 	ArtifactProvider    artifact.Provider
 	CollaborationEvents *realtime.Hub
+	GitHubTransport     worksource.GitHubTransport
 }
 
 // Server is the REST API server for the control plane.
@@ -137,6 +140,8 @@ type Server struct {
 	artifactProvider    artifact.Provider
 	collaborationEvents *realtime.Hub
 	workSources         *worksource.Service
+	endpointRateMu      sync.Mutex
+	endpointRates       map[uuid.UUID]*endpointRateWindow
 }
 
 // NewServer creates a new API server.
@@ -167,6 +172,7 @@ func NewServer(opts ServerOptions) *Server {
 		transcriptMessages:  opts.TranscriptMessages,
 		artifactProvider:    opts.ArtifactProvider,
 		collaborationEvents: opts.CollaborationEvents,
+		endpointRates:       make(map[uuid.UUID]*endpointRateWindow),
 		httpServer: &http.Server{
 			Addr:         opts.Addr,
 			Handler:      router,
@@ -187,7 +193,11 @@ func NewServer(opts ServerOptions) *Server {
 	}
 	if opts.Store != nil {
 		adapters := worksource.NewRegistry()
-		adapters.Register("github", &worksource.GitHubAdapter{Store: opts.Store})
+		githubTransport := opts.GitHubTransport
+		if githubTransport == nil {
+			githubTransport = &worksource.GitHubHTTPTransport{}
+		}
+		adapters.Register("github", &worksource.GitHubAdapter{Store: opts.Store, Transport: githubTransport})
 		s.workSources = &worksource.Service{Store: opts.Store, Adapters: adapters}
 		secret := []byte(opts.TaskTokenSecret)
 		if len(secret) < 32 {
@@ -199,6 +209,7 @@ func NewServer(opts ServerOptions) *Server {
 		}
 		s.taskTokens = taskauth.Manager{Secret: secret, TTL: time.Hour}
 		s.taskPlane = &taskplane.Service{Store: opts.Store}
+		s.taskPlane.CommentSink = s.workSources.QueueComment
 		var external runtimebinding.ExternalCommander
 		if commander, ok := opts.ASDPCommands.(runtimebinding.ExternalCommander); ok {
 			external = commander
@@ -246,6 +257,7 @@ func (s *Server) registerRoutes() {
 		s.router.POST("/api/v1/agent-registrations", s.registerExternalAgent)
 		s.router.POST("/api/v1/work-sources/:workSourceId/webhooks/github", s.githubWorkSourceWebhook)
 		s.router.POST("/invoke/v1/endpoints/:slug/conversations", s.invokeEndpointConversation)
+		s.router.GET("/invoke/v1/endpoints/:slug/conversations/:sessionId/events", s.getEndpointConversationEvents)
 		s.router.POST("/invoke/v1/endpoints/:slug/jobs", s.invokeEndpointJob)
 		s.router.GET("/invoke/v1/jobs/:issueId", s.getEndpointJob)
 		s.router.GET("/invoke/v1/jobs/:issueId/events", s.getEndpointJobEvents)
@@ -277,6 +289,8 @@ func (s *Server) registerRoutes() {
 			v1.POST("/work-sources", s.createWorkSource)
 			v1.GET("/work-sources/:workSourceId", s.getWorkSource)
 			v1.PATCH("/work-sources/:workSourceId", s.patchWorkSource)
+			v1.POST("/work-sources/:workSourceId/reconcile", s.reconcileWorkSource)
+			v1.POST("/work-sources/comment-outbox/flush", s.flushWorkSourceCommentOutbox)
 			v1.GET("/overview", s.fleetOverview)
 			v1.GET("/overview/timeseries", s.overviewTimeseries)
 			v1.GET("/metrics/tokens", s.queryTokenMetrics)
@@ -293,14 +307,23 @@ func (s *Server) registerRoutes() {
 			v1.PUT("/runtime-pools/:name", s.upsertRuntimePool)
 			v1.GET("/runtime-hosts", s.listRuntimeHosts)
 			v1.GET("/runtime-hosts/:hostId", s.getRuntimeHost)
+			v1.POST("/runtime-hosts/:hostId/drain", s.drainRuntimeHost)
+			v1.POST("/runtime-hosts/:hostId/resume", s.resumeRuntimeHost)
+			v1.POST("/runtime-bindings/:bindingId/disable", s.disableRuntimeBinding)
+			v1.POST("/runtime-bindings/:bindingId/enable", s.enableRuntimeBinding)
+			v1.GET("/dead-letters", s.listOutboxDeadLetters)
+			v1.POST("/dead-letters/:eventId/replay", s.replayOutboxDeadLetter)
 
 			agents := v1.Group("/agents")
 			agents.GET("", s.listCatalogAgents)
 			agents.POST("", s.createCatalogAgent)
+			agents.GET("/runtime-options", s.listAgentRuntimeOptions)
 			agents.GET("/:agentId", s.getCatalogAgent)
 			agents.PATCH("/:agentId", s.patchCatalogAgent)
 			agents.GET("/:agentId/definition", s.getManagedAgentDefinition)
+			agents.PATCH("/:agentId/definition", s.patchManagedAgentDefinition)
 			agents.GET("/:agentId/versions", s.listManagedAgentVersions)
+			agents.GET("/:agentId/versions/:version", s.getManagedAgentVersion)
 			agents.GET("/:agentId/bindings", s.listAgentBindings)
 			agents.POST("/:agentId/bindings", s.createAgentBinding)
 			agents.PATCH("/:agentId/bindings/:bindingId", s.patchAgentBinding)
@@ -502,6 +525,7 @@ func (s *Server) registerRoutes() {
 
 			teams := collab.Group("/teams")
 			teams.POST("", s.createCollaborationTeam)
+			teams.POST("/from-proposal/:proposalId", s.saveTeamProposalAsTeam)
 			teams.GET("", s.listCollaborationTeams)
 			teams.GET("/:teamId", s.getCollaborationTeam)
 			teams.PATCH("/:teamId", s.updateCollaborationTeam)
@@ -645,6 +669,29 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// validPlatformToken authenticates public Gateway requests against the same
+// configured identity sources as the management API, without running Gin
+// middleware or granting management-route authorization.
+func (s *Server) validPlatformToken(ctx context.Context, token string) bool {
+	if token == "" {
+		return false
+	}
+	if s.product != nil {
+		if _, err := s.product.VerifyToken(token); err == nil {
+			return true
+		}
+	}
+	if s.authToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.authToken)) == 1 {
+		return true
+	}
+	if s.kubeClient != nil {
+		result, err := s.kubeClient.AuthenticationV1().TokenReviews().Create(ctx,
+			&authv1.TokenReview{Spec: authv1.TokenReviewSpec{Token: token}}, metav1.CreateOptions{})
+		return err == nil && result.Status.Authenticated
+	}
+	return false
 }
 
 // requestBearerToken also accepts a WebSocket subprotocol credential because
@@ -795,6 +842,20 @@ func (s *Server) kubeAuth(c *gin.Context) {
 
 // Start begins serving HTTP (or HTTPS when TLS cert/key are configured).
 func (s *Server) Start(ctx context.Context) error {
+	if s.workSources != nil {
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				_, _ = s.workSources.FlushPendingComments(ctx, 100)
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

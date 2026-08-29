@@ -17,6 +17,7 @@ import (
 // ErrManagedDefinitionNotFound is returned when a v5 Catalog Agent has no
 // corresponding Managed definition in the cp store.
 var ErrManagedDefinitionNotFound = errors.New("managed definition not found")
+var ErrManagedDefinitionConflict = errors.New("managed definition version conflict")
 
 // ManagedDefinitionInput is the Managed-only configuration accepted by the
 // v5 Agent API. Logical identity and lifecycle remain owned by the rt Agent
@@ -129,4 +130,104 @@ func (s *Server) ManagedDefinitionVersions(ctx context.Context, ownerID, agentID
 		out = append(out, map[string]any{"version": version, "snapshot": snapshot, "createdAt": createdAt})
 	}
 	return out, rows.Err()
+}
+
+func (s *Server) ManagedDefinitionVersion(ctx context.Context, ownerID, agentID string, version int) (map[string]any, error) {
+	var raw string
+	var createdAt int64
+	err := s.db.Pool.QueryRow(ctx, `SELECT snapshot_json,created_at FROM agent_versions
+		WHERE owner_id=$1 AND agent_id=$2 AND version=$3`, ownerID, agentID, version).Scan(&raw, &createdAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrManagedDefinitionNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var snapshot any
+	if err = json.Unmarshal([]byte(raw), &snapshot); err != nil {
+		return nil, err
+	}
+	return map[string]any{"version": version, "snapshot": snapshot, "createdAt": createdAt}, nil
+}
+
+// UpdateManagedDefinition writes the next immutable cp definition version.
+func (s *Server) UpdateManagedDefinition(ctx context.Context, ownerID, agentID string, in ManagedDefinitionInput, expectedVersion int) (map[string]any, error) {
+	a, err := s.loadAgent(ctx, ownerID, agentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrManagedDefinitionNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if expectedVersion <= 0 || a.HeadVersion != expectedVersion {
+		return nil, ErrManagedDefinitionConflict
+	}
+	if in.Name == "" {
+		return nil, fmt.Errorf("definition name is required")
+	}
+	maxIters := in.MaxIters
+	if maxIters <= 0 {
+		maxIters = 20
+	}
+	workspacePath := in.WorkspacePath
+	if workspacePath == "" {
+		workspacePath = filepath.Join(s.cfg.WorkspaceRoot, ownerID, agentID)
+	}
+	tools, mcpServers, skills, system := in.Tools, in.MCPServers, in.Skills, in.System
+	if in.WorkspaceID != "" {
+		materialized, materializeErr := s.materializeFromWorkspace(ctx, ownerID, in.WorkspaceID)
+		if materializeErr != nil {
+			return nil, materializeErr
+		}
+		if tools == nil {
+			tools = materialized.Tools
+		}
+		if mcpServers == nil {
+			mcpServers = materialized.McpServers
+		}
+		if skills == nil {
+			skills = materialized.Skills
+		}
+		if system == "" {
+			system = materialized.System
+		}
+		if materialized.DiskPath != "" {
+			workspacePath = materialized.DiskPath
+		}
+	}
+	nextVersion, now := a.HeadVersion+1, nowMillis()
+	tx, err := s.db.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, `UPDATE agents SET name=$1,description=$2,sys_prompt=$3,model=$4,
+		max_iters=$5,tools_json=$6,mcp_servers_json=$7,skills_json=$8,multiagent_json=$9,
+		workspace_path=$10,workspace_id=$11,default_environment_id=$12,default_vault_ids_json=$13,
+		default_memory_store_ids_json=$14,head_version=$15,updated_at=$16
+		WHERE owner_id=$17 AND agent_id=$18 AND head_version=$19`, in.Name, nullStr(in.Description),
+		nullStr(system), nullStr(in.Model), maxIters, mustJSON(tools), mustJSON(mcpServers), mustJSON(skills),
+		mustJSON(in.Multiagent), nullStr(workspacePath), nullStr(in.WorkspaceID), nullStr(in.DefaultEnvironmentID),
+		mustJSON(in.DefaultVaultIDs), mustJSON(in.DefaultMemoryStoreIDs), nextVersion, now, ownerID, agentID, expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrManagedDefinitionConflict
+	}
+	snapshot := s.agentSnapshot(ownerID, agentID, in.Name, in.Description, system, in.Model, maxIters,
+		tools, mcpServers, skills, in.Multiagent, workspacePath, in.WorkspaceID,
+		in.DefaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, nextVersion, a.CreatedAt, now)
+	if _, err = tx.Exec(ctx, `INSERT INTO agent_versions(owner_id,agent_id,version,snapshot_json,created_at)
+		VALUES($1,$2,$3,$4,$5)`, ownerID, agentID, nextVersion, mustJSON(snapshot), now); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	updated, err := s.loadAgent(ctx, ownerID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any(updated.toJSON()), nil
 }

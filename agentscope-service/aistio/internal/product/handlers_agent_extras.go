@@ -38,8 +38,6 @@ func (s *Server) registerAgentExtras(r gin.IRouter) {
 	r.GET("/api/agents/:id/tools/catalog/mcp-servers", s.toolsMcpCatalog)
 	r.GET("/api/agents/:id/tools/active", s.toolsActive)
 
-	r.POST("/api/agents/:id/clone", s.cloneAgent)
-
 	r.GET("/api/agents/:id/shares", s.listShares)
 	r.POST("/api/agents/:id/shares", s.addShare)
 	r.DELETE("/api/agents/:id/shares/:granteeType/:granteeId", s.revokeShare)

@@ -1,0 +1,481 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/48tca4",
+    "id": "48tca4",
+    "slide": 20,
+    "layoutId": "/ppt/slideLayouts/slideLayout5.xml",
+    "layoutName": "内容页-浅色1",
+    "layoutType": "tx",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 2560,
+      "height": 1440
+    }
+  },
+  "theme": {
+    "colorSchemeName": "21_BasicWhite",
+    "colors": {
+      "accent1": "#00A2FF",
+      "accent2": "#16E7CF",
+      "accent3": "#61D836",
+      "accent4": "#FFD932",
+      "accent5": "#FF644E",
+      "accent6": "#FF42A1",
+      "dk1": "#5E5E5E",
+      "lt1": "#005E00",
+      "dk2": "#5E5E5E",
+      "lt2": "#D5D5D5",
+      "hlink": "#0000FF",
+      "folHlink": "#FF00FF"
+    },
+    "fontScheme": {
+      "name": "21_BasicWhite",
+      "majorFont": {
+        "latinTypeface": "FZLanTingHei-M-GBK",
+        "eastAsianTypeface": "FZLanTingHei-M-GBK",
+        "complexScriptTypeface": "FZLanTingHei-M-GBK"
+      },
+      "minorFont": {
+        "latinTypeface": "FZLanTingHei-M-GBK",
+        "eastAsianTypeface": "FZLanTingHei-M-GBK",
+        "complexScriptTypeface": "FZLanTingHei-M-GBK"
+      }
+    },
+    "typefaces": [
+      "Alibaba PuHuiTi R",
+      "FZLanTingHei-B-GBK",
+      "FZLanTingHei-M-GBK"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout5.xml",
+      "name": "内容页-浅色1",
+      "type": "tx",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "image",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout5.xml/59",
+          "id": "59",
+          "name": "2.png",
+          "bbox": [
+            -160,
+            -266.67,
+            3200,
+            1800
+          ],
+          "contentType": "image/png",
+          "asset": {
+            "assetId": "/ppt/media/image5.png",
+            "contentType": "image/png",
+            "byteLength": 365140
+          },
+          "fillImage": {
+            "assetId": "/ppt/media/image5.png",
+            "contentType": "image/png",
+            "byteLength": 365140
+          }
+        },
+        {
+          "order": 2,
+          "kind": "image",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout5.xml/60",
+          "id": "60",
+          "name": "image3.pdf",
+          "bbox": [
+            96,
+            79.67,
+            197.55,
+            43.12
+          ],
+          "contentType": "image/png",
+          "asset": {
+            "assetId": "/ppt/media/image2.png",
+            "contentType": "image/png",
+            "byteLength": 9140
+          },
+          "fillImage": {
+            "assetId": "/ppt/media/image2.png",
+            "contentType": "image/png",
+            "byteLength": 9140
+          }
+        },
+        {
+          "order": 3,
+          "kind": "shape",
+          "scope": "layout",
+          "aid": "template/layout//ppt/slideLayouts/slideLayout5.xml/58",
+          "id": "58",
+          "name": "幻灯片编号",
+          "bbox": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "geometry": "rect",
+          "text": "‹#›",
+          "textPreview": "‹#›",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "‹#›",
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "‹#›"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "type": "master",
+      "backgroundColor": "#FFFFFF",
+      "elements": [
+        {
+          "order": 1,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/4",
+          "id": "4",
+          "name": "幻灯片标题",
+          "bbox": [
+            126.67,
+            113.33,
+            1100,
+            150.67
+          ],
+          "geometry": "rect",
+          "text": "幻灯片标题",
+          "textPreview": "幻灯片标题",
+          "resolvedTextStyle": {
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 5.33,
+              "right": 5.33,
+              "bottom": 5.33,
+              "left": 5.33
+            }
+          },
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "幻灯片标题",
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "幻灯片标题"
+                }
+              ]
+            }
+          ],
+          "lineWidth": 1.33
+        },
+        {
+          "order": 2,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/5",
+          "id": "5",
+          "name": "正文级别 1…",
+          "bbox": [
+            126.67,
+            446.04,
+            1100,
+            866.77
+          ],
+          "geometry": "rect",
+          "text": "幻灯片项目符号文本\n\n\n\n",
+          "textPreview": "幻灯片项目符号文本 |  |  |  |",
+          "resolvedTextStyle": {
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 5.33,
+              "right": 5.33,
+              "bottom": 5.33,
+              "left": 5.33
+            }
+          },
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "幻灯片项目符号文本",
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "幻灯片项目符号文本"
+                }
+              ]
+            }
+          ],
+          "lineWidth": 1.33
+        },
+        {
+          "order": 3,
+          "kind": "shape",
+          "scope": "master",
+          "aid": "template/master//ppt/slideMasters/slideMaster1.xml/6",
+          "id": "6",
+          "name": "幻灯片编号",
+          "bbox": [
+            1258.72,
+            1373.99,
+            41.25,
+            38.67
+          ],
+          "geometry": "rect",
+          "text": "‹#›",
+          "textPreview": "‹#›",
+          "resolvedTextStyle": {
+            "anchor": 3,
+            "verticalAlignment": "bottom",
+            "wrap": "none",
+            "autoFit": "resizeShapeToFitText",
+            "insets": {
+              "top": 5.33,
+              "right": 5.33,
+              "bottom": 5.33,
+              "left": 5.33
+            }
+          },
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "‹#›",
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "‹#›"
+                }
+              ]
+            }
+          ],
+          "lineWidth": 1.33
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/fe58vapw",
+      "id": "5",
+      "name": "图片 1",
+      "bbox": [
+        144.63,
+        335.69,
+        2150.51,
+        1104.31
+      ],
+      "contentType": "image/png",
+      "asset": {
+        "assetId": "/ppt/media/image24.png",
+        "contentType": "image/png",
+        "byteLength": 173535
+      },
+      "fillImage": {
+        "assetId": "/ppt/media/image24.png",
+        "contentType": "image/png",
+        "byteLength": 173535
+      }
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8nahsra5",
+      "id": "3",
+      "name": "请填写大标题-方正兰亭粗黑60磅-限制一行",
+      "bbox": [
+        430.79,
+        27.89,
+        1698.43,
+        107.71
+      ],
+      "geometry": "rect",
+      "text": "AgentScope Service -企业级智能体编排控制面",
+      "textPreview": "AgentScope Service -企业级智能体编排控制面",
+      "resolvedFontSize": 80,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 80,
+        "typeface": "FZLanTingHei-B-GBK",
+        "color": "#0033CC",
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "none",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "AgentScope Service -企业级智能体编排控制面"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "AgentScope Service -企业级智能体编排控制面",
+          "runs": [
+            {
+              "index": 1,
+              "text": "AgentScope",
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 2,
+              "text": " Service -",
+              "typeface": "Alibaba PuHuiTi R"
+            },
+            {
+              "index": 3,
+              "text": "企业级智能体编排控制面",
+              "typeface": "Alibaba PuHuiTi R"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0,
+          "lineSpacingPercent": 100000
+        }
+      ],
+      "lineWidth": 1.33
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/zihgvm9o",
+      "id": "4",
+      "name": "文本框 3",
+      "bbox": [
+        144.63,
+        186.87,
+        2112.31,
+        146.48
+      ],
+      "geometry": "rect",
+      "text": "AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架（AgentScope、Langchain、ADK 等）、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。",
+      "textPreview": "AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架（AgentScope、Langchain、ADK 等）、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "vertical": 1,
+        "rotation": 0,
+        "fontSize": 24,
+        "typeface": "FZLanTingHei-M-GBK",
+        "color": "tx1",
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "textTransform": "none",
+        "wrap": "square",
+        "autoFit": "resizeShapeToFitText",
+        "insets": {
+          "top": 5.33,
+          "right": 5.33,
+          "bottom": 5.33,
+          "left": 5.33
+        },
+        "useParagraphSpacing": true
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架（AgentScope、"
+          },
+          {
+            "index": 2,
+            "text": "Langchain、ADK 等）、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架（AgentScope、Langchain、ADK 等）、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。",
+          "lineSpacingPercent": 150000,
+          "runs": [
+            {
+              "index": 1,
+              "text": "AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架",
+              "fontSize": 37.33
+            },
+            {
+              "index": 2,
+              "text": "（",
+              "fontSize": 37.33
+            },
+            {
+              "index": 3,
+              "text": "AgentScope",
+              "fontSize": 37.33
+            },
+            {
+              "index": 4,
+              "text": "、",
+              "fontSize": 37.33
+            },
+            {
+              "index": 5,
+              "text": "Langchain",
+              "fontSize": 37.33
+            },
+            {
+              "index": 6,
+              "text": "、",
+              "fontSize": 37.33
+            },
+            {
+              "index": 7,
+              "text": "ADK",
+              "fontSize": 37.33
+            },
+            {
+              "index": 8,
+              "text": " 等）",
+              "fontSize": 37.33
+            },
+            {
+              "index": 9,
+              "text": "、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。",
+              "fontSize": 37.33
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0,
+          "indent": 0
+        }
+      ],
+      "lineWidth": 1.33
+    }
+  ],
+  "composeRuns": []
+}

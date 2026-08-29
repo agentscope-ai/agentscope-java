@@ -158,8 +158,15 @@ func (s *Server) registerExternalAgent(c *gin.Context) {
 
 func (s *Server) listCatalogAgents(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
+	tenant, namespace := c.Query("tenant"), c.Query("namespace")
+	if tenant == "" {
+		tenant = "default"
+	}
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
 	agents, err := s.store.AgentCatalog().ListAgents(c.Request.Context(), store.AgentFilter{
-		Tenant: c.Query("tenant"), Namespace: c.Query("namespace"), Status: controlmodel.AgentStatus(c.Query("status")),
+		Tenant: tenant, Namespace: namespace, Status: controlmodel.AgentStatus(c.Query("status")),
 		IncludeArchived: c.Query("includeArchived") == "true", Limit: limit,
 	})
 	if err != nil {
@@ -167,6 +174,30 @@ func (s *Server) listCatalogAgents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": agents})
+}
+
+// listAgentRuntimeOptions exposes only the Hosted Agent binding choices in
+// Agent Center. It avoids granting Agent developers access to Operations
+// inventory APIs while still allowing them to create a valid Hosted Agent.
+func (s *Server) listAgentRuntimeOptions(c *gin.Context) {
+	tenant, namespace := c.Query("tenant"), c.Query("namespace")
+	if tenant == "" {
+		tenant = "default"
+	}
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+	profiles, err := s.store.RuntimeRegistry().ListRuntimeProfiles(c.Request.Context(), tenant, namespace)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	pools, err := s.store.RuntimeRegistry().ListRuntimePools(c.Request.Context(), tenant, namespace)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"profiles": profiles, "pools": pools})
 }
 
 type createCatalogAgentRequest struct {
@@ -446,6 +477,80 @@ func (s *Server) listManagedAgentVersions(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"agentId": agent.ID, "versions": versions})
+}
+
+func (s *Server) getManagedAgentVersion(c *gin.Context) {
+	if s.product == nil {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "managed control plane is unavailable"})
+		return
+	}
+	agentID, ok := parseUUIDParam(c, "agentId")
+	if !ok {
+		return
+	}
+	version, err := strconv.Atoi(c.Param("version"))
+	if err != nil || version <= 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "valid version is required"})
+		return
+	}
+	agent, err := s.store.AgentCatalog().GetAgent(c.Request.Context(), agentID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	entry, err := s.product.ManagedDefinitionVersion(c.Request.Context(), agent.OwnerRef, agent.ID.String(), version)
+	if err != nil {
+		if errors.Is(err, product.ErrManagedDefinitionNotFound) {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"agentId": agent.ID, "version": entry})
+}
+
+func (s *Server) patchManagedAgentDefinition(c *gin.Context) {
+	if s.product == nil {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "managed control plane is unavailable"})
+		return
+	}
+	agentID, ok := parseUUIDParam(c, "agentId")
+	if !ok {
+		return
+	}
+	agent, err := s.store.AgentCatalog().GetAgent(c.Request.Context(), agentID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	var req struct {
+		product.ManagedDefinitionInput
+		Version int `json:"version"`
+	}
+	if err = c.ShouldBindJSON(&req); err != nil || req.Version <= 0 || req.Name == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "name and valid version are required"})
+		return
+	}
+	definition, err := s.product.UpdateManagedDefinition(c.Request.Context(), agent.OwnerRef, agent.ID.String(), req.ManagedDefinitionInput, req.Version)
+	if err != nil {
+		if errors.Is(err, product.ErrManagedDefinitionConflict) {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
+		} else if errors.Is(err, product.ErrManagedDefinitionNotFound) {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		}
+		return
+	}
+	if agent.DisplayName != req.Name || agent.Description != req.Description {
+		agent.DisplayName, agent.Description = req.Name, req.Description
+		if agent, err = s.store.AgentCatalog().UpdateAgent(c.Request.Context(), agent, agent.Version); err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"agent": agent, "definition": definition})
 }
 
 func (s *Server) getCatalogAgent(c *gin.Context) {

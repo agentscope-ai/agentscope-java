@@ -160,8 +160,11 @@ def _wait_for(predicate, timeout=5.0, interval=0.05):
 def _make_bridge(fake_cp, claude, **kwargs):
     addr, _ = fake_cp[1], None
     kwargs.setdefault("control_plane", fake_cp[1])
-    kwargs.setdefault("agent_name", "test-agent")
-    kwargs.setdefault("instance_id", "inst-test")
+    kwargs.setdefault("agent_key", "test-agent")
+    kwargs.setdefault("agent_id", "00000000-0000-0000-0000-000000000001")
+    kwargs.setdefault("binding_id", "00000000-0000-0000-0000-000000000002")
+    kwargs.setdefault("instance_key", "inst-test")
+    kwargs.setdefault("generation", 1)
     kwargs.setdefault("contract_http_port", 0)
     return aistio.instrument(claude, **kwargs)
 
@@ -443,8 +446,15 @@ def test_event_buffer_bounded_drops_oldest(fake_cp, claude, fast_periods, monkey
 
 
 def test_grpc_send_queue_full_counts_dropped():
-    transport = GrpcTransport("127.0.0.1:1", agent_name="x")  # 未启动，队列只会堆积
-    for _ in range(GrpcTransport("127.0.0.1:1", agent_name="x")._send_q.maxsize):
+    params = dict(
+        agent_id="00000000-0000-0000-0000-000000000001",
+        agent_key="x",
+        binding_id="00000000-0000-0000-0000-000000000002",
+        instance_key="inst-test",
+        generation=1,
+    )
+    transport = GrpcTransport("127.0.0.1:1", **params)  # 未启动，队列只会堆积
+    for _ in range(GrpcTransport("127.0.0.1:1", **params)._send_q.maxsize):
         assert transport.report_sessions([]) is True
     assert transport.report_sessions([]) is False
     assert transport.dropped == 1
@@ -455,8 +465,11 @@ def test_bypass_failure_never_raises(fake_cp, claude, fast_periods):
     bridge = aistio.instrument(
         claude,
         control_plane="127.0.0.1:1",  # 无监听
-        agent_name="test-agent",
-        instance_id="inst-test",
+        agent_key="test-agent",
+        agent_id="00000000-0000-0000-0000-000000000001",
+        binding_id="00000000-0000-0000-0000-000000000002",
+        instance_key="inst-test",
+        generation=1,
         contract_http_port=0,
     )
     try:

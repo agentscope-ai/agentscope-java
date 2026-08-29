@@ -1,0 +1,9 @@
+Output slide 1 (mapped from source slide 20):
+- Rewrites inherited title and subtitle for the AgentScope Roadmap overview.
+- Deletes the duplicated inherited architecture image and inserts a three-track capability roadmap diagram in the exact same bounded frame.
+- Reason: source slide 20 already establishes the deck's preferred title + explanatory sentence + large architecture visual pattern.
+
+Output slide 2 (mapped from source slide 20):
+- Rewrites inherited title and subtitle for the unified production-loop explanation.
+- Deletes the duplicated inherited architecture image and inserts a lifecycle-and-ecosystem diagram in the exact same bounded frame.
+- Reason: a second slide reduces density and separates strategic direction from operating-model detail.

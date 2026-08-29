@@ -88,6 +88,75 @@ func (s *Server) getRuntimeHost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"host": host})
 }
 
+func (s *Server) drainRuntimeHost(c *gin.Context) {
+	s.setRuntimeHostStateFromOperations(c, controlmodel.RuntimeHostDraining)
+}
+func (s *Server) resumeRuntimeHost(c *gin.Context) {
+	s.setRuntimeHostStateFromOperations(c, controlmodel.RuntimeHostOnline)
+}
+
+func (s *Server) setRuntimeHostStateFromOperations(c *gin.Context, state string) {
+	id, ok := parseUUIDParam(c, "hostId")
+	if !ok {
+		return
+	}
+	host, err := s.store.RuntimeRegistry().GetRuntimeHost(c.Request.Context(), id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	host, err = s.store.RuntimeRegistry().SetRuntimeHostState(c.Request.Context(), id, host.LeaseGeneration, state)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"host": host})
+}
+
+func (s *Server) disableRuntimeBinding(c *gin.Context) { s.setRuntimeBindingEnabled(c, false) }
+func (s *Server) enableRuntimeBinding(c *gin.Context)  { s.setRuntimeBindingEnabled(c, true) }
+
+func (s *Server) setRuntimeBindingEnabled(c *gin.Context, enabled bool) {
+	id, ok := parseUUIDParam(c, "bindingId")
+	if !ok {
+		return
+	}
+	binding, err := s.store.AgentCatalog().GetBinding(c.Request.Context(), id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	binding.Enabled = enabled
+	binding, err = s.store.AgentCatalog().UpdateBinding(c.Request.Context(), binding, binding.Version)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"binding": binding})
+}
+
+func (s *Server) listOutboxDeadLetters(c *gin.Context) {
+	items, err := s.store.Outbox().ListDeadLetters(c.Request.Context(), c.Query("tenant"), c.Query("namespace"), queryInt(c, "limit", 100))
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (s *Server) replayOutboxDeadLetter(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "eventId")
+	if !ok {
+		return
+	}
+	event, err := s.store.Outbox().ReplayDeadLetter(c.Request.Context(), id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"event": event})
+}
+
 func (s *Server) heartbeatRuntimeHost(c *gin.Context) {
 	id, ok := parseUUIDParam(c, "hostId")
 	if !ok {

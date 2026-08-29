@@ -1,0 +1,19 @@
+{"kind":"deck","id":"pr/9yhran","name":"Deck"}
+{"kind":"layout","layoutId":"/ppt/slideMasters/slideMaster1.xml","name":"","type":"master","placeholders":[{"name":"title","type":"title","textPreview":"幻灯片标题"},{"name":"body","type":"body","textPreview":"幻灯片项目符号文本 |  |  |  |"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout1.xml","name":"封面","type":"tx","placeholders":[{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout2.xml","name":"目录","type":"tx","placeholders":[{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout3.xml","name":"章节页","type":"tx","placeholders":[{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout4.xml","name":"内容页-空白底","type":"tx","placeholders":[{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout5.xml","name":"内容页-浅色1","type":"tx","placeholders":[{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout6.xml","name":"内容页-浅色2","type":"tx","placeholders":[{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout7.xml","name":"封底","type":"tx","placeholders":[{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"slide","id":"sl/oy6eka","slide":1,"title":"AgentScope Service -企业级智能体编排控制面","textShapes":2}
+{"kind":"textbox","id":"sh/32l83mdk","slide":1,"name":"请填写大标题-方正兰亭粗黑60磅-限制一行","text":"AgentScope Service -企业级智能体编排控制面","textPreview":"AgentScope Service -企业级智能体编排控制面","textChars":31,"textLines":1,"bbox":[430.79,27.89,1698.43,107.71]}
+{"kind":"textbox","id":"sh/cre90buh","slide":1,"name":"文本框 3","text":"AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架（AgentScope、Langchain、ADK 等）、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。","textPreview":"AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架（AgentScope、Langchain、ADK 等）、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。","textChars":137,"textLines":1,"bbox":[144.63,186.87,2112.31,146.48]}
+{"kind":"image","id":"im/g7u9grm5","slide":1,"name":"图片 1","bbox":[144.63,335.69,2150.51,1104.31]}
+{"kind":"notes","id":"nt/oy6eka","slide":1,"text":""}
+{"kind":"slide","id":"sl/wx42w3","slide":2,"title":"AgentScope Service -企业级智能体编排控制面","textShapes":2}
+{"kind":"textbox","id":"sh/9wzytkba","slide":2,"name":"请填写大标题-方正兰亭粗黑60磅-限制一行","text":"AgentScope Service -企业级智能体编排控制面","textPreview":"AgentScope Service -企业级智能体编排控制面","textChars":31,"textLines":1,"bbox":[430.79,27.89,1698.43,107.71]}
+{"kind":"textbox","id":"sh/y5ofe5cn","slide":2,"name":"文本框 3","text":"AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架（AgentScope、Langchain、ADK 等）、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。","textPreview":"AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供一层统一控制面，让你把用不同框架（AgentScope、Langchain、ADK 等）、不同技术栈（Claude、OpenClaw、QwenPaw 等）搭建的智能体统一管控、协作起来。","textChars":137,"textLines":1,"bbox":[144.63,186.87,2112.31,146.48]}
+{"kind":"image","id":"im/m5gjypcz","slide":2,"name":"图片 1","bbox":[144.63,335.69,2150.51,1104.31]}
+{"kind":"notes","id":"nt/wx42w3","slide":2,"text":""}

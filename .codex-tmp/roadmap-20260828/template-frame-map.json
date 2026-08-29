@@ -1,0 +1,54 @@
+{
+  "outputSlides": [
+    {
+      "outputSlide": 1,
+      "sourceSlide": 20,
+      "narrativeRole": "roadmap thesis and capability map",
+      "reuseMode": "duplicate-slide",
+      "editTargets": [
+        {"action": "rewrite", "shapeId": "sh/rq50vmp8", "reason": "Roadmap overview title"},
+        {"action": "rewrite", "shapeId": "sh/4nu1krqh", "reason": "Roadmap overview thesis"},
+        {"action": "delete", "shapeId": "im/0n2xcry9", "reason": "Remove the duplicated source diagram image before inserting the roadmap visual"},
+        {"action": "add", "newPrimitiveAllowed": true, "zone": {"left": 144.63, "top": 335.69, "width": 2150.51, "height": 1104.31}, "mustNotOverlapInherited": true, "reason": "Insert the roadmap diagram in the exact inherited image frame after the source image is deleted"}
+      ]
+    },
+    {
+      "outputSlide": 2,
+      "sourceSlide": 20,
+      "narrativeRole": "unified Agent production lifecycle map",
+      "reuseMode": "duplicate-slide",
+      "editTargets": [
+        {"action": "rewrite", "shapeId": "sh/rq50vmp8", "reason": "Production-loop title"},
+        {"action": "rewrite", "shapeId": "sh/4nu1krqh", "reason": "Production-loop explanation"},
+        {"action": "delete", "shapeId": "im/0n2xcry9", "reason": "Remove the duplicated source diagram image before inserting the lifecycle visual"},
+        {"action": "add", "newPrimitiveAllowed": true, "zone": {"left": 144.63, "top": 335.69, "width": 2150.51, "height": 1104.31}, "mustNotOverlapInherited": true, "reason": "Insert the lifecycle diagram in the exact inherited image frame after the source image is deleted"}
+      ]
+    }
+  ],
+  "omittedSourceSlides": [
+    {"sourceSlide": 1, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 2, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 3, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 4, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 5, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 6, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 7, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 8, "reason": "Used as content reference, not output frame"},
+    {"sourceSlide": 9, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 10, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 11, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 12, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 13, "reason": "Used as content reference, not output frame"},
+    {"sourceSlide": 14, "reason": "Used as content reference, not output frame"},
+    {"sourceSlide": 15, "reason": "Used as content reference, not output frame"},
+    {"sourceSlide": 16, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 17, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 18, "reason": "Used as content reference, not output frame"},
+    {"sourceSlide": 19, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 21, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 22, "reason": "Used as content reference, not output frame"},
+    {"sourceSlide": 23, "reason": "Standalone Roadmap deliverable only"},
+    {"sourceSlide": 24, "reason": "Used as content reference, not output frame"},
+    {"sourceSlide": 25, "reason": "Standalone Roadmap deliverable only"}
+  ]
+}

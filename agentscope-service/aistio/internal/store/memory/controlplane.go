@@ -962,3 +962,36 @@ func (r *outboxRepo) MarkFailed(_ context.Context, id uuid.UUID, worker, lastErr
 	event.ClaimedUntil = nil
 	return nil
 }
+
+func (r *outboxRepo) ListDeadLetters(_ context.Context, tenant, namespace string, limit int) ([]*controlmodel.OutboxEvent, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	out := make([]*controlmodel.OutboxEvent, 0)
+	for _, event := range r.s.outboxEvents {
+		if event.DeadLetteredAt == nil || tenant != "" && event.Tenant != tenant || namespace != "" && event.Namespace != namespace {
+			continue
+		}
+		out = append(out, cloneOutboxEvent(event))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DeadLetteredAt.After(*out[j].DeadLetteredAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (r *outboxRepo) ReplayDeadLetter(_ context.Context, id uuid.UUID) (*controlmodel.OutboxEvent, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	event := r.s.outboxEvents[id]
+	if event == nil {
+		return nil, store.ErrNotFound
+	}
+	if event.DeadLetteredAt == nil || event.DeliveredAt != nil {
+		return nil, store.ErrConflict
+	}
+	event.DeadLetteredAt, event.ClaimedUntil = nil, nil
+	event.ClaimedBy, event.LastError, event.Attempts = "", "", 0
+	event.AvailableAt = time.Now().UTC()
+	return cloneOutboxEvent(event), nil
+}

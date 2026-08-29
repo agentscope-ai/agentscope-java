@@ -36,6 +36,7 @@ import { getRoles } from './api/auth';
 const LoginPage = React.lazy(() => import('./pages/LoginPage'));
 const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
 const AgentsHubPage = React.lazy(() => import('./pages/AgentsHubPage'));
+const AgentCatalogDetailPage = React.lazy(() => import('./features/build/agents/AgentCatalogDetailPage'));
 const AgentCreatePage = React.lazy(() => import('./pages/AgentCreatePage'));
 const WorkspacesHubPage = React.lazy(() => import('./pages/WorkspacesHubPage'));
 const WorkspaceDetailPage = React.lazy(() => import('./pages/WorkspaceDetailPage'));
@@ -171,8 +172,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
             <Route path="/agent-center" element={<WorkspaceAccess area="agent-center" />}>
               <Route index element={<Navigate to="agents" replace />} />
-              <Route path="agents" element={<OperateAgentsPage />} />
-              <Route path="agents/:name" element={<OperateAgentDetailRoute />} />
+              <Route path="agents" element={<AgentsHubPage />} />
+              <Route path="agents/new" element={<AgentCreatePage />} />
+              <Route path="agents/:agentId" element={<AgentCatalogDetailPage />} />
               <Route path="teams" element={<TeamsOverviewPage />} />
               <Route path="workflows" element={<DefinitionsPage />} />
               <Route path="workflows/:definitionId" element={<DefinitionsPage />} />

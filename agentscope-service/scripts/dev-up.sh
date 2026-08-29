@@ -57,6 +57,65 @@ jar_of() {
         ! -name "*sources*" ! -name "*javadoc*" | head -1
 }
 
+managed_plane_name() {
+    local pid="$1" command
+    command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    [ -n "$command" ] || return 1
+    case "$command" in
+        *"$ROOT/aistio/bin/aistiod"*) echo control ;;
+        *"$ROOT/service-dataplane/target/service-dataplane-"*.jar*) echo data ;;
+        *"$ROOT/service-scheduler/target/service-scheduler-"*.jar*) echo scheduler ;;
+        *"$ROOT/service-gateway/target/service-gateway-"*.jar*) echo gateway ;;
+        *) return 1 ;;
+    esac
+}
+
+describe_pid() {
+    local pid="$1" command
+    command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    [ -n "$command" ] || command="<process exited>"
+    echo "pid ${pid}: ${command}"
+}
+
+stop_managed_pid() {
+    local port="$1" pid="$2" plane
+    plane="$(managed_plane_name "$pid")" || return 1
+    echo "  * freeing :${port} from stale ${plane} plane (pid ${pid})"
+    kill "$pid" 2>/dev/null || true
+    for _ in $(seq 1 10); do
+        kill -0 "$pid" 2>/dev/null || return 0
+        sleep 1
+    done
+    kill -9 "$pid" 2>/dev/null || true
+}
+
+free_port() {
+    local port="$1" pids pid blocked=0
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    [ -n "$pids" ] || return 0
+    for pid in $pids; do
+        if managed_plane_name "$pid" >/dev/null; then
+            stop_managed_pid "$port" "$pid"
+        else
+            echo "  ERROR :${port} is already in use ($(describe_pid "$pid"))" >&2
+            blocked=1
+        fi
+    done
+    [ "$blocked" = "0" ]
+}
+
+ensure_service_ports_available() {
+    local blocked=0 port
+    for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$DATA_PORT" "$SCHED_PORT"; do
+        free_port "$port" || blocked=1
+    done
+    if [ "$blocked" != "0" ]; then
+        echo "Another application or Docker container owns an AgentScope Service port." >&2
+        echo "Stop that workload or override BUILDER_GATEWAY_PORT/CONTROL_PORT/DATA_PORT/SCHEDULER_PORT." >&2
+        return 1
+    fi
+}
+
 wait_health() {
     local name="$1" port="$2" timeout="${3:-90}" path="${4:-/actuator/health}" i
     for i in $(seq 1 "$timeout"); do
@@ -71,11 +130,18 @@ wait_health() {
 }
 
 start() {
-    local name="$1" pidfile="$2"; shift 2
+    local name="$1" pidfile="$2" pid plane; shift 2
     mkdir -p "$LOG_DIR" "$PID_DIR"
-    if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
-        echo "  * ${name} already running (pid $(cat "$pidfile"))"
-        return 0
+    if [ -f "$pidfile" ]; then
+        pid="$(cat "$pidfile")"
+        if kill -0 "$pid" 2>/dev/null; then
+            if plane="$(managed_plane_name "$pid")" && [ "$plane" = "$name" ]; then
+                echo "  * ${name} already running (pid ${pid})"
+                return 0
+            fi
+            echo "  * ignoring stale ${name} PID file ($(describe_pid "$pid"))" >&2
+        fi
+        rm -f "$pidfile"
     fi
     # Detach into a new session so planes survive after this script (and Cursor/CI
     # wrappers) exit. macOS has no setsid(1); python3 is available on the supported
@@ -96,6 +162,11 @@ PY
     echo $! >"$pidfile"
     echo "  * ${name} started (pid $!)"
 }
+
+# Check before expensive builds or database changes. On macOS, Docker Desktop
+# itself listens on ports published by containers, so arbitrary port-based kills
+# can terminate the entire Docker engine.
+ensure_service_ports_available
 
 # ---------------------------------------------------------------- build Java
 # Always install from the monorepo root (not agentscope-service/ alone):
@@ -174,23 +245,6 @@ fi
 
 # ---------------------------------------------------------------- planes
 mkdir -p "$LOG_DIR" "$PID_DIR"
-
-# Free ports held by orphaned planes from earlier runs (missing/stale pidfiles).
-free_port() {
-    local port="$1" pids
-    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
-    [ -n "$pids" ] || return 0
-    echo "  * freeing :${port} (pid ${pids})"
-    # shellcheck disable=SC2086
-    kill $pids 2>/dev/null || true
-    sleep 1
-    # shellcheck disable=SC2086
-    kill -9 $pids 2>/dev/null || true
-}
-free_port "$GATEWAY_PORT"
-free_port "$CONTROL_PORT"
-free_port "$DATA_PORT"
-free_port "$SCHED_PORT"
 
 echo "==> Starting planes (Postgres: ${DB_URL})"
 
