@@ -1692,6 +1692,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** The tool result message from the successful {@code generate_response} call. */
         Msg soResultMsg;
 
+        /** Placeholder sentence written to the tool_result of a returnDirect tool. */
+        private static final String RETURN_DIRECT_PLACEHOLDER =
+                "Tool call completed. The result has been presented to the user as the final output"
+                        + " of this turn.";
+
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
 
@@ -2785,8 +2790,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     return executeIteration(iter + 1);
                                 }
 
+                                boolean returnDirect =
+                                        pendingPairs.isEmpty()
+                                                && !successPairs.isEmpty()
+                                                && successPairs.stream()
+                                                        .allMatch(this::isReturnDirectToolCall);
+
                                 return Flux.fromIterable(successPairs)
-                                        .concatMap(this::notifyPostActingHook)
+                                        .concatMap(e -> notifyPostActingHook(e, returnDirect))
                                         .last()
                                         .flatMap(
                                                 event -> {
@@ -2796,6 +2807,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                         .withGenerateReason(
                                                                                 GenerateReason
                                                                                         .ACTING_STOP_REQUESTED));
+                                                    }
+
+                                                    if (returnDirect) {
+                                                        Msg result =
+                                                                buildReturnDirectResultMsg(
+                                                                        successPairs);
+                                                        state.contextMutable().add(result);
+                                                        logReturnDirect(successPairs);
+                                                        return Mono.just(result);
                                                     }
 
                                                     if (!pendingPairs.isEmpty()) {
@@ -3461,9 +3481,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Fire PostActingEvent for a single tool result, build message and add to context.
+         *
+         * <p>When {@code returnDirect} is {@code true} (the whole batch is being returned
+         * directly) and the hook did not stop, the tool result written to context is replaced
+         * with the placeholder sentence; the full result is kept on the hook event for
+         * auditing and later lifted into the closing assistant message.
          */
         private Mono<PostActingEvent> notifyPostActingHook(
-                Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
+                Map.Entry<ToolUseBlock, ToolResultBlock> entry, boolean returnDirect) {
             ToolUseBlock toolUse = entry.getKey();
             ToolResultBlock result = entry.getValue();
 
@@ -3491,8 +3516,82 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     e.stopAgent();
                                 }
                                 Msg resultMsg = e.getToolResultMsg();
+                                if (returnDirect && !e.isStopRequested()) {
+                                    resultMsg =
+                                            buildReturnDirectPlaceholderMsg(toolUse, updatedResult);
+                                    log.debug(
+                                            "returnDirect: replaced tool result with placeholder"
+                                                    + " for tool '{}'",
+                                            toolUse.getName());
+                                }
                                 state.contextMutable().add(resultMsg);
                             });
+        }
+
+        /**
+         * Whether a single tool result may participate in the returnDirect short-circuit: the tool
+         * declared {@code returnDirect = true} and its result actually executed successfully.
+         * DENIED / ERROR / INTERRUPTED results must never be presented as the final answer.
+         */
+        private boolean isReturnDirectToolCall(Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
+            AgentTool tool = toolkit.getTool(entry.getKey().getName());
+            if (tool == null || !tool.isReturnDirect()) {
+                return false;
+            }
+            return determineToolResultState(entry.getValue()) == ToolResultState.SUCCESS;
+        }
+
+        /** Builds the placeholder tool_result, replacing only the output while keeping id/name/state. */
+        private Msg buildReturnDirectPlaceholderMsg(ToolUseBlock toolUse, ToolResultBlock result) {
+            ToolResultBlock placeholder =
+                    ToolResultBlock.builder()
+                            .id(toolUse.getId())
+                            .name(toolUse.getName())
+                            .output(TextBlock.builder().text(RETURN_DIRECT_PLACEHOLDER).build())
+                            .state(result.getState())
+                            .build();
+            return ToolResultMessageBuilder.buildToolResultMsg(placeholder, toolUse, getName());
+        }
+
+        /**
+         * Logs the returnDirect short-circuit: {@code info} marks that the tool result(s) were
+         * returned directly as the final answer, {@code debug} adds the tool count and names.
+         */
+        private void logReturnDirect(List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs) {
+            List<String> names = pairs.stream().map(e -> e.getKey().getName()).toList();
+            log.info(
+                    "returnDirect: returning tool result(s) for {} directly as the final answer",
+                    String.join(", ", names));
+            log.debug("returnDirect: {} tool result(s) from tools {}", pairs.size(), names);
+        }
+
+        /**
+         * Synthesises the closing assistant message carrying the full tool result, mimicking the
+         * final answer the model would otherwise have produced.
+         *
+         * <p>For multiple tools the output blocks are concatenated in execution order (= {@code
+         * pairs} order = the model's tool_calls order) without inlining tool names or adding
+         * separator blocks; clients correlate blocks to tools via block order + the event stream's
+         * tool id/name. A tool with empty output contributes a {@code "(no output)"} text block so
+         * ordering never shifts and the closing message is never empty.
+         */
+        private Msg buildReturnDirectResultMsg(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs) {
+            List<ContentBlock> content = new ArrayList<>();
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : pairs) {
+                List<ContentBlock> output = pair.getValue().getOutput();
+                if (output.isEmpty()) {
+                    content.add(TextBlock.builder().text("(no output)").build());
+                } else {
+                    content.addAll(output);
+                }
+            }
+            return AssistantMessage.builder()
+                    .name(getName())
+                    .content(content)
+                    .metadata(Map.of(MessageMetadataKeys.TOOL_RETURN_DIRECT, true))
+                    .generateReason(GenerateReason.TOOL_RETURN_DIRECT)
+                    .build();
         }
 
         /**

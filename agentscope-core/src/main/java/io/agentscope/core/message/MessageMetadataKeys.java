@@ -133,4 +133,12 @@ public final class MessageMetadataKeys {
      * }</pre>
      */
     public static final String CACHE_CONTROL = "_cache_control";
+
+    /**
+     * Metadata key marking an assistant message synthesized by the {@code returnDirect}
+     * tool path (the tool result presented as the turn's final answer).
+     *
+     * <p><b>Type:</b> Boolean
+     */
+    public static final String TOOL_RETURN_DIRECT = "_tool_return_direct";
 }
