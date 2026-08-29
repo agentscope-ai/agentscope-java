@@ -207,10 +207,8 @@ public class AguiRequestProcessor {
                             } catch (Throwable error) {
                                 try {
                                     resumeCoordinator.finishRun(threadId, runId);
-                                } catch (Throwable cleanupError) {
-                                    if (cleanupError != error) {
-                                        error.addSuppressed(cleanupError);
-                                    }
+                                } catch (RuntimeException ignored) {
+                                    // Best-effort cleanup; preserve the original processing error.
                                 }
                                 return processorErrorEvents(input, error);
                             }

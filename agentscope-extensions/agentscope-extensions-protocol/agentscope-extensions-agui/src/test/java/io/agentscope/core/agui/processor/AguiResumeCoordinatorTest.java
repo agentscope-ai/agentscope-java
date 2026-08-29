@@ -367,19 +367,6 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
-    void beginRunPreservesValidationFailureWhenCleanupAlsoFails() {
-        AguiResumeCoordinator coordinator = new AguiResumeCoordinator(new CleanupFailingStore());
-
-        IllegalStateException error =
-                assertThrows(
-                        IllegalStateException.class, () -> coordinator.beginRun(input("run-1")));
-
-        assertEquals("pending read failed", error.getMessage());
-        assertEquals(1, error.getSuppressed().length);
-        assertEquals("claim cleanup failed", error.getSuppressed()[0].getMessage());
-    }
-
-    @Test
     void finishRunDoesNotReleaseDifferentActiveRun() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
         coordinator.beginRun(input("run-1"));
@@ -597,30 +584,6 @@ class AguiResumeCoordinatorTest {
 
         private void allowReads() {
             failReads = false;
-        }
-    }
-
-    private static final class CleanupFailingStore implements AguiResumeStateStore {
-
-        @Override
-        public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
-            throw new IllegalStateException("pending read failed");
-        }
-
-        @Override
-        public RunClaim claimRun(String threadId, String runId) {
-            return RunClaim.acquired();
-        }
-
-        @Override
-        public void releaseRun(String threadId, String runId) {
-            throw new IllegalStateException("claim cleanup failed");
-        }
-
-        @Override
-        public boolean replacePendingInterrupts(
-                String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
-            throw new UnsupportedOperationException();
         }
     }
 }

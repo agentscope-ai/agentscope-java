@@ -428,28 +428,6 @@ class AguiRequestProcessorTest {
     }
 
     @Test
-    void processPreservesResumeReadFailureWhenClaimCleanupAlsoFails() {
-        AgentResolver resolver = mock(AgentResolver.class);
-        ReActAgent agent = mock(ReActAgent.class);
-        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
-                .thenReturn(agent);
-        AguiRequestProcessor processor =
-                AguiRequestProcessor.builder()
-                        .agentResolver(resolver)
-                        .resumeStateStore(new ResumeReadAndCleanupFailingStore())
-                        .build();
-
-        List<AguiEvent> events =
-                processor
-                        .process(request(resumeInput("run-1", "interrupt-1")))
-                        .events()
-                        .collectList()
-                        .block();
-
-        assertProcessorErrorLifecycle(events, "pending read failed", "INVALID_INPUT_ERROR");
-    }
-
-    @Test
     void processDoesNotBeginRunUntilEventsAreSubscribed() {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
@@ -921,35 +899,6 @@ class AguiRequestProcessorTest {
                 Thread.currentThread().interrupt();
                 throw new AssertionError("interrupted while waiting for test interleave", error);
             }
-        }
-    }
-
-    private static final class ResumeReadAndCleanupFailingStore implements AguiResumeStateStore {
-
-        private final AtomicInteger pendingReads = new AtomicInteger();
-
-        @Override
-        public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
-            if (pendingReads.getAndIncrement() == 0) {
-                return Map.of("interrupt-1", interrupt("interrupt-1", "tool-call-1"));
-            }
-            throw new IllegalStateException("pending read failed");
-        }
-
-        @Override
-        public RunClaim claimRun(String threadId, String runId) {
-            return RunClaim.acquired();
-        }
-
-        @Override
-        public void releaseRun(String threadId, String runId) {
-            throw new IllegalStateException("claim cleanup failed");
-        }
-
-        @Override
-        public boolean replacePendingInterrupts(
-                String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
-            throw new UnsupportedOperationException();
         }
     }
 

@@ -133,7 +133,11 @@ final class AguiResumeCoordinator {
         try {
             resumeContract = validate(input);
         } catch (RuntimeException | Error failure) {
-            releaseClaimAfterFailure(input.getThreadId(), input.getRunId(), failure);
+            try {
+                stateStore.releaseRun(input.getThreadId(), input.getRunId());
+            } catch (RuntimeException | Error ignored) {
+                // Best-effort cleanup; preserve the original validation failure.
+            }
             throw failure;
         }
         if (resumeContract.isError()) {
@@ -255,16 +259,6 @@ final class AguiResumeCoordinator {
             return interrupt.toolCallId() != null && !interrupt.toolCallId().isBlank();
         }
         return false;
-    }
-
-    private void releaseClaimAfterFailure(String threadId, String runId, Throwable failure) {
-        try {
-            stateStore.releaseRun(threadId, runId);
-        } catch (RuntimeException | Error cleanupFailure) {
-            if (cleanupFailure != failure) {
-                failure.addSuppressed(cleanupFailure);
-            }
-        }
     }
 
     record ResumeContractResult(boolean error, String message) {
