@@ -566,6 +566,60 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testAgentExternalToolEmitsArgsWhenEmitToolCallArgsDisabled() {
+            // Agent-level schema-only tool registered in the toolkit (not in RunAgentInput.tools).
+            // External tools execute outside the framework, so args must reach the client even
+            // when emitToolCallArgs is disabled. The name-set heuristic would miss this.
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerAgentTool(schemaOnlyTool("agent_external"));
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.builder().emitToolCallArgs(false).build(),
+                            input(),
+                            new ToolCallStartEvent("reply-tool", "tool-1", "agent_external"),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", "{\"q\""),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "agent_external"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_ARGS,
+                            AguiEventType.TOOL_CALL_END),
+                    types(events));
+            AguiEvent.ToolCallArgs args =
+                    assertInstanceOf(AguiEvent.ToolCallArgs.class, events.get(1));
+            assertEquals("{\"q\"", args.delta());
+        }
+
+        @Test
+        void testAgentOnlyModeHidesArgsForFrontendRegisteredName() {
+            // "lookup" is registered in RunAgentInput.tools, but AGENT_ONLY skips injection, so
+            // the live toolkit never sees it. The authoritative toolkit predicate must return
+            // false and suppress args; the name-set heuristic would wrongly emit them.
+            Toolkit toolkit = new Toolkit();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.builder()
+                                    .emitToolCallArgs(false)
+                                    .toolMergeMode(ToolMergeMode.AGENT_ONLY)
+                                    .build(),
+                            inputWithTools(frontendTool("lookup")),
+                            new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", "{\"q\""),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "lookup"));
+
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_START, AguiEventType.TOOL_CALL_END),
+                    types(events));
+        }
+
+        @Test
         void testToolResultDeltasAreAggregatedIntoToolCallResult() {
             List<AguiEvent> events =
                     runReActEvents(
@@ -1997,6 +2051,18 @@ class AguiAgentAdapterV2Test {
     private static List<AguiEvent> runReActEvents(
             AguiAdapterConfig config, RunAgentInput input, AgentEvent... agentEvents) {
         ReActAgent agent = mock(ReActAgent.class);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.fromArray(agentEvents));
+        return new AguiAgentAdapter(agent, config).run(input).collectList().block();
+    }
+
+    private static List<AguiEvent> runReActEvents(
+            Toolkit toolkit,
+            AguiAdapterConfig config,
+            RunAgentInput input,
+            AgentEvent... agentEvents) {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agent.getToolkit()).thenReturn(toolkit);
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                 .thenReturn(Flux.fromArray(agentEvents));
         return new AguiAgentAdapter(agent, config).run(input).collectList().block();

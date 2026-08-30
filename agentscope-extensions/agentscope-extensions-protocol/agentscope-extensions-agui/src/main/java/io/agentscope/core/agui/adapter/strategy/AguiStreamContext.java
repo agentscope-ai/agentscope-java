@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,20 +63,41 @@ public class AguiStreamContext {
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
-    private final Set<String> frontTools;
+    private final Predicate<String> isExternalTool;
     private final Map<String, String> startedToolCallNames = new LinkedHashMap<>();
 
     public AguiStreamContext(String threadId, String runId, AguiAdapterConfig config) {
-        this(threadId, runId, config, null);
+        this(threadId, runId, config, null, null);
     }
 
     public AguiStreamContext(
             String threadId, String runId, AguiAdapterConfig config, RunAgentInput runInput) {
+        this(threadId, runId, config, runInput, null);
+    }
+
+    /**
+     * Stream conversion context.
+     *
+     * <p>The {@code isExternalTool} predicate tells whether a tool call resolves to an external
+     * tool (executed outside the framework, e.g. a frontend-provided or schema-only tool). When
+     * {@code emitToolCallArgs} is disabled, external tools still need {@code TOOL_CALL_ARGS} so
+     * the client can invoke them. Pass {@code null} to fall back to matching tool names from
+     * {@link RunAgentInput#getTools()} (used when no live toolkit is available, e.g. replay).
+     *
+     * @param isExternalTool predicate for external-tool resolution by tool name
+     */
+    public AguiStreamContext(
+            String threadId,
+            String runId,
+            AguiAdapterConfig config,
+            RunAgentInput runInput,
+            Predicate<String> isExternalTool) {
         this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
         this.runId = Objects.requireNonNull(runId, "runId cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.runInput = runInput;
-        this.frontTools = frontendToolNames(runInput);
+        this.isExternalTool =
+                isExternalTool != null ? isExternalTool : defaultExternalToolDetector(runInput);
     }
 
     public String getThreadId() {
@@ -346,17 +368,29 @@ public class AguiStreamContext {
     }
 
     /**
-     * Whether the started tool call is a frontend tool.
+     * Whether the started tool call resolves to an external tool.
      *
-     * <p>Streaming argument chunks often use a placeholder name such as {@code __fragment__}.
-     * Frontend-tool matching must therefore use the real name recorded on {@code ToolCallStart}.
+     * <p>External tools execute outside the framework (e.g. frontend-provided or schema-only
+     * tools) and need {@code TOOL_CALL_ARGS} delivered to the client even when
+     * {@code emitToolCallArgs} is disabled. Streaming argument chunks often use a placeholder
+     * name such as {@code __fragment__}, so the real name recorded on {@code ToolCallStart} is
+     * resolved by {@code toolCallId} rather than read from the delta.
      */
-    public boolean isFrontendToolCall(String toolCallId) {
+    public boolean isExternalToolCall(String toolCallId) {
         String toolCallName = startedToolCallNames.get(toolCallId);
-        return toolCallName != null && frontTools.contains(toolCallName);
+        return toolCallName != null && isExternalTool.test(toolCallName);
     }
 
-    private Set<String> frontendToolNames(RunAgentInput runInput) {
+    /**
+     * Fallback external-tool detector used when no live toolkit is available (e.g. event
+     * replay). Matches tool names registered in {@link RunAgentInput#getTools()}.
+     */
+    private static Predicate<String> defaultExternalToolDetector(RunAgentInput runInput) {
+        Set<String> names = frontendToolNames(runInput);
+        return names.isEmpty() ? name -> false : names::contains;
+    }
+
+    private static Set<String> frontendToolNames(RunAgentInput runInput) {
         if (runInput == null || runInput.getTools() == null || runInput.getTools().isEmpty()) {
             return Set.of();
         }
