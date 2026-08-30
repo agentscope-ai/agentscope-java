@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Toolkit;
 
 /**
@@ -74,7 +75,11 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * This method sets an interrupt flag that will be checked by the agent at appropriate
      * checkpoints during execution. The interruption is cooperative and may not take effect
      * immediately.
+     *
+     * @deprecated Interrupts only the default session and is ambiguous under concurrent calls; use a
+     *     session- or run-scoped interrupt on the concrete agent instead.
      */
+    @Deprecated
     void interrupt();
 
     /**
@@ -82,9 +87,44 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * This method sets an interrupt flag and associates a user message with the interruption.
      * The interruption is cooperative and may not take effect immediately.
      *
+     * @deprecated Interrupts only the default session and is ambiguous under concurrent calls; use a
+     *     session- or run-scoped interrupt on the concrete agent instead.
+     *
      * @param msg User message associated with the interruption
      */
+    @Deprecated
     void interrupt(Msg msg);
+
+    /**
+     * Interrupt the in-flight call identified by the given {@link RuntimeContext}.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     */
+    void interrupt(RuntimeContext ctx);
+
+    /**
+     * Interrupt the in-flight call identified by the given {@link RuntimeContext} with a user
+     * message.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     * @param msg User message associated with the interruption
+     */
+    void interrupt(RuntimeContext ctx, Msg msg);
+
+    /**
+     * Interrupt the in-flight call identified by its per-call {@code runId}; no-op when absent.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     */
+    void interrupt(String runId);
+
+    /**
+     * Interrupt the in-flight call identified by its per-call {@code runId} with a user message.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     * @param msg User message associated with the interruption
+     */
+    void interrupt(String runId, Msg msg);
 
     /**
      * Returns the agent's runtime {@link io.agentscope.core.state.AgentState}, or {@code null} if
@@ -93,8 +133,26 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * <p>This is the canonical access point used by tool methods declared with
      * {@code @Tool(stateInjected=true)}: the framework binds the live state to the
      * {@code AgentState} parameter at invocation time.
+     *
+     * @deprecated The no-arg form resolves to the default session and is ambiguous under concurrent
+     *     calls; resolve the per-call state from the active {@link RuntimeContext} instead.
      */
-    default io.agentscope.core.state.AgentState getAgentState() {
+    @Deprecated
+    default AgentState getAgentState() {
+        return null;
+    }
+
+    /**
+     * Returns the agent's {@link AgentState} for the session identified by the given {@link
+     * RuntimeContext}, or {@code null} when this agent does not maintain per-session state.
+     *
+     * <p>The base implementation returns {@code null}; agents that maintain per-session state
+     * override this to look up the identified session's slot.
+     *
+     * @param ctx the runtime context identifying the session
+     * @return the identified session's state, or {@code null}
+     */
+    default AgentState getAgentState(RuntimeContext ctx) {
         return null;
     }
 

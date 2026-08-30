@@ -926,6 +926,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      *
      * @param ctx the runtime context identifying the session to interrupt
      */
+    @Override
     public void interrupt(RuntimeContext ctx) {
         interrupt(ctx, null);
     }
@@ -937,6 +938,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param ctx the runtime context identifying the session to interrupt
      * @param msg optional user message to attach to the interrupt signal
      */
+    @Override
     public void interrupt(RuntimeContext ctx, Msg msg) {
         String uid = ctx != null ? ctx.getUserId() : null;
         String sid = ctx != null ? ctx.getSessionId() : null;
@@ -944,6 +946,34 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             sid = defaultSessionId;
         }
         getAgentState(uid, sid).interruptControl().trigger(InterruptSource.USER, msg);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by its per-call {@code runId}; no-op when absent.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     */
+    @Override
+    public void interrupt(String runId) {
+        RuntimeContext ctx = getRuntimeContext(runId);
+        if (ctx != null) {
+            interrupt(ctx);
+        }
+    }
+
+    /**
+     * Interrupts the in-flight call identified by its per-call {@code runId} with a user message.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    @Override
+    public void interrupt(String runId, Msg msg) {
+        RuntimeContext ctx = getRuntimeContext(runId);
+        if (ctx == null) {
+            return;
+        }
+        interrupt(ctx, msg);
     }
 
     /**
@@ -4099,6 +4129,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param ctx the runtime context (uses {@code getUserId()} and {@code getSessionId()})
      * @return the agent state for the identified session
      */
+    @Override
     public AgentState getAgentState(RuntimeContext ctx) {
         String uid = ctx != null ? ctx.getUserId() : null;
         String sid = ctx != null ? ctx.getSessionId() : null;

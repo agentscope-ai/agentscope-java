@@ -586,13 +586,35 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
-     * @deprecated Use {@link #getDelegate()}{@code .getAgentState(RuntimeContext)} or
-     *     {@code .getAgentState(String, String)} with explicit session identity.
+     * @deprecated Use {@link #getAgentState(RuntimeContext)} or {@link #getAgentState(String,
+     *     String)} with explicit session identity.
      */
     @Deprecated
     @Override
     public AgentState getAgentState() {
         return delegate.getAgentState();
+    }
+
+    /**
+     * Returns the {@link AgentState} for the session identified by the given {@link RuntimeContext}.
+     *
+     * @param ctx the runtime context identifying the session
+     * @return the agent state for the identified session
+     */
+    @Override
+    public AgentState getAgentState(RuntimeContext ctx) {
+        return delegate.getAgentState(ctx);
+    }
+
+    /**
+     * Returns the {@link AgentState} for the given {@code (userId, sessionId)} slot.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     * @return the agent state for the identified session
+     */
+    public AgentState getAgentState(String userId, String sessionId) {
+        return delegate.getAgentState(userId, sessionId);
     }
 
     @Override
@@ -610,14 +632,93 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getDescription();
     }
 
+    /**
+     * Interrupts the default session's in-flight call.
+     *
+     * @deprecated Use {@link #interrupt(RuntimeContext)} or {@link #interrupt(String, String)} to
+     *     target a specific session.
+     */
+    @Deprecated
     @Override
     public void interrupt() {
         delegate.interrupt();
     }
 
+    /**
+     * Interrupts the default session's in-flight call with a user message.
+     *
+     * @deprecated Use {@link #interrupt(RuntimeContext, Msg)} or {@link #interrupt(String, String,
+     *     Msg)} to target a specific session.
+     */
+    @Deprecated
     @Override
     public void interrupt(Msg msg) {
         delegate.interrupt(msg);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext}.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     */
+    @Override
+    public void interrupt(RuntimeContext ctx) {
+        delegate.interrupt(ctx);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext} with a user
+     * message.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    @Override
+    public void interrupt(RuntimeContext ctx, Msg msg) {
+        delegate.interrupt(ctx, msg);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by its per-call {@code runId}; no-op when absent.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     */
+    @Override
+    public void interrupt(String runId) {
+        delegate.interrupt(runId);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by its per-call {@code runId} with a user message.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    @Override
+    public void interrupt(String runId, Msg msg) {
+        delegate.interrupt(runId, msg);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     */
+    public void interrupt(String userId, String sessionId) {
+        delegate.interrupt(userId, sessionId);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with a user
+     * message.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    public void interrupt(String userId, String sessionId, Msg msg) {
+        delegate.interrupt(userId, sessionId, msg);
     }
 
     // -----------------------------------------------------------------

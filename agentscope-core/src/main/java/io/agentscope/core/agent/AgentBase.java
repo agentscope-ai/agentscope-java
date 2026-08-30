@@ -497,6 +497,22 @@ public abstract class AgentBase implements Agent {
     @Deprecated
     public void interrupt(InterruptSource source) {}
 
+    /** No-op default; subclasses that maintain per-session state override this. */
+    @Override
+    public void interrupt(RuntimeContext ctx) {}
+
+    /** No-op default; subclasses that maintain per-session state override this. */
+    @Override
+    public void interrupt(RuntimeContext ctx, Msg msg) {}
+
+    /** No-op default; subclasses that maintain per-session state override this. */
+    @Override
+    public void interrupt(String runId) {}
+
+    /** No-op default; subclasses that maintain per-session state override this. */
+    @Override
+    public void interrupt(String runId, Msg msg) {}
+
     /** @deprecated No longer needed; ReActAgent uses per-session InterruptControl. */
     @Deprecated
     protected Mono<Void> checkInterruptedAsync() {
@@ -590,14 +606,6 @@ public abstract class AgentBase implements Agent {
      * @return Recovery message to return to the user
      */
     protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
-
-    /**
-     * Returns the agent's mutable runtime state, or {@code null} if this agent type does not
-     * maintain an {@link AgentState}.
-     */
-    public AgentState getAgentState() {
-        return null;
-    }
 
     /**
      * Returns the single in-flight {@link RuntimeContext}. With concurrent calls on one instance
