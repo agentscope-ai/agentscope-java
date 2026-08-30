@@ -222,4 +222,25 @@ class OpenAIThoughtSignatureTest {
         assertEquals(1, details.size());
         assertEquals("thinking-detail", details.get(0).getData());
     }
+
+    @Test
+    @DisplayName("Should skip ThinkingBlock reasoning details that cannot be restored")
+    void testUnconvertibleThinkingDetailsSkipped() {
+        Map<String, Object> thinkingMetadata = new HashMap<>();
+        thinkingMetadata.put(
+                ThinkingBlock.METADATA_REASONING_DETAILS,
+                new ArrayList<>(List.of(Map.of("id", List.of("not-a-string")))));
+        ThinkingBlock thinking =
+                ThinkingBlock.builder().thinking("thinking...").metadata(thinkingMetadata).build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(thinking))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(roundTrip(msg), false);
+
+        assertNull(result.getReasoningDetails());
+    }
 }

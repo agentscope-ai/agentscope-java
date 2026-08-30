@@ -110,6 +110,14 @@ class GeminiThoughtSignaturePersistenceTest {
     }
 
     @Test
+    @DisplayName("Should ignore non-string signature values")
+    void testNonStringSignatureIgnored() {
+        Part part = firstPart(assistantMsg(toolUseWithSignature(42)));
+
+        assertFalse(part.thoughtSignature().isPresent());
+    }
+
+    @Test
     @DisplayName("Should ignore empty string signature")
     void testEmptySignatureIgnored() {
         Part part = firstPart(assistantMsg(toolUseWithSignature("")));

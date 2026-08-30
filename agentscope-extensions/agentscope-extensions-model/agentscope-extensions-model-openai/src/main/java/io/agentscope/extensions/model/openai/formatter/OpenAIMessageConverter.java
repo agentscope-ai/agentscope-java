@@ -373,7 +373,7 @@ public class OpenAIMessageConverter {
                             toSignatureString(
                                     toolUse.getMetadata()
                                             .get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
-                    if (candidate != null && !candidate.isEmpty()) {
+                    if (candidate != null) {
                         fallbackSignature = candidate;
                         break;
                     }
