@@ -138,6 +138,23 @@ class OpenAIThoughtSignatureTest {
     }
 
     @Test
+    @DisplayName("Should handle tool use without metadata")
+    void testToolUseWithoutMetadata() {
+        ToolUseBlock toolUse = ToolUseBlock.builder().id("call_1").name("search").build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolUse))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        assertNull(result.getToolCalls().get(0).getFunction().getThoughtSignature());
+        assertNull(result.getReasoningDetails());
+    }
+
+    @Test
     @DisplayName("Should convert byte[] thought signature to Base64 string")
     void testByteArraySignatureConverted() {
         Map<String, Object> metadata = new HashMap<>();

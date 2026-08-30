@@ -100,6 +100,16 @@ class GeminiThoughtSignaturePersistenceTest {
     }
 
     @Test
+    @DisplayName("Should handle tool use without metadata")
+    void testToolUseWithoutMetadata() {
+        ToolUseBlock toolUse = ToolUseBlock.builder().id("call_1").name("search").build();
+
+        Part part = firstPart(assistantMsg(toolUse));
+
+        assertFalse(part.thoughtSignature().isPresent());
+    }
+
+    @Test
     @DisplayName("Should ignore empty string signature")
     void testEmptySignatureIgnored() {
         Part part = firstPart(assistantMsg(toolUseWithSignature("")));
