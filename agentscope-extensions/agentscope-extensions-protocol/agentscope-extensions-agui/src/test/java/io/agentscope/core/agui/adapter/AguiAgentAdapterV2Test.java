@@ -662,19 +662,24 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testToolResultFallsBackToToolCallIdWhenReplyIdIsBlank() {
-            AguiEvent.ToolCallResult result =
-                    runReActEvents(
-                                    new ToolCallStartEvent("", "tool-blank-reply", "lookup"),
-                                    new ToolResultStartEvent("", "tool-blank-reply", "lookup"),
-                                    new ToolResultEndEvent("", "tool-blank-reply", "lookup", null))
-                            .stream()
-                            .filter(AguiEvent.ToolCallResult.class::isInstance)
-                            .map(AguiEvent.ToolCallResult.class::cast)
-                            .findFirst()
-                            .orElseThrow();
+        void testToolResultFallsBackToToolCallIdWhenReplyIdIsMissing() {
+            for (String replyId : new String[] {"", null}) {
+                AguiEvent.ToolCallResult result =
+                        runReActEvents(
+                                        new ToolCallStartEvent(
+                                                replyId, "tool-missing-reply", "lookup"),
+                                        new ToolResultStartEvent(
+                                                replyId, "tool-missing-reply", "lookup"),
+                                        new ToolResultEndEvent(
+                                                replyId, "tool-missing-reply", "lookup", null))
+                                .stream()
+                                .filter(AguiEvent.ToolCallResult.class::isInstance)
+                                .map(AguiEvent.ToolCallResult.class::cast)
+                                .findFirst()
+                                .orElseThrow();
 
-            assertEquals("tool-blank-reply", result.messageId());
+                assertEquals("tool-missing-reply", result.messageId());
+            }
         }
 
         @Test
