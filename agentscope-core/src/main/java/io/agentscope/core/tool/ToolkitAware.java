@@ -18,22 +18,23 @@ package io.agentscope.core.tool;
 /**
  * Implemented by middleware (or other components) that hold a reference to a {@link Toolkit}.
  *
- * <p>During {@code ReActAgent.Builder.build()}, the builder deep-copies the toolkit to isolate
- * agent state. Any externally-constructed component that was handed the original toolkit will
- * hold a stale reference after the copy. The builder detects components that implement this
- * interface and calls {@link #rebindToolkit(Toolkit)} with the deep-copied instance, so they
- * transparently switch to the correct toolkit without requiring a factory method on the builder.
+ * <p>During {@code ReActAgent.Builder.build()}, the builder resolves the final toolkit to use (a
+ * shared, stateless toolkit — tools are no longer deep-copied per agent). Any externally-constructed
+ * component that was handed a different toolkit (e.g. the builder's default, before a subsequent
+ * {@code .toolkit(...)} call) would otherwise hold a stale reference. The builder detects
+ * components that implement this interface and calls {@link #rebindToolkit(Toolkit)} with the actual
+ * toolkit, so they transparently switch without requiring a factory method on the builder.
  */
 public interface ToolkitAware {
 
     /**
      * Replace this component's toolkit reference with the given instance.
      *
-     * <p>Called by the agent builder after deep-copying the toolkit. Implementations should
-     * update their internal toolkit reference and, if necessary, re-register any tools they
-     * had previously registered on the old toolkit.
+     * <p>Called by the agent builder during {@code build()}. Implementations should update their
+     * internal toolkit reference and, if necessary, re-register any tools they had previously
+     * registered on the old toolkit.
      *
-     * @param toolkit the deep-copied toolkit that the agent will actually use; never {@code null}
+     * @param toolkit the toolkit the agent will actually use; never {@code null}
      */
     void rebindToolkit(Toolkit toolkit);
 }

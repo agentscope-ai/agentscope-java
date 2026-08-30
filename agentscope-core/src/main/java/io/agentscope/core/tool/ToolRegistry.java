@@ -140,7 +140,11 @@ class ToolRegistry {
     }
 
     /**
-     * Copy all tools from this registry to another registry.
+     * Copy all tools (and their registration metadata) from this registry to another registry.
+     *
+     * <p>Tools are shared by reference (they are stateless and thread-safe); only the registry
+     * entries (including {@link RegisteredToolFunction} metadata) are copied, so the target is an
+     * isolated registry for build-time agent isolation.
      *
      * @param target The target registry to copy tools to
      */

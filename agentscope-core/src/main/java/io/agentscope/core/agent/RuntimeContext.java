@@ -18,7 +18,7 @@ package io.agentscope.core.agent;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
-import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolRequestConfig;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -58,11 +58,11 @@ public class RuntimeContext {
     private final ToolExecutionContext toolExecutionContext;
 
     /**
-     * Per-call toolkit override. When non-null, the agent's execution engine uses this toolkit for
-     * the duration of the call instead of the agent's shared {@code toolkit} field. {@code null}
-     * means fall back to the shared field.
+     * Per-call tool request config (immutable). Carries the per-call tool difference — externally
+     * injected (schema-only) tools + merge mode — composed with the agent's shared toolkit to
+     * produce the tool surface for one call. {@code null} means use the shared toolkit as-is.
      */
-    private Toolkit toolkit;
+    private ToolRequestConfig toolRequestConfig;
 
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
@@ -71,7 +71,7 @@ public class RuntimeContext {
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
         this.agentState = builder.agentState;
-        this.toolkit = builder.toolkit;
+        this.toolRequestConfig = builder.toolRequestConfig;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
@@ -152,20 +152,20 @@ public class RuntimeContext {
     }
 
     /**
-     * Returns the per-call toolkit override, or {@code null} when none was provided (the execution
-     * engine then falls back to the agent's shared toolkit field).
+     * Returns the per-call tool request config, or {@code null} when none was provided (the
+     * execution engine then uses the agent's shared toolkit as-is).
      */
-    public Toolkit getToolkit() {
-        return toolkit;
+    public ToolRequestConfig getToolRequestConfig() {
+        return toolRequestConfig;
     }
 
     /**
-     * Installs the per-call toolkit override. Intended for callers that need to vary the toolkit
-     * per call without mutating the agent's shared field (concurrency-safe). Set to {@code null} to
-     * fall back to the shared field.
+     * Installs the per-call tool request config. Intended for callers that need to vary the tool
+     * surface per call without mutating the agent's shared toolkit (concurrency-safe). Set to
+     * {@code null} to use the shared toolkit as-is.
      */
-    public void setToolkit(Toolkit toolkit) {
-        this.toolkit = toolkit;
+    public void setToolRequestConfig(ToolRequestConfig toolRequestConfig) {
+        this.toolRequestConfig = toolRequestConfig;
     }
 
     @SuppressWarnings("unchecked")
@@ -355,7 +355,7 @@ public class RuntimeContext {
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
         private AgentState agentState;
-        private Toolkit toolkit;
+        private ToolRequestConfig toolRequestConfig;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -411,7 +411,7 @@ public class RuntimeContext {
             this.userId = source.userId;
             this.agentState = source.agentState;
             this.toolExecutionContext = source.toolExecutionContext;
-            this.toolkit = source.toolkit;
+            this.toolRequestConfig = source.toolRequestConfig;
             if (!source.stringAttributes.isEmpty()) {
                 this.stringExtras = new ConcurrentHashMap<>(source.stringAttributes);
             }
@@ -435,12 +435,12 @@ public class RuntimeContext {
         }
 
         /**
-         * Installs a per-call toolkit override. When set, the agent's execution engine uses this
-         * toolkit for the duration of the call instead of the agent's shared {@code toolkit} field
-         * (concurrency-safe). {@code null} (the default) means fall back to the shared field.
+         * Installs a per-call tool request config. When set, the agent's execution engine composes
+         * this immutable tool difference with the shared toolkit for the duration of the call
+         * (concurrency-safe). {@code null} (the default) means use the shared toolkit as-is.
          */
-        public Builder toolkit(Toolkit toolkit) {
-            this.toolkit = toolkit;
+        public Builder toolRequestConfig(ToolRequestConfig toolRequestConfig) {
+            this.toolRequestConfig = toolRequestConfig;
             return this;
         }
 

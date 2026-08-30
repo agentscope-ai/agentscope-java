@@ -66,14 +66,6 @@ class ReActAgentRuntimeContextTest {
         }
     }
 
-    /** Tool that only exists on the per-call toolkit, not on the shared one. */
-    private static class PerCallOnlyTool {
-        @Tool(description = "Probe that only exists on the per-call toolkit")
-        public String per_call_probe(@ToolParam(name = "q", description = "q") String q) {
-            return "per-call:" + q;
-        }
-    }
-
     private static class CtxTools {
         @Tool(description = "Read RuntimeContext in a tool call")
         public String ctx_probe(
@@ -154,63 +146,6 @@ class ReActAgentRuntimeContextTest {
                         .getContext()
                         .stream()
                         .anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class)));
-    }
-
-    @Test
-    @DisplayName("RuntimeContext.toolkit overrides the agent's shared toolkit for the call")
-    void perCallToolkitOverrideUsedByCallExecution() {
-        // Shared toolkit: only ctx_probe. Per-call toolkit: ctx_probe + per_call_probe.
-        Toolkit shared = new Toolkit();
-        shared.registerTool(new CtxTools());
-        Toolkit perCall = shared.copy();
-        perCall.registerTool(new PerCallOnlyTool());
-
-        final int[] modelRound = {0};
-        MockModel model =
-                new MockModel(
-                        messages -> {
-                            if (modelRound[0]++ == 0) {
-                                return List.of(
-                                        createToolResponse(
-                                                "per_call_probe", "pc1", Map.of("q", "hello")));
-                            }
-                            return List.of(
-                                    ChatResponse.builder()
-                                            .content(
-                                                    List.of(
-                                                            TextBlock.builder()
-                                                                    .text("done")
-                                                                    .build()))
-                                            .usage(new ChatUsage(1, 1, 0))
-                                            .build());
-                        });
-
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name(TestConstants.TEST_REACT_AGENT_NAME)
-                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
-                        .model(model)
-                        .toolkit(shared)
-                        .build();
-
-        // Sanity: shared toolkit does NOT have the per-call-only tool.
-        assertNull(shared.getTool("per_call_probe"));
-        assertNotNull(perCall.getTool("per_call_probe"));
-
-        RuntimeContext rc =
-                RuntimeContext.builder().userId("per-call-uid").toolkit(perCall).build();
-        Msg user = TestUtils.createUserMessage("User", "probe");
-        Msg out =
-                agent.call(List.of(user), rc)
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
-
-        assertNotNull(out);
-        // If activeToolkit fell back to the shared field, the tool lookup would fail and the
-        // result text would be an error message rather than "per-call:hello".
-        String toolOut = lastToolText(agent, "per-call-uid", null);
-        assertTrue(
-                toolOut.contains("per-call:hello"),
-                "per-call toolkit should have been used, got: " + toolOut);
     }
 
     @Test

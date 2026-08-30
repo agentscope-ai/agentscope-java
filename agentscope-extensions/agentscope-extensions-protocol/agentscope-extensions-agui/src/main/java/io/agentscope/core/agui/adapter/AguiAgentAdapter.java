@@ -37,6 +37,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.ToolMergeMode;
+import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -283,10 +284,10 @@ public class AguiAgentAdapter {
      * Build the runtime context used for the agent invocation.
      *
      * <p>The caller-provided context is copied first, then AG-UI protocol metadata is applied so
-     * that required request values and session isolation are always preserved. A per-call toolkit
-     * is built from a {@linkplain Toolkit#copy() deep copy} of the agent's shared toolkit and
-     * carried via {@link RuntimeContext#getToolkit()} so the shared field is never mutated and
-     * concurrent runs on the same agent are isolated.
+     * that required request values and session isolation are always preserved. A per-call tool
+     * request config is built from the frontend tools and carried via {@link
+     * RuntimeContext#getToolRequestConfig()} so the shared toolkit is never mutated and concurrent
+     * runs on the same agent are isolated.
      *
      * @param input The AG-UI run input
      * @param runtimeContext Optional caller-provided runtime context
@@ -294,10 +295,10 @@ public class AguiAgentAdapter {
      */
     protected RuntimeContext buildRuntimeContext(
             RunAgentInput input, RuntimeContext runtimeContext) {
-        Toolkit perCallToolkit = buildPerCallToolkit(input);
+        ToolRequestConfig perCallRequestConfig = buildToolRequestConfig(input);
         return RuntimeContext.builder(runtimeContext)
                 .sessionId(input.getThreadId())
-                .toolkit(perCallToolkit)
+                .toolRequestConfig(perCallRequestConfig)
                 .put(RunAgentInput.class, input)
                 .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
                 .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
@@ -330,18 +331,19 @@ public class AguiAgentAdapter {
     }
 
     /**
-     * Builds a per-call toolkit based on the frontend tools carried by {@code input}.
+     * Builds a per-call {@link ToolRequestConfig} from the frontend tools carried by {@code input}.
      *
-     * <p>Operates on a {@linkplain Toolkit#copy() deep copy} of the agent's shared toolkit, so the
-     * shared field is never mutated and concurrent runs on the same agent are isolated. The
-     * resulting toolkit is carried via {@link RuntimeContext#getToolkit()}.
+     * <p>Produces an immutable tool difference (external {@link SchemaOnlyTool}s + merge mode)
+     * rather than copying or mutating the agent's shared toolkit. The resulting config is carried
+     * via {@link RuntimeContext#getToolRequestConfig()}; the shared toolkit is composed with it on
+     * demand by the execution engine.
      *
-     * @return a per-call toolkit, or {@code null} when no override is needed (the execution engine
-     *     then falls back to the agent's shared toolkit)
+     * @return the per-call request config, or {@link ToolRequestConfig#NONE} when no override is
+     *     needed (the engine uses the shared toolkit as-is)
      */
-    private Toolkit buildPerCallToolkit(RunAgentInput input) {
+    private ToolRequestConfig buildToolRequestConfig(RunAgentInput input) {
         if (!input.hasTools()) {
-            return null;
+            return ToolRequestConfig.NONE;
         }
 
         ToolMergeMode mergeMode =
@@ -349,28 +351,22 @@ public class AguiAgentAdapter {
                         ? config.getToolMergeMode()
                         : ToolMergeMode.MERGE_EXTERNAL_PRIORITY;
         if (mergeMode == ToolMergeMode.AGENT_ONLY) {
-            return null;
+            return ToolRequestConfig.NONE;
         }
 
         Toolkit source = agent.getToolkit();
         if (source == null) {
-            return null;
+            return ToolRequestConfig.NONE;
         }
 
-        // Deep copy: mutate only the copy, never the shared toolkit.
-        Toolkit perCallToolkit = source.copy();
-
-        if (mergeMode == ToolMergeMode.EXTERNAL_ONLY) {
-            for (String toolName : perCallToolkit.getToolNames()) {
-                perCallToolkit.removeTool(toolName);
-            }
-        }
-
+        // External tools are schema-only by definition: no groupManager/registry back-reference,
+        // no state, safe to construct per-call and carry in an immutable request config.
+        LinkedHashMap<String, SchemaOnlyTool> external = new LinkedHashMap<>();
         for (ToolSchema schema : toolConverter.toToolSchemaList(input.getTools())) {
-            perCallToolkit.registerAgentTool(new SchemaOnlyTool(schema));
+            external.put(schema.getName(), new SchemaOnlyTool(schema));
         }
 
-        return perCallToolkit;
+        return new ToolRequestConfig(external, mergeMode);
     }
 
     private Flux<AguiEvent> errorEvents(
