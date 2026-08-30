@@ -198,7 +198,8 @@ public class AguiAgentAdapter {
 
         if (agent instanceof ReActAgent reAct) {
             AguiStreamContext context =
-                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
+                    new AguiStreamContext(
+                            threadId, runId, config, input, externalToolDetector(runtimeContext));
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
@@ -207,7 +208,8 @@ public class AguiAgentAdapter {
         }
         if (AguiUtil.isHarnessAgent(agent)) {
             AguiStreamContext context =
-                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
+                    new AguiStreamContext(
+                            threadId, runId, config, input, externalToolDetector(runtimeContext));
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             invokeHarnessStreamEvents(agent, msgs, runtimeContext),
@@ -363,17 +365,25 @@ public class AguiAgentAdapter {
     }
 
     /**
-     * External-tool detector backed by the live toolkit.
+     * External-tool detector backed by the live toolkit, resolved against the per-call {@link
+     * ToolRequestConfig} carried by {@code runtimeContext}.
      *
      * <p>Used to decide whether {@code TOOL_CALL_ARGS} must still be emitted when
      * {@code emitToolCallArgs} is disabled: external tools (frontend-provided or schema-only)
-     * execute outside the framework, so the client needs their arguments. Returns {@code null}
-     * when the agent exposes no toolkit, in which case the stream context falls back to
-     * matching names from {@link RunAgentInput#getTools()}.
+     * execute outside the framework, so the client needs their arguments. Frontend-injected tools
+     * live in the request config rather than the shared registry, so resolution goes through {@link
+     * Toolkit#isExternalTool(String, ToolRequestConfig)}. Returns {@code null} when the agent
+     * exposes no toolkit, in which case the stream context falls back to matching names from {@link
+     * RunAgentInput#getTools()}.
      */
-    private Predicate<String> externalToolDetector() {
+    private Predicate<String> externalToolDetector(RuntimeContext runtimeContext) {
         Toolkit toolkit = agent.getToolkit();
-        return toolkit == null ? null : toolkit::isExternalTool;
+        if (toolkit == null) {
+            return null;
+        }
+        ToolRequestConfig requestConfig =
+                runtimeContext != null ? runtimeContext.getToolRequestConfig() : null;
+        return name -> toolkit.isExternalTool(name, requestConfig);
     }
 
     private Flux<AguiEvent> errorEvents(

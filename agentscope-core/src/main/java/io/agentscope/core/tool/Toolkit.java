@@ -344,6 +344,22 @@ public class Toolkit {
     }
 
     /**
+     * Check whether {@code toolName} resolves to an external tool under a per-call {@link
+     * ToolRequestConfig}. Resolves the tool via {@link #getTool(String, ToolRequestConfig)}, so
+     * externally injected (schema-only) tools from the request config are recognised as external in
+     * addition to backend-registered external tools. A {@code null} request config resolves against
+     * the shared registry only (equivalent to {@link #isExternalTool(String)}).
+     *
+     * @param toolName The name of the tool to check
+     * @param requestConfig per-call request config (may be {@code null} → shared registry only)
+     * @return true if the resolved tool is an external tool, false otherwise
+     */
+    public boolean isExternalTool(String toolName, ToolRequestConfig requestConfig) {
+        AgentTool tool = getTool(toolName, requestConfig);
+        return tool instanceof ToolBase tb && tb.isExternalTool();
+    }
+
+    /**
      * Get tool schemas as ToolSchema objects.
      * Updated to respect active tool groups.
      *
