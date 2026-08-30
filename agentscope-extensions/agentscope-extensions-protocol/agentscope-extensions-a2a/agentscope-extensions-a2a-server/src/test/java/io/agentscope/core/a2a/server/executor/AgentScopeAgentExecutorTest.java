@@ -45,6 +45,7 @@ import io.a2a.spec.TaskArtifactUpdateEvent;
 import io.a2a.spec.TaskState;
 import io.a2a.spec.TaskStatusUpdateEvent;
 import io.a2a.spec.TextPart;
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -52,6 +53,7 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
@@ -216,6 +218,49 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
+        @DisplayName("Should preserve hint semantics in blocking fallback")
+        void testExecuteAgentWithBlockingRequestPreservesHint() throws JSONRPCError {
+            AgentExecuteProperties agentExecuteProperties =
+                    AgentExecuteProperties.builder().requireInnerMessage(true).build();
+            executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
+            doMockForContext(false, true, false);
+            Flux<AgentEvent> mockFlux =
+                    Flux.just(
+                            new HintBlockEvent(
+                                    "reply-id", "hint-block-id", "alice", "Check the inbox"),
+                            new TextBlockDeltaEvent("reply-id", "text-block-id", "Final answer"));
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockFlux);
+
+            AtomicReference<Message> messageRef = new AtomicReference<>();
+            doAnswer(
+                            (Answer<Void>)
+                                    invocationOnMock -> {
+                                        messageRef.set(invocationOnMock.getArgument(0));
+                                        return null;
+                                    })
+                    .when(mockEventQueue)
+                    .enqueueEvent(any(Message.class));
+            executor.execute(mockContext, mockEventQueue);
+
+            Message message = messageRef.get();
+            assertNotNull(message);
+            assertEquals(2, message.getParts().size());
+            TextPart hintPart = assertInstanceOf(TextPart.class, message.getParts().get(0));
+            assertEquals("Check the inbox", hintPart.getText());
+            assertEquals(
+                    MessageConstants.BlockContent.TYPE_HINT,
+                    hintPart.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+            assertEquals(
+                    "hint-block-id",
+                    hintPart.getMetadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+            assertEquals(
+                    "alice", hintPart.getMetadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+            TextPart answerPart = assertInstanceOf(TextPart.class, message.getParts().get(1));
+            assertEquals("Final answer", answerPart.getText());
+        }
+
+        @Test
         @DisplayName(
                 "Should execute agent and process blocking request with inner event but disabled")
         void testExecuteAgentWithBlockingRequestDisabledInnerEvent() throws JSONRPCError {
@@ -329,6 +374,59 @@ class AgentScopeAgentExecutorTest {
                     mockContext.getContextId(),
                     true,
                     false);
+        }
+
+        @Test
+        @DisplayName("Should preserve hint and tool metadata in streaming artifacts")
+        void testExecuteAgentWithStreamingRequestPreservesEventMetadata() throws JSONRPCError {
+            AgentExecuteProperties agentExecuteProperties =
+                    AgentExecuteProperties.builder().requireInnerMessage(true).build();
+            executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
+            doMockForContext(true, false, false);
+            Map<String, Object> hintMetadata = Map.of("channel", "inbox");
+            Map<String, Object> toolMetadata = Map.of("traceId", "trace-1");
+            HintBlockEvent hintEvent =
+                    new HintBlockEvent("reply-id", "hint-block-id", "alice", "Check the inbox");
+            hintEvent.withMetadata(hintMetadata);
+            ToolResultTextDeltaEvent toolEvent =
+                    new ToolResultTextDeltaEvent(
+                            "reply-id", "tool-call-id", "search", "tool result");
+            toolEvent.withMetadata(toolMetadata);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.just(hintEvent, toolEvent));
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+
+            executor.execute(mockContext, mockEventQueue);
+
+            List<Artifact> artifacts =
+                    messageRef.get().stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .toList();
+            assertEquals(2, artifacts.size());
+
+            Artifact hintArtifact = artifacts.get(0);
+            assertEquals(hintMetadata, hintArtifact.metadata());
+            TextPart hintPart = assertInstanceOf(TextPart.class, hintArtifact.parts().get(0));
+            assertEquals(
+                    MessageConstants.BlockContent.TYPE_HINT,
+                    hintPart.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+            assertEquals(
+                    "hint-block-id",
+                    hintPart.getMetadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+            assertEquals(
+                    "alice", hintPart.getMetadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+            assertFalse(
+                    hintPart.getMetadata().containsKey(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+
+            Artifact toolArtifact = artifacts.get(1);
+            assertEquals(toolMetadata, toolArtifact.metadata());
+            DataPart toolPart = assertInstanceOf(DataPart.class, toolArtifact.parts().get(0));
+            assertEquals(
+                    Boolean.TRUE,
+                    toolPart.getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+            assertEquals("trace-1", toolPart.getMetadata().get("traceId"));
         }
 
         @Test

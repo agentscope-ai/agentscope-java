@@ -43,6 +43,7 @@ import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -332,20 +333,26 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             }
             if (output instanceof TextBlockDeltaEvent event) {
                 return assistantMessage(
-                        event.getReplyId(), TextBlock.builder().text(event.getDelta()).build());
+                        event,
+                        event.getReplyId(),
+                        TextBlock.builder().text(event.getDelta()).build());
             }
             if (output instanceof ThinkingBlockDeltaEvent event) {
                 return assistantMessage(
+                        event,
                         event.getReplyId(),
                         ThinkingBlock.builder().thinking(event.getDelta()).build());
             }
             if (output instanceof ToolResultTextDeltaEvent event) {
                 return toolResultMessage(
+                        event,
                         event.getReplyId(),
-                        new ToolResultBlock(
-                                event.getToolCallId(),
-                                event.getToolCallName(),
-                                TextBlock.builder().text(event.getDelta()).build()));
+                        ToolResultBlock.builder()
+                                .id(event.getToolCallId())
+                                .name(event.getToolCallName())
+                                .output(TextBlock.builder().text(event.getDelta()).build())
+                                .metadata(event.getMetadata())
+                                .build());
             }
             if (output instanceof ToolResultDataDeltaEvent event) {
                 ContentBlock data = event.getData();
@@ -353,22 +360,47 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                     return null;
                 }
                 return toolResultMessage(
+                        event,
                         event.getReplyId(),
-                        new ToolResultBlock(event.getToolCallId(), event.getToolCallName(), data));
+                        ToolResultBlock.builder()
+                                .id(event.getToolCallId())
+                                .name(event.getToolCallName())
+                                .output(data)
+                                .metadata(event.getMetadata())
+                                .build());
             }
             if (output instanceof HintBlockEvent event) {
                 return assistantMessage(
-                        event.getReplyId(), TextBlock.builder().text(event.getHint()).build());
+                        event,
+                        event.getReplyId(),
+                        new HintBlock(event.getBlockId(), event.getHint(), event.getHintSource()));
             }
+            LoggerUtil.warn(
+                    log,
+                    "[{}] Event passed required check but matched no conversion branch: {} ({})",
+                    context.getTaskId(),
+                    output.getType(),
+                    output.getClass().getName());
             return null;
         }
 
-        private Msg assistantMessage(String replyId, ContentBlock contentBlock) {
-            return Msg.builder().id(replyId).role(MsgRole.ASSISTANT).content(contentBlock).build();
+        private Msg assistantMessage(AgentEvent event, String replyId, ContentBlock contentBlock) {
+            return Msg.builder()
+                    .id(replyId)
+                    .role(MsgRole.ASSISTANT)
+                    .content(contentBlock)
+                    .metadata(event.getMetadata())
+                    .build();
         }
 
-        private Msg toolResultMessage(String replyId, ToolResultBlock toolResultBlock) {
-            return Msg.builder().id(replyId).role(MsgRole.TOOL).content(toolResultBlock).build();
+        private Msg toolResultMessage(
+                AgentEvent event, String replyId, ToolResultBlock toolResultBlock) {
+            return Msg.builder()
+                    .id(replyId)
+                    .role(MsgRole.TOOL)
+                    .content(toolResultBlock)
+                    .metadata(event.getMetadata())
+                    .build();
         }
 
         /**
@@ -477,7 +509,8 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                 return;
             }
             List<Part<?>> responseParts =
-                    MessageConvertUtil.convertFromContentBlocks(responseMessage, true);
+                    MessageConvertUtil.convertFromContentBlocks(
+                            responseMessage, isStreamingChunk(output));
             taskUpdater.addArtifact(
                     responseParts,
                     artifactId,
@@ -485,6 +518,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                     responseMessage.getMetadata(),
                     !isFirstArtifact.getAndSet(false),
                     false);
+        }
+
+        private boolean isStreamingChunk(AgentEvent output) {
+            return output instanceof TextBlockDeltaEvent
+                    || output instanceof ThinkingBlockDeltaEvent
+                    || output instanceof ToolResultTextDeltaEvent
+                    || output instanceof ToolResultDataDeltaEvent;
         }
 
         @Override
