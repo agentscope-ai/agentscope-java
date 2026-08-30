@@ -39,7 +39,9 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIReasoningDetail;
 import io.agentscope.extensions.model.openai.dto.OpenAIToolCall;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -341,8 +343,9 @@ public class OpenAIMessageConverter {
                 if (detailsObj instanceof List<?> list && !list.isEmpty()) {
                     List<OpenAIReasoningDetail> details = new ArrayList<>();
                     for (Object item : list) {
-                        if (item instanceof OpenAIReasoningDetail rd) {
-                            details.add(rd);
+                        OpenAIReasoningDetail detail = toReasoningDetail(item);
+                        if (detail != null) {
+                            details.add(detail);
                         }
                     }
                     if (!details.isEmpty()) {
@@ -366,13 +369,13 @@ public class OpenAIMessageConverter {
             String fallbackSignature = null;
             for (ToolUseBlock toolUse : toolBlocks) {
                 if (toolUse.getMetadata() != null) {
-                    Object signatureObj =
-                            toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                    if (signatureObj instanceof String) {
-                        fallbackSignature = (String) signatureObj;
-                        if (fallbackSignature != null && !fallbackSignature.isEmpty()) {
-                            break;
-                        }
+                    String candidate =
+                            toSignatureString(
+                                    toolUse.getMetadata()
+                                            .get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+                    if (candidate != null && !candidate.isEmpty()) {
+                        fallbackSignature = candidate;
+                        break;
                     }
                 }
             }
@@ -392,14 +395,13 @@ public class OpenAIMessageConverter {
                 if (toolUse.getMetadata() != null) {
                     Object signatureObj =
                             toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                    if (signatureObj instanceof String) {
-                        signature = (String) signatureObj;
-                    }
+                    signature = toSignatureString(signatureObj);
 
                     // Add reasoning detail if present
                     Object detailObj = toolUse.getMetadata().get("reasoningDetail");
-                    if (detailObj instanceof OpenAIReasoningDetail) {
-                        reasoningDetails.add((OpenAIReasoningDetail) detailObj);
+                    OpenAIReasoningDetail detail = toReasoningDetail(detailObj);
+                    if (detail != null) {
+                        reasoningDetails.add(detail);
                     }
                 }
 
@@ -483,6 +485,50 @@ public class OpenAIMessageConverter {
             }
         }
         return false;
+    }
+
+    /**
+     * Normalizes a thought signature metadata value to a Base64 string.
+     *
+     * <p>Signatures are produced as {@code byte[]} by some model parsers and as Base64 strings by
+     * others; after a JSON state persistence round-trip a {@code byte[]} signature is restored as
+     * a Base64 {@code String}. Both forms are accepted here.
+     *
+     * @param signature the raw metadata value
+     * @return the Base64 string form, or {@code null} if no usable signature is present
+     */
+    private static String toSignatureString(Object signature) {
+        if (signature instanceof String s && !s.isEmpty()) {
+            return s;
+        }
+        if (signature instanceof byte[] bytes && bytes.length > 0) {
+            return Base64.getEncoder().encodeToString(bytes);
+        }
+        return null;
+    }
+
+    /**
+     * Restores an {@link OpenAIReasoningDetail} from a metadata value.
+     *
+     * <p>After a JSON state persistence round-trip the typed detail object is restored as a {@code
+     * LinkedHashMap}, so it is converted back to its typed form here.
+     *
+     * @param value the raw metadata value
+     * @return the typed detail, or {@code null} if it cannot be restored
+     */
+    private static OpenAIReasoningDetail toReasoningDetail(Object value) {
+        if (value instanceof OpenAIReasoningDetail detail) {
+            return detail;
+        }
+        if (value instanceof Map<?, ?>) {
+            try {
+                return JsonUtils.getJsonCodec().convertValue(value, OpenAIReasoningDetail.class);
+            } catch (RuntimeException e) {
+                log.warn("Failed to restore reasoning detail from metadata", e);
+                return null;
+            }
+        }
+        return null;
     }
 
     /**
