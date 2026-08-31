@@ -77,6 +77,7 @@ import reactor.core.publisher.Mono;
  * Support tools:
  * <ul>
  *     <li>dashscope_text_to_image: Generate image(s) based on the given text.</li>
+ *     <li>dashscope_image_to_image: Edit/transform an image based on a text prompt and the input image.</li>
  *     <li>dashscope_image_to_text: Generate text based on the given images.</li>
  *     <li>dashscope_text_to_audio: Convert the given text to audio.</li>
  *     <li>dashscope_audio_to_text: Convert the given audio to text.</li>
@@ -231,6 +232,192 @@ public class DashScopeMultiModalTool {
                 .onErrorResume(
                         e -> {
                             log.error("Failed to generate images '{}'", e.getMessage(), e);
+                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                        });
+    }
+
+    /**
+     * Edit or transform an image based on a text prompt and an input image.
+     *
+     * @param imageUrl      The URL, local file path, or Base64 data URL of the input image to edit.
+     * @param prompt        The text prompt describing the desired edit or transformation.
+     * @param model         The model to use, e.g., 'qwen-image'.
+     * @param size          Size of the output image, e.g., '1024*1024'.
+     * @param useBase64     Whether to return image as base64 data instead of URL.
+     * @return A ToolResultBlock containing the generated image url/base64 or error message.
+     */
+    @Tool(
+            name = "dashscope_image_to_image",
+            description =
+                    "Edit or transform an image based on a text prompt and an input image."
+                            + " Returns the edited image as URL or base64.")
+    public Mono<ToolResultBlock> dashscopeImageToImage(
+            @ToolParam(
+                            name = "image_url",
+                            description =
+                                    "The URL, local file path or Base64 data URL (the format"
+                                        + " pattern is data:[MIME_type];base64,{base64_image},"
+                                        + " e.g., 'data:image/png;base64,iVBORw0KGgo...') of"
+                                        + " the input image to edit")
+                    String imageUrl,
+            @ToolParam(
+                            name = "prompt",
+                            description =
+                                    "The text prompt describing the desired edit or"
+                                            + " transformation")
+                    String prompt,
+            @ToolParam(
+                            name = "model",
+                            description = "The model to use, e.g., 'qwen-image'.",
+                            required = false)
+                    String model,
+            @ToolParam(
+                            name = "size",
+                            description =
+                                    "Size of the output image, e.g., '1024*1024', '1280*1280'.",
+                            required = false)
+                    String size,
+            @ToolParam(
+                            name = "use_base64",
+                            description = "Whether to return image as base64 data instead of URL",
+                            required = false)
+                    Boolean useBase64) {
+
+        String finalModel =
+                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("qwen-image");
+        String finalSize =
+                Optional.ofNullable(size).filter(s -> !s.trim().isEmpty()).orElse("1024*1024");
+        Boolean finalUseBase64 = Optional.ofNullable(useBase64).orElse(false);
+
+        log.debug(
+                "dashscope_image_to_image called: imageUrl='{}', prompt='{}', model='{}',"
+                        + " size='{}', useBase64='{}'",
+                imageUrl,
+                prompt,
+                finalModel,
+                finalSize,
+                useBase64);
+
+        return Mono.fromCallable(
+                        () -> {
+                            List<MultiModalMessage> messages = new ArrayList<>();
+
+                            MultiModalMessage systemMessage =
+                                    MultiModalMessage.builder()
+                                            .role(Role.SYSTEM.getValue())
+                                            .content(
+                                                    List.of(
+                                                            Map.of(
+                                                                    "text",
+                                                                    "You are a helpful"
+                                                                            + " assistant.")))
+                                            .build();
+
+                            List<Map<String, Object>> content = new ArrayList<>();
+                            content.add(
+                                    Map.of("image", MediaUtils.urlToProtocolUrl(imageUrl)));
+                            content.add(Map.of("text", prompt));
+
+                            MultiModalMessage userMessage =
+                                    MultiModalMessage.builder()
+                                            .role(Role.USER.getValue())
+                                            .content(content)
+                                            .build();
+
+                            messages.add(systemMessage);
+                            messages.add(userMessage);
+
+                            MultiModalConversationParam param =
+                                    MultiModalConversationParam.builder()
+                                            .apiKey(this.apiKey)
+                                            .model(finalModel)
+                                            .messages(messages)
+                                            .header("user-agent", Version.getUserAgent())
+                                            .parameter("size", finalSize)
+                                            .build();
+
+                            MultiModalConversation conv = new MultiModalConversation();
+                            MultiModalConversationResult result = conv.call(param);
+
+                            // Extract image URL from response
+                            String resultImageUrl =
+                                    Optional.ofNullable(result)
+                                            .map(MultiModalConversationResult::getOutput)
+                                            .map(MultiModalConversationOutput::getChoices)
+                                            .flatMap(
+                                                    choices -> choices.stream().findFirst())
+                                            .map(MultiModalConversationOutput.Choice::getMessage)
+                                            .map(MultiModalMessage::getContent)
+                                            .flatMap(
+                                                    contents -> contents.stream().findFirst())
+                                            .map(m -> m.get("image"))
+                                            .map(Object::toString)
+                                            .orElse(null);
+
+                            if (resultImageUrl == null || resultImageUrl.isEmpty()) {
+                                // Fallback: check if text response (error message from model)
+                                String errorText =
+                                        Optional.ofNullable(result)
+                                                .map(MultiModalConversationResult::getOutput)
+                                                .map(MultiModalConversationOutput::getChoices)
+                                                .flatMap(c -> c.stream().findFirst())
+                                                .map(MultiModalConversationOutput.Choice::getMessage)
+                                                .map(MultiModalMessage::getContent)
+                                                .flatMap(c -> c.stream().findFirst())
+                                                .map(m -> m.get("text"))
+                                                .map(Object::toString)
+                                                .orElse(null);
+                                log.error(
+                                        "No image URL returned from image-to-image."
+                                                + " Response text: {}",
+                                        errorText);
+                                return ToolResultBlock.error(
+                                        "Failed to generate image: "
+                                                + (errorText != null
+                                                        ? errorText
+                                                        : "no image in response"));
+                            }
+
+                            List<ContentBlock> contentBlocks = new ArrayList<>();
+                            if (finalUseBase64) {
+                                String mediaType;
+                                String data;
+                                try {
+                                    mediaType = MediaUtils.determineMediaType(resultImageUrl);
+                                    data = MediaUtils.downloadUrlToBase64(resultImageUrl);
+                                } catch (IOException e) {
+                                    log.error("Failed to download generated image.");
+                                    return ToolResultBlock.error(e.getMessage());
+                                }
+                                if (data == null || data.trim().isEmpty()) {
+                                    return ToolResultBlock.error(
+                                            "Failed to convert image to base64.");
+                                }
+                                contentBlocks.add(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType(mediaType)
+                                                                .data(data)
+                                                                .build())
+                                                .build());
+                            } else {
+                                contentBlocks.add(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(resultImageUrl)
+                                                                .build())
+                                                .build());
+                            }
+                            return ToolResultBlock.of(contentBlocks);
+                        })
+                .onErrorResume(
+                        e -> {
+                            log.error(
+                                    "Failed to generate image from image '{}'",
+                                    e.getMessage(),
+                                    e);
                             return Mono.just(ToolResultBlock.error(e.getMessage()));
                         });
     }
