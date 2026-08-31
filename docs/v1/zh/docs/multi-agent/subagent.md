@@ -1,5 +1,7 @@
 # Subagents（子智能体）
 
+> **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
+
 **子智能体**是主编排智能体（orchestrator）委托工作的**专职智能体**。编排智能体不亲自执行这些工作，而是通过 **Task** 工具传入子智能体类型和任务描述来调用。系统在**独立上下文**（各自的系统提示与工具）中运行选定的子智能体，再将结果返回给编排智能体。这样主对话保持聚焦、避免上下文膨胀，同时仍可由不同专职智能体处理多类任务（如代码库探索、网络调研、依赖分析）。
 
 该模式常被称为**分发–工作者**或**分层**模型：一个“管理”智能体按需将任务分发给“专家”子智能体。
@@ -124,11 +126,6 @@ AgentScope 示例实现了一个**技术尽调助手**：一个编排智能体�
 - **dependency-analyzer** 以 ReActAgent 构建，通过 `TaskToolsBuilder.subAgent("dependency-analyzer", dependencyAnalyzerReAct)` 注册。
 
 **交互运行**：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/subagent spring-boot:run \
-  -Dspring-boot.run.arguments="--subagent.run-interactive=true"
-```
 
 **代码调用**：注入 **OrchestratorService**，调用 `run(userMessage)`；服务会执行调用编排智能体的图。
 
