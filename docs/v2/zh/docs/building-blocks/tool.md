@@ -125,10 +125,10 @@ toolkit.registerTool(new SimpleTools());
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
-import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -153,7 +153,7 @@ public class WebSearchTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, ToolExecutionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.allow("Web search is read-only."));
     }
 
@@ -180,9 +180,9 @@ public class WebSearchTool extends ToolBase {
 创建外部执行 tool 只需把 `externalTool` 设为 `true`，不必实现 `callAsync`：
 
 ```java
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
-import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -207,7 +207,7 @@ public class HumanApprovalTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, ToolExecutionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.allow("External tool dispatch is always allowed."));
     }
 }
