@@ -27,6 +27,7 @@ import {
   unpauseDeployment,
 } from '../../../api/deployments';
 import { AgentDefinition, listAgents } from '../../../api/agents';
+import { Environment, listEnvironments } from '../../../api/environments';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -81,15 +82,39 @@ const S: Record<string, React.CSSProperties> = {
 
 const TRIGGERS: TriggerType[] = ['manual', 'cron', 'webhook'];
 
+const CRON_RANGES: Array<[number, number]> = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
+
+function isValidCronField(field: string, min: number, max: number): boolean {
+  return field.split(',').every(part => {
+    const [base, step] = part.split('/');
+    if (part.split('/').length > 2 || step === '' || (step !== undefined && (!/^\d+$/.test(step) || Number(step) < 1))) {
+      return false;
+    }
+    if (base === '*') return true;
+    const range = base.split('-');
+    if (range.length > 2 || !range.every(value => /^\d+$/.test(value))) return false;
+    const start = Number(range[0]);
+    const end = Number(range[range.length - 1]);
+    return start >= min && end <= max && start <= end;
+  });
+}
+
+function isValidCronExpression(expression: string): boolean {
+  const fields = expression.trim().split(/\s+/);
+  return fields.length === 5 && fields.every((field, index) => isValidCronField(field, ...CRON_RANGES[index]));
+}
+
 export default function DeploymentsPage() {
   const [items, setItems] = useState<Deployment[]>([]);
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [agentId, setAgentId] = useState('');
+  const [environmentId, setEnvironmentId] = useState('');
   const [triggerType, setTriggerType] = useState<TriggerType>('manual');
   const [cronExpression, setCronExpression] = useState('');
 
@@ -97,10 +122,16 @@ export default function DeploymentsPage() {
     setLoading(true);
     setErr(null);
     try {
-      const [deps, ags] = await Promise.all([listDeployments(), listAgents().catch(() => [])]);
+      const [deps, ags, envs] = await Promise.all([
+        listDeployments(),
+        listAgents().catch(() => []),
+        listEnvironments(),
+      ]);
       setItems(deps);
       setAgents(ags);
+      setEnvironments(envs.filter(environment => !environment.archivedAt));
     } catch (e: unknown) {
+      setEnvironments([]);
       setErr(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
@@ -111,21 +142,24 @@ export default function DeploymentsPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !agentId) return;
+    const cron = cronExpression.trim();
+    if (!name.trim() || !agentId || !environmentId || (triggerType === 'cron' && !isValidCronExpression(cron))) return;
     setBusyId('create');
     setErr(null);
     try {
       await createDeployment({
         name: name.trim(),
         agentId,
+        environmentId,
         triggerType,
-        ...(triggerType === 'cron' && cronExpression.trim()
-          ? { cronExpression: cronExpression.trim() }
+        ...(triggerType === 'cron'
+          ? { cronExpression: cron }
           : {}),
       });
       setCreating(false);
       setName('');
       setAgentId('');
+      setEnvironmentId('');
       setTriggerType('manual');
       setCronExpression('');
       await refresh();
@@ -163,11 +197,20 @@ export default function DeploymentsPage() {
     return ts ? new Date(ts).toLocaleString() : '—';
   }
 
+  function closeCreateForm() {
+    setCreating(false);
+    setName('');
+    setAgentId('');
+    setEnvironmentId('');
+    setTriggerType('manual');
+    setCronExpression('');
+  }
+
   return (
     <div style={S.root}>
       <div style={S.header}>
         <h1 style={S.title}>Deployments</h1>
-        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>
+        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)} disabled={loading}>
           ＋ New deployment
         </button>
       </div>
@@ -256,7 +299,7 @@ export default function DeploymentsPage() {
       </div>
 
       {creating && (
-        <div style={S.modal} onClick={() => setCreating(false)}>
+        <div style={S.modal} onClick={closeCreateForm}>
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
             <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>New deployment</h2>
             <form onSubmit={handleCreate}>
@@ -279,6 +322,26 @@ export default function DeploymentsPage() {
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
+              <label style={S.formField}>Environment</label>
+              {environments.length === 0 ? (
+                <div style={{ ...S.err, marginBottom: 14 }}>
+                  No active environments available. Create or activate an environment first.
+                </div>
+              ) : (
+                <select
+                  style={{ ...S.input, marginBottom: 14 }}
+                  value={environmentId}
+                  onChange={e => setEnvironmentId(e.target.value)}
+                  required
+                >
+                  <option value="">Select an environment…</option>
+                  {environments.map(environment => (
+                    <option key={environment.id} value={environment.id}>
+                      {environment.name} ({environment.type})
+                    </option>
+                  ))}
+                </select>
+              )}
               <label style={S.formField}>Trigger</label>
               <select
                 style={{ ...S.input, marginBottom: 14 }}
@@ -295,12 +358,23 @@ export default function DeploymentsPage() {
                     value={cronExpression}
                     onChange={e => setCronExpression(e.target.value)}
                     placeholder="0 9 * * 1-5"
+                    required
+                    aria-invalid={cronExpression.trim() !== '' && !isValidCronExpression(cronExpression)}
                   />
+                  {cronExpression.trim() !== '' && !isValidCronExpression(cronExpression) && (
+                    <div style={{ ...S.err, marginTop: -8, marginBottom: 14 }}>
+                      Use a valid 5-field cron expression, for example: 0 9 * * 1-5.
+                    </div>
+                  )}
                 </>
               )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>Cancel</button>
-                <button type="submit" style={S.primaryBtn} disabled={busyId === 'create' || !name.trim() || !agentId}>
+                <button type="button" style={S.rowBtn} onClick={closeCreateForm}>Cancel</button>
+                <button
+                  type="submit"
+                  style={S.primaryBtn}
+                  disabled={busyId === 'create' || !name.trim() || !agentId || !environmentId || environments.length === 0 || (triggerType === 'cron' && !isValidCronExpression(cronExpression))}
+                >
                   {busyId === 'create' ? 'Creating…' : 'Create'}
                 </button>
               </div>

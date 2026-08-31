@@ -20,6 +20,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -157,22 +160,19 @@ func (s *Server) listDeployments(c *gin.Context) {
 
 func (s *Server) createDeployment(c *gin.Context) {
 	var req createDeployReq
-	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" || req.AgentID == "" || req.TriggerType == "" {
-		writeTextErr(c, http.StatusBadRequest, "name, agentId, triggerType required")
+	if err := c.ShouldBindJSON(&req); err != nil || !validCreateDeployReq(req) {
+		writeTextErr(c, http.StatusBadRequest, "name, agentId, environmentId, triggerType required")
+		return
+	}
+	if req.TriggerType == "cron" && !validCronExpression(req.CronExpression) {
+		writeTextErr(c, http.StatusBadRequest, "valid cronExpression required for cron trigger")
 		return
 	}
 	owner := currentUserID(c)
-	envID := req.EnvironmentID
-	if envID == "" {
-		var e envRow
-		err := s.db.Pool.QueryRow(c.Request.Context(),
-			envSelect+` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY created_at LIMIT 1`, owner).Scan(
-			&e.EnvironmentID, &e.OwnerID, &e.Name, &e.Type, &e.ConfigJSON, &e.ArchivedAt, &e.CreatedAt, &e.UpdatedAt)
-		if err != nil {
-			writeTextErr(c, http.StatusBadRequest, "environmentId required (no default found)")
-			return
-		}
-		envID = e.EnvironmentID
+	envID := strings.TrimSpace(req.EnvironmentID)
+	if err := s.validateActiveEnvironment(c.Request.Context(), owner, envID); err != nil {
+		writeTextErr(c, http.StatusBadRequest, "environmentId must be an active environment owned by the current user")
+		return
 	}
 	id := shortID("dep_")
 	now := nowMillis()
@@ -192,6 +192,64 @@ func (s *Server) createDeployment(c *gin.Context) {
 	}
 	d, _ := s.loadDeploy(c.Request.Context(), id)
 	c.JSON(http.StatusOK, d.toJSON())
+}
+
+func validCreateDeployReq(req createDeployReq) bool {
+	return req.Name != "" && req.AgentID != "" && req.TriggerType != "" && strings.TrimSpace(req.EnvironmentID) != ""
+}
+
+var cronPartPattern = regexp.MustCompile(`^\d+(?:-\d+)?(?:/\d+)?$`)
+
+func validCronField(field string, min, max int) bool {
+	for _, part := range strings.Split(field, ",") {
+		pieces := strings.Split(part, "/")
+		if len(pieces) > 2 || (len(pieces) == 2 && (pieces[1] == "" || !isPositiveInteger(pieces[1]))) {
+			return false
+		}
+		base := pieces[0]
+		if base == "*" {
+			continue
+		}
+		if !cronPartPattern.MatchString(base) {
+			return false
+		}
+		valueRange := strings.Split(base, "-")
+		start, _ := strconv.Atoi(valueRange[0])
+		end := start
+		if len(valueRange) == 2 {
+			end, _ = strconv.Atoi(valueRange[1])
+		}
+		if start < min || end > max || start > end {
+			return false
+		}
+	}
+	return true
+}
+
+func isPositiveInteger(value string) bool {
+	n, err := strconv.Atoi(value)
+	return err == nil && n > 0
+}
+
+func validCronExpression(expression string) bool {
+	fields := strings.Fields(expression)
+	if len(fields) != 5 {
+		return false
+	}
+	ranges := [][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
+	for i, field := range fields {
+		if !validCronField(field, ranges[i][0], ranges[i][1]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) validateActiveEnvironment(ctx context.Context, owner, environmentID string) error {
+	var id string
+	return s.db.Pool.QueryRow(ctx,
+		`SELECT environment_id FROM environments WHERE environment_id=$1 AND owner_id=$2 AND archived_at IS NULL`,
+		environmentID, owner).Scan(&id)
 }
 
 func (s *Server) getDeployment(c *gin.Context) {
@@ -224,11 +282,20 @@ func (s *Server) updateDeployment(c *gin.Context) {
 	}
 	cron := d.CronExpression
 	if req.CronExpression != nil {
-		cron = req.CronExpression
+		trimmedCron := strings.TrimSpace(*req.CronExpression)
+		cron = &trimmedCron
+	}
+	if d.TriggerType == "cron" && (cron == nil || !validCronExpression(*cron)) {
+		writeErr(c, http.StatusBadRequest, "valid cronExpression required for cron trigger")
+		return
 	}
 	envID := d.EnvironmentID
 	if req.EnvironmentID != nil {
-		envID = *req.EnvironmentID
+		envID = strings.TrimSpace(*req.EnvironmentID)
+		if envID == "" || s.validateActiveEnvironment(c.Request.Context(), currentUserID(c), envID) != nil {
+			writeErr(c, http.StatusBadRequest, "environmentId must be an active environment owned by the current user")
+			return
+		}
 	}
 	agentVer := d.AgentVersion
 	if req.AgentVersion != nil {
