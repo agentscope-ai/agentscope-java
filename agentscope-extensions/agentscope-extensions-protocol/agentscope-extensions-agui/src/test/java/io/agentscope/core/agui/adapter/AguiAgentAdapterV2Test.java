@@ -637,7 +637,28 @@ class AguiAgentAdapterV2Test {
                             .findFirst()
                             .orElseThrow();
             assertEquals("hello", result.content());
-            assertEquals("reply-tool", result.messageId());
+            assertEquals("reply-tool:tool-1", result.messageId());
+        }
+
+        @Test
+        void testParallelToolResultsUsePerToolMessageIds() {
+            List<String> messageIds =
+                    runReActEvents(
+                                    new ToolCallStartEvent("reply-parallel", "tool-1", "lookup"),
+                                    new ToolCallStartEvent("reply-parallel", "tool-2", "search"),
+                                    new ToolResultStartEvent("reply-parallel", "tool-1", "lookup"),
+                                    new ToolResultEndEvent(
+                                            "reply-parallel", "tool-1", "lookup", null),
+                                    new ToolResultStartEvent("reply-parallel", "tool-2", "search"),
+                                    new ToolResultEndEvent(
+                                            "reply-parallel", "tool-2", "search", null))
+                            .stream()
+                            .filter(AguiEvent.ToolCallResult.class::isInstance)
+                            .map(AguiEvent.ToolCallResult.class::cast)
+                            .map(AguiEvent.ToolCallResult::messageId)
+                            .toList();
+
+            assertEquals(List.of("reply-parallel:tool-1", "reply-parallel:tool-2"), messageIds);
         }
 
         @Test
