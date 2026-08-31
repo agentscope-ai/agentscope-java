@@ -27,8 +27,13 @@ import io.agentscope.examples.copilotkit.service.InMemoryAgentEventStore.StoredA
 import io.agentscope.examples.copilotkit.workbench.WorkbenchAguiEventConverter;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
@@ -125,6 +130,11 @@ public final class AgentEventAguiReplayer {
      * but its presence means the interrupted run has been continued, so its interrupt is resolved
      * and must be suppressed.
      *
+     * <p>For suppressed runs, tool calls that started but never received a
+     * {@code TOOL_CALL_RESULT} (the suspended tool of the interrupt) are closed with a synthetic
+     * {@code TOOL_CALL_RESULT} right before the run's {@code RUN_FINISHED}, so the frontend
+     * renders them as completed instead of stuck in a running state.
+     *
      * @param events projected AG-UI events, in conversion order
      * @return events with resolved historical interrupts suppressed
      */
@@ -138,12 +148,36 @@ public final class AgentEventAguiReplayer {
         if (lastRunId == null) {
             return events;
         }
-        boolean changed = false;
-        List<AguiEvent> result = new ArrayList<>(events.size());
+        Map<String, AguiEvent.RunFinished> suppressedRunFinished = new LinkedHashMap<>();
         for (AguiEvent event : events) {
             if (event instanceof AguiEvent.RunFinished runFinished
                     && !lastRunId.equals(runFinished.runId())
                     && runFinished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome) {
+                suppressedRunFinished.put(runFinished.runId(), runFinished);
+            }
+        }
+        if (suppressedRunFinished.isEmpty()) {
+            return events;
+        }
+        Map<String, List<String>> danglingToolCalls =
+                danglingToolCalls(events, suppressedRunFinished.keySet());
+
+        boolean changed = false;
+        List<AguiEvent> result = new ArrayList<>(events.size());
+        for (AguiEvent event : events) {
+            if (event instanceof AguiEvent.RunFinished runFinished
+                    && suppressedRunFinished.containsKey(runFinished.runId())) {
+                for (String toolCallId :
+                        danglingToolCalls.getOrDefault(runFinished.runId(), List.of())) {
+                    result.add(
+                            new AguiEvent.ToolCallResult(
+                                    runFinished.threadId(),
+                                    runFinished.runId(),
+                                    toolCallId,
+                                    null,
+                                    "tool",
+                                    toolCallId));
+                }
                 result.add(
                         new AguiEvent.RunFinished(
                                 runFinished.threadId(),
@@ -158,6 +192,41 @@ public final class AgentEventAguiReplayer {
             }
         }
         return changed ? List.copyOf(result) : events;
+    }
+
+    /**
+     * For each suppressed run, collect the {@code toolCallId}s that started via
+     * {@code TOOL_CALL_START} but never produced a {@code TOOL_CALL_RESULT}.
+     */
+    private static Map<String, List<String>> danglingToolCalls(
+            List<AguiEvent> events, Set<String> suppressedRunIds) {
+        Map<String, List<String>> started = new HashMap<>();
+        Map<String, Set<String>> resulted = new HashMap<>();
+        for (AguiEvent event : events) {
+            String runId = event.getRunId();
+            if (runId == null || !suppressedRunIds.contains(runId)) {
+                continue;
+            }
+            if (event instanceof AguiEvent.ToolCallStart toolCallStart) {
+                started.computeIfAbsent(runId, ignored -> new ArrayList<>())
+                        .add(toolCallStart.toolCallId());
+            } else if (event instanceof AguiEvent.ToolCallResult toolCallResult) {
+                resulted.computeIfAbsent(runId, ignored -> new HashSet<>())
+                        .add(toolCallResult.toolCallId());
+            }
+        }
+        Map<String, List<String>> dangling = new HashMap<>();
+        for (Map.Entry<String, List<String>> entry : started.entrySet()) {
+            Set<String> done = resulted.getOrDefault(entry.getKey(), Set.of());
+            List<String> missing =
+                    entry.getValue().stream()
+                            .filter(toolCallId -> !done.contains(toolCallId))
+                            .toList();
+            if (!missing.isEmpty()) {
+                dangling.put(entry.getKey(), missing);
+            }
+        }
+        return dangling;
     }
 
     private AguiAdapterConfig replayConfig() {

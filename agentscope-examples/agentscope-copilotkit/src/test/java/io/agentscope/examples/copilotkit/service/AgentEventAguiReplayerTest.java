@@ -139,6 +139,65 @@ class AgentEventAguiReplayerTest {
         assertTrue(json.contains("interrupt"));
     }
 
+    @Test
+    void suppressResolvedInterrupts_closesDanglingToolOfSuppressedRun() {
+        AguiEvent.ToolCallStart start =
+                new AguiEvent.ToolCallStart("thread-1", "run-1", "call-1", "deploy_release");
+        AguiEvent.ToolCallEnd end = new AguiEvent.ToolCallEnd("thread-1", "run-1", "call-1");
+        AguiEvent.RunFinished run1 = runFinished("run-1", interruptOutcome("int-1"));
+        AguiEvent.RunFinished run2 = runFinished("run-2", null);
+
+        List<AguiEvent> result =
+                AgentEventAguiReplayer.suppressResolvedInterrupts(List.of(start, end, run1, run2));
+
+        assertEquals(5, result.size());
+        assertSame(start, result.get(0));
+        assertSame(end, result.get(1));
+        AguiEvent.ToolCallResult closed = (AguiEvent.ToolCallResult) result.get(2);
+        assertEquals("call-1", closed.toolCallId());
+        assertEquals("run-1", closed.getRunId());
+        assertNull(((AguiEvent.RunFinished) result.get(3)).outcome());
+        assertSame(run2, result.get(4));
+    }
+
+    @Test
+    void suppressResolvedInterrupts_keepsDanglingToolOfLastInterruptedRun() {
+        AguiEvent.ToolCallStart start =
+                new AguiEvent.ToolCallStart("thread-1", "run-1", "call-1", "deploy_release");
+        AguiEvent.RunFinished run1 = runFinished("run-1", interruptOutcome("int-1"));
+
+        List<AguiEvent> result =
+                AgentEventAguiReplayer.suppressResolvedInterrupts(List.of(start, run1));
+
+        assertEquals(2, result.size());
+        assertSame(start, result.get(0));
+        assertEquals(
+                "int-1",
+                ((AguiEvent.RunFinishedInterruptOutcome)
+                                ((AguiEvent.RunFinished) result.get(1)).outcome())
+                        .interrupts()
+                        .get(0)
+                        .id());
+    }
+
+    @Test
+    void suppressResolvedInterrupts_doesNotDuplicateToolResultWhenPresent() {
+        AguiEvent.ToolCallStart start =
+                new AguiEvent.ToolCallStart("thread-1", "run-1", "call-1", "deploy_release");
+        AguiEvent.ToolCallResult realResult =
+                new AguiEvent.ToolCallResult("thread-1", "run-1", "call-1", "ok", "tool", "m-1");
+        AguiEvent.RunFinished run1 = runFinished("run-1", interruptOutcome("int-1"));
+        AguiEvent.RunFinished run2 = runFinished("run-2", null);
+
+        List<AguiEvent> result =
+                AgentEventAguiReplayer.suppressResolvedInterrupts(
+                        List.of(start, realResult, run1, run2));
+
+        long results = result.stream().filter(AguiEvent.ToolCallResult.class::isInstance).count();
+        assertEquals(1, results);
+        assertTrue(result.contains(realResult));
+    }
+
     private static AguiEvent.RunFinished runFinished(
             String runId, AguiEvent.RunFinishedOutcome outcome) {
         return new AguiEvent.RunFinished("thread-1", runId, null, outcome);
