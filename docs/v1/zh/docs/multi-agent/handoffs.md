@@ -1,5 +1,7 @@
 # Handoffs（交接）
 
+> **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
+
 在 **Handoffs** 模式中，行为根据状态动态变化。工具会更新一个在轮次间持久存在的状态变量（如 `active_agent`），图根据该变量将请求路由到不同智能体。该模式适合客服、销售等场景：通过工具调用在专职智能体（如销售与支持）之间转移控制权。
 
 **Handoffs** 一词常用来描述通过工具调用（如 `transfer_to_sales_agent`、`transfer_to_support`）在智能体或状态之间转移控制（可参考 [OpenAI Agents](https://openai.github.io/openai-agents-python/handoffs/)）。
@@ -239,15 +241,9 @@ resultOpt.ifPresent(state -> {
 
 完整的 Handoffs 示例（销售 + 支持与交接工具）位于仓库中：
 
-- **路径**：`agentscope-examples/multiagent-patterns/handoffs/`
 - **要点**：`AgentScopeHandoffsConfig`（图、智能体、路由），`TransferToSalesTool`、`TransferToSupportTool`，`RouteInitialAction`、`RouteAfterSalesAction`、`RouteAfterSupportAction`，以及用于调用图的 `AgentScopeHandoffsService`。
 
 在仓库根目录构建并运行：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/handoffs -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/handoffs spring-boot:run
-```
 
 在 `application.yml` 中设置 `agentscope.runner.enabled=true` 可在启动时运行演示。默认端口为 8089。
 
