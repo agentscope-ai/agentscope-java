@@ -288,7 +288,7 @@ public class AguiStreamContext {
                         toolCallId,
                         content != null && !content.isEmpty() ? content.toString() : null,
                         "tool",
-                        replyId));
+                        replyId + ":" + toolCallId));
     }
 
     public void markToolCallSuspended(String toolCallId) {
