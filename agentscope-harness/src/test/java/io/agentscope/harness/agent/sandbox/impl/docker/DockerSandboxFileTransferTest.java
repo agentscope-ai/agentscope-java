@@ -15,11 +15,18 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.docker;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -125,11 +132,140 @@ class DockerSandboxFileTransferTest {
                 () -> noContainer.uploadFile("/workspace/a.txt", new byte[] {1}));
     }
 
+    @Test
+    void uploadWritesContentThroughDockerCpAndCleansUpTemp() throws Exception {
+        RecordingDockerSandbox recording =
+                new RecordingDockerSandbox(stateWithWorkspace("/workspace", "container-1"));
+        byte[] content = new byte[] {1, 2, 3, 4, 5};
+
+        recording.uploadFile("notes/report.bin", content);
+
+        // The file bytes reached docker cp intact (never through exec argv).
+        assertArrayEquals(content, recording.uploadedContent);
+        // Parent directory is created, then the temp file is copied to the resolved path.
+        assertTrue(
+                recording.commands.contains(
+                        List.of(
+                                "docker",
+                                "exec",
+                                "container-1",
+                                "mkdir",
+                                "-p",
+                                "/workspace/notes")),
+                recording.commands.toString());
+        List<String> cp = recording.lastCpCommand();
+        assertNotNull(cp);
+        assertEquals("container-1:/workspace/notes/report.bin", cp.get(3));
+        // Host temp file is removed after the round trip.
+        assertNotNull(recording.lastCpSource);
+        assertFalse(Files.exists(Path.of(recording.lastCpSource)));
+    }
+
+    @Test
+    void uploadAtWorkspaceRootUsesSlashParent() throws Exception {
+        RecordingDockerSandbox recording =
+                new RecordingDockerSandbox(stateWithWorkspace("/", "container-root"));
+
+        recording.uploadFile("/file.bin", new byte[] {9});
+
+        assertTrue(
+                recording.commands.contains(
+                        List.of("docker", "exec", "container-root", "mkdir", "-p", "/")),
+                recording.commands.toString());
+        assertEquals("container-root:/file.bin", recording.lastCpCommand().get(3));
+    }
+
+    @Test
+    void downloadReadsContentThroughDockerCpAndCleansUpTemp() throws Exception {
+        RecordingDockerSandbox recording =
+                new RecordingDockerSandbox(stateWithWorkspace("/workspace", "container-1"));
+        recording.downloadPayload = new byte[] {7, 8, 9};
+
+        byte[] out = recording.downloadFile("/workspace/out.bin");
+
+        assertArrayEquals(recording.downloadPayload, out);
+        List<String> cp = recording.lastCpCommand();
+        assertEquals("container-1:/workspace/out.bin", cp.get(2));
+        // Destination temp file is removed after the bytes are read back.
+        assertNotNull(recording.lastCpDest);
+        assertFalse(Files.exists(Path.of(recording.lastCpDest)));
+    }
+
+    @Test
+    void uploadCleansUpTempFileWhenDockerCpFails() {
+        RecordingDockerSandbox recording =
+                new RecordingDockerSandbox(stateWithWorkspace("/workspace", "container-1"));
+        recording.failCp = true;
+
+        assertThrows(
+                RuntimeException.class,
+                () -> recording.uploadFile("/workspace/a.bin", new byte[] {1}));
+
+        assertNotNull(recording.lastCpSource);
+        assertFalse(Files.exists(Path.of(recording.lastCpSource)));
+    }
+
     private static DockerSandboxState stateWithWorkspace(String root, String containerId) {
         DockerSandboxState state = new DockerSandboxState();
         state.setWorkspaceRoot(root);
         state.setContainerId(containerId);
         state.setWorkspaceSpec(new WorkspaceSpec());
         return state;
+    }
+
+    /**
+     * Intercepts the docker CLI so the upload/download temp-file plumbing runs end to end without a
+     * live Docker daemon: {@code docker cp} to a container captures the source bytes, and {@code
+     * docker cp} from a container writes {@link #downloadPayload} into the host destination.
+     */
+    private static final class RecordingDockerSandbox extends DockerSandbox {
+
+        final List<List<String>> commands = new ArrayList<>();
+        byte[] uploadedContent;
+        byte[] downloadPayload;
+        String lastCpSource;
+        String lastCpDest;
+        boolean failCp;
+
+        RecordingDockerSandbox(DockerSandboxState state) {
+            super(state);
+        }
+
+        List<String> lastCpCommand() {
+            for (int i = commands.size() - 1; i >= 0; i--) {
+                List<String> c = commands.get(i);
+                if (c.size() >= 2 && "cp".equals(c.get(1))) {
+                    return c;
+                }
+            }
+            return null;
+        }
+
+        @Override
+        protected void runDockerCliBlocking(int timeoutSeconds, String... command)
+                throws Exception {
+            commands.add(List.of(command));
+            if (command.length >= 4 && "cp".equals(command[1])) {
+                String src = command[2];
+                String dst = command[3];
+                // Record paths before any simulated failure so cleanup can be asserted.
+                if (dst.contains(":")) {
+                    lastCpSource = src;
+                } else {
+                    lastCpDest = dst;
+                }
+                if (failCp) {
+                    throw new RuntimeException("simulated docker cp failure");
+                }
+                if (dst.contains(":")) {
+                    // upload: host temp -> container:path
+                    uploadedContent = Files.readAllBytes(Path.of(src));
+                } else {
+                    // download: container:path -> host temp
+                    Files.write(
+                            Path.of(dst), downloadPayload == null ? new byte[0] : downloadPayload);
+                }
+            }
+        }
     }
 }

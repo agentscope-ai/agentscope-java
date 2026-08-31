@@ -693,7 +693,9 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
      * @param command        command and arguments
      * @throws SandboxException.SandboxRuntimeException if the command fails or times out
      */
-    private void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
+    // Visible for testing so unit tests can intercept the docker CLI round trip
+    // (upload/download temp-file plumbing) without a live Docker daemon.
+    protected void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(command);
         Process process = pb.start();
 
