@@ -874,6 +874,40 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, effective));
     }
 
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output (class-driven) and a
+     * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, Class,
+     * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
+     *
+     * @param msgs input messages
+     * @param structuredModel class defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, Class<?> structuredModel, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStreamEvents(
+                effective, () -> delegate.streamEvents(msgs, structuredModel, effective));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output (JSON-schema-driven) and a
+     * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, JsonNode,
+     * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
+     *
+     * @param msgs input messages
+     * @param schema JSON schema defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, schema, effective));
+    }
+
     @Override
     public Mono<Void> observe(Msg msg) {
         return delegate.observe(msg);
