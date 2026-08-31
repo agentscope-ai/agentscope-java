@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Routing" href="routing.html"><link rel="prev" title="Pipeline" href="pipeline.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Routing" href="routing.html"><link rel="prev" title="Pipeline" href="pipeline.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/multi-agent/workflow.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="custom-workflow">
 <h1>Custom Workflow<a class="headerlink" href="#custom-workflow" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>Note:</strong> The former Spring Boot example module <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>.</p>
+</div></blockquote>
 <p>In the <strong>custom workflow</strong> pattern, you define your own execution flow using <strong>Spring AI Alibaba StateGraph</strong>. You have full control over the graph structure—sequential steps, conditional branches, loops, and parallel execution. Nodes can be <strong>deterministic</strong> (e.g. vector search, DB query), <strong>LLM-based</strong> (e.g. rewrite, classify), or <strong>agentic</strong> (an agent with tools). State is passed between nodes via a shared state map with configurable strategies (replace, append).</p>
 <p>This pattern is useful when standard patterns (Pipeline, Routing, Subagents, etc.) do not fit, when you need to mix deterministic logic with agentic behavior, or when your use case requires multi-stage processing with explicit control over the flow.</p>
 <section id="key-characteristics">
@@ -1018,7 +1021,6 @@
 </section>
 <section id="example-project">
 <h2>Example project<a class="headerlink" href="#example-project" title="Link to this heading">¶</a></h2>
-<p><strong>Location</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/workflow/</span></code></p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1039,20 +1041,6 @@
 </tbody>
 </table>
 </div>
-<p><strong>Build and run</strong> (from repo root):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/workflow<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-</pre></div>
-</div>
-<p><strong>Run RAG workflow</strong> (with optional demo on startup):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/workflow<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">"--workflow.rag.enabled=true --workflow.runner.enabled=true"</span>
-</pre></div>
-</div>
-<p><strong>Run SQL workflow</strong> (with optional demo on startup):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/workflow<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">"--workflow.sql.enabled=true --workflow.runner.enabled=true"</span>
-</pre></div>
-</div>
 <p><strong>Configuration</strong>:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">workflow.rag.enabled</span></code> – Enable RAG workflow beans (default <code class="docutils literal notranslate"><span class="pre">false</span></code>).</p></li>
@@ -1068,7 +1056,7 @@
 <li><p><strong>Routing</strong>: Routing is classify → specialist(s) → merge, often with a single router node. In a custom workflow you could implement the same with your own graph (e.g. router node → branch → specialists → merge node).</p></li>
 <li><p><strong>Handoffs</strong>: Handoffs use state (e.g. <code class="docutils literal notranslate"><span class="pre">active_agent</span></code>) to route between agent nodes. Custom workflow can do the same with conditional edges and state; Handoffs is a dedicated pattern for “who owns the conversation” transitions.</p></li>
 </ul>
-<p>For implementation details and code, see the workflow example (<code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/workflow/</span></code>) and the RAG/SQL config classes (<code class="docutils literal notranslate"><span class="pre">RagAgentConfig</span></code>, <code class="docutils literal notranslate"><span class="pre">SqlAgentConfig</span></code>).</p>
+<p>For implementation details, use the snippets on this page and the RAG/SQL config classes (<code class="docutils literal notranslate"><span class="pre">RagAgentConfig</span></code>, <code class="docutils literal notranslate"><span class="pre">SqlAgentConfig</span></code>).</p>
 </section>
 <section id="related-documentation">
 <h2>Related Documentation<a class="headerlink" href="#related-documentation" title="Link to this heading">¶</a></h2>
@@ -1133,7 +1121,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">

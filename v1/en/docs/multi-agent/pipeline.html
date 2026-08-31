@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-01T12:22:29+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Custom Workflow" href="workflow.html"><link rel="prev" title="Multi-Agent Overview" href="overview.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Custom Workflow" href="workflow.html"><link rel="prev" title="Multi-Agent Overview" href="overview.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/multi-agent/pipeline.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,8 +961,10 @@
         <article role="main" id="furo-main-content">
           <section id="pipeline">
 <h1>Pipeline<a class="headerlink" href="#pipeline" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>Note:</strong> The former Spring Boot example module <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>.</p>
+</div></blockquote>
 <p>The pipeline example uses <strong>Spring AI Alibaba</strong> flow agents (<strong>SequentialAgent</strong>, <strong>ParallelAgent</strong>, <strong>LoopAgent</strong>) with <strong>AgentScopeAgent</strong> sub-agents and AgentScope <strong>DashScopeChatModel</strong> (<code class="docutils literal notranslate"><span class="pre">Model</span></code>). Each pipeline is built from ReActAgent-based AgentScopeAgents and invoked via <code class="docutils literal notranslate"><span class="pre">PipelineService</span></code>.</p>
-<p><strong>Location</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/pipeline/</span></code></p>
 <section id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">¶</a></h2>
 <ul class="simple">
@@ -1292,20 +1294,6 @@
 </pre></div>
 </div>
 </section>
-<section id="build-and-run">
-<h2>Build and run<a class="headerlink" href="#build-and-run" title="Link to this heading">¶</a></h2>
-<p>From the repo root:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
-<p><strong>With demo runner:</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span>pipeline.runner.enabled<span class="o">=</span><span class="nb">true</span>
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
-<p>Or in <code class="docutils literal notranslate"><span class="pre">application.yml</span></code>: <code class="docutils literal notranslate"><span class="pre">pipeline.runner.enabled:</span> <span class="pre">true</span></code>.</p>
-</section>
 <section id="configuration">
 <h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -1327,29 +1315,6 @@
 </tr>
 </tbody>
 </table>
-</div>
-</section>
-<section id="project-layout">
-<h2>Project layout<a class="headerlink" href="#project-layout" title="Link to this heading">¶</a></h2>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>agentscope-examples/multiagent-patterns/pipeline/
-├── README.md
-├── pom.xml
-└── src/main/
-    ├── java/.../pipeline/
-    │   ├── PipelineApplication.java
-    │   ├── PipelineModelConfig.java        # Model (DashScopeChatModel) bean
-    │   ├── PipelineService.java            # runSequential, runParallel, runLoop
-    │   ├── PipelineCommandRunner.java      # optional demo (pipeline.runner.enabled)
-    │   ├── PipelineRunnerConfig.java       # PipelineService bean
-    │   ├── sequential/
-    │   │   └── SequentialPipelineConfig.java
-    │   ├── parallel/
-    │   │   └── ParallelPipelineConfig.java
-    │   └── loop/
-    │       └── LoopPipelineConfig.java
-    └── resources/
-        └── application.yml
-</pre></div>
 </div>
 </section>
 <section id="related-documentation">
@@ -1416,7 +1381,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-01</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1468,9 +1433,7 @@
 </li>
 <li><a class="reference internal" href="#invoking-pipelines-pipelineservice">Invoking pipelines: PipelineService</a></li>
 <li><a class="reference internal" href="#optional-demo-runner">Optional demo runner</a></li>
-<li><a class="reference internal" href="#build-and-run">Build and run</a></li>
 <li><a class="reference internal" href="#configuration">Configuration</a></li>
-<li><a class="reference internal" href="#project-layout">Project layout</a></li>
 <li><a class="reference internal" href="#related-documentation">Related Documentation</a></li>
 </ul>
 </li>

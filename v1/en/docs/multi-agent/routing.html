@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skills (Progressive Disclosure)" href="skills.html"><link rel="prev" title="Custom Workflow" href="workflow.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skills (Progressive Disclosure)" href="skills.html"><link rel="prev" title="Custom Workflow" href="workflow.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/multi-agent/routing.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="routing">
 <h1>Routing<a class="headerlink" href="#routing" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>Note:</strong> The former Spring Boot example module <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>.</p>
+</div></blockquote>
 <p>In the <strong>router</strong> pattern, a routing step classifies the input and directs it to specialized agents. Zero or more specialists can be invoked (e.g. in parallel), and results are synthesized into a single response. This is useful when you have distinct <strong>verticals</strong>—separate knowledge domains that each have their own agent (e.g. GitHub, Notion, Slack).</p>
 <p>The router decomposes the query, specialist agents are invoked (single or parallel), and a combined answer is produced.</p>
 <section id="overview">
@@ -1142,26 +1145,10 @@
 <hr class="docutils" />
 <section id="example-project">
 <h2>Example project<a class="headerlink" href="#example-project" title="Link to this heading">¶</a></h2>
-<p><strong>Location</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/routing/</span></code></p>
 <ul class="simple">
 <li><p><strong>Simple</strong>: Entry is <code class="docutils literal notranslate"><span class="pre">RouterService.run(query)</span></code>; flow is classify → parallel specialists → (framework merge) → optional RouterService synthesis. Set <code class="docutils literal notranslate"><span class="pre">routing.runner.enabled=true</span></code> to run the Simple demo on startup (see <strong>RoutingRunner</strong>).</p></li>
 <li><p><strong>Graph</strong>: Entry is <code class="docutils literal notranslate"><span class="pre">RoutingGraphService.run(query)</span></code>; flow is preprocess → routing subgraph → postprocess. Set <code class="docutils literal notranslate"><span class="pre">routing-graph.runner.enabled=true</span></code> to run the Graph demo on startup (see <strong>RoutingGraphRunner</strong>).</p></li>
 </ul>
-<p><strong>Build and run</strong> (from repo root):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/routing<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/routing<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
-<p><strong>Run Simple demo only</strong>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/routing<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">"--routing.runner.enabled=true"</span>
-</pre></div>
-</div>
-<p><strong>Run Graph demo only</strong>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/routing<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">"--routing-graph.runner.enabled=true"</span>
-</pre></div>
-</div>
 <p><strong>Configuration</strong>: Set <code class="docutils literal notranslate"><span class="pre">AI_DASHSCOPE_API_KEY</span></code> (or <code class="docutils literal notranslate"><span class="pre">spring.ai.dashscope.api-key</span></code>) for DashScope model and specialist calls.</p>
 </section>
 <section id="related-documentation">
@@ -1227,7 +1214,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">

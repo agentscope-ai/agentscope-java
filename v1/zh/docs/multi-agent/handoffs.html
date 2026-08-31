@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-01T12:22:29+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="多智能体辩论" href="multiagent-debate.html"><link rel="prev" title="Supervisor（监督者）" href="supervisor.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="多智能体辩论" href="multiagent-debate.html"><link rel="prev" title="Supervisor（监督者）" href="supervisor.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/multi-agent/handoffs.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="handoffs">
 <h1>Handoffs（交接）<a class="headerlink" href="#handoffs" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>说明：</strong> 原先的 Spring Boot 示例模块 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>。</p>
+</div></blockquote>
 <p>在 <strong>Handoffs</strong> 模式中，行为根据状态动态变化。工具会更新一个在轮次间持久存在的状态变量（如 <code class="docutils literal notranslate"><span class="pre">active_agent</span></code>），图根据该变量将请求路由到不同智能体。该模式适合客服、销售等场景：通过工具调用在专职智能体（如销售与支持）之间转移控制权。</p>
 <p><strong>Handoffs</strong> 一词常用来描述通过工具调用（如 <code class="docutils literal notranslate"><span class="pre">transfer_to_sales_agent</span></code>、<code class="docutils literal notranslate"><span class="pre">transfer_to_support</span></code>）在智能体或状态之间转移控制（可参考 <a class="reference external" href="https://openai.github.io/openai-agents-python/handoffs/">OpenAI Agents</a>）。</p>
 <section id="id1">
@@ -1189,14 +1192,9 @@
 <h2>示例项目<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
 <p>完整的 Handoffs 示例（销售 + 支持与交接工具）位于仓库中：</p>
 <ul class="simple">
-<li><p><strong>路径</strong>：<code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/handoffs/</span></code></p></li>
 <li><p><strong>要点</strong>：<code class="docutils literal notranslate"><span class="pre">AgentScopeHandoffsConfig</span></code>（图、智能体、路由），<code class="docutils literal notranslate"><span class="pre">TransferToSalesTool</span></code>、<code class="docutils literal notranslate"><span class="pre">TransferToSupportTool</span></code>，<code class="docutils literal notranslate"><span class="pre">RouteInitialAction</span></code>、<code class="docutils literal notranslate"><span class="pre">RouteAfterSalesAction</span></code>、<code class="docutils literal notranslate"><span class="pre">RouteAfterSupportAction</span></code>，以及用于调用图的 <code class="docutils literal notranslate"><span class="pre">AgentScopeHandoffsService</span></code>。</p></li>
 </ul>
 <p>在仓库根目录构建并运行：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/handoffs<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/handoffs<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
 <p>在 <code class="docutils literal notranslate"><span class="pre">application.yml</span></code> 中设置 <code class="docutils literal notranslate"><span class="pre">agentscope.runner.enabled=true</span></code> 可在启动时运行演示。默认端口为 8089。</p>
 </section>
 <section id="id11">
@@ -1265,7 +1263,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-01</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">

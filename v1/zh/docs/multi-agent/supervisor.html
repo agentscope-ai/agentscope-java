@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Handoffs（交接）" href="handoffs.html"><link rel="prev" title="Subagents（子智能体）" href="subagent.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Handoffs（交接）" href="handoffs.html"><link rel="prev" title="Subagents（子智能体）" href="subagent.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/multi-agent/supervisor.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="supervisor">
 <h1>Supervisor（监督者）<a class="headerlink" href="#supervisor" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>说明：</strong> 原先的 Spring Boot 示例模块 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>。</p>
+</div></blockquote>
 <p>在 <strong>Supervisor</strong> 模式中，一个中心<strong>监督者</strong>（主智能体）通过<strong>工具</strong>调用专职智能体进行协调。监督者接收用户请求，决定调用哪些专家（如日历、邮件），并将结果综合成一条回复。专职智能体从用户视角看是<strong>无状态</strong>的；监督者维护对话，将一次性任务委托给专家。在 AgentScope 中通过 <strong>Agent as Tool</strong>（<a class="reference internal" href="../task/agent-as-tool.html"><span class="std std-doc">agent-as-tool.md</span></a>）实现：<code class="docutils literal notranslate"><span class="pre">Toolkit.registration().subAgent()</span></code>。</p>
 <section id="id1">
 <h2>概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
@@ -1000,15 +1003,9 @@
 <section id="id4">
 <h2>示例项目<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><strong>路径</strong>：<code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/supervisor/</span></code></p></li>
 <li><p><strong>主要类</strong>：<code class="docutils literal notranslate"><span class="pre">SupervisorConfig</span></code>（model、calendarAgent、emailAgent、supervisorAgent），<code class="docutils literal notranslate"><span class="pre">CalendarStubTools</span></code>，<code class="docutils literal notranslate"><span class="pre">EmailStubTools</span></code>，<code class="docutils literal notranslate"><span class="pre">SupervisorRunner</span></code>（可选演示）。</p></li>
 <li><p><strong>演示</strong>：设置 <code class="docutils literal notranslate"><span class="pre">supervisor.run-examples=true</span></code> 可在启动时运行两个场景：(1) 单领域：「明天上午 9 点安排团队站会」；(2) 多领域：「下周二下午 2 点与设计团队开 1 小时会，并给他们发邮件提醒查看新原型」。</p></li>
 </ul>
-<p><strong>构建与运行</strong>（在仓库根目录）：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/supervisor<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/supervisor<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
 <p><strong>在代码中使用</strong>：注入监督者 ReActAgent（如 <code class="docutils literal notranslate"><span class="pre">&#64;Qualifier(&quot;supervisorAgent&quot;)</span></code>），传入用户 <code class="docutils literal notranslate"><span class="pre">Msg</span></code> 调用；用 <code class="docutils literal notranslate"><span class="pre">getTextContent()</span></code> 获取回复文本。</p>
 </section>
 <section id="id5">
@@ -1074,7 +1071,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">

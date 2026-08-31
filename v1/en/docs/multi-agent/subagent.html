@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Supervisor" href="supervisor.html"><link rel="prev" title="Skills (Progressive Disclosure)" href="skills.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Supervisor" href="supervisor.html"><link rel="prev" title="Skills (Progressive Disclosure)" href="skills.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/multi-agent/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="subagents">
 <h1>Subagents<a class="headerlink" href="#subagents" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>Note:</strong> The former Spring Boot example module <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>.</p>
+</div></blockquote>
 <p>Subagents are <strong>specialized agents</strong> that a main <strong>orchestrator</strong> delegates work to. The orchestrator does not execute the work itself; it calls a <strong>Task</strong> tool with a sub-agent type and a task description. The system runs the chosen sub-agent in an <strong>isolated context</strong> (its own system prompt and tools), then returns the result to the orchestrator. This keeps the main conversation focused and avoids context bloat, while still allowing multiple domains (e.g. codebase exploration, web research, dependency analysis) to be handled by dedicated agents.</p>
 <p>This pattern is sometimes called a <strong>dispatcher–worker</strong> or <strong>hierarchical</strong> model: one “manager” agent that delegates to “specialist” sub-agents on demand.</p>
 <section id="why-use-subagents">
@@ -1127,11 +1130,6 @@ Register the Task and TaskOutput tools on the orchestrator’s Toolkit, along wi
 <li><p><strong>Markdown specs</strong> live in <code class="docutils literal notranslate"><span class="pre">src/main/resources/agents/*.md</span></code> and are loaded with <code class="docutils literal notranslate"><span class="pre">TaskToolsBuilder.addAgentResource(res)</span></code>.</p></li>
 <li><p><strong>dependency-analyzer</strong> is built as a ReActAgent and registered with <code class="docutils literal notranslate"><span class="pre">TaskToolsBuilder.subAgent(&quot;dependency-analyzer&quot;,</span> <span class="pre">dependencyAnalyzerReAct)</span></code>.</p></li>
 </ul>
-<p><strong>Run interactively</strong>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/subagent<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">"--subagent.run-interactive=true"</span>
-</pre></div>
-</div>
 <p><strong>Use in code</strong>: Inject <strong>OrchestratorService</strong> and call <code class="docutils literal notranslate"><span class="pre">run(userMessage)</span></code>; the service invokes the graph that runs the orchestrator with the given input.</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Autowired</span>
 <span class="n">OrchestratorService</span><span class="w"> </span><span class="n">orchestratorService</span><span class="p">;</span>
@@ -1222,7 +1220,7 @@ Register the Task and TaskOutput tools on the orchestrator’s Toolkit, along wi
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagents（子智能体）" href="subagent.html"><link rel="prev" title="Routing（路由）" href="routing.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagents（子智能体）" href="subagent.html"><link rel="prev" title="Routing（路由）" href="routing.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/multi-agent/skills.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="skills">
 <h1>Skills（渐进式披露）<a class="headerlink" href="#skills" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>说明：</strong> 原先的 Spring Boot 示例模块 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>。</p>
+</div></blockquote>
 <p>在 <strong>Skills</strong> 模式中，专项能力被打包成可调用的「技能」，用于增强智能体行为。技能主要是<strong>提示驱动</strong>的：智能体先看到技能元数据（如名称、描述），再通过工具（如 <code class="docutils literal notranslate"><span class="pre">read_skill</span></code>）<strong>按需</strong>加载完整技能内容，从而控制初始上下文大小，避免一次性加载所有技能文本。</p>
 <p>AgentScope 通过 <strong>SkillBox</strong>、<strong>SkillRepository</strong>（如 <code class="docutils literal notranslate"><span class="pre">ClasspathSkillRepository</span></code>）和技能工具实现该机制。核心能力在 <a class="reference internal" href="../task/agent-skill.html"><span class="std std-doc">智能体技能</span></a> 中说明；本文侧重使用同一机制的 <strong>多智能体示例</strong>（SQL 助手）。</p>
 <section id="id1">
@@ -1000,15 +1003,9 @@
 <h2>示例项目<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p><strong>SQL 助手</strong>示例包含两个技能：<strong>sales_analytics</strong>（客户、订单、收入）和 <strong>inventory_management</strong>（产品、仓库、库存）。用户用自然语言提问；智能体在需要时调用 <strong>read_skill(“sales_analytics”)</strong> 或 <strong>read_skill(“inventory_management”)</strong>，再生成 SQL。</p>
 <ul class="simple">
-<li><p><strong>路径</strong>：<code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/skills/</span></code></p></li>
 <li><p><strong>主要类</strong>：<code class="docutils literal notranslate"><span class="pre">SkillsConfig</span></code>（ClasspathSkillRepository、SkillBox、ReActAgent），<code class="docutils literal notranslate"><span class="pre">SkillsRunner</span></code>（可选演示）。</p></li>
 <li><p><strong>运行</strong>：设置 <code class="docutils literal notranslate"><span class="pre">skills.runner.enabled=true</span></code> 可在启动时运行单次查询演示（如「写出查询过去一个月内订单金额超过 1000 的所有客户的 SQL」）。</p></li>
 </ul>
-<p><strong>构建与运行</strong>（在仓库根目录）：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/skills<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/skills<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
 <p><strong>在代码中使用</strong>：注入 ReActAgent（如 <code class="docutils literal notranslate"><span class="pre">sqlAssistantAgent</span></code>），传入用户 <code class="docutils literal notranslate"><span class="pre">Msg</span></code> 调用；用 <code class="docutils literal notranslate"><span class="pre">getTextContent()</span></code> 取回复文本。智能体会根据技能描述决定何时调用 <strong>read_skill</strong> 并生成 SQL。</p>
 </section>
 <section id="id5">
@@ -1074,7 +1071,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">

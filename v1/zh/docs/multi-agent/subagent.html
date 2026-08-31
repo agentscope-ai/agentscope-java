@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Supervisor（监督者）" href="supervisor.html"><link rel="prev" title="Skills（渐进式披露）" href="skills.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Supervisor（监督者）" href="supervisor.html"><link rel="prev" title="Skills（渐进式披露）" href="skills.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/multi-agent/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="subagents">
 <h1>Subagents（子智能体）<a class="headerlink" href="#subagents" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>说明：</strong> 原先的 Spring Boot 示例模块 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>。</p>
+</div></blockquote>
 <p><strong>子智能体</strong>是主编排智能体（orchestrator）委托工作的<strong>专职智能体</strong>。编排智能体不亲自执行这些工作，而是通过 <strong>Task</strong> 工具传入子智能体类型和任务描述来调用。系统在<strong>独立上下文</strong>（各自的系统提示与工具）中运行选定的子智能体，再将结果返回给编排智能体。这样主对话保持聚焦、避免上下文膨胀，同时仍可由不同专职智能体处理多类任务（如代码库探索、网络调研、依赖分析）。</p>
 <p>该模式常被称为<strong>分发–工作者</strong>或<strong>分层</strong>模型：一个“管理”智能体按需将任务分发给“专家”子智能体。</p>
 <section id="id1">
@@ -1128,10 +1131,6 @@ description: 用于快速探索代码库。用于查找文件、搜索代码、�
 <li><p><strong>dependency-analyzer</strong> 以 ReActAgent 构建，通过 <code class="docutils literal notranslate"><span class="pre">TaskToolsBuilder.subAgent(&quot;dependency-analyzer&quot;,</span> <span class="pre">dependencyAnalyzerReAct)</span></code> 注册。</p></li>
 </ul>
 <p><strong>交互运行</strong>：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/subagent<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">"--subagent.run-interactive=true"</span>
-</pre></div>
-</div>
 <p><strong>代码调用</strong>：注入 <strong>OrchestratorService</strong>，调用 <code class="docutils literal notranslate"><span class="pre">run(userMessage)</span></code>；服务会执行调用编排智能体的图。</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Autowired</span>
 <span class="n">OrchestratorService</span><span class="w"> </span><span class="n">orchestratorService</span><span class="p">;</span>
@@ -1222,7 +1221,7 @@ description: 用于快速探索代码库。用于查找文件、搜索代码、�
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Handoffs" href="handoffs.html"><link rel="prev" title="Subagents" href="subagent.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Handoffs" href="handoffs.html"><link rel="prev" title="Subagents" href="subagent.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/multi-agent/supervisor.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="supervisor">
 <h1>Supervisor<a class="headerlink" href="#supervisor" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>Note:</strong> The former Spring Boot example module <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>.</p>
+</div></blockquote>
 <p>In the <strong>supervisor</strong> pattern, a central <strong>supervisor</strong> (main agent) coordinates specialized agents by calling them as <strong>tools</strong>. The supervisor receives user requests, decides which specialist(s) to call (e.g. calendar, email), and synthesizes their results into one reply. Specialized agents are <strong>stateless</strong> from the user’s perspective; the supervisor keeps the conversation and delegates one-off tasks. This pattern is implemented in AgentScope via <strong>Agent as Tool</strong> (<a class="reference internal" href="../task/agent-as-tool.html"><span class="std std-doc">agent-as-tool.md</span></a>): <code class="docutils literal notranslate"><span class="pre">Toolkit.registration().subAgent()</span></code>.</p>
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
@@ -1000,15 +1003,9 @@
 <section id="example-project">
 <h2>Example Project<a class="headerlink" href="#example-project" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><strong>Location</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/supervisor/</span></code></p></li>
 <li><p><strong>Key classes</strong>: <code class="docutils literal notranslate"><span class="pre">SupervisorConfig</span></code> (model, calendarAgent, emailAgent, supervisorAgent), <code class="docutils literal notranslate"><span class="pre">CalendarStubTools</span></code>, <code class="docutils literal notranslate"><span class="pre">EmailStubTools</span></code>, <code class="docutils literal notranslate"><span class="pre">SupervisorRunner</span></code> (optional demo).</p></li>
 <li><p><strong>Demo</strong>: Set <code class="docutils literal notranslate"><span class="pre">supervisor.run-examples=true</span></code> to run two scenarios on startup: (1) single-domain: “Schedule a team standup for tomorrow at 9am”; (2) multi-domain: “Schedule a meeting with the design team next Tuesday at 2pm for 1 hour, and send them an email reminder about reviewing the new mockups.”</p></li>
 </ul>
-<p><strong>Build and run</strong> (from repo root):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/supervisor<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/supervisor<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
 <p><strong>Use in your code</strong>: Inject the supervisor ReActAgent (e.g. <code class="docutils literal notranslate"><span class="pre">&#64;Qualifier(&quot;supervisorAgent&quot;)</span></code>) and call it with a user <code class="docutils literal notranslate"><span class="pre">Msg</span></code>; get text from the response with <code class="docutils literal notranslate"><span class="pre">getTextContent()</span></code>.</p>
 </section>
 <section id="related-documentation">
@@ -1074,7 +1071,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">

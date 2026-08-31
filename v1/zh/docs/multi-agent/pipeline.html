@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-01T12:22:29+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="自定义工作流（Custom Workflow）" href="workflow.html"><link rel="prev" title="多智能体概览" href="overview.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="自定义工作流（Custom Workflow）" href="workflow.html"><link rel="prev" title="多智能体概览" href="overview.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/zh/docs/multi-agent/pipeline.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="pipeline">
 <h1>Pipeline（管道）<a class="headerlink" href="#pipeline" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>说明：</strong> 原先的 Spring Boot 示例模块 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>。</p>
+</div></blockquote>
 <p>本示例使用 <strong>Spring AI Alibaba</strong> 的流式智能体（<strong>SequentialAgent</strong>、<strong>ParallelAgent</strong>、<strong>LoopAgent</strong>）与 <strong>AgentScopeAgent</strong> 子智能体及 AgentScope 的 <strong>DashScopeChatModel</strong>（<code class="docutils literal notranslate"><span class="pre">Model</span></code>）。各管道由基于 ReActAgent 的 AgentScopeAgent 构建，并通过 <code class="docutils literal notranslate"><span class="pre">PipelineService</span></code> 调用。</p>
 <section id="id1">
 <h2>前置条件<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
@@ -1292,21 +1295,7 @@
 </div>
 </section>
 <section id="id7">
-<h2>构建与运行<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
-<p>在仓库根目录执行：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
-<p><strong>启用演示运行器：</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span>pipeline.runner.enabled<span class="o">=</span><span class="nb">true</span>
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
-<p>或在 <code class="docutils literal notranslate"><span class="pre">application.yml</span></code> 中设置：<code class="docutils literal notranslate"><span class="pre">pipeline.runner.enabled:</span> <span class="pre">true</span></code>。</p>
-</section>
-<section id="id8">
-<h2>配置<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<h2>配置<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1328,31 +1317,8 @@
 </table>
 </div>
 </section>
-<section id="id9">
-<h2>项目结构<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>agentscope-examples/multiagent-patterns/pipeline/
-├── README.md
-├── pom.xml
-└── src/main/
-    ├── java/.../pipeline/
-    │   ├── PipelineApplication.java
-    │   ├── PipelineModelConfig.java        # Model (DashScopeChatModel) Bean
-    │   ├── PipelineService.java            # runSequential, runParallel, runLoop
-    │   ├── PipelineCommandRunner.java      # 可选演示（pipeline.runner.enabled）
-    │   ├── PipelineRunnerConfig.java       # PipelineService Bean
-    │   ├── sequential/
-    │   │   └── SequentialPipelineConfig.java
-    │   ├── parallel/
-    │   │   └── ParallelPipelineConfig.java
-    │   └── loop/
-    │       └── LoopPipelineConfig.java
-    └── resources/
-        └── application.yml
-</pre></div>
-</div>
-</section>
-<section id="id10">
-<h2>相关文档<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<section id="id8">
+<h2>相关文档<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="routing.html"><span class="std std-doc">Routing</span></a> - 分类并路由到专家智能体</p></li>
 <li><p><a class="reference internal" href="../task/msghub.html"><span class="std std-doc">MsgHub</span></a> - 多智能体对话的消息广播</p></li>
@@ -1415,7 +1381,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-01</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1467,10 +1433,8 @@
 </li>
 <li><a class="reference internal" href="#pipelineservice">调用管道：PipelineService</a></li>
 <li><a class="reference internal" href="#id6">可选演示运行器</a></li>
-<li><a class="reference internal" href="#id7">构建与运行</a></li>
-<li><a class="reference internal" href="#id8">配置</a></li>
-<li><a class="reference internal" href="#id9">项目结构</a></li>
-<li><a class="reference internal" href="#id10">相关文档</a></li>
+<li><a class="reference internal" href="#id7">配置</a></li>
+<li><a class="reference internal" href="#id8">相关文档</a></li>
 </ul>
 </li>
 </ul>

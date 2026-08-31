@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagents" href="subagent.html"><link rel="prev" title="Routing" href="routing.html">
+    <meta property="article:modified_time" content="2026-08-31T03:00:13+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagents" href="subagent.html"><link rel="prev" title="Routing" href="routing.html">
         <link rel="canonical" href="https://java.agentscope.io/v1/en/docs/multi-agent/skills.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -961,6 +961,9 @@
         <article role="main" id="furo-main-content">
           <section id="skills-progressive-disclosure">
 <h1>Skills (Progressive Disclosure)<a class="headerlink" href="#skills-progressive-disclosure" title="Link to this heading">¶</a></h1>
+<blockquote>
+<div><p><strong>Note:</strong> The former Spring Boot example module <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/</span></code> was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see <code class="docutils literal notranslate"><span class="pre">agentscope-examples/documentation/</span></code>.</p>
+</div></blockquote>
 <p>In the <strong>skills</strong> pattern, specialized capabilities are packaged as invokable “skills” that augment an agent’s behavior. Skills are primarily <strong>prompt-driven</strong>: the agent sees skill metadata (e.g. name and description) first and loads full skill content <strong>on demand</strong> via a tool (e.g. <code class="docutils literal notranslate"><span class="pre">read_skill</span></code>). This keeps the initial context small and avoids loading all skill text upfront.</p>
 <p>AgentScope implements this with <strong>SkillBox</strong>, <strong>SkillRepository</strong> (e.g. <code class="docutils literal notranslate"><span class="pre">ClasspathSkillRepository</span></code>), and skill tools. The core feature is documented in <a class="reference internal" href="../task/agent-skill.html"><span class="std std-doc">Agent Skill</span></a>; this page focuses on the <strong>multi-agent example</strong> that uses the same mechanism for a SQL assistant.</p>
 <section id="overview">
@@ -1000,15 +1003,9 @@
 <h2>Example Project<a class="headerlink" href="#example-project" title="Link to this heading">¶</a></h2>
 <p>The <strong>SQL assistant</strong> example uses two skills: <strong>sales_analytics</strong> (customers, orders, revenue) and <strong>inventory_management</strong> (products, warehouses, stock). The user asks in natural language; the agent calls <strong>read_skill(“sales_analytics”)</strong> or <strong>read_skill(“inventory_management”)</strong> when needed, then generates SQL.</p>
 <ul class="simple">
-<li><p><strong>Location</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/skills/</span></code></p></li>
 <li><p><strong>Key classes</strong>: <code class="docutils literal notranslate"><span class="pre">SkillsConfig</span></code> (ClasspathSkillRepository, SkillBox, ReActAgent), <code class="docutils literal notranslate"><span class="pre">SkillsRunner</span></code> (optional demo).</p></li>
 <li><p><strong>Run</strong>: Set <code class="docutils literal notranslate"><span class="pre">skills.runner.enabled=true</span></code> to run a single-query demo on startup (e.g. “Write a SQL query to find all customers who made orders over $1000 in the last month”).</p></li>
 </ul>
-<p><strong>Build and run</strong> (from repo root):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/skills<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/skills<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
 <p><strong>Use in your code</strong>: Inject the ReActAgent (e.g. <code class="docutils literal notranslate"><span class="pre">sqlAssistantAgent</span></code>) and call it with a user <code class="docutils literal notranslate"><span class="pre">Msg</span></code>; get text from the response with <code class="docutils literal notranslate"><span class="pre">getTextContent()</span></code>. The agent will use skill descriptions to decide when to call <strong>read_skill</strong> and then generate the SQL.</p>
 </section>
 <section id="related-documentation">
@@ -1074,7 +1071,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">
