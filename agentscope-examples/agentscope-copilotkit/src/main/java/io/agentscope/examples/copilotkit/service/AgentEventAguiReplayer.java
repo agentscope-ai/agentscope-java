@@ -112,7 +112,52 @@ public final class AgentEventAguiReplayer {
         if (context != null) {
             projected.addAll(registry.enrich(null, context.finishPendingEvents(), context));
         }
-        return List.copyOf(projected);
+        return suppressResolvedInterrupts(projected);
+    }
+
+    /**
+     * Only the interrupt outcome of the last run is preserved; interrupt outcomes of earlier runs
+     * that have been continued (and typically resolved) by a later run are replaced with
+     * {@code null}, which serializes as a normal successful run.
+     *
+     * <p>The last run is determined from the run id of the final event of any kind, not just the
+     * last {@code RUN_FINISHED}: a run that is still in progress has no {@code RUN_FINISHED} yet,
+     * but its presence means the interrupted run has been continued, so its interrupt is resolved
+     * and must be suppressed.
+     *
+     * @param events projected AG-UI events, in conversion order
+     * @return events with resolved historical interrupts suppressed
+     */
+    static List<AguiEvent> suppressResolvedInterrupts(List<AguiEvent> events) {
+        String lastRunId = null;
+        for (AguiEvent event : events) {
+            if (event.getRunId() != null) {
+                lastRunId = event.getRunId();
+            }
+        }
+        if (lastRunId == null) {
+            return events;
+        }
+        boolean changed = false;
+        List<AguiEvent> result = new ArrayList<>(events.size());
+        for (AguiEvent event : events) {
+            if (event instanceof AguiEvent.RunFinished runFinished
+                    && !lastRunId.equals(runFinished.runId())
+                    && runFinished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome) {
+                result.add(
+                        new AguiEvent.RunFinished(
+                                runFinished.threadId(),
+                                runFinished.runId(),
+                                runFinished.result(),
+                                null,
+                                runFinished.timestamp(),
+                                runFinished.rawEvent()));
+                changed = true;
+            } else {
+                result.add(event);
+            }
+        }
+        return changed ? List.copyOf(result) : events;
     }
 
     private AguiAdapterConfig replayConfig() {
