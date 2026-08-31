@@ -1,5 +1,7 @@
 # Pipeline（管道）
 
+> **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
+
 本示例使用 **Spring AI Alibaba** 的流式智能体（**SequentialAgent**、**ParallelAgent**、**LoopAgent**）与 **AgentScopeAgent** 子智能体及 AgentScope 的 **DashScopeChatModel**（`Model`）。各管道由基于 ReActAgent 的 AgentScopeAgent 构建，并通过 `PipelineService` 调用。
 
 ## 前置条件
@@ -318,53 +320,12 @@ public class PipelineCommandRunner implements ApplicationRunner {
 }
 ```
 
-## 构建与运行
-
-在仓库根目录执行：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/pipeline -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
-```
-
-**启用演示运行器：**
-
-```bash
-export pipeline.runner.enabled=true
-./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
-```
-
-或在 `application.yml` 中设置：`pipeline.runner.enabled: true`。
-
 ## 配置
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | `spring.ai.dashscope.api-key` | 环境变量 `AI_DASHSCOPE_API_KEY` | 模型使用的 DashScope API Key |
 | `pipeline.runner.enabled` | `false` | 为 `true` 时，启动时运行顺序、并行、循环三个演示 |
-
-## 项目结构
-
-```
-agentscope-examples/multiagent-patterns/pipeline/
-├── README.md
-├── pom.xml
-└── src/main/
-    ├── java/.../pipeline/
-    │   ├── PipelineApplication.java
-    │   ├── PipelineModelConfig.java        # Model (DashScopeChatModel) Bean
-    │   ├── PipelineService.java            # runSequential, runParallel, runLoop
-    │   ├── PipelineCommandRunner.java      # 可选演示（pipeline.runner.enabled）
-    │   ├── PipelineRunnerConfig.java       # PipelineService Bean
-    │   ├── sequential/
-    │   │   └── SequentialPipelineConfig.java
-    │   ├── parallel/
-    │   │   └── ParallelPipelineConfig.java
-    │   └── loop/
-    │       └── LoopPipelineConfig.java
-    └── resources/
-        └── application.yml
-```
 
 ## 相关文档
 
