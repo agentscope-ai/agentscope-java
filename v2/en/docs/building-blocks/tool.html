@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-09T00:51:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Context &amp; AgentState" href="context.html"><link rel="prev" title="Permission System" href="permission-system.html">
+    <meta property="article:modified_time" content="2026-08-31T02:55:59+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Context &amp; AgentState" href="context.html"><link rel="prev" title="Permission System" href="permission-system.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/building-blocks/tool.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1176,10 +1176,10 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.ToolResultBlock</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionBehavior</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionContextState</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionDecision</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolBase</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolCallParam</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolExecutionContext</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
@@ -1204,7 +1204,7 @@
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">PermissionDecision</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">checkPermissions</span><span class="p">(</span>
-<span class="w">            </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolInput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolInput</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionContextState</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">allow</span><span class="p">(</span><span class="s">"Web search is read-only."</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
 
@@ -1228,9 +1228,9 @@
 <p>External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits <code class="docutils literal notranslate"><span class="pre">RequireExternalExecutionEvent</span></code> and pauses. When the next call feeds back matching <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code>s, the agent emits <code class="docutils literal notranslate"><span class="pre">ExternalExecutionResultEvent</span></code> with the same <code class="docutils literal notranslate"><span class="pre">replyId</span></code> before continuing.</p>
 <p>This pattern is the foundation of <a class="reference internal" href="agent.html#human-in-the-loop"><span class="std std-ref">human-in-the-loop</span></a> flows — some actions need human approval or human execution.</p>
 <p>To create an external tool, set <code class="docutils literal notranslate"><span class="pre">externalTool</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code> and skip implementing <code class="docutils literal notranslate"><span class="pre">callAsync</span></code>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionDecision</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionContextState</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.permission.PermissionDecision</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolBase</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolExecutionContext</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
@@ -1255,7 +1255,7 @@
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">PermissionDecision</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">checkPermissions</span><span class="p">(</span>
-<span class="w">            </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolInput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolInput</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionContextState</span><span class="w"> </span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">PermissionDecision</span><span class="p">.</span><span class="na">allow</span><span class="p">(</span><span class="s">"External tool dispatch is always allowed."</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
@@ -1729,7 +1729,7 @@ Human-in-the-Loop</div>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-09</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">
