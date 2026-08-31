@@ -1,5 +1,7 @@
 # Supervisor（监督者）
 
+> **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
+
 在 **Supervisor** 模式中，一个中心**监督者**（主智能体）通过**工具**调用专职智能体进行协调。监督者接收用户请求，决定调用哪些专家（如日历、邮件），并将结果综合成一条回复。专职智能体从用户视角看是**无状态**的；监督者维护对话，将一次性任务委托给专家。在 AgentScope 中通过 **Agent as Tool**（[agent-as-tool.md](../task/agent-as-tool.md)）实现：`Toolkit.registration().subAgent()`。
 
 ## 概述
@@ -37,16 +39,8 @@
 
 ## 示例项目
 
-- **路径**：`agentscope-examples/multiagent-patterns/supervisor/`
 - **主要类**：`SupervisorConfig`（model、calendarAgent、emailAgent、supervisorAgent），`CalendarStubTools`，`EmailStubTools`，`SupervisorRunner`（可选演示）。
 - **演示**：设置 `supervisor.run-examples=true` 可在启动时运行两个场景：(1) 单领域：「明天上午 9 点安排团队站会」；(2) 多领域：「下周二下午 2 点与设计团队开 1 小时会，并给他们发邮件提醒查看新原型」。
-
-**构建与运行**（在仓库根目录）：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/supervisor -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/supervisor spring-boot:run
-```
 
 **在代码中使用**：注入监督者 ReActAgent（如 `@Qualifier("supervisorAgent")`），传入用户 `Msg` 调用；用 `getTextContent()` 获取回复文本。
 
