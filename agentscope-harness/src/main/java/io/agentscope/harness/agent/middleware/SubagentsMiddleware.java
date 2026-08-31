@@ -95,7 +95,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             ## Subagents
 
             You have access to subagent tools for spawning and coordinating isolated subagents.
-            Subagents are ephemeral — they live only for the duration of the task and return a single result.
+            Spawned subagents remain retained and addressable until explicitly released or until the parent agent shuts down.
 
             ### Agent Tools
 
@@ -112,7 +112,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - `message` (required): content to send
             - `timeout_seconds`: 0=fire-and-forget, >0=wait for reply (default: 30)
 
-            **`%s`** — List active subagents
+            **`%s`** — List retained, addressable subagents
+
+            %s
 
             ### Task Tools (for async/background operations)
 
@@ -167,6 +169,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - **Mixed short/long work**: Wait for short prerequisite tasks first, continue reasoning with those results, and merge long-running async results later through `task_output` or `wait_async_results`
             - **Sync delegation**: Use default timeout for simple one-shot delegation when one result is needed before the next reasoning step
             - **Persistent session**: Spawn without a task, then use send for multi-turn interaction
+            %s
             - **Cancel stale work**: Use task_cancel to stop background tasks that are no longer needed
             - Subagent results are NOT visible to the user — always summarize them in your response
             """;
@@ -174,6 +177,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
     private final List<SubagentEntry> baseEntries;
     private volatile Object subagentTool;
+    private volatile AgentSpawnTool ownedAgentSpawnTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
     private final boolean isSessionMode;
@@ -211,7 +215,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.workspaceManager = workspaceManager;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
-        this.subagentTool = new AgentSpawnTool(dam, taskRepository, 0);
+        AgentSpawnTool spawnTool = new AgentSpawnTool(dam, taskRepository, 0);
+        this.subagentTool = spawnTool;
+        this.ownedAgentSpawnTool = spawnTool;
         this.taskTool = new TaskTool(taskRepository);
         this.filesystem = filesystem;
         this.mainWorkspace = mainWorkspace;
@@ -240,6 +246,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.agentManager = null;
         this.workspaceManager = null;
         this.subagentTool = externalSubagentTool;
+        this.ownedAgentSpawnTool = null;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
         this.taskTool = new TaskTool(taskRepository);
@@ -356,9 +363,25 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (this.subagentTool instanceof AgentSpawnTool ast) {
             ast.setGatewayBridge(bridge);
         } else {
-            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
         }
         return this;
+    }
+
+    /** Returns the internally-created spawn tool, or {@code null} in external session mode. */
+    public AgentSpawnTool getOwnedAgentSpawnTool() {
+        return ownedAgentSpawnTool;
+    }
+
+    /** Closes the internally-created spawn tool without touching an injected external tool. */
+    public synchronized void closeOwnedAgentSpawnTool() {
+        AgentSpawnTool spawnTool = ownedAgentSpawnTool;
+        if (spawnTool != null) {
+            ownedAgentSpawnTool = null;
+            spawnTool.close();
+        }
     }
 
     /**
@@ -655,7 +678,29 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         String spawnName = isSessionMode ? "sessions_spawn" : "agent_spawn";
         String sendName = isSessionMode ? "sessions_send" : "agent_send";
         String listName = isSessionMode ? "sessions_list" : "agent_list";
-        return String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName, agentList);
+        String releaseSection =
+                isSessionMode
+                        ? ""
+                        : """
+                        **`agent_release`** — Release a retained subagent that is no longer needed
+                        - `agent_key`: copy the full opaque handle returned by `agent_spawn`
+                        - Release is rejected while the subagent has running work; wait for or cancel that work, then retry
+                        - Success invalidates the `agent_key` and revokes any user-addressable Gateway handle
+                        """;
+        String releaseUsage =
+                isSessionMode
+                        ? ""
+                        : "- **Release retained agents**: Once a subagent is no longer needed and"
+                                + " has no running work, call `agent_release`; a successful release"
+                                + " permanently invalidates its `agent_key`";
+        return String.format(
+                SUBAGENT_SECTION_TEMPLATE,
+                spawnName,
+                sendName,
+                listName,
+                releaseSection,
+                agentList,
+                releaseUsage);
     }
 
     /**
