@@ -288,7 +288,7 @@ public class AguiStreamContext {
                         toolCallId,
                         content != null && !content.isEmpty() ? content.toString() : null,
                         "tool",
-                        toolResultMessageId(replyId, toolCallId)));
+                        replyId + ":" + toolCallId));
     }
 
     public void markToolCallSuspended(String toolCallId) {
@@ -340,10 +340,6 @@ public class AguiStreamContext {
             return messageId;
         }
         return messageId + REASONING_MESSAGE_ID_SUFFIX;
-    }
-
-    private static String toolResultMessageId(String replyId, String toolCallId) {
-        return isBlank(replyId) ? toolCallId : replyId + "-" + toolCallId;
     }
 
     private static String serialize(ContentBlock data) {

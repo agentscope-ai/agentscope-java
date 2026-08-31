@@ -637,7 +637,7 @@ class AguiAgentAdapterV2Test {
                             .findFirst()
                             .orElseThrow();
             assertEquals("hello", result.content());
-            assertEquals("reply-tool-tool-1", result.messageId());
+            assertEquals("reply-tool:tool-1", result.messageId());
         }
 
         @Test
@@ -658,28 +658,7 @@ class AguiAgentAdapterV2Test {
                             .map(AguiEvent.ToolCallResult::messageId)
                             .toList();
 
-            assertEquals(List.of("reply-parallel-tool-1", "reply-parallel-tool-2"), messageIds);
-        }
-
-        @Test
-        void testToolResultFallsBackToToolCallIdWhenReplyIdIsMissing() {
-            for (String replyId : new String[] {"", null}) {
-                AguiEvent.ToolCallResult result =
-                        runReActEvents(
-                                        new ToolCallStartEvent(
-                                                replyId, "tool-missing-reply", "lookup"),
-                                        new ToolResultStartEvent(
-                                                replyId, "tool-missing-reply", "lookup"),
-                                        new ToolResultEndEvent(
-                                                replyId, "tool-missing-reply", "lookup", null))
-                                .stream()
-                                .filter(AguiEvent.ToolCallResult.class::isInstance)
-                                .map(AguiEvent.ToolCallResult.class::cast)
-                                .findFirst()
-                                .orElseThrow();
-
-                assertEquals("tool-missing-reply", result.messageId());
-            }
+            assertEquals(List.of("reply-parallel:tool-1", "reply-parallel:tool-2"), messageIds);
         }
 
         @Test
