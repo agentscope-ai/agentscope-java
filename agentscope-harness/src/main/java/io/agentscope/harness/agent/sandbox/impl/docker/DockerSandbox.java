@@ -522,10 +522,14 @@ public class DockerSandbox extends AbstractBaseSandbox {
         }
 
         cmd.add(dockerState.getImage());
-        // Keep the container alive with an idle shell loop
+        // Keep the container alive with an idle shell loop. Install a SIGTERM trap and
+        // background the sleep with `wait`, so PID 1 (sh) exits promptly on `docker stop`
+        // instead of blocking in a foreground `sleep` until the stop timeout forces a
+        // SIGKILL. Relies only on `sh` + integer `sleep`, so it stays portable across
+        // minimal images (e.g. BusyBox/Alpine) where `sleep infinity` is unsupported.
         cmd.add("sh");
         cmd.add("-c");
-        cmd.add("while :; do sleep 3600; done");
+        cmd.add("trap 'exit 0' TERM; while :; do sleep 3600 & wait $!; done");
 
         return cmd;
     }
