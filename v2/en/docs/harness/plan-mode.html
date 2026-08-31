@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-07-16T07:09:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Channel" href="channel.html"><link rel="prev" title="Skill" href="skill.html">
+    <meta property="article:modified_time" content="2026-08-31T02:54:18+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Channel" href="channel.html"><link rel="prev" title="Skill" href="skill.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/plan-mode.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1058,7 +1058,7 @@
     A-&gt;&gt;FS: plan_write to plans/PLAN.md
     A-&gt;&gt;H: plan_exit → HITL confirmation
     H--&gt;&gt;A: ConfirmResult(true)
-    A-&gt;&gt;A: enter execution phase; all tools allowed
+    A-&gt;&gt;A: enter execution phase: all tools allowed
     </pre><p>Any non-whitelisted tool call (e.g. <code class="docutils literal notranslate"><span class="pre">write_file</span></code>, or <code class="docutils literal notranslate"><span class="pre">execute</span></code> unless you <a class="reference internal" href="#allowing-the-shell-during-the-plan-phase-opt-in">opt in</a>) during the plan phase is rejected immediately with something like:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[Tool denied — plan mode is active]
 Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are allowed.
@@ -1259,7 +1259,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-07-16</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">
