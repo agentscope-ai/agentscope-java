@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Model" href="model.html"><link rel="prev" title="消息与事件" href="message-and-event.html">
+    <meta property="article:modified_time" content="2026-08-31T02:58:53+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Model" href="model.html"><link rel="prev" title="消息与事件" href="message-and-event.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/middleware.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1052,10 +1052,63 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">execute_tool</span> <span class="pre">&lt;name&gt;</span></code> —— 包裹每次工具执行</p></li>
 </ul>
 <p>未配置 OpenTelemetry SDK（只剩默认的 no-op provider）时，所有 hook 会直接短路到 <code class="docutils literal notranslate"><span class="pre">next.apply(input)</span></code>，几乎零开销。</p>
-<p>使用前先在进程中初始化 OpenTelemetry SDK（OTLP exporter、<code class="docutils literal notranslate"><span class="pre">SdkTracerProvider</span></code>、<code class="docutils literal notranslate"><span class="pre">OpenTelemetrySdk.builder().setTracerProvider(...).buildAndRegisterGlobal()</span></code>），随后把 <code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> 装到 agent 上即可：</p>
+<p><code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> 从进程级 <code class="docutils literal notranslate"><span class="pre">GlobalOpenTelemetry</span></code> 实例读取配置。应用如果自行导出 span，除了 AgentScope 之外还需要引入 OpenTelemetry SDK 和 OTLP exporter。使用 OpenTelemetry BOM 保持二者版本一致（下列版本与 AgentScope 当前使用的版本一致）：</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;properties&gt;</span>
+<span class="w">    </span><span class="nt">&lt;opentelemetry.version&gt;</span>1.61.0<span class="nt">&lt;/opentelemetry.version&gt;</span>
+<span class="nt">&lt;/properties&gt;</span>
+
+<span class="nt">&lt;dependencyManagement&gt;</span>
+<span class="w">    </span><span class="nt">&lt;dependencies&gt;</span>
+<span class="w">        </span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">            </span><span class="nt">&lt;groupId&gt;</span>io.opentelemetry<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">            </span><span class="nt">&lt;artifactId&gt;</span>opentelemetry-bom<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">            </span><span class="nt">&lt;version&gt;</span>${opentelemetry.version}<span class="nt">&lt;/version&gt;</span>
+<span class="w">            </span><span class="nt">&lt;type&gt;</span>pom<span class="nt">&lt;/type&gt;</span>
+<span class="w">            </span><span class="nt">&lt;scope&gt;</span>import<span class="nt">&lt;/scope&gt;</span>
+<span class="w">        </span><span class="nt">&lt;/dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;/dependencies&gt;</span>
+<span class="nt">&lt;/dependencyManagement&gt;</span>
+
+<span class="nt">&lt;dependencies&gt;</span>
+<span class="w">    </span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">        </span><span class="nt">&lt;groupId&gt;</span>io.opentelemetry<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">        </span><span class="nt">&lt;artifactId&gt;</span>opentelemetry-sdk<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;/dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">        </span><span class="nt">&lt;groupId&gt;</span>io.opentelemetry<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">        </span><span class="nt">&lt;artifactId&gt;</span>opentelemetry-exporter-otlp<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;/dependency&gt;</span>
+<span class="nt">&lt;/dependencies&gt;</span>
+</pre></div>
+</div>
+<p>构建 agent 之前，在每个进程中只构建并注册一次 SDK。下例中的可选环境变量可保存 <code class="docutils literal notranslate"><span class="pre">Basic</span> <span class="pre">&lt;base64-credentials&gt;</span></code> 形式的值，供 Langfuse 等要求 <code class="docutils literal notranslate"><span class="pre">Authorization</span></code> header 的后端使用：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tracing.OtelTracingMiddleware</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.opentelemetry.sdk.OpenTelemetrySdk</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.opentelemetry.sdk.trace.SdkTracerProvider</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.opentelemetry.sdk.trace.export.BatchSpanProcessor</span><span class="p">;</span>
+
+<span class="n">String</span><span class="w"> </span><span class="n">endpoint</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">().</span><span class="na">getOrDefault</span><span class="p">(</span>
+<span class="w">                </span><span class="s">"OTEL_EXPORTER_OTLP_ENDPOINT"</span><span class="p">,</span><span class="w"> </span><span class="s">"http://localhost:4318/v1/traces"</span><span class="p">);</span>
+<span class="n">String</span><span class="w"> </span><span class="n">authorization</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">"OTEL_EXPORTER_OTLP_AUTHORIZATION"</span><span class="p">);</span>
+
+<span class="kd">var</span><span class="w"> </span><span class="n">exporterBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OtlpHttpSpanExporter</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">setEndpoint</span><span class="p">(</span><span class="n">endpoint</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">authorization</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">!</span><span class="n">authorization</span><span class="p">.</span><span class="na">isBlank</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">exporterBuilder</span><span class="p">.</span><span class="na">addHeader</span><span class="p">(</span><span class="s">"Authorization"</span><span class="p">,</span><span class="w"> </span><span class="n">authorization</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="n">SdkTracerProvider</span><span class="w"> </span><span class="n">tracerProvider</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">SdkTracerProvider</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">addSpanProcessor</span><span class="p">(</span>
+<span class="w">                        </span><span class="n">BatchSpanProcessor</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">exporterBuilder</span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">OpenTelemetrySdk</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">setTracerProvider</span><span class="p">(</span><span class="n">tracerProvider</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">buildAndRegisterGlobal</span><span class="p">();</span>
+<span class="n">Runtime</span><span class="p">.</span><span class="na">getRuntime</span><span class="p">().</span><span class="na">addShutdownHook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Thread</span><span class="p">(</span><span class="n">tracerProvider</span><span class="p">::</span><span class="n">close</span><span class="p">));</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
 <span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -1063,10 +1116,11 @@
 <span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">"You are a helpful assistant."</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">middlewares</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OtelTracingMiddleware</span><span class="p">()))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">middleware</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OtelTracingMiddleware</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<p>必须在 middleware 开始工作前注册 SDK。如果运行环境（例如 Spring Boot 的 OpenTelemetry 自动配置）已经注册了 <code class="docutils literal notranslate"><span class="pre">GlobalOpenTelemetry</span></code>，直接复用并只添加 middleware 即可。新配置不再调用已弃用的 <code class="docutils literal notranslate"><span class="pre">TracerRegistry.register(...)</span></code>。应用关闭时应关闭 <code class="docutils literal notranslate"><span class="pre">SdkTracerProvider</span></code>，让 batch processor 刷新尚未导出的 span。</p>
 <p>每次 reply 会产出一棵嵌套 span 树，关键属性包括 agent 名称、session ID、模型名、token 数、工具名与入参等。</p>
 </section>
 <section id="taskremindermiddleware">
@@ -1484,7 +1538,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-08-31</div>
           </div>
           <div class="right-details">
             <div class="icons">
