@@ -133,6 +133,28 @@ v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在
 
 `isCheckRunning()` 仍可调用（返回 `false`），`Builder.checkRunning(boolean)` 仍可调用（被忽略），均已标 `@Deprecated`。
 
+#### A.8 `TracerRegistry` + `TelemetryTracer` → `OtelTracingMiddleware`
+
+旧的 tracing 配置会在框架中全局注册一个 `Tracer`：
+
+```java
+TracerRegistry.register(TelemetryTracer.builder().tracer(tracer).build());
+```
+
+在当前 2.0 源码中，`TelemetryTracer` 位于 `agentscope-extensions-studio` 模块，而不是 `agentscope-core`。Studio 集成仍会使用它，但仅仅为了恢复应用级 tracing 而引入 Studio 扩展并不是推荐迁移方式。`Tracer` 接口与 `TracerRegistry` 都已标记为待删除。
+
+应用 tracing 应改用标准 OpenTelemetry 组件：
+
+| 旧配置 | 2.0 替代方案 |
+|---|---|
+| `TelemetryTracer.builder().endpoint(...)` | 构建 `OtlpHttpSpanExporter` 并添加到 `SdkTracerProvider` |
+| `TelemetryTracer.builder().addHeader(...)` | 调用 `OtlpHttpSpanExporter.builder().addHeader(...)` |
+| `TracerRegistry.register(...)` | 通过 `OpenTelemetrySdk.buildAndRegisterGlobal()` 注册 SDK |
+| 框架级全局 tracer | 为每个需要输出 span 的 agent 添加 `new OtelTracingMiddleware()` |
+| `TracerRegistry.resetToNoop()` / tracer shutdown | 应用关闭时关闭由应用持有的 `SdkTracerProvider` |
+
+Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，再让 agent 使用 middleware。所需依赖、完整 OTLP 配置以及自定义认证 header 示例见 [Middleware — OtelTracingMiddleware](building-blocks/middleware.md#oteltracingmiddleware)。
+
 ---
 
 ### Part B —— 推荐迁移（`@Deprecated(forRemoval = true)`，仍可调用）
