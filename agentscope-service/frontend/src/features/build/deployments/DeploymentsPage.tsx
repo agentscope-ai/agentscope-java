@@ -125,11 +125,14 @@ export default function DeploymentsPage() {
       const [deps, ags, envs] = await Promise.all([
         listDeployments(),
         listAgents().catch(() => []),
-        listEnvironments(),
+        listEnvironments().catch(() => [] as Environment[]),
       ]);
+      const active = envs.filter(environment => !environment.archivedAt);
       setItems(deps);
       setAgents(ags);
-      setEnvironments(envs.filter(environment => !environment.archivedAt));
+      setEnvironments(active);
+      // With a single active environment there is nothing to choose from; select it up front.
+      if (active.length === 1) setEnvironmentId(active[0].id);
     } catch (e: unknown) {
       setEnvironments([]);
       setErr(e instanceof Error ? e.message : 'Failed to load');
@@ -221,7 +224,9 @@ export default function DeploymentsPage() {
       {err && <div style={S.err}>{err}</div>}
       {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 18 }}>
-        {items.map(dep => (
+        {items.map(dep => {
+          const envName = environments.find(e => e.id === dep.environmentId)?.name;
+          return (
           <div key={dep.id} style={S.card}>
             <div style={S.nameRow}>
               <span style={S.name}>{dep.name}</span>
@@ -237,6 +242,7 @@ export default function DeploymentsPage() {
             <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
               agent <code>{dep.agentId}</code>
               {dep.agentVersion != null ? ` · v${dep.agentVersion}` : ''}
+              {envName ? ` · env ${envName}` : ''}
               {dep.triggerType === 'cron' && dep.cronExpression ? ` · cron ${dep.cronExpression}` : ''}
             </div>
             <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
@@ -292,7 +298,8 @@ export default function DeploymentsPage() {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
         {!loading && items.length === 0 && (
           <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No deployments yet.</div>
         )}
