@@ -224,6 +224,35 @@ class OpenAIThoughtSignatureTest {
     }
 
     @Test
+    @DisplayName("Should merge ThinkingBlock and tool reasoning details instead of overwriting")
+    void testThinkingDetailsMergedWithToolDetails() {
+        Map<String, Object> thinkingMetadata = new HashMap<>();
+        thinkingMetadata.put(
+                ThinkingBlock.METADATA_REASONING_DETAILS,
+                new ArrayList<>(List.of(reasoningDetail("thinking-detail"))));
+        ThinkingBlock thinking =
+                ThinkingBlock.builder().thinking("thinking...").metadata(thinkingMetadata).build();
+        Map<String, Object> toolMetadata = new HashMap<>();
+        toolMetadata.put("reasoningDetail", reasoningDetail("tool-detail"));
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("call_1").name("search").metadata(toolMetadata).build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(thinking, toolUse))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        List<OpenAIReasoningDetail> details = result.getReasoningDetails();
+        assertNotNull(details);
+        assertEquals(2, details.size());
+        assertEquals("thinking-detail", details.get(0).getData());
+        assertEquals("tool-detail", details.get(1).getData());
+    }
+
+    @Test
     @DisplayName("Should skip ThinkingBlock reasoning details that cannot be restored")
     void testUnconvertibleThinkingDetailsSkipped() {
         Map<String, Object> thinkingMetadata = new HashMap<>();

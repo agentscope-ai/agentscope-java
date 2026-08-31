@@ -326,6 +326,10 @@ public class OpenAIMessageConverter {
             builder.content("");
         }
 
+        // Reasoning details collected from the ThinkingBlock and from tool use metadata;
+        // both sources must be merged, not overwrite each other (see issue #2913)
+        List<OpenAIReasoningDetail> reasoningDetails = new ArrayList<>();
+
         // Handle ThinkingBlock for reasoning models (e.g. Gemini via OpenRouter)
         // These models require reasoning content to be preserved in history
         ThinkingBlock thinkingBlock = msg.getFirstContentBlock(ThinkingBlock.class);
@@ -341,15 +345,11 @@ public class OpenAIMessageConverter {
                 Object detailsObj =
                         thinkingBlock.getMetadata().get(ThinkingBlock.METADATA_REASONING_DETAILS);
                 if (detailsObj instanceof List<?> list && !list.isEmpty()) {
-                    List<OpenAIReasoningDetail> details = new ArrayList<>();
                     for (Object item : list) {
                         OpenAIReasoningDetail detail = toReasoningDetail(item);
                         if (detail != null) {
-                            details.add(detail);
+                            reasoningDetails.add(detail);
                         }
-                    }
-                    if (!details.isEmpty()) {
-                        builder.reasoningDetails(details);
                     }
                 }
             }
@@ -363,7 +363,6 @@ public class OpenAIMessageConverter {
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             List<OpenAIToolCall> toolCalls = new ArrayList<>();
-            List<OpenAIReasoningDetail> reasoningDetails = new ArrayList<>();
 
             // First pass: find any thought signature in the blocks
             String fallbackSignature = null;
@@ -427,10 +426,10 @@ public class OpenAIMessageConverter {
                         signature != null);
             }
             builder.toolCalls(toolCalls);
+        }
 
-            if (!reasoningDetails.isEmpty()) {
-                builder.reasoningDetails(reasoningDetails);
-            }
+        if (!reasoningDetails.isEmpty()) {
+            builder.reasoningDetails(reasoningDetails);
         }
 
         return builder.build();
