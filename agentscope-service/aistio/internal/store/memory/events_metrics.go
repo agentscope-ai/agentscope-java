@@ -208,6 +208,9 @@ func (r *metricsRepo) QueryTokenUsage(_ context.Context, f store.TokenFilter) ([
 		if f.AgentName != "" && m.AgentName != f.AgentName {
 			continue
 		}
+		if f.AgentID != uuid.Nil && m.AgentID != f.AgentID {
+			continue
+		}
 		if f.Namespace != "" && m.Namespace != f.Namespace {
 			continue
 		}
@@ -283,6 +286,9 @@ func (r *metricsRepo) QueryAgentMetrics(_ context.Context, f store.AgentMetricFi
 		if f.AgentName != "" && m.AgentName != f.AgentName {
 			continue
 		}
+		if f.AgentID != uuid.Nil && m.AgentID != f.AgentID {
+			continue
+		}
 		if f.Namespace != "" && m.Namespace != f.Namespace {
 			continue
 		}
@@ -322,6 +328,9 @@ func (r *metricsRepo) AggregateTokens(_ context.Context, f store.TokenFilter, bu
 			continue
 		}
 		if f.AgentName != "" && m.AgentName != f.AgentName {
+			continue
+		}
+		if f.AgentID != uuid.Nil && m.AgentID != f.AgentID {
 			continue
 		}
 		if f.Namespace != "" && m.Namespace != f.Namespace {
@@ -381,14 +390,17 @@ func (r *metricsRepo) TopAgents(_ context.Context, tenant string, since time.Tim
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 
-	type agentKey struct{ agent, ns string }
+	type agentKey struct {
+		id        uuid.UUID
+		agent, ns string
+	}
 	totals := map[agentKey]int64{}
 	for i := range r.s.tokens {
 		m := r.s.tokens[i]
 		if m.Tenant != tenant || m.RecordedAt.Before(since) {
 			continue
 		}
-		k := agentKey{m.AgentName, m.Namespace}
+		k := agentKey{m.AgentID, m.AgentName, m.Namespace}
 		totals[k] += m.TotalTokens
 	}
 
@@ -398,7 +410,7 @@ func (r *metricsRepo) TopAgents(_ context.Context, tenant string, since time.Tim
 		if m.Tenant != tenant {
 			continue
 		}
-		k := agentKey{m.AgentName, m.Namespace}
+		k := agentKey{m.AgentID, m.AgentName, m.Namespace}
 		if prev, ok := latestAgent[k]; ok && !m.RecordedAt.After(prev.RecordedAt) {
 			continue
 		}
@@ -409,6 +421,7 @@ func (r *metricsRepo) TopAgents(_ context.Context, tenant string, since time.Tim
 	out := make([]store.AgentUsage, 0, len(totals))
 	for k, total := range totals {
 		u := store.AgentUsage{
+			AgentID:     k.id,
 			AgentName:   k.agent,
 			Namespace:   k.ns,
 			TotalTokens: total,
@@ -457,6 +470,7 @@ func (r *metricsRepo) TopSessionsByTokens(_ context.Context, tenant string, sinc
 		out = append(out, store.SessionUsage{
 			SessionFK:   fk,
 			SessionID:   s.SessionID,
+			AgentID:     s.AgentID,
 			AgentName:   s.AgentName,
 			Namespace:   s.Namespace,
 			Phase:       s.Phase,
@@ -511,6 +525,7 @@ func (r *metricsRepo) TopSessionsByDuration(_ context.Context, tenant string, si
 		out = append(out, store.SessionDuration{
 			SessionFK:  s.ID,
 			SessionID:  s.SessionID,
+			AgentID:    s.AgentID,
 			AgentName:  s.AgentName,
 			Namespace:  s.Namespace,
 			Phase:      s.Phase,
@@ -540,14 +555,17 @@ func (r *metricsRepo) TopAgentsByActiveSessions(_ context.Context, tenant string
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 
-	type agentKey struct{ agent, ns string }
+	type agentKey struct {
+		id        uuid.UUID
+		agent, ns string
+	}
 	peaks := map[agentKey]int32{}
 	for i := range r.s.agents {
 		m := r.s.agents[i]
 		if m.Tenant != tenant || m.RecordedAt.Before(since) {
 			continue
 		}
-		k := agentKey{m.AgentName, m.Namespace}
+		k := agentKey{m.AgentID, m.AgentName, m.Namespace}
 		if m.ActiveSessions > peaks[k] {
 			peaks[k] = m.ActiveSessions
 		}
@@ -555,6 +573,7 @@ func (r *metricsRepo) TopAgentsByActiveSessions(_ context.Context, tenant string
 	out := make([]store.AgentUsage, 0, len(peaks))
 	for k, peak := range peaks {
 		out = append(out, store.AgentUsage{
+			AgentID:        k.id,
 			AgentName:      k.agent,
 			Namespace:      k.ns,
 			ActiveSessions: peak,
@@ -641,6 +660,9 @@ func (r *metricsRepo) SumTokenUsage(_ context.Context, f store.TokenFilter) (int
 		if f.AgentName != "" && m.AgentName != f.AgentName {
 			continue
 		}
+		if f.AgentID != uuid.Nil && m.AgentID != f.AgentID {
+			continue
+		}
 		if f.Namespace != "" && m.Namespace != f.Namespace {
 			continue
 		}
@@ -668,6 +690,9 @@ func (r *metricsRepo) SumErrorCount(_ context.Context, f store.AgentMetricFilter
 			continue
 		}
 		if f.AgentName != "" && m.AgentName != f.AgentName {
+			continue
+		}
+		if f.AgentID != uuid.Nil && m.AgentID != f.AgentID {
 			continue
 		}
 		if f.Namespace != "" && m.Namespace != f.Namespace {

@@ -57,7 +57,10 @@ export interface RuntimePool {
 
 export interface AgentInstance {
   id: string;
-  agentName: string;
+  agentId: string;
+  bindingId: string;
+  /** Legacy deployments may still provide this denormalized display field. */
+  agentName?: string;
   backendKind: DataPlaneKind;
   framework?: string;
   health: string;

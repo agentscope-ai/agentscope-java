@@ -114,7 +114,7 @@ Because the project has not been released and v4 deliberately replaces the legac
 
 | Item | Value |
 | --- | --- |
-| Console and public API | http://localhost:8080 |
+| Console and public API | http://localhost:18080 |
 | Default login | `admin` / `admin` |
 | Additional seed users | `alice` / `alice`, `bob` / `bob` |
 | Logs and local state | `.dev-stack/` |
@@ -123,7 +123,7 @@ Default users and development secrets are for local use only.
 
 ### 2. Run your first session
 
-1. Open http://localhost:8080 and sign in (`admin` / `admin`).
+1. Open http://localhost:18080 and sign in (`admin` / `admin`).
 2. In **Managed Agents**, create an Agent.
 3. Create a `local` Environment.
 4. Open **Sessions**, create a session bound to the Agent and Environment, and send the first message.
@@ -178,7 +178,7 @@ docker compose -f agentscope-service/docker-compose.yml up --build
 
 | Service | Port | Exposure |
 | --- | ---: | --- |
-| Gateway | 8080 | Public |
+| Gateway | 18080 | Public (container port 8080 with Docker Compose) |
 | `aistiod` | 8081 | Internal |
 | Data plane | 8082 | Internal |
 | Scheduler | 8083 | Internal |

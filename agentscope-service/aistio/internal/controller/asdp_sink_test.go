@@ -126,13 +126,40 @@ func newSinkTestAgent() *v1alpha1.Agent {
 	}
 }
 
+func newRuntimeReportIdentity(t *testing.T, st store.Store, tenant, namespace, agentKey, instanceKey string) RuntimeReportIdentity {
+	t.Helper()
+	ctx := context.Background()
+	agent, err := st.AgentCatalog().CreateAgent(ctx, &controlmodel.Agent{Tenant: tenant, Namespace: namespace,
+		AgentKey: agentKey, DisplayName: agentKey, Status: controlmodel.AgentActive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := st.AgentCatalog().CreateBinding(ctx, &controlmodel.AgentBinding{AgentID: agent.ID,
+		Tenant: tenant, Namespace: namespace, Kind: controlmodel.DataPlaneExternalApplication,
+		Configuration: json.RawMessage(`{"instanceSelector":{}}`), Priority: 100, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := st.RuntimeRegistry().UpsertAgentInstance(ctx, &controlmodel.AgentInstance{Tenant: tenant,
+		Namespace: namespace, AgentID: agent.ID, BindingID: binding.ID,
+		BackendKind: controlmodel.DataPlaneExternalApplication, InstanceKey: instanceKey,
+		Health: controlmodel.RuntimeHealthHealthy, Capacity: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return RuntimeReportIdentity{Tenant: tenant, Namespace: namespace, AgentID: agent.ID.String(),
+		BindingID: binding.ID.String(), AgentKey: agentKey, InstanceKey: instanceKey,
+		InstanceGeneration: instance.Generation}
+}
+
 func TestApplySessionReportNewFields(t *testing.T) {
 	st := newSinkTestStore(t)
 	agent := newSinkTestAgent()
 	c := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(agent).Build()
 	sink := &SessionEventSink{Client: c, Store: st}
+	identity := newRuntimeReportIdentity(t, st, "admin", "default", "agent-1", "pod-0")
 
-	sink.ApplySessionReport(context.Background(), "admin", "default", "agent-1", "pod-0", []ObservedSession{{
+	sink.ApplySessionReport(context.Background(), identity, []ObservedSession{{
 		ID:                    "sess-1",
 		Phase:                 "active",
 		MessageCount:          12,
@@ -153,12 +180,16 @@ func TestApplySessionReportNewFields(t *testing.T) {
 	if sess.InstanceRef != "pod-0" {
 		t.Errorf("instanceRef = %q", sess.InstanceRef)
 	}
+	if sess.AgentID.String() != identity.AgentID || sess.BindingID.String() != identity.BindingID {
+		t.Errorf("stable runtime identity was not stored: %+v", sess)
+	}
 }
 
 func TestApplySessionReportWithoutKubernetes(t *testing.T) {
 	st := newSinkTestStore(t)
 	sink := &SessionEventSink{Store: st}
-	sink.ApplySessionReport(context.Background(), "admin", "standalone", "external-agent", "process-1", []ObservedSession{{
+	identity := newRuntimeReportIdentity(t, st, "admin", "standalone", "external-agent", "process-1")
+	sink.ApplySessionReport(context.Background(), identity, []ObservedSession{{
 		ID: "session-standalone", Phase: "idle", Framework: "agentscope-java",
 	}})
 	sess, err := st.Sessions().Get(context.Background(), "admin", "external-agent", "standalone", "session-standalone")
@@ -170,16 +201,30 @@ func TestApplySessionReportWithoutKubernetes(t *testing.T) {
 	}
 }
 
+func TestApplySessionReportRejectsStaleGeneration(t *testing.T) {
+	st := newSinkTestStore(t)
+	sink := &SessionEventSink{Store: st}
+	identity := newRuntimeReportIdentity(t, st, "admin", "default", "agent-1", "pod-0")
+	identity.InstanceGeneration++
+	sink.ApplySessionReport(context.Background(), identity, []ObservedSession{{ID: "stale", Phase: "active"}})
+	rows, err := st.Sessions().List(context.Background(), store.SessionFilter{Tenant: identity.Tenant,
+		AgentID: uuid.MustParse(identity.AgentID)})
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("stale generation persisted runtime data: rows=%+v err=%v", rows, err)
+	}
+}
+
 func TestApplyEventReportIdempotent(t *testing.T) {
 	st := newSinkTestStore(t)
 	sink := &SessionEventSink{Store: st}
 	ctx := context.Background()
+	identity := newRuntimeReportIdentity(t, st, "admin", "default", "agent-1", "pod-0")
 
 	events := []ObservedEvent{
 		{SessionID: "sess-x", Seq: 1, EventType: "message", Role: "user", Content: "hi", OccurredAt: time.Now().UTC()},
 		{SessionID: "sess-x", Seq: 2, EventType: "message", Role: "assistant", Content: "hello", OccurredAt: time.Now().UTC()},
 	}
-	sink.ApplyEventReport(ctx, "admin", "default", "agent-1", "pod-0", events)
+	sink.ApplyEventReport(ctx, identity, events)
 
 	// Placeholder session must have been created for the unknown session ID.
 	sess, err := st.Sessions().Get(ctx, "admin", "agent-1", "default", "sess-x")
@@ -196,7 +241,7 @@ func TestApplyEventReportIdempotent(t *testing.T) {
 	}
 
 	// Re-applying the same batch must be idempotent (no duplicates).
-	sink.ApplyEventReport(ctx, "admin", "default", "agent-1", "pod-0", events)
+	sink.ApplyEventReport(ctx, identity, events)
 	list, err = st.Events().List(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("Events.List: %v", err)
@@ -210,6 +255,7 @@ func TestApplyContextReportDedup(t *testing.T) {
 	st := newSinkTestStore(t)
 	sink := &SessionEventSink{Store: st}
 	ctx := context.Background()
+	identity := newRuntimeReportIdentity(t, st, "admin", "default", "agent-1", "pod-0")
 
 	report := ObservedContext{
 		SessionID:    "sess-c",
@@ -218,7 +264,7 @@ func TestApplyContextReportDedup(t *testing.T) {
 		Messages:     json.RawMessage(`[{"role":"user","content":"hi"}]`),
 		Framework:    "claude-agent-sdk",
 	}
-	sink.ApplyContextReport(ctx, "admin", "default", "agent-1", "pod-0", report)
+	sink.ApplyContextReport(ctx, identity, report)
 
 	sess, err := st.Sessions().Get(ctx, "admin", "agent-1", "default", "sess-c")
 	if err != nil {
@@ -247,7 +293,7 @@ func TestApplyContextReportDedup(t *testing.T) {
 
 	// Changed hash: Latest reflects the new row.
 	report.ContextHash = "hash-2"
-	sink.ApplyContextReport(ctx, "admin", "default", "agent-1", "pod-0", report)
+	sink.ApplyContextReport(ctx, identity, report)
 	latest, err = st.ContextSnapshots().Latest(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("ContextSnapshots.Latest: %v", err)
@@ -260,9 +306,10 @@ func TestApplyContextReportDedup(t *testing.T) {
 func TestApplyInventoryReportRecordsMetric(t *testing.T) {
 	st := newSinkTestStore(t)
 	sink := &SessionEventSink{Store: st}
+	identity := newRuntimeReportIdentity(t, st, "admin", "default", "agent-1", "pod-0")
 
 	// Must not panic with a full inventory payload.
-	sink.ApplyInventoryReport(context.Background(), "admin", "default", "agent-1", "pod-0", ObservedInventory{
+	sink.ApplyInventoryReport(context.Background(), identity, ObservedInventory{
 		Subagents:      []ObservedSubagent{{Name: "researcher", InvokeCount: 2}},
 		Workspaces:     []ObservedWorkspace{{Path: "/tmp/ws", Mode: "shared"}},
 		Healthy:        true,

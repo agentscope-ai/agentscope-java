@@ -157,10 +157,19 @@ func (s *Server) listAgentEndpoints(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
+	targetType := strings.TrimSpace(c.Query("targetType"))
+	targetRef := strings.TrimSpace(c.Query("targetRef"))
+	var filtered []*controlmodel.AgentEndpoint
 	for i := range items {
-		items[i] = endpointPublic(items[i])
+		if targetType != "" && string(items[i].TargetType) != targetType {
+			continue
+		}
+		if targetRef != "" && items[i].TargetRef.String() != targetRef {
+			continue
+		}
+		filtered = append(filtered, endpointPublic(items[i]))
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	c.JSON(http.StatusOK, gin.H{"items": filtered})
 }
 func (s *Server) getAgentEndpoint(c *gin.Context) {
 	id, ok := parseUUIDParam(c, "endpointId")
@@ -343,6 +352,8 @@ func (s *Server) dispatchEndpointConversation(ctx context.Context, endpoint *con
 	now := time.Now().UTC()
 	contextPayload, _ := json.Marshal(gin.H{"endpointId": endpoint.ID, "message": message})
 	sessionID, instanceRef := requestedSessionID, ""
+	var agentInstanceID uuid.UUID
+	var instanceGeneration int64
 	switch binding.Kind {
 	case controlmodel.DataPlaneManaged:
 		if s.product == nil {
@@ -365,6 +376,8 @@ func (s *Server) dispatchEndpointConversation(ctx context.Context, endpoint *con
 			if instance.BindingID == binding.BindingID && instance.Health == controlmodel.RuntimeHealthHealthy &&
 				(instance.Capacity <= 0 || instance.ActiveSessions < instance.Capacity) {
 				instanceRef = instance.InstanceKey
+				agentInstanceID = instance.ID
+				instanceGeneration = instance.Generation
 				break
 			}
 		}
@@ -382,7 +395,9 @@ func (s *Server) dispatchEndpointConversation(ctx context.Context, endpoint *con
 		return nil, err
 	}
 	return s.store.Sessions().Upsert(ctx, &store.Session{Tenant: endpoint.Tenant, Namespace: endpoint.Namespace,
-		AgentName: agent.ID.String(), SessionID: sessionID, InstanceRef: instanceRef,
+		AgentID: agent.ID, BindingID: binding.BindingID, AgentInstanceID: agentInstanceID,
+		InstanceGeneration: instanceGeneration, AgentName: agent.AgentKey, SessionID: sessionID, InstanceRef: instanceRef,
+		OriginType: "endpoint", OriginRef: endpoint.ID.String(),
 		Framework: "agent-endpoint", Phase: store.SessionPhaseActive, TaskContext: contextPayload,
 		StartedAt: &now, LastActiveAt: &now})
 }

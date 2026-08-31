@@ -59,6 +59,7 @@ CLAUDE.md
 .omc/
 .qoder/
 .cursor/
+.codex-tmp/
 
 ##Log
 logs/

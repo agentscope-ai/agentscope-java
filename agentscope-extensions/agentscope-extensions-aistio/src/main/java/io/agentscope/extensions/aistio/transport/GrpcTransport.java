@@ -73,14 +73,14 @@ public final class GrpcTransport implements AutoCloseable {
     }
 
     private final String target;
-    private final String credential;
-    private final String agentId;
+    private volatile String credential;
+    private volatile String agentId;
     private final String agentKey;
-    private final String bindingId;
+    private volatile String bindingId;
     private final String tenant;
     private final String namespace;
-    private final String instanceKey;
-    private final long generation;
+    private volatile String instanceKey;
+    private volatile long generation;
     private final String runtime;
     private final String sdkVersion;
     private final List<String> capabilities;
@@ -142,6 +142,34 @@ public final class GrpcTransport implements AutoCloseable {
 
     public boolean isConnected() {
         return connected.get();
+    }
+
+    /**
+     * Refreshes the fenced Catalog identity used by the next connection attempt. HTTP
+     * self-registration can advance an instance generation while this transport is reconnecting
+     * after a control-plane outage; keeping these values immutable would make every later
+     * handshake stale until the whole Agent process restarted.
+     */
+    public void updateIdentity(
+            String credential,
+            String agentId,
+            String bindingId,
+            String instanceKey,
+            long generation) {
+        if (agentId == null
+                || agentId.isBlank()
+                || bindingId == null
+                || bindingId.isBlank()
+                || instanceKey == null
+                || instanceKey.isBlank()
+                || generation <= 0) {
+            return;
+        }
+        this.credential = credential == null ? "" : credential;
+        this.agentId = agentId;
+        this.bindingId = bindingId;
+        this.instanceKey = instanceKey;
+        this.generation = generation;
     }
 
     public void start() {

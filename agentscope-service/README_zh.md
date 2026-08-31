@@ -126,7 +126,7 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 
 | 项目 | 值 |
 | --- | --- |
-| Console 与公共 API | http://localhost:8080 |
+| Console 与公共 API | http://localhost:18080 |
 | 默认账号 | `admin` / `admin` |
 | 其他种子账号 | `alice` / `alice`、`bob` / `bob` |
 | 日志与本地状态 | `.dev-stack/` |
@@ -135,7 +135,7 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 
 ### 2. 运行第一个 Session
 
-1. 打开 http://localhost:8080 并登录（`admin` / `admin`）。
+1. 打开 http://localhost:18080 并登录（`admin` / `admin`）。
 2. 在 **Managed Agents** 中创建 Agent。
 3. 创建一个 `local` Environment。
 4. 打开 **Sessions**，创建绑定 Agent 与 Environment 的 Session，并发送第一条消息。
@@ -190,7 +190,7 @@ docker compose -f agentscope-service/docker-compose.yml up --build
 
 | 服务 | 端口 | 暴露方式 |
 | --- | ---: | --- |
-| Gateway | 8080 | 对外 |
+| Gateway | 18080 | 对外（Docker Compose 容器内仍为 8080） |
 | `aistiod` | 8081 | 内部 |
 | Dataplane | 8082 | 内部 |
 | Scheduler | 8083 | 内部 |

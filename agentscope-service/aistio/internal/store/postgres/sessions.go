@@ -32,8 +32,9 @@ type sessionRepo struct {
 	pool *pgxpool.Pool
 }
 
-const sessionColumns = `id, tenant, session_id, agent_name, namespace, framework, framework_version,
-			phase, busy, instance_ref, instance_ip, agent_task_id, task_context,
+const sessionColumns = `id, tenant, session_id, agent_id, binding_id, agent_instance_id, instance_generation,
+			agent_name, namespace, framework, framework_version,
+			phase, busy, instance_ref, instance_ip, agent_task_id, origin_type, origin_ref, task_context,
 			started_at, last_active_at, terminated_at, created_at, updated_at`
 
 func (r *sessionRepo) Upsert(ctx context.Context, s *store.Session) (*store.Session, error) {
@@ -44,15 +45,25 @@ func (r *sessionRepo) Upsert(ctx context.Context, s *store.Session) (*store.Sess
 		s.Phase = store.SessionPhaseActive
 	}
 	now := time.Now().UTC()
+	conflictTarget := `(tenant, agent_name, namespace, session_id) WHERE agent_id IS NULL`
+	if s.AgentID != uuid.Nil {
+		conflictTarget = `(tenant, agent_id, session_id) WHERE agent_id IS NOT NULL`
+	}
 	row := r.pool.QueryRow(ctx, `
 		INSERT INTO sessions (
-			tenant, session_id, agent_name, namespace, framework, framework_version,
-			phase, busy, instance_ref, instance_ip, agent_task_id, task_context,
+			tenant, session_id, agent_id, binding_id, agent_instance_id, instance_generation,
+			agent_name, namespace, framework, framework_version,
+			phase, busy, instance_ref, instance_ip, agent_task_id, origin_type, origin_ref, task_context,
 			started_at, last_active_at, terminated_at, created_at, updated_at
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
 		)
-		ON CONFLICT (tenant, agent_name, namespace, session_id) DO UPDATE SET
+		ON CONFLICT `+conflictTarget+` DO UPDATE SET
+			agent_id = COALESCE(EXCLUDED.agent_id, sessions.agent_id),
+			binding_id = COALESCE(EXCLUDED.binding_id, sessions.binding_id),
+			agent_instance_id = COALESCE(EXCLUDED.agent_instance_id, sessions.agent_instance_id),
+			instance_generation = GREATEST(EXCLUDED.instance_generation, sessions.instance_generation),
+			agent_name = COALESCE(NULLIF(EXCLUDED.agent_name, ''), sessions.agent_name),
 			framework = COALESCE(NULLIF(EXCLUDED.framework, ''), sessions.framework),
 			framework_version = COALESCE(EXCLUDED.framework_version, sessions.framework_version),
 			phase = EXCLUDED.phase,
@@ -60,15 +71,19 @@ func (r *sessionRepo) Upsert(ctx context.Context, s *store.Session) (*store.Sess
 			instance_ref = COALESCE(EXCLUDED.instance_ref, sessions.instance_ref),
 			instance_ip = COALESCE(EXCLUDED.instance_ip, sessions.instance_ip),
 			agent_task_id = COALESCE(EXCLUDED.agent_task_id, sessions.agent_task_id),
+			origin_type = COALESCE(EXCLUDED.origin_type, sessions.origin_type),
+			origin_ref = COALESCE(EXCLUDED.origin_ref, sessions.origin_ref),
 			task_context = COALESCE(EXCLUDED.task_context, sessions.task_context),
 			started_at = COALESCE(EXCLUDED.started_at, sessions.started_at),
 			last_active_at = COALESCE(EXCLUDED.last_active_at, sessions.last_active_at),
 			terminated_at = EXCLUDED.terminated_at,
 			updated_at = EXCLUDED.updated_at
 		RETURNING `+sessionColumns,
-		s.Tenant, s.SessionID, s.AgentName, s.Namespace, s.Framework, nullStr(s.FrameworkVersion),
+		s.Tenant, s.SessionID, nullUUID(s.AgentID), nullUUID(s.BindingID), nullUUID(s.AgentInstanceID), s.InstanceGeneration,
+		s.AgentName, s.Namespace, s.Framework, nullStr(s.FrameworkVersion),
 		s.Phase, s.Busy, nullStr(s.InstanceRef), nullStr(s.InstanceIP), s.AgentTaskID,
-		nullJSON(s.TaskContext), s.StartedAt, s.LastActiveAt, s.TerminatedAt, now, now,
+		nullStr(s.OriginType), nullStr(s.OriginRef), nullJSON(s.TaskContext),
+		s.StartedAt, s.LastActiveAt, s.TerminatedAt, now, now,
 	)
 	out := &store.Session{}
 	if err := scanSession(row, out); err != nil {
@@ -238,8 +253,9 @@ func (r *sessionRepo) ListByPressure(ctx context.Context, f store.SessionFilter,
 	where := " WHERE " + strings.Join(whereParts, " AND ")
 	prefixed := make([]string, 0, 19)
 	for _, c := range []string{
-		"id", "tenant", "session_id", "agent_name", "namespace", "framework", "framework_version",
-		"phase", "busy", "instance_ref", "instance_ip", "agent_task_id", "task_context",
+		"id", "tenant", "session_id", "agent_id", "binding_id", "agent_instance_id", "instance_generation",
+		"agent_name", "namespace", "framework", "framework_version",
+		"phase", "busy", "instance_ref", "instance_ip", "agent_task_id", "origin_type", "origin_ref", "task_context",
 		"started_at", "last_active_at", "terminated_at", "created_at", "updated_at",
 	} {
 		prefixed = append(prefixed, "s."+c)
@@ -270,11 +286,13 @@ func (r *sessionRepo) ListByPressure(ctx context.Context, f store.SessionFilter,
 		snap := &store.SessionSnapshot{}
 		var hash *string
 		var summary []byte
-		var fwVer, instRef, instIP *string
+		var fwVer, instRef, instIP, originType, originRef *string
+		var agentID, bindingID, agentInstanceID *uuid.UUID
 		var taskCtx []byte
 		if err := rows.Scan(
-			&sess.ID, &sess.Tenant, &sess.SessionID, &sess.AgentName, &sess.Namespace, &sess.Framework, &fwVer,
-			&sess.Phase, &sess.Busy, &instRef, &instIP, &sess.AgentTaskID, &taskCtx,
+			&sess.ID, &sess.Tenant, &sess.SessionID, &agentID, &bindingID, &agentInstanceID, &sess.InstanceGeneration,
+			&sess.AgentName, &sess.Namespace, &sess.Framework, &fwVer,
+			&sess.Phase, &sess.Busy, &instRef, &instIP, &sess.AgentTaskID, &originType, &originRef, &taskCtx,
 			&sess.StartedAt, &sess.LastActiveAt, &sess.TerminatedAt, &sess.CreatedAt, &sess.UpdatedAt,
 			&snap.ID, &snap.SessionFK, &snap.CapturedAt, &snap.MessageCount, &snap.PromptTokens,
 			&snap.CompletionTokens, &snap.TotalTokens, &snap.ContextPressure, &snap.IsCompacted,
@@ -283,8 +301,13 @@ func (r *sessionRepo) ListByPressure(ctx context.Context, f store.SessionFilter,
 			return nil, err
 		}
 		sess.FrameworkVersion = deref(fwVer)
+		sess.AgentID = derefUUID(agentID)
+		sess.BindingID = derefUUID(bindingID)
+		sess.AgentInstanceID = derefUUID(agentInstanceID)
 		sess.InstanceRef = deref(instRef)
 		sess.InstanceIP = deref(instIP)
+		sess.OriginType = deref(originType)
+		sess.OriginRef = deref(originRef)
 		sess.TaskContext = taskCtx
 		snap.ContextHash = deref(hash)
 		snap.TaskSummary = summary
@@ -319,6 +342,9 @@ func sessionFilterCondsPrefixed(f store.SessionFilter, alias string) (conds []st
 	if f.AgentName != "" {
 		add("agent_name", f.AgentName)
 	}
+	if f.AgentID != uuid.Nil {
+		add("agent_id", f.AgentID)
+	}
 	if f.Namespace != "" {
 		add("namespace", f.Namespace)
 	}
@@ -342,19 +368,26 @@ type scannable interface {
 }
 
 func scanSession(row scannable, s *store.Session) error {
-	var fwVer, instRef, instIP *string
+	var fwVer, instRef, instIP, originType, originRef *string
+	var agentID, bindingID, agentInstanceID *uuid.UUID
 	var taskCtx []byte
 	err := row.Scan(
-		&s.ID, &s.Tenant, &s.SessionID, &s.AgentName, &s.Namespace, &s.Framework, &fwVer,
-		&s.Phase, &s.Busy, &instRef, &instIP, &s.AgentTaskID, &taskCtx,
+		&s.ID, &s.Tenant, &s.SessionID, &agentID, &bindingID, &agentInstanceID, &s.InstanceGeneration,
+		&s.AgentName, &s.Namespace, &s.Framework, &fwVer,
+		&s.Phase, &s.Busy, &instRef, &instIP, &s.AgentTaskID, &originType, &originRef, &taskCtx,
 		&s.StartedAt, &s.LastActiveAt, &s.TerminatedAt, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {
 		return err
 	}
 	s.FrameworkVersion = deref(fwVer)
+	s.AgentID = derefUUID(agentID)
+	s.BindingID = derefUUID(bindingID)
+	s.AgentInstanceID = derefUUID(agentInstanceID)
 	s.InstanceRef = deref(instRef)
 	s.InstanceIP = deref(instIP)
+	s.OriginType = deref(originType)
+	s.OriginRef = deref(originRef)
 	s.TaskContext = taskCtx
 	return nil
 }
@@ -371,6 +404,20 @@ func nullJSON(b []byte) any {
 		return nil
 	}
 	return b
+}
+
+func nullUUID(id uuid.UUID) any {
+	if id == uuid.Nil {
+		return nil
+	}
+	return id
+}
+
+func derefUUID(id *uuid.UUID) uuid.UUID {
+	if id == nil {
+		return uuid.Nil
+	}
+	return *id
 }
 
 func deref(p *string) string {

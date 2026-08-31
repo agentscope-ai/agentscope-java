@@ -91,8 +91,9 @@ func TestResolverDispatchesSameAgentTaskContractToEveryBackend(t *testing.T) {
 		if result.Task.Status != controlmodel.AgentTaskDispatched || result.SessionID != managed.sessionID || result.TaskToken == "" || len(managed.wakes) != 1 {
 			t.Fatalf("managed dispatch: result=%+v wakes=%+v", result, managed.wakes)
 		}
-		session, err := st.Sessions().Get(ctx, task.Tenant, agent.ID.String(), task.Namespace, managed.sessionID)
-		if err != nil || session.AgentTaskID == nil || *session.AgentTaskID != task.ID || session.Tenant != task.Tenant {
+		session, err := st.Sessions().Get(ctx, task.Tenant, agent.AgentKey, task.Namespace, managed.sessionID)
+		if err != nil || session.AgentID != agent.ID || session.BindingID != binding.ID || session.OriginType != "agent-task" ||
+			session.AgentTaskID == nil || *session.AgentTaskID != task.ID || session.Tenant != task.Tenant {
 			t.Fatalf("managed session context: %+v %v", session, err)
 		}
 	})

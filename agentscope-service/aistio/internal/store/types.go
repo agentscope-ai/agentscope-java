@@ -38,14 +38,18 @@ const (
 
 // Session is a runtime session on an agent.
 type Session struct {
-	ID               uuid.UUID `json:"id"`
-	Tenant           string    `json:"tenant"`
-	SessionID        string    `json:"sessionId"`
-	AgentName        string    `json:"agentName"`
-	Namespace        string    `json:"namespace"`
-	Framework        string    `json:"framework"`
-	FrameworkVersion string    `json:"frameworkVersion,omitempty"`
-	Phase            string    `json:"phase"`
+	ID                 uuid.UUID `json:"id"`
+	Tenant             string    `json:"tenant"`
+	SessionID          string    `json:"sessionId"`
+	AgentID            uuid.UUID `json:"agentId,omitempty"`
+	BindingID          uuid.UUID `json:"bindingId,omitempty"`
+	AgentInstanceID    uuid.UUID `json:"agentInstanceId,omitempty"`
+	InstanceGeneration int64     `json:"instanceGeneration,omitempty"`
+	AgentName          string    `json:"agentName"`
+	Namespace          string    `json:"namespace"`
+	Framework          string    `json:"framework"`
+	FrameworkVersion   string    `json:"frameworkVersion,omitempty"`
+	Phase              string    `json:"phase"`
 	// Busy is derived from phase when reported by modern data planes
 	// (busy := phase == "active"). Kept for backward compatibility; prefer Phase.
 	// nil means the data plane did not report busy (unknown).
@@ -53,6 +57,8 @@ type Session struct {
 	InstanceRef  string          `json:"instanceRef,omitempty"`
 	InstanceIP   string          `json:"instanceIP,omitempty"`
 	AgentTaskID  *uuid.UUID      `json:"agentTaskId,omitempty"`
+	OriginType   string          `json:"originType,omitempty"`
+	OriginRef    string          `json:"originRef,omitempty"`
 	TaskContext  json.RawMessage `json:"taskContext,omitempty"`
 	StartedAt    *time.Time      `json:"startedAt,omitempty"`
 	LastActiveAt *time.Time      `json:"lastActiveAt,omitempty"`
@@ -78,18 +84,20 @@ type TokenBucket struct {
 
 // AgentUsage is a per-agent usage aggregate for TopAgents.
 type AgentUsage struct {
-	AgentName      string  `json:"agentName"`
-	Namespace      string  `json:"namespace"`
-	TotalTokens    int64   `json:"totalTokens"`
-	ActiveSessions int32   `json:"activeSessions"`
-	AvgPressure    float64 `json:"avgPressure,omitempty"`
-	ErrorCount     int32   `json:"errorCount,omitempty"`
+	AgentID        uuid.UUID `json:"agentId,omitempty"`
+	AgentName      string    `json:"agentName"`
+	Namespace      string    `json:"namespace"`
+	TotalTokens    int64     `json:"totalTokens"`
+	ActiveSessions int32     `json:"activeSessions"`
+	AvgPressure    float64   `json:"avgPressure,omitempty"`
+	ErrorCount     int32     `json:"errorCount,omitempty"`
 }
 
 // SessionUsage is a per-session token aggregate for TopSessionsByTokens.
 type SessionUsage struct {
 	SessionFK   uuid.UUID `json:"sessionFk"`
 	SessionID   string    `json:"sessionId"`
+	AgentID     uuid.UUID `json:"agentId,omitempty"`
 	AgentName   string    `json:"agentName"`
 	Namespace   string    `json:"namespace"`
 	Phase       string    `json:"phase,omitempty"`
@@ -100,6 +108,7 @@ type SessionUsage struct {
 type SessionDuration struct {
 	SessionFK  uuid.UUID  `json:"sessionFk"`
 	SessionID  string     `json:"sessionId"`
+	AgentID    uuid.UUID  `json:"agentId,omitempty"`
 	AgentName  string     `json:"agentName"`
 	Namespace  string     `json:"namespace"`
 	Phase      string     `json:"phase,omitempty"`
@@ -233,6 +242,7 @@ type TokenUsageMetric struct {
 	ID               int64      `json:"id"`
 	Tenant           string     `json:"tenant"`
 	SessionFK        *uuid.UUID `json:"sessionFk,omitempty"`
+	AgentID          uuid.UUID  `json:"agentId,omitempty"`
 	AgentName        string     `json:"agentName"`
 	Namespace        string     `json:"namespace"`
 	Model            string     `json:"model,omitempty"`
@@ -247,6 +257,7 @@ type TokenUsageMetric struct {
 type AgentMetric struct {
 	ID                 int64     `json:"id"`
 	Tenant             string    `json:"tenant"`
+	AgentID            uuid.UUID `json:"agentId,omitempty"`
 	AgentName          string    `json:"agentName"`
 	Namespace          string    `json:"namespace"`
 	RecordedAt         time.Time `json:"recordedAt"`

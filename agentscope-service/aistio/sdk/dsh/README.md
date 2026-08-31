@@ -49,7 +49,7 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 
 | Surface | URL |
 | --- | --- |
-| Console / Dashboard | http://localhost:8080 |
+| Console / Dashboard | http://localhost:18080 |
 | aistiod (registration target) | http://localhost:8081 |
 
 `scripts/dev-up.sh` defaults `BUILDER_INTERNAL_TOKEN` to `local-dev-internal-token-at-least-32chars`. DSH must use **the same** token or registration is rejected.
@@ -104,7 +104,7 @@ Without `BUILDER_INTERNAL_TOKEN` the plugin still serves `/agentscope/*` but **d
 
 ### 4. Check the Dashboard
 
-1. Open http://localhost:8080 and sign in as `admin` / `admin`.
+1. Open http://localhost:18080 and sign in as `admin` / `admin`.
 2. **Dashboard**: a healthy instance named `deepseek-harness`.
 3. Send a turn in the DSH Web UI (http://127.0.0.1:3080). Dashboard Sessions should move `idle` → `active` → `idle` and show token deltas.
 4. For collaboration, create an Issue and start or assign an Orchestration Run to this Agent or a Team containing it. DSH receives a fenced `ExecutionAttemptCommand`, pulls the Issue discussion with its task-scoped token, and writes progress/result Comments and Artifacts.

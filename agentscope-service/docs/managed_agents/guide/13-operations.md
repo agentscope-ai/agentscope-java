@@ -14,7 +14,7 @@
 ```mermaid
 flowchart TB
   subgraph local [本地开发_scripts_dev-up.sh]
-    GW1[gateway_8080] --> CP1[control_8081]
+    GW1[gateway_18080] --> CP1[control_8081]
     GW1 --> DP1[data_8082]
     SCH1[scheduler_8083] --> CP1
     SCH1 --> DP1
@@ -59,10 +59,10 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 scripts/smoke.sh
 ```
 
-- 控制台（经网关）：`http://localhost:8080`
+- 控制台（经网关）：`http://localhost:18080`
 - 默认账号：`admin` / `admin`（另有 demo：`bob`/`bob`、`alice`/`alice`）
 - 停止：`scripts/dev-down.sh`；运行状态（pid / 日志 / workspace / Artifact）在 `agentscope-service/.dev-stack/`，数据库位于 Docker 容器 `agentscope-dev-pg`
-- 前端热更：`cd agentscope-service/frontend && npm run dev`（vite 把 `/api` 代理到 :8080 网关）
+- 前端热更：`cd agentscope-service/frontend && npm run dev`（vite 把 `/api` 代理到 :18080 网关）
 
 Docker 替代路径：
 
@@ -145,10 +145,10 @@ BUILDER_DATA_URL=http://127.0.0.1:8082 \
   java -jar service-scheduler/target/service-scheduler-*.jar  # :8083
 BUILDER_CONTROL_URL=http://127.0.0.1:8081 \
 BUILDER_DATA_URL=http://127.0.0.1:8082 \
-  java -jar service-gateway/target/service-gateway-*.jar      # :8080（唯一对外）
+  java -jar service-gateway/target/service-gateway-*.jar      # :18080（唯一对外）
 ```
 
-对外只暴露 gateway 的 8080；aistiod / data / scheduler 端口应在内网。SSE（`/api/sessions/{id}/events/stream`）经网关透传，反向代理需关缓冲。
+对外只暴露 gateway 的 18080；aistiod / data / scheduler 端口应在内网。Docker Compose 中 gateway 容器内部仍监听 8080，仅宿主机映射到 18080。SSE（`/api/sessions/{id}/events/stream`）经网关透传，反向代理需关缓冲。
 
 ## 5. Hands：self_hosted Worker 在调度层
 
@@ -232,7 +232,7 @@ Managed Environment `type=sandbox` **不**使用本机 Docker，也不读已废�
 | `BUILDER_JPA_DDL_AUTO` | `update` | 生产改 `validate` |
 | `BUILDER_INSTANCE_ID` | 自动 | data 副本标识 |
 | `BUILDER_CONTROL_URL` / `BUILDER_DATA_URL` / `BUILDER_SCHEDULER_URL` | localhost:8081/8082/8083 | gateway / scheduler 的对端地址 |
-| `BUILDER_GATEWAY_PORT` / `CONTROL_PORT` / `DATA_PORT` / `SCHEDULER_PORT` | 8080/8081/8082/8083 | 各平面端口 |
+| `BUILDER_GATEWAY_PORT` / `CONTROL_PORT` / `DATA_PORT` / `SCHEDULER_PORT` | 18080/8081/8082/8083 | 各平面端口 |
 | `BUILDER_CHANNEL_REPLY_TIMEOUT_MS` | `120000` | scheduler 等 turn 回包 |
 | `BUILDER_E2B_API_KEY` | 空 | Managed `type=sandbox` 的 E2B key |
 | `BUILDER_E2B_TEMPLATE_ID` | `base` | 默认 E2B 模板 |

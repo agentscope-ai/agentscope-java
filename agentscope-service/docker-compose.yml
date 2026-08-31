@@ -7,7 +7,7 @@
 #   (cd frontend && npm run build)   # emits aistio/ui, baked into the image
 #
 # Services:
-#   gateway    :8080
+#   gateway    :18080 (host) -> :8080 (container)
 #   control    :8081  (aistiod: /api/*, /api/v1/*, console SPA)
 #   data       :8082
 #   scheduler  :8083
@@ -125,7 +125,7 @@ services:
       BUILDER_DATA_URL: http://data:8082
       BUILDER_SCHEDULER_URL: http://scheduler:8083
     ports:
-      - "8080:8080"
+      - "${BUILDER_GATEWAY_PORT:-18080}:8080"
     healthcheck:
       << : *plane-health
     depends_on:

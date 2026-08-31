@@ -23,6 +23,7 @@ import (
 // SessionFilter selects sessions for List.
 type SessionFilter struct {
 	Tenant      string
+	AgentID     uuid.UUID
 	AgentName   string
 	Namespace   string
 	SessionID   string
@@ -37,6 +38,7 @@ type SessionFilter struct {
 // TokenFilter selects token-usage metrics for QueryTokenUsage.
 type TokenFilter struct {
 	Tenant    string
+	AgentID   uuid.UUID
 	AgentName string
 	Namespace string
 	Model     string
@@ -48,6 +50,7 @@ type TokenFilter struct {
 // AgentMetricFilter selects agent_metrics rows for QueryAgentMetrics.
 type AgentMetricFilter struct {
 	Tenant    string
+	AgentID   uuid.UUID
 	AgentName string
 	Namespace string
 	Since     *time.Time

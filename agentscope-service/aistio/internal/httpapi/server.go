@@ -328,6 +328,8 @@ func (s *Server) registerRoutes() {
 			agents.POST("/:agentId/bindings", s.createAgentBinding)
 			agents.PATCH("/:agentId/bindings/:bindingId", s.patchAgentBinding)
 			agents.GET("/:agentId/instances", s.listCatalogAgentInstances)
+			agents.GET("/:agentId/overview", s.getAgentDetailOverview)
+			agents.GET("/:agentId/runtime-inventory", s.getAgentRuntimeInventory)
 			v1.POST("/agent-registrations/:agentId/credentials/rotate", s.rotateAgentRegistrationCredential)
 			v1.DELETE("/agent-registrations/:agentId/credentials/:credentialId", s.revokeAgentRegistrationCredential)
 		}
@@ -517,8 +519,8 @@ func (s *Server) registerRoutes() {
 			tasks.POST("/:taskId/retry", s.retryAgentTask)
 			tasks.GET("/:taskId/run", s.taskTokenMiddleware(), s.getTaskRun)
 			tasks.GET("/:taskId/run/graph", s.taskTokenMiddleware(), s.getTaskRunGraph)
-			tasks.POST("/:taskId/run/node/complete", s.taskTokenMiddleware(), s.completeTaskRunNode)
-			tasks.POST("/:taskId/run/node/fail", s.taskTokenMiddleware(), s.failTaskRunNode)
+			tasks.POST("/:taskId/run/node/complete", s.coordinatorTaskTokenMiddleware(), s.completeTaskRunNode)
+			tasks.POST("/:taskId/run/node/fail", s.coordinatorTaskTokenMiddleware(), s.failTaskRunNode)
 			tasks.POST("/:taskId/run/replan", s.taskTokenMiddleware(), s.replanTaskRun)
 			tasks.POST("/:taskId/run/signals/:name", s.taskTokenMiddleware(), s.signalTaskRun)
 			tasks.GET("/:taskId/run/artifacts", s.taskTokenMiddleware(), s.getTaskRunArtifacts)
@@ -716,7 +718,13 @@ func requestBearerToken(c *gin.Context) string {
 func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if token := c.GetHeader("X-Agent-Task-Token"); token != "" {
-			task, err := s.verifyActiveTaskToken(c.Request.Context(), token, uuid.Nil)
+			verify := s.verifyActiveTaskToken
+			if c.Request.Method == http.MethodPost &&
+				(strings.HasSuffix(c.Request.URL.Path, "/run/node/complete") ||
+					strings.HasSuffix(c.Request.URL.Path, "/run/node/fail")) {
+				verify = s.verifyCoordinatorTaskToken
+			}
+			task, err := verify(c.Request.Context(), token, uuid.Nil)
 			if err != nil {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
 				return
@@ -738,6 +746,17 @@ func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 }
 
 func (s *Server) verifyActiveTaskToken(ctx context.Context, token string, expectedTaskID uuid.UUID) (*controlmodel.AgentTask, error) {
+	return s.verifyTaskToken(ctx, token, expectedTaskID, false)
+}
+
+// verifyCoordinatorTaskToken permits a Team leader to perform the final explicit coordinator
+// transition with the same fenced token immediately after its physical attempt completes. All
+// other task-scoped APIs remain restricted to a live attempt.
+func (s *Server) verifyCoordinatorTaskToken(ctx context.Context, token string, expectedTaskID uuid.UUID) (*controlmodel.AgentTask, error) {
+	return s.verifyTaskToken(ctx, token, expectedTaskID, true)
+}
+
+func (s *Server) verifyTaskToken(ctx context.Context, token string, expectedTaskID uuid.UUID, allowCompletedCoordinator bool) (*controlmodel.AgentTask, error) {
 	claims, err := s.taskTokens.VerifyClaims(token, time.Now().UTC())
 	if err != nil {
 		return nil, err
@@ -759,7 +778,11 @@ func (s *Server) verifyActiveTaskToken(ctx context.Context, token string, expect
 		return nil, fmt.Errorf("task token attempt is no longer active")
 	}
 	attempt, err := s.store.ExecutionAttempts().Get(ctx, claims.AttemptID)
-	if err != nil || attempt.DispatchGeneration != claims.Generation || controlmodel.IsExecutionAttemptTerminal(attempt.State) {
+	if err != nil || attempt.DispatchGeneration != claims.Generation {
+		return nil, fmt.Errorf("task token generation is no longer active")
+	}
+	if controlmodel.IsExecutionAttemptTerminal(attempt.State) &&
+		(!allowCompletedCoordinator || !task.LeaderTask || task.Status != controlmodel.AgentTaskCompleted) {
 		return nil, fmt.Errorf("task token generation is no longer active")
 	}
 	return task, nil

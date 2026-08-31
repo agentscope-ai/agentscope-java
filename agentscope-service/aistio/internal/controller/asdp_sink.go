@@ -219,6 +219,60 @@ type SessionEventSink struct {
 	AttemptTokens *taskauth.Manager
 }
 
+// RuntimeReportIdentity is copied from the authenticated ASDP stream metadata.
+// It is resolved against the Catalog before any runtime report is persisted.
+type RuntimeReportIdentity struct {
+	Tenant             string
+	Namespace          string
+	AgentID            string
+	BindingID          string
+	AgentKey           string
+	InstanceKey        string
+	InstanceGeneration int64
+}
+
+type resolvedRuntimeReportIdentity struct {
+	RuntimeReportIdentity
+	AgentUUID         uuid.UUID
+	BindingUUID       uuid.UUID
+	AgentInstanceUUID uuid.UUID
+}
+
+func (s *SessionEventSink) resolveRuntimeReportIdentity(ctx context.Context, identity RuntimeReportIdentity) (*resolvedRuntimeReportIdentity, error) {
+	if s == nil || s.Store == nil {
+		return nil, fmt.Errorf("runtime Store is unavailable")
+	}
+	agentID, err := uuid.Parse(identity.AgentID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid agentId")
+	}
+	bindingID, err := uuid.Parse(identity.BindingID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bindingId")
+	}
+	agent, err := s.Store.AgentCatalog().GetAgent(ctx, agentID)
+	if err != nil || agent.Status != controlmodel.AgentActive || agent.Tenant != identity.Tenant ||
+		agent.Namespace != identity.Namespace || agent.AgentKey != identity.AgentKey {
+		return nil, fmt.Errorf("runtime report Agent identity does not match the Catalog")
+	}
+	binding, err := s.Store.AgentCatalog().GetBinding(ctx, bindingID)
+	if err != nil || binding.AgentID != agentID || !binding.Enabled || binding.ArchivedAt != nil {
+		return nil, fmt.Errorf("runtime report Binding is disabled or does not match the Agent")
+	}
+	instances, err := s.Store.RuntimeRegistry().ListAgentInstances(ctx, identity.Tenant, identity.Namespace, agentID)
+	if err != nil {
+		return nil, err
+	}
+	for _, instance := range instances {
+		if instance.BindingID == bindingID && instance.InstanceKey == identity.InstanceKey &&
+			instance.Generation == identity.InstanceGeneration {
+			return &resolvedRuntimeReportIdentity{RuntimeReportIdentity: identity, AgentUUID: agentID,
+				BindingUUID: bindingID, AgentInstanceUUID: instance.ID}, nil
+		}
+	}
+	return nil, fmt.Errorf("runtime report instance or generation does not match the Catalog")
+}
+
 // ApplyInstanceConnect observes an already registered ASDP application. ASDP
 // never creates or claims a logical Agent; registration credentials do that.
 func (s *SessionEventSink) ApplyInstanceConnect(ctx context.Context, tenant, namespace, agentIDRaw, bindingIDRaw, agentKey, instanceKey string, generation int64, runtimeName, sdkVersion string, capabilities []string) {
@@ -294,21 +348,26 @@ func (s *SessionEventSink) ApplyInstanceDisconnect(ctx context.Context, tenant, 
 }
 
 // ApplySessionReport upserts each reported session into the Store.
-func (s *SessionEventSink) ApplySessionReport(ctx context.Context, tenant, namespace, agentName, instanceID string, sessions []ObservedSession) {
+func (s *SessionEventSink) ApplySessionReport(ctx context.Context, identity RuntimeReportIdentity, sessions []ObservedSession) {
 	logger := log.FromContext(ctx).WithName("asdp-session-sink")
-	logger = logger.WithValues("tenant", tenant)
+	logger = logger.WithValues("tenant", identity.Tenant, "agentId", identity.AgentID)
+	resolved, err := s.resolveRuntimeReportIdentity(ctx, identity)
+	if err != nil {
+		logger.Error(err, "rejected runtime session report")
+		return
+	}
 
 	var agent v1alpha1.Agent
 	if s.Client != nil {
-		if err := s.Client.Get(ctx, types.NamespacedName{Name: agentName, Namespace: namespace}, &agent); err != nil {
+		if err := s.Client.Get(ctx, types.NamespacedName{Name: identity.AgentKey, Namespace: identity.Namespace}, &agent); err != nil {
 			logger.V(1).Info("agent definition not found; accepting standalone application session report",
-				"agent", agentName, "namespace", namespace, "error", err.Error())
+				"agent", identity.AgentKey, "namespace", identity.Namespace, "error", err.Error())
 		}
 	}
 	// Application ASDP is independent of Kubernetes. A self-registered
 	// application can report sessions before an Agent definition is projected.
-	agent.Name = agentName
-	agent.Namespace = namespace
+	agent.Name = identity.AgentKey
+	agent.Namespace = identity.Namespace
 
 	for i := range sessions {
 		o := sessions[i]
@@ -316,9 +375,9 @@ func (s *SessionEventSink) ApplySessionReport(ctx context.Context, tenant, names
 			o.Framework = agent.Spec.Runtime
 		}
 		if o.InstanceRef == "" {
-			o.InstanceRef = instanceID
+			o.InstanceRef = identity.InstanceKey
 		}
-		if _, err := upsertObservedSession(ctx, s.Store, tenant, &agent, o); err != nil {
+		if _, err := upsertObservedSession(ctx, s.Store, identity.Tenant, &agent, o, resolved); err != nil {
 			logger.Error(err, "failed to upsert reported session", "sessionID", o.ID)
 			continue
 		}
@@ -327,10 +386,15 @@ func (s *SessionEventSink) ApplySessionReport(ctx context.Context, tenant, names
 
 // ApplyEventReport appends a batch of Level-2 events to the Store.
 // Duplicate (session, seq) appends are treated as idempotent success.
-func (s *SessionEventSink) ApplyEventReport(ctx context.Context, tenant, namespace, agentName, instanceID string, events []ObservedEvent) {
+func (s *SessionEventSink) ApplyEventReport(ctx context.Context, identity RuntimeReportIdentity, events []ObservedEvent) {
 	logger := log.FromContext(ctx).WithName("asdp-event-sink")
-	logger = logger.WithValues("tenant", tenant)
+	logger = logger.WithValues("tenant", identity.Tenant, "agentId", identity.AgentID)
 	if s.Store == nil || len(events) == 0 {
+		return
+	}
+	resolvedIdentity, err := s.resolveRuntimeReportIdentity(ctx, identity)
+	if err != nil {
+		logger.Error(err, "rejected runtime event report")
 		return
 	}
 
@@ -344,7 +408,7 @@ func (s *SessionEventSink) ApplyEventReport(ctx context.Context, tenant, namespa
 		}
 		fk, ok := fks[e.SessionID]
 		if !ok {
-			resolved, err := s.resolveSessionFK(ctx, tenant, namespace, agentName, instanceID, e.SessionID)
+			resolved, err := s.resolveSessionFK(ctx, resolvedIdentity, e.SessionID)
 			if err != nil {
 				logger.Error(err, "failed to resolve session for events", "sessionID", e.SessionID)
 				failed[e.SessionID] = true
@@ -384,14 +448,19 @@ func (s *SessionEventSink) ApplyEventReport(ctx context.Context, tenant, namespa
 
 // ApplyContextReport writes a Level-4 effective-context snapshot to the Store.
 // Snapshots with an unchanged context_hash are skipped by the Store.
-func (s *SessionEventSink) ApplyContextReport(ctx context.Context, tenant, namespace, agentName, instanceID string, oc ObservedContext) {
+func (s *SessionEventSink) ApplyContextReport(ctx context.Context, identity RuntimeReportIdentity, oc ObservedContext) {
 	logger := log.FromContext(ctx).WithName("asdp-context-sink")
-	logger = logger.WithValues("tenant", tenant)
+	logger = logger.WithValues("tenant", identity.Tenant, "agentId", identity.AgentID)
 	if s.Store == nil || oc.SessionID == "" {
 		return
 	}
+	resolvedIdentity, err := s.resolveRuntimeReportIdentity(ctx, identity)
+	if err != nil {
+		logger.Error(err, "rejected runtime context report")
+		return
+	}
 
-	fk, err := s.resolveSessionFK(ctx, tenant, namespace, agentName, instanceID, oc.SessionID)
+	fk, err := s.resolveSessionFK(ctx, resolvedIdentity, oc.SessionID)
 	if err != nil {
 		logger.Error(err, "failed to resolve session for context report", "sessionID", oc.SessionID)
 		return
@@ -432,19 +501,25 @@ func (s *SessionEventSink) ApplyContextReport(ctx context.Context, tenant, names
 // ApplyInventoryReport processes an instance inventory report. The transport
 // registry (asdp.Server) retains the latest report for queries; here we log
 // and record the reported active session count as an agent metric.
-func (s *SessionEventSink) ApplyInventoryReport(ctx context.Context, tenant, namespace, agentName, instanceID string, inv ObservedInventory) {
+func (s *SessionEventSink) ApplyInventoryReport(ctx context.Context, identity RuntimeReportIdentity, inv ObservedInventory) {
 	logger := log.FromContext(ctx).WithName("asdp-inventory-sink")
 	logger.V(1).Info("inventory report",
-		"tenant", tenant, "agent", agentName, "instance", instanceID,
+		"tenant", identity.Tenant, "agent", identity.AgentKey, "instance", identity.InstanceKey,
 		"subagents", len(inv.Subagents), "workspaces", len(inv.Workspaces),
 		"healthy", inv.Healthy, "activeSessions", inv.ActiveSessions)
 	if s.Store == nil {
 		return
 	}
+	resolved, err := s.resolveRuntimeReportIdentity(ctx, identity)
+	if err != nil {
+		logger.Error(err, "rejected runtime inventory report")
+		return
+	}
 	if err := s.Store.Metrics().RecordAgentMetric(ctx, &store.AgentMetric{
-		Tenant:         tenant,
-		AgentName:      agentName,
-		Namespace:      namespace,
+		Tenant:         identity.Tenant,
+		AgentID:        resolved.AgentUUID,
+		AgentName:      identity.AgentKey,
+		Namespace:      identity.Namespace,
 		ActiveSessions: inv.ActiveSessions,
 	}); err != nil {
 		logger.Error(err, "failed to record agent metric from inventory")
@@ -454,21 +529,29 @@ func (s *SessionEventSink) ApplyInventoryReport(ctx context.Context, tenant, nam
 // resolveSessionFK maps a framework-reported session ID to the store primary
 // key, creating a minimal session row when the session is not known yet
 // (events/context may arrive before the first Level-1 snapshot).
-func (s *SessionEventSink) resolveSessionFK(ctx context.Context, tenant, namespace, agentName, instanceID, sessionID string) (uuid.UUID, error) {
-	sess, err := s.Store.Sessions().Get(ctx, tenant, agentName, namespace, sessionID)
-	if err == nil {
-		return sess.ID, nil
+func (s *SessionEventSink) resolveSessionFK(ctx context.Context, identity *resolvedRuntimeReportIdentity, sessionID string) (uuid.UUID, error) {
+	sessions, err := s.Store.Sessions().List(ctx, store.SessionFilter{Tenant: identity.Tenant, AgentID: identity.AgentUUID,
+		SessionID: sessionID, Limit: 1})
+	if err == nil && len(sessions) > 0 {
+		return sessions[0].ID, nil
 	}
 	if !errors.Is(err, store.ErrNotFound) {
-		return uuid.Nil, err
+		if err != nil {
+			return uuid.Nil, err
+		}
 	}
 	saved, err := s.Store.Sessions().Upsert(ctx, &store.Session{
-		Tenant:      tenant,
-		SessionID:   sessionID,
-		AgentName:   agentName,
-		Namespace:   namespace,
-		Phase:       store.SessionPhaseActive,
-		InstanceRef: instanceID,
+		Tenant:             identity.Tenant,
+		SessionID:          sessionID,
+		AgentID:            identity.AgentUUID,
+		BindingID:          identity.BindingUUID,
+		AgentInstanceID:    identity.AgentInstanceUUID,
+		InstanceGeneration: identity.InstanceGeneration,
+		AgentName:          identity.AgentKey,
+		Namespace:          identity.Namespace,
+		Phase:              store.SessionPhaseActive,
+		InstanceRef:        identity.InstanceKey,
+		OriginType:         "runtime",
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("creating placeholder session %s: %w", sessionID, err)
@@ -479,7 +562,7 @@ func (s *SessionEventSink) resolveSessionFK(ctx context.Context, tenant, namespa
 // upsertObservedSession writes a session + Level-1 snapshot (+ optional token metric)
 // into the Store. Shared by SessionPoller (HTTP pull) and ASDP gRPC sink (push).
 // It returns the saved session so callers can chain context/event writes.
-func upsertObservedSession(ctx context.Context, st store.Store, tenant string, agent *v1alpha1.Agent, o ObservedSession) (*store.Session, error) {
+func upsertObservedSession(ctx context.Context, st store.Store, tenant string, agent *v1alpha1.Agent, o ObservedSession, identity ...*resolvedRuntimeReportIdentity) (*store.Session, error) {
 	if st == nil {
 		return nil, fmt.Errorf("store is nil")
 	}
@@ -502,6 +585,15 @@ func upsertObservedSession(ctx context.Context, st store.Store, tenant string, a
 		InstanceIP:       o.InstanceIP,
 		StartedAt:        parseTimePtr(o.StartedAt),
 		LastActiveAt:     parseTimePtr(o.LastActiveAt),
+	}
+	if len(identity) > 0 && identity[0] != nil {
+		resolved := identity[0]
+		sess.AgentID = resolved.AgentUUID
+		sess.BindingID = resolved.BindingUUID
+		sess.AgentInstanceID = resolved.AgentInstanceUUID
+		sess.InstanceGeneration = resolved.InstanceGeneration
+		sess.AgentName = resolved.AgentKey
+		sess.OriginType = "runtime"
 	}
 	saved, err := st.Sessions().Upsert(ctx, sess)
 	if err != nil {
@@ -535,6 +627,7 @@ func upsertObservedSession(ctx context.Context, st store.Store, tenant string, a
 		if err := st.Metrics().RecordTokenUsage(ctx, &store.TokenUsageMetric{
 			Tenant:           tenant,
 			SessionFK:        &fk,
+			AgentID:          saved.AgentID,
 			AgentName:        agent.Name,
 			Namespace:        agent.Namespace,
 			PromptTokens:     dPrompt,

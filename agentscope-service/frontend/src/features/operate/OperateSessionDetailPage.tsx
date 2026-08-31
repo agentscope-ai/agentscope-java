@@ -222,7 +222,7 @@ export default function OperateSessionDetailPage() {
   return (
     <Page>
       <div>
-        <Link to={scope.scopedPath('/control/sessions')} className="text-sm text-muted-foreground hover:text-foreground">
+        <Link to={scope.scopedPath('/sessions')} className="text-sm text-muted-foreground hover:text-foreground">
           ← Sessions
         </Link>
         <PageHeader

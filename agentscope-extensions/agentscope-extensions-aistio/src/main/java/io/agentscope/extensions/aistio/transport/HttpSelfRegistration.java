@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -68,6 +69,7 @@ public final class HttpSelfRegistration implements AutoCloseable {
     private final AtomicReference<String> registeredInstanceId = new AtomicReference<>();
     private final AtomicLong generation = new AtomicLong();
     private final AtomicReference<RegisteredIdentity> identity = new AtomicReference<>();
+    private volatile Consumer<RegisteredIdentity> identityListener = ignored -> {};
     private ScheduledExecutorService scheduler;
 
     public HttpSelfRegistration(
@@ -125,6 +127,11 @@ public final class HttpSelfRegistration implements AutoCloseable {
     /** Returns the last successfully registered stable identity, or {@code null}. */
     public RegisteredIdentity identity() {
         return identity.get();
+    }
+
+    /** Receives every successfully refreshed identity, including generation changes. */
+    public void setIdentityListener(Consumer<RegisteredIdentity> listener) {
+        identityListener = listener == null ? ignored -> {} : listener;
     }
 
     @Override
@@ -226,7 +233,7 @@ public final class HttpSelfRegistration implements AutoCloseable {
                 }
                 registeredInstanceId.set(durableId);
                 generation.set(currentGeneration);
-                identity.set(
+                RegisteredIdentity registeredIdentity =
                         new RegisteredIdentity(
                                 agentId,
                                 agentKey,
@@ -234,7 +241,9 @@ public final class HttpSelfRegistration implements AutoCloseable {
                                 durableId,
                                 instanceKey,
                                 currentGeneration,
-                                issuedCredential));
+                                issuedCredential);
+                identity.set(registeredIdentity);
+                identityListener.accept(registeredIdentity);
                 registered.set(true);
                 LOG.info(
                         () ->

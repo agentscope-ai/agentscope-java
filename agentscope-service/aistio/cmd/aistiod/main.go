@@ -101,7 +101,7 @@ func (a *sessionSinkAdapter) HandleDisconnect(tenant, namespace, agentID, bindin
 	a.sink.ApplyInstanceDisconnect(context.Background(), tenant, namespace, agentID, bindingID, instanceKey, generation)
 }
 
-func (a *sessionSinkAdapter) HandleSessionReport(tenant, namespace, agentName, instanceID string, report *asdp.SessionReport) {
+func (a *sessionSinkAdapter) HandleSessionReport(identity asdp.ReportIdentity, report *asdp.SessionReport) {
 	if report == nil {
 		return
 	}
@@ -124,11 +124,11 @@ func (a *sessionSinkAdapter) HandleSessionReport(tenant, namespace, agentName, i
 			EffectiveMessageCount: s.GetEffectiveMessageCount(),
 		})
 	}
-	a.sink.ApplySessionReport(context.Background(), tenant, namespace, agentName, instanceID, observed)
+	a.sink.ApplySessionReport(context.Background(), reportIdentity(identity), observed)
 }
 
 // HandleEventReport maps an ASDP Level-2 event batch to the store sink.
-func (a *sessionSinkAdapter) HandleEventReport(tenant, namespace, agentName, instanceID string, report *asdp.EventReport) {
+func (a *sessionSinkAdapter) HandleEventReport(identity asdp.ReportIdentity, report *asdp.EventReport) {
 	if report == nil || len(report.Events) == 0 {
 		return
 	}
@@ -153,15 +153,15 @@ func (a *sessionSinkAdapter) HandleEventReport(tenant, namespace, agentName, ins
 			FrameworkMeta: e.GetFrameworkMeta(),
 		})
 	}
-	a.sink.ApplyEventReport(context.Background(), tenant, namespace, agentName, instanceID, events)
+	a.sink.ApplyEventReport(context.Background(), reportIdentity(identity), events)
 }
 
 // HandleContextReport maps an ASDP Level-4 context report to the store sink.
-func (a *sessionSinkAdapter) HandleContextReport(tenant, namespace, agentName, instanceID string, report *asdp.ContextReport) {
+func (a *sessionSinkAdapter) HandleContextReport(identity asdp.ReportIdentity, report *asdp.ContextReport) {
 	if report == nil {
 		return
 	}
-	a.sink.ApplyContextReport(context.Background(), tenant, namespace, agentName, instanceID, controller.ObservedContext{
+	a.sink.ApplyContextReport(context.Background(), reportIdentity(identity), controller.ObservedContext{
 		SessionID:            report.GetSessionId(),
 		ContextHash:          report.GetContextHash(),
 		CapturedAt:           unixMsToTime(report.GetCapturedAt()),
@@ -180,7 +180,7 @@ func (a *sessionSinkAdapter) HandleContextReport(tenant, namespace, agentName, i
 }
 
 // HandleInventoryReport maps an ASDP inventory report to the store sink.
-func (a *sessionSinkAdapter) HandleInventoryReport(tenant, namespace, agentName, instanceID string, report *asdp.InventoryReport) {
+func (a *sessionSinkAdapter) HandleInventoryReport(identity asdp.ReportIdentity, report *asdp.InventoryReport) {
 	if report == nil {
 		return
 	}
@@ -209,7 +209,19 @@ func (a *sessionSinkAdapter) HandleInventoryReport(tenant, namespace, agentName,
 		inv.HealthReason = h.GetReason()
 		inv.ActiveSessions = h.GetActiveSessions()
 	}
-	a.sink.ApplyInventoryReport(context.Background(), tenant, namespace, agentName, instanceID, inv)
+	a.sink.ApplyInventoryReport(context.Background(), reportIdentity(identity), inv)
+}
+
+func reportIdentity(identity asdp.ReportIdentity) controller.RuntimeReportIdentity {
+	return controller.RuntimeReportIdentity{
+		Tenant:             identity.Tenant,
+		Namespace:          identity.Namespace,
+		AgentID:            identity.AgentID,
+		BindingID:          identity.BindingID,
+		AgentKey:           identity.AgentKey,
+		InstanceKey:        identity.InstanceKey,
+		InstanceGeneration: identity.InstanceGeneration,
+	}
 }
 
 func (a *sessionSinkAdapter) HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *asdp.ExecutionAttemptReport) {

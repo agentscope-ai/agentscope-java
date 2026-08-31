@@ -2,7 +2,7 @@
 #
 # dev-up.sh - start the AgentScope Service stack locally.
 #
-#   Gateway    :8080
+#   Gateway    :18080
 #   aistiod    :8081  (Go control plane: /api/*, /api/v1/*, console SPA)
 #   Data       :8082
 #   Scheduler  :8083
@@ -35,7 +35,7 @@ cleanup_failed_startup() {
 }
 trap cleanup_failed_startup EXIT
 
-GATEWAY_PORT="${BUILDER_GATEWAY_PORT:-8080}"
+GATEWAY_PORT="${BUILDER_GATEWAY_PORT:-18080}"
 CONTROL_PORT="${BUILDER_CONTROL_PORT:-8081}"
 DATA_PORT="${BUILDER_DATA_PORT:-8082}"
 SCHED_PORT="${BUILDER_SCHEDULER_PORT:-8083}"

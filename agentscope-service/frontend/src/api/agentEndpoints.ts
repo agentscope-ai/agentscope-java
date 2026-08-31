@@ -32,8 +32,10 @@ export interface CreateAgentEndpointRequest {
   rateLimit?: { requests: number; windowSeconds: number };
 }
 
-export const listAgentEndpoints = (tenant = 'default', namespace = 'default') => {
+export const listAgentEndpoints = (tenant = 'default', namespace = 'default', filter?: { targetType?: EndpointTargetType; targetRef?: string }) => {
   const params = new URLSearchParams({ tenant, namespace });
+  if (filter?.targetType) params.set('targetType', filter.targetType);
+  if (filter?.targetRef) params.set('targetRef', filter.targetRef);
   return api.get<{ items: AgentEndpoint[] }>(`/api/v1/agent-endpoints?${params}`);
 };
 export const createAgentEndpoint = (body: CreateAgentEndpointRequest) =>

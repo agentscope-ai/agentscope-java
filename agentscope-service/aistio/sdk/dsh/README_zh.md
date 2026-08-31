@@ -49,7 +49,7 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 
 | 入口 | 地址 |
 | --- | --- |
-| Console / Dashboard | http://localhost:8080 |
+| Console / Dashboard | http://localhost:18080 |
 | aistiod（插件注册目标） | http://localhost:8081 |
 
 `scripts/dev-up.sh` 默认内部 token 是 `local-dev-internal-token-at-least-32chars`。下一步 DSH 必须用**同一把** token，控制面才会接受注册。
@@ -104,7 +104,7 @@ curl -s http://127.0.0.1:18091/agentscope/health
 
 ### 4. 在 Dashboard 验收
 
-1. 打开 http://localhost:8080 ，用 `admin` / `admin` 登录。
+1. 打开 http://localhost:18080 ，用 `admin` / `admin` 登录。
 2. **Dashboard**：出现名为 `deepseek-harness` 的健康实例。
 3. 回到 DSH Web UI（http://127.0.0.1:3080）发一轮对话；Dashboard Sessions 应在 `idle` → `active` → `idle` 之间切换，并有 token 增量。
 4. 需要协作时，创建 Issue，并为该 Agent 或包含它的 Team 启动或分配 Orchestration Run。DSH 收到带 fencing 的 `ExecutionAttemptCommand` 后使用 task token 拉取 discussion，并写 progress/result Comment 与 Artifact。

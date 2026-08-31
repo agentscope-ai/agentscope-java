@@ -37,6 +37,18 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 	key := sessCompositeKey(tenant, in.AgentName, in.Namespace, in.SessionID)
 	if id, ok := r.s.sessKey[key]; ok {
 		existing := r.s.sessions[id]
+		if in.AgentID != uuid.Nil {
+			existing.AgentID = in.AgentID
+		}
+		if in.BindingID != uuid.Nil {
+			existing.BindingID = in.BindingID
+		}
+		if in.AgentInstanceID != uuid.Nil {
+			existing.AgentInstanceID = in.AgentInstanceID
+		}
+		if in.InstanceGeneration > 0 {
+			existing.InstanceGeneration = in.InstanceGeneration
+		}
 		if in.Framework != "" {
 			existing.Framework = in.Framework
 		}
@@ -63,6 +75,12 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 			id := *in.AgentTaskID
 			existing.AgentTaskID = &id
 		}
+		if in.OriginType != "" {
+			existing.OriginType = in.OriginType
+		}
+		if in.OriginRef != "" {
+			existing.OriginRef = in.OriginRef
+		}
 		if len(in.TaskContext) > 0 {
 			existing.TaskContext = append([]byte(nil), in.TaskContext...)
 		}
@@ -87,24 +105,30 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 		busy = &b
 	}
 	s := &store.Session{
-		ID:               id,
-		Tenant:           tenant,
-		SessionID:        in.SessionID,
-		AgentName:        in.AgentName,
-		Namespace:        in.Namespace,
-		Framework:        in.Framework,
-		FrameworkVersion: in.FrameworkVersion,
-		Phase:            phase,
-		Busy:             busy,
-		InstanceRef:      in.InstanceRef,
-		InstanceIP:       in.InstanceIP,
-		AgentTaskID:      in.AgentTaskID,
-		TaskContext:      append([]byte(nil), in.TaskContext...),
-		StartedAt:        in.StartedAt,
-		LastActiveAt:     in.LastActiveAt,
-		TerminatedAt:     in.TerminatedAt,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:                 id,
+		Tenant:             tenant,
+		SessionID:          in.SessionID,
+		AgentID:            in.AgentID,
+		BindingID:          in.BindingID,
+		AgentInstanceID:    in.AgentInstanceID,
+		InstanceGeneration: in.InstanceGeneration,
+		AgentName:          in.AgentName,
+		Namespace:          in.Namespace,
+		Framework:          in.Framework,
+		FrameworkVersion:   in.FrameworkVersion,
+		Phase:              phase,
+		Busy:               busy,
+		InstanceRef:        in.InstanceRef,
+		InstanceIP:         in.InstanceIP,
+		AgentTaskID:        in.AgentTaskID,
+		OriginType:         in.OriginType,
+		OriginRef:          in.OriginRef,
+		TaskContext:        append([]byte(nil), in.TaskContext...),
+		StartedAt:          in.StartedAt,
+		LastActiveAt:       in.LastActiveAt,
+		TerminatedAt:       in.TerminatedAt,
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 	r.s.sessions[id] = s
 	r.s.sessKey[key] = id
@@ -140,6 +164,9 @@ func (r *sessionRepo) List(_ context.Context, f store.SessionFilter) ([]*store.S
 			continue
 		}
 		if f.AgentName != "" && s.AgentName != f.AgentName {
+			continue
+		}
+		if f.AgentID != uuid.Nil && s.AgentID != f.AgentID {
 			continue
 		}
 		if f.Namespace != "" && s.Namespace != f.Namespace {
@@ -337,6 +364,9 @@ func sessionMatchesFilter(s *store.Session, f store.SessionFilter) bool {
 		return false
 	}
 	if f.AgentName != "" && s.AgentName != f.AgentName {
+		return false
+	}
+	if f.AgentID != uuid.Nil && s.AgentID != f.AgentID {
 		return false
 	}
 	if f.Namespace != "" && s.Namespace != f.Namespace {

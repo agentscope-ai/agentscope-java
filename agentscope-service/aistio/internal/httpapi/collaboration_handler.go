@@ -964,6 +964,16 @@ func (s *Server) getAgentTaskContext(c *gin.Context) {
 }
 
 func (s *Server) taskTokenMiddleware() gin.HandlerFunc {
+	return s.taskTokenMiddlewareWithVerifier(s.verifyActiveTaskToken)
+}
+
+func (s *Server) coordinatorTaskTokenMiddleware() gin.HandlerFunc {
+	return s.taskTokenMiddlewareWithVerifier(s.verifyCoordinatorTaskToken)
+}
+
+func (s *Server) taskTokenMiddlewareWithVerifier(
+	verify func(context.Context, string, uuid.UUID) (*controlmodel.AgentTask, error),
+) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := uuid.Parse(c.Param("taskId"))
 		if err != nil {
@@ -975,10 +985,13 @@ func (s *Server) taskTokenMiddleware() gin.HandlerFunc {
 			auth := c.GetHeader("Authorization")
 			token = strings.TrimPrefix(auth, "Bearer ")
 		}
-		if _, err := s.verifyActiveTaskToken(c.Request.Context(), token, id); err != nil {
+		task, err := verify(c.Request.Context(), token, id)
+		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
 			return
 		}
+		c.Set(ctxInternalAuth, true)
+		c.Set(ctxTaskAuth, task)
 		c.Next()
 	}
 }

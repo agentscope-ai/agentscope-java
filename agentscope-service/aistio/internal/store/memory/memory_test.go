@@ -18,6 +18,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 	"github.com/spring-ai-alibaba/aistio/internal/store/storetest"
@@ -30,6 +32,33 @@ func TestMemoryStore(t *testing.T) {
 	}
 	defer s.Close()
 	storetest.RunSuite(t, s)
+}
+
+func TestRuntimeDataFiltersByStableAgentID(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(ctx, store.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	agentA, agentB := uuid.New(), uuid.New()
+	for _, agentID := range []uuid.UUID{agentA, agentB} {
+		saved, saveErr := s.Sessions().Upsert(ctx, &store.Session{Tenant: "tenant", Namespace: "default",
+			AgentID: agentID, AgentName: "same-observed-name", SessionID: agentID.String(), Phase: store.SessionPhaseActive})
+		if saveErr != nil {
+			t.Fatal(saveErr)
+		}
+		if metricErr := s.Metrics().RecordTokenUsage(ctx, &store.TokenUsageMetric{Tenant: "tenant", AgentID: agentID,
+			AgentName: "same-observed-name", Namespace: "default", SessionFK: &saved.ID, TotalTokens: 7}); metricErr != nil {
+			t.Fatal(metricErr)
+		}
+	}
+	if rows, _ := s.Sessions().List(ctx, store.SessionFilter{Tenant: "tenant", AgentID: agentA}); len(rows) != 1 || rows[0].AgentID != agentA {
+		t.Fatalf("agent session filter leaked: %+v", rows)
+	}
+	if total, _ := s.Metrics().SumTokenUsage(ctx, store.TokenFilter{Tenant: "tenant", AgentID: agentA}); total != 7 {
+		t.Fatalf("agent metric filter leaked: %d", total)
+	}
 }
 
 func TestSessionsAndMetricsAreTenantIsolated(t *testing.T) {

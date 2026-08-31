@@ -8,7 +8,7 @@
 
 ## 硬前提
 
-1. **服务已启动**（默认 `http://localhost:8080`）。构建与启动见仓库根目录 [README](../../README.md) Quick Start。
+1. **服务已启动**（默认 `http://localhost:18080`）。构建与启动见仓库根目录 [README](../../README.md) Quick Start。
 2. **模型 API Key**（例如 DashScope）：
 
 ```bash
@@ -20,7 +20,7 @@ export DASHSCOPE_API_KEY=sk-xxx
 下文假设：
 
 ```bash
-export BASE=http://localhost:8080
+export BASE=http://localhost:18080
 ```
 
 ## 1. 登录拿 JWT

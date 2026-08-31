@@ -252,7 +252,7 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 	if err != nil {
 		return nil, err
 	}
-	if err := r.persistSession(ctx, dispatched, sessionID, binding.AgentID.String(), ""); err != nil {
+	if err := r.persistSession(ctx, dispatched, sessionID, binding, nil); err != nil {
 		return nil, err
 	}
 	if err := r.Managed.PostSessionWakeEvent(ctx, sessionID, binding.ManagedOwnerRef,
@@ -299,7 +299,7 @@ func (r *Resolver) dispatchExternal(ctx context.Context, taskID uuid.UUID, candi
 	if err != nil {
 		return nil, err
 	}
-	if err := r.persistSession(ctx, dispatched, sessionID, instance.AgentID.String(), instance.InstanceKey); err != nil {
+	if err := r.persistSession(ctx, dispatched, sessionID, binding, instance); err != nil {
 		return nil, err
 	}
 	payload, _ := json.Marshal(map[string]any{"attemptId": attempt.ID, "agentTaskId": task.ID,
@@ -346,7 +346,8 @@ func capabilitiesMatch(actual, required json.RawMessage) bool {
 	return controlmodel.JSONContains(actual, required)
 }
 
-func (r *Resolver) persistSession(ctx context.Context, task *controlmodel.AgentTask, sessionID, agentName, instanceRef string) error {
+func (r *Resolver) persistSession(ctx context.Context, task *controlmodel.AgentTask, sessionID string,
+	binding controlmodel.RuntimeBinding, instance *controlmodel.AgentInstance) error {
 	envelope, err := (&collaboration.Service{Store: r.Store}).BuildContext(ctx, task.ID)
 	if err != nil {
 		return err
@@ -356,9 +357,24 @@ func (r *Resolver) persistSession(ctx context.Context, task *controlmodel.AgentT
 	if err != nil {
 		return err
 	}
+	agent, err := r.Store.AgentCatalog().GetAgent(ctx, binding.AgentID)
+	if err != nil {
+		return err
+	}
+	instanceRef := ""
+	agentInstanceID := uuid.Nil
+	instanceGeneration := int64(0)
+	if instance != nil {
+		instanceRef = instance.InstanceKey
+		agentInstanceID = instance.ID
+		instanceGeneration = instance.Generation
+	}
 	now := time.Now().UTC()
 	_, err = r.Store.Sessions().Upsert(ctx, &store.Session{SessionID: sessionID,
-		Tenant: task.Tenant, AgentName: agentName, Namespace: task.Namespace, InstanceRef: instanceRef,
+		Tenant: task.Tenant, AgentID: binding.AgentID, BindingID: binding.BindingID,
+		AgentInstanceID: agentInstanceID, InstanceGeneration: instanceGeneration,
+		AgentName: agent.AgentKey, Namespace: task.Namespace, InstanceRef: instanceRef,
+		OriginType: "agent-task", OriginRef: task.ID.String(),
 		Phase: store.SessionPhaseActive, AgentTaskID: &task.ID, TaskContext: contextJSON,
 		StartedAt: &now, LastActiveAt: &now})
 	return err

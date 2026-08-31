@@ -5,7 +5,7 @@
 # published Definition/declared Run/signal -> Automation.
 set -euo pipefail
 
-BASE="${BASE:-http://localhost:8080}"
+BASE="${BASE:-http://localhost:18080}"
 TENANT="${SMOKE_TENANT:-admin}"
 NAMESPACE="${SMOKE_NAMESPACE:-default}"
 SMOKE_ID="${SMOKE_ID:-$(date +%s)-$$}"

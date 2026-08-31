@@ -151,11 +151,11 @@ export default function AgentLayout() {
           <div>
             <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>Runtime</div>
             <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-              Open this agent in Operate if a data plane has registered under the same name.
+              Open the canonical Agent Center service view for runtime health, sessions, and capabilities.
             </div>
           </div>
           <button
-            onClick={() => navigate(`/managed/registered-agents/${encodeURIComponent(agent?.name || id)}?namespace=default`)}
+            onClick={() => navigate(`/agent-center/agents/${encodeURIComponent(id)}?tenant=default&namespace=default`)}
             style={{
               padding: '7px 12px',
               background: '#ffffff',
@@ -168,7 +168,7 @@ export default function AgentLayout() {
               whiteSpace: 'nowrap',
             }}
           >
-            View in Operate →
+            View Agent service →
           </button>
         </div>
 

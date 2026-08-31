@@ -42,8 +42,13 @@ type SessionWithSnapshot struct {
 // Level-1 snapshot so the console can render context pressure without a
 // second round-trip.
 func (s *Server) listSessions(c *gin.Context) {
+	agentID, ok := optionalUUIDQuery(c, "agentId")
+	if !ok {
+		return
+	}
 	filter := store.SessionFilter{
 		Tenant:    c.DefaultQuery("tenant", "default"),
+		AgentID:   agentID,
 		AgentName: c.Query("agent"),
 		Namespace: c.Query("namespace"),
 		Phase:     c.Query("phase"),
@@ -150,8 +155,13 @@ func (s *Server) enrichSessionInstance(sess *store.Session, item *SessionWithSna
 
 // queryTokenMetrics handles GET /api/v1/metrics/tokens.
 func (s *Server) queryTokenMetrics(c *gin.Context) {
+	agentID, ok := optionalUUIDQuery(c, "agentId")
+	if !ok {
+		return
+	}
 	filter := store.TokenFilter{
 		Tenant:    c.DefaultQuery("tenant", "default"),
+		AgentID:   agentID,
 		AgentName: c.Query("agent"),
 		Namespace: c.Query("namespace"),
 		Model:     c.Query("model"),
@@ -186,8 +196,13 @@ func (s *Server) queryTokenMetrics(c *gin.Context) {
 
 // queryAgentMetrics handles GET /api/v1/metrics/agents.
 func (s *Server) queryAgentMetrics(c *gin.Context) {
+	agentID, ok := optionalUUIDQuery(c, "agentId")
+	if !ok {
+		return
+	}
 	filter := store.AgentMetricFilter{
 		Tenant:    c.DefaultQuery("tenant", "default"),
+		AgentID:   agentID,
 		AgentName: c.Query("agent"),
 		Namespace: c.Query("namespace"),
 		Limit:     parseLimit(c, 500),
@@ -217,6 +232,19 @@ func (s *Server) queryAgentMetrics(c *gin.Context) {
 		rows = []*store.AgentMetric{}
 	}
 	c.JSON(http.StatusOK, gin.H{"metrics": rows})
+}
+
+func optionalUUIDQuery(c *gin.Context, name string) (uuid.UUID, bool) {
+	raw := strings.TrimSpace(c.Query(name))
+	if raw == "" {
+		return uuid.Nil, true
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid " + name})
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 type overviewCacheEntry struct {

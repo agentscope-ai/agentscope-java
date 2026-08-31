@@ -97,19 +97,31 @@ type Server struct {
 // workload token; external applications must present their registration token.
 type IdentityValidator func(ctx context.Context, meta *UpstreamMeta, credential string, trustedWorkloadIdentity bool) error
 
+// ReportIdentity is the authenticated runtime identity attached to every
+// report. Report payloads never get to select their logical Agent identity.
+type ReportIdentity struct {
+	Tenant             string
+	Namespace          string
+	AgentID            string
+	BindingID          string
+	AgentKey           string
+	InstanceKey        string
+	InstanceGeneration int64
+}
+
 // EventSink processes upstream events from data plane instances.
 type EventSink interface {
 	HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtime, sdkVersion string, capabilities []string)
 	HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64)
-	HandleSessionReport(tenant, namespace, agentName, instanceID string, report *SessionReport)
+	HandleSessionReport(identity ReportIdentity, report *SessionReport)
 	HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *ExecutionAttemptReport)
 	// HandleEventReport processes a Level-2 event stream batch (session_events).
-	HandleEventReport(tenant, namespace, agentName, instanceID string, report *EventReport)
+	HandleEventReport(identity ReportIdentity, report *EventReport)
 	// HandleContextReport processes a Level-4 effective-context report (context_snapshots).
-	HandleContextReport(tenant, namespace, agentName, instanceID string, report *ContextReport)
+	HandleContextReport(identity ReportIdentity, report *ContextReport)
 	// HandleInventoryReport processes an instance inventory report. The latest
 	// report is also kept in the server connection registry (see GetInventory*).
-	HandleInventoryReport(tenant, namespace, agentName, instanceID string, report *InventoryReport)
+	HandleInventoryReport(identity ReportIdentity, report *InventoryReport)
 }
 
 // InstanceInventory couples the latest InventoryReport from a connected
@@ -117,8 +129,11 @@ type EventSink interface {
 type InstanceInventory struct {
 	Tenant     string
 	Namespace  string
+	AgentID    string
+	BindingID  string
 	AgentName  string
 	InstanceID string
+	Generation int64
 	Report     *InventoryReport
 	UpdatedAt  time.Time
 }
@@ -363,8 +378,11 @@ func (s *Server) UpdateInventory(tenant, namespace, instanceID string, report *I
 	s.inventory[key] = &InstanceInventory{
 		Tenant:     tenant,
 		Namespace:  namespace,
+		AgentID:    conn.AgentID,
+		BindingID:  conn.BindingID,
 		AgentName:  conn.AgentName,
 		InstanceID: instanceID,
+		Generation: conn.Generation,
 		Report:     report,
 		UpdatedAt:  time.Now().UTC(),
 	}

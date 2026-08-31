@@ -226,7 +226,7 @@ func (s *service) handleConfigAck(meta *UpstreamMeta, ack *ConfigAck) {
 
 func (s *service) handleSessionReport(meta *UpstreamMeta, report *SessionReport) {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleSessionReport(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey, report)
+		s.server.eventSink.HandleSessionReport(reportIdentity(meta), report)
 	}
 }
 
@@ -239,13 +239,13 @@ func (s *service) handleExecutionAttempt(meta *UpstreamMeta, report *ExecutionAt
 
 func (s *service) handleEventReport(meta *UpstreamMeta, report *EventReport) {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleEventReport(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey, report)
+		s.server.eventSink.HandleEventReport(reportIdentity(meta), report)
 	}
 }
 
 func (s *service) handleContextReport(meta *UpstreamMeta, report *ContextReport) {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleContextReport(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey, report)
+		s.server.eventSink.HandleContextReport(reportIdentity(meta), report)
 	}
 }
 
@@ -254,6 +254,18 @@ func (s *service) handleInventoryReport(meta *UpstreamMeta, report *InventoryRep
 	// REST/CLI queries; the sink gets a copy for logging/metrics.
 	s.server.UpdateInventory(meta.GetTenant(), meta.Namespace, meta.InstanceKey, report)
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleInventoryReport(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey, report)
+		s.server.eventSink.HandleInventoryReport(reportIdentity(meta), report)
+	}
+}
+
+func reportIdentity(meta *UpstreamMeta) ReportIdentity {
+	return ReportIdentity{
+		Tenant:             meta.GetTenant(),
+		Namespace:          meta.GetNamespace(),
+		AgentID:            meta.GetAgentId(),
+		BindingID:          meta.GetBindingId(),
+		AgentKey:           meta.GetAgentKey(),
+		InstanceKey:        meta.GetInstanceKey(),
+		InstanceGeneration: meta.GetGeneration(),
 	}
 }

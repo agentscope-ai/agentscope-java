@@ -64,9 +64,10 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                 collaboration.acknowledge(
                         assignment.agentTaskId(), assignment.taskToken(), inputIds);
             }
-            JsonNode started =
-                    collaboration.start(assignment.agentTaskId(), assignment.taskToken(), version);
-            version = started.path("task").path("version").asLong(version + 1);
+            JsonNode running = ensureRunning(assignment, envelope, version);
+            version = running.path("task").path("version").asLong(version);
+            envelope = running;
+            boolean teamCoordinator = envelope.path("task").path("leaderTask").asBoolean(false);
 
             String payload = new String(assignment.payload(), StandardCharsets.UTF_8);
             String prompt =
@@ -88,14 +89,18 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             if (summary == null || summary.isBlank()) {
                 summary = "AgentTask completed";
             }
+            Map<String, String> result = Map.of("content", summary);
             collaboration.complete(
                     assignment.agentTaskId(),
                     assignment.taskToken(),
                     version,
                     summary,
-                    Map.of("content", summary),
+                    result,
                     inputIds,
                     List.of());
+            if (teamCoordinator) {
+                completeTeamCoordinator(assignment, result);
+            }
             LOG.log(Level.INFO, "AgentTask completed: {0}", assignment.agentTaskId());
         } catch (RuntimeException e) {
             try {
@@ -109,6 +114,63 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                 e.addSuppressed(reportError);
             }
             acceptedEvents.remove(eventKey);
+            throw e;
+        }
+    }
+
+    /**
+     * A Team leader task and its coordinator node have deliberately separate lifecycles. The
+     * framework adapter owns the final explicit coordinator action for the simple case where the
+     * leader returned without leaving delegated work behind. If workers, child Issues, or dynamic
+     * nodes are still active, the control plane rejects the completion and keeps the coordinator
+     * waiting for a later turn.
+     */
+    private void completeTeamCoordinator(
+            AgentTaskAssignment assignment, Map<String, String> output) {
+        try {
+            collaboration.completeRunNode(assignment.agentTaskId(), assignment.taskToken(), output);
+            LOG.log(
+                    Level.INFO,
+                    "Team coordinator completed for AgentTask: {0}",
+                    assignment.agentTaskId());
+        } catch (RuntimeException e) {
+            // The logical task is already complete. A coordinator conflict is not a task failure;
+            // it means active delegated work must converge before another coordinator turn can
+            // explicitly close the node.
+            LOG.log(
+                    Level.WARNING,
+                    "Team coordinator remains waiting after AgentTask "
+                            + assignment.agentTaskId()
+                            + ": "
+                            + e.getMessage());
+        }
+    }
+
+    /**
+     * ASDP reports the physical Attempt start before invoking the framework adapter. That report
+     * normally moves the logical AgentTask to {@code running} as part of the same control-plane
+     * transaction, so issuing a second task start would fail its optimistic version check. Keep
+     * the HTTP start as a fallback for transports where the ASDP report has not been observed yet.
+     */
+    private JsonNode ensureRunning(
+            AgentTaskAssignment assignment, JsonNode envelope, long expectedVersion) {
+        if ("running".equals(envelope.path("task").path("status").asText())) {
+            return envelope;
+        }
+        try {
+            return collaboration.start(
+                    assignment.agentTaskId(), assignment.taskToken(), expectedVersion);
+        } catch (CollaborationClient.CollaborationHttpException e) {
+            if (e.status() != 409) {
+                throw e;
+            }
+            // The ASDP start and this fallback can race. A conflict is success only when a fresh
+            // fenced read proves that this same task is already running.
+            JsonNode refreshed =
+                    collaboration.taskContext(assignment.agentTaskId(), assignment.taskToken());
+            if ("running".equals(refreshed.path("task").path("status").asText())) {
+                return refreshed;
+            }
             throw e;
         }
     }

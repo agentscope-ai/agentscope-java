@@ -34,7 +34,7 @@ export const assignIssue=(id:string,assigneeType:string,assigneeRef:string,expec
 export const createChildIssue=(id:string,body:unknown)=>api.post<{issue:Issue;agentTask?:AgentTask}>(`/api/v1/issues/${encodeURIComponent(id)}/children`,body);
 export const listChildIssues=(tenant:string,namespace:string,parentIssueId:string)=>api.get<{items:Issue[]}>(`/api/v1/issues${query({tenant,namespace,parentIssueId})}`);
 export const uploadIssueArtifact=async(tenant:string,namespace:string,issueId:string,file:File)=>{const form=new FormData();form.set('tenant',tenant);form.set('namespace',namespace);form.set('targetType','issue');form.set('targetRef',issueId);form.set('relation','attachment');form.set('file',file);return apiFetch<{artifact:{id:string;filename:string;sizeBytes:number;contentType:string}}>('/api/v1/artifacts/uploads',{method:'POST',body:form})};
-export const listTasks=(tenant:string,namespace:string,status='')=>api.get<{items:AgentTask[]}>(`/api/v1/agent-tasks${query({tenant,namespace,status})}`);
+export const listTasks=(tenant:string,namespace:string,status='',agentId='')=>api.get<{items:AgentTask[]}>(`/api/v1/agent-tasks${query({tenant,namespace,status,agentId})}`);
 export const getTask=(id:string)=>api.get<{task:AgentTask}>(`/api/v1/agent-tasks/${encodeURIComponent(id)}`);
 export const cancelTask=(id:string,expectedVersion:number)=>api.post<{task:AgentTask}>(`/api/v1/agent-tasks/${encodeURIComponent(id)}/cancel`,{expectedVersion});
 export const retryTask=(id:string)=>api.post<{task:AgentTask}>(`/api/v1/agent-tasks/${encodeURIComponent(id)}/retry`,{});

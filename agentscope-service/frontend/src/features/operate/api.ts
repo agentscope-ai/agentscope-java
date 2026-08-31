@@ -20,6 +20,12 @@ export interface RuntimeSession {
   id: string;
   sessionId: string;
   agentName: string;
+  agentId?: string;
+  bindingId?: string;
+  agentInstanceId?: string;
+  instanceGeneration?: number;
+  originType?: 'endpoint' | 'channel' | 'agent-task' | 'runtime' | string;
+  originRef?: string;
   namespace: string;
   framework?: string;
   phase: string;
@@ -46,6 +52,7 @@ export interface RuntimeSession {
 }
 
 export interface AgentUsage {
+  agentId?: string;
   agentName: string;
   namespace: string;
   totalTokens: number;
@@ -57,6 +64,7 @@ export interface AgentUsage {
 export interface SessionUsage {
   sessionFk: string;
   sessionId: string;
+  agentId?: string;
   agentName: string;
   namespace: string;
   phase?: string;
@@ -66,6 +74,7 @@ export interface SessionUsage {
 export interface SessionDurationRank {
   sessionFk: string;
   sessionId: string;
+  agentId?: string;
   agentName: string;
   namespace: string;
   phase?: string;
@@ -180,6 +189,7 @@ export interface OverviewTimeseries {
 export interface AgentMetric {
   id: number;
   agentName: string;
+  agentId?: string;
   namespace: string;
   recordedAt: string;
   activeSessions: number;
@@ -245,8 +255,9 @@ export function fetchOverviewTimeseries(params?: { metric?: string; bucket?: str
   return api.get<OverviewTimeseries>(`/api/v1/overview/timeseries?${q}`);
 }
 
-export function fetchAgentMetrics(params?: { agent?: string; namespace?: string; since?: string }) {
+export function fetchAgentMetrics(params?: { agentId?: string; agent?: string; namespace?: string; since?: string }) {
   const q = new URLSearchParams();
+  if (params?.agentId) q.set('agentId', params.agentId);
   if (params?.agent) q.set('agent', params.agent);
   if (params?.namespace) q.set('namespace', params.namespace);
   if (params?.since) q.set('since', params.since);
@@ -255,6 +266,7 @@ export function fetchAgentMetrics(params?: { agent?: string; namespace?: string;
 }
 
 export function fetchRuntimeSessions(params?: {
+  agentId?: string;
   agent?: string;
   phase?: string;
   namespace?: string;
@@ -262,6 +274,7 @@ export function fetchRuntimeSessions(params?: {
   offset?: number;
 }) {
   const q = new URLSearchParams();
+  if (params?.agentId) q.set('agentId', params.agentId);
   if (params?.agent) q.set('agent', params.agent);
   if (params?.phase) q.set('phase', params.phase);
   if (params?.namespace) q.set('namespace', params.namespace);
@@ -279,13 +292,13 @@ export function sessionDetailPath(s: {
   namespace?: string;
 }): string {
   if (s.id) {
-    return `/control/sessions/${encodeURIComponent(s.id)}`;
+    return `/operations/sessions/${encodeURIComponent(s.id)}`;
   }
   const q = new URLSearchParams();
   if (s.agentName) q.set('agent', s.agentName);
   if (s.namespace) q.set('namespace', s.namespace);
   const qs = q.toString();
-  return `/control/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
+  return `/operations/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
 }
 
 export function fetchRuntimeSession(

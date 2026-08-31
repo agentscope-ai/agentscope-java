@@ -45,6 +45,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -86,6 +87,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     private static final int EVENT_BUFFER_MAX = 1_000;
     private static final long CONTEXT_PUSH_COOLDOWN_MS = 30_000L;
     private static final long INVENTORY_INTERVAL_MS = 30_000L;
+    private static final long ATTEMPT_HEARTBEAT_INTERVAL_MS = 15_000L;
     private static final Duration ADAPTER_CALL_TIMEOUT = Duration.ofSeconds(10);
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -139,6 +141,15 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
 
     public AistioConfig getConfig() {
         return config;
+    }
+
+    /**
+     * Returns the stable Catalog identity issued by the latest successful self-registration.
+     * Applications can use the one-time credential from this value to persist their identity in
+     * an application-owned secret store.
+     */
+    public HttpSelfRegistration.RegisteredIdentity getRegisteredIdentity() {
+        return httpRegister == null ? null : httpRegister.identity();
     }
 
     /** Actual contract HTTP port, which matters when the configured port was 0. */
@@ -234,6 +245,16 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             grpc.setSessionCommandHandler(
                     (sessionId, command, params) -> dispatchCommand(sessionId, command, params));
             grpc.setExecutionAttemptHandler(this::onExecutionAttempt);
+            if (httpRegister != null) {
+                httpRegister.setIdentityListener(
+                        identity ->
+                                grpc.updateIdentity(
+                                        identity.registrationCredential(),
+                                        identity.agentId(),
+                                        identity.bindingId(),
+                                        identity.instanceKey(),
+                                        identity.generation()));
+            }
             grpc.start();
         }
 
@@ -613,6 +634,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             return;
         }
         reportAttempt(command, "start");
+        ScheduledFuture<?> heartbeat = startAttemptHeartbeat(command);
         adapter.handleAgentTask(
                         new AgentTaskAssignment(
                                 command.getAttemptId(),
@@ -626,6 +648,12 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                                 command.getAttemptToken(),
                                 command.getPayload().toByteArray(),
                                 command.getTimestamp()))
+                .doFinally(
+                        ignored -> {
+                            if (heartbeat != null) {
+                                heartbeat.cancel(false);
+                            }
+                        })
                 .subscribe(
                         ignored -> {},
                         error ->
@@ -634,6 +662,18 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                                         "aistio: ExecutionAttempt delivery failed attempt="
                                                 + command.getAttemptId(),
                                         error));
+    }
+
+    private ScheduledFuture<?> startAttemptHeartbeat(ExecutionAttemptCommand command) {
+        ScheduledExecutorService current = scheduler;
+        if (current == null || current.isShutdown()) {
+            return null;
+        }
+        return current.scheduleWithFixedDelay(
+                guarded(() -> reportAttempt(command, "heartbeat")),
+                ATTEMPT_HEARTBEAT_INTERVAL_MS,
+                ATTEMPT_HEARTBEAT_INTERVAL_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     private void reportAttempt(ExecutionAttemptCommand command, String action) {

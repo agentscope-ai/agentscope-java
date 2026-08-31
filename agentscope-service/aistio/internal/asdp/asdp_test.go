@@ -59,6 +59,7 @@ func (s *testEventSink) HandleDisconnect(tenant, namespace, agentID, bindingID, 
 type capturedSessionReport struct {
 	Tenant     string
 	Namespace  string
+	AgentID    string
 	AgentName  string
 	InstanceID string
 	Report     *asdp.SessionReport
@@ -71,14 +72,15 @@ type capturedExecutionAttemptReport struct {
 	Report    *asdp.ExecutionAttemptReport
 }
 
-func (s *testEventSink) HandleSessionReport(tenant, namespace, agentName, instanceID string, report *asdp.SessionReport) {
+func (s *testEventSink) HandleSessionReport(identity asdp.ReportIdentity, report *asdp.SessionReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessionReports = append(s.sessionReports, capturedSessionReport{
-		Tenant:     tenant,
-		Namespace:  namespace,
-		AgentName:  agentName,
-		InstanceID: instanceID,
+		Tenant:     identity.Tenant,
+		Namespace:  identity.Namespace,
+		AgentID:    identity.AgentID,
+		AgentName:  identity.AgentKey,
+		InstanceID: identity.InstanceKey,
 		Report:     report,
 	})
 }
@@ -94,19 +96,19 @@ func (s *testEventSink) HandleExecutionAttemptReport(tenant, namespace, agentID,
 	})
 }
 
-func (s *testEventSink) HandleEventReport(tenant, namespace, agentName, instanceID string, report *asdp.EventReport) {
+func (s *testEventSink) HandleEventReport(identity asdp.ReportIdentity, report *asdp.EventReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.eventReports = append(s.eventReports, report)
 }
 
-func (s *testEventSink) HandleContextReport(tenant, namespace, agentName, instanceID string, report *asdp.ContextReport) {
+func (s *testEventSink) HandleContextReport(identity asdp.ReportIdentity, report *asdp.ContextReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.contextReports = append(s.contextReports, report)
 }
 
-func (s *testEventSink) HandleInventoryReport(tenant, namespace, agentName, instanceID string, report *asdp.InventoryReport) {
+func (s *testEventSink) HandleInventoryReport(identity asdp.ReportIdentity, report *asdp.InventoryReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.inventoryReports = append(s.inventoryReports, report)
@@ -514,8 +516,8 @@ func TestSessionReport(t *testing.T) {
 	if got.Namespace != meta.Namespace {
 		t.Errorf("namespace: want %q, got %q", meta.Namespace, got.Namespace)
 	}
-	if got.AgentName != meta.AgentId {
-		t.Errorf("agentId: want %q, got %q", meta.AgentId, got.AgentName)
+	if got.AgentID != meta.AgentId || got.AgentName != meta.AgentKey {
+		t.Errorf("agent identity: want %q/%q, got %q/%q", meta.AgentId, meta.AgentKey, got.AgentID, got.AgentName)
 	}
 	if got.InstanceID != meta.InstanceKey {
 		t.Errorf("instanceKey: want %q, got %q", meta.InstanceKey, got.InstanceID)

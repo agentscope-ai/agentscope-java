@@ -92,6 +92,15 @@ func (s *Server) workspaceRBACMiddleware() gin.HandlerFunc {
 		}
 		workspace := requestWorkspace(c.Request.URL.Path)
 		write := c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead && c.Request.Method != http.MethodOptions
+		// Agent Details reads runtime projections through their canonical APIs.
+		// Stable agentId scope makes these Agent Center summaries, while the
+		// unscoped fleet APIs remain Operations-only.
+		if !write && strings.TrimSpace(c.Query("agentId")) != "" {
+			switch strings.TrimPrefix(c.Request.URL.Path, "/api/v1/") {
+			case "sessions", "metrics/agents", "metrics/tokens", "agent-tasks":
+				workspace = workspaceAgentCenter
+			}
+		}
 		if !workspaceAllowed(roleSet(c), workspace, write) {
 			c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: "role is not allowed to access this workspace"})
 			return

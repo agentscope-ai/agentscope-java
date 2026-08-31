@@ -107,6 +107,11 @@ export interface AgentDefinition {
   status?: string;
   runtimeKind?: 'managed' | 'external-application' | 'hosted-runtime' | string;
   catalogVersion?: number;
+  tenant?: string;
+  namespace?: string;
+  catalogCapabilities?: unknown;
+  catalogLabels?: Record<string, unknown>;
+  catalogMetadata?: Record<string, unknown>;
 }
 
 export interface AgentVersionEntry {
@@ -290,6 +295,11 @@ interface CatalogAgent {
   ownerType?: string;
   ownerRef?: string;
   status: string;
+  tenant: string;
+  namespace: string;
+  capabilities?: unknown;
+  labels?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -312,6 +322,7 @@ export interface CatalogAgentInstance {
   id: string;
   agentId: string;
   bindingId: string;
+  backendKind?: string;
   instanceKey: string;
   health: string;
   capacity: number;
@@ -320,7 +331,41 @@ export interface CatalogAgentInstance {
   framework?: string;
   frameworkVersion?: string;
   sdkVersion?: string;
+  capabilities?: unknown;
+  labels?: Record<string, unknown>;
+  routingKey?: string;
   lastSeenAt?: string;
+}
+
+export type TelemetryState = 'available' | 'partial' | 'not_reporting' | 'not_supported' | 'not_applicable';
+
+export interface AgentDetailOverview {
+  agentId: string;
+  observedAt: string;
+  window: string;
+  lifecycle: string;
+  readiness: { state: 'ready' | 'degraded' | 'unavailable' | 'unbound' | 'inactive'; mode: 'online' | 'on-demand'; reason: string; activeBindingId?: string };
+  bindings: { total: number; enabled: number; dispatchable: number };
+  instances: { total: number; healthy: number; unhealthy: number; capacity: number | null; activeSessions: number; availableCapacity: number | null };
+  sessions: { active: number; idle: number; compressing: number; history: number; createdInWindow: number; lastActiveAt?: string; status: TelemetryState };
+  usage: { totalTokens: number | null; errorCount: number | null; status: TelemetryState };
+  entrypoints: { total: number; enabled: number; conversation: number; jobs: number };
+  telemetry: Record<string, TelemetryState>;
+}
+
+export interface AgentRuntimeInventory {
+  status: TelemetryState;
+  items: Array<{
+    agentId: string;
+    bindingId: string;
+    instanceKey: string;
+    generation: number;
+    reportedAt: string;
+    healthy: boolean;
+    activeSessions: number;
+    subagents?: Array<{ name: string; description?: string; tools?: string[]; workspaceMode?: string; url?: string; invokeCount?: number; lastInvokedAt?: string }>;
+    workspaces?: Array<{ path: string; mode?: string; sizeBytes?: number; ownerRef?: string }>;
+  }>;
 }
 
 export interface HostedRuntimeOption {
@@ -345,6 +390,18 @@ export async function listCatalogAgentInstances(id: string): Promise<CatalogAgen
   const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}/instances`, { headers: authHeaders() });
   if (!res.ok) throw await readApiError(res, 'Failed to load Agent instances');
   return ((await res.json()) as { items?: CatalogAgentInstance[] }).items ?? [];
+}
+
+export async function getAgentDetailOverview(id: string): Promise<AgentDetailOverview> {
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}/overview?window=24h`, { headers: authHeaders() });
+  if (!res.ok) throw await readApiError(res, 'Failed to load Agent runtime overview');
+  return res.json();
+}
+
+export async function getAgentRuntimeInventory(id: string): Promise<AgentRuntimeInventory> {
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}/runtime-inventory`, { headers: authHeaders() });
+  if (!res.ok) throw await readApiError(res, 'Failed to load Agent runtime inventory');
+  return res.json();
 }
 
 export async function listHostedRuntimeOptions(tenant = 'default', namespace = 'default'): Promise<{
@@ -413,6 +470,11 @@ function catalogToDefinition(agent: CatalogAgent, runtimeKind: string): AgentDef
     status: agent.status,
     runtimeKind,
     catalogVersion: agent.version,
+    tenant: agent.tenant,
+    namespace: agent.namespace,
+    catalogCapabilities: agent.capabilities,
+    catalogLabels: agent.labels,
+    catalogMetadata: agent.metadata,
   };
 }
 
