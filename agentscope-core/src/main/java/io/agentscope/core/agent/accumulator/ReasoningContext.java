@@ -149,12 +149,12 @@ public class ReasoningContext {
 
         // Add thinking content if present
         if (thinkingAcc.hasContent()) {
-            blocks.add(thinkingAcc.buildAggregated());
+            blocks.addAll(thinkingAcc.buildAllThinkingBlocks());
         }
 
         // Add text content if present
         if (textAcc.hasContent()) {
-            blocks.add(textAcc.buildAggregated());
+            blocks.addAll(textAcc.buildAllTextBlocks());
         }
 
         // Add all tool calls

@@ -45,6 +45,8 @@ public class GenerateOptions {
     private final Double frequencyPenalty;
     private final Double presencePenalty;
     private final Integer thinkingBudget;
+    private final Boolean includeThoughts;
+    private final String thinkingLevel;
     private final String reasoningEffort;
     private final ExecutionConfig executionConfig;
     private final ToolChoice toolChoice;
@@ -75,6 +77,8 @@ public class GenerateOptions {
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
+        this.includeThoughts = builder.includeThoughts;
+        this.thinkingLevel = builder.thinkingLevel;
         this.reasoningEffort = builder.reasoningEffort;
         this.executionConfig = builder.executionConfig;
         this.toolChoice = builder.toolChoice;
@@ -235,14 +239,38 @@ public class GenerateOptions {
     /**
      * Gets the maximum number of tokens for reasoning/thinking content.
      *
-     * <p>This parameter is specific to models that support thinking mode (e.g., DashScope).
-     * When set, it enables the model to show its reasoning process before generating the final
-     * answer.
+     * <p>This parameter is specific to models that support thinking mode. Whether thought summaries
+     * are returned is controlled separately by {@link #getIncludeThoughts()} when supported by the
+     * provider.
      *
      * @return the thinking budget in tokens, or null if not set
      */
     public Integer getThinkingBudget() {
         return thinkingBudget;
+    }
+
+    /**
+     * Gets whether model thoughts should be included in the response.
+     *
+     * <p>This option only controls whether supported models return their thought summaries. It does
+     * not by itself control the amount of thinking performed by the model.
+     *
+     * @return whether thoughts should be included, or null if not set
+     */
+    public Boolean getIncludeThoughts() {
+        return includeThoughts;
+    }
+
+    /**
+     * Gets the model-specific thinking level.
+     *
+     * <p>Supported values are model dependent. Providers that support this option are responsible
+     * for translating it to their native request type.
+     *
+     * @return the thinking level, or null if not set
+     */
+    public String getThinkingLevel() {
+        return thinkingLevel;
     }
 
     /**
@@ -469,6 +497,12 @@ public class GenerateOptions {
                         : fallback.presencePenalty);
         builder.thinkingBudget(
                 primary.thinkingBudget != null ? primary.thinkingBudget : fallback.thinkingBudget);
+        builder.includeThoughts(
+                primary.includeThoughts != null
+                        ? primary.includeThoughts
+                        : fallback.includeThoughts);
+        builder.thinkingLevel(
+                primary.thinkingLevel != null ? primary.thinkingLevel : fallback.thinkingLevel);
         builder.reasoningEffort(
                 primary.reasoningEffort != null
                         ? primary.reasoningEffort
@@ -531,6 +565,8 @@ public class GenerateOptions {
         private Double frequencyPenalty;
         private Double presencePenalty;
         private Integer thinkingBudget;
+        private Boolean includeThoughts;
+        private String thinkingLevel;
         private String reasoningEffort;
         private ExecutionConfig executionConfig;
         private ToolChoice toolChoice;
@@ -688,15 +724,42 @@ public class GenerateOptions {
         /**
          * Sets the thinking budget (maximum tokens for reasoning/thinking content).
          *
-         * <p>This parameter is specific to models that support thinking mode. When set, the model
-         * will show its reasoning process before generating the final answer. Setting this
-         * parameter may automatically enable thinking mode in some models.
+         * <p>This parameter is specific to models that support thinking mode. Setting it may
+         * automatically enable thinking mode in some models. Use {@link #includeThoughts(Boolean)}
+         * to control whether supported providers return thought summaries.
          *
          * @param thinkingBudget the maximum tokens for thinking content
          * @return this builder
          */
         public Builder thinkingBudget(Integer thinkingBudget) {
             this.thinkingBudget = thinkingBudget;
+            return this;
+        }
+
+        /**
+         * Sets whether model thought summaries should be included in the response.
+         *
+         * <p>Use {@code false} to explicitly suppress thought summaries while retaining any
+         * provider-specific thinking configuration.
+         *
+         * @param includeThoughts whether thoughts should be included in the response
+         * @return this builder
+         */
+        public Builder includeThoughts(Boolean includeThoughts) {
+            this.includeThoughts = includeThoughts;
+            return this;
+        }
+
+        /**
+         * Sets the model-specific thinking level.
+         *
+         * <p>Supported values are model dependent and are validated by the target provider.
+         *
+         * @param thinkingLevel the thinking level
+         * @return this builder
+         */
+        public Builder thinkingLevel(String thinkingLevel) {
+            this.thinkingLevel = thinkingLevel;
             return this;
         }
 
