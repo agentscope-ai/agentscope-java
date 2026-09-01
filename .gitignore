@@ -90,6 +90,9 @@ logs/
 ## harness db
 **/*.db
 
+## oh-my-claudecode
+.omc/
+.codegraph
 .dev-stack/
 
 # aistio local build artifacts
