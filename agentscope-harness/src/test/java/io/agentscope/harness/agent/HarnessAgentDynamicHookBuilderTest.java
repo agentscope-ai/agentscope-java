@@ -49,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
@@ -76,10 +77,19 @@ class HarnessAgentDynamicHookBuilderTest {
 
     @TempDir Path workspace;
 
+    private HarnessAgent agent;
+
+    @AfterEach
+    void closeAgents() {
+        if (agent != null) {
+            agent.close();
+        }
+    }
+
     @Test
     void defaultBuild_registersDynamicSkillAndSubagentMiddlewares() throws Exception {
         Files.createDirectories(workspace);
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
@@ -107,7 +117,7 @@ class HarnessAgentDynamicHookBuilderTest {
         Files.createDirectories(workspace);
         AgentSkillRepository emptyRepo = new EmptySkillRepository();
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
@@ -125,7 +135,7 @@ class HarnessAgentDynamicHookBuilderTest {
     @Test
     void disableDynamicSkills_skipsDynamicSkillMiddleware() throws Exception {
         Files.createDirectories(workspace);
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
@@ -153,7 +163,7 @@ class HarnessAgentDynamicHookBuilderTest {
                                         "# Frozen skill",
                                         null)));
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
@@ -222,7 +232,7 @@ class HarnessAgentDynamicHookBuilderTest {
                                 skill("beta", "beta description"),
                                 skill("gamma", "gamma description")));
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
@@ -265,7 +275,7 @@ class HarnessAgentDynamicHookBuilderTest {
         CountingSkillRepository repository =
                 new CountingSkillRepository(List.of(skill("disabled", "must stay hidden")));
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
@@ -293,7 +303,7 @@ class HarnessAgentDynamicHookBuilderTest {
                 "---\nname: lazy-resource\ndescription: Loads a lazy reference\n---\n# Body\n");
         Files.writeString(skillDir.resolve("references/guide.md"), "lazy reference body");
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
@@ -331,7 +341,7 @@ class HarnessAgentDynamicHookBuilderTest {
         Files.createDirectories(workspace);
         AgentSkillRepository custom = new EmptySkillRepository();
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
@@ -356,7 +366,7 @@ class HarnessAgentDynamicHookBuilderTest {
     @Test
     void getSkillRepositories_isEmptyWhenNothingComposed() throws Exception {
         Files.createDirectories(workspace);
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
@@ -371,7 +381,7 @@ class HarnessAgentDynamicHookBuilderTest {
     @Test
     void getSkillRepositories_returnsImmutableList() throws Exception {
         Files.createDirectories(workspace);
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
@@ -394,7 +404,7 @@ class HarnessAgentDynamicHookBuilderTest {
     @Test
     void disableDynamicSubagents_fallsBackToStaticSubagentsMiddleware() throws Exception {
         Files.createDirectories(workspace);
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
