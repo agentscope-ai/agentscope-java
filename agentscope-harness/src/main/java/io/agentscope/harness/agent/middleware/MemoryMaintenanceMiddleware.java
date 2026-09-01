@@ -142,31 +142,33 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        // Fire-and-forget: the agent stream completes immediately and maintenance runs on a
-        // background scheduler so a slow consolidation never blocks the caller.
+        // The maintenance body — including the gate claim, which is remote I/O under a
+        // store-backed gate — runs on the background scheduler. Only the in-flight counter is
+        // updated synchronously, so a quiescence check can never observe an empty in-flight
+        // set before the task is counted.
         return next.apply(input)
                 .doOnComplete(
-                        () ->
-                                doMaintenance(rc)
-                                        .subscribeOn(Schedulers.boundedElastic())
-                                        .subscribe(
-                                                null,
-                                                e ->
-                                                        log.warn(
-                                                                "Memory maintenance failed: {}",
-                                                                e.getMessage())));
+                        () -> {
+                            MemoryBackgroundTasks.begin();
+                            Mono.defer(() -> doMaintenance(rc))
+                                    .subscribeOn(Schedulers.boundedElastic())
+                                    .doFinally(signal -> MemoryBackgroundTasks.end())
+                                    .subscribe(
+                                            null,
+                                            e ->
+                                                    log.warn(
+                                                            "Memory maintenance failed: {}",
+                                                            e.getMessage()));
+                        });
     }
 
     private Mono<Void> doMaintenance(RuntimeContext rc) {
         if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
+            // Throttled out; the in-flight slot acquired at dispatch is released when this
+            // Mono completes.
             return Mono.empty();
         }
-        // Track the in-flight task synchronously, before subscribeOn hands the subscription to a
-        // background thread. This both skips the counter for throttled-out calls and eliminates the
-        // (tiny) race where awaitQuiescence could observe a zero counter before begin() runs.
-        MemoryBackgroundTasks.begin();
-        Mono<Void> maintenanceMono = Mono.fromRunnable(() -> runMaintenance(rc));
-        return maintenanceMono.doFinally(signal -> MemoryBackgroundTasks.end());
+        return Mono.fromRunnable(() -> runMaintenance(rc));
     }
 
     /**
@@ -186,14 +188,9 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
      */
     String timerKeyFor(RuntimeContext rc) {
         return switch (isolationScope) {
-            case USER -> {
-                String uid = rc != null ? rc.getUserId() : null;
-                yield (uid != null && !uid.isBlank()) ? uid : "";
-            }
-            case SESSION -> {
-                String sid = rc != null ? rc.getSessionId() : null;
-                yield (sid != null && !sid.isBlank()) ? sid : "";
-            }
+            case USER -> MemoryFlushMiddleware.blankToEmpty(rc != null ? rc.getUserId() : null);
+            case SESSION ->
+                    MemoryFlushMiddleware.blankToEmpty(rc != null ? rc.getSessionId() : null);
             case AGENT, GLOBAL -> "";
         };
     }

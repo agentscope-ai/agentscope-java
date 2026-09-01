@@ -29,9 +29,9 @@ import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -64,8 +64,14 @@ import reactor.core.scheduler.Schedulers;
  * which runs independently of memory flush so history stays complete even when flush is
  * disabled.
  *
- * <p>Concurrent flushes for the same isolation key are serialised through a per-key FIFO, so
- * back-to-back calls never extract and append overlapping memories in parallel.
+ * <p>Concurrent flushes for the same isolation key are serialised: at most one flush runs per
+ * key at a time, and pending flushes of the same conversation coalesce into a single queued
+ * task, because a queued task reads the conversation state only when it executes and the
+ * newest task therefore subsumes the ones it replaces. Flushes of distinct conversations
+ * under the same key are queued separately.
+ *
+ * <p>The class is thread-safe: instances hold only configuration, and the per-key queues live
+ * in a static map and are synchronised internally.
  *
  * <p>The throttle window is tracked per <em>isolation key</em>, which matches the memory data
  * isolation in use:
@@ -150,33 +156,45 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        // Flush is fire-and-forget: the agent stream completes immediately and all flush work
-        // (context snapshot, dedup reads, LLM extraction, ledger append) is deferred to a
-        // background scheduler and serialised per isolation key, so back-to-back calls can never
-        // extract and append the same memories concurrently.
         return next.apply(input).doOnComplete(() -> scheduleFlush(agent, rc));
     }
 
     private void scheduleFlush(Agent agent, RuntimeContext rc) {
-        // Counted from scheduling time (synchronously on the completing thread) until the task has
-        // actually finished, so HarnessAgent.close() drains queued flushes too and can never
-        // observe a zero counter before bookkeeping starts.
+        // The in-flight slot is acquired at dispatch rather than inside the task: a queued
+        // flush must already be counted, or a quiescence check could observe an empty
+        // in-flight set while work is still pending.
         MemoryBackgroundTasks.begin();
         String key = compositeTimerKey(rc);
+        // Coalescing key of the task: the conversation whose state the task reads when it
+        // executes. The agent reference distinguishes agent instances serving the same user
+        // and session ids, whose flushes must not displace each other.
+        ConversationKey conversationKey =
+                new ConversationKey(
+                        agent, blankToEmpty(rc.getUserId()), blankToEmpty(rc.getSessionId()));
         Runnable task = () -> runFlush(key, agent, rc);
         Runnable[] starter = new Runnable[1];
+        Runnable[] displaced = new Runnable[1];
         FLUSH_QUEUES.compute(
                 key,
                 (k, queue) -> {
                     FlushQueue q = queue == null ? new FlushQueue() : queue;
                     if (q.running) {
-                        q.waiting.add(task);
+                        // A queued task reads the conversation state only when it executes, and
+                        // calls of one conversation are serialised on the agent's
+                        // (userId, sessionId) serialization key, so the newest task's state
+                        // includes everything the replaced tasks would have read.
+                        displaced[0] = q.pending.put(conversationKey, task);
                     } else {
                         q.running = true;
                         starter[0] = task;
                     }
                     return q;
                 });
+        if (displaced[0] != null) {
+            // The replaced task will never execute; release the in-flight slot it acquired at
+            // dispatch. Done outside compute to avoid running under the map's bin lock.
+            MemoryBackgroundTasks.end();
+        }
         if (starter[0] != null) {
             starter[0].run();
         }
@@ -201,11 +219,15 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                     if (queue == null) {
                         return null;
                     }
-                    next[0] = queue.waiting.poll();
-                    if (next[0] == null) {
-                        return null; // idle — evict so the map stays bounded to active keys
+                    Iterator<Runnable> it = queue.pending.values().iterator();
+                    if (it.hasNext()) {
+                        next[0] = it.next();
+                        it.remove();
                     }
-                    return queue; // still running; hand the slot to the queued flush
+                    if (next[0] == null) {
+                        return null; // idle: evict so the map holds only active keys
+                    }
+                    return queue; // the dequeued task continues as the running flush
                 });
         if (next[0] != null) {
             next[0].run();
@@ -213,13 +235,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Per-isolation-key FIFO of pending flush tasks, keeping at most one flush in flight per
-     * memory namespace. Fields are only mutated inside {@link ConcurrentHashMap#compute} (which
-     * holds the per-key bin lock), so they need no additional synchronisation; entries are
-     * removed as soon as a key goes idle.
+     * Per-isolation-key pending flush tasks, keeping at most one flush in flight per memory
+     * namespace. Fields are only mutated inside {@link ConcurrentHashMap#compute} (which holds
+     * the per-key bin lock), so they need no additional synchronisation; entries are removed
+     * as soon as a key goes idle.
      */
     private static final class FlushQueue {
-        final Deque<Runnable> waiting = new ArrayDeque<>();
+        final LinkedHashMap<ConversationKey, Runnable> pending = new LinkedHashMap<>();
         boolean running;
     }
 
@@ -231,9 +253,9 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         if (state == null) {
             return Mono.empty();
         }
-        // Snapshot at execution time on the background thread: for a queued flush this picks up
-        // everything appended since its scheduling — a superset of the blocked predecessor's
-        // window — so draining the queue never loses messages.
+        // Read at execution time rather than scheduling time: a task that waited in the queue
+        // sees everything appended in the meantime, so coalescing queued tasks never loses
+        // messages.
         List<Msg> messages = new ArrayList<>(state.getContext());
         if (messages.isEmpty()) {
             return Mono.empty();
@@ -289,6 +311,17 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         return isolationScope.name() + ":" + timerKeyFor(rc);
     }
 
+    /** The conversation a queued flush reads when it executes: agent instance, user, session. */
+    private record ConversationKey(Agent agent, String userId, String sessionId) {}
+
+    /**
+     * Normalises {@code null} and blank identifiers to {@code ""} so absent ids share one slot.
+     * Package-private: shared with {@link MemoryMaintenanceMiddleware#timerKeyFor}.
+     */
+    static String blankToEmpty(String s) {
+        return (s != null && !s.isBlank()) ? s : "";
+    }
+
     /**
      * Derives the per-call identity portion of the composite timer key from the configured
      * {@link IsolationScope} and the {@link RuntimeContext}, mirroring the memory data
@@ -302,14 +335,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
      */
     String timerKeyFor(RuntimeContext rc) {
         return switch (isolationScope) {
-            case USER -> {
-                String uid = rc != null ? rc.getUserId() : null;
-                yield (uid != null && !uid.isBlank()) ? uid : "";
-            }
-            case SESSION -> {
-                String sid = rc != null ? rc.getSessionId() : null;
-                yield (sid != null && !sid.isBlank()) ? sid : "";
-            }
+            case USER -> blankToEmpty(rc != null ? rc.getUserId() : null);
+            case SESSION -> blankToEmpty(rc != null ? rc.getSessionId() : null);
             case AGENT, GLOBAL -> "";
         };
     }
