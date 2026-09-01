@@ -29,8 +29,11 @@ import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,6 +63,9 @@ import reactor.core.scheduler.Schedulers;
  * <p>Session transcript append is <b>not</b> handled here — see {@link TranscriptMiddleware},
  * which runs independently of memory flush so history stays complete even when flush is
  * disabled.
+ *
+ * <p>Concurrent flushes for the same isolation key are serialised through a per-key FIFO, so
+ * back-to-back calls never extract and append overlapping memories in parallel.
  *
  * <p>The throttle window is tracked per <em>isolation key</em>, which matches the memory data
  * isolation in use:
@@ -144,61 +150,109 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        // Flush is fire-and-forget: the agent stream completes immediately and the (potentially
-        // slow) memory extraction runs on a background scheduler so it never blocks the caller.
-        return next.apply(input)
-                .doOnComplete(
-                        () ->
-                                doFlush(agent, rc)
-                                        .subscribeOn(Schedulers.boundedElastic())
-                                        .subscribe(
-                                                null,
-                                                e ->
-                                                        log.warn(
-                                                                "Memory flush failed: {}",
-                                                                e.getMessage())));
+        // Flush is fire-and-forget: the agent stream completes immediately and all flush work
+        // (context snapshot, dedup reads, LLM extraction, ledger append) is deferred to a
+        // background scheduler and serialised per isolation key, so back-to-back calls can never
+        // extract and append the same memories concurrently.
+        return next.apply(input).doOnComplete(() -> scheduleFlush(agent, rc));
     }
+
+    private void scheduleFlush(Agent agent, RuntimeContext rc) {
+        // Counted from scheduling time (synchronously on the completing thread) until the task has
+        // actually finished, so HarnessAgent.close() drains queued flushes too and can never
+        // observe a zero counter before bookkeeping starts.
+        MemoryBackgroundTasks.begin();
+        String key = compositeTimerKey(rc);
+        Runnable task = () -> runFlush(key, agent, rc);
+        Runnable[] starter = new Runnable[1];
+        FLUSH_QUEUES.compute(
+                key,
+                (k, queue) -> {
+                    FlushQueue q = queue == null ? new FlushQueue() : queue;
+                    if (q.running) {
+                        q.waiting.add(task);
+                    } else {
+                        q.running = true;
+                        starter[0] = task;
+                    }
+                    return q;
+                });
+        if (starter[0] != null) {
+            starter[0].run();
+        }
+    }
+
+    private void runFlush(String key, Agent agent, RuntimeContext rc) {
+        Mono.defer(() -> doFlush(agent, rc))
+                .subscribeOn(Schedulers.boundedElastic())
+                .doFinally(
+                        signal -> {
+                            MemoryBackgroundTasks.end();
+                            drainFlushQueue(key);
+                        })
+                .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
+    }
+
+    private void drainFlushQueue(String key) {
+        Runnable[] next = new Runnable[1];
+        FLUSH_QUEUES.compute(
+                key,
+                (k, queue) -> {
+                    if (queue == null) {
+                        return null;
+                    }
+                    next[0] = queue.waiting.poll();
+                    if (next[0] == null) {
+                        return null; // idle — evict so the map stays bounded to active keys
+                    }
+                    return queue; // still running; hand the slot to the queued flush
+                });
+        if (next[0] != null) {
+            next[0].run();
+        }
+    }
+
+    /**
+     * Per-isolation-key FIFO of pending flush tasks, keeping at most one flush in flight per
+     * memory namespace. Fields are only mutated inside {@link ConcurrentHashMap#compute} (which
+     * holds the per-key bin lock), so they need no additional synchronisation; entries are
+     * removed as soon as a key goes idle.
+     */
+    private static final class FlushQueue {
+        final Deque<Runnable> waiting = new ArrayDeque<>();
+        boolean running;
+    }
+
+    private static final ConcurrentHashMap<String, FlushQueue> FLUSH_QUEUES =
+            new ConcurrentHashMap<>();
 
     private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
         AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null) {
             return Mono.empty();
         }
-        // Snapshot the conversation before handing it to the background flush: the state list is
-        // live and may be cleared/replaced by the next agent call while the flush is still running.
+        // Snapshot at execution time on the background thread: for a queued flush this picks up
+        // everything appended since its scheduling — a superset of the blocked predecessor's
+        // window — so draining the queue never loses messages.
         List<Msg> messages = new ArrayList<>(state.getContext());
         if (messages.isEmpty()) {
+            return Mono.empty();
+        }
+        if (!shouldFlushNow(rc)) {
+            log.debug("Memory flush skipped (trigger={})", flushTrigger);
             return Mono.empty();
         }
 
         MemoryFlushManager flushManager =
                 new MemoryFlushManager(workspaceManager, model, flushPrompt);
-
-        boolean shouldFlush = shouldFlushNow(rc);
-        Mono<Void> flushMono;
-        if (shouldFlush) {
-            // Track the in-flight task synchronously, before subscribeOn hands the subscription to
-            // a
-            // background thread. This both skips the counter for no-op flushes and eliminates the
-            // (tiny) race where awaitQuiescence could observe a zero counter before begin() runs.
-            MemoryBackgroundTasks.begin();
-            flushMono =
-                    flushManager
-                            .flushMemories(rc, messages)
-                            .doOnSuccess(v -> log.debug("Memory flush completed"))
-                            .onErrorResume(
-                                    e -> {
-                                        log.warn("Memory flush failed: {}", e.getMessage());
-                                        return Mono.empty();
-                                    })
-                            .doFinally(signal -> MemoryBackgroundTasks.end());
-        } else {
-            log.debug("Memory flush skipped (trigger={})", flushTrigger);
-            flushMono = Mono.empty();
-        }
-
-        // Message offload is owned by TranscriptMiddleware (independent of memory flush).
-        return flushMono;
+        return flushManager
+                .flushMemories(rc, messages)
+                .doOnSuccess(v -> log.debug("Memory flush completed"))
+                .onErrorResume(
+                        e -> {
+                            log.warn("Memory flush failed: {}", e.getMessage());
+                            return Mono.empty();
+                        });
     }
 
     /**

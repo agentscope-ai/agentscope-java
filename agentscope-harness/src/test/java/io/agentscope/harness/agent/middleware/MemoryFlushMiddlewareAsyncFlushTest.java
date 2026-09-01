@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -43,7 +45,7 @@ import reactor.core.publisher.Flux;
 /**
  * Verifies that {@link MemoryFlushMiddleware#onAgent} completes the agent stream before the
  * memory flush finishes — the flush is fire-and-forget so a slow extraction must never delay
- * the caller.
+ * the caller — and that concurrent flushes for the same isolation key are serialised.
  */
 class MemoryFlushMiddlewareAsyncFlushTest {
 
@@ -128,5 +130,91 @@ class MemoryFlushMiddlewareAsyncFlushTest {
         assertTrue(
                 MemoryBackgroundTasks.awaitQuiescence(5, TimeUnit.SECONDS),
                 "released async flush must finish");
+    }
+
+    @Test
+    void flushesForSameIsolationKeyRunSerially() throws Exception {
+        // Two gated model invocations: each blocks until the test releases it. The second must
+        // not start while the first is still in flight (same userId → same isolation key).
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger concurrent = new AtomicInteger();
+        AtomicInteger maxConcurrent = new AtomicInteger();
+        CountDownLatch[] started = {new CountDownLatch(1), new CountDownLatch(1)};
+        CountDownLatch[] release = {new CountDownLatch(1), new CountDownLatch(1)};
+        ChatResponse chunk =
+                new ChatResponse(
+                        "stub-id",
+                        List.of(TextBlock.builder().text("extracted memory").build()),
+                        null,
+                        Map.of(),
+                        "stop");
+        Model gatedModel =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        int i = calls.getAndIncrement();
+                        return Flux.defer(
+                                () -> {
+                                    int now = concurrent.incrementAndGet();
+                                    maxConcurrent.accumulateAndGet(now, Math::max);
+                                    started[i].countDown();
+                                    try {
+                                        release[i].await(10, TimeUnit.SECONDS);
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                    }
+                                    concurrent.decrementAndGet();
+                                    return Flux.just(chunk);
+                                });
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "gated-model";
+                    }
+                };
+
+        Msg userMsg =
+                Msg.builder().role(MsgRole.USER).textContent("remember: deploy Fridays").build();
+        AgentState state = AgentState.builder().addMessage(userMsg).build();
+        RuntimeContext rc = RuntimeContext.builder().userId("alice").agentState(state).build();
+        MemoryFlushMiddleware middleware = new MemoryFlushMiddleware(null, gatedModel);
+        AgentInput input = new AgentInput(List.of(userMsg));
+        AgentEndEvent event = new AgentEndEvent("reply-1");
+
+        try {
+            // Turn 1: flush starts and blocks on its gate.
+            middleware
+                    .onAgent(null, rc, input, in -> Flux.just(event))
+                    .collectList()
+                    .block(Duration.ofSeconds(2));
+            assertTrue(started[0].await(5, TimeUnit.SECONDS), "first flush must run");
+
+            // Turn 2 (same key): queued behind the still-running first flush.
+            middleware
+                    .onAgent(null, rc, input, in -> Flux.just(event))
+                    .collectList()
+                    .block(Duration.ofSeconds(2));
+            assertFalse(
+                    started[1].await(250, TimeUnit.MILLISECONDS),
+                    "second flush must not start while the first is in flight");
+
+            // Release the first → the queued second runs afterwards.
+            release[0].countDown();
+            assertTrue(
+                    started[1].await(5, TimeUnit.SECONDS),
+                    "queued second flush must run once the first finishes");
+            release[1].countDown();
+            assertTrue(
+                    MemoryBackgroundTasks.awaitQuiescence(5, TimeUnit.SECONDS),
+                    "all flushes must quiesce after release");
+        } finally {
+            release[0].countDown();
+            release[1].countDown();
+            MemoryBackgroundTasks.awaitQuiescence(10, TimeUnit.SECONDS);
+        }
+        assertEquals(
+                1, maxConcurrent.get(), "at most one flush per isolation key may run at a time");
     }
 }
