@@ -393,7 +393,9 @@ public class DashScopeHttpClient {
         String lowerModelName = modelName.toLowerCase();
         // Reverse exclusions: text-only models whose prefix would otherwise match.
         if (lowerModelName.equals("qwen3.6-max-preview")
-                || lowerModelName.startsWith("qwen3.7-max")) {
+                || lowerModelName.startsWith("qwen3.7-max")
+                || lowerModelName.contains("kimi-k2-thinking")
+                || lowerModelName.contains("moonshot-kimi-k2-instruct")) {
             return false;
         }
         return lowerModelName.startsWith("qvq")
@@ -403,8 +405,7 @@ public class DashScopeHttpClient {
                 || lowerModelName.startsWith("qwen3.6")
                 || lowerModelName.startsWith("qwen3.7")
                 || lowerModelName.startsWith("qwen3.8-max")
-                || lowerModelName.contains("kimi-k2.5")
-                || lowerModelName.contains("kimi-k2.6");
+                || lowerModelName.contains("kimi-k");
     }
 
     /**
