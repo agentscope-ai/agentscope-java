@@ -57,7 +57,8 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Workspace Operations</h2>
  * <ul>
- *   <li>Exec: {@code docker exec -w <root> <containerId> sh -c <command>}</li>
+ *   <li>Exec: {@code docker exec -i -w <root> <containerId> sh -s}, with the command streamed
+ *       through standard input</li>
  *   <li>PersistWorkspace: {@code docker exec <containerId> tar -cf - -C <root> .}</li>
  *   <li>HydrateWorkspace: {@code docker exec -i <containerId> tar -xf - -C <root>}</li>
  * </ul>
@@ -141,19 +142,18 @@ public class DockerSandbox extends AbstractBaseSandbox {
         List<String> cmd = new ArrayList<>();
         cmd.add("docker");
         cmd.add("exec");
+        cmd.add("-i");
         cmd.add("-w");
         cmd.add(workspaceRoot);
         cmd.add(containerId);
         cmd.add("sh");
-        cmd.add("-c");
-        cmd.add(command);
+        cmd.add("-s");
 
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        Process process = pb.start();
+        Process process = startExecProcess(cmd);
 
-        ExecutorService drainer =
+        ExecutorService ioExecutor =
                 Executors.newFixedThreadPool(
-                        2,
+                        3,
                         r -> {
                             Thread t =
                                     new Thread(
@@ -164,15 +164,29 @@ public class DockerSandbox extends AbstractBaseSandbox {
                         });
 
         Future<String> stdoutFuture =
-                drainer.submit(() -> readStream(process.getInputStream(), OUTPUT_TRUNCATE_BYTES));
+                ioExecutor.submit(
+                        () -> readStream(process.getInputStream(), OUTPUT_TRUNCATE_BYTES));
         Future<String> stderrFuture =
-                drainer.submit(() -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
-        drainer.shutdown();
+                ioExecutor.submit(
+                        () -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+        Future<?> stdinFuture =
+                ioExecutor.submit(
+                        () -> {
+                            try (OutputStream stdin = process.getOutputStream()) {
+                                stdin.write(
+                                        wrapCommandForStdin(command)
+                                                .getBytes(StandardCharsets.UTF_8));
+                            }
+                            return null;
+                        });
+        ioExecutor.shutdown();
 
         boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
         if (!exited) {
+            closeQuietly(process.getOutputStream());
             process.destroyForcibly();
-            drainer.shutdownNow();
+            stdinFuture.cancel(true);
+            ioExecutor.shutdownNow();
             throw new SandboxException.ExecTimeoutException(command, timeoutSeconds);
         }
 
@@ -185,9 +199,46 @@ public class DockerSandbox extends AbstractBaseSandbox {
                         || stderr.length() >= OUTPUT_TRUNCATE_BYTES;
         ExecResult result = new ExecResult(exitCode, stdout, stderr, truncated);
         if (!result.ok()) {
+            awaitWriterIgnoringFailure(stdinFuture);
             throw new SandboxException.ExecException(exitCode, stdout, stderr);
         }
+        stdinFuture.get();
         return result;
+    }
+
+    /** Starts a Docker exec process. Package-private to allow process-level unit testing. */
+    Process startExecProcess(List<String> command) throws IOException {
+        return new ProcessBuilder(command).start();
+    }
+
+    /**
+     * Wraps the command in a compound command before streaming it to {@code sh -s}.
+     *
+     * <p>The shell parses the complete compound command before applying the {@code /dev/null}
+     * redirection. Commands such as {@code read} therefore cannot consume the remaining script,
+     * while heredocs and explicit stdin redirections continue to work.
+     */
+    static String wrapCommandForStdin(String command) {
+        String trailingNewline = command.endsWith("\n") ? "" : "\n";
+        return "{\n:\n" + command + trailingNewline + "} </dev/null\n";
+    }
+
+    private static void closeQuietly(OutputStream output) {
+        try {
+            output.close();
+        } catch (IOException ignored) {
+            // Best effort during timeout cleanup.
+        }
+    }
+
+    private static void awaitWriterIgnoringFailure(Future<?> writer) {
+        try {
+            writer.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (Exception ignored) {
+            // Preserve the command's non-zero exit as the primary failure.
+        }
     }
 
     @Override
