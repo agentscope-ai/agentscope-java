@@ -96,6 +96,7 @@ import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.permission.PermissionEngine;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
@@ -3194,11 +3195,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     }
 
                                     // Carry the engine's suggested rules on the ToolUseBlock
-                                    List<PermissionRule> suggested = decision.getSuggestedRules();
-                                    ToolUseBlock toolUseBlock = use;
-                                    if (suggested != null && !suggested.isEmpty()) {
-                                        toolUseBlock = use.withSuggestedRules(suggested);
-                                    }
+                                    ToolUseBlock toolUseBlock =
+                                            withSuggestedRulesIfExist(use, decision);
                                     return new PermissionVerdict(
                                             toolUseBlock, decision.getBehavior());
                                 });
@@ -3209,16 +3207,32 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (decision == null) {
                                     return new PermissionVerdict(use, PermissionBehavior.ALLOW);
                                 }
+
+                                // Carry the engine's suggested rules on the ToolUseBlock
+                                ToolUseBlock newToolUse = withSuggestedRulesIfExist(use, decision);
+
                                 // In the legacy lightweight path only an explicit ASK from the tool
                                 // gates execution; PASSTHROUGH and ALLOW both run, DENY is
                                 // honoured.
                                 return switch (decision.getBehavior()) {
-                                    case ASK -> new PermissionVerdict(use, PermissionBehavior.ASK);
+                                    case ASK ->
+                                            new PermissionVerdict(newToolUse, PermissionBehavior.ASK);
                                     case DENY ->
-                                            new PermissionVerdict(use, PermissionBehavior.DENY);
-                                    default -> new PermissionVerdict(use, PermissionBehavior.ALLOW);
+                                            new PermissionVerdict(newToolUse, PermissionBehavior.DENY);
+                                    default ->
+                                            new PermissionVerdict(newToolUse, PermissionBehavior.ALLOW);
                                 };
                             });
+        }
+
+        private ToolUseBlock withSuggestedRulesIfExist(
+                ToolUseBlock use, PermissionDecision decision) {
+            // Carry the engine's suggested rules on the ToolUseBlock
+            List<PermissionRule> suggested = decision.getSuggestedRules();
+            if (suggested == null || suggested.isEmpty()) {
+                return use;
+            }
+            return use.withSuggestedRules(suggested);
         }
 
         private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}

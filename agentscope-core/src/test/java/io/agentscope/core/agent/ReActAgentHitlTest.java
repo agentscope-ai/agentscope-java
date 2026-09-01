@@ -656,4 +656,70 @@ class ReActAgentHitlTest {
                 (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));
         assertEquals(ToolResultState.SUCCESS, end.getState());
     }
+
+    /**
+     * Regression test for issue where suggested rules were lost in the lightweight permission
+     * path. When a default agent (no PermissionEngine) uses a tool that returns
+     * PermissionDecision.ask().withSuggestedRules(...), the suggested rules must be carried
+     * through to the returned ToolUseBlock and the RequireUserConfirmEvent.
+     */
+    @Test
+    void lightweightPathPreservesSuggestedRulesFromAskingTool() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "send_money", "test"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new SendMoneyTool()));
+
+        // Use streamEvents to capture both the result and events
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        // Verify RequireUserConfirmEvent was emitted with suggested rules
+        int iReq = indexOf(events, RequireUserConfirmEvent.class);
+        assertTrue(iReq >= 0, "RequireUserConfirmEvent must be emitted");
+
+        RequireUserConfirmEvent req = (RequireUserConfirmEvent) events.get(iReq);
+        assertEquals(1, req.getToolCalls().size());
+        ToolUseBlock eventBlock = req.getToolCalls().get(0);
+        assertNotNull(
+                eventBlock.getSuggestedRules(),
+                "suggested rules must be present in RequireUserConfirmEvent");
+        assertEquals(
+                1,
+                eventBlock.getSuggestedRules().size(),
+                "RequireUserConfirmEvent must carry the suggested rule");
+        assertEquals(
+                "send_money",
+                eventBlock.getSuggestedRules().get(0).toolName(),
+                "rule tool name must match");
+    }
+
+    public static class SendMoneyTool extends ToolBase {
+        public SendMoneyTool() {
+            super(
+                    ToolBase.builder()
+                            .name("send_money")
+                            .description("Sends a money to the user")
+                            .inputSchema(Map.of(
+                                    "type", "object",
+                                    "properties", Map.of(
+                                            "user", Map.of("type", "string"),
+                                            "money", Map.of("type", "string")),
+                                    "required", List.of("user", "money")))
+            );
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(Map<String, Object> toolInput, PermissionContextState context) {
+            return Mono.just(PermissionDecision.ask("Requesting permission for send_money tool").withSuggestedRules(generateSuggestions(toolInput)));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.just(ToolResultBlock.builder()
+                    .name("send_money")
+                    .output(TextBlock.builder().text("send success!").build())
+                    .build());
+        }
+    }
 }
