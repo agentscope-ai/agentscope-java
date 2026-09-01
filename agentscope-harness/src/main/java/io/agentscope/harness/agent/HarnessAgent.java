@@ -2439,7 +2439,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
                                 effectiveIsolationScope,
-                                periodicGate));
+                                periodicGate,
+                                memoryConfig.asyncFlush()));
 
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null

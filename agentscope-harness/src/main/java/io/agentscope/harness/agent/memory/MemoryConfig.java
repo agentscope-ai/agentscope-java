@@ -32,7 +32,7 @@ import java.util.Objects;
  *   <li><b>Flush</b> — extracts long-term memories from a conversation window into today's
  *       daily ledger ({@code memory/YYYY-MM-DD.md}). Prompt: {@link #flushPrompt()},
  *       defaults to {@link MemoryFlushManager#DEFAULT_FLUSH_PROMPT}. Trigger:
- *       {@link #flushTrigger()}.</li>
+ *       {@link #flushTrigger()}. Completion mode: {@link #asyncFlush()}.</li>
  *   <li><b>Consolidation</b> — periodically merges daily ledgers into the curated
  *       {@code MEMORY.md}. Prompt: {@link #consolidationPrompt()}, defaults to
  *       {@link MemoryConsolidator#DEFAULT_CONSOLIDATION_PROMPT}. Run cadence:
@@ -147,6 +147,7 @@ public final class MemoryConfig {
     private final int dailyFileRetentionDays;
     private final int sessionRetentionDays;
     private final FlushTrigger flushTrigger;
+    private final boolean asyncFlush;
 
     private MemoryConfig(Builder b) {
         this.model = b.model;
@@ -157,6 +158,7 @@ public final class MemoryConfig {
         this.dailyFileRetentionDays = b.dailyFileRetentionDays;
         this.sessionRetentionDays = b.sessionRetentionDays;
         this.flushTrigger = b.flushTrigger;
+        this.asyncFlush = b.asyncFlush;
     }
 
     /**
@@ -206,6 +208,14 @@ public final class MemoryConfig {
         return flushTrigger;
     }
 
+    /**
+     * Whether the per-call memory flush runs asynchronously after the response stream completes.
+     * Defaults to {@code false} so memory persistence retains its historical completion semantics.
+     */
+    public boolean asyncFlush() {
+        return asyncFlush;
+    }
+
     /** Returns a config equivalent to the harness's historical defaults. */
     public static MemoryConfig defaults() {
         return new Builder().build();
@@ -225,6 +235,7 @@ public final class MemoryConfig {
         private int dailyFileRetentionDays = DEFAULT_DAILY_FILE_RETENTION_DAYS;
         private int sessionRetentionDays = DEFAULT_SESSION_RETENTION_DAYS;
         private FlushTrigger flushTrigger = FlushTrigger.always();
+        private boolean asyncFlush = false;
 
         /**
          * Sets a dedicated model for memory operations (flush + consolidation),
@@ -328,6 +339,16 @@ public final class MemoryConfig {
                 throw new IllegalArgumentException("flushTrigger must not be null");
             }
             this.flushTrigger = flushTrigger;
+            return this;
+        }
+
+        /**
+         * Sets whether the per-call memory flush should run asynchronously after the response
+         * stream completes. Background failures are logged and do not fail the completed response.
+         * Disabled by default so the response waits for persistence to finish.
+         */
+        public Builder asyncFlush(boolean asyncFlush) {
+            this.asyncFlush = asyncFlush;
             return this;
         }
 

@@ -58,7 +58,7 @@ Flush (path 1) is triggered at three different moments:
 
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.
 
-Both flush and offload are **asynchronous**: they are launched in a fire-and-forget fashion via `doOnComplete` after the response stream has ended, so they never block the current `call()` return. The caller receives the full response first; the flush LLM call and JSONL offload run in the background afterward.
+The per-call flush and transcript offload run after the downstream response events have been emitted, but by default they remain part of the response pipeline, so `call()` completion waits for them. Set `MemoryConfig.asyncFlush(true)` to detach only the per-call flush and run it in a fire-and-forget fashion; transcript offload and the other two flush paths retain their existing completion semantics.
 
 ## Enable compaction
 
@@ -105,7 +105,7 @@ CompactionConfig.builder()
 
 ## Customizing the memory pipeline: `MemoryConfig`
 
-`MemoryConfig` is the single place to configure flush / consolidation prompts, throttling, retention, and the per-call flush trigger. Every field has a default; not calling `.memory(...)` reproduces the historical behaviour bit-for-bit.
+`MemoryConfig` is the single place to configure flush / consolidation prompts, throttling, retention, and the per-call flush trigger and completion mode. Every field has a default; not calling `.memory(...)` reproduces the historical behaviour bit-for-bit.
 
 ### Example 1: throttle per-call flush to save tokens
 
@@ -193,6 +193,29 @@ HarnessAgent.builder()
 
 `model(String)` resolves via `ModelRegistry.resolve()`; you can also pass a `Model` instance. When not set, falls back to the agent's primary model.
 
+### Example 7: return without waiting for per-call flush
+
+By default, the agent response waits for the per-call memory flush to finish. If the memory model can be slow and the application does not require the memory write to finish before returning the response, enable asynchronous flush:
+
+```java
+HarnessAgent.builder()
+    ...
+    .memory(MemoryConfig.builder()
+        .asyncFlush(true)
+        .build())
+    .build();
+```
+
+This option only changes **path 1** (the per-call flush). It captures a message snapshot when the response completes, then performs extraction and persistence in the background. Compaction flushes, transcript persistence, and background consolidation keep their existing completion semantics.
+
+Async flush is fire-and-forget:
+
+- failures are logged and do not fail the completed agent response;
+- a process-wide dedicated scheduler runs one flush at a time and queues up to three more; when saturated, new flushes are rejected and logged instead of growing the backlog without bound;
+- in-flight flushes are not awaited during `HarnessAgent.close()`, so an application that exits immediately may stop before the memory write completes.
+
+Leave `asyncFlush` at its default `false` when every accepted response must guarantee that its per-call memory flush has completed.
+
 ### `MemoryConfig` field reference
 
 | Field | Default | Purpose |
@@ -205,6 +228,7 @@ HarnessAgent.builder()
 | `dailyFileRetentionDays` | `90` | Days before a daily log moves to `memory/archive/` |
 | `sessionRetentionDays` | `180` | Days before a `*.log.jsonl` is pruned |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
+| `asyncFlush` | `false` | Return without waiting for the per-call flush; background failures are logged |
 
 ## Large tool-result offloading
 

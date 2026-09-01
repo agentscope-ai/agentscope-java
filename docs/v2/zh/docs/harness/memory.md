@@ -58,7 +58,7 @@ Flush（路径 1）会在以下三个时机被触发：
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
-Flush 和 offload 都是**异步执行**的：它们在响应流结束后通过 `doOnComplete` 以 fire-and-forget 方式启动，不会阻塞当前 `call()` 的返回。换句话说，调用方拿到完整响应之后，flush LLM 调用和 JSONL offload 才在后台开始。
+Per-call flush 和 transcript offload 会在下游响应事件发送完成后执行，但默认情况下它们仍属于响应流程的一部分，因此 `call()` 会等待其完成。设置 `MemoryConfig.asyncFlush(true)` 后，只有 per-call flush 会脱离当前响应流程，以 fire-and-forget 方式在后台执行；transcript offload 以及另外两个 flush 路径仍保持现有的完成语义。
 
 ## 开启压缩
 
@@ -105,7 +105,7 @@ CompactionConfig.builder()
 
 ## 定制 Memory pipeline：`MemoryConfig`
 
-`MemoryConfig` 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值，不调 `.memory(...)` 时与历史行为完全一致。
+`MemoryConfig` 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略和完成模式。所有字段都有默认值，不调 `.memory(...)` 时与历史行为完全一致。
 
 ### 例 1：节流 per-call flush，省 token
 
@@ -193,6 +193,29 @@ HarnessAgent.builder()
 
 `model(String)` 走 `ModelRegistry.resolve()`，也可以传 `Model` 实例。不设则 fallback 到 agent 主模型。
 
+### 例 7：不等待 per-call flush 就返回
+
+默认情况下，agent 响应会等待当次记忆 flush 完成。如果记忆模型较慢，而业务不要求记忆写入在返回响应前完成，可以开启异步 flush：
+
+```java
+HarnessAgent.builder()
+    ...
+    .memory(MemoryConfig.builder()
+        .asyncFlush(true)
+        .build())
+    .build();
+```
+
+该选项只改变**路径 1**（per-call flush）。响应完成时会先复制当前消息快照，再在后台执行抽取和持久化。压缩内嵌的 flush、transcript 持久化和后台 consolidation 仍保持原有完成语义。
+
+异步 flush 是 fire-and-forget：
+
+- 失败只记日志，不会让已完成的 agent 响应失败；
+- 进程级专用调度器每次运行一个 flush，最多再排队三个；队列饱和时，新 flush 会被拒绝并记录日志，避免待执行任务无限增长；
+- `HarnessAgent.close()` 不会等待进行中的 flush，因此应用立即退出时，记忆写入可能尚未完成。
+
+如果每个已返回响应都必须保证当次记忆 flush 已完成，请保持 `asyncFlush` 的默认值 `false`。
+
 ### `MemoryConfig` 字段速查
 
 | 字段 | 默认 | 作用 |
@@ -205,6 +228,7 @@ HarnessAgent.builder()
 | `dailyFileRetentionDays` | `90` | 多少天后把日流水账归档到 `memory/archive/` |
 | `sessionRetentionDays` | `180` | 多少天后清掉 `*.log.jsonl` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
+| `asyncFlush` | `false` | 不等待 per-call flush 就返回；后台失败只记日志 |
 
 ## 大工具结果卸载
 
