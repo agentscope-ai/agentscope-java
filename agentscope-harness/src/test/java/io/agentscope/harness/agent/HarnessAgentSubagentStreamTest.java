@@ -69,6 +69,8 @@ class HarnessAgentSubagentStreamTest {
     // "parent" agent's persisted AgentState from leaking between cases.
     @TempDir Path stateHome;
 
+    private HarnessAgent parent;
+    private HarnessAgent agent;
     private String previousStateHome;
 
     @BeforeEach
@@ -79,6 +81,12 @@ class HarnessAgentSubagentStreamTest {
 
     @AfterEach
     void restoreStateHome() {
+        if (parent != null) {
+            parent.close();
+        }
+        if (agent != null) {
+            agent.close();
+        }
         if (previousStateHome != null) {
             System.setProperty("agentscope.state.home", previousStateHome);
         } else {
@@ -176,7 +184,7 @@ class HarnessAgentSubagentStreamTest {
                 // Turn 3 (parent): final summary
                 .thenReturn(Flux.just(stopChunk("p2", "summary done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -273,7 +281,7 @@ class HarnessAgentSubagentStreamTest {
                 // parent final
                 .thenReturn(Flux.just(stopChunk("p2", "all done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -357,7 +365,7 @@ class HarnessAgentSubagentStreamTest {
                 .thenReturn(Flux.just(stopChunk("c1", "analysis complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "result obtained")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -450,7 +458,7 @@ class HarnessAgentSubagentStreamTest {
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub");
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("diag-parent")
                         .model(model)
