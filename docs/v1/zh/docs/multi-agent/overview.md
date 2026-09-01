@@ -30,7 +30,6 @@ AgentScope 支持以下多智能体模式，每种都有独立页面说明实现
 
 ## 如何选型
 
-
 ### 工作流（workflow）vs 对话（conversational）
 从整体上，多智能体模式可分为 **工作流（workflow）** 与 **对话（conversational）** 两类：
 

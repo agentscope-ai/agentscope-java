@@ -57,7 +57,7 @@ public class ToolResultEvictionConfig {
      * <ul>
      *   <li>{@code read_file} — evicting would cause re-read loops; pagination handles size</li>
      *   <li>{@code write_file}, {@code edit_file} — return tiny success messages</li>
-     *   <li>{@code grep_files}, {@code glob_files}, {@code list_files} — self-limiting outputs</li>
+     *   <li>{@code list_files} — normally returns a small directory listing</li>
      *   <li>{@code memory_search}, {@code memory_get}, {@code session_search} — small/paginated results</li>
      * </ul>
      *
@@ -68,8 +68,6 @@ public class ToolResultEvictionConfig {
                     "read_file",
                     "write_file",
                     "edit_file",
-                    "grep_files",
-                    "glob_files",
                     "list_files",
                     "memory_search",
                     "memory_get",
