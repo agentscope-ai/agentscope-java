@@ -221,6 +221,9 @@ agentscope:
     emit-run-finished-after-error: false
     server-side-memory: false
     interrupt-on-disconnect: true
+    # Presentation snapshot store (both off by default)
+    snapshot-store-enabled: false
+    snapshot-max-threads: 1000
 ```
 
 `interrupt-on-disconnect` controls whether an Agent run is interrupted when the MVC/WebFlux SSE
@@ -332,6 +335,59 @@ The front end can show an approval or external-execution UI. After the user acts
 For permission confirmations, `payload.approved` must be the boolean `true` to approve the tool. Any missing, non-boolean, or `false` value is treated as denial. `payload.editedArgs`, when present, must be a JSON object and is a **full replacement** of the original tool arguments, not a partial merge. AgentScope Java rebuilds both the `ToolUseBlock.input` and raw JSON `ToolUseBlock.content` from `editedArgs`, so the approved tool executes the edited arguments.
 
 The front end does not need to echo `metadata` in `resume[]`; it only sends `interruptId`, `status`, and `payload`. Through the Spring `AguiRequestProcessor` entry point, AgentScope Java records the latest `RUN_FINISHED.outcome.interrupts[]` server-side, validates that the next `resume[]` covers all open interrupts, and passes the originating interrupts into the adapter for conversion.
+
+## Presentation Snapshot Store
+
+A reconnecting client needs to rebuild the visible conversation without re-running the agent. AgentScope Java provides a framework-level **presentation snapshot store** that materializes the AG-UI frames a browser should draw right now, and a read-only `POST {path-prefix}/connect` hydrate route that replays them.
+
+### Responsibility boundary
+
+| Component | Role | Mutated by hydrate? |
+| --- | --- | --- |
+| `AguiSnapshotStore` | Presentation state — derived, replayable, safe to lose. Answers "what should the browser draw right now". | No (read-only) |
+| `AgentStateStore` (core) + `AguiResumeCoordinator` | Authoritative state — agent context and the live human-in-the-loop contract. | No (read-only) |
+
+Because the snapshot only ever retains the **trailing unresolved** interrupt, a resolved historical interrupt cannot be revived on reconnect — the failure mode is removed at the data model instead of being filtered after the fact.
+
+### `/connect` frame contract
+
+`POST {path-prefix}/connect` accepts a `RunAgentInput` (only `threadId` / `runId` are used) and returns a read-only SSE stream. Hydrate is strictly read-only: it resolves no agent, mutates no resume coordinator, and creates no adapter. Frames are emitted in this exact order:
+
+```
+RUN_STARTED(threadId, runId)
+MESSAGES_SNAPSHOT(messages)
+STATE_SNAPSHOT(state)                     // omitted when state is empty
+ACTIVITY_SNAPSHOT(...) per ActivityFrame  // omitted when none
+RUN_FINISHED(result=null, outcome=pendingOutcome)
+```
+
+A null `pendingOutcome` serializes as a plain successful run. An empty or missing snapshot produces the minimal three-frame handshake (`RUN_STARTED` → `MESSAGES_SNAPSHOT([])` → `RUN_FINISHED`).
+
+Only the trailing unresolved interrupt is replayed; when a new run starts the store drops any trailing interrupt, so a resolved interrupt can never reappear.
+
+### Configuration
+
+```yaml
+agentscope:
+  agui:
+    snapshot-store-enabled: false   # set true to enable POST {path-prefix}/connect
+    snapshot-max-threads: 1000      # in-memory store capacity
+```
+
+Both keys are off by default, so existing clients stay byte-identical until you opt in. When enabled, the starter creates an in-memory `AguiSnapshotStore` bean and registers the `/connect` route (WebFlux `RouterFunction` / MVC `@PostMapping`).
+
+### Custom stores
+
+To persist snapshots externally (for example in Redis), implement `AguiSnapshotStore` and expose it as a bean — the starter's `@ConditionalOnMissingBean` defers to yours:
+
+```java
+@Bean
+AguiSnapshotStore aguiSnapshotStore(RedisTemplate<String, byte[]> redis) {
+    return new RedisAguiSnapshotStore(redis);
+}
+```
+
+The store API is intentionally tiny: `save`, `find`, `delete`, and a `clearPendingInterrupts` default that drops the trailing interrupt. Snapshots are immutable records, so a custom store can serialize them with any Jackson-compatible codec.
 
 ## Example Project
 

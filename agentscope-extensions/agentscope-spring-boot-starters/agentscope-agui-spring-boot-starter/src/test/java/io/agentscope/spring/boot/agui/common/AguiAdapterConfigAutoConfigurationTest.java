@@ -15,9 +15,12 @@
  */
 package io.agentscope.spring.boot.agui.common;
 
+import static org.junit.Assert.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,6 +35,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
@@ -381,6 +385,74 @@ class AguiAdapterConfigAutoConfigurationTest {
         assertEquals("true", request.firstQueryParam("debug"));
         assertThrowsUnsupportedOperation(() -> request.getHeaders().put("x", List.of("y")));
         assertThrowsUnsupportedOperation(() -> request.getQueryParams().put("x", List.of("y")));
+    }
+
+    @Test
+    @DisplayName("Should create AguiSnapshotStore bean when enabled (MVC parity)")
+    void testMvcSnapshotStoreBeanCreatedWhenEnabled() {
+        mvcContextRunner
+                .withPropertyValues("agentscope.agui.snapshot-store-enabled=true")
+                .run(
+                        ctx -> {
+                            assertEquals(1, ctx.getBeansOfType(AguiSnapshotStore.class).size());
+                            AguiAdapterConfig config =
+                                    mvcConfig(ctx.getBean(AguiMvcController.class));
+                            assertTrue(config.isSnapshotStoreEnabled());
+                            assertNotNull(config.getSnapshotStore());
+                        });
+    }
+
+    @Test
+    @DisplayName("Should not create AguiSnapshotStore bean by default (WebFlux)")
+    void testWebFluxSnapshotStoreBeanAbsentByDefault() {
+        webFluxContextRunner.run(
+                ctx -> {
+                    assertEquals(0, ctx.getBeansOfType(AguiSnapshotStore.class).size());
+                    AguiAdapterConfig config = webFluxConfig(ctx.getBean(AguiWebFluxHandler.class));
+                    assertFalse(config.isSnapshotStoreEnabled());
+                });
+    }
+
+    @Test
+    @DisplayName("Should create AguiSnapshotStore bean when enabled (WebFlux)")
+    void testWebFluxSnapshotStoreBeanCreatedWhenEnabled() {
+        webFluxContextRunner
+                .withPropertyValues("agentscope.agui.snapshot-store-enabled=true")
+                .run(
+                        ctx -> {
+                            assertEquals(1, ctx.getBeansOfType(AguiSnapshotStore.class).size());
+                            AguiAdapterConfig config =
+                                    webFluxConfig(ctx.getBean(AguiWebFluxHandler.class));
+                            assertTrue(config.isSnapshotStoreEnabled());
+                            assertNotNull(config.getSnapshotStore());
+                        });
+    }
+
+    @Test
+    @DisplayName("Should wire snapshot store into the handler only when enabled")
+    void testWebFluxConnectWiringPresentOnlyWhenEnabled() {
+        // Disabled by default: the handler's processor has no snapshot store, so /connect
+        // returns the empty handshake and no snapshot is recorded.
+        webFluxContextRunner.run(
+                ctx -> {
+                    Object processor =
+                            ReflectionTestUtils.getField(
+                                    ctx.getBean(AguiWebFluxHandler.class), "processor");
+                    assertNull(ReflectionTestUtils.getField(processor, "snapshotStore"));
+                });
+
+        // Enabled: the handler's processor carries the snapshot store backing /connect hydrate.
+        webFluxContextRunner
+                .withPropertyValues("agentscope.agui.snapshot-store-enabled=true")
+                .run(
+                        ctx -> {
+                            Object processor =
+                                    ReflectionTestUtils.getField(
+                                            ctx.getBean(AguiWebFluxHandler.class), "processor");
+                            Object store = ReflectionTestUtils.getField(processor, "snapshotStore");
+                            assertNotNull(store);
+                            assertInstanceOf(AguiSnapshotStore.class, store);
+                        });
     }
 
     private static AguiAdapterConfig mvcConfig(AguiMvcController controller) {
