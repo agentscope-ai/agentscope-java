@@ -700,26 +700,31 @@ class ReActAgentHitlTest {
                     ToolBase.builder()
                             .name("send_money")
                             .description("Sends a money to the user")
-                            .inputSchema(Map.of(
-                                    "type", "object",
-                                    "properties", Map.of(
-                                            "user", Map.of("type", "string"),
-                                            "money", Map.of("type", "string")),
-                                    "required", List.of("user", "money")))
-            );
+                            .inputSchema(
+                                    Map.of(
+                                            "type", "object",
+                                            "properties",
+                                                    Map.of(
+                                                            "user", Map.of("type", "string"),
+                                                            "money", Map.of("type", "string")),
+                                            "required", List.of("user", "money"))));
         }
 
         @Override
-        public Mono<PermissionDecision> checkPermissions(Map<String, Object> toolInput, PermissionContextState context) {
-            return Mono.just(PermissionDecision.ask("Requesting permission for send_money tool").withSuggestedRules(generateSuggestions(toolInput)));
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> toolInput, PermissionContextState context) {
+            return Mono.just(
+                    PermissionDecision.ask("Requesting permission for send_money tool")
+                            .withSuggestedRules(generateSuggestions(toolInput)));
         }
 
         @Override
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-            return Mono.just(ToolResultBlock.builder()
-                    .name("send_money")
-                    .output(TextBlock.builder().text("send success!").build())
-                    .build());
+            return Mono.just(
+                    ToolResultBlock.builder()
+                            .name("send_money")
+                            .output(TextBlock.builder().text("send success!").build())
+                            .build());
         }
     }
 }

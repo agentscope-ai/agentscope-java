@@ -3216,11 +3216,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // honoured.
                                 return switch (decision.getBehavior()) {
                                     case ASK ->
-                                            new PermissionVerdict(newToolUse, PermissionBehavior.ASK);
+                                            new PermissionVerdict(
+                                                    newToolUse, PermissionBehavior.ASK);
                                     case DENY ->
-                                            new PermissionVerdict(newToolUse, PermissionBehavior.DENY);
+                                            new PermissionVerdict(
+                                                    newToolUse, PermissionBehavior.DENY);
                                     default ->
-                                            new PermissionVerdict(newToolUse, PermissionBehavior.ALLOW);
+                                            new PermissionVerdict(
+                                                    newToolUse, PermissionBehavior.ALLOW);
                                 };
                             });
         }
