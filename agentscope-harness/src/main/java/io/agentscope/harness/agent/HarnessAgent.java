@@ -41,6 +41,7 @@ import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate;
@@ -97,6 +98,7 @@ import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.tool.ArtifactDeliveryTool;
 import io.agentscope.harness.agent.tool.FilesystemTool;
 import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySaveTool;
@@ -460,6 +462,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Drain fire-and-forget session/transcript mirrors so async workspace writes do not
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.session.SessionTree.awaitMirrorQuiescence(
+                    5, java.util.concurrent.TimeUnit.SECONDS);
+            // Drain fire-and-forget memory flush/maintenance so async memory/*.md writes do not
+            // race with resource cleanup (e.g., temp workspace deletion in tests).
+            io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
                     5, java.util.concurrent.TimeUnit.SECONDS);
             shutdownTaskRepository();
         } finally {
@@ -1291,6 +1297,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         int maxContextTokens = 8000;
         boolean useLegacyXmlWorkspaceContext = false;
 
+        ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
         boolean disableShellTool = false;
         boolean disableMemoryTools = false;
@@ -2045,6 +2052,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Configures the {@link ArtifactDeliveryTarget} used by the {@code deliver_artifact} tool.
+         *
+         * <p>When set, the generic {@link ArtifactDeliveryTool} is registered on the main agent and
+         * the sandbox workspace prompt tells the model to use it to hand artifacts it produced to a
+         * destination outside the sandbox. When unset (default), no delivery tool is exposed.
+         *
+         * <p>The tool is exposed only to the main agent — it is not propagated to automatically
+         * constructed subagents, which return plain text results for the main agent to deliver.
+         *
+         * <p>Note: the tool reads files from the agent filesystem, so it is also suppressed when
+         * {@link #disableFilesystemTools()} is used. Combining both leaves the tool
+         * unregistered.
+         */
+        public Builder artifactDeliveryTarget(ArtifactDeliveryTarget target) {
+            this.artifactDeliveryTarget = target;
+            return this;
+        }
+
         /** Skips registration of {@link FilesystemTool}. */
         public Builder disableFilesystemTools() {
             this.disableFilesystemTools = true;
@@ -2500,6 +2526,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (agentTracingLogEnabled) {
                 inner.middleware(new AgentTraceMiddleware());
             }
+            boolean artifactDeliveryEnabled =
+                    artifactDeliveryTarget != null && !disableFilesystemTools;
             if (!disableWorkspaceContext) {
                 WorkspaceContextMiddleware markdownMw =
                         new WorkspaceContextMiddleware(
@@ -2510,6 +2538,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 disableMemoryTools,
                                 disableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
+                markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);
             }
             if (!disableAtPathExpansion) {
@@ -2687,6 +2716,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             if (!disableFilesystemTools) {
                 agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
+            }
+            if (artifactDeliveryEnabled) {
+                agentToolkit.registerTool(
+                        new ArtifactDeliveryTool(
+                                filesystem, pathNormalizer, artifactDeliveryTarget));
             }
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
@@ -2885,6 +2919,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                         visibilityFilter,
                                         stager,
                                         shellPolicy);
+                skillMiddleware.isolationScope(fsIsolationScope);
                 inner.middleware(skillMiddleware);
 
                 // Harness owns both the live and frozen repository paths.
