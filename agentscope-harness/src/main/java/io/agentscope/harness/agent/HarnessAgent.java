@@ -2779,6 +2779,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                         visibilityFilter,
                                         stager,
                                         shellPolicy);
+                skillMiddleware.isolationScope(fsIsolationScope);
                 inner.middleware(skillMiddleware);
 
                 // Harness owns both the live and frozen repository paths.
