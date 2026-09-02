@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { readApiError } from './http';
 
 export type SkillOrigin = 'custom' | 'marketplace';
 
@@ -57,21 +58,9 @@ function base(agentId: string): string {
   return `/api/agents/${encodeURIComponent(agentId)}/skills`;
 }
 
-async function readError(res: Response, fallback: string): Promise<Error> {
-  try {
-    const body = await res.json();
-    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
-      return new Error(body.message);
-    }
-  } catch {
-    // ignore
-  }
-  return new Error(`${fallback} (${res.status})`);
-}
-
 export async function listWorkspaceSkills(agentId: string): Promise<WorkspaceSkillInfo[]> {
   const res = await fetch(`${base(agentId)}/workspace`, { headers: authHeaders() });
-  if (!res.ok) throw await readError(res, 'Failed to list workspace skills');
+  if (!res.ok) throw await readApiError(res, 'Failed to list workspace skills');
   return res.json();
 }
 
@@ -82,7 +71,7 @@ export async function getWorkspaceSkill(
   const res = await fetch(`${base(agentId)}/workspace/${encodeURIComponent(name)}`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw await readError(res, 'Failed to load workspace skill');
+  if (!res.ok) throw await readApiError(res, 'Failed to load workspace skill');
   return res.json();
 }
 
@@ -97,7 +86,7 @@ export async function upsertWorkspaceSkill(
     headers: jsonHeaders(),
     body: JSON.stringify({ markdown, resources }),
   });
-  if (!res.ok) throw await readError(res, 'Failed to save workspace skill');
+  if (!res.ok) throw await readApiError(res, 'Failed to save workspace skill');
   return res.json();
 }
 
@@ -106,7 +95,9 @@ export async function deleteWorkspaceSkill(agentId: string, name: string): Promi
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw await readError(res, 'Failed to delete skill');
+  if (!res.ok && res.status !== 204) {
+    throw await readApiError(res, 'Failed to delete skill');
+  }
 }
 
 export interface InstallResult {
@@ -134,7 +125,7 @@ export async function installFromMarketplace(
   if (res.status === 409) {
     return { status: 'conflict', conflictName: req.targetName ?? req.skillName };
   }
-  if (!res.ok) throw await readError(res, 'Failed to install skill');
+  if (!res.ok) throw await readApiError(res, 'Failed to install skill');
   const installed = (await res.json()) as WorkspaceSkillInfo;
   return { status: 'installed', installed };
 }

@@ -14,26 +14,33 @@
  * limitations under the License.
  */
 
-export function formatNumber(n?: number | null): string {
+export function formatNumber(n?: number | null, locale?: string): string {
   if (n == null || Number.isNaN(n)) return '—';
-  return n.toLocaleString();
+  return new Intl.NumberFormat(locale).format(n);
 }
 
-export function formatPercent(ratio?: number | null): string {
+export function formatPercent(ratio?: number | null, locale?: string): string {
   if (ratio == null || Number.isNaN(ratio)) return '—';
-  return `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`;
+  return new Intl.NumberFormat(locale, {
+    style: 'percent',
+    maximumFractionDigits: 0,
+  }).format(Math.max(0, Math.min(1, ratio)));
 }
 
-export function formatRelative(iso?: string | null): string {
+export function formatRelative(iso?: string | null, locale?: string): string {
   if (!iso) return '—';
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return iso;
-  const diff = Date.now() - t;
-  const sec = Math.round(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 48) return `${hr}h ago`;
-  return new Date(t).toLocaleString();
+  const timestamp = Date.parse(iso);
+  if (Number.isNaN(timestamp)) return iso;
+
+  const elapsedSeconds = Math.round((Date.now() - timestamp) / 1000);
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'always' });
+  const absoluteSeconds = Math.abs(elapsedSeconds);
+  if (absoluteSeconds < 60) return relative.format(-elapsedSeconds, 'second');
+
+  const elapsedMinutes = Math.round(elapsedSeconds / 60);
+  if (Math.abs(elapsedMinutes) < 60) return relative.format(-elapsedMinutes, 'minute');
+
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+  if (Math.abs(elapsedHours) < 48) return relative.format(-elapsedHours, 'hour');
+  return new Date(timestamp).toLocaleString(locale);
 }

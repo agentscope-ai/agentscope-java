@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { fallbackApiError } from './errors';
 import { authHeaders, readApiError } from './http';
 
 export interface ManagedSession {
@@ -248,8 +249,11 @@ export function streamEvents(
         signal: controller.signal,
       },
     );
-    if (!res.ok || !res.body) {
-      throw new Error(`Event stream failed: ${res.status}`);
+    if (!res.ok) {
+      throw await readApiError(res, 'Event stream failed');
+    }
+    if (!res.body) {
+      throw fallbackApiError('Event stream response did not include a body', res.status);
     }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
@@ -285,7 +289,7 @@ export function streamEvents(
       } catch (e: unknown) {
         if (closed) return;
         if (e instanceof Error && e.name === 'AbortError') return;
-        onError?.(e instanceof Error ? e : new Error(String(e)));
+        onError?.(e instanceof Error ? e : fallbackApiError('Event stream failed', undefined, e));
       }
       if (closed) return;
       const delayMs = backoffMs;

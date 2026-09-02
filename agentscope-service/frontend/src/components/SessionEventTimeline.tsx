@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { listEvents, SessionEvent } from '../api/managedSessions';
+import { resolveApiErrorMessage } from '@/api/errors';
+import { useI18n } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { marginTop: 28, paddingTop: 24, borderTop: '1px solid #e2e8f0' },
@@ -45,9 +47,15 @@ function eventColor(type: string): string {
 }
 
 export default function SessionEventTimeline({ managedSessionId }: { managedSessionId: string }) {
+  const { locale, t } = useI18n();
+  const tRef = useRef(t);
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,21 +63,29 @@ export default function SessionEventTimeline({ managedSessionId }: { managedSess
     setErr(null);
     listEvents(managedSessionId)
       .then(list => { if (!cancelled) setEvents(list); })
-      .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed'); })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setErr(resolveApiErrorMessage(e, tRef.current('common.requestFailed')));
+        }
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [managedSessionId]);
 
   return (
     <div style={S.root}>
-      <h3 style={S.title}>Managed session event timeline</h3>
+      <h3 style={S.title}>{t('session.events.title')}</h3>
       <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontFamily: 'monospace', marginBottom: 14 }}>
         {managedSessionId}
       </div>
-      {loading && <div style={{ color: '#94a3b8' }}>Loading events…</div>}
+      {loading && (
+        <div style={{ color: '#94a3b8' }}>{t('session.events.loading')}</div>
+      )}
       {err && <div style={S.err}>{err}</div>}
       {!loading && !err && events.length === 0 && (
-        <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No events recorded.</div>
+        <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+          {t('session.events.empty')}
+        </div>
       )}
       {events.map(evt => (
         <div key={evt.id} style={{ ...S.event, background: eventColor(evt.type) }}>
@@ -77,7 +93,9 @@ export default function SessionEventTimeline({ managedSessionId }: { managedSess
           {evt.payload && Object.keys(evt.payload).length > 0 && (
             <div style={S.payload}>{JSON.stringify(evt.payload, null, 2)}</div>
           )}
-          <div style={S.time}>{new Date(evt.createdAt).toLocaleString()}</div>
+          <div style={S.time}>
+            {new Date(evt.createdAt).toLocaleString(locale)}
+          </div>
         </div>
       ))}
     </div>

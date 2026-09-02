@@ -16,14 +16,16 @@
 
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
+import { useT } from '@/i18n';
 
 export default function GovernancePage() {
+  const t = useT();
   return (
     <Page className="max-w-4xl">
-      <PageHeader title="Governance" />
+      <PageHeader title={t('operate.governance.title')} />
       <EmptyState
-        title="Requires Kubernetes"
-        description="ModelConfig and MCPServer CRDs are only available when aistiod is connected to a Kubernetes cluster. In standalone mode these resources are unavailable."
+        title={t('operate.governance.requiresKubernetes')}
+        description={t('operate.governance.description')}
       />
     </Page>
   );

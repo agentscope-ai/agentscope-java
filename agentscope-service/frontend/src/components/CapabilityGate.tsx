@@ -23,6 +23,7 @@ import {
   canQueryTasks,
   canTerminate,
 } from '@/lib/capabilities';
+import { useT } from '@/i18n';
 
 export type CapabilityAction = 'compress' | 'terminate' | 'abort' | 'context' | 'messages' | 'tasks';
 
@@ -39,24 +40,25 @@ export function CapabilityGate({
   children: (enabled: boolean, tip?: string) => React.ReactNode;
   reason?: string;
 }) {
+  const t = useT();
   let enabled = false;
   let tip = reason;
   switch (action) {
     case 'compress':
       enabled = canCompress(contractLevel, capabilities);
-      tip = tip || (!enabled ? 'Data plane must advertise session-command (contract level ≥ 3)' : undefined);
+      tip = tip || (!enabled ? t('capability.sessionCommandRequired') : undefined);
       break;
     case 'terminate':
       enabled = canTerminate(contractLevel, capabilities);
-      tip = tip || (!enabled ? 'Data plane must advertise session-command (contract level ≥ 3)' : undefined);
+      tip = tip || (!enabled ? t('capability.sessionCommandRequired') : undefined);
       break;
     case 'abort':
       enabled = canAbort(capabilities);
-      tip = tip || (!enabled ? 'Data plane must advertise session-abort' : undefined);
+      tip = tip || (!enabled ? t('capability.sessionAbortRequired') : undefined);
       break;
     case 'context':
       enabled = canQueryContext(capabilities);
-      tip = tip || (!enabled ? 'Data plane must advertise context-query' : undefined);
+      tip = tip || (!enabled ? t('capability.contextQueryRequired') : undefined);
       break;
     case 'messages':
       // Live fallback only; transcript reads do not need this capability.
@@ -64,12 +66,12 @@ export function CapabilityGate({
       tip =
         tip ||
         (!enabled
-          ? 'Live message-query not advertised (control-plane transcript may still work)'
+          ? t('capability.messageQueryRequired')
           : undefined);
       break;
     case 'tasks':
       enabled = canQueryTasks(capabilities);
-      tip = tip || (!enabled ? 'Data plane must advertise task-query' : undefined);
+      tip = tip || (!enabled ? t('capability.taskQueryRequired') : undefined);
       break;
   }
   return <>{children(enabled, tip)}</>;

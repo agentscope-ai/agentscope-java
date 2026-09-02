@@ -16,6 +16,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   AgentPresence,
   ChannelTypeSpec,
@@ -32,6 +33,7 @@ import PlatformCredentialsForm, {
   propertiesFromCredentials,
 } from '../components/PlatformCredentialsForm';
 import ChannelBindingTable from '../components/ChannelBindingTable';
+import { useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', maxWidth: 1100 },
@@ -69,6 +71,7 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function AgentChannelsPage() {
+  const t = useT();
   const { agentId } = useOutletContext<{ agentId: string }>();
   const [presences, setPresences] = useState<AgentPresence[]>([]);
   const [types, setTypes] = useState<ChannelTypeSpec[]>([]);
@@ -83,34 +86,37 @@ export default function AgentChannelsPage() {
       setPresences(p);
       setTypes(t);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     }
   }
 
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [agentId]);
+  // Reload for a different agent, but not for translated fallback text.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(); }, [agentId]);
 
   return (
     <div style={S.root}>
-      <h1 style={S.title}>Connect IM</h1>
+      <h1 style={S.title}>{t('managed.agentChannels.title')}</h1>
       <p style={S.subtle}>
-        Give this agent an identity on DingTalk / Feishu / WeCom / GitHub / GitLab.
-        Each identity is one bot account; conversations default to per-person isolation.
+        {t('managed.agentChannels.description')}
       </p>
 
       {err && <div style={S.err}>{err}</div>}
 
       <div style={S.section}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>IM identities</h2>
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>
+            {t('managed.agentChannels.identities')}
+          </h2>
           <span style={{ flex: 1 }} />
           <button style={{ ...S.btn, ...S.btnPrimary }} onClick={() => setShowCreate(true)}>
-            + Connect platform
+            + {t('managed.agentChannels.connectPlatform')}
           </button>
         </div>
 
         {presences.length === 0 ? (
           <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-            No IM identity yet. Connect a platform so people can chat with this agent.
+            {t('managed.agentChannels.empty')}
           </div>
         ) : (
           presences.map((p) => {
@@ -123,32 +129,42 @@ export default function AgentChannelsPage() {
                 <span style={{ fontWeight: 600, flex: 1 }}>{p.channelId}</span>
                 <span style={S.badge}>{spec?.label ?? p.platform}</span>
                 <span style={S.badge}>
-                  {p.isolation === 'shared' ? 'shared inbox' : 'per person'}
+                  {p.isolation === 'shared'
+                    ? t('managed.agentChannels.sharedInbox')
+                    : t('managed.agentChannels.perPerson')}
                 </span>
                 <span style={{
                   ...S.badge,
                   background: p.started ? '#dcfce7' : '#f1f5f9',
                   color: p.started ? '#166534' : '#475569',
                 }}>
-                  {p.enabled ? (p.started ? 'connected' : 'stopped') : 'disabled'}
+                  {p.enabled
+                    ? p.started
+                      ? t('managed.agentChannels.connected')
+                      : t('common.status.stopped')
+                    : t('managed.agentChannels.disabled')}
                 </span>
                 <Link style={{ ...S.btn, textDecoration: 'none' }} to={`/channels/${encodeURIComponent(p.channelId)}`}>
-                  Advanced
+                  {t('managed.common.advanced')}
                 </Link>
-                <button style={S.btn} onClick={() => setEdit(p)}>Edit</button>
+                <button style={S.btn} onClick={() => setEdit(p)}>
+                  {t('common.actions.edit')}
+                </button>
                 <button
                   style={{ ...S.btn, color: '#dc2626', borderColor: '#fca5a5' }}
                   onClick={async () => {
-                    if (!confirm(`Disconnect ${p.channelId}?`)) return;
+                    if (!confirm(t('managed.agentChannels.confirmDisconnect', {
+                      platform: p.platform || p.channelId,
+                    }))) return;
                     try {
                       await deleteAgentPresence(agentId, p.channelId);
                       await load();
                     } catch (e: unknown) {
-                      setErr(e instanceof Error ? e.message : String(e));
+                      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
                     }
                   }}
                 >
-                  Disconnect
+                  {t('managed.agentChannels.disconnect')}
                 </button>
                 {cb ? (
                   <div style={{ width: '100%', fontSize: '0.78rem', color: '#64748b', fontFamily: 'monospace' }}>
@@ -179,8 +195,10 @@ export default function AgentChannelsPage() {
       )}
 
       <div style={{ marginTop: 28 }}>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: 8 }}>Transfer rules (advanced)</h2>
-        <p style={S.subtle}>Route specific peers or groups to another agent while keeping this identity.</p>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: 8 }}>
+          {t('managed.agentChannels.transferRules')}
+        </h2>
+        <p style={S.subtle}>{t('managed.agentChannels.transferRulesHint')}</p>
         <ChannelBindingTable agentId={agentId} />
       </div>
     </div>
@@ -200,6 +218,7 @@ function PresenceDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const isEdit = initial != null;
   const [platform, setPlatform] = useState(initial?.platform ?? types[0]?.type ?? '');
   const [channelId, setChannelId] = useState(initial?.channelId ?? '');
@@ -245,7 +264,7 @@ function PresenceDialog({
       }
       onSaved();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(resolveApiErrorMessage(e, t('managed.common.requestFailed')));
     } finally {
       setBusy(false);
     }
@@ -263,10 +282,14 @@ function PresenceDialog({
   return (
     <div style={scrim} onClick={onClose}>
       <div style={modal} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginTop: 0 }}>{isEdit ? 'Edit IM identity' : 'Connect platform'}</h3>
+        <h3 style={{ marginTop: 0 }}>
+          {isEdit
+            ? t('managed.agentChannels.editIdentity')
+            : t('managed.agentChannels.connectPlatform')}
+        </h3>
         <div style={S.grid2}>
           <div>
-            <label style={S.field}>Platform</label>
+            <label style={S.field}>{t('managed.agentChannels.platform')}</label>
             <select
               style={S.input}
               value={platform}
@@ -279,7 +302,7 @@ function PresenceDialog({
             </select>
           </div>
           <div>
-            <label style={S.field}>Channel id</label>
+            <label style={S.field}>{t('managed.agentChannels.channelId')}</label>
             <input
               style={S.input}
               value={channelId}
@@ -289,30 +312,34 @@ function PresenceDialog({
             />
           </div>
           <div>
-            <label style={S.field}>Conversation isolation</label>
+            <label style={S.field}>{t('managed.agentChannels.isolation')}</label>
             <select
               style={S.input}
               value={isolation}
               onChange={(e) => setIsolation(e.target.value as 'per_person' | 'shared')}
             >
-              <option value="per_person">Per person — each chatter has their own memory</option>
-              <option value="shared">Shared inbox — everyone shares one conversation</option>
+              <option value="per_person">
+                {t('managed.agentChannels.perPersonDescription')}
+              </option>
+              <option value="shared">
+                {t('managed.agentChannels.sharedDescription')}
+              </option>
             </select>
           </div>
           <div>
-            <label style={S.field}>Enabled</label>
+            <label style={S.field}>{t('managed.common.enabled')}</label>
             <select
               style={S.input}
               value={enabled ? 'yes' : 'no'}
               onChange={(e) => setEnabled(e.target.value === 'yes')}
             >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="yes">{t('managed.common.yes')}</option>
+              <option value="no">{t('managed.common.no')}</option>
             </select>
           </div>
         </div>
         <div style={{ marginTop: 16 }}>
-          <label style={S.field}>Credentials</label>
+          <label style={S.field}>{t('managed.agentChannels.credentials')}</label>
           <PlatformCredentialsForm
             spec={typeSpec}
             values={creds}
@@ -323,9 +350,15 @@ function PresenceDialog({
         </div>
         {err && <div style={S.err}>{err}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 20 }}>
-          <button style={S.btn} onClick={onClose} disabled={busy}>Cancel</button>
+          <button style={S.btn} onClick={onClose} disabled={busy}>
+            {t('common.cancel')}
+          </button>
           <button style={{ ...S.btn, ...S.btnPrimary }} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : isEdit ? 'Save' : 'Connect'}
+            {busy
+              ? t('common.saving')
+              : isEdit
+                ? t('common.actions.save')
+                : t('managed.agentChannels.connect')}
           </button>
         </div>
       </div>

@@ -21,8 +21,11 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
 import { listTeams, teamPhaseTone } from '@/api/teams';
+import { useT } from '@/i18n';
+import { teamPhaseLabel } from './i18n';
 
 export default function TeamsHubPage() {
+  const t = useT();
   const teams = useQuery({
     queryKey: ['teams', 'list'],
     queryFn: () => listTeams(),
@@ -34,29 +37,29 @@ export default function TeamsHubPage() {
   return (
     <Page>
       <PageHeader
-        title="Teams"
-        description="Store-backed Agent Teams. Refresh is read-only and will not recreate teams."
+        title={t('teams.title')}
+        description={t('teams.hub.description')}
         actions={
           <Button asChild>
-            <Link to="/teams/new">New team</Link>
+            <Link to="/teams/new">{t('teams.new')}</Link>
           </Button>
         }
       />
 
-      {teams.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {teams.isLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
       {teams.isError && (
         <p className="text-sm text-red-600">
-          Failed to load teams. Is the control-plane store enabled?
+          {t('teams.loadFailed')}
         </p>
       )}
 
       {!teams.isLoading && items.length === 0 && (
         <EmptyState
-          title="No teams"
-          description="Create a team with a lead and workers to coordinate shared tasks."
+          title={t('teams.empty.title')}
+          description={t('teams.empty.description')}
           action={
             <Button asChild>
-              <Link to="/teams/new">Create team</Link>
+              <Link to="/teams/new">{t('teams.create')}</Link>
             </Button>
           }
         />
@@ -67,31 +70,31 @@ export default function TeamsHubPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-border bg-muted/40 text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Namespace</th>
-                <th className="px-4 py-3 font-medium">Phase</th>
-                <th className="px-4 py-3 font-medium">Lead</th>
-                <th className="px-4 py-3 font-medium">Objective</th>
+                <th className="px-4 py-3 font-medium">{t('teams.name')}</th>
+                <th className="px-4 py-3 font-medium">{t('teams.namespace')}</th>
+                <th className="px-4 py-3 font-medium">{t('teams.phase')}</th>
+                <th className="px-4 py-3 font-medium">{t('teams.lead')}</th>
+                <th className="px-4 py-3 font-medium">{t('teams.objective')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {items.map((t) => (
-                <tr key={`${t.namespace}/${t.name}`} className="hover:bg-muted/30">
+              {items.map((team) => (
+                <tr key={`${team.namespace}/${team.name}`} className="hover:bg-muted/30">
                   <td className="px-4 py-3">
                     <Link
                       className="font-medium text-primary hover:underline"
-                      to={`/teams/${encodeURIComponent(t.name)}?namespace=${encodeURIComponent(t.namespace || 'default')}`}
+                      to={`/teams/${encodeURIComponent(team.name)}?namespace=${encodeURIComponent(team.namespace || 'default')}`}
                     >
-                      {t.name}
+                      {team.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{t.namespace}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{team.namespace}</td>
                   <td className="px-4 py-3">
-                    <Badge tone={teamPhaseTone(t.phase)}>{t.phase || '—'}</Badge>
+                    <Badge tone={teamPhaseTone(team.phase)}>{teamPhaseLabel(t, team.phase)}</Badge>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs">{t.leadRef || '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{team.leadRef || '—'}</td>
                   <td className="max-w-xs truncate px-4 py-3 text-muted-foreground">
-                    {t.objective}
+                    {team.objective}
                   </td>
                 </tr>
               ))}

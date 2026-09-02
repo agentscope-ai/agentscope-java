@@ -16,6 +16,7 @@
 
 import { getToken } from './auth';
 import { AgentToolset, McpServerSpec, SkillRef } from './agents';
+import { readApiError } from './http';
 import type { SubagentInfo, SubagentUpsertRequest } from './subagents';
 import type { WorkspaceSkillDetail, WorkspaceSkillInfo } from './skills';
 
@@ -26,24 +27,6 @@ function authHeaders(): Record<string, string> {
 
 function jsonHeaders(): Record<string, string> {
   return { ...authHeaders(), 'Content-Type': 'application/json' };
-}
-
-async function readError(res: Response, fallback: string): Promise<Error> {
-  try {
-    const body = await res.json();
-    if (body && typeof body === 'object') {
-      if ('error' in body && typeof (body as { error: unknown }).error === 'string') {
-        return new Error((body as { error: string }).error);
-      }
-      if ('message' in body && typeof (body as { message: unknown }).message === 'string') {
-        return new Error((body as { message: string }).message);
-      }
-    }
-  } catch {
-    // ignore
-  }
-  const text = await res.text().catch(() => '');
-  return new Error(text || `${fallback} (${res.status})`);
 }
 
 export interface WorkspaceSummary {
@@ -64,7 +47,7 @@ export interface WorkspaceSummary {
 
 export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
   const res = await fetch('/api/workspaces', { headers: authHeaders() });
-  if (!res.ok) throw await readError(res, 'Failed to list workspaces');
+  if (!res.ok) throw await readApiError(res, 'Failed to list workspaces');
   return res.json();
 }
 
@@ -77,13 +60,13 @@ export async function createWorkspace(body: {
     headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await readError(res, 'Failed to create workspace');
+  if (!res.ok) throw await readApiError(res, 'Failed to create workspace');
   return res.json();
 }
 
 export async function getWorkspace(id: string): Promise<WorkspaceSummary> {
   const res = await fetch(`/api/workspaces/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  if (!res.ok) throw await readError(res, 'Workspace not found');
+  if (!res.ok) throw await readApiError(res, 'Workspace not found');
   return res.json();
 }
 
@@ -102,7 +85,7 @@ export async function patchWorkspace(
     headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await readError(res, 'Failed to update workspace');
+  if (!res.ok) throw await readApiError(res, 'Failed to update workspace');
   return res.json();
 }
 
@@ -111,7 +94,9 @@ export async function deleteWorkspace(id: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw await readError(res, 'Failed to delete workspace');
+  if (!res.ok && res.status !== 204) {
+    throw await readApiError(res, 'Failed to delete workspace');
+  }
 }
 
 export async function readWorkspaceFile(
@@ -122,7 +107,7 @@ export async function readWorkspaceFile(
     `/api/workspaces/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw await readError(res, 'File not found');
+  if (!res.ok) throw await readApiError(res, 'File not found');
   return res.json();
 }
 
@@ -132,7 +117,7 @@ export async function writeWorkspaceFile(id: string, path: string, content: stri
     headers: jsonHeaders(),
     body: JSON.stringify({ path, content }),
   });
-  if (!res.ok) throw await readError(res, 'Failed to write file');
+  if (!res.ok) throw await readApiError(res, 'Failed to write file');
 }
 
 export async function getWorkspaceTools(
@@ -141,7 +126,7 @@ export async function getWorkspaceTools(
   const res = await fetch(`/api/workspaces/${encodeURIComponent(id)}/tools`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw await readError(res, 'Failed to load tools');
+  if (!res.ok) throw await readApiError(res, 'Failed to load tools');
   return res.json();
 }
 
@@ -155,14 +140,14 @@ export async function putWorkspaceTools(
     headers: jsonHeaders(),
     body: JSON.stringify({ tools, mcpServers }),
   });
-  if (!res.ok) throw await readError(res, 'Failed to save tools');
+  if (!res.ok) throw await readApiError(res, 'Failed to save tools');
 }
 
 export async function listWorkspaceResourceSkills(id: string): Promise<WorkspaceSkillInfo[]> {
   const res = await fetch(`/api/workspaces/${encodeURIComponent(id)}/skills`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw await readError(res, 'Failed to list skills');
+  if (!res.ok) throw await readApiError(res, 'Failed to list skills');
   return res.json();
 }
 
@@ -174,7 +159,7 @@ export async function getWorkspaceResourceSkill(
     `/api/workspaces/${encodeURIComponent(id)}/skills/${encodeURIComponent(name)}`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw await readError(res, 'Failed to load skill');
+  if (!res.ok) throw await readApiError(res, 'Failed to load skill');
   return res.json();
 }
 
@@ -192,7 +177,7 @@ export async function putWorkspaceResourceSkill(
       body: JSON.stringify({ markdown, resources }),
     },
   );
-  if (!res.ok) throw await readError(res, 'Failed to save skill');
+  if (!res.ok) throw await readApiError(res, 'Failed to save skill');
   return res.json();
 }
 
@@ -201,14 +186,16 @@ export async function deleteWorkspaceResourceSkill(id: string, name: string): Pr
     `/api/workspaces/${encodeURIComponent(id)}/skills/${encodeURIComponent(name)}`,
     { method: 'DELETE', headers: authHeaders() },
   );
-  if (!res.ok && res.status !== 204) throw await readError(res, 'Failed to delete skill');
+  if (!res.ok && res.status !== 204) {
+    throw await readApiError(res, 'Failed to delete skill');
+  }
 }
 
 export async function listWorkspaceResourceSubagents(id: string): Promise<SubagentInfo[]> {
   const res = await fetch(`/api/workspaces/${encodeURIComponent(id)}/subagents`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw await readError(res, 'Failed to list subagents');
+  if (!res.ok) throw await readApiError(res, 'Failed to list subagents');
   return res.json();
 }
 
@@ -225,7 +212,7 @@ export async function upsertWorkspaceResourceSubagent(
       body: JSON.stringify(req),
     },
   );
-  if (!res.ok) throw await readError(res, 'Failed to save subagent');
+  if (!res.ok) throw await readApiError(res, 'Failed to save subagent');
   return res.json();
 }
 
@@ -234,7 +221,9 @@ export async function deleteWorkspaceResourceSubagent(id: string, name: string):
     `/api/workspaces/${encodeURIComponent(id)}/subagents/${encodeURIComponent(name)}`,
     { method: 'DELETE', headers: authHeaders() },
   );
-  if (!res.ok && res.status !== 204) throw await readError(res, 'Failed to delete subagent');
+  if (!res.ok && res.status !== 204) {
+    throw await readApiError(res, 'Failed to delete subagent');
+  }
 }
 
 export interface BuiltinToolCatalogEntry {
@@ -247,12 +236,12 @@ export interface BuiltinToolCatalogEntry {
 
 export async function fetchBuiltinToolCatalog(): Promise<BuiltinToolCatalogEntry[]> {
   const res = await fetch('/api/toolsets/builtin', { headers: authHeaders() });
-  if (!res.ok) throw await readError(res, 'Failed to load builtin catalog');
+  if (!res.ok) throw await readApiError(res, 'Failed to load builtin catalog');
   return res.json();
 }
 
 export async function fetchMcpCatalog(): Promise<Record<string, unknown>[]> {
   const res = await fetch('/api/toolsets/mcp-catalog', { headers: authHeaders() });
-  if (!res.ok) throw await readError(res, 'Failed to load MCP catalog');
+  if (!res.ok) throw await readApiError(res, 'Failed to load MCP catalog');
   return res.json();
 }

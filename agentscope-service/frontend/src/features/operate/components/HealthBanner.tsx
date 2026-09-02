@@ -17,6 +17,8 @@
 import { Link } from 'react-router-dom';
 import type { OrphanSession, StaleDataplane } from '../api';
 import { sessionDetailPath } from '../api';
+import { useI18n } from '@/i18n';
+import { formatNumber } from '../i18n';
 
 export function HealthBanner({
   staleDataplanes = [],
@@ -25,17 +27,20 @@ export function HealthBanner({
   staleDataplanes?: StaleDataplane[];
   orphanSessions?: OrphanSession[];
 }) {
+  const { locale, t } = useI18n();
   const issues = staleDataplanes.length + orphanSessions.length;
   if (issues === 0) return null;
 
   return (
     <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/80 p-5 text-sm">
-      <div className="text-base font-semibold text-amber-900">Fleet health alerts</div>
+      <div className="text-base font-semibold text-amber-900">{t('operate.health.title')}</div>
 
       {staleDataplanes.length > 0 && (
         <div>
           <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-amber-800">
-            Stale dataplanes ({staleDataplanes.length})
+            {t('operate.health.staleDataplanes', {
+              count: formatNumber(locale, staleDataplanes.length),
+            })}
           </div>
           <ul className="space-y-1.5 text-amber-900/90">
             {staleDataplanes.slice(0, 5).map((dp) => (
@@ -56,7 +61,9 @@ export function HealthBanner({
       {orphanSessions.length > 0 && (
         <div>
           <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-amber-800">
-            Orphan sessions ({orphanSessions.length})
+            {t('operate.health.orphanSessions', {
+              count: formatNumber(locale, orphanSessions.length),
+            })}
           </div>
           <ul className="space-y-1.5 text-amber-900/90">
             {orphanSessions.slice(0, 5).map((s) => (

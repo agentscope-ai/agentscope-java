@@ -17,8 +17,10 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { clearToken, getToken, me } from '@/lib/auth';
+import { useT } from '@/i18n';
 
 export function PrivateRoute({ children }: { children: React.ReactElement }) {
+  const t = useT();
   const token = getToken();
   const [status, setStatus] = useState<'checking' | 'ok' | 'invalid'>(token ? 'checking' : 'invalid');
 
@@ -42,7 +44,7 @@ export function PrivateRoute({ children }: { children: React.ReactElement }) {
 
   if (status === 'invalid') return <Navigate to="/login" replace />;
   if (status === 'checking') {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('common.loading')}</div>;
   }
   return children;
 }

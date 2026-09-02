@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import { readApiError } from './errors';
+
 const BASE = '';
 
 export interface LoginResponse {
@@ -48,19 +50,19 @@ export async function login(username: string, password: string): Promise<LoginRe
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   });
-  if (!res.ok) throw new Error('Invalid credentials');
+  if (!res.ok) throw await readApiError(res, 'Invalid credentials');
   return res.json();
 }
 
 export async function me(): Promise<MeResponse> {
   const res = await fetch(`${BASE}/api/auth/me`, { headers: authHeaders() });
-  if (!res.ok) throw new Error('Unauthorized');
+  if (!res.ok) throw await readApiError(res, 'Unauthorized');
   return res.json();
 }
 
 export async function getProfile(): Promise<UserProfile> {
   const res = await fetch(`${BASE}/api/user/profile`, { headers: authHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch profile');
+  if (!res.ok) throw await readApiError(res, 'Failed to fetch profile');
   return res.json();
 }
 
@@ -71,8 +73,7 @@ export async function changePassword(currentPassword: string, newPassword: strin
     body: JSON.stringify({ currentPassword, newPassword }),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => '');
-    throw new Error(msg || 'Failed to change password');
+    throw await readApiError(res, 'Failed to change password');
   }
 }
 

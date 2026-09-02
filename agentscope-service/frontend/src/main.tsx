@@ -26,6 +26,7 @@ import {
 } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './index.css';
+import { I18nProvider } from './i18n';
 
 import AppShell from './app/AppShell';
 import { PrivateRoute } from './app/PrivateRoute';
@@ -109,9 +110,10 @@ function AgentSessionDetailRedirect() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
           <Route path="/login" element={<LoginPage />} />
 
           <Route
@@ -170,8 +172,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
             <Route path="*" element={<Navigate to="/agents" replace />} />
           </Route>
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </I18nProvider>
   </React.StrictMode>,
 );

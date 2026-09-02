@@ -8,3 +8,6 @@
 *.zip binary
 *.gz binary
 *.jar binary
+
+# Vite bundles may preserve whitespace inside embedded template literals.
+agentscope-service/aistio/ui/assets/*.js whitespace=-trailing-space

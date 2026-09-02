@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { JsonViewer } from '@/components/JsonViewer';
 import { Page, PageHeader } from '@/components/Page';
 import { PressureGauge } from '@/components/PressureGauge';
+import { type TranslationKey, useI18n } from '@/i18n';
 import {
   fetchAgentMetrics,
   fetchAgentSubagents,
@@ -33,16 +34,21 @@ import {
   phaseTone,
   sessionDetailPath,
 } from './api';
+import { formatDateTime, formatNumber, statusLabel } from './i18n';
 
 type TabId = 'definition' | 'instances' | 'sessions' | 'usage' | 'inventory';
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'definition', label: 'Definition' },
-  { id: 'instances', label: 'Instances' },
-  { id: 'sessions', label: 'Sessions' },
-  { id: 'usage', label: 'Usage' },
-  { id: 'inventory', label: 'Inventory' },
+const TABS: { id: TabId; labelKey: TranslationKey }[] = [
+  { id: 'definition', labelKey: 'operate.agentDetail.tabs.definition' },
+  { id: 'instances', labelKey: 'operate.agentDetail.tabs.instances' },
+  { id: 'sessions', labelKey: 'operate.agentDetail.tabs.sessions' },
+  { id: 'usage', labelKey: 'operate.agentDetail.tabs.usage' },
+  { id: 'inventory', labelKey: 'operate.agentDetail.tabs.inventory' },
 ];
+
+function last24HoursSince(): string {
+  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+}
 
 function isHistory(phase?: string) {
   const p = (phase || '').toLowerCase();
@@ -55,6 +61,7 @@ function isActiveOps(phase?: string) {
 }
 
 export default function OperateAgentDetailPage({ name }: { name: string }) {
+  const { locale, t } = useI18n();
   const [params, setParams] = useSearchParams();
   const namespace = params.get('namespace') || 'default';
   const tabParam = params.get('tab');
@@ -89,7 +96,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
       fetchAgentMetrics({
         agent: name,
         namespace,
-        since: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        since: last24HoursSince(),
       }),
     enabled: tab === 'usage',
     refetchIntervalInBackground: false,
@@ -128,12 +135,16 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
     <Page>
       <div>
         <Link to="/operate/agents" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Agents
+          ← {t('operate.fields.agents')}
         </Link>
         <PageHeader
           className="mt-2"
           title={name}
-          description={`${namespace} · ${(a.runtime as string) || 'runtime unknown'} · contract L${contractLevel || '?'}`}
+          description={t('operate.agentDetail.subtitle', {
+            namespace,
+            runtime: (a.runtime as string) || t('operate.agentDetail.runtimeUnknown'),
+            contract: contractLevel || '?',
+          })}
         />
         <div className="mt-3 flex flex-wrap gap-2">
           {caps.map((c) => (
@@ -145,18 +156,18 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-border pb-px">
-        {TABS.map((t) => (
+        {TABS.map((tabItem) => (
           <button
-            key={t.id}
+            key={tabItem.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => setTab(tabItem.id)}
             className={`rounded-t-lg px-4 py-2.5 text-sm ${
-              tab === t.id
+              tab === tabItem.id
                 ? 'border border-b-0 border-border bg-white font-medium text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            {t.label}
+            {t(tabItem.labelKey)}
           </button>
         ))}
       </div>
@@ -164,20 +175,20 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
       {tab === 'definition' && (
         <Card>
           <CardHeader>
-            <CardTitle>Definition</CardTitle>
+            <CardTitle>{t('operate.agentDetail.definition.title')}</CardTitle>
             <CardDescription>
-              Effective snapshot from data-plane /agentscope/info (builder + workspace merge)
+              {t('operate.agentDetail.definition.description')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {agent.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
             ) : agentConfig ? (
               <JsonViewer value={agentConfig} className="max-h-[32rem]" />
             ) : (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">
-                  No agentConfig on this agent (common in BYO registry mode). Showing registry summary:
+                  {t('operate.agentDetail.definition.noConfig')}
                 </p>
                 <JsonViewer
                   value={{
@@ -203,18 +214,18 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
       {tab === 'instances' && (
         <Card>
           <CardHeader>
-            <CardTitle>Instances</CardTitle>
+            <CardTitle>{t('operate.agentDetail.instances.title')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {(planes.data?.dataplanes || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No registered instances.</p>
+              <p className="text-sm text-muted-foreground">{t('operate.agentDetail.instances.empty')}</p>
             ) : (
               (planes.data?.dataplanes || []).map((dp) => (
                 <div key={dp.instanceId} className="rounded-lg border border-border px-4 py-3 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{dp.instanceId}</span>
                     <Badge tone={dp.healthy ? 'success' : 'danger'}>
-                      {dp.healthy ? 'healthy' : 'stale'}
+                      {dp.healthy ? t('status.healthy') : t('operate.status.stale')}
                     </Badge>
                   </div>
                   <div className="mt-1.5 text-sm text-muted-foreground">{dp.baseUrl}</div>
@@ -236,12 +247,12 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Active</CardTitle>
-              <CardDescription>active · idle · compressing</CardDescription>
+              <CardTitle>{t('status.active')}</CardTitle>
+              <CardDescription>{t('operate.agentDetail.sessions.activePhases')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {active.length === 0 ? (
-                <EmptyState title="No active sessions" description="Waiting for live sessions." className="py-10" />
+                <EmptyState title={t('operate.agentDetail.sessions.noActive')} description={t('operate.agentDetail.sessions.waiting')} className="py-10" />
               ) : (
                 active.map((s) => (
                   <Link
@@ -252,7 +263,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
                     <div className="min-w-0">
                       <div className="truncate font-medium">{s.sessionId}</div>
                       <div className="mt-1">
-                        <Badge tone={phaseTone(s.phase)}>{s.phase || '—'}</Badge>
+                        <Badge tone={phaseTone(s.phase)}>{statusLabel(t, s.phase)}</Badge>
                       </div>
                     </div>
                     <PressureGauge value={s.snapshot?.contextPressure} />
@@ -263,12 +274,12 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>History</CardTitle>
-              <CardDescription>archived (restore OK) · terminated</CardDescription>
+              <CardTitle>{t('operate.agentDetail.sessions.history')}</CardTitle>
+              <CardDescription>{t('operate.agentDetail.sessions.historyPhases')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {history.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No archived sessions.</p>
+                <p className="text-sm text-muted-foreground">{t('operate.agentDetail.sessions.noArchived')}</p>
               ) : (
                 history.map((s) => (
                   <Link
@@ -279,7 +290,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
                     <div className="min-w-0">
                       <div className="truncate font-medium">{s.sessionId}</div>
                       <div className="mt-1">
-                        <Badge tone={phaseTone(s.phase)}>{s.phase || '—'}</Badge>
+                        <Badge tone={phaseTone(s.phase)}>{statusLabel(t, s.phase)}</Badge>
                       </div>
                     </div>
                     <PressureGauge value={s.snapshot?.contextPressure} />
@@ -294,46 +305,49 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
       {tab === 'usage' && (
         <Card>
           <CardHeader>
-            <CardTitle>Usage samples</CardTitle>
+            <CardTitle>{t('operate.agentDetail.usage.title')}</CardTitle>
             <CardDescription>
-              One row per control-plane poll (last 24h). Tokens = usage observed in that interval
-              (delta), not a running total ·{' '}
+              {t('operate.agentDetail.usage.description')}{' · '}
               <Link className="text-primary hover:underline" to="/operate">
-                Fleet overview
+                {t('operate.overview.title')}
               </Link>
             </CardDescription>
           </CardHeader>
           <CardContent>
             {metrics.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
             ) : metrics.isError ? (
-              <p className="text-sm text-muted-foreground">Metrics unavailable.</p>
+              <p className="text-sm text-muted-foreground">{t('operate.agentDetail.usage.unavailable')}</p>
             ) : (metrics.data?.metrics || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No metrics samples yet.</p>
+              <p className="text-sm text-muted-foreground">{t('operate.agentDetail.usage.empty')}</p>
             ) : (
               <div className="overflow-hidden rounded-lg border border-border">
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-border bg-muted/50 text-[13px] uppercase tracking-wide text-muted-foreground">
                     <tr>
-                      <th className="px-4 py-3 font-medium">Recorded</th>
-                      <th className="px-4 py-3 font-medium">Active</th>
-                      <th className="px-4 py-3 font-medium">Δ Tokens</th>
-                      <th className="px-4 py-3 font-medium">Pressure</th>
-                      <th className="px-4 py-3 font-medium">Errors</th>
+                      <th className="px-4 py-3 font-medium">{t('operate.fields.recorded')}</th>
+                      <th className="px-4 py-3 font-medium">{t('status.active')}</th>
+                      <th className="px-4 py-3 font-medium">{t('operate.fields.deltaTokens')}</th>
+                      <th className="px-4 py-3 font-medium">{t('operate.fields.pressure')}</th>
+                      <th className="px-4 py-3 font-medium">{t('operate.fields.errors')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {(metrics.data?.metrics || []).slice(0, 50).map((m) => (
                       <tr key={m.id}>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
-                          {new Date(m.recordedAt).toLocaleString()}
+                          {formatDateTime(locale, m.recordedAt)}
                         </td>
-                        <td className="px-4 py-3 font-mono tabular-nums">{m.activeSessions}</td>
-                        <td className="px-4 py-3 font-mono tabular-nums">{(m.totalTokens ?? 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 font-mono tabular-nums">
+                          {formatNumber(locale, m.activeSessions)}
+                        </td>
+                        <td className="px-4 py-3 font-mono tabular-nums">{formatNumber(locale, m.totalTokens ?? 0)}</td>
                         <td className="px-4 py-3">
                           <PressureGauge value={m.avgContextPressure} />
                         </td>
-                        <td className="px-4 py-3 font-mono tabular-nums">{m.errorCount ?? 0}</td>
+                        <td className="px-4 py-3 font-mono tabular-nums">
+                          {formatNumber(locale, m.errorCount ?? 0)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -348,15 +362,15 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Subagents</CardTitle>
+              <CardTitle>{t('operate.agentDetail.inventory.subagents')}</CardTitle>
               <CardDescription>GET /api/v1/agents/:name/subagents</CardDescription>
             </CardHeader>
             <CardContent>
               {subagents.isLoading ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
+                <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
               ) : !subagents.data ? (
                 <p className="text-sm text-muted-foreground">
-                  Subagent inventory unavailable (404/501 common in BYO mode).
+                  {t('operate.agentDetail.inventory.subagentsUnavailable')}
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -364,7 +378,7 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
                     <div key={inst.instanceId} className="rounded-lg border border-border p-4 text-sm">
                       <div className="mb-2.5 text-sm text-muted-foreground">{inst.instanceId}</div>
                       {(inst.subagents || []).length === 0 ? (
-                        <p className="text-muted-foreground">No subagents.</p>
+                        <p className="text-muted-foreground">{t('operate.agentDetail.inventory.noSubagents')}</p>
                       ) : (
                         (inst.subagents || []).map((sa) => (
                           <div key={sa.name} className="border-t border-border py-2.5 first:border-0 first:pt-0">
@@ -383,15 +397,15 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Workspaces</CardTitle>
+              <CardTitle>{t('operate.agentDetail.inventory.workspaces')}</CardTitle>
               <CardDescription>GET /api/v1/agents/:name/workspaces</CardDescription>
             </CardHeader>
             <CardContent>
               {workspaces.isLoading ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
+                <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
               ) : !workspaces.data ? (
                 <p className="text-sm text-muted-foreground">
-                  Workspace inventory unavailable (404/501 common in BYO mode).
+                  {t('operate.agentDetail.inventory.workspacesUnavailable')}
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -399,14 +413,16 @@ export default function OperateAgentDetailPage({ name }: { name: string }) {
                     <div key={inst.instanceId} className="rounded-lg border border-border p-4 text-sm">
                       <div className="mb-2.5 text-sm text-muted-foreground">{inst.instanceId}</div>
                       {(inst.workspaces || []).length === 0 ? (
-                        <p className="text-muted-foreground">No workspaces.</p>
+                        <p className="text-muted-foreground">{t('operate.agentDetail.inventory.noWorkspaces')}</p>
                       ) : (
                         (inst.workspaces || []).map((ws) => (
                           <div key={ws.path} className="border-t border-border py-2.5 first:border-0 first:pt-0">
                             <div className="font-mono text-sm">{ws.path}</div>
                             <div className="mt-0.5 text-sm text-muted-foreground">
-                              {ws.mode || 'mode n/a'}
-                              {ws.sizeBytes != null ? ` · ${ws.sizeBytes.toLocaleString()} bytes` : ''}
+                              {ws.mode || t('operate.agentDetail.inventory.modeUnavailable')}
+                              {ws.sizeBytes != null
+                                ? ` · ${t('operate.bytes', { count: formatNumber(locale, ws.sizeBytes) })}`
+                                : ''}
                             </div>
                           </div>
                         ))

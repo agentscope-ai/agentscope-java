@@ -16,6 +16,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Highlight, themes } from 'prism-react-renderer';
+import { useT } from '../i18n';
 
 interface Props {
   toolName: string;
@@ -194,6 +195,7 @@ function renderContent(text: string): React.ReactNode {
 }
 
 export default function ToolCallBlock({ toolName, toolCallId, input, result }: Props) {
+  const t = useT();
   // Open while the tool is producing output, collapse once the result lands.
   const [open, setOpen] = useState(result == null);
   useEffect(() => {
@@ -205,27 +207,27 @@ export default function ToolCallBlock({ toolName, toolCallId, input, result }: P
     <div style={s.wrapper}>
       <div style={s.header} onClick={() => setOpen(o => !o)}>
         <span style={s.icon}>{open ? '▼' : '▶'}</span>
-        <span style={s.name}>Tool: {toolName}</span>
+        <span style={s.name}>{t('toolCall.tool', { name: toolName })}</span>
         <span style={s.id}>{toolCallId.slice(0, 10)}</span>
       </div>
       {open && (inputText || resultText) && (
         <>
           {inputText != null && (
             <div style={s.inputSection}>
-              <div style={s.label}>Input</div>
+              <div style={s.label}>{t('toolCall.input')}</div>
               {renderContent(inputText)}
             </div>
           )}
           {resultText != null && (
             <div style={s.resultSection}>
-              <div style={s.label}>Result</div>
+              <div style={s.label}>{t('toolCall.result')}</div>
               {renderContent(resultText)}
             </div>
           )}
         </>
       )}
       {open && !inputText && !resultText && (
-        <div style={{ ...s.body, color: '#94a3b8' }}>Running…</div>
+        <div style={{ ...s.body, color: '#94a3b8' }}>{t('toolCall.running')}</div>
       )}
     </div>
   );

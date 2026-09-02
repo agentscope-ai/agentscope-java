@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   getManagedSession,
@@ -22,8 +22,10 @@ import {
   parseTeamExternalKey,
   teamDetailPath,
 } from '../api/managedSessions';
+import { resolveApiErrorMessage } from '@/api/errors';
 import ChatPanel from '../components/ChatPanel';
 import SessionTranscript from '../components/SessionTranscript';
+import { useT } from '@/i18n';
 
 type Tab = 'chat' | 'details';
 
@@ -71,6 +73,8 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function SessionDetailPage() {
+  const t = useT();
+  const tRef = useRef(t);
   const { sessionId = '' } = useParams<{ sessionId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -81,16 +85,23 @@ export default function SessionDetailPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  useEffect(() => {
     if (!sessionId) return;
     let cancelled = false;
     setLoading(true);
     setErr(null);
     getManagedSession(sessionId)
       .then(s => { if (!cancelled) setSession(s); })
-      .catch(e => {
+      .catch((e: unknown) => {
         if (!cancelled) {
           setSession(null);
-          setErr(e instanceof Error ? e.message : 'Failed to load session');
+          setErr(resolveApiErrorMessage(
+            e,
+            tRef.current('managed.sessions.loadFailed'),
+          ));
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -105,20 +116,25 @@ export default function SessionDetailPage() {
   }
 
   if (!sessionId) {
-    return <div style={S.err}>Missing session id. <Link to="/sessions">Back to sessions</Link></div>;
+    return (
+      <div style={S.err}>
+        {t('managed.sessions.missingId')}{' '}
+        <Link to="/sessions">{t('managed.sessions.back')}</Link>
+      </div>
+    );
   }
 
   if (loading) {
-    return <div style={S.loading}>Loading session…</div>;
+    return <div style={S.loading}>{t('managed.sessions.loading')}</div>;
   }
 
   if (err || !session) {
     return (
       <div style={S.err}>
-        {err || 'Session not found.'}{' '}
-        <Link to="/sessions">Back to sessions</Link>
+        {err || t('managed.sessions.notFound')}{' '}
+        <Link to="/sessions">{t('managed.sessions.back')}</Link>
         {' · '}
-        <Link to="/sessions/new">Create session</Link>
+        <Link to="/sessions/new">{t('session.new.create')}</Link>
       </div>
     );
   }
@@ -133,12 +149,14 @@ export default function SessionDetailPage() {
           to={`/sessions?agentId=${encodeURIComponent(session.agentId)}`}
           style={S.back}
         >
-          ← Sessions
+          ← {t('navigation.managed.sessions')}
         </Link>
-        <h1 style={S.title}>Session</h1>
+        <h1 style={S.title}>{t('managed.sessions.session')}</h1>
         <span style={S.meta} title={session.id}>{session.id}</span>
         {fromTeam && (
-          <span style={S.teamTag} title={session.externalKey || undefined}>Team</span>
+          <span style={S.teamTag} title={session.externalKey || undefined}>
+            {t('managed.common.team')}
+          </span>
         )}
         <span style={{ flex: 1 }} />
         <div style={S.tabs}>
@@ -147,14 +165,16 @@ export default function SessionDetailPage() {
             style={{ ...S.tab, ...(tab === 'chat' ? S.tabActive : {}) }}
             onClick={() => setTab('chat')}
           >
-            {fromTeam ? 'Transcript' : 'Chat'}
+            {fromTeam
+              ? t('managed.sessions.transcript')
+              : t('managed.sessions.chat')}
           </button>
           <button
             type="button"
             style={{ ...S.tab, ...(tab === 'details' ? S.tabActive : {}) }}
             onClick={() => setTab('details')}
           >
-            Details
+            {t('session.details.title')}
           </button>
         </div>
       </div>
@@ -163,16 +183,17 @@ export default function SessionDetailPage() {
           <>
             {teamRef && (
               <div style={S.banner}>
-                This session was started by Agent Team{' '}
+                {t('managed.sessions.teamSessionPrefix')}{' '}
                 <strong>
                   {teamRef.namespace}/{teamRef.teamName}
                 </strong>{' '}
-                (member <strong>{teamRef.memberName}</strong>). Direct chat here is disabled —
-                continue the conversation from the{' '}
+                {t('managed.sessions.teamMemberPrefix')}{' '}
+                <strong>{teamRef.memberName}</strong>
+                {t('managed.sessions.teamChatDisabled')}{' '}
                 <Link to={teamDetailPath(teamRef)} style={S.bannerLink}>
-                  team detail page
+                  {t('managed.sessions.teamDetailPage')}
                 </Link>
-                .
+                {t('managed.common.period')}
               </div>
             )}
             <div style={S.chatWrap}>

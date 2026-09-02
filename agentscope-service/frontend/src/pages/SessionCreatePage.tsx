@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AgentDefinition, listAgents } from '../api/agents';
 import NewManagedSessionForm from '../components/NewManagedSessionForm';
+import { resolveApiErrorMessage } from '@/api/errors';
+import { useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 640 },
@@ -44,12 +46,18 @@ const S: Record<string, React.CSSProperties> = {
  * Create a Managed session definition (static bind). Does not post user.message.
  */
 export default function SessionCreatePage() {
+  const t = useT();
+  const tRef = useRef(t);
   const [searchParams] = useSearchParams();
   const prefAgentId = searchParams.get('agentId') ?? '';
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [agentId, setAgentId] = useState(prefAgentId);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,8 +69,13 @@ export default function SessionCreatePage() {
           setAgentId(list[0].id);
         }
       })
-      .catch(e => {
-        if (!cancelled) setLoadErr(e instanceof Error ? e.message : 'Failed to load agents');
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setLoadErr(resolveApiErrorMessage(
+            e,
+            tRef.current('managed.sessions.loadAgentsFailed'),
+          ));
+        }
       });
     return () => { cancelled = true; };
   }, [prefAgentId]);
@@ -74,23 +87,22 @@ export default function SessionCreatePage() {
   return (
     <div style={S.root}>
       <Link to={agentId ? `/sessions?agentId=${encodeURIComponent(agentId)}` : '/sessions'} style={S.back}>
-        ← Sessions
+        ← {t('navigation.managed.sessions')}
       </Link>
-      <h1 style={S.title}>New session</h1>
+      <h1 style={S.title}>{t('session.new.title')}</h1>
       <p style={S.hint}>
-        Creates a session resource bound to an agent and mounts. No turn starts until you send a
-        message in Chat.
+        {t('managed.sessions.createDescription')}
       </p>
       {loadErr && <div style={S.err}>{loadErr}</div>}
 
-      <label style={S.field}>Agent</label>
+      <label style={S.field}>{t('managed.common.agent')}</label>
       <select
         style={S.select}
         value={agentId}
         onChange={e => setAgentId(e.target.value)}
         required
       >
-        <option value="">Select agent…</option>
+        <option value="">{t('managed.sessions.selectAgent')}</option>
         {agents.map(a => (
           <option key={a.id} value={a.id}>{a.name}</option>
         ))}
@@ -111,7 +123,7 @@ export default function SessionCreatePage() {
         </div>
       ) : (
         <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-          Choose an agent to configure environment, vaults, and memory mounts.
+          {t('managed.sessions.chooseAgentHint')}
         </div>
       )}
     </div>

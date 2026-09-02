@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { readApiError } from './http';
 
 export interface FileNode {
   name: string;
@@ -50,13 +51,13 @@ function base(agentId: string): string {
 
 export async function summary(agentId: string): Promise<WorkspaceSummary> {
   const res = await fetch(base(agentId), { headers: authHeaders() });
-  if (!res.ok) throw new Error('Failed to load workspace summary');
+  if (!res.ok) throw await readApiError(res, 'Failed to load workspace summary');
   return res.json();
 }
 
 export async function tree(agentId: string, recursive = true): Promise<FileNode[]> {
   const res = await fetch(`${base(agentId)}/files?recursive=${recursive}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error('Failed to load workspace files');
+  if (!res.ok) throw await readApiError(res, 'Failed to load workspace files');
   return res.json();
 }
 
@@ -64,7 +65,7 @@ export async function readFile(agentId: string, path: string): Promise<string> {
   const res = await fetch(`${base(agentId)}/file?path=${encodeURIComponent(path)}`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error('Failed to read file');
+  if (!res.ok) throw await readApiError(res, 'Failed to read file');
   return res.text();
 }
 
@@ -74,7 +75,7 @@ export async function writeFile(agentId: string, path: string, content: string):
     headers: jsonHeaders(),
     body: JSON.stringify({ content }),
   });
-  if (!res.ok) throw new Error('Failed to write file');
+  if (!res.ok) throw await readApiError(res, 'Failed to write file');
 }
 
 // Empty directories are not representable on the composite filesystem (intermediate dirs
@@ -84,7 +85,7 @@ export async function createNode(agentId: string, path: string): Promise<void> {
     `${base(agentId)}/file?path=${encodeURIComponent(path)}&type=file`,
     { method: 'POST', headers: authHeaders() },
   );
-  if (!res.ok) throw new Error('Failed to create file');
+  if (!res.ok) throw await readApiError(res, 'Failed to create file');
 }
 
 export async function moveNode(agentId: string, from: string, to: string): Promise<void> {
@@ -93,7 +94,7 @@ export async function moveNode(agentId: string, from: string, to: string): Promi
     headers: jsonHeaders(),
     body: JSON.stringify({ from, to }),
   });
-  if (!res.ok) throw new Error('Failed to move file');
+  if (!res.ok) throw await readApiError(res, 'Failed to move file');
 }
 
 export async function deleteNode(agentId: string, path: string): Promise<void> {
@@ -101,7 +102,9 @@ export async function deleteNode(agentId: string, path: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw new Error('Failed to delete file');
+  if (!res.ok && res.status !== 204) {
+    throw await readApiError(res, 'Failed to delete file');
+  }
 }
 
 export async function uploadFile(agentId: string, path: string, file: File): Promise<void> {
@@ -112,5 +115,5 @@ export async function uploadFile(agentId: string, path: string, file: File): Pro
     headers: authHeaders(),
     body: fd,
   });
-  if (!res.ok) throw new Error('Failed to upload file');
+  if (!res.ok) throw await readApiError(res, 'Failed to upload file');
 }

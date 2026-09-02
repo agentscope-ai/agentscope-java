@@ -20,6 +20,7 @@ import ToolsActivePanel from '../components/ToolsActivePanel';
 import ToolsCatalogPanel from '../components/ToolsCatalogPanel';
 import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
 import type { AgentDefinition } from '../api/agents';
+import { useT } from '@/i18n';
 
 const helpStyle: React.CSSProperties = {
   padding: '8px 24px',
@@ -68,6 +69,7 @@ const closeButtonStyle: React.CSSProperties = {
 };
 
 export default function AgentToolsPage() {
+  const t = useT();
   const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
   const [refreshKey, setRefreshKey] = useState(0);
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -81,10 +83,7 @@ export default function AgentToolsPage() {
         <LinkedWorkspaceBanner workspaceId={linked} resource="tools" />
       ) : (
         <div style={helpStyle}>
-          Tools and MCP servers are stored on the Agent definition (<code>tools</code> /{' '}
-          <code>mcpServers</code>) and create a new agent version on save. Changes apply to
-          the next Session. Use <b>Ask</b> on a built-in tool to pause for confirmation
-          before that tool runs (HITL). Link a Workspace to author a shared toolset.
+          {t('managed.agentTools.storageHint')}
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>
@@ -102,14 +101,14 @@ export default function AgentToolsPage() {
             <div style={modalHeaderStyle}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a' }}>
-                  Configure tools
+                  {t('managed.agentTools.configure')}
                 </div>
                 <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 2 }}>
-                  Enable / disable built-in tools or add an MCP server.
+                  {t('managed.agentTools.configureHint')}
                 </div>
               </div>
               <button onClick={() => setBrowseOpen(false)} style={closeButtonStyle}>
-                Close
+                {t('common.actions.close')}
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>

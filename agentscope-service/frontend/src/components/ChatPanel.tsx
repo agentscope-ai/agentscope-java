@@ -27,7 +27,9 @@ import {
   SessionEvent,
   streamEvents,
 } from '../api/managedSessions';
+import { resolveApiErrorMessage } from '@/api/errors';
 import MessageBlock, { ContentBlock } from './MessageBlock';
+import { type TranslationFunction, useT } from '@/i18n';
 
 type Role = 'user' | 'assistant' | 'system' | 'error';
 
@@ -117,17 +119,25 @@ function payloadText(payload?: Record<string, unknown>): string {
   return text != null ? String(text) : '';
 }
 
-function errorText(evt: SessionEvent): string {
+function errorText(evt: SessionEvent, t: TranslationFunction): string {
   const payload = evt.payload as Record<string, unknown> | undefined;
   const raw = payload?.error;
   const err = (typeof raw === 'object' && raw != null ? raw : {}) as Record<string, unknown>;
   const code = err.code != null ? String(err.code) : '';
-  const message = err.message != null ? String(err.message) : '';
-  const label = code ? `[${code}]` : '[error]';
-  return `${label} ${message || 'Session turn failed'}`.trim();
+  const message =
+    typeof raw === 'string'
+      ? raw
+      : err.message != null
+        ? String(err.message)
+        : '';
+  const label = code ? `[${code}]` : `[${t('chat.error.label')}]`;
+  return `${label} ${message || t('chat.error.turnFailed')}`.trim();
 }
 
-function eventsToMessages(events: SessionEvent[]): Message[] {
+function eventsToMessages(
+  events: SessionEvent[],
+  t: TranslationFunction,
+): Message[] {
   const out: Message[] = [];
   // Index of the current assistant turn bubble; content appends into it until
   // a status/error event closes the turn.
@@ -160,13 +170,15 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
       ensureOpen(evt.id).blocks.push({
         kind: 'text',
         id: evt.id,
-        text: payloadText(evt.payload) || '[agent response]',
+        text: payloadText(evt.payload) || t('chat.agentResponseFallback'),
       });
     } else if (evt.type === 'agent.tool_use') {
       ensureOpen(evt.id).blocks.push({
         kind: 'tool',
         id: String(evt.payload?.id ?? evt.payload?.toolCallId ?? evt.payload?.toolUseId ?? evt.id),
-        toolName: String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool'),
+        toolName: String(
+          evt.payload?.name ?? evt.payload?.toolName ?? t('chat.toolFallback'),
+        ),
         text: evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined,
       });
     } else if (evt.type === 'agent.tool_result') {
@@ -189,7 +201,7 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
       out.push({
         id: evt.id,
         role: 'error',
-        blocks: [{ kind: 'text', id: evt.id, text: errorText(evt) }],
+        blocks: [{ kind: 'text', id: evt.id, text: errorText(evt, t) }],
       });
     } else if (evt.type.startsWith('session.status')) {
       // Status events do not end the turn bubble: the backend may emit
@@ -204,14 +216,17 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
   return out;
 }
 
-function extractConfirmation(evt: SessionEvent): PendingConfirmation | null {
+function extractConfirmation(
+  evt: SessionEvent,
+  t: TranslationFunction,
+): PendingConfirmation | null {
   if (evt.type === 'session.requires_action') {
     const p = evt.payload ?? {};
     const toolUseId = p.toolUseId != null ? String(p.toolUseId) : '';
     if (!toolUseId) return null;
     return {
       toolUseId,
-      toolName: String(p.toolName ?? 'tool'),
+      toolName: String(p.toolName ?? t('chat.toolFallback')),
       input: typeof p.input === 'object' && p.input != null ? p.input as Record<string, unknown> : undefined,
     };
   }
@@ -222,7 +237,7 @@ function extractConfirmation(evt: SessionEvent): PendingConfirmation | null {
       if (sr.toolUseId) {
         return {
           toolUseId: String(sr.toolUseId),
-          toolName: String(sr.toolName ?? 'tool'),
+          toolName: String(sr.toolName ?? t('chat.toolFallback')),
           input: typeof sr.input === 'object' && sr.input != null ? sr.input as Record<string, unknown> : undefined,
         };
       }
@@ -230,7 +245,7 @@ function extractConfirmation(evt: SessionEvent): PendingConfirmation | null {
     if (evt.payload?.toolUseId) {
       return {
         toolUseId: String(evt.payload.toolUseId),
-        toolName: String(evt.payload.toolName ?? 'tool'),
+        toolName: String(evt.payload.toolName ?? t('chat.toolFallback')),
         input: typeof evt.payload.input === 'object' && evt.payload.input != null
           ? evt.payload.input as Record<string, unknown> : undefined,
       };
@@ -276,6 +291,8 @@ export default function ChatPanel({
   embedded?: boolean;
   readOnly?: boolean;
 }) {
+  const t = useT();
+  const tRef = useRef(t);
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -297,6 +314,10 @@ export default function ChatPanel({
   const stickToBottomRef = useRef(true);
 
   useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  useEffect(() => {
     listEnvironments()
       .then((envs: Environment[]) => setEnvNameById(new Map(envs.map(e => [e.id, e.name]))))
       .catch(() => setEnvNameById(new Map()));
@@ -311,7 +332,7 @@ export default function ChatPanel({
       lastSeqRef.current = evt.seq;
     }
 
-    const confirm = extractConfirmation(evt);
+    const confirm = extractConfirmation(evt, tRef.current);
     if (confirm) setPendingConfirm(confirm);
 
     const closeOpen = (prev: Message[]): Message[] => {
@@ -375,7 +396,12 @@ export default function ChatPanel({
           return append(prev, eventId, { kind: 'text', id: eventId, text: delta });
         });
       } else if (targetType === 'agent.tool_use') {
-        setMessages(prev => append(prev, eventId, { kind: 'tool', id: eventId, toolName: 'tool', text: delta }));
+        setMessages(prev => append(prev, eventId, {
+          kind: 'tool',
+          id: eventId,
+          toolName: tRef.current('chat.toolFallback'),
+          text: delta,
+        }));
       }
       return;
     }
@@ -386,7 +412,7 @@ export default function ChatPanel({
       const localUser = pendingUserMsgIdRef.current;
       pendingUserMsgIdRef.current = null;
       setMessages(prev => {
-        let next = closeOpen(prev);
+        const next = closeOpen(prev);
         if (next.some(m => m.id === evt.id)) return next;
         if (localUser && next.some(m => m.id === localUser)) {
           return next.map(m =>
@@ -400,7 +426,8 @@ export default function ChatPanel({
     }
 
     if (evt.type === 'agent.message' || evt.type === 'agent.turn_stub') {
-      const text = payloadText(evt.payload) || '[agent response]';
+      const text =
+        payloadText(evt.payload) || tRef.current('chat.agentResponseFallback');
       setMessages(prev => {
         // The final persisted event carries the full text: replace the streamed
         // preview block instead of appending a duplicate.
@@ -426,7 +453,11 @@ export default function ChatPanel({
       const toolId = String(
         evt.payload?.id ?? evt.payload?.toolCallId ?? evt.payload?.toolUseId ?? evt.id,
       );
-      const toolName = String(evt.payload?.name ?? evt.payload?.toolName ?? 'tool');
+      const toolName = String(
+        evt.payload?.name ??
+          evt.payload?.toolName ??
+          tRef.current('chat.toolFallback'),
+      );
       const input = evt.payload?.input != null ? JSON.stringify(evt.payload.input) : undefined;
       setMessages(prev => {
         // Adopt the preview block (id = the event id) and finalize its id to the
@@ -496,7 +527,13 @@ export default function ChatPanel({
         return [...next, {
           id: evt.id,
           role: 'error',
-          blocks: [{ kind: 'text', id: evt.id, text: errorText(evt) }],
+          blocks: [
+            {
+              kind: 'text',
+              id: evt.id,
+              text: errorText(evt, tRef.current),
+            },
+          ],
         }];
       });
     }
@@ -531,7 +568,7 @@ export default function ChatPanel({
             lastSeqRef.current = e.seq;
           }
         }
-        setMessages(eventsToMessages(events));
+        setMessages(eventsToMessages(events, tRef.current));
         streamHandleRef.current = streamEvents(
           sessionId,
           evt => { if (!cancelled) handleManagedEvent(evt); },
@@ -546,7 +583,10 @@ export default function ChatPanel({
         );
       } catch (e: unknown) {
         if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : 'Failed to open session');
+          setLoadError(resolveApiErrorMessage(
+            e,
+            tRef.current('chat.error.openSessionFailed'),
+          ));
         }
       } finally {
         if (!cancelled) setRestoring(false);
@@ -607,8 +647,12 @@ export default function ChatPanel({
     const env = envNameById.get(managedSession.environmentId) || managedSession.environmentId || '—';
     const vaults = managedSession.vaultIds?.length ?? 0;
     const mems = managedSession.memoryStoreIds?.length ?? 0;
-    return `env: ${env} · vaults: ${vaults} · memory: ${mems}`;
-  }, [managedSession, envNameById]);
+    return t('chat.mountSummary', {
+      environment: env,
+      vaultCount: vaults,
+      memoryCount: mems,
+    });
+  }, [managedSession, envNameById, t]);
 
   /**
    * Relabels the optimistic user bubble with the server event id so the same event
@@ -649,11 +693,20 @@ export default function ChatPanel({
       const recorded = await postUserMessage(sessionId, text);
       adoptRecordedUserEvent(recorded);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'send failed';
+      const msg = resolveApiErrorMessage(
+        e,
+        tRef.current('chat.error.sendFailed'),
+      );
       setMessages(prev => [...prev, {
         id: nextId(),
         role: 'system',
-        blocks: [{ kind: 'text', id: nextId(), text: `[error] ${msg}` }],
+        blocks: [
+          {
+            kind: 'text',
+            id: nextId(),
+            text: tRef.current('chat.error.withMessage', { message: msg }),
+          },
+        ],
       }]);
       pendingUserMsgIdRef.current = null;
     } finally {
@@ -680,15 +733,30 @@ export default function ChatPanel({
         blocks: [{
           kind: 'text',
           id: nextId(),
-          text: allow ? `Tool "${pendingConfirm.toolName}" allowed.` : `Tool "${pendingConfirm.toolName}" denied.`,
+          text: allow
+            ? tRef.current('chat.confirmation.allowed', {
+                toolName: pendingConfirm.toolName,
+              })
+            : tRef.current('chat.confirmation.denied', {
+                toolName: pendingConfirm.toolName,
+              }),
         }],
       }]);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'confirmation failed';
+      const msg = resolveApiErrorMessage(
+        e,
+        tRef.current('chat.error.confirmationFailed'),
+      );
       setMessages(prev => [...prev, {
         id: nextId(),
         role: 'system',
-        blocks: [{ kind: 'text', id: nextId(), text: `[error] ${msg}` }],
+        blocks: [
+          {
+            kind: 'text',
+            id: nextId(),
+            text: tRef.current('chat.error.withMessage', { message: msg }),
+          },
+        ],
       }]);
     } finally {
       setBusy(false);
@@ -716,12 +784,14 @@ export default function ChatPanel({
           {loadError}
           {!embedded && (
             <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
-              <Link to="/sessions" style={{ ...S.iconBtn, color: '#6366f1' }}>Sessions</Link>
+              <Link to="/sessions" style={{ ...S.iconBtn, color: '#6366f1' }}>
+                {t('navigation.managed.sessions')}
+              </Link>
               <Link
                 to={`/sessions/new?agentId=${encodeURIComponent(agentId)}`}
                 style={{ ...S.iconBtn, color: '#6366f1' }}
               >
-                New session
+                {t('session.new.title')}
               </Link>
             </div>
           )}
@@ -733,15 +803,18 @@ export default function ChatPanel({
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <span>{embedded ? 'Team chat' : 'Managed session'}</span>
+        <span>
+          {embedded ? t('chat.teamChat') : t('chat.managedSession')}
+        </span>
         <span style={S.sessionTag} title={sessionId}>
-          {restoring ? 'resolving…' : sessionLabel}{sessionId.length > 24 ? '…' : ''}
+          {restoring ? t('chat.resolving') : sessionLabel}
+          {sessionId.length > 24 ? '…' : ''}
         </span>
         {!embedded && mountLabel && (
           <Link
             to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
             style={{ ...S.iconBtn, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            title="View / edit mounts on Details"
+            title={t('chat.viewMountsTitle')}
           >
             {mountLabel}
           </Link>
@@ -752,15 +825,15 @@ export default function ChatPanel({
             <Link
               to={`/sessions/${encodeURIComponent(sessionId)}?tab=details`}
               style={S.iconBtn}
-              title="Session details and event timeline"
+              title={t('chat.detailsTitle')}
             >
-              📊 Details
+              📊 {t('session.details.title')}
             </Link>
             <Link to="/sessions" style={S.iconBtn}>
-              📋 All sessions
+              📋 {t('chat.allSessions')}
             </Link>
             <button type="button" style={S.iconBtn} onClick={handleNewChat} disabled={busy}>
-              ✨ New session
+              ✨ {t('session.new.title')}
             </button>
           </>
         )}
@@ -768,9 +841,9 @@ export default function ChatPanel({
           <Link
             to={`/sessions/${encodeURIComponent(sessionId)}`}
             style={S.iconBtn}
-            title="Open full session page"
+            title={t('chat.fullPageTitle')}
           >
-            Full page
+            {t('chat.fullPage')}
           </Link>
         )}
       </div>
@@ -780,10 +853,12 @@ export default function ChatPanel({
         onScroll={handleThreadScroll}
         onWheel={handleThreadWheel}
       >
-        {restoring && messages.length === 0 && <div style={S.empty}>Loading conversation…</div>}
+        {restoring && messages.length === 0 && (
+          <div style={S.empty}>{t('chat.loadingConversation')}</div>
+        )}
         {!restoring && messages.length === 0 && (
           <div style={S.empty}>
-            Session ready. Send a message to start the first turn — events stay empty until then.
+            {t('chat.readyHint')}
           </div>
         )}
         {(() => {
@@ -809,7 +884,9 @@ export default function ChatPanel({
         {pendingConfirm && !readOnly && (
           <div style={S.confirmCard}>
             <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 8 }}>
-              Allow tool call: {pendingConfirm.toolName}?
+              {t('chat.confirmation.prompt', {
+                toolName: pendingConfirm.toolName,
+              })}
             </div>
             {pendingConfirm.input && (
               <pre style={{
@@ -820,8 +897,12 @@ export default function ChatPanel({
               </pre>
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-              <button type="button" style={S.allowBtn} onClick={() => handleConfirmation(true)} disabled={busy}>Allow</button>
-              <button type="button" style={S.denyBtn} onClick={() => handleConfirmation(false)} disabled={busy}>Deny</button>
+              <button type="button" style={S.allowBtn} onClick={() => handleConfirmation(true)} disabled={busy}>
+                {t('chat.confirmation.allow')}
+              </button>
+              <button type="button" style={S.denyBtn} onClick={() => handleConfirmation(false)} disabled={busy}>
+                {t('chat.confirmation.deny')}
+              </button>
             </div>
           </div>
         )}
@@ -835,12 +916,12 @@ export default function ChatPanel({
           onKeyDown={handleKeyDown}
           placeholder={
             readOnly
-              ? 'Read-only transcript — sending is disabled'
+              ? t('chat.composer.readOnlyPlaceholder')
               : restoring
-                ? 'Loading…'
+                ? t('common.loading')
                 : pendingConfirm
-                  ? 'Confirm tool call above…'
-                  : `Message ${agentId}…`
+                  ? t('chat.composer.confirmToolPlaceholder')
+                  : t('chat.composer.messagePlaceholder', { agentId })
           }
           rows={1}
           autoFocus={!readOnly}
@@ -851,7 +932,7 @@ export default function ChatPanel({
           onClick={handleSend}
           disabled={!canSend}
         >
-          {busy ? '…' : 'Send'}
+          {busy ? '…' : t('chat.send')}
         </button>
       </div>
     </div>

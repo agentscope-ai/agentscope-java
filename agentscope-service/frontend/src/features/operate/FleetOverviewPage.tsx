@@ -20,6 +20,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
 import { Button } from '@/components/ui/button';
+import { useI18n } from '@/i18n';
 import { fetchOverview, fetchOverviewTimeseries } from './api';
 import { HealthBanner } from './components/HealthBanner';
 import { TokenTrend } from './components/TokenTrend';
@@ -29,6 +30,7 @@ import {
   TopSessionsByDurationTable,
   TopSessionsByTokensTable,
 } from './components/TopAgentsTable';
+import { formatNumber } from './i18n';
 
 function Stat({
   label,
@@ -56,6 +58,7 @@ function Stat({
 }
 
 export default function FleetOverviewPage() {
+  const { locale, t } = useI18n();
   const overview = useQuery({
     queryKey: ['overview'],
     queryFn: fetchOverview,
@@ -79,14 +82,14 @@ export default function FleetOverviewPage() {
   return (
     <Page>
       <PageHeader
-        title="Fleet overview"
-        description="Cross-framework agent instances and runtime sessions reported into aistiod."
+        title={t('operate.overview.title')}
+        description={t('operate.overview.description')}
       />
 
       {overview.isError && (
         <EmptyState
-          title="Overview unavailable"
-          description="The /api/v1/overview endpoint did not respond. Ensure aistiod is running with the runtime store."
+          title={t('operate.overview.unavailable')}
+          description={t('operate.overview.unavailableDescription')}
         />
       )}
 
@@ -99,40 +102,42 @@ export default function FleetOverviewPage() {
 
       {o && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          <Stat label="Agents" value={o.agentCount} to="/operate/agents" />
+          <Stat label={t('operate.fields.agents')} value={formatNumber(locale, o.agentCount)} to="/operate/agents" />
           <Stat
-            label="Healthy instances"
-            value={healthy}
+            label={t('operate.overview.healthyInstances')}
+            value={formatNumber(locale, healthy)}
             to="/operate/agents?presence=live"
           />
           <Stat
-            label="Stale instances"
-            value={stale}
+            label={t('operate.overview.staleInstances')}
+            value={formatNumber(locale, stale)}
             to="/operate/agents?presence=offline"
           />
           <Stat
-            label="Active sessions"
-            value={o.activeSessionCount}
+            label={t('operate.overview.activeSessions')}
+            value={formatNumber(locale, o.activeSessionCount)}
             to="/operate/sessions?phase=active"
           />
           <Stat
-            label="Idle sessions"
-            value={idleCount}
+            label={t('operate.overview.idleSessions')}
+            value={formatNumber(locale, idleCount)}
             to="/operate/sessions?phase=idle"
           />
-          <Stat label="Tokens (24h, Δ)" value={o.tokenUsage24h.toLocaleString()} />
-          <Stat label="Errors (24h)" value={o.errorCount24h ?? 0} />
+          <Stat label={t('operate.overview.tokens24h')} value={formatNumber(locale, o.tokenUsage24h)} />
+          <Stat label={t('operate.overview.errors24h')} value={formatNumber(locale, o.errorCount24h ?? 0)} />
         </div>
       )}
 
       {o && ((o.offlineAgentCount ?? 0) > 0 || (o.historicalAgentCount ?? 0) > 0) && (
         <p className="text-sm text-muted-foreground">
-          Agents counts live instances only.
+          {t('operate.overview.agentCountHint')}
           {(o.offlineAgentCount ?? 0) > 0 && (
             <>
               {' '}
               <Link className="text-primary underline-offset-2 hover:underline" to="/operate/agents?presence=offline">
-                {o.offlineAgentCount} offline
+                {t('operate.overview.offlineCount', {
+                  count: formatNumber(locale, o.offlineAgentCount ?? 0),
+                })}
               </Link>
             </>
           )}
@@ -140,7 +145,9 @@ export default function FleetOverviewPage() {
             <>
               {(o.offlineAgentCount ?? 0) > 0 ? ' · ' : ' '}
               <Link className="text-primary underline-offset-2 hover:underline" to="/operate/agents?presence=historical">
-                {o.historicalAgentCount} historical
+                {t('operate.overview.historicalCount', {
+                  count: formatNumber(locale, o.historicalAgentCount ?? 0),
+                })}
               </Link>
             </>
           )}
@@ -164,11 +171,11 @@ export default function FleetOverviewPage() {
 
       {!overview.isLoading && o && o.dataplaneCount === 0 && o.agentCount === 0 && (
         <EmptyState
-          title="No data planes registered"
-          description="Start a data plane that implements /agentscope/* and self-registers with aistiod, or connect Kubernetes for CRD discovery."
+          title={t('operate.overview.noDataPlanes')}
+          description={t('operate.overview.noDataPlanesDescription')}
           action={
             <Button asChild variant="outline">
-              <Link to="/operate/agents">Open agents</Link>
+              <Link to="/operate/agents">{t('operate.overview.openAgents')}</Link>
             </Button>
           }
         />

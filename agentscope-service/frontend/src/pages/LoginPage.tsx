@@ -17,6 +17,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login, saveToken } from '../api/auth';
+import { useT } from '@/i18n';
 
 const s: Record<string, React.CSSProperties> = {
   page: {
@@ -85,20 +86,21 @@ const s: Record<string, React.CSSProperties> = {
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [hasInvalidCredentials, setHasInvalidCredentials] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const t = useT();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
+    setHasInvalidCredentials(false);
     setLoading(true);
     try {
       const res = await login(username, password);
       saveToken(res.token);
       navigate('/agents', { replace: true });
     } catch {
-      setError('Invalid username or password');
+      setHasInvalidCredentials(true);
     } finally {
       setLoading(false);
     }
@@ -108,13 +110,21 @@ export default function LoginPage() {
     <div style={s.page}>
       <form style={s.card} onSubmit={handleSubmit}>
         <div style={s.brand}>
-          <img src="/logo.svg" alt="AgentScope" width={40} height={40} />
+          <img
+            src="/logo.svg"
+            alt={t('app.logoAlt')}
+            width={40}
+            height={40}
+          />
         </div>
-        <div style={s.title}>AgentScope Service</div>
-        <div style={s.sub}>Sign in to continue</div>
+        <div style={s.title}>{t('auth.login.title')}</div>
+        <div style={s.sub}>{t('auth.login.subtitle')}</div>
         <div>
-          <label style={s.label}>Username</label>
+          <label style={s.label} htmlFor="username">
+            {t('auth.login.username')}
+          </label>
           <input
+            id="username"
             style={s.input}
             type="text"
             value={username}
@@ -124,8 +134,11 @@ export default function LoginPage() {
           />
         </div>
         <div>
-          <label style={s.label}>Password</label>
+          <label style={s.label} htmlFor="password">
+            {t('auth.login.password')}
+          </label>
           <input
+            id="password"
             style={s.input}
             type="password"
             value={password}
@@ -133,9 +146,11 @@ export default function LoginPage() {
             autoComplete="current-password"
           />
         </div>
-        {error && <div style={s.error}>{error}</div>}
+        {hasInvalidCredentials && (
+          <div style={s.error}>{t('auth.login.invalidCredentials')}</div>
+        )}
         <button style={s.button} type="submit" disabled={loading}>
-          {loading ? 'Signing in…' : 'Sign in'}
+          {loading ? t('auth.login.signingIn') : t('auth.login.signIn')}
         </button>
       </form>
     </div>

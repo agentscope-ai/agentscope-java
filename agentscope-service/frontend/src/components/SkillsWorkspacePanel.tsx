@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   WorkspaceSkillInfo,
   WorkspaceSkillDetail,
@@ -23,6 +23,8 @@ import {
   upsertWorkspaceSkill,
   deleteWorkspaceSkill,
 } from '../api/skills';
+import { resolveApiErrorMessage } from '@/api/errors';
+import { useT } from '../i18n';
 
 interface Props {
   agentId: string;
@@ -133,6 +135,8 @@ export default function SkillsWorkspacePanel({
   onRequestBrowse,
   readOnly = false,
 }: Props) {
+  const tr = useT();
+  const trRef = useRef(tr);
   const [allSkills, setAllSkills] = useState<WorkspaceSkillInfo[]>([]);
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkspaceSkillDetail | null>(null);
@@ -140,6 +144,10 @@ export default function SkillsWorkspacePanel({
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    trRef.current = tr;
+  }, [tr]);
 
   // The skills page surfaces every workspace skill — both marketplace-installed and
   // workspace-authored ("custom") entries — so a refresh accurately reflects on-disk state.
@@ -156,8 +164,8 @@ export default function SkillsWorkspacePanel({
       } else if (!selectedDir && list.length > 0) {
         setSelectedDir(list[0].dirName);
       }
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (e: unknown) {
+      setError(resolveApiErrorMessage(e, trRef.current('common.requestFailed')));
     }
   }, [agentId, selectedDir]);
 
@@ -180,8 +188,10 @@ export default function SkillsWorkspacePanel({
         setDraft(d.markdown);
         setDirty(false);
       })
-      .catch(e => {
-        if (!cancelled) setError((e as Error).message);
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError(resolveApiErrorMessage(e, trRef.current('common.requestFailed')));
+        }
       });
     return () => {
       cancelled = true;
@@ -197,8 +207,8 @@ export default function SkillsWorkspacePanel({
       setDirty(false);
       await refreshList();
       onChange();
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (e: unknown) {
+      setError(resolveApiErrorMessage(e, tr('agent.settings.error.save')));
     } finally {
       setBusy(false);
     }
@@ -209,8 +219,8 @@ export default function SkillsWorkspacePanel({
     // Phrase the confirmation by origin so users understand the local impact: marketplace skills
     // get the "Uninstall" language they're used to, custom skills are framed as a Delete.
     const isMarketplace = selectedSkill?.origin === 'marketplace';
-    const verb = isMarketplace ? 'Uninstall' : 'Delete';
-    if (!window.confirm(`${verb} skill "${selectedDir}"? This removes the entire directory.`)) return;
+    const confirmKey = isMarketplace ? 'skills.confirm.uninstall' : 'skills.confirm.delete';
+    if (!window.confirm(tr(confirmKey, { name: selectedDir }))) return;
     setBusy(true);
     setError(null);
     try {
@@ -218,8 +228,8 @@ export default function SkillsWorkspacePanel({
       setSelectedDir(null);
       await refreshList();
       onChange();
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (e: unknown) {
+      setError(resolveApiErrorMessage(e, tr('agent.settings.error.delete')));
     } finally {
       setBusy(false);
     }
@@ -240,11 +250,11 @@ export default function SkillsWorkspacePanel({
       <div style={sidebarStyle}>
         <div style={sidebarHeaderStyle}>
           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a' }}>
-            Installed Skills ({skills.length})
+            {tr('skills.installedCount', { count: skills.length })}
           </span>
           {!readOnly && onRequestBrowse && (
             <button onClick={onRequestBrowse} style={buttonStyle} disabled={busy}>
-              + Install
+              + {tr('skills.actions.install')}
             </button>
           )}
         </div>
@@ -252,11 +262,11 @@ export default function SkillsWorkspacePanel({
           {skills.length === 0 ? (
             <div style={{ padding: 16, color: '#94a3b8', fontSize: '0.85rem' }}>
               <div style={{ fontWeight: 600, color: '#475569', marginBottom: 6 }}>
-                No skills yet.
+                {tr('skills.empty.title')}
               </div>
-              Author a skill under
-              <code> workspace/skills/&lt;name&gt;/SKILL.md </code>via the Workspace file tree —
-              it will show up here.
+              {tr('skills.empty.authorPrefix')}
+              <code> workspace/skills/&lt;name&gt;/SKILL.md </code>
+              {tr('skills.empty.authorSuffix')}
             </div>
           ) : (
             skills.map(s => (
@@ -288,8 +298,8 @@ export default function SkillsWorkspacePanel({
                     // Custom (workspace-authored) skills get a "custom" badge so they aren't
                     // visually mistaken for an unbadged marketplace entry — the same visual slot
                     // is reused so list items stay aligned regardless of origin.
-                    <span style={customBadgeStyle} title="Authored in this workspace">
-                      custom
+                    <span style={customBadgeStyle} title={tr('skills.custom.title')}>
+                      {tr('skills.custom.badge')}
                     </span>
                   )}
                 </div>
@@ -319,7 +329,9 @@ export default function SkillsWorkspacePanel({
                   }}
                 >
                   <span>{(s.sizeBytes / 1024).toFixed(1)} KB</span>
-                  {s.resourceCount > 0 && <span>{s.resourceCount} resources</span>}
+                  {s.resourceCount > 0 && (
+                    <span>{tr('skills.resourceCount', { count: s.resourceCount })}</span>
+                  )}
                   {s.hasReferences && <span>references/</span>}
                   {s.hasScripts && <span>scripts/</span>}
                 </div>
@@ -330,9 +342,9 @@ export default function SkillsWorkspacePanel({
       </div>
       <div style={detailStyle}>
         {!selectedDir ? (
-          <div style={{ padding: 24, color: '#94a3b8' }}>Select a skill to view or edit.</div>
+          <div style={{ padding: 24, color: '#94a3b8' }}>{tr('skills.select')}</div>
         ) : !detail ? (
-          <div style={{ padding: 24, color: '#94a3b8' }}>Loading…</div>
+          <div style={{ padding: 24, color: '#94a3b8' }}>{tr('common.loading')}</div>
         ) : (
           <>
             <div style={toolbarStyle}>
@@ -340,26 +352,33 @@ export default function SkillsWorkspacePanel({
               {selectedSkill?.marketplace ? (
                 <span
                   style={{ fontSize: '0.78rem', color: '#64748b' }}
-                  title={`Installed from ${selectedSkill.marketplace.repoType}: ${selectedSkill.marketplace.repoLocation}`}
+                  title={tr('skills.marketplace.installedFromTitle', {
+                    type: selectedSkill.marketplace.repoType,
+                    location: selectedSkill.marketplace.repoLocation,
+                  })}
                 >
-                  · from <b>{selectedSkill.marketplace.repoType}</b>
+                  · {tr('skills.marketplace.from')} <b>{selectedSkill.marketplace.repoType}</b>
                   {selectedSkill.marketplace.originalName &&
                     selectedSkill.marketplace.originalName !== selectedDir &&
-                    ` (orig: ${selectedSkill.marketplace.originalName})`}
+                    tr('skills.marketplace.original', {
+                      name: selectedSkill.marketplace.originalName,
+                    })}
                 </span>
               ) : (
                 selectedSkill && (
                   <span
                     style={{ fontSize: '0.78rem', color: '#64748b' }}
-                    title="Authored directly in this workspace (no marketplace lineage)"
+                    title={tr('skills.custom.detailTitle')}
                   >
-                    · <b>custom</b>
+                    · <b>{tr('skills.custom.badge')}</b>
                   </span>
                 )
               )}
               <span style={{ flex: 1 }} />
               {!readOnly && dirty && (
-                <span style={{ fontSize: '0.78rem', color: '#d97706' }}>unsaved</span>
+                <span style={{ fontSize: '0.78rem', color: '#d97706' }}>
+                  {tr('common.status.unsaved')}
+                </span>
               )}
               {!readOnly && (
                 <>
@@ -373,10 +392,12 @@ export default function SkillsWorkspacePanel({
                     }}
                     disabled={!dirty || busy}
                   >
-                    Save
+                    {tr('common.actions.save')}
                   </button>
                   <button onClick={handleDelete} style={dangerButtonStyle} disabled={busy}>
-                    {selectedSkill?.origin === 'marketplace' ? 'Uninstall' : 'Delete'}
+                    {selectedSkill?.origin === 'marketplace'
+                      ? tr('skills.actions.uninstall')
+                      : tr('common.actions.delete')}
                   </button>
                 </>
               )}
@@ -412,7 +433,7 @@ export default function SkillsWorkspacePanel({
                     letterSpacing: '0.04em',
                   }}
                 >
-                  Resources ({resourceList.length})
+                  {tr('skills.resourcesCount', { count: resourceList.length })}
                 </div>
                 {resourceList.map(r => (
                   <div

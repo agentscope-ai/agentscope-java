@@ -15,7 +15,9 @@
  */
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useI18n } from '@/i18n';
 import type { TokenBucket } from '../api';
+import { formatClock, formatNumber } from '../i18n';
 
 const CHART_H = 128;
 
@@ -28,36 +30,40 @@ export function TokenTrend({
   loading?: boolean;
   error?: boolean;
 }) {
+  const { locale, t } = useI18n();
   const max = Math.max(1, ...points.map((p) => p.totalTokens || 0));
   const showLabels = points.length > 0 && points.length <= 24;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Token usage (24h)</CardTitle>
-        <CardDescription>Hourly sum of usage deltas (not cumulative snapshots)</CardDescription>
+        <CardTitle>{t('operate.tokenTrend.title')}</CardTitle>
+        <CardDescription>{t('operate.tokenTrend.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {error ? (
-          <p className="text-sm text-muted-foreground">Timeseries unavailable.</p>
+          <p className="text-sm text-muted-foreground">{t('operate.tokenTrend.unavailable')}</p>
         ) : loading && points.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : points.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No token samples yet.</p>
+          <p className="text-sm text-muted-foreground">{t('operate.tokenTrend.empty')}</p>
         ) : (
           <div className="space-y-2">
             <div className="flex items-end gap-1.5" style={{ height: CHART_H }}>
               {points.map((p, i) => {
                 const hPx = Math.max(2, Math.round(((p.totalTokens || 0) / max) * CHART_H));
                 const label = p.bucketStart
-                  ? new Date(p.bucketStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  ? formatClock(locale, p.bucketStart)
                   : `#${i}`;
                 return (
                   <div
                     key={p.bucketStart || i}
                     className="min-w-0 flex-1 rounded-t bg-indigo-400/80 transition-all"
                     style={{ height: hPx }}
-                    title={`${label}: ${(p.totalTokens || 0).toLocaleString()} tokens`}
+                    title={t('operate.tokenTrend.tooltip', {
+                      time: label,
+                      tokens: formatNumber(locale, p.totalTokens || 0),
+                    })}
                   />
                 );
               })}
@@ -66,7 +72,7 @@ export function TokenTrend({
               <div className="flex gap-1.5">
                 {points.map((p, i) => {
                   const label = p.bucketStart
-                    ? new Date(p.bucketStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    ? formatClock(locale, p.bucketStart)
                     : `#${i}`;
                   return (
                     <span

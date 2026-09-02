@@ -15,6 +15,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   Memory,
   MemoryStore,
@@ -27,6 +28,7 @@ import {
   putMemory,
   redactMemory,
 } from '../api/memoryStores';
+import { useT } from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -77,6 +79,7 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function MemoryStoresPage() {
+  const t = useT();
   const [stores, setStores] = useState<MemoryStore[]>([]);
   const [selected, setSelected] = useState<MemoryStore | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -94,7 +97,7 @@ export default function MemoryStoresPage() {
     try {
       setStores(await listMemoryStores());
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load');
+      setErr(resolveApiErrorMessage(e, t('managed.memory.loadStoresFailed')));
     } finally {
       setLoading(false);
     }
@@ -106,10 +109,12 @@ export default function MemoryStoresPage() {
     try {
       setMemories(await listMemories(store.id));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load memories');
+      setErr(resolveApiErrorMessage(e, t('managed.memory.loadMemoriesFailed')));
     }
   }
 
+  // Initial data load must not repeat when the locale changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void refreshStores(); }, []);
 
   async function handleCreateStore(e: React.FormEvent) {
@@ -124,35 +129,35 @@ export default function MemoryStoresPage() {
       await refreshStores();
       await loadMemories(created);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Create failed');
+      setErr(resolveApiErrorMessage(e, t('managed.memory.createFailed')));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleArchiveStore(id: string) {
-    if (!confirm('Archive this memory store? It will no longer mount on new sessions.')) return;
+    if (!confirm(t('managed.memory.confirmArchiveStore'))) return;
     setBusyId(id);
     try {
       await archiveMemoryStore(id);
       if (selected?.id === id) { setSelected(null); setMemories([]); }
       await refreshStores();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Archive failed');
+      setErr(resolveApiErrorMessage(e, t('managed.memory.archiveFailed')));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleDeleteStore(id: string) {
-    if (!confirm('Delete this memory store and all memories?')) return;
+    if (!confirm(t('managed.memory.confirmDeleteStore'))) return;
     setBusyId(id);
     try {
       await deleteMemoryStore(id);
       if (selected?.id === id) { setSelected(null); setMemories([]); }
       await refreshStores();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Delete failed');
+      setErr(resolveApiErrorMessage(e, t('managed.memory.deleteFailed')));
     } finally {
       setBusyId(null);
     }
@@ -160,13 +165,13 @@ export default function MemoryStoresPage() {
 
   async function handleRedactMemory(path: string) {
     if (!selected) return;
-    if (!confirm(`Redact "${path}" permanently? Version history will be cleared.`)) return;
+    if (!confirm(t('managed.memory.confirmRedact', { path }))) return;
     setBusyId(path);
     try {
       await redactMemory(selected.id, path);
       await loadMemories(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Redact failed');
+      setErr(resolveApiErrorMessage(e, t('managed.memory.redactFailed')));
     } finally {
       setBusyId(null);
     }
@@ -181,20 +186,20 @@ export default function MemoryStoresPage() {
       setEditing(null);
       await loadMemories(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(resolveApiErrorMessage(e, t('managed.common.saveFailed')));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleDeleteMemory(path: string) {
-    if (!selected || !confirm(`Delete memory "${path}"?`)) return;
+    if (!selected || !confirm(t('managed.memory.confirmDeleteMemory', { path }))) return;
     setBusyId(path);
     try {
       await deleteMemory(selected.id, path);
       await loadMemories(selected);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Delete failed');
+      setErr(resolveApiErrorMessage(e, t('managed.memory.deleteFailed')));
     } finally {
       setBusyId(null);
     }
@@ -203,14 +208,16 @@ export default function MemoryStoresPage() {
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <h1 style={S.title}>Memory Stores</h1>
-        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New store</button>
+        <h1 style={S.title}>{t('navigation.managed.memory')}</h1>
+        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>
+          ＋ {t('managed.memory.newStore')}
+        </button>
       </div>
       <p style={S.blurb}>
-        Cross-session memory stores mountable on managed agent sessions. Documents are versioned by path.
+        {t('managed.memory.description')}
       </p>
       {err && <div style={S.err}>{err}</div>}
-      {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
+      {loading && <div style={{ color: '#64748b' }}>{t('common.loading')}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,1fr) minmax(0,2fr)', gap: 24 }}>
         <div>
@@ -234,20 +241,22 @@ export default function MemoryStoresPage() {
                   style={S.rowBtn}
                   onClick={e => { e.stopPropagation(); void handleArchiveStore(s.id); }}
                 >
-                  Archive
+                  {t('common.archive')}
                 </button>
                 <button
                   type="button"
                   style={{ ...S.rowBtn, ...S.danger }}
                   onClick={e => { e.stopPropagation(); void handleDeleteStore(s.id); }}
                 >
-                  Delete
+                  {t('common.delete')}
                 </button>
               </div>
             </div>
           ))}
           {!loading && stores.length === 0 && (
-            <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No memory stores yet.</div>
+            <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+              {t('managed.memory.noStores')}
+            </div>
           )}
         </div>
 
@@ -255,21 +264,23 @@ export default function MemoryStoresPage() {
           {selected ? (
             <div style={S.card}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{selected.name} — memories</h2>
+                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>
+                  {t('managed.memory.storeMemories', { name: selected.name })}
+                </h2>
                 <button
                   type="button"
                   style={S.rowBtn}
                   onClick={() => setEditing({ path: 'notes.md', content: '' })}
                 >
-                  ＋ Add memory
+                  ＋ {t('managed.memory.addMemory')}
                 </button>
               </div>
               <table style={S.table}>
                 <thead>
                   <tr>
-                    <th style={S.th}>Path</th>
-                    <th style={S.th}>Version</th>
-                    <th style={S.th}>Actions</th>
+                    <th style={S.th}>{t('managed.agentWorkspace.path')}</th>
+                    <th style={S.th}>{t('managed.common.version')}</th>
+                    <th style={S.th}>{t('managed.common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -278,22 +289,22 @@ export default function MemoryStoresPage() {
                       <td style={S.td}><code>{m.path}</code></td>
                       <td style={S.td}>v{m.headVersion}</td>
                       <td style={S.td}>
-                        <button type="button" style={S.rowBtn} onClick={() => setEditing({ path: m.path, content: m.content })}>Edit</button>
+                        <button type="button" style={S.rowBtn} onClick={() => setEditing({ path: m.path, content: m.content })}>{t('common.actions.edit')}</button>
                         {' '}
-                        <button type="button" style={S.rowBtn} onClick={() => handleRedactMemory(m.path)}>Redact</button>
+                        <button type="button" style={S.rowBtn} onClick={() => handleRedactMemory(m.path)}>{t('managed.memory.redact')}</button>
                         {' '}
-                        <button type="button" style={{ ...S.rowBtn, ...S.danger }} onClick={() => handleDeleteMemory(m.path)}>Delete</button>
+                        <button type="button" style={{ ...S.rowBtn, ...S.danger }} onClick={() => handleDeleteMemory(m.path)}>{t('common.delete')}</button>
                       </td>
                     </tr>
                   ))}
                   {memories.length === 0 && (
-                    <tr><td colSpan={3} style={{ ...S.td, color: '#94a3b8', fontStyle: 'italic' }}>No memories in this store.</td></tr>
+                    <tr><td colSpan={3} style={{ ...S.td, color: '#94a3b8', fontStyle: 'italic' }}>{t('managed.memory.noMemories')}</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           ) : (
-            <div style={{ color: '#94a3b8', padding: '40px 0', textAlign: 'center' }}>Select a store to view memories.</div>
+            <div style={{ color: '#94a3b8', padding: '40px 0', textAlign: 'center' }}>{t('managed.memory.selectStore')}</div>
           )}
         </div>
       </div>
@@ -301,15 +312,15 @@ export default function MemoryStoresPage() {
       {creating && (
         <div style={S.modal} onClick={() => setCreating(false)}>
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>New memory store</h2>
+            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>{t('managed.memory.newStore')}</h2>
             <form onSubmit={handleCreateStore}>
-              <label style={S.formField}>Name</label>
+              <label style={S.formField}>{t('common.fields.name')}</label>
               <input style={{ ...S.input, marginBottom: 14 }} value={storeName} onChange={e => setStoreName(e.target.value)} autoFocus />
-              <label style={S.formField}>Description</label>
+              <label style={S.formField}>{t('managed.common.description')}</label>
               <input style={{ ...S.input, marginBottom: 20 }} value={storeDesc} onChange={e => setStoreDesc(e.target.value)} />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>Cancel</button>
-                <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>Create</button>
+                <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>{t('common.cancel')}</button>
+                <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>{t('managed.common.create')}</button>
               </div>
             </form>
           </div>
@@ -319,15 +330,15 @@ export default function MemoryStoresPage() {
       {editing && selected && (
         <div style={S.modal} onClick={() => setEditing(null)}>
           <div style={{ ...S.modalBody, maxWidth: 560 }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>Edit memory</h2>
+            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>{t('managed.memory.editMemory')}</h2>
             <form onSubmit={handleSaveMemory}>
-              <label style={S.formField}>Path</label>
+              <label style={S.formField}>{t('managed.agentWorkspace.path')}</label>
               <input style={{ ...S.input, marginBottom: 14 }} value={editing.path} onChange={e => setEditing({ ...editing, path: e.target.value })} />
-              <label style={S.formField}>Content</label>
+              <label style={S.formField}>{t('managed.memory.content')}</label>
               <textarea style={{ ...S.textarea, marginBottom: 20 }} value={editing.content} onChange={e => setEditing({ ...editing, content: e.target.value })} />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" style={S.rowBtn} onClick={() => setEditing(null)}>Cancel</button>
-                <button type="submit" style={S.primaryBtn} disabled={busyId === 'save'}>Save</button>
+                <button type="button" style={S.rowBtn} onClick={() => setEditing(null)}>{t('common.cancel')}</button>
+                <button type="submit" style={S.primaryBtn} disabled={busyId === 'save'}>{t('common.actions.save')}</button>
               </div>
             </form>
           </div>

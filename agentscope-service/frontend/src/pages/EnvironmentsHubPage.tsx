@@ -15,6 +15,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import {
   Environment,
   archiveEnvironment,
@@ -24,6 +25,11 @@ import {
   updateEnvironment,
 } from '../api/environments';
 import { HandsStatus, fetchHandsStatus } from '../api/hands';
+import {
+  type TranslationFunction,
+  type TranslationKey,
+  useI18n,
+} from '@/i18n';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -71,7 +77,20 @@ const S: Record<string, React.CSSProperties> = {
   },
 };
 
+const ENVIRONMENT_TYPE_LABELS = new Map<string, TranslationKey>([
+  ['local', 'managed.environments.types.local'],
+  ['sandbox', 'managed.environments.types.sandbox'],
+  ['remote', 'managed.environments.types.remote'],
+  ['self_hosted', 'managed.environments.types.selfHosted'],
+]);
+
+function environmentTypeLabel(type: string, t: TranslationFunction): string {
+  const key = ENVIRONMENT_TYPE_LABELS.get(type);
+  return key ? t(key) : type;
+}
+
 export default function EnvironmentsHubPage() {
+  const { locale, t } = useI18n();
   const [items, setItems] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -95,12 +114,14 @@ export default function EnvironmentsHubPage() {
         setHands(null);
       }
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load');
+      setErr(resolveApiErrorMessage(e, t('managed.environments.loadFailed')));
     } finally {
       setLoading(false);
     }
   }
 
+  // Initial data load must not repeat when the locale changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void refresh(); }, []);
 
   async function handleCreate(e: React.FormEvent) {
@@ -115,7 +136,7 @@ export default function EnvironmentsHubPage() {
       setType('local');
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Create failed');
+      setErr(resolveApiErrorMessage(e, t('managed.environments.createFailed')));
     } finally {
       setBusyId(null);
     }
@@ -135,7 +156,7 @@ export default function EnvironmentsHubPage() {
     try {
       config = JSON.parse(editConfigText || '{}') as Record<string, unknown>;
     } catch {
-      setErr('Config must be valid JSON');
+      setErr(t('managed.environments.invalidJson'));
       return;
     }
     setBusyId(editing.id);
@@ -145,33 +166,33 @@ export default function EnvironmentsHubPage() {
       setEditing(null);
       await refresh();
     } catch (ex: unknown) {
-      setErr(ex instanceof Error ? ex.message : 'Update failed');
+      setErr(resolveApiErrorMessage(ex, t('managed.environments.updateFailed')));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleArchive(id: string) {
-    if (!confirm('Archive this environment?')) return;
+    if (!confirm(t('managed.environments.confirmArchive'))) return;
     setBusyId(id);
     try {
       await archiveEnvironment(id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Archive failed');
+      setErr(resolveApiErrorMessage(e, t('managed.environments.archiveFailed')));
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this environment permanently?')) return;
+    if (!confirm(t('managed.environments.confirmDelete'))) return;
     setBusyId(id);
     try {
       await deleteEnvironment(id);
       await refresh();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Delete failed');
+      setErr(resolveApiErrorMessage(e, t('managed.environments.deleteFailed')));
     } finally {
       setBusyId(null);
     }
@@ -180,32 +201,38 @@ export default function EnvironmentsHubPage() {
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <h1 style={S.title}>Environments</h1>
-        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New environment</button>
+        <h1 style={S.title}>{t('navigation.managed.environments')}</h1>
+        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>
+          ＋ {t('managed.environments.new')}
+        </button>
       </div>
       <p style={S.blurb}>
-        Execution environment templates used by managed agent sessions. Each session runs against one environment.
+        {t('managed.environments.description')}
       </p>
       {hands && (
         <div style={{ ...S.card, marginBottom: 18 }}>
-          <div style={{ fontWeight: 600 }}>Hands / worker status</div>
+          <div style={{ fontWeight: 600 }}>{t('managed.environments.workerStatus')}</div>
           <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
-            brain <code>{hands.brainInstanceId}</code>
-            {' · '}pending work {hands.pendingWorkItems}
-            {' · '}local sandboxes {hands.localSandboxRegistrySize}
+            {t('managed.environments.brain')} <code>{hands.brainInstanceId}</code>
+            {' · '}{t('managed.environments.pendingWork', {
+              count: new Intl.NumberFormat(locale).format(hands.pendingWorkItems),
+            })}
+            {' · '}{t('managed.environments.localSandboxes', {
+              count: new Intl.NumberFormat(locale).format(hands.localSandboxRegistrySize),
+            })}
           </div>
           <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
-            workers:{' '}
+            {t('managed.environments.workers')}{' '}
             {Object.keys(hands.workerHeartbeats).length === 0
-              ? 'none'
+              ? t('managed.common.none')
               : Object.entries(hands.workerHeartbeats)
-                  .map(([id, ts]) => `${id}@${new Date(ts).toLocaleTimeString()}`)
+                  .map(([id, ts]) => `${id}@${new Date(ts).toLocaleTimeString(locale)}`)
                   .join(', ')}
           </div>
         </div>
       )}
       {err && <div style={S.err}>{err}</div>}
-      {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
+      {loading && <div style={{ color: '#64748b' }}>{t('common.loading')}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 18 }}>
         {items.map(env => (
           <div key={env.id} style={S.card}>
@@ -213,58 +240,72 @@ export default function EnvironmentsHubPage() {
               <span style={{ fontSize: '1.25rem' }}>🌐</span>
               <span style={{ fontWeight: 600, fontSize: '1.05rem', flex: 1 }}>{env.name}</span>
               <span style={{ ...S.badge, ...(env.archivedAt ? S.archived : {}) }}>
-                {env.archivedAt ? 'archived' : env.type}
+                {env.archivedAt
+                  ? t('status.archived')
+                  : environmentTypeLabel(env.type, t)}
               </span>
             </div>
             <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontFamily: 'monospace' }}>{env.id}</div>
             <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
               {!env.archivedAt && (
                 <button type="button" style={S.rowBtn} disabled={busyId === env.id} onClick={() => openEdit(env)}>
-                  Edit
+                  {t('common.actions.edit')}
                 </button>
               )}
               {!env.archivedAt && (
                 <button type="button" style={S.rowBtn} disabled={busyId === env.id} onClick={() => handleArchive(env.id)}>
-                  Archive
+                  {t('common.archive')}
                 </button>
               )}
               <button type="button" style={{ ...S.rowBtn, ...S.danger }} disabled={busyId === env.id} onClick={() => handleDelete(env.id)}>
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </div>
         ))}
         {!loading && items.length === 0 && (
-          <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No environments yet.</div>
+          <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+            {t('managed.environments.empty')}
+          </div>
         )}
       </div>
 
       {creating && (
         <div style={S.modal} onClick={() => setCreating(false)}>
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>New environment</h2>
+            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>
+              {t('managed.environments.new')}
+            </h2>
             <form onSubmit={handleCreate}>
-              <label style={S.formField}>Name</label>
-              <input style={{ ...S.input, marginBottom: 14 }} value={name} onChange={e => setName(e.target.value)} placeholder="default-local" autoFocus />
-              <label style={S.formField}>Type</label>
+              <label style={S.formField}>{t('common.fields.name')}</label>
+              <input
+                style={{ ...S.input, marginBottom: 14 }}
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder={t('managed.environments.namePlaceholder')}
+                autoFocus
+              />
+              <label style={S.formField}>{t('managed.common.type')}</label>
               <select style={{ ...S.input, marginBottom: 20 }} value={type} onChange={e => setType(e.target.value)}>
-                <option value="local">local</option>
-                <option value="sandbox">sandbox</option>
-                <option value="remote">remote</option>
-                <option value="self_hosted">self_hosted</option>
+                {['local', 'sandbox', 'remote', 'self_hosted'].map(value => (
+                  <option key={value} value={value}>
+                    {environmentTypeLabel(value, t)}
+                  </option>
+                ))}
               </select>
               {type === 'self_hosted' && (
                 <p style={{ margin: '-14px 0 20px', color: '#64748b', fontSize: '0.82rem', lineHeight: 1.5 }}>
-                  Sessions on this environment attach a hands sandbox from an Environment Worker
-                  at the start of each turn (the built-in in-process worker handles this
-                  automatically for single-server deployments). No Docker image or remote sandbox
-                  is required.
+                  {t('managed.environments.selfHostedHint')}
                 </p>
               )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>Cancel</button>
+                <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>
+                  {t('common.cancel')}
+                </button>
                 <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>
-                  {busyId === 'create' ? 'Creating…' : 'Create'}
+                  {busyId === 'create'
+                    ? t('managed.common.creating')
+                    : t('managed.common.create')}
                 </button>
               </div>
             </form>
@@ -275,27 +316,33 @@ export default function EnvironmentsHubPage() {
       {editing && (
         <div style={S.modal} onClick={() => setEditing(null)}>
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>Edit environment</h2>
+            <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>
+              {t('managed.environments.edit')}
+            </h2>
             <form onSubmit={handleUpdate}>
-              <label style={S.formField}>Name</label>
+              <label style={S.formField}>{t('common.fields.name')}</label>
               <input
                 style={{ ...S.input, marginBottom: 14 }}
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
                 autoFocus
               />
-              <label style={S.formField}>Type (read-only)</label>
+              <label style={S.formField}>{t('managed.environments.typeReadOnly')}</label>
               <input style={{ ...S.input, marginBottom: 14, color: '#94a3b8' }} value={editing.type} disabled />
-              <label style={S.formField}>Config (JSON)</label>
+              <label style={S.formField}>{t('managed.environments.configJson')}</label>
               <textarea
                 style={{ ...S.input, marginBottom: 20, minHeight: 140, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.82rem' }}
                 value={editConfigText}
                 onChange={e => setEditConfigText(e.target.value)}
               />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" style={S.rowBtn} onClick={() => setEditing(null)}>Cancel</button>
+                <button type="button" style={S.rowBtn} onClick={() => setEditing(null)}>
+                  {t('common.cancel')}
+                </button>
                 <button type="submit" style={S.primaryBtn} disabled={busyId === editing.id}>
-                  {busyId === editing.id ? 'Saving…' : 'Save'}
+                  {busyId === editing.id
+                    ? t('common.saving')
+                    : t('common.actions.save')}
                 </button>
               </div>
             </form>

@@ -15,33 +15,29 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { ApiError } from '@/lib/apiClient';
+import { type TranslationFunction, useT } from '@/i18n';
 import { fetchSessionMessages, type SessionMessageItem, type SessionMessagePage } from '../api';
 
 const PAGE_SIZE = 100;
 const MAX_WINDOW = 500;
 
-function formatMessagesError(err: unknown): string {
+export function formatMessagesError(err: unknown, t: TranslationFunction): string {
   if (err instanceof ApiError) {
-    let detail = err.body || err.message;
-    try {
-      const parsed = JSON.parse(err.body) as { error?: string };
-      if (parsed.error) detail = parsed.error;
-    } catch {
-      /* keep raw body */
-    }
+    const detail = resolveApiErrorMessage(err, t('operate.messagesError.failed'));
     if (err.status === 501) {
-      return `Transcript unavailable and live message-query is not advertised (${detail}). Configure AISTIO_TRANSCRIPT_FS_ROOT (or object-store transcript) on the control plane, or enable message-query on a live instance.`;
+      return t('operate.messagesError.transcriptUnavailable', { detail });
     }
     if (err.status === 404) {
-      return `Messages not found on data plane (${detail}). If the instance is gone, ensure control-plane transcript storage is configured.`;
+      return t('operate.messagesError.notFound', { detail });
     }
     if (err.status === 502 || err.status === 503) {
-      return `Could not load messages (${detail}). Transcript miss fell back to a live instance that is unreachable.`;
+      return t('operate.messagesError.unreachable', { detail });
     }
-    return detail || `Failed to load messages (HTTP ${err.status})`;
+    return detail;
   }
-  return err instanceof Error ? err.message : String(err);
+  return resolveApiErrorMessage(err, t('operate.messagesError.failed'));
 }
 
 function mergeBySeq(base: SessionMessageItem[], extra: SessionMessageItem[]): SessionMessageItem[] {
@@ -59,12 +55,13 @@ export function useSessionMessages(
   sessionId: string,
   opts: { agent?: string; namespace?: string; enabled: boolean; pollMs?: number },
 ) {
+  const t = useT();
   const { agent, namespace, enabled, pollMs = 5_000 } = opts;
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
   const [source, setSource] = useState<string | undefined>();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [loadedEarlier, setLoadedEarlier] = useState(false);
@@ -141,7 +138,7 @@ export function useSessionMessages(
         applyPage(tail, 'mergeTail');
       }
     } catch (err) {
-      setError(formatMessagesError(err));
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -163,7 +160,7 @@ export function useSessionMessages(
       applyPage(page, 'prepend');
       setLoadedEarlier(true);
     } catch (err) {
-      setError(formatMessagesError(err));
+      setError(err);
     } finally {
       setLoadingEarlier(false);
     }
@@ -208,7 +205,7 @@ export function useSessionMessages(
     total,
     offset,
     source,
-    error,
+    error: error == null ? null : formatMessagesError(error, t),
     loading: loading && !hydratedRef.current,
     loadingEarlier,
     hasEarlier,

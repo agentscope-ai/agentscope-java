@@ -155,10 +155,14 @@ make test
 
 ### Build or run the console
 
+The console requires Node.js 22.13 or later. Run the full verification command before
+committing; it checks the translation catalogs and UI copy, lints, tests, and rebuilds
+the static bundle tracked under `aistio/ui`.
+
 ```bash
 cd agentscope-service/frontend
-npm install
-npm run build   # emits static assets into ../aistio/ui
+npm ci
+npm run verify  # verifies source and emits static assets into ../aistio/ui
 
 npm run dev     # Vite HMR; /api proxies to the gateway
 ```

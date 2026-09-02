@@ -31,7 +31,9 @@ import {
 import { CapabilityGate, DisabledAction } from '@/components/CapabilityGate';
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { canPlanMode, canQueryContext, canQuerySubagentTasks, canQueryTasks } from '@/lib/capabilities';
+import { useI18n } from '@/i18n';
 import {
   abortSession,
   archiveSession,
@@ -53,8 +55,10 @@ import { ConversationHistoryPanel } from './components/ConversationHistoryPanel'
 import { SessionEventsPanel } from './components/SessionEventsPanel';
 import { StatusStrip } from './components/StatusStrip';
 import { useSessionMessages } from './lib/useSessionMessages';
+import { formatDateTime, formatNumber, statusLabel } from './i18n';
 
 export default function OperateSessionDetailPage() {
+  const { locale, t } = useI18n();
   const { sessionId = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const agent = params.get('agent') || undefined;
@@ -189,7 +193,10 @@ export default function OperateSessionDetailPage() {
   if (session.isError) {
     return (
       <Page>
-        <EmptyState title="Session not found" description={String(session.error)} />
+        <EmptyState
+          title={t('operate.sessionDetail.notFound')}
+          description={resolveApiErrorMessage(session.error, t('common.requestFailed'))}
+        />
       </Page>
     );
   }
@@ -220,12 +227,20 @@ export default function OperateSessionDetailPage() {
     <Page>
       <div>
         <Link to="/operate/sessions" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Sessions
+          ← {t('operate.fields.sessions')}
         </Link>
         <PageHeader
           className="mt-2"
           title={sessionId}
-          description={`${s?.agentName} · ${s?.namespace} · ${s?.framework || 'framework n/a'}${contractLevel ? ` · L${contractLevel}` : ''}${selectedTurnIndex != null ? ` · turn #${selectedTurnIndex}` : ''}`}
+          description={t('operate.sessionDetail.subtitle', {
+            agent: s?.agentName || '—',
+            namespace: s?.namespace || '—',
+            framework: s?.framework || t('operate.sessionDetail.frameworkUnavailable'),
+            contract: contractLevel ? ` · L${contractLevel}` : '',
+            turn: selectedTurnIndex != null
+              ? ` · ${t('operate.sessionDetail.turnNumber', { number: selectedTurnIndex })}`
+              : '',
+          })}
           actions={
             <>
               <CapabilityGate contractLevel={contractLevel} capabilities={capabilities} action="compress">
@@ -241,7 +256,7 @@ export default function OperateSessionDetailPage() {
                       }}
                     />
                   ) : (
-                    <DisabledAction label="Compress" tip={tip} />
+                    <DisabledAction label={t('operate.compress.action')} tip={tip} />
                   )
                 }
               </CapabilityGate>
@@ -252,7 +267,7 @@ export default function OperateSessionDetailPage() {
                   disabled={archive.isPending}
                   onClick={() => archive.mutate()}
                 >
-                  Archive
+                  {t('common.archive')}
                 </Button>
               )}
               {canRestore && (
@@ -262,19 +277,21 @@ export default function OperateSessionDetailPage() {
                   disabled={restore.isPending}
                   onClick={() => restore.mutate()}
                 >
-                  Restore
+                  {t('common.restore')}
                 </Button>
               )}
               <CapabilityGate contractLevel={contractLevel} capabilities={capabilities} action="abort">
                 {(enabled, tip) =>
                   enabled && !readOnlyOps ? (
                     <Button size="sm" variant="outline" disabled={abort.isPending} onClick={() => abort.mutate()}>
-                      Abort turn
+                      {t('operate.sessionDetail.abortTurn')}
                     </Button>
                   ) : (
                     <DisabledAction
-                      label="Abort turn"
-                      tip={readOnlyOps ? `Session is ${phase}` : tip}
+                      label={t('operate.sessionDetail.abortTurn')}
+                      tip={readOnlyOps
+                        ? t('operate.sessionDetail.sessionIs', { status: statusLabel(t, phase) })
+                        : tip}
                     />
                   )
                 }
@@ -287,7 +304,7 @@ export default function OperateSessionDetailPage() {
                     disabled={readOnlyOps || planMode.isPending || planActive}
                     onClick={() => planMode.mutate(true)}
                   >
-                    Enter plan
+                    {t('operate.sessionDetail.enterPlan')}
                   </Button>
                   <Button
                     size="sm"
@@ -295,7 +312,7 @@ export default function OperateSessionDetailPage() {
                     disabled={readOnlyOps || planMode.isPending || !planActive}
                     onClick={() => planMode.mutate(false)}
                   >
-                    Exit plan
+                    {t('operate.sessionDetail.exitPlan')}
                   </Button>
                 </>
               )}
@@ -308,11 +325,18 @@ export default function OperateSessionDetailPage() {
                       disabled={terminate.isPending}
                       onClick={() => terminate.mutate()}
                     >
-                      Terminate
+                      {t('operate.sessionDetail.terminate')}
                     </Button>
                   ) : (
-                    <Button size="sm" variant="destructive" disabled title={readOnlyOps ? `Session is ${phase}` : tip}>
-                      Terminate
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled
+                      title={readOnlyOps
+                        ? t('operate.sessionDetail.sessionIs', { status: statusLabel(t, phase) })
+                        : tip}
+                    >
+                      {t('operate.sessionDetail.terminate')}
                     </Button>
                   )
                 }
@@ -327,10 +351,9 @@ export default function OperateSessionDetailPage() {
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div>
-            <CardTitle>Context</CardTitle>
+            <CardTitle>{t('operate.context.title')}</CardTitle>
             <CardDescription>
-              Effective AgentState for the next model call (sys prompt, tools, window occupancy) —
-              not lifetime API spend and not the full session transcript.
+              {t('operate.context.cardDescription')}
             </CardDescription>
           </div>
           <Button
@@ -339,30 +362,39 @@ export default function OperateSessionDetailPage() {
             disabled={!canQueryContext(capabilities) || context.isLoading || context.isError}
             onClick={() => setContextOpen(true)}
           >
-            View
+            {t('operate.common.view')}
           </Button>
         </CardHeader>
         <CardContent>
           {!sessionReady || session.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
           ) : !canQueryContext(capabilities) ? (
-            <p className="text-sm text-muted-foreground">context-query not advertised by data plane.</p>
+            <p className="text-sm text-muted-foreground">{t('operate.context.notAdvertised')}</p>
           ) : context.isError ? (
-            <p className="text-sm text-red-600">Failed to load context.</p>
+            <p className="text-sm text-red-600">{t('operate.context.loadFailed')}</p>
           ) : context.isLoading || (context.isFetching && !context.data) ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
           ) : !context.data || !ctxSummary ? (
-            <p className="text-sm text-muted-foreground">No context.</p>
+            <p className="text-sm text-muted-foreground">{t('operate.context.empty')}</p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
-              {ctxSummary.isCompacted && <Badge tone="warning">compacted</Badge>}
-              {ctxSummary.planActive && <Badge tone="info">plan mode</Badge>}
+              {ctxSummary.isCompacted && <Badge tone="warning">{t('operate.status.compacted')}</Badge>}
+              {ctxSummary.planActive && <Badge tone="info">{t('operate.status.planMode')}</Badge>}
               {ctxSummary.model && <Badge tone="info">{ctxSummary.model}</Badge>}
               <span className="text-sm text-muted-foreground">
-                {ctxSummary.messageCount} effective msgs
-                {ctxSummary.toolCount ? ` · ${ctxSummary.toolCount} tools` : ''}
+                {t('operate.context.effectiveMessagesShort', {
+                  count: formatNumber(locale, ctxSummary.messageCount),
+                })}
+                {ctxSummary.toolCount
+                  ? ` · ${t('operate.context.toolsCount', { count: formatNumber(locale, ctxSummary.toolCount) })}`
+                  : ''}
                 {ctxSummary.totalTokens != null
-                  ? ` · window ${ctxSummary.totalTokens.toLocaleString()}${ctxSummary.maxTokens != null ? ` / ${ctxSummary.maxTokens.toLocaleString()}` : ''}`
+                  ? ` · ${t('operate.context.windowTokens', {
+                      tokens: formatNumber(locale, ctxSummary.totalTokens),
+                      maximum: ctxSummary.maxTokens != null
+                        ? ` / ${formatNumber(locale, ctxSummary.maxTokens)}`
+                        : '',
+                    })}`
                   : ''}
               </span>
             </div>
@@ -375,17 +407,16 @@ export default function OperateSessionDetailPage() {
       <Dialog open={contextOpen} onOpenChange={setContextOpen}>
         <DialogContent size="xl">
           <DialogHeader>
-            <DialogTitle>Context</DialogTitle>
+            <DialogTitle>{t('operate.context.title')}</DialogTitle>
             <DialogDescription>
-              Effective AgentState window (sys prompt, tools, effective messages). Window tokens are
-              latest-turn input size, not lifetime spend.
+              {t('operate.context.dialogDescription')}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <ContextPanel
               data={context.data}
               unavailableReason={
-                !canQueryContext(capabilities) ? 'context-query not advertised by data plane.' : undefined
+                !canQueryContext(capabilities) ? t('operate.context.notAdvertised') : undefined
               }
               error={context.isError}
               loading={context.isLoading}
@@ -397,19 +428,19 @@ export default function OperateSessionDetailPage() {
       {canQueryTasks(capabilities) && (
         <Card>
           <CardHeader>
-            <CardTitle>Todo</CardTitle>
+            <CardTitle>{t('operate.sessionDetail.todo.title')}</CardTitle>
           </CardHeader>
           <CardContent>
             {tasks.isError ? (
-              <p className="text-sm text-muted-foreground">Todo endpoint unavailable.</p>
+              <p className="text-sm text-muted-foreground">{t('operate.sessionDetail.todo.unavailable')}</p>
             ) : tasks.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
             ) : taskList.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No todos.</p>
+              <p className="text-sm text-muted-foreground">{t('operate.sessionDetail.todo.empty')}</p>
             ) : (
               <div className="space-y-2.5">
-                {taskList.map((t, i) => {
-                  const row = t as Record<string, unknown>;
+                {taskList.map((task, i) => {
+                  const row = task as Record<string, unknown>;
                   return (
                     <div key={String(row.taskId || row.id || i)} className="rounded-lg border border-border px-4 py-3 text-sm">
                       <div className="font-medium">{String(row.subject || row.name || row.taskId || row.id || `task-${i}`)}</div>
@@ -429,25 +460,25 @@ export default function OperateSessionDetailPage() {
       {canQuerySubagentTasks(capabilities) && (
         <Card>
           <CardHeader>
-            <CardTitle>Background tasks</CardTitle>
+            <CardTitle>{t('operate.sessionDetail.backgroundTasks.title')}</CardTitle>
           </CardHeader>
           <CardContent>
             {subagentTasks.isError ? (
-              <p className="text-sm text-muted-foreground">Background tasks unavailable.</p>
+              <p className="text-sm text-muted-foreground">{t('operate.sessionDetail.backgroundTasks.unavailable')}</p>
             ) : subagentTasks.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
             ) : bgTaskList.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No background subagent tasks.</p>
+              <p className="text-sm text-muted-foreground">{t('operate.sessionDetail.backgroundTasks.empty')}</p>
             ) : (
               <div className="space-y-2.5">
-                {bgTaskList.map((t, i) => (
-                  <div key={String(t.taskId || t.id || i)} className="rounded-lg border border-border px-4 py-3 text-sm">
+                {bgTaskList.map((task, i) => (
+                  <div key={String(task.taskId || task.id || i)} className="rounded-lg border border-border px-4 py-3 text-sm">
                     <div className="font-medium">
-                      {String(t.subject || t.subagentId || t.taskId || t.id || `bg-${i}`)}
+                      {String(task.subject || task.subagentId || task.taskId || task.id || `bg-${i}`)}
                     </div>
                     <div className="mt-0.5 text-sm text-muted-foreground">
-                      {String(t.status || t.state || '')}
-                      {t.completed ? ' · completed' : ''}
+                      {String(task.status || task.state || '')}
+                      {task.completed ? ` · ${statusLabel(t, 'completed')}` : ''}
                     </div>
                   </div>
                 ))}
@@ -485,10 +516,14 @@ export default function OperateSessionDetailPage() {
             onClick={() => setCommandsOpen((v) => !v)}
           >
             <span className="font-mono text-muted-foreground">{commandsOpen ? '▾' : '▸'}</span>
-            <CardTitle className="text-base">Commands</CardTitle>
+            <CardTitle className="text-base">{t('operate.sessionDetail.commands.title')}</CardTitle>
             <span className="text-sm text-muted-foreground">
-              {(commands.data?.commands || []).length} command
-              {(commands.data?.commands || []).length === 1 ? '' : 's'}
+              {t(
+                (commands.data?.commands || []).length === 1
+                  ? 'operate.sessionDetail.commands.countOne'
+                  : 'operate.sessionDetail.commands.countMany',
+                { count: formatNumber(locale, (commands.data?.commands || []).length) },
+              )}
             </span>
           </button>
           {commandsOpen && (
@@ -496,10 +531,10 @@ export default function OperateSessionDetailPage() {
               {(commands.data?.commands || []).map((c) => (
                 <div key={c.id} className="rounded-lg border border-border px-4 py-3 text-sm">
                   <div className="font-medium">
-                    {c.command} · {c.status}
+                    {c.command} · {statusLabel(t, c.status)}
                   </div>
                   <div className="mt-0.5 text-muted-foreground">
-                    {new Date(c.requestedAt).toLocaleString()}
+                    {formatDateTime(locale, c.requestedAt)}
                     {c.error ? ` · ${c.error}` : ''}
                   </div>
                 </div>

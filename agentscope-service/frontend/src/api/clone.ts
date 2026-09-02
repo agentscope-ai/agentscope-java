@@ -16,6 +16,7 @@
 
 import { getToken } from './auth';
 import type { AgentDefinition } from './agents';
+import { readApiError } from './http';
 
 function authHeaders(): Record<string, string> {
   return {
@@ -39,8 +40,7 @@ export async function cloneAgent(
     body: JSON.stringify(req),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `${res.status}`);
-    throw new Error(msg || `Clone failed: ${res.status}`);
+    throw await readApiError(res, 'Clone failed');
   }
   return res.json();
 }

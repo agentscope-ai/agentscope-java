@@ -15,6 +15,7 @@
  */
 
 import { getToken } from './auth';
+import { readApiError } from './http';
 
 function authHeaders(): Record<string, string> {
   const token = getToken();
@@ -44,7 +45,7 @@ export interface MarketplaceSkill {
 
 export async function listMarketplaces(): Promise<Marketplace[]> {
   const res = await fetch('/api/marketplaces', { headers: authHeaders() });
-  if (!res.ok) throw new Error('Failed to list marketplaces');
+  if (!res.ok) throw await readApiError(res, 'Failed to list marketplaces');
   return res.json();
 }
 
@@ -58,7 +59,7 @@ export async function createMarketplace(body: {
     headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw await readApiError(res, 'Failed to create marketplace');
   return res.json();
 }
 
@@ -67,14 +68,16 @@ export async function deleteMarketplace(id: string): Promise<void> {
     method: 'DELETE',
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 204) throw new Error(await res.text());
+  if (!res.ok && res.status !== 204) {
+    throw await readApiError(res, 'Failed to delete marketplace');
+  }
 }
 
 export async function browseMarketplaceSkills(id: string): Promise<MarketplaceSkill[]> {
   const res = await fetch(`/api/marketplaces/${encodeURIComponent(id)}/skills`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw await readApiError(res, 'Failed to browse marketplace skills');
   return res.json();
 }
 
@@ -92,5 +95,5 @@ export async function installMarketplaceSkill(
       body: JSON.stringify({ marketplaceId, skillName, version }),
     },
   );
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw await readApiError(res, 'Failed to install marketplace skill');
 }

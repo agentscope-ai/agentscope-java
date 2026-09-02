@@ -16,9 +16,23 @@
 
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { type TranslationKey, useT } from '@/i18n';
+
+const STATUS_LABELS = new Map<string, TranslationKey>([
+  ['active', 'status.active'],
+  ['healthy', 'status.healthy'],
+  ['ready', 'status.ready'],
+  ['terminated', 'status.terminated'],
+  ['failed', 'status.failed'],
+  ['unhealthy', 'status.unhealthy'],
+  ['compressing', 'status.compressing'],
+  ['pending', 'status.pending'],
+]);
 
 export function StatusBadge({ status, className }: { status?: string; className?: string }) {
+  const t = useT();
   const s = (status || '').toLowerCase();
+  const labelKey = STATUS_LABELS.get(s);
   const tone =
     s === 'active' || s === 'healthy' || s === 'ready'
       ? 'success'
@@ -29,7 +43,7 @@ export function StatusBadge({ status, className }: { status?: string; className?
           : 'default';
   return (
     <Badge tone={tone} className={cn('uppercase tracking-wide', className)}>
-      {status || 'unknown'}
+      {status ? (labelKey ? t(labelKey) : status) : t('status.unknown')}
     </Badge>
   );
 }

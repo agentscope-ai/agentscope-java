@@ -18,8 +18,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { resolveApiErrorMessage } from '@/api/errors';
+import { useI18n } from '@/i18n';
 import { fetchSessionEvents, type SessionEventItem } from '../api';
 import { formatToolInput } from '../lib/groupMessagesByTurns';
+import { formatDateTime, formatNumber, messageRoleLabel } from '../i18n';
 
 const PAGE_SIZE = 50;
 
@@ -28,6 +31,7 @@ function eventKey(e: SessionEventItem, i: number) {
 }
 
 function EventRow({ event: e }: { event: SessionEventItem }) {
+  const { locale, t } = useI18n();
   const [open, setOpen] = useState(false);
   const hasDetail = !!(e.toolInput || e.toolOutput || (e.content && e.content.length > 120));
   return (
@@ -42,15 +46,18 @@ function EventRow({ event: e }: { event: SessionEventItem }) {
           <span className="font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
         )}
         <span className="font-mono tabular-nums text-muted-foreground">#{e.seq}</span>
-        <Badge tone="default">{e.eventType || 'event'}</Badge>
-        {e.role && <Badge tone="info">{e.role}</Badge>}
+        <Badge tone="default">{e.eventType || t('operate.events.event')}</Badge>
+        {e.role && <Badge tone="info">{messageRoleLabel(t, e.role)}</Badge>}
         {e.toolName && <Badge tone="warning">{e.toolName}</Badge>}
         {e.occurredAt && (
-          <span className="text-muted-foreground">{new Date(e.occurredAt).toLocaleString()}</span>
+          <span className="text-muted-foreground">{formatDateTime(locale, e.occurredAt)}</span>
         )}
         {(e.tokensIn || e.tokensOut) && (
           <span className="font-mono text-[11px] text-muted-foreground">
-            tok {e.tokensIn ?? 0}/{e.tokensOut ?? 0}
+            {t('operate.events.tokenCounts', {
+              input: formatNumber(locale, e.tokensIn ?? 0),
+              output: formatNumber(locale, e.tokensOut ?? 0),
+            })}
           </span>
         )}
         {!open && (
@@ -68,7 +75,7 @@ function EventRow({ event: e }: { event: SessionEventItem }) {
           )}
           {e.toolInput != null && (
             <div>
-              <div className="text-xs font-medium uppercase text-muted-foreground">toolInput</div>
+              <div className="text-xs font-medium uppercase text-muted-foreground">{t('operate.events.toolInput')}</div>
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 px-3 py-2 font-mono text-[12px]">
                 {formatToolInput(e.toolInput)}
               </pre>
@@ -76,7 +83,7 @@ function EventRow({ event: e }: { event: SessionEventItem }) {
           )}
           {e.toolOutput && (
             <div>
-              <div className="text-xs font-medium uppercase text-muted-foreground">toolOutput</div>
+              <div className="text-xs font-medium uppercase text-muted-foreground">{t('operate.events.toolOutput')}</div>
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 px-3 py-2 font-mono text-[12px]">
                 {e.toolOutput}
               </pre>
@@ -89,11 +96,12 @@ function EventRow({ event: e }: { event: SessionEventItem }) {
 }
 
 export function SessionEventsPanel({ sessionId, enabled }: { sessionId: string; enabled: boolean }) {
+  const { locale, t } = useI18n();
   const [events, setEvents] = useState<SessionEventItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [loadedOlder, setLoadedOlder] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [hasMore, setHasMore] = useState(false);
 
   const loadNewest = useCallback(async () => {
@@ -106,7 +114,7 @@ export function SessionEventsPanel({ sessionId, enabled }: { sessionId: string; 
       setEvents(list);
       setHasMore(list.length >= PAGE_SIZE);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -134,7 +142,7 @@ export function SessionEventsPanel({ sessionId, enabled }: { sessionId: string; 
       setLoadedOlder(true);
       setHasMore(older.length >= PAGE_SIZE);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err);
     } finally {
       setLoadingOlder(false);
     }
@@ -158,23 +166,26 @@ export function SessionEventsPanel({ sessionId, enabled }: { sessionId: string; 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Events</CardTitle>
+        <CardTitle>{t('operate.events.title')}</CardTitle>
         <CardDescription>
-          Optional Level-2 timeline from the control-plane store (ASDP / event reporting). Message
-          history above does not depend on this feed.
+          {t('operate.events.description')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2.5">
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error != null && (
+          <p className="text-sm text-red-600">
+            {resolveApiErrorMessage(error, t('operate.events.loadFailed'))}
+          </p>
+        )}
         {loading && events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading events…</p>
+          <p className="text-sm text-muted-foreground">{t('operate.events.loading')}</p>
         ) : events.length === 0 ? (
           <div className="space-y-1 text-sm text-muted-foreground">
-            <p>No Level-2 events in the control-plane store for this session.</p>
+            <p>{t('operate.events.empty')}</p>
             <p>
-              Events are pushed asynchronously (ASDP / event reporting). Paw defaults to{' '}
+              {t('operate.events.emptyHintBefore')}{' '}
               <code className="rounded bg-muted px-1 py-0.5 text-[12px]">claw.aistio.enable-events: false</code>
-              , so Operate shows Messages via transcript / on-demand query instead.
+              {t('operate.events.emptyHintAfter')}
             </p>
           </div>
         ) : (
@@ -182,11 +193,16 @@ export function SessionEventsPanel({ sessionId, enabled }: { sessionId: string; 
             <div className="flex flex-wrap items-center gap-2">
               {hasMore && (
                 <Button size="sm" variant="outline" disabled={loadingOlder} onClick={() => void loadOlder()}>
-                  {loadingOlder ? 'Loading…' : 'Load older'}
+                  {loadingOlder ? t('common.loading') : t('operate.pagination.loadOlder')}
                 </Button>
               )}
               <span className="text-sm text-muted-foreground">
-                {events.length} event{events.length === 1 ? '' : 's'} loaded
+                {t(
+                  events.length === 1
+                    ? 'operate.events.loadedOne'
+                    : 'operate.events.loadedMany',
+                  { count: formatNumber(locale, events.length) },
+                )}
               </span>
             </div>
             <div className="max-h-80 space-y-2.5 overflow-auto">

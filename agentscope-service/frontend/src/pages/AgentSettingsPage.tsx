@@ -18,15 +18,21 @@ import React from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AgentDefinition } from '../api/agents';
 import AgentSettingsForm from '../components/AgentSettingsForm';
+import { useT } from '@/i18n';
 
 export default function AgentSettingsPage() {
+  const t = useT();
   const { agent, refreshAgent } = useOutletContext<{
     agentId: string;
     agent: AgentDefinition | null;
     refreshAgent?: () => void | Promise<unknown>;
   }>();
   if (!agent) {
-    return <div style={{ padding: '24px 28px', color: '#64748b' }}>Loading…</div>;
+    return (
+      <div style={{ padding: '24px 28px', color: '#64748b' }}>
+        {t('common.loading')}
+      </div>
+    );
   }
   return <AgentSettingsForm agent={agent} onSaved={refreshAgent} />;
 }

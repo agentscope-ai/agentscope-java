@@ -16,6 +16,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { FileNode, tree as fetchTree } from '../api/workspace';
+import { resolveApiErrorMessage } from '@/api/errors';
+import { useT } from '../i18n';
 
 interface Props {
   agentId: string;
@@ -162,6 +164,7 @@ function NodeView({ node, depth, selectedPath, onSelect, expanded, toggle }: Nod
 }
 
 export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, refreshKey }: Props) {
+  const t = useT();
   const [nodes, setNodes] = useState<FileNode[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -182,7 +185,7 @@ export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, ref
         return next;
       });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load files');
+      setErr(resolveApiErrorMessage(e, t('workspace.files.loadFailed')));
     } finally {
       setLoading(false);
     }
@@ -212,38 +215,48 @@ export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, ref
   return (
     <div style={S.root}>
       <div style={S.header}>
-        <span style={{ flex: 1 }}>Files</span>
+        <span style={{ flex: 1 }}>{t('workspace.files.title')}</span>
         <button
           type="button"
           style={S.refreshBtn}
           onClick={() => reload()}
           disabled={loading}
-          title="Refresh file tree"
+          title={t('workspace.files.refreshTitle')}
         >
-          {loading ? '…' : '↻'} <span style={{ fontSize: '0.7rem' }}>refresh</span>
+          {loading ? '…' : '↻'} <span style={{ fontSize: '0.7rem' }}>{t('workspace.files.refresh')}</span>
         </button>
       </div>
       {hiddenCount > 0 && (
         <div style={S.subbar}>
           <span>
             {showHidden
-              ? `${hiddenCount} hidden item${hiddenCount === 1 ? '' : 's'} shown`
-              : `${hiddenCount} item${hiddenCount === 1 ? '' : 's'} hidden`}
+              ? t(
+                  hiddenCount === 1
+                    ? 'workspace.files.hiddenShownOne'
+                    : 'workspace.files.hiddenShownMany',
+                  { count: hiddenCount },
+                )
+              : t(
+                  hiddenCount === 1
+                    ? 'workspace.files.hiddenOne'
+                    : 'workspace.files.hiddenMany',
+                  { count: hiddenCount },
+                )}
           </span>
           <button
             type="button"
             style={S.miniToggle}
             onClick={() => setShowHidden(s => !s)}
-            title={showHidden ? 'Hide internal files' : 'Show internal/dotfile entries'}
+            title={showHidden ? t('workspace.files.hideInternalTitle') : t('workspace.files.showInternalTitle')}
           >
-            {showHidden ? '👁 hide' : '👁 show all'}
+            {showHidden ? `👁 ${t('workspace.files.hide')}` : `👁 ${t('workspace.files.showAll')}`}
           </button>
         </div>
       )}
       <div style={S.scroll}>
         {err && <div style={S.err}>{err}</div>}
         {!err && list.length === 0 && (
-          <div style={{ padding: 14, fontSize: '0.88rem', color: '#94a3b8' }}>Empty workspace.</div>
+          <div style={{ padding: 14, fontSize: '0.88rem', color: '#94a3b8' }}>{t('workspace.files.empty')}</div>
         )}
         {list.map(n => (
           <NodeView

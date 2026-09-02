@@ -15,7 +15,9 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { resolveApiErrorMessage } from '@/api/errors';
 import { UserProfile, getProfile, changePassword } from '../api/auth';
+import { useT } from '../i18n';
 
 const S: Record<string, React.CSSProperties> = {
   page: { padding: '36px 40px', maxWidth: 760 },
@@ -54,8 +56,9 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function ProfilePage() {
+  const t = useT();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<unknown>(null);
 
   const [curPwd, setCurPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
@@ -64,44 +67,48 @@ export default function ProfilePage() {
   const [pwdOk, setPwdOk] = useState(false);
 
   useEffect(() => {
-    getProfile().then(setProfile).catch(e => setLoadErr(e.message));
+    getProfile().then(setProfile).catch(setLoadErr);
   }, []);
 
   async function handleChangePwd() {
     setPwdErr(null);
     setPwdOk(false);
-    if (newPwd.length < 6) { setPwdErr('Password must be ≥ 6 characters'); return; }
-    if (newPwd !== conPwd) { setPwdErr('Passwords do not match'); return; }
+    if (newPwd.length < 6) { setPwdErr(t('teams.admin.passwordMin')); return; }
+    if (newPwd !== conPwd) { setPwdErr(t('teams.profile.passwordMismatch')); return; }
     try {
       await changePassword(curPwd, newPwd);
       setPwdOk(true);
       setCurPwd(''); setNewPwd(''); setConPwd('');
     } catch (e: unknown) {
-      setPwdErr(e instanceof Error ? e.message : 'Error');
+      setPwdErr(resolveApiErrorMessage(e, t('teams.profile.error')));
     }
   }
 
   return (
     <div style={S.page}>
-      <h2 style={S.title}>My Profile</h2>
-      {loadErr && <p style={S.error}>{loadErr}</p>}
+      <h2 style={S.title}>{t('teams.profile.title')}</h2>
+      {loadErr != null && (
+        <p style={S.error}>
+          {resolveApiErrorMessage(loadErr, t('teams.admin.loadFailed'))}
+        </p>
+      )}
 
       <div style={S.card}>
-        <span style={S.cardLabel}>Account</span>
+        <span style={S.cardLabel}>{t('teams.profile.account')}</span>
         {profile && (
           <>
             <div style={S.row}>
-              <span style={S.rowLabel}>Username</span>
+              <span style={S.rowLabel}>{t('teams.admin.username')}</span>
               <span style={{ ...S.rowValue, fontWeight: 600 }}>{profile.username}</span>
             </div>
             <div style={S.row}>
-              <span style={S.rowLabel}>User ID</span>
+              <span style={S.rowLabel}>{t('teams.admin.userId')}</span>
               <span style={{ ...S.rowValue, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.88rem', color: '#64748b' }}>
                 {profile.userId}
               </span>
             </div>
             <div style={S.row}>
-              <span style={S.rowLabel}>Role</span>
+              <span style={S.rowLabel}>{t('teams.profile.role')}</span>
               <span>
                 {profile.roles.map(r => (
                   <span
@@ -113,7 +120,7 @@ export default function ProfilePage() {
                       border: r === 'admin' ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
                     }}
                   >
-                    {r}
+                    {r === 'admin' ? t('teams.role.admin') : r === 'user' ? t('teams.role.user') : r}
                   </span>
                 ))}
               </span>
@@ -123,24 +130,24 @@ export default function ProfilePage() {
       </div>
 
       <div style={S.card}>
-        <span style={S.cardLabel}>Change Password</span>
+        <span style={S.cardLabel}>{t('teams.profile.changePassword')}</span>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
           <div>
-            <label style={S.fieldLabel}>Current</label>
+            <label style={S.fieldLabel}>{t('teams.profile.currentPassword')}</label>
             <input style={S.input} type="password" value={curPwd} onChange={e => setCurPwd(e.target.value)} />
           </div>
           <div>
-            <label style={S.fieldLabel}>New</label>
-            <input style={S.input} type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="≥ 6 chars" />
+            <label style={S.fieldLabel}>{t('teams.profile.newPassword')}</label>
+            <input style={S.input} type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder={t('teams.profile.passwordPlaceholder')} />
           </div>
           <div>
-            <label style={S.fieldLabel}>Confirm</label>
+            <label style={S.fieldLabel}>{t('teams.profile.confirmPassword')}</label>
             <input style={S.input} type="password" value={conPwd} onChange={e => setConPwd(e.target.value)} />
           </div>
         </div>
         {pwdErr && <p style={S.error}>{pwdErr}</p>}
-        {pwdOk && <p style={S.success}>Password changed successfully!</p>}
-        <button style={S.saveBtn} onClick={handleChangePwd}>Update Password</button>
+        {pwdOk && <p style={S.success}>{t('teams.profile.passwordChanged')}</p>}
+        <button style={S.saveBtn} onClick={handleChangePwd}>{t('teams.profile.updatePassword')}</button>
       </div>
     </div>
   );

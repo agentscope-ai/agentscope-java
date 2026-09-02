@@ -19,6 +19,7 @@ import { useOutletContext } from 'react-router-dom';
 import SkillsWorkspacePanel from '../components/SkillsWorkspacePanel';
 import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
 import type { AgentDefinition } from '../api/agents';
+import { useT } from '@/i18n';
 
 const helpStyle: React.CSSProperties = {
   padding: '8px 24px',
@@ -29,6 +30,7 @@ const helpStyle: React.CSSProperties = {
 };
 
 export default function AgentSkillsPage() {
+  const t = useT();
   const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
   const [refreshKey, setRefreshKey] = useState(0);
   const linked = agent?.workspaceId;
@@ -39,8 +41,7 @@ export default function AgentSkillsPage() {
         <LinkedWorkspaceBanner workspaceId={linked} resource="skills" />
       ) : (
         <div style={helpStyle}>
-          Manage skills under this agent&apos;s private workspace. For shared packs, create a Workspace
-          and link it in Settings.
+          {t('managed.agentSkills.privateWorkspaceHint')}
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>

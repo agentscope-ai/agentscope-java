@@ -19,6 +19,7 @@ import { useOutletContext } from 'react-router-dom';
 import SubagentPanel from '../components/SubagentPanel';
 import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
 import type { AgentDefinition } from '../api/agents';
+import { useT } from '@/i18n';
 
 const helpStyle: React.CSSProperties = {
   padding: '8px 24px',
@@ -29,6 +30,7 @@ const helpStyle: React.CSSProperties = {
 };
 
 export default function AgentSubagentsPage() {
+  const t = useT();
   const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
   const linked = agent?.workspaceId;
 
@@ -38,8 +40,9 @@ export default function AgentSubagentsPage() {
         <LinkedWorkspaceBanner workspaceId={linked} resource="subagents" />
       ) : (
         <div style={helpStyle}>
-          Subagents are stored as <code>subagents/&lt;name&gt;.md</code> with YAML frontmatter. Link a
-          Workspace in Settings to share them across agents.
+          {t('managed.agentSubagents.storageHint', {
+            path: 'subagents/<name>.md',
+          })}
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>

@@ -16,6 +16,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { type TranslationKey, useT } from '../i18n';
 
 const TAB_FOR: Record<string, string> = {
   skills: 'skills',
@@ -23,6 +24,14 @@ const TAB_FOR: Record<string, string> = {
   subagents: 'subagents',
   files: 'agentsmd',
   settings: 'agentsmd',
+};
+
+const RESOURCE_LABELS: Record<string, TranslationKey> = {
+  skills: 'linkedWorkspace.resource.skills',
+  tools: 'linkedWorkspace.resource.tools',
+  subagents: 'linkedWorkspace.resource.subagents',
+  files: 'linkedWorkspace.resource.files',
+  settings: 'linkedWorkspace.resource.settings',
 };
 
 export default function LinkedWorkspaceBanner({
@@ -34,6 +43,7 @@ export default function LinkedWorkspaceBanner({
   workspaceName?: string;
   resource: 'skills' | 'tools' | 'subagents' | 'files' | 'settings';
 }) {
+  const t = useT();
   const label = workspaceName || workspaceId;
   const tab = TAB_FOR[resource] || 'agentsmd';
   const href = `/workspaces/${encodeURIComponent(workspaceId)}?tab=${encodeURIComponent(tab)}`;
@@ -52,8 +62,8 @@ export default function LinkedWorkspaceBanner({
       }}
     >
       <span>
-        Linked to workspace <strong>{label}</strong>. This page shows the agent snapshot
-        (read-only). Edit shared {resource} in the Workspace so all linked agents stay consistent.
+        {t('linkedWorkspace.prefix')} <strong>{label}</strong>
+        {t('linkedWorkspace.suffix', { resource: t(RESOURCE_LABELS[resource]) })}
       </span>
       <Link
         to={href}
@@ -67,7 +77,7 @@ export default function LinkedWorkspaceBanner({
           background: '#ffffff',
         }}
       >
-        Edit in Workspace →
+        {t('linkedWorkspace.edit')} →
       </Link>
     </div>
   );

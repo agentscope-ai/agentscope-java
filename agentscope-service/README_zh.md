@@ -167,10 +167,13 @@ make test
 
 ### 构建或开发 Console
 
+Console 需要 Node.js 22.13 或更高版本。提交前请运行完整验证命令；它会检查中英字典和界面硬编码、
+执行 lint 与测试，并重新生成跟踪在 `aistio/ui` 下的静态资源。
+
 ```bash
 cd agentscope-service/frontend
-npm install
-npm run build   # 静态资源输出到 ../aistio/ui
+npm ci
+npm run verify  # 验证源码并将静态资源输出到 ../aistio/ui
 
 npm run dev     # Vite HMR，/api 代理到 Gateway
 ```
