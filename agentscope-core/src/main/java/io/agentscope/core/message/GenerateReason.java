@@ -62,6 +62,16 @@ public enum GenerateReason {
     PERMISSION_ASKING,
 
     /**
+     * The model asked the user for input via a tool whose {@code checkPermissions()} returned
+     * {@code PermissionDecision.askUser(...)} (e.g. the built-in {@code ask_user} tool).
+     *
+     * <p>The returned Msg contains the pending ToolUseBlock(s) whose input carries the questions.
+     * The caller resumes by issuing a second {@code agent.call(...)} whose message carries
+     * {@code List<AskUserResult>} under {@code Msg.METADATA_ASK_USER_RESULTS}.
+     */
+    ASK_USER_ASKING,
+
+    /**
      * A middleware requested the agent to pause via {@code RequestStopEvent}.
      *
      * <p>The caller resumes by issuing a second {@code agent.call()} with no arguments — the
