@@ -23,9 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -52,7 +51,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>The stager keeps no cross-call state: each invocation rebuilds the white-list of
  * directories that should remain under {@code .skills-cache}, materialises any files whose
- * SHA-256 has changed, and deletes orphan directories not present in the white-list.
+ * bytes have changed, and deletes orphan directories not present in the white-list.
  *
  * <p>Workspace-native skills (those produced by {@link WorkspaceSkillRepository}) are NOT
  * staged: they already live under {@code <wsRoot>/skills/} (or are produced lazily from the
@@ -200,17 +199,28 @@ public final class MarketplaceStager {
 
     private void writeIfChanged(Path target, byte[] bytes) throws IOException {
         Files.createDirectories(target.getParent());
-        if (Files.exists(target)) {
-            byte[] existing = Files.readAllBytes(target);
-            if (sha256(existing).equals(sha256(bytes))) {
-                return;
-            }
+        if (contentUnchanged(target, bytes)) {
+            return;
         }
         Files.write(target, bytes);
         // Heuristic exec-bit recovery: the ingestion path turns files into Strings and discards
         // POSIX mode, so we re-derive +x from a shebang / known script extension. Not a true
         // mode preservation — pure-static skill assets (.json/.md/.txt) stay 644.
         maybeMarkExecutable(target, bytes);
+    }
+
+    /**
+     * True when {@code target} already holds {@code bytes}. Length is checked first so a
+     * restage that cannot match does not read the whole file. Package-private for tests.
+     */
+    static boolean contentUnchanged(Path target, byte[] bytes) throws IOException {
+        if (!Files.exists(target)) {
+            return false;
+        }
+        if (Files.size(target) != bytes.length) {
+            return false;
+        }
+        return Arrays.equals(Files.readAllBytes(target), bytes);
     }
 
     /**
@@ -346,21 +356,6 @@ public final class MarketplaceStager {
             return Base64.getDecoder().decode(content.substring("base64:".length()));
         }
         return content.getBytes(StandardCharsets.UTF_8);
-    }
-
-    private static String sha256(byte[] bytes) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            md.update(bytes);
-            byte[] hash = md.digest();
-            StringBuilder sb = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
     }
 
     /**
