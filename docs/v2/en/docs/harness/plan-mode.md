@@ -61,7 +61,7 @@ sequenceDiagram
     A->>FS: plan_write to plans/PLAN.md
     A->>H: plan_exit → HITL confirmation
     H-->>A: ConfirmResult(true)
-    A->>A: enter execution phase; all tools allowed
+    A->>A: enter execution phase: all tools allowed
 ```
 
 Any non-whitelisted tool call (e.g. `write_file`, or `execute` unless you [opt in](#allowing-the-shell-during-the-plan-phase-opt-in)) during the plan phase is rejected immediately with something like:
