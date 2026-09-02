@@ -89,6 +89,7 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
                 }
                 case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
                 case AGENT_CONVERSATION -> result.addAll(formatAgentConversation(group.messages));
+                case BYPASS -> result.addAll(messageConverter.convert(group.messages));
             }
         }
 
@@ -109,7 +110,8 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
     private enum GroupType {
         SYSTEM,
         TOOL_SEQUENCE,
-        AGENT_CONVERSATION
+        AGENT_CONVERSATION,
+        BYPASS
     }
 
     private static class MessageGroup {
@@ -158,6 +160,9 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
 
     /** Determine message type for grouping. */
     private GroupType determineMessageType(Msg msg) {
+        if (shouldBypassHistory(msg)) {
+            return GroupType.BYPASS;
+        }
         if (msg.getRole() == MsgRole.SYSTEM
                 && !msg.getContent().isEmpty()
                 && !(msg.getContent().get(0) instanceof ToolResultBlock)) {

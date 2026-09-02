@@ -17,15 +17,19 @@ package io.agentscope.extensions.model.dashscope.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,9 +37,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/**
- * Tests for cache_control support in DashScope formatter.
- */
+/** Tests DashScope content-block prompt cache markers. */
 class DashScopeCacheControlTest {
 
     private static final Map<String, String> EPHEMERAL = Map.of("type", "ephemeral");
@@ -49,257 +51,260 @@ class DashScopeCacheControlTest {
     }
 
     @Nested
-    @DisplayName("applyCacheControl - automatic strategy")
-    class ApplyCacheControlTest {
+    @DisplayName("automatic cache strategy")
+    class AutomaticCacheStrategyTest {
 
         @Test
-        @DisplayName("should add cache_control to system and last message")
-        void systemAndLastMessage() {
-            List<DashScopeMessage> messages = new ArrayList<>();
-            messages.add(
-                    DashScopeMessage.builder().role("system").content("You are helpful.").build());
-            messages.add(DashScopeMessage.builder().role("user").content("Hello").build());
-            messages.add(DashScopeMessage.builder().role("assistant").content("Hi").build());
-            messages.add(DashScopeMessage.builder().role("user").content("Question").build());
+        void marksFirstSystemAndLastCacheableNonSystemMessage() {
+            List<DashScopeMessage> messages =
+                    new ArrayList<>(
+                            List.of(
+                                    message("system", "stable system"),
+                                    message("system", "dynamic system"),
+                                    message("user", "question"),
+                                    message("assistant", "answer")));
 
-            formatter.applyCacheControl(messages);
+            formatter.applyCacheControl(messages, true);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertNull(messages.get(1).getCacheControl());
-            assertNull(messages.get(2).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(3).getCacheControl());
+            assertEquals(EPHEMERAL, lastPart(messages.get(0)).getCacheControl());
+            assertNoCacheControl(messages.get(1));
+            assertNoCacheControl(messages.get(2));
+            assertEquals(EPHEMERAL, lastPart(messages.get(3)).getCacheControl());
+            messages.forEach(message -> assertNull(message.getCacheControl()));
         }
 
         @Test
-        @DisplayName("should handle no system message - only last message")
-        void noSystemMessage() {
-            List<DashScopeMessage> messages = new ArrayList<>();
-            messages.add(DashScopeMessage.builder().role("user").content("Hello").build());
-            messages.add(DashScopeMessage.builder().role("assistant").content("Hi").build());
-
-            formatter.applyCacheControl(messages);
-
-            assertNull(messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
-        }
-
-        @Test
-        @DisplayName("should handle empty list without error")
-        void emptyList() {
-            List<DashScopeMessage> messages = new ArrayList<>();
-            formatter.applyCacheControl(messages);
-            // No exception thrown
-        }
-
-        @Test
-        @DisplayName("should handle null list without error")
-        void nullList() {
-            formatter.applyCacheControl(null);
-            // No exception thrown
-        }
-
-        @Test
-        @DisplayName("should handle single system message (both system and last)")
-        void singleSystemMessage() {
-            List<DashScopeMessage> messages = new ArrayList<>();
-            messages.add(
-                    DashScopeMessage.builder().role("system").content("You are helpful.").build());
-
-            formatter.applyCacheControl(messages);
-
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-        }
-
-        @Test
-        @DisplayName("should not overwrite manually marked cache_control")
-        void manuallyMarkedNotOverridden() {
-            Map<String, String> customCacheControl = Map.of("type", "custom");
-
-            List<DashScopeMessage> messages = new ArrayList<>();
-            messages.add(
-                    DashScopeMessage.builder()
-                            .role("system")
-                            .content("System")
-                            .cacheControl(customCacheControl)
-                            .build());
-            messages.add(DashScopeMessage.builder().role("user").content("User").build());
-
-            formatter.applyCacheControl(messages);
-
-            // System message keeps its custom cache_control
-            assertEquals(customCacheControl, messages.get(0).getCacheControl());
-            // Last message gets ephemeral
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
-        }
-
-        @Test
-        @DisplayName("should not overwrite last message with existing cache_control")
-        void lastMessageManuallyMarkedNotOverridden() {
-            Map<String, String> customCacheControl = Map.of("type", "custom");
-
-            List<DashScopeMessage> messages = new ArrayList<>();
-            messages.add(DashScopeMessage.builder().role("system").content("System").build());
-            messages.add(
+        void automaticFalseKeepsOnlyExplicitMarkers() {
+            DashScopeMessage system = message("system", "system");
+            DashScopeMessage explicit =
                     DashScopeMessage.builder()
                             .role("user")
-                            .content("User")
-                            .cacheControl(customCacheControl)
-                            .build());
+                            .content("explicit")
+                            .cacheControl(Map.of("type", "custom"))
+                            .build();
+            DashScopeMessage last = message("assistant", "last");
 
-            formatter.applyCacheControl(messages);
+            formatter.applyCacheControl(new ArrayList<>(List.of(system, explicit, last)), false);
 
-            // System message gets ephemeral
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            // Last message keeps its custom cache_control
-            assertEquals(customCacheControl, messages.get(1).getCacheControl());
+            assertNoCacheControl(system);
+            assertEquals(Map.of("type", "custom"), lastPart(explicit).getCacheControl());
+            assertNull(explicit.getCacheControl());
+            assertNoCacheControl(last);
         }
 
         @Test
-        @DisplayName("should handle multiple system messages")
-        void multipleSystemMessages() {
+        void rejectsMoreThanFourExplicitMarkers() {
             List<DashScopeMessage> messages = new ArrayList<>();
-            messages.add(DashScopeMessage.builder().role("system").content("System 1").build());
-            messages.add(DashScopeMessage.builder().role("system").content("System 2").build());
-            messages.add(DashScopeMessage.builder().role("user").content("User").build());
+            for (int i = 0; i < 5; i++) {
+                DashScopeContentPart part =
+                        DashScopeContentPart.builder()
+                                .type("text")
+                                .text("part-" + i)
+                                .cacheControl(EPHEMERAL)
+                                .build();
+                messages.add(
+                        DashScopeMessage.builder()
+                                .role("user")
+                                .content(new ArrayList<>(List.of(part)))
+                                .build());
+            }
 
-            formatter.applyCacheControl(messages);
+            IllegalArgumentException error =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> formatter.applyCacheControl(messages, false));
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(2).getCacheControl());
+            assertTrue(error.getMessage().contains("at most 4"));
+        }
+
+        @Test
+        void handlesNullAndEmptyLists() {
+            formatter.applyCacheControl(null, true);
+            formatter.applyCacheControl(List.of(), true);
         }
     }
 
     @Nested
-    @DisplayName("metadata-based cache_control marking")
-    class MetadataMarkingTest {
+    @DisplayName("wire format")
+    class WireFormatTest {
 
         @Test
-        @DisplayName("should set cache_control from Msg metadata")
-        void metadataMarking() {
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
-            Msg msg =
-                    Msg.builder()
-                            .role(MsgRole.USER)
-                            .textContent("Important context")
-                            .metadata(metadata)
-                            .build();
+        void serializesMarkerInsideTextContentBlockOnly() {
+            List<DashScopeMessage> messages =
+                    new ArrayList<>(List.of(message("system", "You are helpful")));
 
-            List<DashScopeMessage> result = formatter.format(List.of(msg));
+            formatter.applyCacheControl(messages, true);
 
-            assertEquals(1, result.size());
-            assertEquals(EPHEMERAL, result.get(0).getCacheControl());
+            JsonNode tree =
+                    JsonUtils.getJsonCodec()
+                            .fromJson(
+                                    JsonUtils.getJsonCodec().toJson(messages.get(0)),
+                                    JsonNode.class);
+            assertFalse(tree.has("cache_control"));
+            assertTrue(tree.get("content").isArray());
+            assertEquals("text", tree.at("/content/0/type").asText());
+            assertEquals("You are helpful", tree.at("/content/0/text").asText());
+            assertEquals("ephemeral", tree.at("/content/0/cache_control/type").asText());
         }
 
         @Test
-        @DisplayName("should not set cache_control when metadata flag is absent")
-        void noMetadata() {
-            Msg msg = Msg.builder().role(MsgRole.USER).textContent("Hello").build();
-
-            List<DashScopeMessage> result = formatter.format(List.of(msg));
-
-            assertEquals(1, result.size());
-            assertNull(result.get(0).getCacheControl());
-        }
-
-        @Test
-        @DisplayName("should mark explicit no-cache when metadata flag is false")
-        void metadataFalse() {
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
-            Msg msg =
-                    Msg.builder()
-                            .role(MsgRole.USER)
-                            .textContent("Hello")
-                            .metadata(metadata)
+        void marksLastExistingMultimodalContentPart() {
+            DashScopeContentPart text = DashScopeContentPart.text("describe");
+            DashScopeContentPart image = DashScopeContentPart.image("https://example.com/a.png");
+            DashScopeMessage message =
+                    DashScopeMessage.builder()
+                            .role("user")
+                            .content(new ArrayList<>(List.of(text, image)))
                             .build();
 
-            List<DashScopeMessage> result = formatter.format(List.of(msg));
+            formatter.applyCacheControl(new ArrayList<>(List.of(message)), true);
 
-            assertEquals(1, result.size());
-            assertEquals(NO_CACHE, result.get(0).getCacheControl());
-        }
-
-        @Test
-        @DisplayName("should not auto-cache a system message explicitly marked false")
-        void systemMessageExplicitNoCache() {
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
-            Msg systemMsg =
-                    Msg.builder()
-                            .role(MsgRole.SYSTEM)
-                            .textContent("System prompt")
-                            .metadata(metadata)
-                            .build();
-            Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("User msg").build();
-
-            List<DashScopeMessage> result = formatter.format(List.of(systemMsg, userMsg));
-            formatter.applyCacheControl(result);
-
-            assertEquals(NO_CACHE, result.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, result.get(1).getCacheControl());
-        }
-
-        @Test
-        @DisplayName("should not serialize the no-cache marker into the API payload")
-        void noCacheNotSerialized() throws Exception {
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
-            Msg msg =
-                    Msg.builder()
-                            .role(MsgRole.USER)
-                            .textContent("Hello")
-                            .metadata(metadata)
-                            .build();
-
-            List<DashScopeMessage> result = formatter.format(List.of(msg));
-            String json = JsonUtils.getJsonCodec().toJson(result.get(0));
-
-            assertEquals(NO_CACHE, result.get(0).getCacheControl());
-            assertFalse(json.contains("no_cache"));
-            assertFalse(json.contains("cache_control"));
-        }
-
-        @Test
-        @DisplayName("should set cache_control on system message via metadata")
-        void systemMessageMetadata() {
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
-            Msg systemMsg =
-                    Msg.builder()
-                            .role(MsgRole.SYSTEM)
-                            .textContent("System prompt")
-                            .metadata(metadata)
-                            .build();
-            Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("User msg").build();
-
-            List<DashScopeMessage> result = formatter.format(List.of(systemMsg, userMsg));
-
-            assertEquals(2, result.size());
-            assertEquals(EPHEMERAL, result.get(0).getCacheControl());
-            assertNull(result.get(1).getCacheControl());
+            assertNull(text.getCacheControl());
+            assertEquals(EPHEMERAL, image.getCacheControl());
+            assertNull(message.getCacheControl());
         }
     }
 
     @Nested
-    @DisplayName("DashScopeMultiAgentFormatter cache_control")
-    class MultiAgentFormatterTest {
+    @DisplayName("metadata and multi-agent formatting")
+    class MetadataAndMultiAgentTest {
 
         @Test
-        @DisplayName("should add cache_control to system and last message")
-        void applyCacheControl() {
+        void metadataMarkerIsPlacedOnContentBlockWithoutAutomaticOption() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("cache this")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                            .build();
+
+            DashScopeMessage formatted = formatter.format(List.of(msg)).get(0);
+
+            assertNull(formatted.getCacheControl());
+            assertEquals(EPHEMERAL, lastPart(formatted).getCacheControl());
+        }
+
+        @Test
+        void explicitNoCacheIsNeitherSerializedNorAutomaticallyReenabled() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("do not cache")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+
+            List<DashScopeMessage> formatted = formatter.format(List.of(msg));
+            assertEquals(NO_CACHE, formatted.get(0).getCacheControl());
+
+            formatter.applyCacheControl(formatted, true);
+
+            assertNoCacheControl(formatted.get(0));
+            JsonNode tree =
+                    JsonUtils.getJsonCodec()
+                            .fromJson(
+                                    JsonUtils.getJsonCodec().toJson(formatted.get(0)),
+                                    JsonNode.class);
+            assertFalse(tree.has("cache_control"));
+            assertFalse(tree.toString().contains("cache_control"));
+        }
+
+        @Test
+        void automaticStrategySkipsExplicitNoCacheSystemMessage() {
+            Msg system =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .textContent("dynamic system")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+            Msg user = Msg.builder().role(MsgRole.USER).textContent("cacheable user").build();
+            List<DashScopeMessage> formatted = formatter.format(List.of(system, user));
+
+            formatter.applyCacheControl(formatted, true);
+
+            assertNoCacheControl(formatted.get(0));
+            assertEquals(EPHEMERAL, lastPart(formatted.get(1)).getCacheControl());
+        }
+
+        @Test
+        void explicitMetadataPreventsMultiAgentHistoryMerge() {
             DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
+            Msg cached =
+                    Msg.builder()
+                            .name("agent-a")
+                            .role(MsgRole.USER)
+                            .textContent("stable context")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                            .build();
+            Msg following =
+                    Msg.builder()
+                            .name("agent-b")
+                            .role(MsgRole.USER)
+                            .textContent("dynamic question")
+                            .build();
 
-            List<DashScopeMessage> messages = new ArrayList<>();
-            messages.add(
-                    DashScopeMessage.builder().role("system").content("You are helpful.").build());
-            messages.add(DashScopeMessage.builder().role("user").content("Hello").build());
+            List<DashScopeMessage> formatted = multiFormatter.format(List.of(cached, following));
 
-            multiFormatter.applyCacheControl(messages);
+            assertEquals(2, formatted.size());
+            assertEquals(EPHEMERAL, lastPart(formatted.get(0)).getCacheControl());
+            assertNoCacheControl(formatted.get(1));
+        }
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
+        @Test
+        void explicitNoCachePreventsMultiAgentHistoryMerge() {
+            DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
+            Msg notCached =
+                    Msg.builder()
+                            .name("agent-a")
+                            .role(MsgRole.USER)
+                            .textContent("dynamic context")
+                            .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, false))
+                            .build();
+            Msg following =
+                    Msg.builder()
+                            .name("agent-b")
+                            .role(MsgRole.USER)
+                            .textContent("cacheable question")
+                            .build();
+
+            List<DashScopeMessage> formatted = multiFormatter.format(List.of(notCached, following));
+            assertEquals(2, formatted.size());
+
+            multiFormatter.applyCacheControl(formatted, true);
+
+            assertNoCacheControl(formatted.get(0));
+            assertEquals(EPHEMERAL, lastPart(formatted.get(1)).getCacheControl());
+        }
+
+        @Test
+        void multiAgentAutomaticStrategyUsesContentBlocks() {
+            DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
+            List<DashScopeMessage> messages =
+                    new ArrayList<>(List.of(message("system", "system"), message("user", "user")));
+
+            multiFormatter.applyCacheControl(messages, true);
+
+            assertEquals(EPHEMERAL, lastPart(messages.get(0)).getCacheControl());
+            assertEquals(EPHEMERAL, lastPart(messages.get(1)).getCacheControl());
+            messages.forEach(message -> assertNull(message.getCacheControl()));
+        }
+    }
+
+    private static DashScopeMessage message(String role, String content) {
+        return DashScopeMessage.builder().role(role).content(content).build();
+    }
+
+    private static DashScopeContentPart lastPart(DashScopeMessage message) {
+        List<DashScopeContentPart> parts = message.getContentAsList();
+        assertNotNull(parts);
+        assertFalse(parts.isEmpty());
+        return parts.get(parts.size() - 1);
+    }
+
+    private static void assertNoCacheControl(DashScopeMessage message) {
+        assertNull(message.getCacheControl());
+        List<DashScopeContentPart> parts = message.getContentAsList();
+        if (parts != null) {
+            assertTrue(parts.stream().allMatch(part -> part.getCacheControl() == null));
         }
     }
 }

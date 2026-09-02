@@ -24,7 +24,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeInput;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
@@ -33,7 +32,6 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * DashScope formatter for multi-agent conversations.
@@ -84,11 +82,7 @@ public class DashScopeMultiAgentFormatter
 
         // Process system message first (if any) - output separately
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            result.add(
-                    DashScopeMessage.builder()
-                            .role("system")
-                            .content(extractTextContent(msgs.get(0)))
-                            .build());
+            result.add(messageConverter.convertToMessage(msgs.get(0), false));
             startIndex = 1;
         }
 
@@ -111,6 +105,8 @@ public class DashScopeMultiAgentFormatter
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
                 // Format tool sequence directly
                 result.addAll(formatToolSeq(group.messages));
+            } else if (group.type == GroupType.BYPASS) {
+                result.add(messageConverter.convertToMessage(group.messages.get(0), false));
             }
         }
 
@@ -171,14 +167,7 @@ public class DashScopeMultiAgentFormatter
 
         // Process system message first (if any)
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            result.add(
-                    DashScopeMessage.builder()
-                            .role("system")
-                            .content(
-                                    List.of(
-                                            DashScopeContentPart.text(
-                                                    extractTextContent(msgs.get(0)))))
-                            .build());
+            result.add(messageConverter.convertToMessage(msgs.get(0), true));
             startIndex = 1;
         }
 
@@ -200,6 +189,8 @@ public class DashScopeMultiAgentFormatter
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
                 // Format tool sequence directly
                 result.addAll(formatMultiModalToolSeq(group.messages));
+            } else if (group.type == GroupType.BYPASS) {
+                result.add(messageConverter.convertToMessage(group.messages.get(0), true));
             }
         }
 
@@ -244,6 +235,16 @@ public class DashScopeMultiAgentFormatter
         List<Msg> currentGroup = new ArrayList<>();
 
         for (Msg msg : msgs) {
+            if (shouldBypassHistory(msg)) {
+                if (!currentGroup.isEmpty()) {
+                    result.add(new MessageGroup(currentType, new ArrayList<>(currentGroup)));
+                    currentGroup.clear();
+                }
+                result.add(new MessageGroup(GroupType.BYPASS, List.of(msg)));
+                currentType = null;
+                continue;
+            }
+
             boolean isToolRelated =
                     msg.getRole() == MsgRole.TOOL
                             || msg.hasContentBlocks(ToolUseBlock.class)
@@ -347,7 +348,8 @@ public class DashScopeMultiAgentFormatter
      */
     private enum GroupType {
         AGENT_MESSAGE,
-        TOOL_SEQUENCE
+        TOOL_SEQUENCE,
+        BYPASS
     }
 
     /**
@@ -364,27 +366,40 @@ public class DashScopeMultiAgentFormatter
     }
 
     /**
-     * Apply cache control to DashScope messages.
-     *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that are explicitly excluded from caching or that already carry
-     * a cache_control value are left untouched.
+     * Apply automatic prompt cache control to DashScope messages.
      *
      * @param messages the list of formatted DashScope messages
      */
     public void applyCacheControl(List<DashScopeMessage> messages) {
+        applyCacheControl(messages, true);
+    }
+
+    /** Normalize explicit cache markers and optionally apply automatic cache breakpoints. */
+    public void applyCacheControl(List<DashScopeMessage> messages, boolean automatic) {
         if (messages == null || messages.isEmpty()) {
             return;
         }
-        Map<String, String> ephemeral = DashScopeChatFormatter.getEphemeralCacheControl();
-        for (DashScopeMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && DashScopeChatFormatter.shouldAutoCache(msg)) {
-                msg.setCacheControl(ephemeral);
-            }
+        List<DashScopeMessage> selected =
+                selectPromptCacheBreakpoints(
+                        messages,
+                        automatic,
+                        DashScopeChatFormatter::hasExplicitCacheControl,
+                        message -> "system".equals(message.getRole()),
+                        DashScopeChatFormatter::isCacheable);
+        for (DashScopeMessage message : selected) {
+            DashScopeChatFormatter.applyCacheControlToContentBlock(message);
         }
-        DashScopeMessage lastMsg = messages.get(messages.size() - 1);
-        if (DashScopeChatFormatter.shouldAutoCache(lastMsg)) {
-            lastMsg.setCacheControl(ephemeral);
+        for (DashScopeMessage message : messages) {
+            message.setCacheControl(null);
+        }
+
+        int markerCount = DashScopeChatFormatter.countCacheControlMarkers(messages);
+        if (markerCount > MAX_PROMPT_CACHE_BREAKPOINTS) {
+            throw new IllegalArgumentException(
+                    "DashScope supports at most "
+                            + MAX_PROMPT_CACHE_BREAKPOINTS
+                            + " cache_control markers, but got "
+                            + markerCount);
         }
     }
 }

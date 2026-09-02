@@ -114,6 +114,40 @@ class OpenAIChatModelTest {
     }
 
     @Test
+    @DisplayName("Should recognize Alibaba OpenAI-compatible endpoints")
+    void testDashScopeCompatibleBaseUrlDetection() {
+        assertTrue(
+                OpenAIChatModel.isDashScopeCompatibleBaseUrl(
+                        "https://dashscope.aliyuncs.com/compatible-mode/v1"));
+        assertTrue(
+                OpenAIChatModel.isDashScopeCompatibleBaseUrl(
+                        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"));
+        assertTrue(
+                OpenAIChatModel.isDashScopeCompatibleBaseUrl(
+                        "https://dashscope-us.aliyuncs.com/compatible-mode/v1"));
+        assertTrue(
+                OpenAIChatModel.isDashScopeCompatibleBaseUrl(
+                        "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"));
+        assertFalse(OpenAIChatModel.isDashScopeCompatibleBaseUrl("https://api.openai.com/v1"));
+        assertFalse(OpenAIChatModel.isDashScopeCompatibleBaseUrl(null));
+        assertFalse(OpenAIChatModel.isDashScopeCompatibleBaseUrl("not a valid URL"));
+
+        assertTrue(OpenAIChatModel.isOfficialOpenAIBaseUrl(null));
+        assertTrue(OpenAIChatModel.isOfficialOpenAIBaseUrl(""));
+        assertTrue(OpenAIChatModel.isOfficialOpenAIBaseUrl("https://api.openai.com/v1"));
+        for (String region : List.of("us", "eu", "au", "ca", "jp", "in", "sg", "kr", "gb", "ae")) {
+            assertTrue(
+                    OpenAIChatModel.isOfficialOpenAIBaseUrl(
+                            "https://" + region + ".api.openai.com/v1"),
+                    region);
+        }
+        assertFalse(
+                OpenAIChatModel.isOfficialOpenAIBaseUrl("https://api.openai.com.evil.example/v1"));
+        assertFalse(
+                OpenAIChatModel.isOfficialOpenAIBaseUrl("https://gateway.example.com/openai/v1"));
+    }
+
+    @Test
     @DisplayName("Should make non-streaming call successfully")
     void testNonStreamingCall() throws Exception {
         String responseJson =
@@ -336,8 +370,8 @@ class OpenAIChatModelTest {
     }
 
     @Test
-    @DisplayName("Should apply cache_control to request when cacheControl option is enabled")
-    void testCacheControlApplied() throws Exception {
+    @DisplayName("Should not guess a cache protocol for an unknown compatible endpoint")
+    void testUnknownCompatibleCacheControlIsNotApplied() throws Exception {
         String responseJson =
                 """
                 {
@@ -385,12 +419,12 @@ class OpenAIChatModelTest {
         RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(request);
         String body = request.getBody().readUtf8();
-        assertTrue(
+        assertFalse(
                 body.contains("\"cache_control\""),
-                "Request body should contain cache_control: " + body);
-        assertTrue(
-                body.contains("\"ephemeral\""),
-                "Request body should contain ephemeral cache type: " + body);
+                "Unknown compatible endpoint must not receive cache_control: " + body);
+        assertFalse(
+                body.contains("\"prompt_cache_breakpoint\""),
+                "Unknown compatible endpoint must not receive OpenAI cache fields: " + body);
     }
 
     @Test

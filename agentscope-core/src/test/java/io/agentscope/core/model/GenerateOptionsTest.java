@@ -357,6 +357,28 @@ class GenerateOptionsTest {
     }
 
     @Test
+    @DisplayName("Should prefer primary cache control when merging options")
+    void testMergeOptionsPrefersPrimaryCacheControl() {
+        GenerateOptions primary = GenerateOptions.builder().cacheControl(false).build();
+        GenerateOptions fallback = GenerateOptions.builder().cacheControl(true).build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+
+        assertEquals(Boolean.FALSE, merged.getCacheControl());
+    }
+
+    @Test
+    @DisplayName("Should inherit fallback cache control when primary is unset")
+    void testMergeOptionsInheritsFallbackCacheControl() {
+        GenerateOptions primary = GenerateOptions.builder().temperature(0.8).build();
+        GenerateOptions fallback = GenerateOptions.builder().cacheControl(true).build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+
+        assertEquals(Boolean.TRUE, merged.getCacheControl());
+    }
+
+    @Test
     @DisplayName("Should set additional headers using map")
     void testSetAdditionalHeadersMap() {
         Map<String, String> headers = Map.of("Header1", "Value1", "Header2", "Value2");

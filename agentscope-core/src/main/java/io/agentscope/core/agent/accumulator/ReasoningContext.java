@@ -56,6 +56,7 @@ public class ReasoningContext {
     private int inputTokens = 0;
     private int outputTokens = 0;
     private int cachedTokens = 0;
+    private int cacheCreationInputTokens = 0;
     private double time = 0;
 
     // Provider-specific response metadata to propagate to the final message
@@ -89,6 +90,7 @@ public class ReasoningContext {
             inputTokens = usage.getInputTokens();
             outputTokens = usage.getOutputTokens();
             cachedTokens = usage.getCachedTokens();
+            cacheCreationInputTokens = usage.getCacheCreationInputTokens();
             time = usage.getTime();
         }
 
@@ -178,12 +180,17 @@ public class ReasoningContext {
         // Build metadata: start with propagated response metadata, then add ChatUsage
         Map<String, Object> metadata = new HashMap<>(responseMetadata);
         ChatUsage chatUsage = null;
-        if (inputTokens > 0 || outputTokens > 0 || time > 0) {
+        if (inputTokens > 0
+                || outputTokens > 0
+                || cachedTokens > 0
+                || cacheCreationInputTokens > 0
+                || time > 0) {
             chatUsage =
                     ChatUsage.builder()
                             .inputTokens(inputTokens)
                             .outputTokens(outputTokens)
                             .cachedTokens(cachedTokens)
+                            .cacheCreationInputTokens(cacheCreationInputTokens)
                             .time(time)
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
@@ -296,11 +303,16 @@ public class ReasoningContext {
      * @return ChatUsage with accumulated tokens, or null if no usage data
      */
     public ChatUsage getChatUsage() {
-        if (inputTokens > 0 || outputTokens > 0 || time > 0) {
+        if (inputTokens > 0
+                || outputTokens > 0
+                || cachedTokens > 0
+                || cacheCreationInputTokens > 0
+                || time > 0) {
             return ChatUsage.builder()
                     .inputTokens(inputTokens)
                     .outputTokens(outputTokens)
                     .cachedTokens(cachedTokens)
+                    .cacheCreationInputTokens(cacheCreationInputTokens)
                     .time(time)
                     .build();
         }

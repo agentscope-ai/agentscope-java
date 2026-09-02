@@ -37,8 +37,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -61,6 +63,8 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         implements Formatter<TReq, TResp, TParams> {
+
+    protected static final int MAX_PROMPT_CACHE_BREAKPOINTS = 4;
 
     private static final Logger log = LoggerFactory.getLogger(AbstractBaseFormatter.class);
 
@@ -160,8 +164,11 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
 
     /**
      * Check if a message should bypass history merging in multiagent formatters.
-     * Messages with the {@link MessageMetadataKeys#BYPASS_MULTIAGENT_HISTORY_MERGE} flag set to {@code true}
-     * should be kept as separate messages rather than merged into the conversation history.
+     * Messages with the {@link MessageMetadataKeys#BYPASS_MULTIAGENT_HISTORY_MERGE} or {@link
+     * MessageMetadataKeys#CACHE_CONTROL} flag set to either {@code true} or {@code false} should be
+     * kept as separate messages rather than merged into the conversation history. Preserving
+     * explicitly marked cache boundaries prevents formatter-level history merging from discarding
+     * the marker.
      *
      * @param msg The message to check
      * @return true if message should bypass history merging
@@ -172,7 +179,80 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         }
         Object bypassFlag =
                 msg.getMetadata().get(MessageMetadataKeys.BYPASS_MULTIAGENT_HISTORY_MERGE);
-        return Boolean.TRUE.equals(bypassFlag);
+        Object cacheControlFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+        return Boolean.TRUE.equals(bypassFlag) || cacheControlFlag instanceof Boolean;
+    }
+
+    /**
+     * Select prompt cache breakpoints while respecting the provider limit.
+     *
+     * <p>Explicitly marked items always take priority. When automatic selection is enabled, the
+     * first cacheable system item and the last cacheable non-system item fill any remaining slots.
+     * The returned items preserve their original request order.
+     *
+     * @param items provider request items to inspect
+     * @param automatic whether automatic cache breakpoint selection is enabled
+     * @param explicitlyMarked predicate identifying explicitly marked items
+     * @param systemItem predicate identifying system items
+     * @param cacheableItem predicate identifying items eligible for automatic caching
+     * @param <T> provider request item type
+     * @return selected cache breakpoint items in request order
+     * @throws IllegalArgumentException when more than four items are explicitly marked
+     */
+    protected <T> List<T> selectPromptCacheBreakpoints(
+            List<T> items,
+            boolean automatic,
+            Predicate<T> explicitlyMarked,
+            Predicate<T> systemItem,
+            Predicate<T> cacheableItem) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+
+        List<Integer> selectedIndices = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            if (explicitlyMarked.test(items.get(i))) {
+                selectedIndices.add(i);
+            }
+        }
+
+        if (selectedIndices.size() > MAX_PROMPT_CACHE_BREAKPOINTS) {
+            throw new IllegalArgumentException(
+                    "Prompt cache supports at most "
+                            + MAX_PROMPT_CACHE_BREAKPOINTS
+                            + " explicit breakpoints, but got "
+                            + selectedIndices.size());
+        }
+
+        if (automatic && selectedIndices.size() < MAX_PROMPT_CACHE_BREAKPOINTS) {
+            for (int i = 0; i < items.size(); i++) {
+                T item = items.get(i);
+                if (systemItem.test(item) && cacheableItem.test(item)) {
+                    addBreakpointIfAvailable(selectedIndices, i);
+                    break;
+                }
+            }
+
+            for (int i = items.size() - 1;
+                    i >= 0 && selectedIndices.size() < MAX_PROMPT_CACHE_BREAKPOINTS;
+                    i--) {
+                T item = items.get(i);
+                if (!systemItem.test(item) && cacheableItem.test(item)) {
+                    addBreakpointIfAvailable(selectedIndices, i);
+                    break;
+                }
+            }
+        }
+
+        Collections.sort(selectedIndices);
+        return selectedIndices.stream().map(items::get).toList();
+    }
+
+    private void addBreakpointIfAvailable(List<Integer> selectedIndices, int index) {
+        if (selectedIndices.size() < MAX_PROMPT_CACHE_BREAKPOINTS
+                && !selectedIndices.contains(index)) {
+            selectedIndices.add(index);
+        }
     }
 
     /**

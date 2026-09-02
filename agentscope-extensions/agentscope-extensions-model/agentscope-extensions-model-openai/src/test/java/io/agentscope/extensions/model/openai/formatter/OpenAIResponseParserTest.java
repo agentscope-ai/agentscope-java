@@ -26,6 +26,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIError;
 import io.agentscope.extensions.model.openai.dto.OpenAIFunction;
@@ -55,11 +57,13 @@ class OpenAIResponseParserTest {
 
     private OpenAIResponseParser parser;
     private Instant startTime;
+    private JsonCodec jsonCodec;
 
     @BeforeEach
     void setUp() {
         parser = new OpenAIResponseParser();
         startTime = Instant.now();
+        jsonCodec = JsonUtils.getJsonCodec();
     }
 
     @Test
@@ -937,6 +941,7 @@ class OpenAIResponseParserTest {
             usage.setCompletionTokens(20);
             OpenAIUsage.PromptTokensDetails details = new OpenAIUsage.PromptTokensDetails();
             details.setCachedTokens(80);
+            details.setCacheWriteTokens(12);
             usage.setPromptTokensDetails(details);
             response.setUsage(usage);
 
@@ -958,6 +963,7 @@ class OpenAIResponseParserTest {
             assertEquals(100, result.getUsage().getInputTokens());
             assertEquals(20, result.getUsage().getOutputTokens());
             assertEquals(80, result.getUsage().getCachedTokens());
+            assertEquals(12, result.getUsage().getCacheCreationInputTokens());
         }
 
         @Test
@@ -1032,6 +1038,7 @@ class OpenAIResponseParserTest {
             usage.setCompletionTokens(50);
             OpenAIUsage.PromptTokensDetails details = new OpenAIUsage.PromptTokensDetails();
             details.setCachedTokens(64);
+            details.setCacheWriteTokens(7);
             usage.setPromptTokensDetails(details);
             response.setUsage(usage);
 
@@ -1053,6 +1060,74 @@ class OpenAIResponseParserTest {
             assertEquals(100, result.getUsage().getInputTokens());
             assertEquals(50, result.getUsage().getOutputTokens());
             assertEquals(64, result.getUsage().getCachedTokens());
+            assertEquals(7, result.getUsage().getCacheCreationInputTokens());
+        }
+
+        @Test
+        @DisplayName("Should parse nested compatible-provider cache creation tokens")
+        void testParseResponseWithNestedCacheCreationTokens() {
+            String json =
+                    """
+                    {
+                      "id": "chatcmpl-cache-nested",
+                      "object": "chat.completion",
+                      "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Answer"},
+                        "finish_reason": "stop"
+                      }],
+                      "usage": {
+                        "prompt_tokens": 100,
+                        "completion_tokens": 20,
+                        "prompt_tokens_details": {
+                          "cached_tokens": 60,
+                          "cache_creation": {
+                            "ephemeral_5m_input_tokens": 30,
+                            "cache_type": "ephemeral"
+                          }
+                        }
+                      }
+                    }
+                    """;
+            OpenAIResponse response = jsonCodec.fromJson(json, OpenAIResponse.class);
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result.getUsage());
+            assertEquals(60, result.getUsage().getCachedTokens());
+            assertEquals(30, result.getUsage().getCacheCreationInputTokens());
+        }
+
+        @Test
+        @DisplayName("Should parse direct compatible-provider cache creation tokens from a chunk")
+        void testParseChunkResponseWithDirectCacheCreationTokens() {
+            String json =
+                    """
+                    {
+                      "id": "chatcmpl-cache-direct",
+                      "object": "chat.completion.chunk",
+                      "choices": [{
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": ""},
+                        "finish_reason": "stop"
+                      }],
+                      "usage": {
+                        "prompt_tokens": 100,
+                        "completion_tokens": 20,
+                        "prompt_tokens_details": {
+                          "cached_tokens": 50,
+                          "cache_creation_input_tokens": 25
+                        }
+                      }
+                    }
+                    """;
+            OpenAIResponse response = jsonCodec.fromJson(json, OpenAIResponse.class);
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result.getUsage());
+            assertEquals(50, result.getUsage().getCachedTokens());
+            assertEquals(25, result.getUsage().getCacheCreationInputTokens());
         }
 
         @Test

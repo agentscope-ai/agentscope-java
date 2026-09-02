@@ -461,9 +461,9 @@ class AnthropicChatModelTest {
     @Test
     @DisplayName("Should build streaming request with cacheControl enabled before transport error")
     void testStreamWithCacheControlEnabled() {
-        // Unreachable local endpoint: the request-building path (system message with
-        // cache_control, message formatting, applyCacheControl) executes fully and
-        // only the transport call fails.
+        // Unreachable local endpoint: the request-building path (system extraction,
+        // message formatting, and prompt-cache planning) executes fully and only the
+        // transport call fails.
         AnthropicChatModel model =
                 AnthropicChatModel.builder()
                         .apiKey(mockApiKey)

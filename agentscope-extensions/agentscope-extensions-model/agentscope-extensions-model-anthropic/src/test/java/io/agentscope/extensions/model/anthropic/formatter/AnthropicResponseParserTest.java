@@ -66,17 +66,11 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
      */
     private ChatResponse invokeParseStreamEvent(RawMessageStreamEvent event, Instant startTime)
             throws Exception {
-        Class<?> stateClass =
-                Class.forName(AnthropicResponseParser.class.getName() + "$StreamUsageState");
-        var constructor = stateClass.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Object state = constructor.newInstance();
-
         Method method =
                 AnthropicResponseParser.class.getDeclaredMethod(
-                        "parseStreamEvent", RawMessageStreamEvent.class, Instant.class, stateClass);
+                        "parseStreamEvent", RawMessageStreamEvent.class, Instant.class);
         method.setAccessible(true);
-        return (ChatResponse) method.invoke(null, event, startTime, state);
+        return (ChatResponse) method.invoke(null, event, startTime);
     }
 
     @Test
@@ -92,8 +86,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(100L);
         when(usage.outputTokens()).thenReturn(50L);
-        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
-        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.of(30L));
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.of(20L));
 
         when(contentBlock.text()).thenReturn(Optional.of(textBlock));
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
@@ -111,8 +105,10 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
         ChatUsage responseUsage = response.getUsage();
         assertNotNull(responseUsage);
-        assertEquals(100, responseUsage.getInputTokens());
+        assertEquals(150, responseUsage.getInputTokens());
         assertEquals(50, responseUsage.getOutputTokens());
+        assertEquals(30, responseUsage.getCachedTokens());
+        assertEquals(20, responseUsage.getCacheCreationInputTokens());
     }
 
     @Test
@@ -366,6 +362,47 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_stream_123", response.getId());
         assertTrue(response.getContent().isEmpty()); // MessageStart has no content
+    }
+
+    @Test
+    void testStreamUsageRetainsCacheTokensAndMessageId() {
+        RawMessageStreamEvent startEvent = mock(RawMessageStreamEvent.class);
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        Message message = mock(Message.class);
+        Usage startUsage = mock(Usage.class);
+        when(startEvent.isMessageStart()).thenReturn(true);
+        when(startEvent.asMessageStart()).thenReturn(messageStart);
+        when(messageStart.message()).thenReturn(message);
+        when(message.id()).thenReturn("msg-cache");
+        when(message.usage()).thenReturn(startUsage);
+        when(startUsage.inputTokens()).thenReturn(10L);
+        when(startUsage.cacheReadInputTokens()).thenReturn(Optional.of(70L));
+        when(startUsage.cacheCreationInputTokens()).thenReturn(Optional.of(20L));
+
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.outputTokens()).thenReturn(5L);
+
+        StepVerifier.create(
+                        AnthropicResponseParser.parseStreamEvents(
+                                Flux.just(startEvent, deltaEvent), Instant.now()))
+                .assertNext(
+                        response -> {
+                            assertEquals("msg-cache", response.getId());
+                            assertTrue(response.getContent().isEmpty());
+                            assertEquals(100, response.getUsage().getInputTokens());
+                            assertEquals(5, response.getUsage().getOutputTokens());
+                            assertEquals(70, response.getUsage().getCachedTokens());
+                            assertEquals(20, response.getUsage().getCacheCreationInputTokens());
+                        })
+                .verifyComplete();
     }
 
     @Test

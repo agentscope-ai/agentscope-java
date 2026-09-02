@@ -239,6 +239,58 @@ class DashScopeDtoSerializationTest {
     }
 
     @Test
+    void testDashScopeCacheUsageDeserialization() {
+        String json =
+                """
+                {
+                  "request_id": "req-cache",
+                  "usage": {
+                    "input_tokens": 2048,
+                    "output_tokens": 128,
+                    "prompt_tokens_details": {
+                      "cached_tokens": 1536,
+                      "cache_creation_input_tokens": 256
+                    }
+                  }
+                }
+                """;
+
+        DashScopeResponse response = jsonCodec.fromJson(json, DashScopeResponse.class);
+
+        assertNotNull(response.getUsage());
+        assertEquals(1536, response.getUsage().getCachedTokens());
+        assertEquals(256, response.getUsage().getCacheCreationInputTokens());
+    }
+
+    @Test
+    void testDashScopeNestedCacheCreationUsageDeserialization() {
+        String json =
+                """
+                {
+                  "request_id": "req-cache-nested",
+                  "usage": {
+                    "input_tokens": 2048,
+                    "output_tokens": 128,
+                    "prompt_tokens_details": {
+                      "cached_tokens": 1536,
+                      "cache_creation": {
+                        "cache_creation_input_tokens": 384,
+                        "ephemeral_5m_input_tokens": 999,
+                        "cache_type": "ephemeral"
+                      }
+                    }
+                  }
+                }
+                """;
+
+        DashScopeResponse response = jsonCodec.fromJson(json, DashScopeResponse.class);
+
+        assertNotNull(response.getUsage());
+        assertEquals(1536, response.getUsage().getCachedTokens());
+        assertEquals(384, response.getUsage().getCacheCreationInputTokens());
+    }
+
+    @Test
     void testDashScopeResponseWithToolCalls() throws Exception {
         String json =
                 """

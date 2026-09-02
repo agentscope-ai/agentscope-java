@@ -59,6 +59,7 @@ import reactor.core.scheduler.Schedulers;
  * <li>Multi-agent conversation with history merging</li>
  * <li>Vision capabilities (images, audio, video)</li>
  * <li>Thinking mode (extended reasoning)</li>
+ * <li>Implicit caching and explicit cached content resource references</li>
  * </ul>
  */
 public class GeminiChatModel extends ChatModelBase {
@@ -250,29 +251,11 @@ public class GeminiChatModel extends ChatModelBase {
         return Flux.defer(
                         () -> {
                             try {
-                                // Build generate content config
-                                GenerateContentConfig.Builder configBuilder =
-                                        GenerateContentConfig.builder();
-
                                 // Use formatter to convert Msg to Gemini
                                 // Content
                                 List<Content> formattedMessages = formatter.format(messages);
-
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(configBuilder, tools);
-
-                                    // Apply tool choice if present
-                                    if (options != null && options.getToolChoice() != null) {
-                                        formatter.applyToolChoice(
-                                                configBuilder, options.getToolChoice());
-                                    }
-                                }
-
-                                // Apply generation options via formatter
-                                formatter.applyOptions(configBuilder, options, defaultOptions);
-
-                                GenerateContentConfig config = configBuilder.build();
+                                GenerateContentConfig config =
+                                        buildGenerateContentConfig(tools, options);
 
                                 // Choose API based on streaming flag
                                 if (streamEnabled) {
@@ -323,6 +306,27 @@ public class GeminiChatModel extends ChatModelBase {
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    GenerateContentConfig buildGenerateContentConfig(
+            List<ToolSchema> tools, GenerateOptions options) {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+
+        // Apply options first because an explicit cached content resource also fixes tools and
+        // toolConfig. Gemini rejects those fields when cachedContent is set.
+        formatter.applyOptions(configBuilder, options, defaultOptions);
+        boolean usesCachedContent = configBuilder.build().cachedContent().isPresent();
+
+        if (!usesCachedContent && tools != null && !tools.isEmpty()) {
+            formatter.applyTools(configBuilder, tools);
+            GenerateOptions effectiveOptions =
+                    GenerateOptions.mergeOptions(options, defaultOptions);
+            if (effectiveOptions != null && effectiveOptions.getToolChoice() != null) {
+                formatter.applyToolChoice(configBuilder, effectiveOptions.getToolChoice());
+            }
+        }
+
+        return configBuilder.build();
     }
 
     @Override

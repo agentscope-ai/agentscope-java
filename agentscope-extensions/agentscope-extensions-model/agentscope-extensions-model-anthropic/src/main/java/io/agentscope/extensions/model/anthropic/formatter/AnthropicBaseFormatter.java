@@ -15,17 +15,21 @@
  */
 package io.agentscope.extensions.model.anthropic.formatter;
 
+import com.anthropic.core.JsonValue;
 import com.anthropic.models.messages.CacheControlEphemeral;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Abstract base formatter for Anthropic API with shared logic for handling Anthropic-specific
@@ -251,4 +255,74 @@ public abstract class AnthropicBaseFormatter
         }
         return null;
     }
+
+    /**
+     * Encode explicit and automatic prompt-cache breakpoints into an Anthropic request.
+     * Explicit message metadata always remains effective. Automatic selection uses Anthropic's
+     * provider-native top-level cache control, which moves the final breakpoint as a conversation
+     * grows.
+     */
+    public PromptCachePlan applyPromptCache(
+            MessageCreateParams.Builder paramsBuilder,
+            List<Msg> originalMessages,
+            List<MessageParam> formattedMessages,
+            boolean automatic) {
+        List<MessageParam> plannedMessages = new ArrayList<>(formattedMessages);
+        Msg system =
+                originalMessages != null
+                                && !originalMessages.isEmpty()
+                                && originalMessages.get(0).getRole() == MsgRole.SYSTEM
+                        ? originalMessages.get(0)
+                        : null;
+
+        boolean explicitSystem =
+                system != null
+                        && system.getMetadata() != null
+                        && Boolean.TRUE.equals(
+                                system.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL));
+        int explicitCount = explicitSystem ? 1 : 0;
+        explicitCount +=
+                (int)
+                        plannedMessages.stream()
+                                .filter(AnthropicPromptCacheSupport::hasCacheControl)
+                                .count();
+        if (explicitCount > MAX_PROMPT_CACHE_BREAKPOINTS) {
+            throw new IllegalArgumentException(
+                    "Prompt cache supports at most "
+                            + MAX_PROMPT_CACHE_BREAKPOINTS
+                            + " explicit breakpoints, but got "
+                            + explicitCount);
+        }
+        if (automatic && explicitCount == MAX_PROMPT_CACHE_BREAKPOINTS) {
+            throw new IllegalArgumentException(
+                    "Anthropic automatic prompt caching requires one of the four breakpoint slots");
+        }
+        if (automatic) {
+            paramsBuilder.putAdditionalBodyProperty(
+                    "cache_control",
+                    JsonValue.from(
+                            cacheTtl == null || cacheTtl.isEmpty()
+                                    ? Map.of("type", "ephemeral")
+                                    : Map.of("type", "ephemeral", "ttl", cacheTtl)));
+        }
+
+        if (system != null) {
+            String systemText = messageConverter.extractSystemMessage(originalMessages);
+            if (systemText != null && !systemText.isEmpty()) {
+                TextBlockParam.Builder block = TextBlockParam.builder().text(systemText);
+                if (explicitSystem) {
+                    block.cacheControl(buildCacheControl(cacheTtl));
+                }
+                paramsBuilder.systemOfTextBlockParams(List.of(block.build()));
+            } else if (explicitSystem) {
+                throw new IllegalArgumentException(
+                        "Explicit Anthropic system cache breakpoint has no text content");
+            }
+        }
+
+        return new PromptCachePlan(List.copyOf(plannedMessages));
+    }
+
+    /** Provider-ready messages and tool cache decision for one request. */
+    public record PromptCachePlan(List<MessageParam> messages) {}
 }

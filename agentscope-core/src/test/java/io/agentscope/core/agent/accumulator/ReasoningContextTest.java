@@ -85,6 +85,7 @@ class ReasoningContextTest {
                         .inputTokens(100)
                         .outputTokens(50)
                         .cachedTokens(80)
+                        .cacheCreationInputTokens(15)
                         .time(1.5)
                         .build();
 
@@ -101,10 +102,27 @@ class ReasoningContextTest {
         assertNotNull(msg);
         assertNotNull(msg.getChatUsage());
         assertEquals(80, msg.getChatUsage().getCachedTokens());
+        assertEquals(15, msg.getChatUsage().getCacheCreationInputTokens());
 
         ChatUsage resultUsage = context.getChatUsage();
         assertNotNull(resultUsage);
         assertEquals(80, resultUsage.getCachedTokens());
+        assertEquals(15, resultUsage.getCacheCreationInputTokens());
+    }
+
+    @Test
+    @DisplayName("Should retain cache-only usage")
+    void testCacheOnlyUsage() {
+        ChatUsage usage = ChatUsage.builder().cachedTokens(80).cacheCreationInputTokens(15).build();
+        ChatResponse chunk =
+                ChatResponse.builder().id("msg-cache-only").content(List.of()).usage(usage).build();
+
+        context.processChunk(chunk);
+
+        ChatUsage resultUsage = context.getChatUsage();
+        assertNotNull(resultUsage);
+        assertEquals(80, resultUsage.getCachedTokens());
+        assertEquals(15, resultUsage.getCacheCreationInputTokens());
     }
 
     @Test

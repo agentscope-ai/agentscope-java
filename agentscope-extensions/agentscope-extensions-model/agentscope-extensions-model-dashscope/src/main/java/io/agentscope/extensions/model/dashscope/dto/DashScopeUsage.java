@@ -59,6 +59,22 @@ public class DashScopeUsage {
     @JsonProperty("audio_tokens")
     private Integer audioTokens;
 
+    /** Legacy regional field for cache hits. */
+    @JsonProperty("cached_tokens")
+    private Integer cachedTokens;
+
+    /** Legacy/top-level field for explicit cache creation. */
+    @JsonProperty("cache_creation_input_tokens")
+    private Integer cacheCreationInputTokens;
+
+    /** Current DashScope prompt token details. */
+    @JsonProperty("prompt_tokens_details")
+    private DashScopeTokenDetails promptTokensDetails;
+
+    /** Alternate token detail shape returned by some endpoints. */
+    @JsonProperty("input_tokens_details")
+    private DashScopeTokenDetails inputTokensDetails;
+
     public DashScopeUsage() {}
 
     public Integer getInputTokens() {
@@ -107,5 +123,53 @@ public class DashScopeUsage {
 
     public void setAudioTokens(Integer audioTokens) {
         this.audioTokens = audioTokens;
+    }
+
+    /** Returns cache hits across current and legacy DashScope response shapes. */
+    public Integer getCachedTokens() {
+        if (promptTokensDetails != null && promptTokensDetails.getCachedTokens() != null) {
+            return promptTokensDetails.getCachedTokens();
+        }
+        if (inputTokensDetails != null && inputTokensDetails.getCachedTokens() != null) {
+            return inputTokensDetails.getCachedTokens();
+        }
+        return cachedTokens;
+    }
+
+    public void setCachedTokens(Integer cachedTokens) {
+        this.cachedTokens = cachedTokens;
+    }
+
+    /** Returns explicit cache creation tokens across current and legacy response shapes. */
+    public Integer getCacheCreationInputTokens() {
+        if (promptTokensDetails != null
+                && promptTokensDetails.getCacheCreationInputTokens() != null) {
+            return promptTokensDetails.getCacheCreationInputTokens();
+        }
+        if (inputTokensDetails != null
+                && inputTokensDetails.getCacheCreationInputTokens() != null) {
+            return inputTokensDetails.getCacheCreationInputTokens();
+        }
+        return cacheCreationInputTokens;
+    }
+
+    public void setCacheCreationInputTokens(Integer cacheCreationInputTokens) {
+        this.cacheCreationInputTokens = cacheCreationInputTokens;
+    }
+
+    public DashScopeTokenDetails getPromptTokensDetails() {
+        return promptTokensDetails;
+    }
+
+    public void setPromptTokensDetails(DashScopeTokenDetails promptTokensDetails) {
+        this.promptTokensDetails = promptTokensDetails;
+    }
+
+    public DashScopeTokenDetails getInputTokensDetails() {
+        return inputTokensDetails;
+    }
+
+    public void setInputTokensDetails(DashScopeTokenDetails inputTokensDetails) {
+        this.inputTokensDetails = inputTokensDetails;
     }
 }

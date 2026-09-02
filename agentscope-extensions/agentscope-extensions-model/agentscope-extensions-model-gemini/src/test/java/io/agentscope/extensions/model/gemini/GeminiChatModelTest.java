@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.ClientOptions;
+import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
 import io.agentscope.core.message.Msg;
@@ -281,6 +282,43 @@ class GeminiChatModelTest {
                         .build();
 
         assertNotNull(modelWithOptions);
+    }
+
+    @Test
+    @DisplayName("Should reference cached content without resending tools or tool config")
+    void testCachedContentRequestSuppressesCachedToolConfiguration() {
+        GeminiChatModel model =
+                GeminiChatModel.builder().apiKey(mockApiKey).modelName("gemini-2.5-flash").build();
+        ToolSchema tool =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search")
+                        .parameters(java.util.Map.of("type", "object"))
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("cachedContent", "cachedContents/cache-123")
+                        .toolChoice(new ToolChoice.Required())
+                        .build();
+
+        GenerateContentConfig config = model.buildGenerateContentConfig(List.of(tool), options);
+
+        assertEquals("cachedContents/cache-123", config.cachedContent().orElseThrow());
+        assertTrue(config.tools().isEmpty());
+        assertTrue(config.toolConfig().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should leave Gemini implicit caching to the provider")
+    void testCacheControlDoesNotCreateExplicitCachedContentReference() {
+        GeminiChatModel model =
+                GeminiChatModel.builder().apiKey(mockApiKey).modelName("gemini-2.5-flash").build();
+
+        GenerateContentConfig config =
+                model.buildGenerateContentConfig(
+                        List.of(), GenerateOptions.builder().cacheControl(true).build());
+
+        assertTrue(config.cachedContent().isEmpty());
     }
 
     @Test

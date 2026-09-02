@@ -309,15 +309,14 @@ public class GenerateOptions {
     /**
      * Gets whether cache control is enabled for prompt caching.
      *
-     * <p>When true, the formatter will automatically add <code>cache_control:
-     * {"type": "ephemeral"}</code> to system messages and the last message in the request. This
-     * enables prompt
-     * caching on supported providers (e.g., Anthropic, DashScope, OpenAI-compatible APIs) to reduce
-     * latency and cost.
+     * <p>When true, a supporting provider enables its automatic prompt-caching strategy. Some
+     * providers select request breakpoints in the formatter, while others expose a provider-native
+     * automatic caching mode.
      *
      * <p>Users can also manually mark individual messages for caching via {@link
      * io.agentscope.core.message.MessageMetadataKeys#CACHE_CONTROL} metadata. Manually marked
-     * messages take priority over the automatic strategy.
+     * messages take priority over the automatic strategy and remain effective when this option is
+     * false or unset. Providers currently support at most four explicit breakpoints per request.
      *
      * @return true if cache control is enabled, false or null if not set
      */
@@ -780,8 +779,8 @@ public class GenerateOptions {
         /**
          * Sets whether cache control is enabled for prompt caching.
          *
-         * <p>When true, the formatter will automatically add <code>cache_control:
-         * {"type": "ephemeral"}</code> to system messages and the last message in the request.
+         * <p>When true, a supporting provider enables its automatic prompt-caching strategy using
+         * the request shape defined by that provider.
          *
          * @param cacheControl true to enable cache control, false to disable
          * @return this builder instance

@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.openai.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Map;
 
 /**
  * OpenAI content part DTO for multimodal messages.
@@ -65,6 +66,14 @@ public class OpenAIContentPart {
     @JsonProperty("video_url")
     private OpenAIVideoUrl videoUrl;
 
+    /** Prompt cache control marker used by compatible providers such as DashScope. */
+    @JsonProperty("cache_control")
+    private Map<String, String> cacheControl;
+
+    /** Explicit prompt cache breakpoint used by the official OpenAI API. */
+    @JsonProperty("prompt_cache_breakpoint")
+    private Map<String, String> promptCacheBreakpoint;
+
     public OpenAIContentPart() {}
 
     public String getType() {
@@ -105,6 +114,22 @@ public class OpenAIContentPart {
 
     public void setVideoUrl(OpenAIVideoUrl videoUrl) {
         this.videoUrl = videoUrl;
+    }
+
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
+    }
+
+    public Map<String, String> getPromptCacheBreakpoint() {
+        return promptCacheBreakpoint;
+    }
+
+    public void setPromptCacheBreakpoint(Map<String, String> promptCacheBreakpoint) {
+        this.promptCacheBreakpoint = promptCacheBreakpoint;
     }
 
     /**
@@ -203,6 +228,16 @@ public class OpenAIContentPart {
 
         public Builder videoUrl(OpenAIVideoUrl videoUrl) {
             part.setVideoUrl(videoUrl);
+            return this;
+        }
+
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            part.setCacheControl(cacheControl);
+            return this;
+        }
+
+        public Builder promptCacheBreakpoint(Map<String, String> promptCacheBreakpoint) {
+            part.setPromptCacheBreakpoint(promptCacheBreakpoint);
             return this;
         }
 

@@ -41,6 +41,8 @@ class StreamChatResponseAggregatorTest {
                                     ChatUsage.builder()
                                             .inputTokens(100)
                                             .outputTokens(i * 20)
+                                            .cachedTokens(i * 10)
+                                            .cacheCreationInputTokens(i * 5)
                                             .time(i * 0.5)
                                             .build())
                             .finishReason(i == 5 ? "stop" : null)
@@ -51,6 +53,8 @@ class StreamChatResponseAggregatorTest {
         assertEquals("test-id", response.getId());
         assertEquals(100, response.getUsage().getInputTokens());
         assertEquals(100, response.getUsage().getOutputTokens());
+        assertEquals(50, response.getUsage().getCachedTokens());
+        assertEquals(25, response.getUsage().getCacheCreationInputTokens());
         assertEquals("stop", response.getFinishReason());
     }
 
@@ -70,12 +74,20 @@ class StreamChatResponseAggregatorTest {
         agg.append(
                 ChatResponse.builder()
                         .id("openai-id")
-                        .usage(ChatUsage.builder().inputTokens(200).outputTokens(150).build())
+                        .usage(
+                                ChatUsage.builder()
+                                        .inputTokens(200)
+                                        .outputTokens(150)
+                                        .cachedTokens(120)
+                                        .cacheCreationInputTokens(30)
+                                        .build())
                         .finishReason("stop")
                         .build());
 
         ChatResponse response = agg.getResponse();
         assertEquals(200, response.getUsage().getInputTokens());
         assertEquals(150, response.getUsage().getOutputTokens());
+        assertEquals(120, response.getUsage().getCachedTokens());
+        assertEquals(30, response.getUsage().getCacheCreationInputTokens());
     }
 }

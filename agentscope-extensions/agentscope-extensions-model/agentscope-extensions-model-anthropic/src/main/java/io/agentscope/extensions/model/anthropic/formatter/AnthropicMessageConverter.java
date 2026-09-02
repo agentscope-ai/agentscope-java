@@ -80,12 +80,15 @@ public class AnthropicMessageConverter {
         for (int i = 0; i < messages.size(); i++) {
             Msg msg = messages.get(i);
             boolean isFirstMessage = (i == 0);
+            int resultStart = result.size();
 
             if (msg.getRole() == MsgRole.ASSISTANT
                     && msg.getContentBlocks(ToolUseBlock.class).size() > 1) {
                 SplitToolResultSequence splitResults = collectSplitToolResults(messages, i + 1);
                 if (shouldSplitParallelToolCalls(msg, splitResults)) {
                     result.addAll(convertParallelToolCalls(msg, splitResults));
+                    applyExplicitBreakpoints(
+                            result, resultStart, msg, messages, i + 1, splitResults);
                     i += splitResults.consumedMessages();
                     continue;
                 }
@@ -123,9 +126,71 @@ public class AnthropicMessageConverter {
                     result.add(param);
                 }
             }
+
+            markLastProducedMessage(result, resultStart, msg);
         }
 
         return result;
+    }
+
+    private void markLastProducedMessage(List<MessageParam> result, int start, Msg source) {
+        if (!AnthropicPromptCacheSupport.isExplicitlyMarked(source)) {
+            return;
+        }
+        if (result.size() == start) {
+            throw new IllegalArgumentException(
+                    "Explicit Anthropic prompt cache breakpoint has no provider message");
+        }
+        int last = result.size() - 1;
+        result.set(last, AnthropicPromptCacheSupport.markLastCacheableBlock(result.get(last)));
+    }
+
+    private void applyExplicitBreakpoints(
+            List<MessageParam> result,
+            int start,
+            Msg assistant,
+            List<Msg> messages,
+            int toolResultStart,
+            SplitToolResultSequence splitResults) {
+        if (AnthropicPromptCacheSupport.isExplicitlyMarked(assistant)) {
+            int assistantIndex = start + (splitResults.resultsById().size() - 1) * 2;
+            result.set(
+                    assistantIndex,
+                    AnthropicPromptCacheSupport.markLastCacheableBlock(result.get(assistantIndex)));
+        }
+
+        for (int i = toolResultStart; i < toolResultStart + splitResults.consumedMessages(); i++) {
+            Msg toolResultMsg = messages.get(i);
+            if (AnthropicPromptCacheSupport.isExplicitlyMarked(toolResultMsg)) {
+                List<ToolResultBlock> sourceResults =
+                        toolResultMsg.getContentBlocks(ToolResultBlock.class);
+                String lastToolUseId = sourceResults.get(sourceResults.size() - 1).getId();
+                int providerIndex = findToolResultMessage(result, start, lastToolUseId);
+                result.set(
+                        providerIndex,
+                        AnthropicPromptCacheSupport.markLastCacheableBlock(
+                                result.get(providerIndex)));
+            }
+        }
+    }
+
+    private int findToolResultMessage(
+            List<MessageParam> result, int start, String expectedToolUseId) {
+        for (int i = result.size() - 1; i >= start; i--) {
+            MessageParam param = result.get(i);
+            if (!param.content().isBlockParams()) {
+                continue;
+            }
+            for (ContentBlockParam block : param.content().asBlockParams()) {
+                if (block.isToolResult()
+                        && java.util.Objects.equals(
+                                block.asToolResult().toolUseId(), expectedToolUseId)) {
+                    return i;
+                }
+            }
+        }
+        throw new IllegalArgumentException(
+                "Explicit Anthropic tool-result cache breakpoint lost during conversion");
     }
 
     /**

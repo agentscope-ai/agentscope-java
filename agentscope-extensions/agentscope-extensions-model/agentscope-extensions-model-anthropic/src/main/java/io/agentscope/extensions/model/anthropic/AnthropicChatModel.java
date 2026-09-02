@@ -162,42 +162,28 @@ public class AnthropicChatModel extends ChatModelBase {
                                                 .model(modelName)
                                                 .maxTokens(4096);
 
-                                GenerateOptions effectiveOptions =
-                                        GenerateOptions.mergeOptions(options, defaultOptions);
-                                boolean cacheControlEnabled =
-                                        effectiveOptions != null
-                                                && Boolean.TRUE.equals(
-                                                        effectiveOptions.getCacheControl());
-
-                                // Extract and apply system message
-                                // (Anthropic-specific requirement);
-                                // adds cache_control when prompt caching is enabled
-                                formatter.applySystemMessage(
-                                        paramsBuilder, messages, cacheControlEnabled);
-
-                                // The leading system message has been applied to the `system`
-                                // field above. Exclude it from the message body so the system
-                                // prompt isn't sent twice.
-                                List<Msg> conversationMessages = messages;
-                                if (messages != null
-                                        && !messages.isEmpty()
-                                        && messages.get(0).getRole() == MsgRole.SYSTEM) {
-                                    conversationMessages = messages.subList(1, messages.size());
-                                }
-
                                 // Use formatter to convert Msg to Anthropic
                                 // MessageParam
+                                List<Msg> providerMessages =
+                                        messages != null
+                                                        && !messages.isEmpty()
+                                                        && messages.get(0).getRole()
+                                                                == MsgRole.SYSTEM
+                                                ? messages.subList(1, messages.size())
+                                                : messages;
                                 List<MessageParam> formattedMessages =
-                                        formatter.format(conversationMessages);
-
-                                // Apply automatic cache control strategy
-                                // (marks the last message to cache the conversation prefix)
-                                if (cacheControlEnabled) {
-                                    formattedMessages =
-                                            formatter.applyCacheControl(formattedMessages);
-                                }
-
-                                for (MessageParam param : formattedMessages) {
+                                        formatter.format(providerMessages);
+                                GenerateOptions effectiveOptions =
+                                        GenerateOptions.mergeOptions(options, defaultOptions);
+                                boolean automaticCache =
+                                        Boolean.TRUE.equals(effectiveOptions.getCacheControl());
+                                AnthropicBaseFormatter.PromptCachePlan cachePlan =
+                                        formatter.applyPromptCache(
+                                                paramsBuilder,
+                                                messages,
+                                                formattedMessages,
+                                                automaticCache);
+                                for (MessageParam param : cachePlan.messages()) {
                                     paramsBuilder.addMessage(param);
                                 }
 

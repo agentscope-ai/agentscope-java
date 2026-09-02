@@ -67,6 +67,7 @@ final class ModelCallUsageEventConverter implements AgentEventConverter {
         value.put("inputTokens", usage.inputTokens());
         value.put("outputTokens", usage.outputTokens());
         value.put("cachedTokens", usage.cachedTokens());
+        value.put("cacheCreationInputTokens", usage.cacheCreationInputTokens());
         value.put("totalTokens", usage.totalTokens());
         value.put("time", usage.time());
         return value;

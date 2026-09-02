@@ -388,7 +388,14 @@ class ReActAgentStructuredOutputTest {
                                                                                         .toJson(
                                                                                                 toolInput))
                                                                         .build()))
-                                                .usage(new ChatUsage(100, 50, 1.5))
+                                                .usage(
+                                                        ChatUsage.builder()
+                                                                .inputTokens(100)
+                                                                .outputTokens(50)
+                                                                .cachedTokens(40)
+                                                                .cacheCreationInputTokens(25)
+                                                                .time(1.5)
+                                                                .build())
                                                 .build());
                             } else {
                                 return List.of(
@@ -435,6 +442,11 @@ class ReActAgentStructuredOutputTest {
         assertNotNull(usage, "ChatUsage should be preserved after structured output compression");
         assertEquals(100, usage.getInputTokens(), "Input tokens should be preserved");
         assertEquals(50, usage.getOutputTokens(), "Output tokens should be preserved");
+        assertEquals(40, usage.getCachedTokens(), "Cached tokens should be preserved");
+        assertEquals(
+                25,
+                usage.getCacheCreationInputTokens(),
+                "Cache creation tokens should be preserved");
         assertEquals(1.5, usage.getTime(), 0.01, "Time should be preserved");
     }
 

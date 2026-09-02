@@ -216,8 +216,9 @@ class GeminiResponseParserTest {
         GenerateContentResponseUsageMetadata usageMetadata =
                 GenerateContentResponseUsageMetadata.builder()
                         .promptTokenCount(100)
-                        .candidatesTokenCount(60) // Includes thinking
-                        .thoughtsTokenCount(10) // Thinking tokens
+                        .cachedContentTokenCount(60)
+                        .candidatesTokenCount(50)
+                        .thoughtsTokenCount(10)
                         .totalTokenCount(160)
                         .build();
 
@@ -238,8 +239,12 @@ class GeminiResponseParserTest {
         // Input tokens = promptTokenCount
         assertEquals(100, usage.getInputTokens());
 
-        // Output tokens = candidatesTokenCount - thoughtsTokenCount
+        // Output tokens = candidatesTokenCount; thoughts are reported separately by Gemini
         assertEquals(50, usage.getOutputTokens());
+
+        // Cached tokens are a subset of promptTokenCount
+        assertEquals(60, usage.getCachedTokens());
+        assertEquals(0, usage.getCacheCreationInputTokens());
 
         // Time should be > 0
         assertTrue(usage.getTime() >= 0);

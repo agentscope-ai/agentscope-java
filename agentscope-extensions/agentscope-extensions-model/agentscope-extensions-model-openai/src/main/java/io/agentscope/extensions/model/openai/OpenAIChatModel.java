@@ -35,8 +35,10 @@ import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.dto.OpenAIStreamOptions;
 import io.agentscope.extensions.model.openai.formatter.OpenAIBaseFormatter;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -155,10 +157,20 @@ public class OpenAIChatModel extends ChatModelBase {
             formatter.applyToolChoice(request, effectiveOptions.getToolChoice());
         }
 
-        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
-        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())
-                && formatter instanceof OpenAIBaseFormatter openAIFormatter) {
-            openAIFormatter.applyCacheControl(request.getMessages());
+        // DashScope-compatible endpoints require content-block markers. Normalize explicit
+        // metadata even when automatic cache control is disabled.
+        if (formatter instanceof OpenAIBaseFormatter openAIFormatter) {
+            boolean automaticCacheControl = Boolean.TRUE.equals(effectiveOptions.getCacheControl());
+            if (isDashScopeCompatibleBaseUrl(baseUrl)) {
+                openAIFormatter.applyDashScopeCacheControl(
+                        request.getMessages(), automaticCacheControl);
+            } else if (isOfficialOpenAIBaseUrl(baseUrl)) {
+                openAIFormatter.applyOpenAIPromptCache(request);
+            } else {
+                // The OpenAI-compatible surface does not imply a provider's cache protocol.
+                // Never leak AgentScope's internal legacy marker to an unknown endpoint.
+                openAIFormatter.clearLegacyCacheControl(request.getMessages());
+            }
         }
 
         // Make the API call
@@ -195,6 +207,43 @@ public class OpenAIChatModel extends ChatModelBase {
                                 }
                             })
                     .subscribeOn(Schedulers.boundedElastic());
+        }
+    }
+
+    static boolean isDashScopeCompatibleBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return false;
+        }
+        try {
+            String host = URI.create(baseUrl).getHost();
+            if (host == null) {
+                return false;
+            }
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            return normalizedHost.equals("dashscope.aliyuncs.com")
+                    || (normalizedHost.startsWith("dashscope-")
+                            && normalizedHost.endsWith(".aliyuncs.com"))
+                    || normalizedHost.endsWith(".dashscope.aliyuncs.com")
+                    || normalizedHost.endsWith(".maas.aliyuncs.com");
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    static boolean isOfficialOpenAIBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return true;
+        }
+        try {
+            String host = URI.create(baseUrl).getHost();
+            if (host == null) {
+                return false;
+            }
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            return normalizedHost.equals("api.openai.com")
+                    || normalizedHost.endsWith(".api.openai.com");
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 
