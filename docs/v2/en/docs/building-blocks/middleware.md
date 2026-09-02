@@ -171,6 +171,24 @@ ReActAgent agent =
                 .build();
 ```
 
+### FinalAnswerFilterMiddleware
+
+`FinalAnswerFilterMiddleware` exposes only the text from the final ReAct reasoning round. Text from rounds that produce tool calls is suppressed, while tool and other non-text events continue to stream normally.
+
+```java
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new FinalAnswerFilterMiddleware())
+                .build();
+```
+
+The middleware buffers each round's text until the model call ends, because it cannot know whether the round is final until no tool call is observed.
+
 ## Custom middleware
 
 Implement `MiddlewareBase` (`io.agentscope.core.middleware`) and override only the hooks you need.

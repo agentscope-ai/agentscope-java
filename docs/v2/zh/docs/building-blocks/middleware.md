@@ -171,6 +171,24 @@ ReActAgent agent =
                 .build();
 ```
 
+### FinalAnswerFilterMiddleware
+
+`FinalAnswerFilterMiddleware` 仅输出 ReAct 最终推理轮次的文本。产生工具调用的中间轮次文本会被过滤，工具事件及其他非文本事件仍会正常流式输出。
+
+```java
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new FinalAnswerFilterMiddleware())
+                .build();
+```
+
+由于只有在未观察到工具调用时才能确定当前轮次是最终轮次，该 middleware 会将每轮文本缓冲到模型调用结束。
+
 ## 自定义 Middleware
 
 实现 `MiddlewareBase` 接口（位于 `io.agentscope.core.middleware`），只重写需要的 hook 即可，其它的不用管。
