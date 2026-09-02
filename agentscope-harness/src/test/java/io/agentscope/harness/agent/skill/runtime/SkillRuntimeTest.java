@@ -107,8 +107,9 @@ class SkillRuntimeTest {
         @Test
         void sandboxResolveEscapesSpacesInCachedSkill() {
             ShellPathPolicy policy = ShellPathPolicy.sandbox();
-            String result = policy.resolve("ignored", new StageResult.Cached("ns", "my skill"));
-            assertEquals("/workspace/.skills-cache/ns/my\\ skill", result);
+            String result =
+                    policy.resolve("ignored", new StageResult.Cached("alice", "ns", "my skill"));
+            assertEquals("/workspace/.skills-cache/alice/ns/my\\ skill", result);
         }
 
         @Test
@@ -129,7 +130,7 @@ class SkillRuntimeTest {
         void noShellAlwaysReturnsNull() {
             ShellPathPolicy policy = ShellPathPolicy.noShell();
             assertNull(policy.resolve("any name", new StageResult.WorkspaceNative()));
-            assertNull(policy.resolve("any name", new StageResult.Cached("ns", "name")));
+            assertNull(policy.resolve("any name", new StageResult.Cached("alice", "ns", "name")));
             assertNull(policy.resolve("any name", StageResult.NONE));
             assertNull(policy.resolve("any name", null));
         }
