@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-31T02:58:53+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Model" href="model.html"><link rel="prev" title="消息与事件" href="message-and-event.html">
+    <meta property="article:modified_time" content="2026-09-02T07:11:11+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Model" href="model.html"><link rel="prev" title="消息与事件" href="message-and-event.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/building-blocks/middleware.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1145,6 +1145,22 @@
 </pre></div>
 </div>
 </section>
+<section id="finalanswerfiltermiddleware">
+<h3>FinalAnswerFilterMiddleware<a class="headerlink" href="#finalanswerfiltermiddleware" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">FinalAnswerFilterMiddleware</span></code> 仅输出 ReAct 最终推理轮次的文本。产生工具调用的中间轮次文本会被过滤，工具事件及其他非文本事件仍会正常流式输出。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.middleware.FinalAnswerFilterMiddleware</span><span class="p">;</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">"assistant"</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">middleware</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">FinalAnswerFilterMiddleware</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>由于只有在未观察到工具调用时才能确定当前轮次是最终轮次，该 middleware 会将每轮文本缓冲到模型调用结束。</p>
+</section>
 </section>
 <section id="id4">
 <h2>自定义 Middleware<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
@@ -1538,7 +1554,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-31</div>
+              Last updated on 2026-09-02</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1579,6 +1595,7 @@
 <li><a class="reference internal" href="#id3">内置 Middleware</a><ul>
 <li><a class="reference internal" href="#oteltracingmiddleware">OtelTracingMiddleware</a></li>
 <li><a class="reference internal" href="#taskremindermiddleware">TaskReminderMiddleware</a></li>
+<li><a class="reference internal" href="#finalanswerfiltermiddleware">FinalAnswerFilterMiddleware</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#id4">自定义 Middleware</a><ul>
