@@ -29,6 +29,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -50,6 +51,7 @@ import reactor.core.publisher.Flux;
  * TempDir} so we can both (a) assert state lands at the expected location and (b) avoid sharing
  * state across tests / polluting the surefire-shared {@code target/test-state-home/}.
  */
+@HarnessQuiescence
 class JsonSessionDefaultLocationTest {
 
     @TempDir Path stateHome;
