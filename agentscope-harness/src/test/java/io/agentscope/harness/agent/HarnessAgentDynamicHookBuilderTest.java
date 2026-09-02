@@ -42,6 +42,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -73,6 +74,7 @@ import reactor.core.publisher.Flux;
  * <p>The contract under test is the middleware list registered on the underlying
  * {@code ReActAgent}.
  */
+@HarnessQuiescence
 class HarnessAgentDynamicHookBuilderTest {
 
     @TempDir Path workspace;

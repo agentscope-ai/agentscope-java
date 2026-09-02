@@ -65,6 +65,7 @@ import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -90,6 +91,7 @@ import reactor.core.scheduler.Schedulers;
  * Tests for {@link HarnessAgent} workspace wiring: {@code AGENTS.md} context and subagent
  * discovery ({@code subagents/*.md}).
  */
+@HarnessQuiescence
 class HarnessAgentTest {
 
     @TempDir Path workspace;
