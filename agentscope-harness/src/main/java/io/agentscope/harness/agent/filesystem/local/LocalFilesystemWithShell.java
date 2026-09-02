@@ -30,7 +30,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +55,23 @@ import org.slf4j.LoggerFactory;
 public class LocalFilesystemWithShell extends LocalFilesystem implements AbstractSandboxFilesystem {
 
     private static final Logger log = LoggerFactory.getLogger(LocalFilesystemWithShell.class);
+
+    private static final ExecutorService STREAM_READER_POOL =
+            Executors.newCachedThreadPool(
+                    new ThreadFactory() {
+                        private final AtomicInteger counter = new AtomicInteger();
+
+                        @Override
+                        public Thread newThread(Runnable runnable) {
+                            Thread thread =
+                                    new Thread(
+                                            runnable,
+                                            "LocalFilesystemWithShell-StreamReader-"
+                                                    + counter.incrementAndGet());
+                            thread.setDaemon(true);
+                            return thread;
+                        }
+                    });
 
     /** Default timeout in seconds for shell command execution. */
     public static final int DEFAULT_EXECUTE_TIMEOUT = 120;
@@ -335,11 +359,22 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
             Process proc = pb.start();
 
+            Future<byte[]> stdoutFuture =
+                    STREAM_READER_POOL.submit(() -> proc.getInputStream().readAllBytes());
+            Future<byte[]> stderrFuture =
+                    STREAM_READER_POOL.submit(() -> proc.getErrorStream().readAllBytes());
+
             boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
 
             Charset outputCharset = outputCharset(osName);
-            String stdout = new String(proc.getInputStream().readAllBytes(), outputCharset);
-            String stderr = new String(proc.getErrorStream().readAllBytes(), outputCharset);
+            String stdout =
+                    new String(
+                            getOutput(stdoutFuture, finished ? 5 : 1, TimeUnit.SECONDS),
+                            outputCharset);
+            String stderr =
+                    new String(
+                            getOutput(stderrFuture, finished ? 5 : 1, TimeUnit.SECONDS),
+                            outputCharset);
 
             if (!finished) {
                 proc.destroyForcibly();
@@ -406,6 +441,19 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                     1,
                     false);
         }
+    }
+
+    private byte[] getOutput(Future<byte[]> future, long timeout, TimeUnit unit) {
+        try {
+            return future.get(timeout, unit);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+        } catch (ExecutionException | TimeoutException e) {
+            future.cancel(true);
+            log.debug("Failed to collect shell output", e);
+        }
+        return new byte[0];
     }
 
     private Path resolveExecuteCwd(RuntimeContext rc) {

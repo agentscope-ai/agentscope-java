@@ -16,9 +16,12 @@
 package io.agentscope.harness.agent.filesystem.local;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 class LocalFilesystemWithShellTest {
@@ -40,5 +43,20 @@ class LocalFilesystemWithShellTest {
         assertEquals(
                 Charset.defaultCharset(),
                 LocalFilesystemWithShell.outputCharset("Windows 10", null));
+    }
+
+    @Test
+    void execute_drainsLargeStdoutWithoutDeadlocking() throws Exception {
+        Path root = Files.createTempDirectory("local-filesystem-shell-test");
+        LocalFilesystemWithShell filesystem = new LocalFilesystemWithShell(root);
+
+        var response =
+                filesystem.execute(
+                        null,
+                        "i=0; while [ $i -lt 12000 ]; do printf '123456789'; i=$((i+1)); done",
+                        10);
+
+        assertEquals(0, response.exitCode());
+        assertTrue(response.output().contains("Output truncated"));
     }
 }
