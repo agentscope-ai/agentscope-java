@@ -18,7 +18,8 @@ package io.agentscope.harness.agent.tool;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 
@@ -271,8 +272,8 @@ class AgentSpawnToolForceSyncTest {
                 captureRepo.putCount.get() == 0,
                 "TaskRepository.putTask must not be called under force_sync timeout");
 
-        // Dispose → CANCEL → interruptAgent
-        verify(agentSpy, atLeastOnce()).interrupt(any(RuntimeContext.class));
+        // Dispose → CANCEL → interrupt the exact child execution slot.
+        verify(agentSpy, atLeastOnce()).interrupt(eq("u1"), startsWith("sub-"));
     }
 
     private static final class CapturingTaskRepository implements TaskRepository {

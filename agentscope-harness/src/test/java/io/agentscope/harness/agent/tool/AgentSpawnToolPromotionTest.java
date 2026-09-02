@@ -18,8 +18,12 @@ package io.agentscope.harness.agent.tool;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -45,6 +49,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -82,6 +87,49 @@ import reactor.core.scheduler.Schedulers;
 @DisplayName(
         "AgentSpawnTool timeout-promotion: AdoptedTaskRunSpec still works after orphan-cancel fix")
 class AgentSpawnToolPromotionTest {
+
+    @Test
+    @DisplayName("Promoted task exposes an exact cancellation handle for its inner subscription")
+    @Timeout(10)
+    void promotedTask_cancelActionDisposesInnerSubscription() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch cancelled = new CountDownLatch(1);
+        ReActAgent child = Mockito.mock(ReActAgent.class);
+        when(child.call(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Mono.<io.agentscope.core.message.Msg>never()
+                                .doOnSubscribe(ignored -> started.countDown())
+                                .doOnCancel(cancelled::countDown));
+
+        DefaultAgentManager manager =
+                new DefaultAgentManager(
+                        List.of(new SubagentEntry("slow_agent", "Test slow agent", rc -> child)),
+                        null);
+        AtomicReference<TaskRunSpec> capturedSpec = new AtomicReference<>();
+        AtomicReference<String> capturedTaskId = new AtomicReference<>();
+        AgentSpawnTool tool =
+                new AgentSpawnTool(
+                        manager, new CapturingTaskRepository(capturedSpec, capturedTaskId), 0);
+        RuntimeContext parentContext =
+                RuntimeContext.builder().sessionId("parent-session").userId("u-promote").build();
+
+        String result =
+                tool.agentSpawn(parentContext, null, "slow_agent", "go", null, 1, null)
+                        .block(Duration.ofSeconds(5));
+        assertNotNull(result);
+        assertTrue(result.contains("status: timeout_promoted"));
+        assertTrue(started.await(1, TimeUnit.SECONDS));
+
+        TaskRunSpec.AdoptedTaskRunSpec adopted =
+                (TaskRunSpec.AdoptedTaskRunSpec) capturedSpec.get();
+        assertNotNull(adopted.cancelAction(), "promotion must retain the inner cancel handle");
+        adopted.cancelAction().run();
+
+        assertTrue(
+                cancelled.await(2, TimeUnit.SECONDS),
+                "promotion cancelAction must dispose the exact inner subscription");
+        verify(child).interrupt(eq("u-promote"), eq(extractField(result, "session_id")));
+    }
 
     @Test
     @DisplayName(
@@ -217,7 +265,7 @@ class AgentSpawnToolPromotionTest {
         // ===== Proof #4: interrupt() was never called on the agent =====
         // Promotion is supposed to keep the agent running, not kill it. If the orphan-cancel
         // fix accidentally fires on the promotion path, interrupt() would be invoked here.
-        verify(agentSpy, never()).interrupt(any(RuntimeContext.class));
+        verify(agentSpy, never()).interrupt(anyString(), anyString());
     }
 
     /** Captures the {@link TaskRunSpec} submitted to {@code putTask} so the test can inspect it. */
@@ -257,5 +305,14 @@ class AgentSpawnToolPromotionTest {
         public boolean cancelTask(RuntimeContext rc, String sessionId, String taskId) {
             return false;
         }
+    }
+
+    private static String extractField(String text, String field) {
+        String prefix = field + ": ";
+        return text.lines()
+                .filter(line -> line.startsWith(prefix))
+                .map(line -> line.substring(prefix.length()).trim())
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing " + field + " in: " + text));
     }
 }

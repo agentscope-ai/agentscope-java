@@ -17,14 +17,18 @@ package io.agentscope.extensions.aistio.store;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.extensions.aistio.transport.ControlPlaneHttpClient;
+import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
@@ -45,7 +49,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -71,6 +79,10 @@ class TaskRepositoryContractTest {
     private HttpServer server;
     private String baseUrl;
     private final ConcurrentHashMap<String, StubTask> stubTasks = new ConcurrentHashMap<>();
+    private final AtomicBoolean cancelReturnsNotFound = new AtomicBoolean();
+    private final AtomicInteger remoteSubmissions = new AtomicInteger();
+    private final AtomicInteger remoteStatusReads = new AtomicInteger();
+    private final AtomicInteger remoteResultReads = new AtomicInteger();
     private ControlPlaneTaskRepository cpRepoA;
     private ControlPlaneTaskRepository cpRepoB;
 
@@ -81,6 +93,7 @@ class TaskRepositoryContractTest {
 
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/v1/dp/tasks", this::handleTasks);
+        server.createContext("/tasks", this::handleRemoteTasks);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
@@ -138,6 +151,239 @@ class TaskRepositoryContractTest {
     @Test
     void terminalStatus_notOverwrittenByNonTerminal_controlPlane() throws Exception {
         terminalStatus_notOverwrittenByNonTerminal(cpRepoA, Backend.CONTROL_PLANE);
+    }
+
+    @Test
+    void localCancel_persistsBeforeInvokingHandle_andSuppressesLateCompletion() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        CountDownLatch allowFinish = new CountDownLatch(1);
+        CountDownLatch finished = new CountDownLatch(1);
+        AtomicBoolean cancelActionSawDurableFlag = new AtomicBoolean();
+        AtomicInteger callbacks = new AtomicInteger();
+        cpRepoA.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, result) -> callbacks.incrementAndGet());
+
+        cpRepoA.putTask(
+                RuntimeContext.empty(),
+                "t-local-cancel",
+                "sub-a",
+                SESSION,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            started.countDown();
+                            try {
+                                while (!allowFinish.await(5, TimeUnit.SECONDS)) {
+                                    // keep waiting until the test releases this deliberately
+                                }
+                            } catch (InterruptedException ignored) {
+                                interrupted.countDown();
+                                while (true) {
+                                    try {
+                                        allowFinish.await();
+                                        break;
+                                    } catch (InterruptedException ignoredAgain) {
+                                        // Deliberately emulate an uncooperative supplier.
+                                    }
+                                }
+                            } finally {
+                                finished.countDown();
+                            }
+                            return "late-success";
+                        },
+                        () ->
+                                cancelActionSawDurableFlag.set(
+                                        isCancelRequested(
+                                                Backend.CONTROL_PLANE, "t-local-cancel"))));
+
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        try {
+            assertTrue(cpRepoA.cancelTask(RuntimeContext.empty(), SESSION, "t-local-cancel"));
+            assertTrue(
+                    cancelActionSawDurableFlag.get(),
+                    "control-plane cancel must precede local handle");
+            assertTrue(
+                    interrupted.await(5, TimeUnit.SECONDS),
+                    "attached runner Future must be interrupted");
+        } finally {
+            allowFinish.countDown();
+        }
+        assertTrue(finished.await(5, TimeUnit.SECONDS));
+        awaitStatus(Backend.CONTROL_PLANE, "t-local-cancel", TaskStatus.CANCELLED);
+        assertEquals(0, callbacks.get(), "late completion after cancel must not be delivered");
+        assertTrue(
+                cpRepoA.isDelivered(RuntimeContext.empty(), SESSION, "t-local-cancel"),
+                "explicit cancellation must suppress later delivery");
+        assertTrue(
+                cpRepoA.findPendingDeliveries(RuntimeContext.empty(), SESSION).stream()
+                        .noneMatch(d -> "t-local-cancel".equals(d.taskId())),
+                "explicit cancellation must not create an inbox reminder or wakeup");
+    }
+
+    @Test
+    void adoptedCancel_usesCancelAction_andDoesNotPublishFailure() throws Exception {
+        CompletableFuture<String> adopted = new CompletableFuture<>();
+        AtomicInteger cancelActions = new AtomicInteger();
+        AtomicInteger callbacks = new AtomicInteger();
+        cpRepoA.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, result) -> callbacks.incrementAndGet());
+
+        cpRepoA.putTask(
+                RuntimeContext.empty(),
+                "t-adopted-cancel",
+                "sub-a",
+                SESSION,
+                new TaskRunSpec.AdoptedTaskRunSpec(adopted, cancelActions::incrementAndGet));
+
+        assertTrue(cpRepoA.cancelTask(RuntimeContext.empty(), SESSION, "t-adopted-cancel"));
+        awaitStatus(Backend.CONTROL_PLANE, "t-adopted-cancel", TaskStatus.CANCELLED);
+        assertEquals(1, cancelActions.get());
+        assertTrue(adopted.isCancelled());
+        assertEquals(0, callbacks.get(), "cancelled adopted future must not publish FAILED");
+    }
+
+    @Test
+    void adoptedFailure_unwrapsCause_andPublishesFailure() throws Exception {
+        CompletableFuture<String> adopted = new CompletableFuture<>();
+        AtomicInteger callbacks = new AtomicInteger();
+        cpRepoA.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, result) -> {
+                    assertEquals("t-adopted-failure", taskId);
+                    assertNull(result);
+                    callbacks.incrementAndGet();
+                });
+
+        cpRepoA.putTask(
+                RuntimeContext.empty(),
+                "t-adopted-failure",
+                "sub-a",
+                SESSION,
+                new TaskRunSpec.AdoptedTaskRunSpec(adopted));
+        adopted.completeExceptionally(
+                new java.util.concurrent.CompletionException(
+                        new IllegalStateException("adopted boom")));
+
+        awaitStatus(Backend.CONTROL_PLANE, "t-adopted-failure", TaskStatus.FAILED);
+        assertEquals(
+                "adopted boom", stubTasks.get(taskKey(SESSION, "t-adopted-failure")).errorMessage);
+        assertEquals(1, callbacks.get());
+    }
+
+    @Test
+    void remoteTask_submitsAndPersistsSuccessfulResult() throws Exception {
+        cpRepoA.putTask(
+                RuntimeContext.empty(),
+                "t-remote-success",
+                "remote-agent",
+                SESSION,
+                new TaskRunSpec.RemoteTaskRunSpec(
+                        baseUrl, Map.of("X-Remote-Token", "remote-token"), "remote-agent", "work"));
+
+        awaitStatus(Backend.CONTROL_PLANE, "t-remote-success", TaskStatus.COMPLETED);
+        assertEquals("remote result", stubTasks.get(taskKey(SESSION, "t-remote-success")).result);
+        assertEquals(1, remoteSubmissions.get());
+        assertTrue(remoteStatusReads.get() >= 1);
+        assertEquals(1, remoteResultReads.get());
+    }
+
+    @Test
+    void getTask_resumesPersistedRemoteExecutionWithoutResubmitting() throws Exception {
+        TaskRecord persisted =
+                new TaskRecord("t-remote-resume", "remote-agent", AGENT, SESSION, "remote-session");
+        persisted.setStatus(TaskStatus.RUNNING);
+        persisted.setTransportType("agent-protocol");
+        persisted.setRemoteBaseUrl(baseUrl);
+        persisted.setRemoteHeaders(Map.of("X-Remote-Token", "remote-token"));
+        stubUpsert("t-remote-resume", persisted);
+
+        BackgroundTask resumed =
+                cpRepoA.getTask(RuntimeContext.empty(), SESSION, "t-remote-resume");
+
+        assertNotNull(resumed);
+        awaitStatus(Backend.CONTROL_PLANE, "t-remote-resume", TaskStatus.COMPLETED);
+        assertTrue(resumed.waitForCompletion(TimeUnit.SECONDS.toMillis(5)));
+        assertEquals("remote result", resumed.getResult());
+        assertEquals(0, remoteSubmissions.get());
+        assertTrue(remoteStatusReads.get() >= 1);
+        assertEquals(1, remoteResultReads.get());
+    }
+
+    @Test
+    void cancelTask_cancelEndpointRaceStillInvokesAndReleasesLocalHandle() {
+        CompletableFuture<String> adopted = new CompletableFuture<>();
+        AtomicInteger cancelActions = new AtomicInteger();
+        BackgroundTask localHandle =
+                cpRepoA.putTask(
+                        RuntimeContext.empty(),
+                        "t-cancel-not-found-race",
+                        "sub-a",
+                        SESSION,
+                        new TaskRunSpec.AdoptedTaskRunSpec(
+                                adopted, cancelActions::incrementAndGet));
+        cancelReturnsNotFound.set(true);
+
+        assertTrue(cpRepoA.cancelTask(RuntimeContext.empty(), SESSION, "t-cancel-not-found-race"));
+
+        assertEquals(1, cancelActions.get());
+        assertTrue(adopted.isCancelled());
+        assertNotSame(
+                localHandle,
+                cpRepoA.getTask(RuntimeContext.empty(), SESSION, "t-cancel-not-found-race"),
+                "the vanished terminal task must release its local cancellation handle");
+    }
+
+    @Test
+    void heartbeat_observesCrossNodeCancel_andTriggersLocalHandle() throws Exception {
+        CompletableFuture<String> adopted = new CompletableFuture<>();
+        AtomicInteger cancelActions = new AtomicInteger();
+        AtomicInteger callbacks = new AtomicInteger();
+        cpRepoA.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, result) -> callbacks.incrementAndGet());
+        cpRepoA.putTask(
+                RuntimeContext.empty(),
+                "t-cross-node-cancel",
+                "sub-a",
+                SESSION,
+                new TaskRunSpec.AdoptedTaskRunSpec(adopted, cancelActions::incrementAndGet));
+
+        assertTrue(cpRepoB.cancelTask(RuntimeContext.empty(), SESSION, "t-cross-node-cancel"));
+        assertEquals(0, cancelActions.get(), "other repository has no local execution handle");
+
+        invokeHeartbeat(cpRepoA);
+
+        assertEquals(1, cancelActions.get());
+        assertTrue(adopted.isCancelled());
+        assertEquals(0, callbacks.get());
+        assertEquals(
+                TaskStatus.CANCELLED, readStatus(Backend.CONTROL_PLANE, "t-cross-node-cancel"));
+    }
+
+    @Test
+    void localHandle_isRegisteredBeforeSupplierCanCancelItself() throws Exception {
+        AtomicInteger cancelActions = new AtomicInteger();
+        CountDownLatch cancelInvoked = new CountDownLatch(1);
+        cpRepoA.putTask(
+                RuntimeContext.empty(),
+                "t-register-first",
+                "sub-a",
+                SESSION,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            assertTrue(
+                                    cpRepoA.cancelTask(
+                                            RuntimeContext.empty(), SESSION, "t-register-first"));
+                            return "ignored";
+                        },
+                        () -> {
+                            cancelActions.incrementAndGet();
+                            cancelInvoked.countDown();
+                        }));
+
+        awaitStatus(Backend.CONTROL_PLANE, "t-register-first", TaskStatus.CANCELLED);
+        assertTrue(
+                cancelInvoked.await(5, TimeUnit.SECONDS),
+                "registered local cancel action must be invoked");
+        assertEquals(1, cancelActions.get());
     }
 
     private enum Backend {
@@ -219,6 +465,17 @@ class TaskRepositoryContractTest {
         assertTrue(isCancelRequested(backend, taskId));
     }
 
+    private void awaitStatus(Backend backend, String taskId, TaskStatus expected)
+            throws InterruptedException {
+        for (int i = 0; i < 100; i++) {
+            if (readStatus(backend, taskId) == expected) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        assertEquals(expected, readStatus(backend, taskId));
+    }
+
     private boolean isCancelRequested(Backend backend, String taskId) {
         if (backend == Backend.WORKSPACE) {
             return wsm.readTaskRecord(RuntimeContext.empty(), AGENT, SESSION, taskId)
@@ -272,6 +529,9 @@ class TaskRepositoryContractTest {
         t.result = record.getResult();
         t.errorMessage = record.getErrorMessage();
         t.cancelRequested = record.isCancelRequested();
+        t.transportType = record.getTransportType();
+        t.remoteBaseUrl = record.getRemoteBaseUrl();
+        t.remoteHeaders = record.getRemoteHeaders();
         t.lastUpdatedAt = Instant.now();
         if (t.createdAt == null) {
             t.createdAt = Instant.now();
@@ -343,6 +603,18 @@ class TaskRepositoryContractTest {
                 t.errorMessage = body.path("errorMessage").asText();
             }
             t.cancelRequested = body.path("cancelRequested").asBoolean(false);
+            if (body.hasNonNull("transportType")) {
+                t.transportType = body.path("transportType").asText();
+            }
+            if (body.hasNonNull("remoteBaseUrl")) {
+                t.remoteBaseUrl = body.path("remoteBaseUrl").asText();
+            }
+            if (body.hasNonNull("remoteHeaders")) {
+                t.remoteHeaders =
+                        MAPPER.convertValue(
+                                body.path("remoteHeaders"),
+                                new TypeReference<Map<String, String>>() {});
+            }
             t.lastUpdatedAt = Instant.now();
             if (t.createdAt == null) {
                 t.createdAt = Instant.now();
@@ -378,6 +650,11 @@ class TaskRepositoryContractTest {
             JsonNode body = MAPPER.readTree(ex.getRequestBody());
             assertTenant(body);
             String sid = body.path("parentSessionId").asText();
+            if (cancelReturnsNotFound.compareAndSet(true, false)) {
+                stubTasks.remove(taskKey(sid, taskId));
+                write(ex, 404, Map.of("error", "not found"));
+                return;
+            }
             StubTask t = stubTasks.get(taskKey(sid, taskId));
             if (t == null) {
                 write(ex, 404, Map.of("error", "not found"));
@@ -407,6 +684,35 @@ class TaskRepositoryContractTest {
                 written = true;
             }
             write(ex, 200, Map.of("written", written));
+            return;
+        }
+        write(ex, 405, Map.of("error", "method not allowed"));
+    }
+
+    private void handleRemoteTasks(HttpExchange ex) throws IOException {
+        if (!"remote-token".equals(ex.getRequestHeaders().getFirst("X-Remote-Token"))) {
+            write(ex, 401, Map.of("error", "unauthorized"));
+            return;
+        }
+        String method = ex.getRequestMethod();
+        String path = ex.getRequestURI().getPath();
+        if ("POST".equals(method) && "/tasks".equals(path)) {
+            JsonNode body = MAPPER.readTree(ex.getRequestBody());
+            assertEquals("t-remote-success", body.path("task_id").asText());
+            assertEquals("remote-agent", body.path("agent_id").asText());
+            assertEquals("work", body.path("input").asText());
+            remoteSubmissions.incrementAndGet();
+            write(ex, 202, Map.of("accepted", true));
+            return;
+        }
+        if ("GET".equals(method) && path.endsWith("/wait")) {
+            remoteResultReads.incrementAndGet();
+            write(ex, 200, Map.of("result", "remote result"));
+            return;
+        }
+        if ("GET".equals(method) && path.startsWith("/tasks/")) {
+            remoteStatusReads.incrementAndGet();
+            write(ex, 200, Map.of("status", "success"));
             return;
         }
         write(ex, 405, Map.of("error", "method not allowed"));
@@ -475,6 +781,9 @@ class TaskRepositoryContractTest {
         String result;
         String errorMessage;
         boolean cancelRequested;
+        String transportType;
+        String remoteBaseUrl;
+        Map<String, String> remoteHeaders;
         Instant createdAt;
         Instant lastUpdatedAt;
         Instant deliveredAt;
@@ -489,6 +798,9 @@ class TaskRepositoryContractTest {
             m.put("result", result);
             m.put("errorMessage", errorMessage);
             m.put("cancelRequested", cancelRequested);
+            m.put("transportType", transportType);
+            m.put("remoteBaseUrl", remoteBaseUrl);
+            m.put("remoteHeaders", remoteHeaders);
             if (createdAt != null) {
                 m.put("createdAt", createdAt.toString());
             }

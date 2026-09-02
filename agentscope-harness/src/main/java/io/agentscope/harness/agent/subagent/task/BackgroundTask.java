@@ -17,8 +17,13 @@ package io.agentscope.harness.agent.subagent.task;
 
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Wraps a {@link CompletableFuture} to track background subagent task execution with status,
@@ -34,19 +39,40 @@ import java.util.concurrent.TimeoutException;
  */
 public class BackgroundTask {
 
+    private static final Logger log = LoggerFactory.getLogger(BackgroundTask.class);
+
     private final String taskId;
     private final String agentId;
     private final CompletableFuture<String> future;
     private final Instant createdAt;
     private volatile Instant lastCheckedAt;
-    private volatile boolean cancelled;
+    private final AtomicBoolean cancelled = new AtomicBoolean();
+    private final AtomicReference<Boolean> cancellationRequest = new AtomicReference<>();
+    private final AtomicReference<Runnable> cancelAction;
+    private final AtomicReference<Future<?>> executionFuture = new AtomicReference<>();
 
     public BackgroundTask(String taskId, String agentId, CompletableFuture<String> future) {
+        this(taskId, agentId, future, null);
+    }
+
+    public BackgroundTask(
+            String taskId,
+            String agentId,
+            CompletableFuture<String> future,
+            Runnable cancelAction) {
         this.taskId = taskId;
         this.agentId = agentId;
         this.future = future;
+        this.cancelAction = new AtomicReference<>(cancelAction);
         this.createdAt = Instant.now();
         this.lastCheckedAt = this.createdAt;
+        future.whenComplete(
+                (ignored, error) -> {
+                    if (cancellationRequest.get() == null) {
+                        this.cancelAction.set(null);
+                        executionFuture.set(null);
+                    }
+                });
     }
 
     public String getTaskId() {
@@ -78,7 +104,7 @@ public class BackgroundTask {
      * state and any explicit cancellation.
      */
     public TaskStatus getTaskStatus() {
-        if (cancelled || future.isCancelled()) {
+        if (cancelled.get() || future.isCancelled()) {
             return TaskStatus.CANCELLED;
         }
         if (future.isCompletedExceptionally()) {
@@ -146,7 +172,59 @@ public class BackgroundTask {
      * {@link TaskStatus#CANCELLED} even if the future cannot be interrupted.
      */
     public boolean cancel(boolean mayInterruptIfRunning) {
-        this.cancelled = true;
-        return future.cancel(mayInterruptIfRunning);
+        if (!cancellationRequest.compareAndSet(null, mayInterruptIfRunning)) {
+            return false;
+        }
+
+        // CompletableFuture cancellation is the completion-vs-cancel linearization point. It does
+        // not interrupt the executor task itself, which is why attachExecutionFuture exists.
+        boolean wonCancellation = future.cancel(false);
+        if (!wonCancellation) {
+            cancelAction.set(null);
+            executionFuture.set(null);
+            return false;
+        }
+        cancelled.set(true);
+
+        Runnable action = cancelAction.getAndSet(null);
+        if (action != null) {
+            try {
+                action.run();
+            } catch (RuntimeException e) {
+                log.warn("Task cancel action failed for {}: {}", taskId, e.getMessage(), e);
+            }
+        }
+
+        Future<?> runner = executionFuture.getAndSet(null);
+        if (runner != null) {
+            runner.cancel(mayInterruptIfRunning);
+        }
+        return true;
+    }
+
+    /**
+     * Attaches the executor's real future after task registration. If cancellation won before the
+     * executor returned its handle, the newly attached runner is cancelled immediately.
+     */
+    public void attachExecutionFuture(Future<?> runner) {
+        if (runner == null) {
+            return;
+        }
+        if (!executionFuture.compareAndSet(null, runner)) {
+            throw new IllegalStateException("Execution future already attached for task " + taskId);
+        }
+        Boolean interrupt = cancellationRequest.get();
+        if (interrupt != null) {
+            if (executionFuture.compareAndSet(runner, null)) {
+                runner.cancel(interrupt);
+            }
+        } else if (future.isDone()) {
+            executionFuture.compareAndSet(runner, null);
+        }
+    }
+
+    /** Whether cancellation has been requested, including while executor attachment is racing. */
+    public boolean isCancellationRequested() {
+        return cancellationRequest.get() != null;
     }
 }

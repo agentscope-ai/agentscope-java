@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -35,8 +36,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -306,6 +312,157 @@ class WorkspaceTaskRepositoryTest {
         assertEquals(TaskStatus.CANCELLED, record.get().getStatus());
 
         release.countDown();
+    }
+
+    @Test
+    @DisplayName(
+            "cancelTask invokes running local cancel action and suppresses completion callback")
+    void cancelTask_stopsRunningLocalTaskWithoutCompletionCallback() throws Exception {
+        String session = "sess-cancel-running";
+        String taskId = "task-cancel-running";
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        AtomicBoolean stop = new AtomicBoolean();
+        AtomicInteger cancelActions = new AtomicInteger();
+        AtomicInteger completionCallbacks = new AtomicInteger();
+        repo.setCompletionCallback(
+                (rc, tid, aid, sid, result) -> completionCallbacks.incrementAndGet());
+
+        BackgroundTask task =
+                repo.putTask(
+                        RuntimeContext.empty(),
+                        taskId,
+                        "agent-running",
+                        session,
+                        new TaskRunSpec.LocalTaskRunSpec(
+                                () -> {
+                                    started.countDown();
+                                    try {
+                                        while (!stop.get()) {
+                                            // Deliberately ignore thread interruption: this proves
+                                            // the cooperative cancel action is wired and invoked.
+                                            Thread.interrupted();
+                                            LockSupport.parkNanos(
+                                                    TimeUnit.MILLISECONDS.toNanos(10));
+                                        }
+                                        return "should-not-be-delivered";
+                                    } finally {
+                                        exited.countDown();
+                                    }
+                                },
+                                () -> {
+                                    cancelActions.incrementAndGet();
+                                    stop.set(true);
+                                }));
+
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        assertTrue(repo.cancelTask(RuntimeContext.empty(), session, taskId));
+        assertTrue(exited.await(5, TimeUnit.SECONDS));
+
+        assertEquals(1, cancelActions.get());
+        assertEquals(0, completionCallbacks.get());
+        assertEquals(TaskStatus.CANCELLED, task.getTaskStatus());
+        TaskRecord record =
+                workspaceManager
+                        .readTaskRecord(RuntimeContext.empty(), "test-agent", session, taskId)
+                        .orElseThrow();
+        assertTrue(record.isCancelRequested());
+        assertEquals(TaskStatus.CANCELLED, record.getStatus());
+        assertTrue(record.isDelivered(), "explicit cancellation must suppress later delivery");
+        assertTrue(
+                repo.findPendingDeliveries(RuntimeContext.empty(), session).isEmpty(),
+                "explicit cancellation must not create an inbox reminder or wakeup");
+    }
+
+    @Test
+    @DisplayName("cancelTask before executor start prevents local supplier execution")
+    void cancelTask_beforeExecutorStartSkipsSupplier() throws Exception {
+        ExecutorService single = Executors.newSingleThreadExecutor();
+        CountDownLatch executorOccupied = new CountDownLatch(1);
+        CountDownLatch releaseExecutor = new CountDownLatch(1);
+        Future<?> blocker =
+                single.submit(
+                        () -> {
+                            executorOccupied.countDown();
+                            try {
+                                releaseExecutor.await();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
+        assertTrue(executorOccupied.await(5, TimeUnit.SECONDS));
+
+        WorkspaceTaskRepository queuedRepo =
+                WorkspaceTaskRepository.forTests(workspaceManager, "test-agent", single);
+        AtomicBoolean executed = new AtomicBoolean();
+        try {
+            String session = "sess-cancel-queued";
+            String taskId = "task-cancel-queued";
+            BackgroundTask task =
+                    queuedRepo.putTask(
+                            RuntimeContext.empty(),
+                            taskId,
+                            "agent-queued",
+                            session,
+                            new TaskRunSpec.LocalTaskRunSpec(
+                                    () -> {
+                                        executed.set(true);
+                                        return "unexpected";
+                                    }));
+
+            assertTrue(queuedRepo.cancelTask(RuntimeContext.empty(), session, taskId));
+            releaseExecutor.countDown();
+            blocker.get(5, TimeUnit.SECONDS);
+            single.submit(() -> {}).get(5, TimeUnit.SECONDS); // drain the cancelled runner
+
+            assertFalse(executed.get());
+            assertEquals(TaskStatus.CANCELLED, task.getTaskStatus());
+        } finally {
+            releaseExecutor.countDown();
+            queuedRepo.shutdown();
+            single.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("heartbeat observes cross-node cancel and invokes originating local cancel action")
+    void heartbeat_stopsLocalTaskCancelledByAnotherRepository() throws Exception {
+        String session = "sess-cross-node-cancel";
+        String taskId = "task-cross-node-cancel";
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch cancelledLocally = new CountDownLatch(1);
+        AtomicBoolean stop = new AtomicBoolean();
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-cross-node",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            started.countDown();
+                            while (!stop.get()) {
+                                Thread.interrupted();
+                                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));
+                            }
+                            return "cancelled";
+                        },
+                        () -> {
+                            stop.set(true);
+                            cancelledLocally.countDown();
+                        }));
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+
+        WorkspaceTaskRepository other =
+                WorkspaceTaskRepository.forTests(workspaceManager, "test-agent");
+        try {
+            assertTrue(other.cancelTask(RuntimeContext.empty(), session, taskId));
+            repo.heartbeat();
+            assertTrue(cancelledLocally.await(5, TimeUnit.SECONDS));
+        } finally {
+            stop.set(true);
+            other.shutdown();
+        }
     }
 
     // ------------------------------------------------------------------

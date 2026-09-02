@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
@@ -29,8 +30,19 @@ import java.util.function.Supplier;
  */
 public sealed interface TaskRunSpec {
 
-    /** In-process execution via {@link Supplier}. */
-    record LocalTaskRunSpec(Supplier<String> execution) implements TaskRunSpec {}
+    /** In-process execution via {@link Supplier}, with an optional cooperative cancel action. */
+    record LocalTaskRunSpec(Supplier<String> execution, Runnable cancelAction)
+            implements TaskRunSpec {
+
+        public LocalTaskRunSpec {
+            Objects.requireNonNull(execution, "execution");
+        }
+
+        /** Backward-compatible constructor for local tasks without a cooperative cancel action. */
+        public LocalTaskRunSpec(Supplier<String> execution) {
+            this(execution, null);
+        }
+    }
 
     /**
      * Remote HTTP task execution. The {@code taskId} is chosen by the client and used as the
@@ -57,5 +69,16 @@ public sealed interface TaskRunSpec {
      * a sync execution exceeds its timeout and is promoted to async: the future is still in
      * progress and only needs status-tracking callbacks, not a new executor submission.
      */
-    record AdoptedTaskRunSpec(CompletableFuture<String> future) implements TaskRunSpec {}
+    record AdoptedTaskRunSpec(CompletableFuture<String> future, Runnable cancelAction)
+            implements TaskRunSpec {
+
+        public AdoptedTaskRunSpec {
+            Objects.requireNonNull(future, "future");
+        }
+
+        /** Backward-compatible constructor for adopted tasks without a cooperative cancel action. */
+        public AdoptedTaskRunSpec(CompletableFuture<String> future) {
+            this(future, null);
+        }
+    }
 }
