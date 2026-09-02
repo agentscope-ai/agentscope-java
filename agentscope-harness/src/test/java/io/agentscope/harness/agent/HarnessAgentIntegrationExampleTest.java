@@ -33,6 +33,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -66,6 +67,7 @@ import reactor.core.publisher.Flux;
  * them in the IDE or via JUnit Platform if you add {@code groups} later.
  */
 @Tag("integration")
+@HarnessQuiescence
 class HarnessAgentIntegrationExampleTest {
 
     @TempDir Path workspace;
