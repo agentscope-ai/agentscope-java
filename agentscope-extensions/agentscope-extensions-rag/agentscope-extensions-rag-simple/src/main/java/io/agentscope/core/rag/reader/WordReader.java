@@ -24,14 +24,6 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
 import org.apache.poi.xwpf.usermodel.BodyElementType;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -42,6 +34,15 @@ import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import reactor.core.publisher.Mono;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 
 /**
  * Word document reader that extracts text, tables, and images from Word files.
@@ -243,6 +244,13 @@ public class WordReader extends AbstractChunkingReader {
                             blocks.add(TextBlock.builder().text(text).build());
                         }
                         lastType = "text";
+                    }else{
+                        // 修复:空段落不跳过,追加 \n 用于保留段落边界
+                        if (!blocks.isEmpty() && "text".equals(lastType)) {
+                            int idx = blocks.size() - 1;
+                            TextBlock last = (TextBlock)blocks.get(idx);
+                            blocks.set(idx, TextBlock.builder().text(last.getText() + "\n").build());
+                        }
                     }
 
                 } else if (element.getElementType() == BodyElementType.TABLE) {
