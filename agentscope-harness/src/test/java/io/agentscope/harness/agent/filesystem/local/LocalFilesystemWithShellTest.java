@@ -22,6 +22,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
 
 class LocalFilesystemWithShellTest {
@@ -50,11 +51,13 @@ class LocalFilesystemWithShellTest {
         Path root = Files.createTempDirectory("local-filesystem-shell-test");
         LocalFilesystemWithShell filesystem = new LocalFilesystemWithShell(root);
 
-        var response =
-                filesystem.execute(
-                        null,
-                        "i=0; while [ $i -lt 12000 ]; do printf '123456789'; i=$((i+1)); done",
-                        10);
+        String command;
+        if (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")) {
+            command = "for /l %i in (1,1,12000) do @echo 123456789";
+        } else {
+            command = "i=0; while [ $i -lt 12000 ]; do printf '123456789'; i=$((i+1)); done";
+        }
+        var response = filesystem.execute(null, command, 10);
 
         assertEquals(0, response.exitCode());
         assertTrue(response.output().contains("Output truncated"));
