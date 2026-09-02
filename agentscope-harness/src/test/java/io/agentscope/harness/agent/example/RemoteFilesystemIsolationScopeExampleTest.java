@@ -35,6 +35,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -75,6 +76,7 @@ import reactor.core.publisher.Flux;
  * directly where possible to keep the example focused on namespace routing rather than agent
  * conversation mechanics.
  */
+@HarnessQuiescence
 class RemoteFilesystemIsolationScopeExampleTest {
 
     @TempDir Path workspace;
