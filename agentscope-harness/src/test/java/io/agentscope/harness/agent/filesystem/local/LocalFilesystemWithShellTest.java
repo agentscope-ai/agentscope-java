@@ -62,4 +62,39 @@ class LocalFilesystemWithShellTest {
         assertEquals(0, response.exitCode());
         assertTrue(response.output().contains("Output truncated"));
     }
+
+    @Test
+    void execute_drainsLargeStderrWithoutDeadlocking() throws Exception {
+        Path root = Files.createTempDirectory("local-filesystem-shell-test");
+        LocalFilesystemWithShell filesystem = new LocalFilesystemWithShell(root);
+
+        String command;
+        if (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")) {
+            command = "for /l %i in (1,1,12000) do @echo 123456789 1>&2";
+        } else {
+            command = "i=0; while [ $i -lt 12000 ]; do printf '123456789' >&2; i=$((i+1)); done";
+        }
+        var response = filesystem.execute(null, command, 10);
+
+        assertEquals(0, response.exitCode());
+        assertTrue(response.output().contains("[stderr]"));
+        assertTrue(response.output().contains("Output truncated"));
+    }
+
+    @Test
+    void execute_terminatesCommandsThatExceedTheTimeout() throws Exception {
+        Path root = Files.createTempDirectory("local-filesystem-shell-test");
+        LocalFilesystemWithShell filesystem = new LocalFilesystemWithShell(root);
+
+        String command;
+        if (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")) {
+            command = "ping -n 4 127.0.0.1 > nul";
+        } else {
+            command = "sleep 10";
+        }
+        var response = filesystem.execute(null, command, 1);
+
+        assertEquals(124, response.exitCode());
+        assertTrue(response.output().contains("timed out after 1 seconds"));
+    }
 }
