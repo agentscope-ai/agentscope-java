@@ -884,35 +884,39 @@ class HarnessAgentTest {
         RuntimeContext parentContext =
                 RuntimeContext.builder().userId("u").sessionId("parent").build();
 
-        HarnessAgent generalPurpose =
+        try (HarnessAgent generalPurpose =
                 (HarnessAgent)
                         entries.stream()
                                 .filter(e -> "general-purpose".equals(e.name()))
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create(parentContext);
-        generalPurpose
-                .call(userText("hi"), RuntimeContext.builder().sessionId("gp").build())
-                .block();
-        assertEquals(
-                1, systemPromptHits.get(), "general-purpose subagent should inherit middleware");
+                                .create(parentContext)) {
+            generalPurpose
+                    .call(userText("hi"), RuntimeContext.builder().sessionId("gp").build())
+                    .block();
+            assertEquals(
+                    1,
+                    systemPromptHits.get(),
+                    "general-purpose subagent should inherit middleware");
+        }
 
-        HarnessAgent markdownChild =
+        try (HarnessAgent markdownChild =
                 (HarnessAgent)
                         entries.stream()
                                 .filter(e -> "helper".equals(e.name()))
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create(parentContext);
-        markdownChild
-                .call(userText("hi"), RuntimeContext.builder().sessionId("md").build())
-                .block();
-        assertEquals(
-                2,
-                systemPromptHits.get(),
-                "markdown-declared subagent should inherit parent middleware too");
+                                .create(parentContext)) {
+            markdownChild
+                    .call(userText("hi"), RuntimeContext.builder().sessionId("md").build())
+                    .block();
+            assertEquals(
+                    2,
+                    systemPromptHits.get(),
+                    "markdown-declared subagent should inherit parent middleware too");
+        }
     }
 
     @Test

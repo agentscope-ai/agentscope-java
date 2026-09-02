@@ -2211,42 +2211,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     this, resolvedWorkspace, sandboxFs);
         }
 
-        private static void wireTaskRepositoryMessageBus(
-                io.agentscope.harness.agent.subagent.task.TaskRepository repo,
-                io.agentscope.harness.agent.bus.MessageBus bus,
-                String agentId) {
-            repo.setCompletionCallback(
-                    (rc, taskId, subAgentId, sessionId, result) -> {
-                        String userId = rc != null ? rc.getUserId() : null;
-                        String hintContent =
-                                String.format(
-                                        "<system-notification>Background subagent task '%s'"
-                                                + " (agent=%s) has completed.\n\nResult:\n\n%s"
-                                                + "</system-notification>",
-                                        taskId,
-                                        subAgentId,
-                                        result != null ? result : "(no output)");
-                        String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
-                        bus.inboxPush(
-                                        sessionId,
-                                        java.util.Map.of(
-                                                "type",
-                                                "hint",
-                                                "id",
-                                                hintId,
-                                                "hint",
-                                                hintContent,
-                                                "source",
-                                                "subagent_task"))
-                                .subscribe();
-                        bus.enqueueWakeup(
-                                        userId != null ? userId : "",
-                                        sessionId,
-                                        agentId != null ? agentId : "")
-                                .subscribe();
-                    });
-        }
-
         public HarnessAgent build() {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
@@ -2531,8 +2495,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                     this, wsManager, resolvedWorkspace, capturedSandboxFs);
                     if (dynMw != null) {
                         if (messageBus != null) {
-                            wireTaskRepositoryMessageBus(
-                                    dynMw.getTaskRepository(), messageBus, agentId);
+                            dynMw.wireMessageBus(messageBus, agentId);
                         }
                         inner.middleware(dynMw);
                         for (Object t : dynMw.getTools()) {
