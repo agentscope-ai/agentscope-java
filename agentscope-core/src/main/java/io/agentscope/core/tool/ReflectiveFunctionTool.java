@@ -63,7 +63,7 @@ final class ReflectiveFunctionTool extends ToolBase {
      * Build a {@code ReflectiveFunctionTool} from the {@code @Tool}-annotated method.
      *
      * @throws IllegalArgumentException if the {@code stateInjected} flag disagrees with the method
-     *     signature or if more than one {@link AgentState} parameter is declared.
+     *                                  signature or if more than one {@link AgentState} parameter is declared.
      */
     static ReflectiveFunctionTool create(
             Object toolObject,
@@ -137,6 +137,8 @@ final class ReflectiveFunctionTool extends ToolBase {
                         .readOnly(annotation.readOnly())
                         .concurrencySafe(annotation.concurrencySafe())
                         .externalTool(annotation.externalTool())
+                        .returnDirect(annotation.returnDirect())
+                        .returnResult(annotation.returnResult())
                         .stateInjected(annotation.stateInjected());
         if (annotation.dangerousFiles().length > 0) {
             builder.dangerousFiles(List.of(annotation.dangerousFiles()));

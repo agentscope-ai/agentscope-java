@@ -113,6 +113,35 @@ public interface AgentTool {
     }
 
     /**
+     * Whether invoking this tool ends the current agent turn without another model call.
+     *
+     * <p>When {@code true}, the tool still runs and its result is written to conversation
+     * context, but the ReAct loop does not go back to the model (no summarizing / next
+     * reasoning). The returned {@code Msg} uses
+     * {@link io.agentscope.core.message.GenerateReason#RETURN_DIRECT}.
+     *
+     * @return {@code true} if this is a terminal tool; {@code false} by default
+     */
+    default boolean isReturnDirect() {
+        return false;
+    }
+
+    /**
+     * Whether the tool result should be included in the agent's returned message.
+     *
+     * <p>Only consulted when {@link #isReturnDirect()} is {@code true}. When
+     * {@code returnDirect} is {@code false}, the result is always fed back to the model.
+     *
+     * <p>Set to {@code false} together with {@code returnDirect=true} to stop the turn
+     * silently: the caller gets an empty reply instead of the tool output as the answer.
+     *
+     * @return {@code true} to surface the tool output as the final reply; {@code true} by default
+     */
+    default boolean isReturnResult() {
+        return true;
+    }
+
+    /**
      * Execute the tool with the given parameters (asynchronous).
      *
      * <p>This method accepts a {@link ToolCallParam} object containing all necessary context for

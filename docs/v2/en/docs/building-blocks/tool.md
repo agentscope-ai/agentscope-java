@@ -42,6 +42,8 @@ Properties exposed to the agent and runtime:
 | `isConcurrencySafe()` | `boolean` | Can the tool be called concurrently? |
 | `isReadOnly()` | `boolean` | Is the tool read-only / side-effect-free? |
 | `isExternalTool()` | `boolean` | When `true`, execution is delegated externally (see [external execution](#external-execution-tools)) |
+| `isReturnDirect()` | `boolean` | When `true`, the turn ends after this tool runs — no further model call (see [Terminal tools](#terminal-tools-returndirect)) |
+| `isReturnResult()` | `boolean` | Only used when `returnDirect` is `true`: whether the tool output becomes the agent reply (default `true`) |
 | `isStateInjected()` | `boolean` | When `true`, the framework injects `AgentState` as an extra parameter |
 | `isMcp()` | `boolean` | Did the tool come from an MCP server? |
 | `getMcpName()` | `String` | The MCP server name when `isMcp()` is `true` |
@@ -114,8 +116,60 @@ Common `@Tool` attributes:
 | `readOnly` | `boolean` | Whether the tool is read-only (default `false`) |
 | `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `false`) |
 | `stateInjected` | `boolean` | Inject `AgentState` as an extra parameter (default `false`) |
+| `returnDirect` | `boolean` | End the turn after this tool; no further model call / summary (default `false`) |
+| `returnResult` | `boolean` | Only when `returnDirect=true`: whether the tool output becomes the reply (default `true`); `false` ends silently |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
+
+### Terminal tools (`returnDirect`)
+
+By default the ReAct loop is: run the tool → feed the result back to the model → reason again (or `summarizing` when `maxIters` is hit). Mark a tool as terminal and **the turn ends as soon as it finishes** — the model is not called again.
+
+All three registration paths share the same semantics:
+
+```java
+// 1) @Tool
+@Tool(name = "submit_answer", description = "Submit the final answer", returnDirect = true)
+public String submitAnswer(@ToolParam(name = "answer") String answer) {
+    return answer;
+}
+
+// Silent stop: end the loop but do not use the tool output as the agent reply
+@Tool(name = "handoff", description = "Hand off to a human", returnDirect = true, returnResult = false)
+public String handoff(@ToolParam(name = "reason") String reason) {
+    return reason;
+}
+
+// 2) ToolBase
+super(ToolBase.builder()
+        .name("submit_answer")
+        .description("Submit the final answer")
+        .inputSchema(schema)
+        .returnDirect(true)
+        .returnResult(true));
+
+// 3) Implement AgentTool directly
+@Override
+public boolean isReturnDirect() {
+    return true;
+}
+
+@Override
+public boolean isReturnResult() {  // default true; false = silent stop
+    return true;
+}
+```
+
+After the turn ends, `Msg.getGenerateReason()` is `RETURN_DIRECT`:
+
+- `returnResult=true` (default): the returned message text is the tool output
+- `returnResult=false`: the reply is empty. The tool result is still written to session context so `tool_use` / `tool_result` stay paired
+
+When the model calls several `returnDirect` tools in the same turn, **every result is returned** (they run in parallel; order follows the original tool-call list):
+
+- `result.getTextContent()`: text outputs joined by `\n`
+- `result.getContentBlocks(ToolResultBlock.class)`: each result keeps `id` / `name`
+- `result.getMetadata().get(MessageMetadataKeys.RETURN_DIRECT_RESULTS)`: the same `List<ToolResultBlock>`
 
 ### Custom tools (extending `ToolBase`)
 

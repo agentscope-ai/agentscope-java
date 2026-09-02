@@ -191,6 +191,80 @@ class ToolkitTest {
     }
 
     @Test
+    @DisplayName("Should propagate returnDirect flags from @Tool and AgentTool")
+    void testReturnDirectRegistration() {
+        toolkit.registerTool(new ReturnDirectAnnotatedTools());
+        AgentTool annotated = toolkit.getTool("submit_answer");
+        assertNotNull(annotated);
+        assertTrue(annotated.isReturnDirect());
+        assertTrue(annotated.isReturnResult());
+        assertTrue(toolkit.isReturnDirect("submit_answer"));
+        assertTrue(toolkit.isReturnResult("submit_answer"));
+
+        AgentTool silent = toolkit.getTool("handoff");
+        assertNotNull(silent);
+        assertTrue(silent.isReturnDirect());
+        assertFalse(silent.isReturnResult());
+        assertTrue(toolkit.isReturnDirect("handoff"));
+        assertFalse(toolkit.isReturnResult("handoff"));
+
+        toolkit.registerAgentTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "plain_finish";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "plain finish";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object");
+                    }
+
+                    @Override
+                    public boolean isReturnDirect() {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean isReturnResult() {
+                        return false;
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.just(ToolResultBlock.text("done"));
+                    }
+                });
+        assertTrue(toolkit.isReturnDirect("plain_finish"));
+        assertFalse(toolkit.isReturnResult("plain_finish"));
+        assertFalse(toolkit.isReturnDirect("missing"));
+        assertTrue(toolkit.isReturnResult("missing"));
+    }
+
+    public static class ReturnDirectAnnotatedTools {
+
+        @Tool(name = "submit_answer", description = "Submit the final answer", returnDirect = true)
+        public String submitAnswer(
+                @ToolParam(name = "answer", description = "final answer") String answer) {
+            return answer;
+        }
+
+        @Tool(
+                name = "handoff",
+                description = "Hand off without a reply",
+                returnDirect = true,
+                returnResult = false)
+        public String handoff(@ToolParam(name = "reason", description = "reason") String reason) {
+            return reason;
+        }
+    }
+
+    @Test
     @DisplayName("Should handle empty toolkit")
     void testEmptyToolkit() {
         // Empty toolkit

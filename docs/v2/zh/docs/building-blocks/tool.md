@@ -42,6 +42,8 @@ Java tool 是任意满足 `AgentTool` 契约的对象。AgentScope 同时提供�
 | `isConcurrencySafe()` | `boolean` | 是否可并发调用 |
 | `isReadOnly()` | `boolean` | 是否只读、不产生副作用 |
 | `isExternalTool()` | `boolean` | 为 `true` 时执行委派给外部（见 [定义外部执行 Tool](#定义外部执行-tool)） |
+| `isReturnDirect()` | `boolean` | 为 `true` 时本轮在该 tool 执行完后结束，不再回调模型（见 [终态 Tool](#终态-toolreturndirect)） |
+| `isReturnResult()` | `boolean` | 仅在 `returnDirect` 为 `true` 时生效：是否把 tool 输出作为 agent 的返回消息（默认 `true`） |
 | `isStateInjected()` | `boolean` | 为 `true` 时框架注入 `AgentState` 参数 |
 | `isMcp()` | `boolean` | 是否来自 MCP 服务 |
 | `getMcpName()` | `String` | `isMcp()` 为 `true` 时所属 MCP 服务名 |
@@ -114,8 +116,60 @@ toolkit.registerTool(new SimpleTools());
 | `readOnly` | `boolean` | 是否只读（默认 `false`） |
 | `concurrencySafe` | `boolean` | 是否可并发调用（默认 `false`） |
 | `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
+| `returnDirect` | `boolean` | 调用后结束本轮，不再回调模型做总结（默认 `false`） |
+| `returnResult` | `boolean` | 仅在 `returnDirect=true` 时生效：是否把 tool 输出作为返回消息（默认 `true`）；设为 `false` 则静默结束 |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
+
+### 终态 Tool（`returnDirect`）
+
+默认 ReAct 循环是：执行 tool → 把结果回传给模型 → 再推理（或撞到 `maxIters` 后 `summarizing`）。把 tool 标成终态后，**执行完立刻结束本轮**，不再回调模型。
+
+三种注册方式语义相同：
+
+```java
+// 1) @Tool
+@Tool(name = "submit_answer", description = "提交最终答案", returnDirect = true)
+public String submitAnswer(@ToolParam(name = "answer") String answer) {
+    return answer;
+}
+
+// 静默结束：停循环，但不把 tool 输出当作 agent 回复
+@Tool(name = "handoff", description = "转交人工", returnDirect = true, returnResult = false)
+public String handoff(@ToolParam(name = "reason") String reason) {
+    return reason;
+}
+
+// 2) ToolBase
+super(ToolBase.builder()
+        .name("submit_answer")
+        .description("提交最终答案")
+        .inputSchema(schema)
+        .returnDirect(true)
+        .returnResult(true));
+
+// 3) 直接实现 AgentTool
+@Override
+public boolean isReturnDirect() {
+    return true;
+}
+
+@Override
+public boolean isReturnResult() {  // 默认 true；false 表示静默结束
+    return true;
+}
+```
+
+结束后 `Msg.getGenerateReason()` 为 `RETURN_DIRECT`：
+
+- `returnResult=true`（默认）：返回消息的文本就是 tool 输出
+- `returnResult=false`：返回空回复。tool 结果仍会写入会话上下文，保证 `tool_use` / `tool_result` 成对
+
+同一轮里模型并发调用多个 `returnDirect` 工具时，**全部都会返回**（并行执行，结果按原始 tool-call 顺序排列）：
+
+- `result.getTextContent()`：各工具文本输出按 `\n` 拼接
+- `result.getContentBlocks(ToolResultBlock.class)`：每条结果带 `id` / `name`，可区分来源
+- `result.getMetadata().get(MessageMetadataKeys.RETURN_DIRECT_RESULTS)`：同样的 `List<ToolResultBlock>`
 
 ### 自定义 Tool（继承 `ToolBase`）
 

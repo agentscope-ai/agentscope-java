@@ -127,6 +127,31 @@ public @interface Tool {
     boolean externalTool() default false;
 
     /**
+     * Whether invoking this tool ends the current agent turn without another model call.
+     *
+     * <p>When {@code true}, the tool still runs and its result is written to conversation
+     * context, but the ReAct loop does not go back to the model (no summarizing / next
+     * reasoning). Pair with {@link #returnResult()} to control whether the tool output
+     * becomes the agent's returned message.
+     *
+     * @return true if this is a terminal tool
+     */
+    boolean returnDirect() default false;
+
+    /**
+     * Whether the tool result should be included in the agent's returned message.
+     *
+     * <p>Only consulted when {@link #returnDirect()} is {@code true}. When
+     * {@code returnDirect} is {@code false}, the result is always fed back to the model.
+     *
+     * <p>Set to {@code false} together with {@code returnDirect=true} to stop the turn
+     * without surfacing the tool output as the reply.
+     *
+     * @return true to surface the tool output as the final reply
+     */
+    boolean returnResult() default true;
+
+    /**
      * Whether the tool requires the agent state to be injected at call time.
      *
      * <p>When true, the method signature must declare exactly one

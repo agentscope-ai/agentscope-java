@@ -31,7 +31,7 @@ The core fields on `Msg` (via getters):
 | `getMetadata()` | `Map<String, Object>` | Arbitrary key/value metadata |
 | `getTimestamp()` | `String` | Creation time (`yyyy-MM-dd HH:mm:ss.SSS`) |
 | `getUsage()` | `ChatUsage` | Token usage (assistant messages only) |
-| `getGenerateReason()` | `GenerateReason` | Termination reason: `MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
+| `getGenerateReason()` | `GenerateReason` | Termination reason: `MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `RETURN_DIRECT` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
 
 ### Content blocks
 

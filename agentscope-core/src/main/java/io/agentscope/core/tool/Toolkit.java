@@ -149,6 +149,7 @@ public class Toolkit {
 
     /**
      * Register a tool object by scanning for methods annotated with @Tool.
+     *
      * @param toolObject the object containing tool methods
      */
     public void registerTool(Object toolObject) {
@@ -198,6 +199,7 @@ public class Toolkit {
 
     /**
      * Register an AgentTool instance directly.
+     *
      * @param tool the AgentTool to register
      */
     public void registerAgentTool(AgentTool tool) {
@@ -322,6 +324,34 @@ public class Toolkit {
     public boolean isExternalTool(String toolName) {
         AgentTool tool = getTool(toolName);
         return tool instanceof ToolBase tb && tb.isExternalTool();
+    }
+
+    /**
+     * Check if a tool is terminal ({@link AgentTool#isReturnDirect()}).
+     *
+     * <p>When this returns {@code true}, the agent executes the tool then ends the turn
+     * without another model call.
+     *
+     * @param toolName The name of the tool to check
+     * @return true if the tool is return-direct, false otherwise
+     */
+    public boolean isReturnDirect(String toolName) {
+        AgentTool tool = getTool(toolName);
+        return tool != null && tool.isReturnDirect();
+    }
+
+    /**
+     * Check whether a return-direct tool should surface its result as the agent reply.
+     *
+     * <p>Only meaningful when {@link #isReturnDirect(String)} is {@code true}. Tools that are
+     * not registered default to {@code true}.
+     *
+     * @param toolName The name of the tool to check
+     * @return true if the tool result should be included in the returned message
+     */
+    public boolean isReturnResult(String toolName) {
+        AgentTool tool = getTool(toolName);
+        return tool == null || tool.isReturnResult();
     }
 
     /**
@@ -502,10 +532,10 @@ public class Toolkit {
      * applies execution config (timeout, retry) from multiple levels. The agent context is
      * merged with toolkit default context during tool execution.
      *
-     * @param toolCalls List of tool calls to execute
+     * @param toolCalls            List of tool calls to execute
      * @param agentExecutionConfig Execution config from agent level (can be null)
-     * @param agent The agent making the calls (may be null)
-     * @param agentRuntimeContext The agent-level runtime context (may be null)
+     * @param agent                The agent making the calls (may be null)
+     * @param agentRuntimeContext  The agent-level runtime context (may be null)
      * @return Mono containing list of tool responses
      */
     public Mono<List<ToolResultBlock>> callTools(
@@ -554,9 +584,9 @@ public class Toolkit {
     /**
      * Create a new tool group with specified activation status and default META scope.
      *
-     * @param groupName Name of the tool group
+     * @param groupName   Name of the tool group
      * @param description Description of the tool group
-     * @param active Whether the group should be active by default
+     * @param active      Whether the group should be active by default
      * @throws IllegalArgumentException if group already exists
      */
     public void createToolGroup(String groupName, String description, boolean active) {
@@ -566,11 +596,11 @@ public class Toolkit {
     /**
      * Create a new tool group with specified activation status and scope.
      *
-     * @param groupName Name of the tool group
+     * @param groupName   Name of the tool group
      * @param description Description of the tool group
-     * @param active Whether the group should be active by default
-     * @param scope Whether the group is managed by the meta tool ({@link ToolGroupScope#META})
-     *              or by developer code ({@link ToolGroupScope#EXTERNAL})
+     * @param active      Whether the group should be active by default
+     * @param scope       Whether the group is managed by the meta tool ({@link ToolGroupScope#META})
+     *                    or by developer code ({@link ToolGroupScope#EXTERNAL})
      * @throws IllegalArgumentException if group already exists
      */
     public void createToolGroup(
@@ -581,7 +611,7 @@ public class Toolkit {
     /**
      * Create a new tool group (active by default, META scope).
      *
-     * @param groupName Name of the tool group
+     * @param groupName   Name of the tool group
      * @param description Description of the tool group
      * @throws IllegalArgumentException if group already exists
      */
@@ -596,9 +626,9 @@ public class Toolkit {
      * via {@code reset_equipped_tools}. The description shown to the model will include a
      * reminder that this group must be activated when the bound skill is in use.
      *
-     * @param groupName Name of the tool group
-     * @param description Description of the tool group
-     * @param active Whether the group should be active by default
+     * @param groupName       Name of the tool group
+     * @param description     Description of the tool group
+     * @param active          Whether the group should be active by default
      * @param activateOnSkill The skill name that this group is bound to
      * @throws IllegalArgumentException if group already exists
      */
@@ -638,7 +668,7 @@ public class Toolkit {
      * once has no additional effect.
      *
      * @param groupName Name of the existing tool group
-     * @param toolName Name of the registered tool
+     * @param toolName  Name of the registered tool
      * @throws IllegalArgumentException if the group or tool doesn't exist
      */
     public void addToolToGroup(String groupName, String toolName) {
@@ -656,7 +686,7 @@ public class Toolkit {
      * will be ignored and a warning will be logged.
      *
      * @param groupNames List of tool group names to update
-     * @param active Whether to activate (true) or deactivate (false) the groups
+     * @param active     Whether to activate (true) or deactivate (false) the groups
      * @throws IllegalArgumentException if any group doesn't exist
      */
     public void updateToolGroups(List<String> groupNames, boolean active) {
@@ -754,7 +784,7 @@ public class Toolkit {
 
     /**
      * Register the meta tool that allows agents to dynamically manage tool groups.
-     *
+     * <p>
      * This creates a tool that wraps the toolkit's resetEquippedTools method,
      * allowing the agent to activate tool groups during execution.
      */
@@ -774,7 +804,7 @@ public class Toolkit {
      * tool. This is useful for updating session-specific context (like session IDs or timestamps)
      * or refreshing credentials.
      *
-     * @param toolName The name of the tool to update
+     * @param toolName            The name of the tool to update
      * @param newPresetParameters The new preset parameters (null will be treated as empty map)
      * @throws IllegalArgumentException if the tool is not found
      */
@@ -927,8 +957,8 @@ public class Toolkit {
          * }</pre>
          *
          * @param provider Factory for creating agent instances (called for each session)
-         * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
-         *     derived from agent name, InMemoryAgentStateStore for state, events forwarded)
+         * @param config   Configuration for the sub-agent tool, or null to use defaults (tool name
+         *                 derived from agent name, InMemoryAgentStateStore for state, events forwarded)
          * @return This builder for chaining
          * @see SubAgentConfig
          * @see SubAgentConfig#defaults()

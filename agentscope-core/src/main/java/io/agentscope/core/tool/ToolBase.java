@@ -64,18 +64,26 @@ public abstract class ToolBase implements AgentTool {
     private final boolean concurrencySafe;
     private final boolean readOnly;
     private final boolean externalTool;
+    private final boolean returnDirect;
+    private final boolean returnResult;
     private final boolean stateInjected;
     private final boolean mcp;
     private final String mcpName;
 
-    /** Sensitive files; subclasses may replace this list to widen or narrow protection. */
+    /**
+     * Sensitive files; subclasses may replace this list to widen or narrow protection.
+     */
     protected List<String> dangerousFiles = ToolDangerousPathConstants.DEFAULT_DANGEROUS_FILES;
 
-    /** Sensitive directory names; segment-level matching applies to absolute paths. */
+    /**
+     * Sensitive directory names; segment-level matching applies to absolute paths.
+     */
     protected List<String> dangerousDirectories =
             ToolDangerousPathConstants.DEFAULT_DANGEROUS_DIRECTORIES;
 
-    /** Builder-based constructor (preferred). */
+    /**
+     * Builder-based constructor (preferred).
+     */
     protected ToolBase(Builder builder) {
         this(
                 builder.name,
@@ -86,6 +94,8 @@ public abstract class ToolBase implements AgentTool {
                 builder.mcp,
                 builder.mcpName,
                 builder.externalTool,
+                builder.returnDirect,
+                builder.returnResult,
                 builder.stateInjected);
         if (builder.dangerousFiles != null) {
             this.dangerousFiles = List.copyOf(builder.dangerousFiles);
@@ -109,6 +119,35 @@ public abstract class ToolBase implements AgentTool {
             String mcpName,
             boolean externalTool,
             boolean stateInjected) {
+        this(
+                name,
+                description,
+                inputSchema,
+                readOnly,
+                concurrencySafe,
+                mcp,
+                mcpName,
+                externalTool,
+                false,
+                true,
+                stateInjected);
+    }
+
+    /**
+     * Positional constructor including return-direct flags. Prefer {@link #builder()}.
+     */
+    protected ToolBase(
+            String name,
+            String description,
+            Map<String, Object> inputSchema,
+            boolean readOnly,
+            boolean concurrencySafe,
+            boolean mcp,
+            String mcpName,
+            boolean externalTool,
+            boolean returnDirect,
+            boolean returnResult,
+            boolean stateInjected) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.description = Objects.requireNonNull(description, "description must not be null");
         this.inputSchema = Objects.requireNonNull(inputSchema, "inputSchema must not be null");
@@ -117,6 +156,8 @@ public abstract class ToolBase implements AgentTool {
         this.mcp = mcp;
         this.mcpName = mcpName;
         this.externalTool = externalTool;
+        this.returnDirect = returnDirect;
+        this.returnResult = returnResult;
         this.stateInjected = stateInjected;
         if (mcp && (mcpName == null || mcpName.isBlank())) {
             throw new IllegalArgumentException("mcpName is required when mcp is true");
@@ -149,6 +190,16 @@ public abstract class ToolBase implements AgentTool {
 
     public final boolean isExternalTool() {
         return externalTool;
+    }
+
+    @Override
+    public final boolean isReturnDirect() {
+        return returnDirect;
+    }
+
+    @Override
+    public final boolean isReturnResult() {
+        return returnResult;
     }
 
     public final boolean isStateInjected() {
@@ -190,7 +241,7 @@ public abstract class ToolBase implements AgentTool {
      * own ALLOW / ASK / DENY policy.
      *
      * @param toolInput the parsed tool arguments
-     * @param context current permission evaluation context
+     * @param context   current permission evaluation context
      * @return a Mono emitting the decision; never {@code null}
      */
     public Mono<PermissionDecision> checkPermissions(
@@ -217,9 +268,9 @@ public abstract class ToolBase implements AgentTool {
 
     /**
      * @return {@code true} when {@code filePath}'s filename matches one of {@link #dangerousFiles}
-     *     (case-insensitive), or when any segment matches one of {@link #dangerousDirectories}.
-     *     Also resolves symlinks and re-checks the real path to prevent bypass via symlink
-     *     pointing at a dangerous target.
+     * (case-insensitive), or when any segment matches one of {@link #dangerousDirectories}.
+     * Also resolves symlinks and re-checks the real path to prevent bypass via symlink
+     * pointing at a dangerous target.
      */
     protected boolean isDangerousPath(String filePath) {
         if (filePath == null || filePath.isBlank()) {
@@ -270,7 +321,9 @@ public abstract class ToolBase implements AgentTool {
         return new Builder();
     }
 
-    /** Fluent builder for {@link ToolBase} subclasses. */
+    /**
+     * Fluent builder for {@link ToolBase} subclasses.
+     */
     public static final class Builder {
         private String name;
         private String description;
@@ -278,6 +331,8 @@ public abstract class ToolBase implements AgentTool {
         private boolean readOnly = false;
         private boolean concurrencySafe = true;
         private boolean externalTool = false;
+        private boolean returnDirect = false;
+        private boolean returnResult = true;
         private boolean stateInjected = false;
         private boolean mcp = false;
         private String mcpName;
@@ -316,12 +371,32 @@ public abstract class ToolBase implements AgentTool {
             return this;
         }
 
+        /**
+         * Marks this tool as terminal: after it runs, the agent ends the turn without another
+         * model call.
+         */
+        public Builder returnDirect(boolean returnDirect) {
+            this.returnDirect = returnDirect;
+            return this;
+        }
+
+        /**
+         * When {@link #returnDirect(boolean)} is {@code true}, whether the tool output becomes
+         * the agent's returned message. Ignored when {@code returnDirect} is {@code false}.
+         */
+        public Builder returnResult(boolean returnResult) {
+            this.returnResult = returnResult;
+            return this;
+        }
+
         public Builder stateInjected(boolean stateInjected) {
             this.stateInjected = stateInjected;
             return this;
         }
 
-        /** Marks the tool as an MCP tool and records the MCP server name. */
+        /**
+         * Marks the tool as an MCP tool and records the MCP server name.
+         */
         public Builder mcp(String mcpName) {
             this.mcp = true;
             this.mcpName = mcpName;

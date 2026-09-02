@@ -107,6 +107,17 @@ public final class MessageMetadataKeys {
     public static final String STRUCTURED_OUTPUT = "_structured_output";
 
     /**
+     * Metadata key for results of {@code returnDirect} tools that ended the turn.
+     *
+     * <p>When the model invokes one or more return-direct tools in the same acting batch,
+     * this list holds every surfaced {@link ToolResultBlock} in the original tool-call
+     * order (parallel execution still preserves that order).
+     *
+     * <p><b>Type:</b> {@code List<ToolResultBlock>}
+     */
+    public static final String RETURN_DIRECT_RESULTS = "_return_direct_results";
+
+    /**
      * Metadata key to explicitly mark a message for prompt caching or non-caching.
      *
      * <p>When set to {@code true}, the formatter adds <code>cache_control:

@@ -218,14 +218,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private static final GracefulShutdownManager shutdownManager =
             GracefulShutdownManager.getInstance();
 
-    /** Tool name used for the per-call structured-output {@code generate_response} tool. */
+    /**
+     * Tool name used for the per-call structured-output {@code generate_response} tool.
+     */
     public static final String STRUCTURED_OUTPUT_TOOL_NAME = "generate_response";
 
     /**
      * @deprecated Permission HITL no longer uses a Reactor Sink. Confirm results are now
-     *     delivered via a second {@code agent.call(msgs)} carrying a {@link ConfirmResult}
-     *     payload — see {@code applyConfirmResults}. This constant is retained as a
-     *     compile-time marker and will be removed in a future release.
+     * delivered via a second {@code agent.call(msgs)} carrying a {@link ConfirmResult}
+     * payload — see {@code applyConfirmResults}. This constant is retained as a
+     * compile-time marker and will be removed in a future release.
      */
     @Deprecated
     public static final String CONFIRM_SINK_KEY = "io.agentscope.core.ReActAgent.confirmSink";
@@ -246,7 +248,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final Toolkit toolkit;
 
-    /** Default active groups captured after builder-time toolkit configuration is complete. */
+    /**
+     * Default active groups captured after builder-time toolkit configuration is complete.
+     */
     private final List<String> initialActiveToolGroups;
 
     private final ToolExecutionContext toolExecutionContext;
@@ -279,10 +283,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     // ==================== 2.0 Core Fields ====================
 
-    /** Active per-call RuntimeContext, set during call lifecycle only. */
+    /**
+     * Active per-call RuntimeContext, set during call lifecycle only.
+     */
     private volatile RuntimeContext activeRc;
 
-    /** Cache of state per {@code (userId, sessionId)} slot key. */
+    /**
+     * Cache of state per {@code (userId, sessionId)} slot key.
+     */
     private final ConcurrentHashMap<String, AgentState> stateCache = new ConcurrentHashMap<>();
 
     /**
@@ -292,7 +300,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final ConcurrentHashMap<String, Long> slotVersions = new ConcurrentHashMap<>();
 
-    /** Count of CAS conflicts observed during agent_state saves (metric / diagnostics). */
+    /**
+     * Count of CAS conflicts observed during agent_state saves (metric / diagnostics).
+     */
     private final AtomicLong stateConflictCount = new AtomicLong();
 
     /**
@@ -314,7 +324,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private static final String EVENT_SINK_KEY = "io.agentscope.core.ReActAgent.eventSink";
 
-    /** Synthetic reminder injected when looping back to reasoning for an empty final response. */
+    /**
+     * Synthetic reminder injected when looping back to reasoning for an empty final response.
+     */
     private static final String EMPTY_RESPONSE_REMINDER_TEXT =
             "<system-reminder>Your previous reply had empty content - the full answer was written"
                     + " to the reasoning channel only. Reply again and write the final answer into"
@@ -399,7 +411,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
     }
 
-    /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
+    /**
+     * Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair.
+     */
     private record SlotRef(String userId, String sessionId) {
         static SlotRef parse(String slotKey) {
             int slash = slotKey.lastIndexOf('/');
@@ -416,7 +430,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * {@link LegacyStateLoader}, and finally a fresh state if neither yields anything.
      *
      * @return state paired with the store version ({@code 0} when absent on a versioning backend,
-     *     {@link AgentStateStore#UNVERSIONED} when the backend does not version)
+     * {@link AgentStateStore#UNVERSIONED} when the backend does not version)
      */
     private static VersionedState<AgentState> loadOrCreateAgentStateForSlot(
             AgentStateStore stateStore,
@@ -531,7 +545,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * CAS-aware persist of {@code agent_state}. Applies {@link #conflictPolicy} on conflict.
      *
      * @return the new store version, or {@link AgentStateStore#UNVERSIONED} when the backend does
-     *     not version / the write used unconditional overwrite without a version return
+     * not version / the write used unconditional overwrite without a version return
      */
     private long persistAgentStateCas(
             String userId,
@@ -870,9 +884,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Calls the agent with a plain text input, structured output class, and per-call
      * {@link RuntimeContext}.
      *
-     * @param text                 input text (wrapped into a {@link UserMessage})
+     * @param text                  input text (wrapped into a {@link UserMessage})
      * @param structuredOutputClass class defining the structure
-     * @param context              per-call runtime context
+     * @param context               per-call runtime context
      * @return response message with structured data in metadata
      */
     public Mono<Msg> call(String text, Class<?> structuredOutputClass, RuntimeContext context) {
@@ -903,14 +917,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         interrupt(null, defaultSessionId);
     }
 
-    /** @deprecated Use {@link #interrupt(String, String, Msg)} with explicit userId/sessionId. */
+    /**
+     * @deprecated Use {@link #interrupt(String, String, Msg)} with explicit userId/sessionId.
+     */
     @Deprecated
     @Override
     public void interrupt(Msg msg) {
         interrupt(null, defaultSessionId, msg);
     }
 
-    /** @deprecated Use {@link #interrupt(String, String)} with explicit userId/sessionId. */
+    /**
+     * @deprecated Use {@link #interrupt(String, String)} with explicit userId/sessionId.
+     */
     @Deprecated
     @Override
     public void interrupt(InterruptSource source) {
@@ -949,7 +967,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session.
      *
-     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param userId    the user id ({@code null} = anonymous / single-tenant)
      * @param sessionId the session id
      */
     public void interrupt(String userId, String sessionId) {
@@ -966,8 +984,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} (and overloads that
-     *     accept {@link RuntimeContext} via {@code call()}-driven lifecycle) for the
-     *     fine-grained {@code AgentEvent} stream.
+     * accept {@link RuntimeContext} via {@code call()}-driven lifecycle) for the
+     * fine-grained {@code AgentEvent} stream.
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext context) {
@@ -976,7 +994,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the
-     *     fine-grained {@code AgentEvent} stream.
+     * fine-grained {@code AgentEvent} stream.
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
@@ -989,7 +1007,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the
-     *     fine-grained {@code AgentEvent} stream.
+     * fine-grained {@code AgentEvent} stream.
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
@@ -1029,10 +1047,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * before {@link AgentEndEvent}.  The {@code onAgent} middleware chain is applied exactly
      * once around this core.
      *
-     * @param msgs      input messages
-     * @param context   caller-supplied per-call {@link RuntimeContext}, or {@code null}
-     * @param doCallFn  the concrete call implementation ({@link #doCall} or a structured-output
-     *                  variant) passed straight through to {@link AgentBase#runLifecycle}
+     * @param msgs     input messages
+     * @param context  caller-supplied per-call {@link RuntimeContext}, or {@code null}
+     * @param doCallFn the concrete call implementation ({@link #doCall} or a structured-output
+     *                 variant) passed straight through to {@link AgentBase#runLifecycle}
      * @return event stream covering the full agent invocation lifecycle
      */
     private Flux<AgentEvent> buildAgentStream(
@@ -1131,7 +1149,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Concurrent invocations do not share any state; each subscription gets its own event sink and
      * lifecycle execution.
      *
-     * @param msgs input messages
+     * @param msgs    input messages
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
@@ -1143,7 +1161,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Stream fine-grained {@link AgentEvent}s for a single input message with a caller-supplied
      * {@link RuntimeContext}.
      *
-     * @param msg input message
+     * @param msg     input message
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
@@ -1553,7 +1571,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         };
     }
 
-    /** Extract the structured result message from the {@code generate_response} tool result. */
+    /**
+     * Extract the structured result message from the {@code generate_response} tool result.
+     */
     private Msg extractStructuredResult(Msg hookResultMsg) {
         if (hookResultMsg == null) {
             return null;
@@ -1588,7 +1608,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return responseMsg;
     }
 
-    /** Merge aggregated {@link ChatUsage} / {@link ThinkingBlock} into the final message. */
+    /**
+     * Merge aggregated {@link ChatUsage} / {@link ThinkingBlock} into the final message.
+     */
     private Msg mergeCollectedMetadata(Msg msg, ChatUsage chatUsage, ThinkingBlock thinking) {
         Map<String, Object> metadata =
                 new HashMap<>(msg.getMetadata() != null ? msg.getMetadata() : Map.of());
@@ -1616,7 +1638,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 .build();
     }
 
-    /** Hoist {@code $defs}/{@code definitions} from a nested schema up to the params root. */
+    /**
+     * Hoist {@code $defs}/{@code definitions} from a nested schema up to the params root.
+     */
     @SuppressWarnings("unchecked")
     private static void hoistDefsKey(
             Map<String, Object> innerSchema, String key, Map<String, Object> target) {
@@ -1644,7 +1668,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         long loadedVersion;
 
-        /** Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}. */
+        /**
+         * Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}.
+         */
         int loadedContextSize;
 
         /**
@@ -1686,13 +1712,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         AgentTool soTool;
 
-        /** Set to {@code true} when the {@code generate_response} tool completes successfully. */
+        /**
+         * Set to {@code true} when the {@code generate_response} tool completes successfully.
+         */
         boolean soCompleted;
 
-        /** The tool result message from the successful {@code generate_response} call. */
+        /**
+         * The tool result message from the successful {@code generate_response} call.
+         */
         Msg soResultMsg;
 
-        /** Native structured-output format set on the per-call scope for native-path calls. */
+        /**
+         * Native structured-output format set on the per-call scope for native-path calls.
+         */
         ResponseFormat nativeResponseFormat;
 
         CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
@@ -1899,7 +1931,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             applyConfirmResults(normalized);
         }
 
-        /** Resolve the reply id for the pending HITL request stored on the last assistant message. */
+        /**
+         * Resolve the reply id for the pending HITL request stored on the last assistant message.
+         */
         private String resolvePendingRequestReplyId(String metadataKey) {
             Msg requestMsg = findLastAssistantMsg();
             if (requestMsg == null || requestMsg.getMetadata() == null) {
@@ -1925,7 +1959,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
         }
 
-        /** Remove HITL correlation metadata after the resume payload is accepted. */
+        /**
+         * Remove HITL correlation metadata after the resume payload is accepted.
+         */
         private void clearPendingRequestReplyId(String metadataKey) {
             Msg lastAssistant = findLastAssistantMsg();
             if (lastAssistant == null || lastAssistant.getMetadata() == null) {
@@ -2183,7 +2219,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       completed)</li>
          * </ul>
          *
-         * @param msgs The input messages to validate
+         * @param msgs       The input messages to validate
          * @param pendingIds The set of pending tool use IDs
          * @throws IllegalStateException if validation fails
          */
@@ -2285,7 +2321,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * <p>This method streams from the model, accumulates chunks, notifies hooks, and
          * decides whether to continue to acting or return early (HITL stop, gotoReasoning, or finished).
          *
-         * @param iter Current iteration number
+         * @param iter           Current iteration number
          * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning)
          * @return Mono containing the final result message
          */
@@ -2486,10 +2522,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * ModelCallEndEvent}. The provided {@link ReasoningContext} is used to accumulate chunks
          * (for building the final {@link Msg}) and to notify legacy {@link Hook}s.
          *
-         * @param context   reasoning context for chunk accumulation
-         * @param messages  the messages to send to the model
-         * @param tools     the tool schemas available
-         * @param options   generation options
+         * @param context  reasoning context for chunk accumulation
+         * @param messages the messages to send to the model
+         * @param tools    the tool schemas available
+         * @param options  generation options
          * @return event stream from a single model call
          */
         Flux<AgentEvent> reasoningStream(
@@ -2804,6 +2840,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     }
 
                                                     syncToolkitToState(state);
+                                                    if (hasReturnDirect(successPairs)) {
+                                                        return Mono.just(
+                                                                buildReturnDirectMsg(successPairs));
+                                                    }
                                                     return executeIteration(iter + 1);
                                                 });
                             });
@@ -3129,9 +3169,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Outcome of running every {@link ToolBase} call through the {@link PermissionEngine}.
          *
-         * @param pendingAsk tool calls that require user confirmation before execution.
+         * @param pendingAsk    tool calls that require user confirmation before execution.
          * @param autoDeniedIds ids of tool calls whose decision was {@code DENY}; the agent loop
-         *     synthesises denied results for them without invoking the tool.
+         *                      synthesises denied results for them without invoking the tool.
          */
         private record PermissionGate(List<ToolUseBlock> pendingAsk, Set<String> autoDeniedIds) {}
 
@@ -3293,6 +3333,56 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .content(content)
                     .generateReason(GenerateReason.TOOL_SUSPENDED)
                     .build();
+        }
+
+        /**
+         * Whether any successfully executed tool is marked {@code returnDirect}.
+         */
+        private boolean hasReturnDirect(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs) {
+            return successPairs.stream()
+                    .anyMatch(pair -> toolkit.isReturnDirect(pair.getKey().getName()));
+        }
+
+        /**
+         * End the turn after one or more {@code returnDirect} tools: surface every
+         * {@code returnResult} output in the original tool-call order (parallel execution still
+         * preserves that order), without another model call.
+         */
+        private Msg buildReturnDirectMsg(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs) {
+            List<ContentBlock> content = new ArrayList<>();
+            List<ToolResultBlock> surfaced = new ArrayList<>();
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : successPairs) {
+                String toolName = pair.getKey().getName();
+                if (!toolkit.isReturnDirect(toolName) || !toolkit.isReturnResult(toolName)) {
+                    continue;
+                }
+                ToolResultBlock result = pair.getValue();
+                surfaced.add(result);
+                content.add(result);
+                List<ContentBlock> output = result.getOutput();
+                if (output != null) {
+                    for (ContentBlock block : output) {
+                        if (block instanceof TextBlock) {
+                            content.add(block);
+                        }
+                    }
+                }
+            }
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageMetadataKeys.RETURN_DIRECT_RESULTS, List.copyOf(surfaced));
+            Msg stopMsg =
+                    AssistantMessage.builder()
+                            .name(getName())
+                            .content(content)
+                            .metadata(metadata)
+                            .generateReason(GenerateReason.RETURN_DIRECT)
+                            .build();
+            if (!content.isEmpty()) {
+                state.contextMutable().add(stopMsg);
+            }
+            return stopMsg;
         }
 
         /**
@@ -3585,10 +3675,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * <p>Structurally identical to {@link #reasoningStream} but notifies summary-specific
          * hooks (SummaryChunkEvent) and does not pass tool schemas to the model.
          *
-         * @param context   reasoning context for chunk accumulation
-         * @param messages  the messages to send to the model
-         * @param options   generation options
-         * @param model     the model used for this summary call
+         * @param context  reasoning context for chunk accumulation
+         * @param messages the messages to send to the model
+         * @param options  generation options
+         * @param model    the model used for this summary call
          * @return event stream from the summary model call
          */
         Flux<AgentEvent> summaryStream(
@@ -3885,7 +3975,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * preventing duplicate execution when resuming from HITL or partial tool result scenarios.
          *
          * @return List of tool use blocks that don't have results yet, or empty list if all tools
-         *     have been executed
+         * have been executed
          */
         private List<ToolUseBlock> extractPendingToolCalls() {
             List<ToolUseBlock> allToolCalls = extractRecentToolCalls();
@@ -3938,17 +4028,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
 
-        /** Convenience overload for a single tool call. */
+        /**
+         * Convenience overload for a single tool call.
+         */
         private void updateToolCallState(String toolCallId, ToolCallState newState) {
             updateToolCallStates(Map.of(toolCallId, newState));
         }
 
-        /** Whether any ToolUseBlock in the last assistant Msg is in ASKING state. */
+        /**
+         * Whether any ToolUseBlock in the last assistant Msg is in ASKING state.
+         */
         private boolean hasAskingToolCalls() {
             return !askingToolCalls().isEmpty();
         }
 
-        /** The ToolUseBlocks in the last assistant Msg that are in ASKING state (HITL pending). */
+        /**
+         * The ToolUseBlocks in the last assistant Msg that are in ASKING state (HITL pending).
+         */
         private List<ToolUseBlock> askingToolCalls() {
             Msg last = findLastAssistantMsg();
             if (last == null) {
@@ -4085,7 +4181,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     // ==================== Getters ====================
 
-    /** Returns this agent's toolkit (a per-instance deep copy made at build time). */
+    /**
+     * Returns this agent's toolkit (a per-instance deep copy made at build time).
+     */
     public Toolkit getToolkit() {
         return toolkit;
     }
@@ -4113,8 +4211,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * @deprecated Use {@link #getAgentState(RuntimeContext)} or
-     *     {@link #getAgentState(String, String)} with explicit session identity.
-     *     This method delegates to the default session slot.
+     * {@link #getAgentState(String, String)} with explicit session identity.
+     * This method delegates to the default session slot.
      */
     @Deprecated
     @Override
@@ -4190,7 +4288,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * {@code ctx}.
      *
      * @param ctx runtime context identifying the session; a missing session id uses the default
-     *     session id
+     *            session id
      */
     public void clearStateCache(RuntimeContext ctx) {
         String uid = ctx != null ? ctx.getUserId() : null;
@@ -4205,7 +4303,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * <p>This only releases local references. It does not delete the corresponding state from
      * the configured {@link AgentStateStore}; the next access reloads the persisted state.
      *
-     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param userId    user identity for the slot ({@code null} = anonymous / single-tenant)
      * @param sessionId session identity; {@code null} or blank uses the default session id
      */
     public void clearStateCache(String userId, String sessionId) {
@@ -4231,7 +4329,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * has completed so that the next call reliably starts with an empty conversation context.
      *
      * @param ctx runtime context identifying the session; a missing session id uses the default
-     *     session id
+     *            session id
      */
     public void clearContext(RuntimeContext ctx) {
         String uid = ctx != null ? ctx.getUserId() : null;
@@ -4254,7 +4352,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * <p>This method does not cancel an in-flight call. Invoke it after the session's current call
      * has completed so that the next call reliably starts with an empty conversation context.
      *
-     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param userId    user identity for the slot ({@code null} = anonymous / single-tenant)
      * @param sessionId session identity; {@code null} or blank uses the default session id
      */
     public void clearContext(String userId, String sessionId) {
@@ -4306,9 +4404,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * <p>An in-flight call keeps the engine it started with; the new mode applies to subsequent
      * calls on the slot.
      *
-     * @param userId user identity for the slot (may be {@code null})
+     * @param userId    user identity for the slot (may be {@code null})
      * @param sessionId session identity (falls back to the default session id when {@code null})
-     * @param mode the permission mode to switch to
+     * @param mode      the permission mode to switch to
      */
     public void setPermissionMode(String userId, String sessionId, PermissionMode mode) {
         Objects.requireNonNull(mode, "mode must not be null");
@@ -4324,8 +4422,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * <p>An in-flight call keeps the call-scoped engine it started with. The replacement applies
      * to subsequent calls on this slot and does not affect any other user or session.
      *
-     * @param userId user identity for the slot (may be {@code null})
-     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param userId            user identity for the slot (may be {@code null})
+     * @param sessionId         session identity (falls back to the default session id when {@code null})
      * @param permissionContext complete replacement context
      */
     public void replacePermissionContext(
@@ -4351,7 +4449,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Switches the {@link PermissionMode} for the session identified by the given
      * {@link RuntimeContext}. See {@link #setPermissionMode(String, String, PermissionMode)}.
      *
-     * @param ctx the runtime context identifying the session
+     * @param ctx  the runtime context identifying the session
      * @param mode the permission mode to switch to
      */
     public void setPermissionMode(RuntimeContext ctx, PermissionMode mode) {
@@ -4363,7 +4461,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Returns the current {@link PermissionMode} for the given {@code (userId, sessionId)} session.
      *
-     * @param userId user identity for the slot (may be {@code null})
+     * @param userId    user identity for the slot (may be {@code null})
      * @param sessionId session identity (falls back to the default session id when {@code null})
      * @return the session's current permission mode
      */
@@ -4405,17 +4503,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
     }
 
-    /** Returns how many optimistic-concurrency conflicts have been observed on this agent. */
+    /**
+     * Returns how many optimistic-concurrency conflicts have been observed on this agent.
+     */
     public long getStateConflictCount() {
         return stateConflictCount.get();
     }
 
-    /** Returns the configured {@link ConflictPolicy} for agent_state saves. */
+    /**
+     * Returns the configured {@link ConflictPolicy} for agent_state saves.
+     */
     public ConflictPolicy getConflictPolicy() {
         return conflictPolicy;
     }
 
-    /** Returns the {@link AgentStateStore} configured for state persistence, or {@code null}. */
+    /**
+     * Returns the {@link AgentStateStore} configured for state persistence, or {@code null}.
+     */
     public AgentStateStore getStateStore() {
         return stateStore;
     }
@@ -4434,17 +4538,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
     }
 
-    /** Returns the model-call configuration (retries, timeouts). */
+    /**
+     * Returns the model-call configuration (retries, timeouts).
+     */
     public ModelConfig getModelConfig() {
         return modelConfig;
     }
 
-    /** Returns the reasoning-loop configuration (maxIters, stopOnReject). */
+    /**
+     * Returns the reasoning-loop configuration (maxIters, stopOnReject).
+     */
     public ReactConfig getReactConfig() {
         return reactConfig;
     }
 
-    /** @deprecated Use {@code getAgentState(userId, sessionId).getPermissionContext()} instead. */
+    /**
+     * @deprecated Use {@code getAgentState(userId, sessionId).getPermissionContext()} instead.
+     */
     @Deprecated
     public PermissionEngine getPermissionEngine() {
         String slot = slotKey(null, defaultSessionId);
@@ -4453,28 +4563,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 slot, k -> new PermissionEngine(s.getPermissionContext()));
     }
 
-    /** @deprecated Use {@code getAgentState(userId, sessionId).getPermissionContext()} instead. */
+    /**
+     * @deprecated Use {@code getAgentState(userId, sessionId).getPermissionContext()} instead.
+     */
     @Deprecated
     public PermissionContextState getPermissionContext() {
         return getAgentState().getPermissionContext();
     }
 
-    /** Returns the immutable list of registered middlewares. */
+    /**
+     * Returns the immutable list of registered middlewares.
+     */
     public List<MiddlewareBase> getMiddlewares() {
         return middlewares;
     }
 
-    /** Returns the per-model-call {@link ExecutionConfig}, or {@code null} if none was set. */
+    /**
+     * Returns the per-model-call {@link ExecutionConfig}, or {@code null} if none was set.
+     */
     public ExecutionConfig getModelExecutionConfig() {
         return modelExecutionConfig;
     }
 
-    /** Returns the per-tool-call {@link ExecutionConfig}, or {@code null} if none was set. */
+    /**
+     * Returns the per-tool-call {@link ExecutionConfig}, or {@code null} if none was set.
+     */
     public ExecutionConfig getToolExecutionConfig() {
         return toolExecutionConfig;
     }
 
-    /** Returns the {@link ToolExecutionContext} bound at build time, or {@code null} if none. */
+    /**
+     * Returns the {@link ToolExecutionContext} bound at build time, or {@code null} if none.
+     */
     public ToolExecutionContext getToolExecutionContext() {
         return toolExecutionContext;
     }
@@ -4487,7 +4607,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return enablePendingToolRecovery;
     }
 
-    /** Returns the system prompt (alias for {@link #getSysPrompt()}). */
+    /**
+     * Returns the system prompt (alias for {@link #getSysPrompt()}).
+     */
     public String getSystemPrompt() {
         return sysPrompt;
     }
@@ -4605,7 +4727,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return this;
         }
 
-        /** @deprecated No longer enforced; per-session serialization handles concurrency. */
+        /**
+         * @deprecated No longer enforced; per-session serialization handles concurrency.
+         */
         @Deprecated
         public Builder checkRunning(boolean checkRunning) {
             return this;
@@ -4857,7 +4981,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @param toolExecutionContext The tool execution context
          * @return This builder instance for method chaining
          * @deprecated Use {@link RuntimeContext} with {@code agent.call(msg, runtimeContext)}
-         *     or register POJOs directly via {@code RuntimeContext.builder().put(Type, value)}.
+         * or register POJOs directly via {@code RuntimeContext.builder().put(Type, value)}.
          */
         @Deprecated
         public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
@@ -4956,7 +5080,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * @deprecated since 2.0.0. Long-term memory is being redesigned around the upcoming reme
-         *     base class. Hooks added through this path still work.
+         * base class. Hooks added through this path still work.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder longTermMemory(LongTermMemory longTermMemory) {
@@ -5028,10 +5152,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * @deprecated since 2.0.0. Skills now flow through {@link #skillRepository} /
-         *     {@link #skillRepositories}; legacy {@link io.agentscope.core.skill.SkillBox}
-         *     instances are still accepted for source compatibility, but combining a
-         *     {@code skillBox(...)} with {@code skillRepository(...)} is untested — new code
-         *     should prefer {@link #skillRepository(AgentSkillRepository)}.
+         * {@link #skillRepositories}; legacy {@link io.agentscope.core.skill.SkillBox}
+         * instances are still accepted for source compatibility, but combining a
+         * {@code skillBox(...)} with {@code skillRepository(...)} is untested — new code
+         * should prefer {@link #skillRepository(AgentSkillRepository)}.
          */
         @Deprecated(since = "2.0.0")
         public Builder skillBox(SkillBox skillBox) {

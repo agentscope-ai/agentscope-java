@@ -35,23 +35,41 @@ package io.agentscope.core.message;
  */
 public enum GenerateReason {
 
-    /** Model stopped normally, task completed. */
+    /**
+     * Model stopped normally, task completed.
+     */
     MODEL_STOP,
 
-    /** Model returned tool calls (internal tools, framework will continue execution). */
+    /**
+     * Model returned tool calls (internal tools, framework will continue execution).
+     */
     TOOL_CALLS,
 
-    /** Structured output completed. */
+    /**
+     * Structured output completed.
+     */
     STRUCTURED_OUTPUT,
 
-    /** Tool execution was suspended, waiting for user to provide results. */
+    /**
+     * Tool execution was suspended, waiting for user to provide results.
+     */
     TOOL_SUSPENDED,
 
-    /** Reasoning phase was stopped by a Hook (PostReasoningEvent.stopAgent()). */
+    /**
+     * Reasoning phase was stopped by a Hook (PostReasoningEvent.stopAgent()).
+     */
     REASONING_STOP_REQUESTED,
 
-    /** Acting phase was stopped by a Hook (PostActingEvent.stopAgent()). */
+    /**
+     * Acting phase was stopped by a Hook (PostActingEvent.stopAgent()).
+     */
     ACTING_STOP_REQUESTED,
+
+    /**
+     * A tool marked {@code returnDirect} completed; the agent ended the turn without another
+     * model call (no summarizing / next reasoning).
+     */
+    RETURN_DIRECT,
 
     /**
      * Permission engine is asking the user to confirm one or more tool calls.
@@ -78,9 +96,13 @@ public enum GenerateReason {
      */
     ALL_TOOLS_DENIED,
 
-    /** Agent was interrupted. */
+    /**
+     * Agent was interrupted.
+     */
     INTERRUPTED,
 
-    /** Maximum iterations reached. */
+    /**
+     * Maximum iterations reached.
+     */
     MAX_ITERATIONS
 }

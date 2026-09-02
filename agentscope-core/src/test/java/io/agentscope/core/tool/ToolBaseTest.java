@@ -92,9 +92,31 @@ class ToolBaseTest {
         assertTrue(tool.isReadOnly());
         assertTrue(tool.isConcurrencySafe());
         assertFalse(tool.isExternalTool());
+        assertFalse(tool.isReturnDirect());
+        assertTrue(tool.isReturnResult());
         assertFalse(tool.isStateInjected());
         assertFalse(tool.isMcp());
         assertNull(tool.getMcpName());
+    }
+
+    @Test
+    void returnDirectFlagsPropagateFromBuilder() {
+        ToolBase tool =
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("submit")
+                                .description("submit")
+                                .inputSchema(emptySchema())
+                                .returnDirect(true)
+                                .returnResult(false)) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> toolInput, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.passthrough("ok"));
+                    }
+                };
+        assertTrue(tool.isReturnDirect());
+        assertFalse(tool.isReturnResult());
     }
 
     @Test

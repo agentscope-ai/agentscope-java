@@ -39,6 +39,7 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -67,7 +68,9 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-/** End-to-end tests for the ReAct reply loop. */
+/**
+ * End-to-end tests for the ReAct reply loop.
+ */
 class ReActAgentNewLoopReplyTest {
 
     private static AgentState newState() {
@@ -76,7 +79,7 @@ class ReActAgentNewLoopReplyTest {
 
     private static final class ScriptedModel extends ChatModelBase {
         private final List<Supplier<Flux<ChatResponse>>> scripts;
-        private final AtomicInteger idx = new AtomicInteger(0);
+        final AtomicInteger idx = new AtomicInteger(0);
 
         ScriptedModel(List<Supplier<Flux<ChatResponse>>> scripts) {
             this.scripts = scripts;
@@ -140,7 +143,7 @@ class ReActAgentNewLoopReplyTest {
         return toolkit;
     }
 
-    private static final class EchoTool implements AgentTool {
+    private static class EchoTool implements AgentTool {
         @Override
         public String getName() {
             return "echo";
@@ -167,6 +170,43 @@ class ReActAgentNewLoopReplyTest {
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             Object q = param.getInput() == null ? "" : param.getInput().get("query");
             return Mono.just(ToolResultBlock.text("echo:" + q));
+        }
+    }
+
+    private static final class ReturnDirectEchoTool extends EchoTool {
+        @Override
+        public boolean isReturnDirect() {
+            return true;
+        }
+    }
+
+    private static final class SilentReturnDirectTool extends EchoTool {
+        @Override
+        public boolean isReturnDirect() {
+            return true;
+        }
+
+        @Override
+        public boolean isReturnResult() {
+            return false;
+        }
+    }
+
+    private static final class NamedReturnDirectTool extends EchoTool {
+        private final String name;
+
+        NamedReturnDirectTool(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public boolean isReturnDirect() {
+            return true;
         }
     }
 
@@ -248,6 +288,97 @@ class ReActAgentNewLoopReplyTest {
         int firstModelStart = indexOf(events, ModelCallStartEvent.class);
         int secondModelStart = indexOfFrom(events, ModelCallStartEvent.class, firstModelStart + 1);
         assertTrue(secondModelStart > iToolResultEnd, "second iteration should follow tool result");
+    }
+
+    @Test
+    void returnDirectToolEndsTurnWithoutSecondModelCall() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "echo", "ping")),
+                                () -> Flux.just(textResponse("should-not-run"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new ReturnDirectEchoTool()))
+                        .build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.RETURN_DIRECT, result.getGenerateReason());
+        assertEquals("echo:ping", result.getTextContent());
+        assertEquals(1, ((ScriptedModel) model).idx.get(), "model must not be called again");
+    }
+
+    @Test
+    void returnDirectWithoutResultSurfacesEmptyReply() {
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("tc1", "echo", "ping"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new SilentReturnDirectTool()))
+                        .build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.RETURN_DIRECT, result.getGenerateReason());
+        String text = result.getTextContent();
+        assertTrue(
+                text == null || text.isBlank(), "silent returnDirect must not surface tool text");
+        assertEquals(1, ((ScriptedModel) model).idx.get());
+    }
+
+    @Test
+    void concurrentReturnDirectToolsAllSurfaceInReply() {
+        ChatResponse batch =
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("a1")
+                                                .name("alpha")
+                                                .input(Map.of("query", "one"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("b1")
+                                                .name("beta")
+                                                .input(Map.of("query", "two"))
+                                                .build()))
+                        .build();
+        ChatModelBase model = new ScriptedModel(List.of(() -> Flux.just(batch)));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new NamedReturnDirectTool("alpha"));
+        toolkit.registerAgentTool(new NamedReturnDirectTool("beta"));
+        ReActAgent agent = ReActAgent.builder().name("asst").model(model).toolkit(toolkit).build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.RETURN_DIRECT, result.getGenerateReason());
+        assertEquals(1, ((ScriptedModel) model).idx.get(), "model must not be called again");
+
+        List<ToolResultBlock> blocks = result.getContentBlocks(ToolResultBlock.class);
+        assertEquals(2, blocks.size());
+        assertEquals("a1", blocks.get(0).getId());
+        assertEquals("alpha", blocks.get(0).getName());
+        assertEquals("b1", blocks.get(1).getId());
+        assertEquals("beta", blocks.get(1).getName());
+        assertTrue(result.getTextContent().contains("echo:one"));
+        assertTrue(result.getTextContent().contains("echo:two"));
+
+        @SuppressWarnings("unchecked")
+        List<ToolResultBlock> fromMeta =
+                (List<ToolResultBlock>)
+                        result.getMetadata().get(MessageMetadataKeys.RETURN_DIRECT_RESULTS);
+        assertNotNull(fromMeta);
+        assertEquals(2, fromMeta.size());
+        assertEquals("alpha", fromMeta.get(0).getName());
+        assertEquals("beta", fromMeta.get(1).getName());
     }
 
     @Test

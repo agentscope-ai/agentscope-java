@@ -35,7 +35,7 @@ class GenerateReasonTest {
     @DisplayName("Should have all expected enum values")
     void testEnumValues() {
         GenerateReason[] values = GenerateReason.values();
-        assertEquals(11, values.length);
+        assertEquals(12, values.length);
 
         // Verify all expected values exist
         assertNotNull(GenerateReason.MODEL_STOP);
@@ -44,6 +44,7 @@ class GenerateReasonTest {
         assertNotNull(GenerateReason.TOOL_SUSPENDED);
         assertNotNull(GenerateReason.REASONING_STOP_REQUESTED);
         assertNotNull(GenerateReason.ACTING_STOP_REQUESTED);
+        assertNotNull(GenerateReason.RETURN_DIRECT);
         assertNotNull(GenerateReason.PERMISSION_ASKING);
         assertNotNull(GenerateReason.MIDDLEWARE_STOP_REQUESTED);
         assertNotNull(GenerateReason.INTERRUPTED);

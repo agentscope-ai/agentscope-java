@@ -31,7 +31,7 @@ description: "智能体通信，与前端流式数据传输"
 | `getMetadata()` | `Map<String, Object>` | 任意键值元数据 |
 | `getTimestamp()` | `String` | 创建时间（`yyyy-MM-dd HH:mm:ss.SSS`） |
 | `getUsage()` | `ChatUsage` | Token 用量（仅 assistant 消息） |
-| `getGenerateReason()` | `GenerateReason` | 退出原因：`MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
+| `getGenerateReason()` | `GenerateReason` | 退出原因：`MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `RETURN_DIRECT` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
 
 ### 内容块
 
