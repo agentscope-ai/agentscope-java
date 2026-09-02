@@ -37,6 +37,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -61,6 +62,7 @@ import reactor.core.publisher.Flux;
  * child → parent turn 2) yields the appropriate {@link ChatResponse}. This mirrors how
  * {@code buildDeclaredFactory} captures {@code this.model} for child agents.
  */
+@HarnessQuiescence
 class HarnessAgentSubagentStreamTest {
 
     @TempDir Path workspace;
