@@ -38,7 +38,10 @@ import org.junit.jupiter.api.extension.ExtensionContext;
  * <em>before</em> the JUnit {@code TempDir} extension closes the extension context and deletes
  * the temp directory, so the background writes have quiesced first. When nothing is in flight
  * both {@code await*} calls return immediately, making this a no-op for tests that never
- * trigger a flush.
+ * trigger a flush. If the trackers fail to quiesce within the timeout (or the thread is
+ * interrupted), the callback throws {@link AssertionError} so the failure is deterministic and
+ * points at the root cause rather than surfacing later as an opaque
+ * {@code "Failed to delete temp directory"}.
  */
 public class HarnessBackgroundTaskQuiescenceExtension implements AfterEachCallback {
 
@@ -46,7 +49,15 @@ public class HarnessBackgroundTaskQuiescenceExtension implements AfterEachCallba
 
     @Override
     public void afterEach(ExtensionContext context) {
-        SessionTree.awaitMirrorQuiescence(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        MemoryBackgroundTasks.awaitQuiescence(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        boolean mirrorsQuiet = SessionTree.awaitMirrorQuiescence(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        boolean flushQuiet =
+                MemoryBackgroundTasks.awaitQuiescence(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        if (!mirrorsQuiet || !flushQuiet) {
+            throw new AssertionError(
+                    "Harness background tasks did not quiesce within "
+                            + TIMEOUT_SECONDS
+                            + "s; fire-and-forget memory flush may still race with @TempDir"
+                            + " teardown");
+        }
     }
 }
