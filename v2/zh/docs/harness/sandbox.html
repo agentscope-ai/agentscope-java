@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-04T12:46:10+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="子 Agent（Subagent）" href="subagent.html"><link rel="prev" title="文件系统（Filesystem）" href="filesystem.html">
+    <meta property="article:modified_time" content="2026-09-02T06:28:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="子 Agent（Subagent）" href="subagent.html"><link rel="prev" title="文件系统（Filesystem）" href="filesystem.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/sandbox.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1275,6 +1275,7 @@
 <section id="id10">
 <h3>为什么这样设计<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">Sandbox</span></code> 抽象的主数据面入口是 <code class="docutils literal notranslate"><span class="pre">exec(command)</span></code>。这是刻意的——<code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> 这类工具的语义（正则、字符串替换、glob）不可能靠有限的文件 API 端点表达，靠镜像内的标准工具链执行 shell 脚本是唯一通用解。文件 API（upload/download）只承担”纯字节搬运”：工作区快照和单文件上传下载走它（后端通过实现 <code class="docutils literal notranslate"><span class="pre">SandboxFileTransfer</span></code> 可选接口声明该能力），其余一切走 <code class="docutils literal notranslate"><span class="pre">execute</span></code>。这也意味着：<strong>镜像契约本身就是沙箱接口的一部分</strong>，换镜像前先跑上面的自检。</p>
+<p><strong>从模型视角跨越边界。</strong> 上面的文件 API（upload/download）是内部机制——对 LLM 不可见，<code class="docutils literal notranslate"><span class="pre">FilesystemTool</span></code> 不暴露任何传输工具。沙箱中的 agent 把自己产出的产物交给沙箱外目标的受支持方式是通用 <strong><code class="docutils literal notranslate"><span class="pre">deliver_artifact</span></code></strong> 工具。只有当你通过 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.builder().artifactDeliveryTarget(...)</span></code> 配置了 <code class="docutils literal notranslate"><span class="pre">ArtifactDeliveryTarget</span></code> 时它才会被注册。该 SPI 保持业务无关——<code class="docutils literal notranslate"><span class="pre">deliver(RuntimeContext,</span> <span class="pre">ArtifactDeliveryRequest)</span> <span class="pre">-&gt;</span> <span class="pre">ArtifactDeliveryResult</span></code>——目标逻辑（例如 WebDAV 上传）由你的应用实现。工具会从沙箱工作区下载文件字节，并把传输委托给 target。未配置 target 时，沙箱工作区提示语会明确说明文件无法离开容器。</p>
 </section>
 </section>
 <section id="kubernetes-pvc">
@@ -1407,7 +1408,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-04</div>
+              Last updated on 2026-09-02</div>
           </div>
           <div class="right-details">
             <div class="icons">

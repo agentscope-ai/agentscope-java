@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-04T12:46:10+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagent" href="subagent.html"><link rel="prev" title="Filesystem" href="filesystem.html">
+    <meta property="article:modified_time" content="2026-09-02T06:28:30+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagent" href="subagent.html"><link rel="prev" title="Filesystem" href="filesystem.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/sandbox.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1276,6 +1276,7 @@
 <section id="why-it-works-this-way">
 <h3>Why it works this way<a class="headerlink" href="#why-it-works-this-way" title="Link to this heading">¶</a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">Sandbox</span></code> abstraction’s primary data-plane entry point is <code class="docutils literal notranslate"><span class="pre">exec(command)</span></code>. This is deliberate — tool semantics like <code class="docutils literal notranslate"><span class="pre">edit_file</span></code> / <code class="docutils literal notranslate"><span class="pre">grep_files</span></code> (regex, string replacement, globbing) cannot be expressed through a small set of file-API endpoints; running shell scripts against a standard toolchain inside the image is the only portable answer. The file API (upload/download) handles pure byte transfer only: workspace snapshots and single-file upload/download go through it (backends declare the capability by implementing the optional <code class="docutils literal notranslate"><span class="pre">SandboxFileTransfer</span></code> interface); everything else goes through <code class="docutils literal notranslate"><span class="pre">execute</span></code>. Which also means: <strong>the image contract is part of the sandbox interface</strong> — run the conformance check above before switching images.</p>
+<p><strong>Crossing the boundary from the model’s point of view.</strong> The file API (upload/download) above is an internal mechanism — invisible to the LLM, and <code class="docutils literal notranslate"><span class="pre">FilesystemTool</span></code> exposes no transfer tools. The supported way for a sandboxed agent to hand an artifact it produced to a destination outside the sandbox is the generic <strong><code class="docutils literal notranslate"><span class="pre">deliver_artifact</span></code></strong> tool. It is registered only when you configure an <code class="docutils literal notranslate"><span class="pre">ArtifactDeliveryTarget</span></code> via <code class="docutils literal notranslate"><span class="pre">HarnessAgent.builder().artifactDeliveryTarget(...)</span></code>. The SPI stays business-agnostic — <code class="docutils literal notranslate"><span class="pre">deliver(RuntimeContext,</span> <span class="pre">ArtifactDeliveryRequest)</span> <span class="pre">-&gt;</span> <span class="pre">ArtifactDeliveryResult</span></code> — so destination logic (e.g. WebDAV upload) lives in your application. The tool downloads the file bytes from the sandbox workspace and delegates the transport to the target. Without a configured target, the sandbox workspace prompt states plainly that files cannot leave the container.</p>
 </section>
 </section>
 <section id="kubernetes-state-persistence-pvc-is-the-first-layer">
@@ -1408,7 +1409,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-04</div>
+              Last updated on 2026-09-02</div>
           </div>
           <div class="right-details">
             <div class="icons">
