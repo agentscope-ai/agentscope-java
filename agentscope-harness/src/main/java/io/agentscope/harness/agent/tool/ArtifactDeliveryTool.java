@@ -36,11 +36,6 @@ import java.util.List;
  */
 public class ArtifactDeliveryTool {
 
-    /**
-     * Registered tool name.
-     */
-    public static final String NAME = "deliver_artifact";
-
     private final AbstractFilesystem filesystem;
     private final WorkspacePathNormalizer pathNormalizer;
     private final ArtifactDeliveryTarget target;

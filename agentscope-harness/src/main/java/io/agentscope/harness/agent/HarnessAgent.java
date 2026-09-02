@@ -2412,6 +2412,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (agentTracingLogEnabled) {
                 inner.middleware(new AgentTraceMiddleware());
             }
+            boolean artifactDeliveryEnabled =
+                    artifactDeliveryTarget != null && !disableFilesystemTools;
             if (!disableWorkspaceContext) {
                 WorkspaceContextMiddleware markdownMw =
                         new WorkspaceContextMiddleware(
@@ -2422,8 +2424,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 disableMemoryTools,
                                 disableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
-                markdownMw.setArtifactDeliveryEnabled(
-                        artifactDeliveryTarget != null && !disableFilesystemTools);
+                markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);
             }
             if (!disableAtPathExpansion) {
@@ -2602,7 +2603,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableFilesystemTools) {
                 agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
             }
-            if (artifactDeliveryTarget != null && !disableFilesystemTools) {
+            if (artifactDeliveryEnabled) {
                 agentToolkit.registerTool(
                         new ArtifactDeliveryTool(
                                 filesystem, pathNormalizer, artifactDeliveryTarget));

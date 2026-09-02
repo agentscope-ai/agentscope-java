@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.tool;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -76,7 +77,7 @@ class ArtifactDeliveryToolTest {
         assertEquals("outputs/report.docx", request.filePath());
         assertArrayEquals(content, request.content());
         assertEquals("report.docx", request.fileName());
-        assertEquals(null, request.description());
+        assertNull(request.description());
         assertFalse(request.force());
     }
 
