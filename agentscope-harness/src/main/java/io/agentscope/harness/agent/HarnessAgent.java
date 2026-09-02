@@ -457,6 +457,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.session.SessionTree.awaitMirrorQuiescence(
                     5, java.util.concurrent.TimeUnit.SECONDS);
+            // Drain fire-and-forget memory flush/maintenance so async memory/*.md writes do not
+            // race with resource cleanup (e.g., temp workspace deletion in tests).
+            io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
+                    5, java.util.concurrent.TimeUnit.SECONDS);
             shutdownTaskRepository();
         } finally {
             try {
@@ -2775,6 +2779,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                         visibilityFilter,
                                         stager,
                                         shellPolicy);
+                skillMiddleware.isolationScope(fsIsolationScope);
                 inner.middleware(skillMiddleware);
 
                 // Harness owns both the live and frozen repository paths.
