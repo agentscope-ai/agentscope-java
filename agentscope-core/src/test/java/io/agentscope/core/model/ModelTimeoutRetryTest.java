@@ -17,13 +17,16 @@ package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -385,5 +388,239 @@ class ModelTimeoutRetryTest {
                 null,
                 null,
                 null);
+    }
+
+    /**
+     * Creates a mock model backed by the supplied flux supplier, wrapped with the shared
+     * timeout/retry/empty-completion handling. The supplier is re-invoked on every subscription,
+     * so retry attempts can vary their behavior.
+     *
+     * @param responseFlux supplies the response flux for each subscription
+     * @param modelName the model name for error messages
+     * @return a Model instance backed by the supplier
+     */
+    private Model createModelReturning(
+            Supplier<Flux<ChatResponse>> responseFlux, String modelName) {
+        return new Model() {
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                return ModelUtils.applyTimeoutAndRetry(
+                        Flux.defer(responseFlux), options, null, modelName, "test");
+            }
+
+            @Override
+            public String getModelName() {
+                return modelName;
+            }
+        };
+    }
+
+    // ==================== Empty-completion detection (issue #2962) ====================
+
+    @Test
+    @DisplayName("Should fail when the model returns zero chunks")
+    void testEmptyCompletionZeroChunks() {
+        // Zero chunks — the [DONE]-only stream case
+        Model emptyModel = createModelReturning(() -> Flux.empty(), "empty-model");
+
+        Msg testMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+
+        // Empty-completion detection is unconditional (no ExecutionConfig needed)
+        StepVerifier.create(emptyModel.stream(List.of(testMsg), null, null))
+                .expectErrorMatches(
+                        error ->
+                                error instanceof ModelException
+                                        && error.getMessage().contains("empty completion"))
+                .verify();
+    }
+
+    @Test
+    @DisplayName("Should fail when all chunks have null or empty content")
+    void testEmptyCompletionAllChunksEmpty() {
+        // Two chunks, both contentless — the role-only/usage-only chunks of a well-formed but
+        // empty gateway response
+        Model emptyContentModel =
+                createModelReturning(
+                        () ->
+                                Flux.just(
+                                        new ChatResponse("chunk-1", List.of(), null, null, null),
+                                        new ChatResponse("chunk-2", null, null, null, null)),
+                        "empty-content-model");
+
+        Msg testMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+
+        // Contentless chunks are withheld, so the error must be the first downstream signal:
+        // any emitted chunk would commit a switchOnFirst-based fallback to the primary model
+        StepVerifier.create(emptyContentModel.stream(List.of(testMsg), null, null))
+                .expectErrorMatches(
+                        error ->
+                                error instanceof ModelException
+                                        && error.getMessage().contains("empty completion"))
+                .verify();
+    }
+
+    @Test
+    @DisplayName("Empty completion should trigger retry when maxAttempts > 1")
+    void testEmptyCompletionRetriesAndSucceeds() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+
+        Model retryingEmptyModel =
+                createModelReturning(
+                        () ->
+                                attemptCount.incrementAndGet() < 2
+                                        ? Flux.empty() // First attempt: empty
+                                        : Flux.just(createMockResponse()), // Then: success
+                        "retrying-empty-model");
+
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .maxAttempts(2)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
+
+        Msg testMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+
+        // Should retry the empty completion and succeed on second attempt
+        StepVerifier.create(retryingEmptyModel.stream(List.of(testMsg), null, options))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(2, attemptCount.get(), "Should have made exactly 2 attempts");
+    }
+
+    @Test
+    @DisplayName(
+            "Empty completion on retry must fail even if a content-bearing attempt errored first")
+    void testEmptyCompletionOnRetryAfterContentBearingFailure() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+
+        Model model =
+                createModelReturning(
+                        () -> {
+                            if (attemptCount.incrementAndGet() == 1) {
+                                // First attempt: content arrives, then the stream fails
+                                // mid-flight
+                                return Flux.concat(
+                                        Flux.just(createMockResponse()),
+                                        Flux.error(new RuntimeException("boom")));
+                            }
+                            // Retry: empty completion must still fail
+                            return Flux.empty();
+                        },
+                        "retry-after-content-model");
+
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .maxAttempts(2)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
+
+        Msg testMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+
+        // The empty completion on the second attempt must surface as ModelException; the chunk
+        // seen on the first attempt must not satisfy the check for the retried attempt.
+        // Retry.backoff wraps the last failure in RetryExhaustedException when retries run out
+        StepVerifier.create(model.stream(List.of(testMsg), null, options))
+                .expectNextCount(1)
+                .expectErrorMatches(
+                        error ->
+                                error.getCause() instanceof ModelException
+                                        && error.getCause()
+                                                .getMessage()
+                                                .contains("empty completion"))
+                .verify();
+
+        assertEquals(2, attemptCount.get(), "Should have made exactly 2 attempts");
+    }
+
+    @Test
+    @DisplayName("Multimodal-only chunks (image blocks) are not empty completions")
+    void testMultimodalOnlyCompletionIsNotEmpty() {
+        ChatResponse imageChunk =
+                new ChatResponse(
+                        "chunk-1",
+                        List.of(
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/image.jpg")
+                                                        .build())
+                                        .build()),
+                        null,
+                        null,
+                        null);
+        Model multimodalModel =
+                createModelReturning(() -> Flux.just(imageChunk), "multimodal-model");
+
+        Msg testMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+
+        // Image-only chunks carry content; the stream must complete normally
+        StepVerifier.create(multimodalModel.stream(List.of(testMsg), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should release withheld contentless chunks in order once content arrives")
+    void testLeadingContentlessChunksReleasedWithFirstContentChunk() {
+        Model model =
+                createModelReturning(
+                        () ->
+                                Flux.just(
+                                        new ChatResponse("role-chunk", List.of(), null, null, null),
+                                        createMockResponse(),
+                                        new ChatResponse("usage-chunk", null, null, null, null)),
+                        "leading-contentless-model");
+
+        Msg testMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+
+        // The withheld chunks stream out together with the first content-bearing chunk, and
+        // trailing contentless chunks pass through untouched
+        StepVerifier.create(model.stream(List.of(testMsg), null, null))
+                .expectNextMatches(chunk -> "role-chunk".equals(chunk.getId()))
+                .expectNextMatches(
+                        chunk ->
+                                "test-id".equals(chunk.getId())
+                                        && chunk.getContent() != null
+                                        && !chunk.getContent().isEmpty())
+                .expectNextMatches(chunk -> "usage-chunk".equals(chunk.getId()))
+                .verifyComplete();
     }
 }
