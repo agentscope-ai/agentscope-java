@@ -243,6 +243,16 @@ public class WordReader extends AbstractChunkingReader {
                             blocks.add(TextBlock.builder().text(text).build());
                         }
                         lastType = "text";
+                    } else if (!blocks.isEmpty()
+                            && ("text".equals(lastType)
+                                    || ("table".equals(lastType) && !separateTable))) {
+                        // Blank paragraph: append a newline so that consecutive paragraphs
+                        // are joined with "\n\n", preserving the paragraph boundary that
+                        // TextChunker relies on when splitting by PARAGRAPH strategy
+                        TextBlock lastBlock = (TextBlock) blocks.get(blocks.size() - 1);
+                        TextBlock mergedBlock =
+                                TextBlock.builder().text(lastBlock.getText() + "\n").build();
+                        blocks.set(blocks.size() - 1, mergedBlock);
                     }
 
                 } else if (element.getElementType() == BodyElementType.TABLE) {
