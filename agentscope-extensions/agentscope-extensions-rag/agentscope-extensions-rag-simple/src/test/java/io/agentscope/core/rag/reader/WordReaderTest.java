@@ -17,14 +17,23 @@ package io.agentscope.core.rag.reader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.rag.exception.ReaderException;
+import io.agentscope.core.rag.model.Document;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Consumer;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.test.StepVerifier;
 
 /**
@@ -132,5 +141,59 @@ class WordReaderTest {
         ReaderInput input = ReaderInput.fromString("/non/existent/file.docx");
 
         StepVerifier.create(reader.read(input)).expectError(ReaderException.class).verify();
+    }
+
+    @Test
+    @DisplayName("Should keep a blank paragraph as a blank line")
+    void testBlankParagraphIsPreservedAsBlankLine(@TempDir Path tempDir) throws Exception {
+        Path docx =
+                writeDocx(
+                        tempDir.resolve("blank-line.docx"),
+                        doc -> {
+                            doc.createParagraph().createRun().setText("Paragraph one.");
+                            doc.createParagraph(); // blank line: a single Enter in Word
+                            doc.createParagraph().createRun().setText("Paragraph two.");
+                        });
+
+        assertEquals("Paragraph one.\n\nParagraph two.", readSingleChunk(new WordReader(), docx));
+    }
+
+    @Test
+    @DisplayName("Should keep consecutive blank paragraphs as consecutive blank lines")
+    void testConsecutiveBlankParagraphsArePreserved(@TempDir Path tempDir) throws Exception {
+        Path docx =
+                writeDocx(
+                        tempDir.resolve("two-blank-lines.docx"),
+                        doc -> {
+                            doc.createParagraph().createRun().setText("Paragraph one.");
+                            doc.createParagraph();
+                            doc.createParagraph();
+                            doc.createParagraph().createRun().setText("Paragraph two.");
+                        });
+
+        // CHARACTER keeps the extracted text verbatim; PARAGRAPH would collapse any run of
+        // blank lines back to a single one when it re-joins the split paragraphs.
+        WordReader reader =
+                new WordReader(512, SplitStrategy.CHARACTER, 50, true, false, TableFormat.MARKDOWN);
+
+        assertEquals("Paragraph one.\n\n\nParagraph two.", readSingleChunk(reader, docx));
+    }
+
+    /** Authors a .docx fixture in memory, so that no binary test resource is required. */
+    private static Path writeDocx(Path target, Consumer<XWPFDocument> author) throws IOException {
+        try (XWPFDocument doc = new XWPFDocument()) {
+            author.accept(doc);
+            try (OutputStream out = Files.newOutputStream(target)) {
+                doc.write(out);
+            }
+        }
+        return target;
+    }
+
+    private static String readSingleChunk(WordReader reader, Path docx) {
+        List<Document> docs = reader.read(ReaderInput.fromPath(docx)).block();
+        assertNotNull(docs);
+        assertEquals(1, docs.size(), "fixture is expected to fit into a single chunk");
+        return docs.get(0).getMetadata().getContentText();
     }
 }
