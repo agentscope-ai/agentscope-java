@@ -21,7 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.rag.exception.ReaderException;
+import io.agentscope.core.rag.model.Document;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.List;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -132,5 +138,39 @@ class WordReaderTest {
         ReaderInput input = ReaderInput.fromString("/non/existent/file.docx");
 
         StepVerifier.create(reader.read(input)).expectError(ReaderException.class).verify();
+    }
+
+    @Test
+    @DisplayName(
+            "Should preserve paragraph boundaries across empty paragraphs for PARAGRAPH strategy")
+    void testParagraphBoundaryPreservedAcrossBlankLine() throws IOException {
+        // Build a docx with "First\n\nSecond" where the blank line is an empty <w:p> element.
+        File file = File.createTempFile("wordreader-paragraph", ".docx");
+        file.deleteOnExit();
+
+        try (XWPFDocument doc = new XWPFDocument()) {
+            XWPFParagraph first = doc.createParagraph();
+            first.createRun().setText("First paragraph.");
+            doc.createParagraph(); // empty paragraph (blank line in Word)
+            XWPFParagraph second = doc.createParagraph();
+            second.createRun().setText("Second paragraph.");
+
+            try (FileOutputStream fos = new FileOutputStream(file)) {
+                doc.write(fos);
+            }
+        }
+
+        // Images disabled to keep the test focused on text.
+        WordReader reader =
+                new WordReader(1000, SplitStrategy.PARAGRAPH, 0, false, true, TableFormat.MARKDOWN);
+        List<Document> documents =
+                reader.read(ReaderInput.fromString(file.getAbsolutePath())).block();
+
+        assertEquals(1, documents.size());
+        // The blank line must produce "\n\n" so TextChunker's PARAGRAPH strategy can detect
+        // the boundary instead of degrading to character splitting.
+        assertEquals(
+                "First paragraph.\n\nSecond paragraph.",
+                documents.get(0).getMetadata().getContentText());
     }
 }
