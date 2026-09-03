@@ -16,10 +16,14 @@
 package io.agentscope.core.agui.adapter.strategy;
 
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.JsonException;
@@ -32,6 +36,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,13 +60,19 @@ public class AguiStreamContext {
     private final Set<String> endedToolCalls = new LinkedHashSet<>();
     private final Set<String> adoptedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
+    private String currentTextReplyId;
     private String currentReasoningMessageId;
+    private final Map<String, List<String>> textMessageIdsByReply = new LinkedHashMap<>();
+    private final Map<String, String> activeTextMessageIdsByReply = new LinkedHashMap<>();
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
     private final Predicate<String> isExternalTool;
     private final Map<String, String> startedToolCallNames = new LinkedHashMap<>();
+    private final Supplier<List<Msg>> authoritativeMessagesSupplier;
+    private final AguiMessageConverter messageConverter = new AguiMessageConverter();
+    private Msg finalResult;
 
     public AguiStreamContext(String threadId, String runId, AguiAdapterConfig config) {
         this(threadId, runId, config, null, null);
@@ -89,12 +100,26 @@ public class AguiStreamContext {
             AguiAdapterConfig config,
             RunAgentInput runInput,
             Predicate<String> isExternalTool) {
+        this(threadId, runId, config, runInput, isExternalTool, List::of);
+    }
+
+    public AguiStreamContext(
+            String threadId,
+            String runId,
+            AguiAdapterConfig config,
+            RunAgentInput runInput,
+            Predicate<String> isExternalTool,
+            Supplier<List<Msg>> authoritativeMessagesSupplier) {
         this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
         this.runId = Objects.requireNonNull(runId, "runId cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.runInput = runInput;
         this.isExternalTool =
                 isExternalTool != null ? isExternalTool : defaultExternalToolDetector(runInput);
+        this.authoritativeMessagesSupplier =
+                Objects.requireNonNull(
+                        authoritativeMessagesSupplier,
+                        "authoritativeMessagesSupplier cannot be null");
     }
 
     public String getThreadId() {
@@ -127,21 +152,29 @@ public class AguiStreamContext {
         pendingEvents.add(event);
     }
 
+    public void observe(AgentEvent event) {
+        if (event instanceof AgentResultEvent resultEvent && isBlank(event.getSource())) {
+            finalResult = resultEvent.getResult();
+        }
+    }
+
     TokenUsageAccumulator getTokenUsageAccumulator() {
         return tokenUsageAccumulator;
     }
 
-    public void startTextMessage(String messageId) {
+    public void startTextMessage(String replyId) {
+        String messageId = resolveTextMessageId(replyId);
         if (startedTextMessages.add(messageId)) {
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
         }
+        currentTextReplyId = replyId;
         currentTextMessageId = messageId;
     }
 
-    public void appendTextDelta(String messageId, String delta) {
+    public void appendTextDelta(String replyId, String delta) {
         if (delta != null && !delta.isEmpty()) {
-            startTextMessage(messageId);
-            emit(new AguiEvent.TextMessageContent(threadId, runId, messageId, delta));
+            startTextMessage(replyId);
+            emit(new AguiEvent.TextMessageContent(threadId, runId, currentTextMessageId, delta));
         }
     }
 
@@ -149,10 +182,18 @@ public class AguiStreamContext {
         if (currentTextMessageId == null) {
             return;
         }
-        closeTextMessage(currentTextMessageId);
+        closeResolvedTextMessage(currentTextReplyId, currentTextMessageId);
     }
 
-    public void closeTextMessage(String messageId) {
+    public void closeTextMessage(String replyId) {
+        String messageId =
+                config.isTextOutputDispositionEnabled()
+                        ? activeTextMessageIdsByReply.get(replyId)
+                        : replyId;
+        closeResolvedTextMessage(replyId, messageId);
+    }
+
+    private void closeResolvedTextMessage(String replyId, String messageId) {
         if (messageId == null
                 || !startedTextMessages.contains(messageId)
                 || endedTextMessages.contains(messageId)) {
@@ -161,8 +202,41 @@ public class AguiStreamContext {
         endedTextMessages.add(messageId);
         if (Objects.equals(messageId, currentTextMessageId)) {
             currentTextMessageId = null;
+            currentTextReplyId = null;
+        }
+        if (config.isTextOutputDispositionEnabled()) {
+            activeTextMessageIdsByReply.remove(replyId, messageId);
         }
         emit(new AguiEvent.TextMessageEnd(threadId, runId, messageId));
+    }
+
+    public List<String> getTextMessageIds(String replyId) {
+        if (!config.isTextOutputDispositionEnabled()) {
+            return startedTextMessages.contains(replyId) ? List.of(replyId) : List.of();
+        }
+        return List.copyOf(textMessageIdsByReply.getOrDefault(replyId, List.of()));
+    }
+
+    public void emitFinalMessagesSnapshot() {
+        if (finalResult == null) {
+            return;
+        }
+        Map<String, Msg> messagesById = new LinkedHashMap<>();
+        List<Msg> authoritativeMessages = authoritativeMessagesSupplier.get();
+        if (authoritativeMessages != null) {
+            for (Msg message : authoritativeMessages) {
+                if (message != null) {
+                    messagesById.put(message.getId(), message);
+                }
+            }
+        }
+        messagesById.put(finalResult.getId(), finalResult);
+        emit(
+                new AguiEvent.MessagesSnapshot(
+                        threadId,
+                        runId,
+                        messageConverter.toAguiMessageList(
+                                new ArrayList<>(messagesById.values()))));
     }
 
     public void startReasoningMessage(String messageId) {
@@ -341,6 +415,22 @@ public class AguiStreamContext {
 
     private StringBuilder toolResultBuffer(String toolCallId) {
         return toolResultContent.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
+    }
+
+    private String resolveTextMessageId(String replyId) {
+        if (!config.isTextOutputDispositionEnabled()) {
+            return replyId;
+        }
+        return activeTextMessageIdsByReply.computeIfAbsent(
+                replyId,
+                key -> {
+                    List<String> messageIds =
+                            textMessageIdsByReply.computeIfAbsent(
+                                    key, ignored -> new ArrayList<>());
+                    String messageId = key + ":text:" + messageIds.size();
+                    messageIds.add(messageId);
+                    return messageId;
+                });
     }
 
     private static String normalizeToolCallName(String toolCallName) {

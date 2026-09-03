@@ -38,6 +38,7 @@ public class AguiAdapterConfig {
     private final boolean emitToolCallArgs;
     private final boolean emitTokenUsage;
     private final boolean enableReasoning;
+    private final boolean textOutputDispositionEnabled;
     private final boolean emitRunFinishedAfterError;
     private final Duration runTimeout;
     private final String defaultAgentId;
@@ -52,6 +53,7 @@ public class AguiAdapterConfig {
         this.emitToolCallArgs = builder.emitToolCallArgs;
         this.emitTokenUsage = builder.emitTokenUsage;
         this.enableReasoning = builder.enableReasoning;
+        this.textOutputDispositionEnabled = builder.textOutputDispositionEnabled;
         this.emitRunFinishedAfterError = builder.emitRunFinishedAfterError;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
@@ -111,6 +113,18 @@ public class AguiAdapterConfig {
      */
     public boolean isEnableReasoning() {
         return enableReasoning;
+    }
+
+    /**
+     * Check whether streamed text output disposition and final message snapshots are enabled.
+     *
+     * <p>Default is {@code false} so existing AG-UI event sequences and message IDs remain
+     * unchanged.
+     *
+     * @return true to derive text output disposition events
+     */
+    public boolean isTextOutputDispositionEnabled() {
+        return textOutputDispositionEnabled;
     }
 
     /**
@@ -220,6 +234,7 @@ public class AguiAdapterConfig {
         private boolean emitToolCallArgs = true;
         private boolean emitTokenUsage = false;
         private boolean enableReasoning = false;
+        private boolean textOutputDispositionEnabled = false;
         private boolean emitRunFinishedAfterError = false;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
@@ -287,6 +302,19 @@ public class AguiAdapterConfig {
          */
         public Builder enableReasoning(boolean enableReasoning) {
             this.enableReasoning = enableReasoning;
+            return this;
+        }
+
+        /**
+         * Set whether to derive text output disposition events and final message snapshots.
+         *
+         * <p>Default is {@code false} for backward compatibility.
+         *
+         * @param textOutputDispositionEnabled true to enable disposition conversion
+         * @return This builder
+         */
+        public Builder textOutputDispositionEnabled(boolean textOutputDispositionEnabled) {
+            this.textOutputDispositionEnabled = textOutputDispositionEnabled;
             return this;
         }
 

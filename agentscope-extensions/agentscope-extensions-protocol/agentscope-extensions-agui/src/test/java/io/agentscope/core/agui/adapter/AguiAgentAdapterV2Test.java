@@ -50,6 +50,7 @@ import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.DataBlockStartEvent;
 import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -70,12 +71,14 @@ import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -86,6 +89,8 @@ import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 
@@ -307,6 +312,216 @@ class AguiAgentAdapterV2Test {
 
     @Nested
     class TextAndReasoningConversionTests {
+
+        @Test
+        void testTextOutputDispositionRemainsDisabledWithoutChangingLegacySequenceOrMessageId() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-legacy", "react"),
+                            new ModelCallStartEvent("reply-legacy"),
+                            new TextBlockDeltaEvent("reply-legacy", "text-1", "answer"),
+                            new TextBlockEndEvent("reply-legacy", "text-1"),
+                            new AgentResultEvent(
+                                    AssistantMessage.builder()
+                                            .id("reply-legacy")
+                                            .content(TextBlock.builder().text("answer").build())
+                                            .generateReason(GenerateReason.MODEL_STOP)
+                                            .build()),
+                            new AgentEndEvent("reply-legacy"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.RUN_STARTED,
+                            AguiEventType.TEXT_MESSAGE_START,
+                            AguiEventType.TEXT_MESSAGE_CONTENT,
+                            AguiEventType.TEXT_MESSAGE_END,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+            assertEquals(
+                    List.of("reply-legacy", "reply-legacy", "reply-legacy"),
+                    events.stream()
+                            .filter(
+                                    event ->
+                                            event instanceof AguiEvent.TextMessageStart
+                                                    || event instanceof AguiEvent.TextMessageContent
+                                                    || event instanceof AguiEvent.TextMessageEnd)
+                            .map(
+                                    event -> {
+                                        if (event instanceof AguiEvent.TextMessageStart start) {
+                                            return start.messageId();
+                                        }
+                                        if (event instanceof AguiEvent.TextMessageContent content) {
+                                            return content.messageId();
+                                        }
+                                        return ((AguiEvent.TextMessageEnd) event).messageId();
+                                    })
+                            .toList());
+            assertFalse(events.stream().anyMatch(AguiEvent.Custom.class::isInstance));
+            assertFalse(events.stream().anyMatch(AguiEvent.MessagesSnapshot.class::isInstance));
+        }
+
+        @Test
+        void testEnabledDispositionUsesSegmentIdsAndEmitsOneCustomEventWithoutReasoning() {
+            AguiAdapterConfig config =
+                    AguiAdapterConfig.builder().textOutputDispositionEnabled(true).build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            config,
+                            new ModelCallStartEvent("reply-1"),
+                            new TextBlockDeltaEvent("reply-1", "text-1", "first"),
+                            new TextBlockEndEvent("reply-1", "text-1"),
+                            new TextBlockDeltaEvent("reply-1", "text-2", "second"),
+                            new TextBlockEndEvent("reply-1", "text-2"),
+                            new ModelCallStartEvent("reply-2"));
+
+            assertEquals(
+                    List.of(
+                            "reply-1:text:0",
+                            "reply-1:text:0",
+                            "reply-1:text:0",
+                            "reply-1:text:1",
+                            "reply-1:text:1",
+                            "reply-1:text:1"),
+                    events.stream()
+                            .filter(
+                                    event ->
+                                            event instanceof AguiEvent.TextMessageStart
+                                                    || event instanceof AguiEvent.TextMessageContent
+                                                    || event instanceof AguiEvent.TextMessageEnd)
+                            .map(
+                                    event -> {
+                                        if (event instanceof AguiEvent.TextMessageStart start) {
+                                            return start.messageId();
+                                        }
+                                        if (event instanceof AguiEvent.TextMessageContent content) {
+                                            return content.messageId();
+                                        }
+                                        return ((AguiEvent.TextMessageEnd) event).messageId();
+                                    })
+                            .toList());
+            AguiEvent.Custom disposition =
+                    events.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("agentscope.text_output.disposition", disposition.name());
+            assertEquals(
+                    Map.of(
+                            "replyId",
+                            "reply-1",
+                            "messageIds",
+                            List.of("reply-1:text:0", "reply-1:text:1"),
+                            "disposition",
+                            "INTERMEDIATE"),
+                    customValue(disposition).entrySet().stream()
+                            .filter(entry -> entry.getValue() != null)
+                            .collect(
+                                    java.util.stream.Collectors.toMap(
+                                            Map.Entry::getKey, Map.Entry::getValue)));
+            assertTrue(customValue(disposition).containsKey("generateReason"));
+            assertNull(customValue(disposition).get("generateReason"));
+            assertFalse(
+                    events.stream()
+                            .anyMatch(event -> event.getType().name().startsWith("REASONING")));
+        }
+
+        @ParameterizedTest
+        @EnumSource(
+                value = GenerateReason.class,
+                names = {"MODEL_STOP", "STRUCTURED_OUTPUT", "MAX_ITERATIONS"})
+        void testEnabledDispositionEmitsMessagesSnapshotForAllowedFinalReasons(
+                GenerateReason generateReason) {
+            List<AguiEvent> events = runTerminalDisposition(generateReason, null);
+
+            assertEquals(
+                    1,
+                    events.stream().filter(AguiEvent.MessagesSnapshot.class::isInstance).count());
+            assertTrue(
+                    events.indexOf(
+                                    events.stream()
+                                            .filter(AguiEvent.MessagesSnapshot.class::isInstance)
+                                            .findFirst()
+                                            .orElseThrow())
+                            < events.indexOf(
+                                    events.stream()
+                                            .filter(AguiEvent.RunFinished.class::isInstance)
+                                            .findFirst()
+                                            .orElseThrow()));
+        }
+
+        @ParameterizedTest
+        @EnumSource(
+                value = GenerateReason.class,
+                mode = EnumSource.Mode.EXCLUDE,
+                names = {"MODEL_STOP", "STRUCTURED_OUTPUT", "MAX_ITERATIONS"})
+        void testEnabledDispositionDoesNotEmitMessagesSnapshotForNonFinalReasons(
+                GenerateReason generateReason) {
+            List<AguiEvent> events = runTerminalDisposition(generateReason, null);
+
+            assertFalse(events.stream().anyMatch(AguiEvent.MessagesSnapshot.class::isInstance));
+        }
+
+        @Test
+        void testFinalSnapshotUsesSessionMessagesAndResultDeduplicatedById() {
+            Msg sessionUser =
+                    Msg.builder()
+                            .id("session-user")
+                            .role(MsgRole.USER)
+                            .textContent("session question")
+                            .build();
+            Msg staleResult =
+                    AssistantMessage.builder()
+                            .id("reply-final")
+                            .content(TextBlock.builder().text("stale result").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+            AgentState state =
+                    AgentState.builder().context(List.of(sessionUser, staleResult)).build();
+            RuntimeContext callerContext = RuntimeContext.builder().agentState(state).build();
+            Msg finalResult =
+                    AssistantMessage.builder()
+                            .id("reply-final")
+                            .content(
+                                    List.<ContentBlock>of(
+                                            TextBlock.builder().text("canonical result").build(),
+                                            ToolUseBlock.builder()
+                                                    .id("tool-final")
+                                                    .name("lookup")
+                                                    .input(Map.of("q", "answer"))
+                                                    .build()))
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+
+            List<AguiEvent> events = runTerminalDisposition(callerContext, finalResult);
+
+            int snapshotIndex =
+                    events.indexOf(
+                            events.stream()
+                                    .filter(AguiEvent.MessagesSnapshot.class::isInstance)
+                                    .findFirst()
+                                    .orElseThrow());
+            int finishedIndex =
+                    events.indexOf(
+                            events.stream()
+                                    .filter(AguiEvent.RunFinished.class::isInstance)
+                                    .findFirst()
+                                    .orElseThrow());
+            AguiEvent.MessagesSnapshot snapshot =
+                    assertInstanceOf(AguiEvent.MessagesSnapshot.class, events.get(snapshotIndex));
+
+            assertEquals(finishedIndex - 1, snapshotIndex);
+            assertEquals(
+                    List.of("session-user", "reply-final"),
+                    snapshot.messages().stream().map(AguiMessage::getId).toList());
+            AguiMessage resultMessage = snapshot.messages().get(1);
+            assertEquals("canonical result", resultMessage.getTextContent());
+            assertEquals(1, resultMessage.getToolCalls().size());
+            assertFalse(
+                    snapshot.messages().stream()
+                            .map(AguiMessage::getId)
+                            .anyMatch(id -> id.contains(":text:")));
+        }
 
         @Test
         void testTextBlockEventsConvertToAguiTextMessageEvents() {
@@ -610,6 +825,38 @@ class AguiAgentAdapterV2Test {
             assertEquals(
                     1,
                     secondEvents.stream().filter(AguiEvent.ToolCallEnd.class::isInstance).count());
+        }
+
+        private List<AguiEvent> runTerminalDisposition(
+                GenerateReason generateReason, RuntimeContext callerContext) {
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-final")
+                            .content(TextBlock.builder().text("canonical result").build())
+                            .generateReason(generateReason)
+                            .build();
+            return runTerminalDisposition(callerContext, result);
+        }
+
+        private List<AguiEvent> runTerminalDisposition(RuntimeContext callerContext, Msg result) {
+            ReActAgent agent = mock(ReActAgent.class);
+            when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new AgentStartEvent("thread-v2", "reply-final", "react"),
+                                    new ModelCallStartEvent("reply-final"),
+                                    new TextBlockDeltaEvent(
+                                            "reply-final", "text-live", "streamed preview"),
+                                    new TextBlockEndEvent("reply-final", "text-live"),
+                                    new AgentResultEvent(result),
+                                    new AgentEndEvent("reply-final")));
+            AguiAdapterConfig config =
+                    AguiAdapterConfig.builder().textOutputDispositionEnabled(true).build();
+
+            return new AguiAgentAdapter(agent, config)
+                    .run(input(), callerContext)
+                    .collectList()
+                    .block();
         }
     }
 

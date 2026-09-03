@@ -22,14 +22,17 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.AguiUtil;
+import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverterRegistry;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
+import io.agentscope.core.agui.adapter.strategy.TextOutputDispositionConverter;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventStreams;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -106,9 +109,14 @@ public class AguiAgentAdapter {
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
         this.toolConverter = new AguiToolConverter();
+        List<AgentEventConverter> eventConverters = new ArrayList<>();
+        if (config.isTextOutputDispositionEnabled()) {
+            eventConverters.add(new TextOutputDispositionConverter());
+        }
+        eventConverters.addAll(config.getEventConverters());
         this.agentEventConverterRegistry =
                 new AgentEventConverterRegistry(
-                        config.getEventConverters(),
+                        eventConverters,
                         config.getEventEnrichers(),
                         config.isEmitSubagentEventsAsNative());
     }
@@ -203,20 +211,34 @@ public class AguiAgentAdapter {
 
         if (agent instanceof ReActAgent reAct) {
             AguiStreamContext context =
-                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
+                    new AguiStreamContext(
+                            threadId,
+                            runId,
+                            config,
+                            input,
+                            externalToolDetector(),
+                            () -> authoritativeMessages(runtimeContext));
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
+            events = applyTextOutputDisposition(events);
             return new AgentStream(
                     convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
         if (AguiUtil.isHarnessAgent(agent)) {
             AguiStreamContext context =
-                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
+                    new AguiStreamContext(
+                            threadId,
+                            runId,
+                            config,
+                            input,
+                            externalToolDetector(),
+                            () -> authoritativeMessages(runtimeContext));
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             invokeHarnessStreamEvents(agent, msgs, runtimeContext),
                             "agent stream is null");
+            events = applyTextOutputDisposition(events);
             return new AgentStream(
                     convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
@@ -236,7 +258,7 @@ public class AguiAgentAdapter {
     }
 
     private Flux<AguiEvent> convertAgentEvents(Flux<AgentEvent> events, AguiStreamContext context) {
-        return events
+        return events.doOnNext(context::observe)
                 // Use concatMapIterable to preserve strict event ordering
                 .concatMapIterable(event -> agentEventConverterRegistry.convert(event, context))
                 .onErrorResume(
@@ -246,6 +268,17 @@ public class AguiAgentAdapter {
     private Flux<AguiEvent> finishPendingEvents(AguiStreamContext context) {
         return Flux.fromIterable(
                 agentEventConverterRegistry.enrich(null, context.finishPendingEvents(), context));
+    }
+
+    private Flux<AgentEvent> applyTextOutputDisposition(Flux<AgentEvent> events) {
+        return config.isTextOutputDispositionEnabled()
+                ? AgentEventStreams.withTextOutputDisposition(events)
+                : events;
+    }
+
+    private List<Msg> authoritativeMessages(RuntimeContext runtimeContext) {
+        var state = RuntimeContext.resolveAgentState(runtimeContext, agent);
+        return state != null ? state.getContext() : List.of();
     }
 
     private record AgentStream(Flux<AguiEvent> events, Supplier<Flux<AguiEvent>> finish) {}
