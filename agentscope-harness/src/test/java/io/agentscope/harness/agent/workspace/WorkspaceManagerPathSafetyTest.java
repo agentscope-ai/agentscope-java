@@ -89,4 +89,62 @@ class WorkspaceManagerPathSafetyTest {
                 "LITERAL",
                 Files.readString(backend.resolve("some..dir/note.txt"), StandardCharsets.UTF_8));
     }
+
+    @Test
+    void sessionFileNamesReplaceWindowsReservedCharacters(@TempDir Path root) throws Exception {
+        Path template = root.resolve("template");
+        Path backend = root.resolve("backend");
+        Files.createDirectories(template);
+        Files.createDirectories(backend);
+        RuntimeContext rc = RuntimeContext.empty();
+
+        try (WorkspaceManager manager =
+                new WorkspaceManager(
+                        template,
+                        new LocalFilesystem(
+                                backend, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null))) {
+            // The shape from #2937: a session id built from namespaced parts.
+            String sessionId = "agent:abc-123:main:main-9f3c";
+            String sanitized = "agent-abc-123-main-main-9f3c";
+
+            assertFileNameIsSanitized(
+                    manager.resolveSessionFile(rc, "agent-1", sessionId), sanitized);
+            assertFileNameIsSanitized(
+                    manager.resolveSessionContextFile(rc, "agent-1", sessionId), sanitized);
+            assertFileNameIsSanitized(
+                    manager.resolveSessionLogFile(rc, "agent-1", sessionId), sanitized);
+
+            // Every character NTFS reserves, plus both separators, is replaced.
+            String allReserved = "a<b>c:d\"e/f\\g|h?i*j";
+            String allSanitized = "a-b-c-d-e-f-g-h-i-j";
+            assertFileNameIsSanitized(
+                    manager.resolveSessionFile(rc, "agent-1", allReserved), allSanitized);
+        }
+    }
+
+    @Test
+    void sessionFileNamesLeaveOrdinaryIdsUnchanged(@TempDir Path root) throws Exception {
+        Path template = root.resolve("template");
+        Path backend = root.resolve("backend");
+        Files.createDirectories(template);
+        Files.createDirectories(backend);
+        RuntimeContext rc = RuntimeContext.empty();
+
+        try (WorkspaceManager manager =
+                new WorkspaceManager(
+                        template,
+                        new LocalFilesystem(
+                                backend, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null))) {
+            assertFileNameIsSanitized(
+                    manager.resolveSessionFile(rc, "agent-1", "main-9f3c7a2e"), "main-9f3c7a2e");
+        }
+    }
+
+    private static void assertFileNameIsSanitized(Path file, String sanitizedBaseName) {
+        String name = file.getFileName().toString();
+        assertEquals(sanitizedBaseName, name.substring(0, sanitizedBaseName.length()));
+        assertFalse(
+                name.substring(sanitizedBaseName.length()).matches(".*[<>:\"/\\\\|?*].*"),
+                "file name still contains a reserved character: " + name);
+    }
 }
