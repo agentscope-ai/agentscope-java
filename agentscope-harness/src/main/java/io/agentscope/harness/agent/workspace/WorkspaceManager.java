@@ -59,6 +59,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,6 +105,18 @@ public class WorkspaceManager implements AutoCloseable {
                     .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     private static final TypeReference<Map<String, TaskRecord>> TASK_MAP_TYPE =
             new TypeReference<>() {};
+
+    /**
+     * Characters that Windows/NTFS reserves inside a single path segment. Ids such as the session
+     * id can legitimately contain a colon (for example {@code agent:<id>:main:<uuid>}), and using
+     * one verbatim in a file name turns path construction into an {@link
+     * java.nio.file.InvalidPathException} on Windows. Reserved characters are replaced with '-'
+     * rather than rejected, so ids keep working unchanged on every platform.
+     *
+     * <p>Forward slash and backslash are included as well: an id is a single file-name segment
+     * here, so either would otherwise be read as a directory separator.
+     */
+    private static final Pattern UNSAFE_SEGMENT_CHARS = Pattern.compile("[<>:\"/\\\\|?*]");
 
     /**
      * Per-path locks for workspace-relative files to prevent concurrent read-modify-write races.
@@ -343,18 +356,19 @@ public class WorkspaceManager implements AutoCloseable {
      */
     @Deprecated
     public Path resolveSessionFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId).resolve(sessionId + ".json");
+        return getSessionDir(rc, agentId).resolve(safeSegment(sessionId) + ".json");
     }
 
     /** Returns the JSONL session context file path (LLM-facing, compacted). */
     public Path resolveSessionContextFile(RuntimeContext rc, String agentId, String sessionId) {
         return getSessionDir(rc, agentId)
-                .resolve(sessionId + WorkspaceConstants.SESSION_CONTEXT_EXT);
+                .resolve(safeSegment(sessionId) + WorkspaceConstants.SESSION_CONTEXT_EXT);
     }
 
     /** Returns the JSONL session log file path (full history, append-only). */
     public Path resolveSessionLogFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId).resolve(sessionId + WorkspaceConstants.SESSION_LOG_EXT);
+        return getSessionDir(rc, agentId)
+                .resolve(safeSegment(sessionId) + WorkspaceConstants.SESSION_LOG_EXT);
     }
 
     /**
@@ -596,8 +610,27 @@ public class WorkspaceManager implements AutoCloseable {
         }
     }
 
+    /**
+     * Replaces characters that are illegal in a Windows/NTFS file-name segment with '-'.
+     *
+     * <p>Session ids are caller-supplied and carry no documented character constraint, yet they are
+     * used verbatim to build file names. Sanitising here keeps an unexpected id from surfacing as a
+     * raw {@link java.nio.file.InvalidPathException} from deep inside the workspace layer, with no
+     * hint that the caller-supplied id is the problem.
+     */
+    private static String safeSegment(String segment) {
+        return segment == null ? null : UNSAFE_SEGMENT_CHARS.matcher(segment).replaceAll("-");
+    }
+
     private String taskRecordPath(String agentId, String sessionId) {
-        return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/" + sessionId + ".json";
+        return AGENTS_DIR
+                + "/"
+                + agentId
+                + "/"
+                + TASKS_DIR
+                + "/"
+                + safeSegment(sessionId)
+                + ".json";
     }
 
     /**
