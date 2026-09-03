@@ -18,17 +18,21 @@ package io.agentscope.core.agui.adapter.strategy;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +41,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +49,12 @@ import org.slf4j.LoggerFactory;
 public class AguiStreamContext {
 
     private static final Logger logger = LoggerFactory.getLogger(AguiStreamContext.class);
+    private static final Set<GenerateReason> FINAL_SNAPSHOT_REASONS =
+            EnumSet.of(
+                    GenerateReason.MODEL_STOP,
+                    GenerateReason.STRUCTURED_OUTPUT,
+                    GenerateReason.MAX_ITERATIONS);
+    private static final Pattern TEXT_SEGMENT_ID = Pattern.compile("^.+:text:\\d+$");
 
     private final String threadId;
     private final String runId;
@@ -217,26 +228,39 @@ public class AguiStreamContext {
         return List.copyOf(textMessageIdsByReply.getOrDefault(replyId, List.of()));
     }
 
-    public void emitFinalMessagesSnapshot() {
-        if (finalResult == null) {
+    public void emitFinalMessagesSnapshot(AgentEndEvent endEvent) {
+        if (!config.isTextOutputDispositionEnabled()
+                || !isBlank(endEvent.getSource())
+                || finalResult == null
+                || !FINAL_SNAPSHOT_REASONS.contains(finalResult.getGenerateReason())
+                || !pendingInterrupts.isEmpty()) {
             return;
         }
-        Map<String, Msg> messagesById = new LinkedHashMap<>();
+        Map<String, AguiMessage> messagesById = new LinkedHashMap<>();
         List<Msg> authoritativeMessages = authoritativeMessagesSupplier.get();
-        if (authoritativeMessages != null) {
+        boolean hasAuthoritativeMessages =
+                authoritativeMessages != null && !authoritativeMessages.isEmpty();
+        if (hasAuthoritativeMessages) {
             for (Msg message : authoritativeMessages) {
-                if (message != null) {
+                if (message != null && !isTextSegmentId(message.getId())) {
+                    messagesById.put(message.getId(), messageConverter.toAguiMessage(message));
+                }
+            }
+        }
+        if (runInput != null) {
+            for (AguiMessage message : runInput.getMessages()) {
+                if (message != null
+                        && !isTextSegmentId(message.getId())
+                        && (!hasAuthoritativeMessages
+                                || messagesById.containsKey(message.getId()))) {
                     messagesById.put(message.getId(), message);
                 }
             }
         }
-        messagesById.put(finalResult.getId(), finalResult);
+        messagesById.put(finalResult.getId(), messageConverter.toAguiMessage(finalResult));
         emit(
                 new AguiEvent.MessagesSnapshot(
-                        threadId,
-                        runId,
-                        messageConverter.toAguiMessageList(
-                                new ArrayList<>(messagesById.values()))));
+                        threadId, runId, new ArrayList<>(messagesById.values())));
     }
 
     public void startReasoningMessage(String messageId) {
@@ -431,6 +455,10 @@ public class AguiStreamContext {
                     messageIds.add(messageId);
                     return messageId;
                 });
+    }
+
+    private static boolean isTextSegmentId(String messageId) {
+        return messageId != null && TEXT_SEGMENT_ID.matcher(messageId).matches();
     }
 
     private static String normalizeToolCallName(String toolCallName) {

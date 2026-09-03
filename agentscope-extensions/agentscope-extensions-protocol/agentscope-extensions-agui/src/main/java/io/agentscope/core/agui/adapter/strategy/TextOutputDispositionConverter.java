@@ -17,11 +17,8 @@ package io.agentscope.core.agui.adapter.strategy;
 
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.TextOutputDisposition;
 import io.agentscope.core.event.TextOutputDispositionEvent;
-import io.agentscope.core.message.GenerateReason;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -30,12 +27,6 @@ import java.util.Set;
 public final class TextOutputDispositionConverter implements AgentEventConverter {
 
     public static final String EVENT_NAME = "agentscope.text_output.disposition";
-
-    private static final Set<GenerateReason> FINAL_REASONS =
-            EnumSet.of(
-                    GenerateReason.MODEL_STOP,
-                    GenerateReason.STRUCTURED_OUTPUT,
-                    GenerateReason.MAX_ITERATIONS);
 
     @Override
     public Set<Class<? extends AgentEvent>> eventTypes() {
@@ -60,10 +51,5 @@ public final class TextOutputDispositionConverter implements AgentEventConverter
                         context.getRunId(),
                         EVENT_NAME,
                         Collections.unmodifiableMap(value)));
-
-        if (dispositionEvent.getDisposition() == TextOutputDisposition.TERMINAL
-                && FINAL_REASONS.contains(dispositionEvent.getGenerateReason())) {
-            context.emitFinalMessagesSnapshot();
-        }
     }
 }

@@ -278,7 +278,7 @@ public class AguiAgentAdapter {
 
     private List<Msg> authoritativeMessages(RuntimeContext runtimeContext) {
         var state = RuntimeContext.resolveAgentState(runtimeContext, agent);
-        return state != null ? state.getContext() : List.of();
+        return state != null ? state.getContext() : null;
     }
 
     private record AgentStream(Flux<AguiEvent> events, Supplier<Flux<AguiEvent>> finish) {}

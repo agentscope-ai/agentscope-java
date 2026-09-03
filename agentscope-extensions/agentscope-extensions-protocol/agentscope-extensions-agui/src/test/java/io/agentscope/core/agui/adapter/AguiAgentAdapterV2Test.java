@@ -39,8 +39,15 @@ import io.agentscope.core.agui.model.AguiContext;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.AguiTool;
+import io.agentscope.core.agui.model.AudioInputContent;
+import io.agentscope.core.agui.model.ImageInputContent;
+import io.agentscope.core.agui.model.InputContentDataSource;
+import io.agentscope.core.agui.model.InputContentUrlSource;
+import io.agentscope.core.agui.model.MessageContent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -56,6 +63,7 @@ import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
@@ -68,14 +76,19 @@ import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
@@ -453,6 +466,85 @@ class AguiAgentAdapterV2Test {
         @ParameterizedTest
         @EnumSource(
                 value = GenerateReason.class,
+                names = {"MODEL_STOP", "STRUCTURED_OUTPUT", "MAX_ITERATIONS"})
+        void testEnabledDispositionEmitsSnapshotForResultOnlyFinalReasons(
+                GenerateReason generateReason) {
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-result-only")
+                            .content(TextBlock.builder().text("authoritative result").build())
+                            .generateReason(generateReason)
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().textOutputDispositionEnabled(true).build(),
+                            new AgentStartEvent("thread-v2", "reply-result-only", "react"),
+                            new AgentResultEvent(result),
+                            new AgentEndEvent("reply-result-only"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.RUN_STARTED,
+                            AguiEventType.MESSAGES_SNAPSHOT,
+                            AguiEventType.RUN_FINISHED),
+                    types(events));
+        }
+
+        @Test
+        void testCustomDispositionConverterDoesNotDisableFinalSnapshot() {
+            AgentEventConverter customDispositionConverter =
+                    new AgentEventConverter() {
+                        @Override
+                        public Set<Class<? extends AgentEvent>> eventTypes() {
+                            return Set.of(TextOutputDispositionEvent.class);
+                        }
+
+                        @Override
+                        public void convert(AgentEvent event, AguiStreamContext context) {
+                            context.emit(
+                                    new AguiEvent.Custom(
+                                            context.getThreadId(),
+                                            context.getRunId(),
+                                            "custom.disposition",
+                                            Map.of()));
+                        }
+                    };
+            AguiAdapterConfig config =
+                    AguiAdapterConfig.builder()
+                            .textOutputDispositionEnabled(true)
+                            .addEventConverter(customDispositionConverter)
+                            .build();
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-custom")
+                            .content(TextBlock.builder().text("answer").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            config,
+                            new AgentStartEvent("thread-v2", "reply-custom", "react"),
+                            new ModelCallStartEvent("reply-custom"),
+                            new TextBlockDeltaEvent("reply-custom", "text-1", "answer"),
+                            new TextBlockEndEvent("reply-custom", "text-1"),
+                            new AgentResultEvent(result),
+                            new AgentEndEvent("reply-custom"));
+
+            assertTrue(
+                    events.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .anyMatch(event -> "custom.disposition".equals(event.name())));
+            assertEquals(
+                    1,
+                    events.stream().filter(AguiEvent.MessagesSnapshot.class::isInstance).count());
+        }
+
+        @ParameterizedTest
+        @EnumSource(
+                value = GenerateReason.class,
                 mode = EnumSource.Mode.EXCLUDE,
                 names = {"MODEL_STOP", "STRUCTURED_OUTPUT", "MAX_ITERATIONS"})
         void testEnabledDispositionDoesNotEmitMessagesSnapshotForNonFinalReasons(
@@ -521,6 +613,131 @@ class AguiAgentAdapterV2Test {
                     snapshot.messages().stream()
                             .map(AguiMessage::getId)
                             .anyMatch(id -> id.contains(":text:")));
+        }
+
+        @Test
+        void testFinalSnapshotFallsBackToOriginalInputWithoutAgentState() {
+            AguiMessage inputMessage =
+                    AguiMessage.userMessage(
+                            "input-media",
+                            List.of(
+                                    new TextInputContent("describe this"),
+                                    new ImageInputContent(
+                                            new InputContentUrlSource(
+                                                    "https://example.test/input.png", "image/png"),
+                                            Map.of("detail", "high"))));
+            RunAgentInput runInput = inputBuilder().messages(List.of(inputMessage)).build();
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-final")
+                            .content(TextBlock.builder().text("description").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+
+            List<AguiEvent> events = runTerminalDisposition(runInput, null, result);
+
+            AguiEvent.MessagesSnapshot snapshot = snapshot(events);
+            assertEquals(List.of("input-media", "reply-final"), messageIds(snapshot));
+            assertEquals(inputMessage, snapshot.messages().get(0));
+        }
+
+        @Test
+        void testFinalSnapshotExcludesOnlyReservedTextSegmentIds() {
+            Msg user = Msg.builder().id("session-user").role(MsgRole.USER).textContent("q").build();
+            Msg liveSegment =
+                    AssistantMessage.builder()
+                            .id("reply-preview:text:7")
+                            .content(TextBlock.builder().text("preview").build())
+                            .build();
+            Msg ordinaryColonId =
+                    AssistantMessage.builder()
+                            .id("reply-preview:text:final")
+                            .content(TextBlock.builder().text("kept").build())
+                            .build();
+            AgentState state =
+                    AgentState.builder()
+                            .context(List.of(user, liveSegment, ordinaryColonId))
+                            .build();
+            RuntimeContext callerContext = RuntimeContext.builder().agentState(state).build();
+
+            List<AguiEvent> events =
+                    runTerminalDisposition(GenerateReason.MODEL_STOP, callerContext);
+
+            assertEquals(
+                    List.of("session-user", "reply-preview:text:final", "reply-final"),
+                    messageIds(snapshot(events)));
+        }
+
+        @Test
+        void testFinalSnapshotPreservesMultimodalStateAndResultContent() {
+            Msg history =
+                    Msg.builder()
+                            .id("history-media")
+                            .role(MsgRole.USER)
+                            .content(
+                                    List.of(
+                                            TextBlock.builder().text("history text").build(),
+                                            ImageBlock.builder()
+                                                    .source(
+                                                            new URLSource(
+                                                                    "https://example.test/history.png",
+                                                                    "image/png"))
+                                                    .build(),
+                                            AudioBlock.builder()
+                                                    .source(
+                                                            new Base64Source(
+                                                                    "audio/wav", "aGlzdG9yeQ=="))
+                                                    .build()))
+                            .build();
+            AgentState state = AgentState.builder().context(List.of(history)).build();
+            RuntimeContext callerContext = RuntimeContext.builder().agentState(state).build();
+            Msg result =
+                    AssistantMessage.builder()
+                            .id("reply-media")
+                            .content(
+                                    List.of(
+                                            TextBlock.builder().text("result text").build(),
+                                            VideoBlock.builder()
+                                                    .source(
+                                                            new URLSource(
+                                                                    "https://example.test/result.mp4",
+                                                                    "video/mp4"))
+                                                    .build()))
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+
+            List<AguiEvent> events = runTerminalDisposition(callerContext, result);
+
+            AguiEvent.MessagesSnapshot snapshot = snapshot(events);
+            MessageContent.Blocks historyContent =
+                    assertInstanceOf(
+                            MessageContent.Blocks.class, snapshot.messages().get(0).getContent());
+            assertEquals(
+                    List.of(
+                            TextInputContent.class,
+                            ImageInputContent.class,
+                            AudioInputContent.class),
+                    historyContent.parts().stream().map(Object::getClass).toList());
+            ImageInputContent image =
+                    assertInstanceOf(ImageInputContent.class, historyContent.parts().get(1));
+            assertEquals(
+                    new InputContentUrlSource("https://example.test/history.png", "image/png"),
+                    image.source());
+            AudioInputContent audio =
+                    assertInstanceOf(AudioInputContent.class, historyContent.parts().get(2));
+            assertEquals(new InputContentDataSource("aGlzdG9yeQ==", "audio/wav"), audio.source());
+
+            MessageContent.Blocks resultContent =
+                    assertInstanceOf(
+                            MessageContent.Blocks.class, snapshot.messages().get(1).getContent());
+            assertEquals(
+                    List.of(TextInputContent.class, VideoInputContent.class),
+                    resultContent.parts().stream().map(Object::getClass).toList());
+            VideoInputContent video =
+                    assertInstanceOf(VideoInputContent.class, resultContent.parts().get(1));
+            assertEquals(
+                    new InputContentUrlSource("https://example.test/result.mp4", "video/mp4"),
+                    video.source());
         }
 
         @Test
@@ -835,10 +1052,15 @@ class AguiAgentAdapterV2Test {
                             .content(TextBlock.builder().text("canonical result").build())
                             .generateReason(generateReason)
                             .build();
-            return runTerminalDisposition(callerContext, result);
+            return runTerminalDisposition(input(), callerContext, result);
         }
 
         private List<AguiEvent> runTerminalDisposition(RuntimeContext callerContext, Msg result) {
+            return runTerminalDisposition(input(), callerContext, result);
+        }
+
+        private List<AguiEvent> runTerminalDisposition(
+                RunAgentInput runInput, RuntimeContext callerContext, Msg result) {
             ReActAgent agent = mock(ReActAgent.class);
             when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                     .thenReturn(
@@ -854,9 +1076,21 @@ class AguiAgentAdapterV2Test {
                     AguiAdapterConfig.builder().textOutputDispositionEnabled(true).build();
 
             return new AguiAgentAdapter(agent, config)
-                    .run(input(), callerContext)
+                    .run(runInput, callerContext)
                     .collectList()
                     .block();
+        }
+
+        private AguiEvent.MessagesSnapshot snapshot(List<AguiEvent> events) {
+            return events.stream()
+                    .filter(AguiEvent.MessagesSnapshot.class::isInstance)
+                    .map(AguiEvent.MessagesSnapshot.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+        }
+
+        private List<String> messageIds(AguiEvent.MessagesSnapshot snapshot) {
+            return snapshot.messages().stream().map(AguiMessage::getId).toList();
         }
     }
 
