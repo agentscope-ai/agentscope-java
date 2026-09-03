@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.1-SNAPSHOT</revision>
+        <revision>2.0.3-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -73,11 +73,11 @@
         <jackson.version>2.21.1</jackson.version>
         <mockito.version>5.23.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
-        <guava.version>33.5.0-jre</guava.version>
+        <guava.version>33.7.1-jre</guava.version>
         <google-genai.version>1.45.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.9</dashscope-sdk-java.version>
         <bailian.version>2.8.2</bailian.version>
-        <openai-java.version>4.28.0</openai-java.version>
+        <openai-java.version>4.52.0</openai-java.version>
         <anthropic.version>2.14.0</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
@@ -114,7 +114,7 @@
         <kotlin.version>1.9.24</kotlin.version>
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
         <jgit.version>7.6.0.202603022253-r</jgit.version>
-        <fabric8.kubernetes-client.version>6.13.4</fabric8.kubernetes-client.version>
+        <fabric8.kubernetes-client.version>7.8.0</fabric8.kubernetes-client.version>
         <protobuf.java.version>4.29.3</protobuf.java.version>
 
         <spotless.version>3.4.0</spotless.version>

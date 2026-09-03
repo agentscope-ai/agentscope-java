@@ -133,6 +133,28 @@ Combinations that v1 tolerated (for example, a `USER` message carrying a `ToolUs
 
 `isCheckRunning()` is still callable (returns `false`) and `Builder.checkRunning(boolean)` is still callable (ignored) — both are `@Deprecated`.
 
+#### A.8 `TracerRegistry` + `TelemetryTracer` → `OtelTracingMiddleware`
+
+The old tracing setup registered a framework-level `Tracer` globally:
+
+```java
+TracerRegistry.register(TelemetryTracer.builder().tracer(tracer).build());
+```
+
+In the current 2.0 source tree, `TelemetryTracer` lives in the `agentscope-extensions-studio` module rather than `agentscope-core`. It remains available for the Studio integration, but adding the Studio extension solely to restore application-wide tracing is not the recommended migration. The `Tracer` interface and `TracerRegistry` are deprecated for removal.
+
+Configure tracing through standard OpenTelemetry components instead:
+
+| Old setup | 2.0 replacement |
+|---|---|
+| `TelemetryTracer.builder().endpoint(...)` | Build an `OtlpHttpSpanExporter` and attach it to an `SdkTracerProvider` |
+| `TelemetryTracer.builder().addHeader(...)` | Call `OtlpHttpSpanExporter.builder().addHeader(...)` |
+| `TracerRegistry.register(...)` | Register the SDK with `OpenTelemetrySdk.buildAndRegisterGlobal()` |
+| Framework-global tracer | Add `new OtelTracingMiddleware()` to each agent that should emit spans |
+| `TracerRegistry.resetToNoop()` / tracer shutdown | Close the application-owned `SdkTracerProvider` during shutdown |
+
+The middleware reads `GlobalOpenTelemetry`, so the SDK must be registered before the agent uses the middleware. See [Middleware — OtelTracingMiddleware](building-blocks/middleware.md#oteltracingmiddleware) for the required dependencies and a complete OTLP example with custom authentication headers.
+
 ---
 
 ### Part B — Recommended (`@Deprecated(forRemoval = true)`, still callable today)
@@ -194,7 +216,7 @@ Python 2.0's `agent.reply_stream()` exposes a single streaming signature (`Async
 - **Types (soft deprecation, no `forRemoval` yet)**
   - `io.agentscope.core.agent.Event`, `EventType`, `EventSource`
   - Still consumed internally by the harness (subagent event forwarding: `SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`), AGUI, A2A, chat-completions-web, and Kotlin extension modules as the event-bus / adapter input. They will be flipped to `forRemoval = true` only after those modules migrate to `AgentEvent`, so the entire downstream is not warning-flooded in a single release.
-  - **Current gap:** `HarnessAgent.streamEvents(...)` does **not** forward subagent events yet — the `AgentEvent` hierarchy has no equivalent `EventSource` channel. Callers that need the child-agent stream must stay on the deprecated `stream(...)` path until that channel lands.
+  - Subagent events are forwarded on `HarnessAgent.streamEvents(...)` with a non-null `source` path (including remote Agent Protocol children when `remoteStreaming` is enabled).
 
 New code should use:
 
@@ -253,6 +275,7 @@ The capabilities below are additive in 2.0 — none of them break 1.x code. The 
 - New `AgentEventConverter` and `AguiEventEnricher` extension points: converters handle semantic mapping, while enrichers handle cross-cutting properties such as `timestamp` / `rawEvent`. The Spring Boot starter automatically collects both bean types.
 - Every `AguiEvent` supports AG-UI base event properties. `BaseEventPropertiesEnricher` is disabled by default; when explicitly enabled, it only fills missing `timestamp` values and does not default `rawEvent`.
 - `AguiAdapterConfig.emitTokenUsage` can emit `CUSTOM token_usage` events with model-call delta and run-level cumulative token usage.
+- **Behavior change:** AgentEvents with `source != null` (subagent events) are emitted as AG-UI `CUSTOM` events (`subagent.lifecycle`, `subagent.text`, `subagent.thinking`, `subagent.tool_call`, `subagent.tool_result`, `subagent.require_confirm`) instead of native `TEXT_MESSAGE_*` / `RUN_*`. Set `emitSubagentEventsAsNative(true)` to restore the legacy native mapping.
 - The Spring Boot starter supports `AguiRuntimeContextResolver`, custom `AguiAgentAdapterFactory`, frontend tool injection / merge mode, and HITL interrupt output.
 
 Detail → [AG-UI](../integration/protocol/agui.md)

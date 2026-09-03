@@ -15,7 +15,9 @@
  */
 package io.agentscope.harness.agent.tools;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -28,15 +30,18 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
+@HarnessQuiescence
 class HarnessAgentToolsConfigTest {
 
     @TempDir Path workspace;
@@ -90,19 +95,77 @@ class HarnessAgentToolsConfigTest {
         Files.createDirectories(workspace);
         Files.writeString(
                 workspace.resolve(WorkspaceConstants.TOOLS_JSON),
-                "{ \"deny\": [\"memory_search\"] }");
+                """
+                {
+                  "deny": ["memory_search"],
+                  "mcpServers": {
+                    "broken": { "transport": "unsupported" }
+                  }
+                }
+                """);
+        List<McpServerRegistrationResult> results = new ArrayList<>();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .disableToolsConfig()
-                        .build();
+                        .mcpServerRegistrationListener(results::add)
+                        .build()) {
+            // memory_search should still be present because the file was not consulted.
+            assertTrue(toolNames(agent).contains("memory_search"));
+        }
 
-        // memory_search should still be present because the file was not consulted.
-        assertTrue(toolNames(agent).contains("memory_search"));
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void toolsJsonMcpServer_reportsRegistrationFailure() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(
+                workspace.resolve(WorkspaceConstants.TOOLS_JSON),
+                """
+                {
+                  "mcpServers": {
+                    "file-broken": { "transport": "unsupported" }
+                  }
+                }
+                """);
+        List<McpServerRegistrationResult> results = new ArrayList<>();
+
+        try (HarnessAgent ignored =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel())
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .mcpServerRegistrationListener(results::add)
+                        .build()) {
+            assertFailedRegistration(results, "file-broken");
+        }
+    }
+
+    @Test
+    void programmaticMcpServer_reportsRegistrationFailure() {
+        McpServerConfig invalid = new McpServerConfig();
+        invalid.setTransport("unsupported");
+        ToolsConfig override = new ToolsConfig();
+        override.setMcpServers(Map.of("programmatic-broken", invalid));
+        List<McpServerRegistrationResult> results = new ArrayList<>();
+
+        try (HarnessAgent ignored =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel())
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .toolsConfig(override)
+                        .mcpServerRegistrationListener(results::add)
+                        .build()) {
+            assertFailedRegistration(results, "programmatic-broken");
+        }
     }
 
     @Test
@@ -152,6 +215,15 @@ class HarnessAgentToolsConfigTest {
         return agent.getDelegate().getToolkit().getToolSchemas().stream()
                 .map(ToolSchema::getName)
                 .toList();
+    }
+
+    private static void assertFailedRegistration(
+            List<McpServerRegistrationResult> results, String serverName) {
+        assertEquals(1, results.size(), "expected exactly one registration result");
+        McpServerRegistrationResult result = results.get(0);
+        assertEquals(McpServerRegistrationResult.Status.FAILED, result.status());
+        assertEquals(serverName, result.serverName());
+        assertInstanceOf(IllegalArgumentException.class, result.cause());
     }
 
     private static Model stubModel() {

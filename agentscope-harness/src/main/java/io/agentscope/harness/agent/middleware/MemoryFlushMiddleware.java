@@ -23,14 +23,17 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
+import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.time.Duration;
-import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,8 +46,10 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Runs in {@link #onAgent}'s {@code doOnComplete} so long-term memories are extracted and
  * persisted after every call, even when conversation compaction was not triggered during that
- * call. When {@link CompactionMiddleware} is active, it handles flush/offload for the messages
- * it summarizes; this middleware covers the remaining tail of messages that were kept verbatim.
+ * call. The flush is <em>fire-and-forget</em>: the agent stream completes immediately while the
+ * extraction runs on a background scheduler. When {@link CompactionMiddleware} is active, it
+ * handles flush/offload for the messages it summarizes; this middleware covers the remaining
+ * tail of messages that were kept verbatim.
  *
  * <p>Flush is gated by a {@link MemoryConfig.FlushTrigger}:
  * <ul>
@@ -55,8 +60,18 @@ import reactor.core.scheduler.Schedulers;
  *       {@link MemoryConfig.FlushTrigger#minGap()}.</li>
  * </ul>
  *
- * <p>Message <b>offload</b> is independent of the flush trigger and runs on every call so the
- * session JSONL stays complete (needed for {@code SessionSearchTool} and resumption).
+ * <p>Session transcript append is <b>not</b> handled here — see {@link TranscriptMiddleware},
+ * which runs independently of memory flush so history stays complete even when flush is
+ * disabled.
+ *
+ * <p>Concurrent flushes for the same isolation key are serialised: at most one flush runs per
+ * key at a time, and pending flushes of the same conversation coalesce into a single queued
+ * task, because a queued task reads the conversation state only when it executes and the
+ * newest task therefore subsumes the ones it replaces. Flushes of distinct conversations
+ * under the same key are queued separately.
+ *
+ * <p>The class is thread-safe: instances hold only configuration, and the per-key queues live
+ * in a static map and are synchronised internally.
  *
  * <p>The throttle window is tracked per <em>isolation key</em>, which matches the memory data
  * isolation in use:
@@ -76,32 +91,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final String flushPrompt;
     private final MemoryConfig.FlushTrigger flushTrigger;
     private final IsolationScope isolationScope;
-
-    /**
-     * Process-wide per-isolation-key flush timestamps. Static so that the throttle window
-     * survives across {@code HarnessAgent.Builder.build()} calls — each rebuild creates a new
-     * middleware instance, and an instance-level map would reset to {@link Instant#EPOCH} on
-     * every request, defeating the {@link MemoryConfig.FlushMode#THROTTLED} back-off.
-     *
-     * <p>The key is a composite of {@link IsolationScope} name and the per-call identity
-     * (see {@link #timerKeyFor(RuntimeContext)}) so the shared map correctly isolates throttle
-     * windows across scope dimensions:
-     * <ul>
-     *   <li>{@code USER:<userId>} — one window per user</li>
-     *   <li>{@code SESSION:<sessionId>} — one window per session</li>
-     *   <li>{@code AGENT:} / {@code GLOBAL:} — one shared window across the process
-     *       (prevents concurrent flush races on shared memory files)</li>
-     * </ul>
-     */
-    static final ConcurrentHashMap<String, AtomicReference<Instant>> SHARED_LAST_FLUSH_AT =
-            new ConcurrentHashMap<>();
-
-    /**
-     * Entries in {@link #SHARED_LAST_FLUSH_AT} whose timestamp is older than this threshold
-     * are considered stale and removed on the next cleanup sweep. This bounds the map size in
-     * long-running services with high user/session churn.
-     */
-    static final Duration STALE_ENTRY_MAX_AGE = Duration.ofMinutes(60);
+    private final PeriodicGate periodicGate;
 
     public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this(
@@ -109,7 +99,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 model,
                 MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
                 MemoryConfig.FlushTrigger.always(),
-                IsolationScope.USER);
+                IsolationScope.USER,
+                new LocalPeriodicGate());
     }
 
     public MemoryFlushMiddleware(
@@ -117,7 +108,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             Model model,
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger) {
-        this(workspaceManager, model, flushPrompt, flushTrigger, IsolationScope.USER);
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                IsolationScope.USER,
+                new LocalPeriodicGate());
     }
 
     public MemoryFlushMiddleware(
@@ -126,6 +123,22 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             String flushPrompt,
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope) {
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                isolationScope,
+                new LocalPeriodicGate());
+    }
+
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt =
@@ -133,6 +146,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         this.flushTrigger =
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
     @Override
@@ -142,65 +156,125 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input)
-                .concatWith(
-                        Mono.defer(() -> doFlush(agent, rc))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn("Memory flush failed: {}", e.getMessage());
-                                            return Mono.empty();
-                                        })
-                                .then(Mono.<AgentEvent>empty()));
+        return next.apply(input).doOnComplete(() -> scheduleFlush(agent, rc));
     }
+
+    private void scheduleFlush(Agent agent, RuntimeContext rc) {
+        // The in-flight slot is acquired at dispatch rather than inside the task: a queued
+        // flush must already be counted, or a quiescence check could observe an empty
+        // in-flight set while work is still pending.
+        MemoryBackgroundTasks.begin();
+        String key = compositeTimerKey(rc);
+        // Coalescing key of the task: the conversation whose state the task reads when it
+        // executes. The agent reference distinguishes agent instances serving the same user
+        // and session ids, whose flushes must not displace each other.
+        ConversationKey conversationKey =
+                new ConversationKey(
+                        agent, blankToEmpty(rc.getUserId()), blankToEmpty(rc.getSessionId()));
+        Runnable task = () -> runFlush(key, agent, rc);
+        Runnable[] starter = new Runnable[1];
+        Runnable[] displaced = new Runnable[1];
+        FLUSH_QUEUES.compute(
+                key,
+                (k, queue) -> {
+                    FlushQueue q = queue == null ? new FlushQueue() : queue;
+                    if (q.running) {
+                        // A queued task reads the conversation state only when it executes, and
+                        // calls of one conversation are serialised on the agent's
+                        // (userId, sessionId) serialization key, so the newest task's state
+                        // includes everything the replaced tasks would have read.
+                        displaced[0] = q.pending.put(conversationKey, task);
+                    } else {
+                        q.running = true;
+                        starter[0] = task;
+                    }
+                    return q;
+                });
+        if (displaced[0] != null) {
+            // The replaced task will never execute; release the in-flight slot it acquired at
+            // dispatch. Done outside compute to avoid running under the map's bin lock.
+            MemoryBackgroundTasks.end();
+        }
+        if (starter[0] != null) {
+            starter[0].run();
+        }
+    }
+
+    private void runFlush(String key, Agent agent, RuntimeContext rc) {
+        Mono.defer(() -> doFlush(agent, rc))
+                .subscribeOn(Schedulers.boundedElastic())
+                .doFinally(
+                        signal -> {
+                            MemoryBackgroundTasks.end();
+                            drainFlushQueue(key);
+                        })
+                .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
+    }
+
+    private void drainFlushQueue(String key) {
+        Runnable[] next = new Runnable[1];
+        FLUSH_QUEUES.compute(
+                key,
+                (k, queue) -> {
+                    if (queue == null) {
+                        return null;
+                    }
+                    Iterator<Runnable> it = queue.pending.values().iterator();
+                    if (it.hasNext()) {
+                        next[0] = it.next();
+                        it.remove();
+                    }
+                    if (next[0] == null) {
+                        return null; // idle: evict so the map holds only active keys
+                    }
+                    return queue; // the dequeued task continues as the running flush
+                });
+        if (next[0] != null) {
+            next[0].run();
+        }
+    }
+
+    /**
+     * Per-isolation-key pending flush tasks, keeping at most one flush in flight per memory
+     * namespace. Fields are only mutated inside {@link ConcurrentHashMap#compute} (which holds
+     * the per-key bin lock), so they need no additional synchronisation; entries are removed
+     * as soon as a key goes idle.
+     */
+    private static final class FlushQueue {
+        final LinkedHashMap<ConversationKey, Runnable> pending = new LinkedHashMap<>();
+        boolean running;
+    }
+
+    private static final ConcurrentHashMap<String, FlushQueue> FLUSH_QUEUES =
+            new ConcurrentHashMap<>();
 
     private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
         AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null) {
             return Mono.empty();
         }
-        List<Msg> messages = state.getContext();
+        // Read at execution time rather than scheduling time: a task that waited in the queue
+        // sees everything appended in the meantime, so coalescing queued tasks never loses
+        // messages.
+        List<Msg> messages = new ArrayList<>(state.getContext());
         if (messages.isEmpty()) {
+            return Mono.empty();
+        }
+        if (!shouldFlushNow(rc)) {
+            log.debug("Memory flush skipped (trigger={})", flushTrigger);
             return Mono.empty();
         }
 
         MemoryFlushManager flushManager =
                 new MemoryFlushManager(workspaceManager, model, flushPrompt);
-
-        boolean shouldFlush = shouldFlushNow(rc);
-        Mono<Void> flushMono;
-        if (shouldFlush) {
-            flushMono =
-                    flushManager
-                            .flushMemories(rc, messages)
-                            .doOnSuccess(v -> log.debug("Memory flush completed"))
-                            .onErrorResume(
-                                    e -> {
-                                        log.warn("Memory flush failed: {}", e.getMessage());
-                                        return Mono.empty();
-                                    });
-        } else {
-            log.debug("Memory flush skipped (trigger={})", flushTrigger);
-            flushMono = Mono.empty();
-        }
-
-        String agentId = agent.getName();
-        String sessionId = rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
-
-        Mono<Void> offloadMono =
-                Mono.fromRunnable(
-                                () ->
-                                        flushManager.offloadMessages(
-                                                rc, messages, agentId, sessionId))
-                        .then()
-                        .doOnSuccess(v -> log.debug("Message offload completed"))
-                        .onErrorResume(
-                                e -> {
-                                    log.warn("Message offload failed: {}", e.getMessage());
-                                    return Mono.empty();
-                                });
-
-        return flushMono.then(offloadMono);
+        return flushManager
+                .flushMemories(rc, messages)
+                .doOnSuccess(v -> log.debug("Memory flush completed"))
+                .onErrorResume(
+                        e -> {
+                            log.warn("Memory flush failed: {}", e.getMessage());
+                            return Mono.empty();
+                        });
     }
 
     /**
@@ -221,46 +295,31 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             case NEVER:
                 return false;
             case THROTTLED:
-                Instant now = Instant.now();
-                AtomicReference<Instant> ref = lastFlushAtFor(rc);
-                Instant last = ref.get();
-                Duration minGap = flushTrigger.minGap();
-                if (Duration.between(last, now).compareTo(minGap) < 0) {
-                    return false;
-                }
-                return ref.compareAndSet(last, now);
+                return periodicGate.tryClaim(compositeTimerKey(rc), flushTrigger.minGap());
             default:
                 return true;
         }
     }
 
-    private AtomicReference<Instant> lastFlushAtFor(RuntimeContext rc) {
-        return SHARED_LAST_FLUSH_AT.computeIfAbsent(
-                compositeTimerKey(rc), k -> new AtomicReference<>(Instant.EPOCH));
-    }
-
-    /**
-     * Removes entries whose timestamp is older than {@link #STALE_ENTRY_MAX_AGE} from
-     * {@link #SHARED_LAST_FLUSH_AT}. This bounds the map size in long-running services with
-     * high user/session churn — stale entries represent keys that have not flushed recently
-     * and are safe to re-create on demand.
-     *
-     * <p>Package-private for unit testing.
-     */
-    static void cleanupStaleEntries() {
-        Instant cutoff = Instant.now().minus(STALE_ENTRY_MAX_AGE);
-        SHARED_LAST_FLUSH_AT.entrySet().removeIf(e -> e.getValue().get().isBefore(cutoff));
-    }
-
     /**
      * Builds a composite key from {@link IsolationScope} name and the per-call identity returned
-     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that the shared
-     * {@link #SHARED_LAST_FLUSH_AT} map never conflates throttle windows from different
-     * isolation dimensions — e.g. a {@code userId} that happens to equal a {@code sessionId}
-     * must not share a slot.
+     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that throttle windows
+     * from different isolation dimensions are never conflated — e.g. a {@code userId} that
+     * happens to equal a {@code sessionId} must not share a slot.
      */
     private String compositeTimerKey(RuntimeContext rc) {
         return isolationScope.name() + ":" + timerKeyFor(rc);
+    }
+
+    /** The conversation a queued flush reads when it executes: agent instance, user, session. */
+    private record ConversationKey(Agent agent, String userId, String sessionId) {}
+
+    /**
+     * Normalises {@code null} and blank identifiers to {@code ""} so absent ids share one slot.
+     * Package-private: shared with {@link MemoryMaintenanceMiddleware#timerKeyFor}.
+     */
+    static String blankToEmpty(String s) {
+        return (s != null && !s.isBlank()) ? s : "";
     }
 
     /**
@@ -276,14 +335,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
      */
     String timerKeyFor(RuntimeContext rc) {
         return switch (isolationScope) {
-            case USER -> {
-                String uid = rc != null ? rc.getUserId() : null;
-                yield (uid != null && !uid.isBlank()) ? uid : "";
-            }
-            case SESSION -> {
-                String sid = rc != null ? rc.getSessionId() : null;
-                yield (sid != null && !sid.isBlank()) ? sid : "";
-            }
+            case USER -> blankToEmpty(rc != null ? rc.getUserId() : null);
+            case SESSION -> blankToEmpty(rc != null ? rc.getSessionId() : null);
             case AGENT, GLOBAL -> "";
         };
     }

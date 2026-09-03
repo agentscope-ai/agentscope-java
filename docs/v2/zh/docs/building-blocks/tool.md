@@ -125,10 +125,10 @@ toolkit.registerTool(new SimpleTools());
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
-import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -153,7 +153,7 @@ public class WebSearchTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, ToolExecutionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.allow("Web search is read-only."));
     }
 
@@ -173,16 +173,16 @@ public class WebSearchTool extends ToolBase {
 
 ### 定义外部执行 Tool
 
-外部执行 tool 把实际执行委派给 agent 运行时之外 —— 通常是人工操作员或外部系统。Agent 调用此类 tool 时会发出 `RequireExternalExecutionEvent` 并暂停，直到结果通过 `ExternalExecutionResultEvent` 回传。
+外部执行 tool 把实际执行委派给 agent 运行时之外 —— 通常是人工操作员或外部系统。Agent 调用此类 tool 时会发出 `RequireExternalExecutionEvent` 并暂停。下一次调用回传匹配的 `ToolResultBlock` 后，agent 会发出带有相同 `replyId` 的 `ExternalExecutionResultEvent`，然后继续执行。
 
 这种模式是 [human-in-the-loop](./agent.md) 工作流的基础 —— 某些动作需要人工确认或人工执行。
 
 创建外部执行 tool 只需把 `externalTool` 设为 `true`，不必实现 `callAsync`：
 
 ```java
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
-import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -207,7 +207,7 @@ public class HumanApprovalTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, ToolExecutionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.allow("External tool dispatch is always allowed."));
     }
 }

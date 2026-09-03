@@ -57,7 +57,7 @@ ReActAgent agent =
                 .build();
 ```
 
-`middleware(...)` (singular) appends one; `middlewares(...)` accepts `List<? extends MiddlewareBase>`. Hooks not implemented by a middleware are skipped at zero cost.
+`middleware(...)` (singular) adds one; `middlewares(...)` accepts `List<? extends MiddlewareBase>`. Hooks not implemented by a middleware are skipped at zero cost.
 
 ## Built-in middlewares
 
@@ -71,12 +71,67 @@ ReActAgent agent =
 
 When no OpenTelemetry SDK is configured (only the default no-op provider), every hook short-circuits to `next.apply(input)` — near-zero overhead.
 
-Initialise the OpenTelemetry SDK in your process (OTLP exporter, `SdkTracerProvider`, `OpenTelemetrySdk.builder().setTracerProvider(...).buildAndRegisterGlobal()`) and then equip the middleware:
+`OtelTracingMiddleware` reads the process-wide `GlobalOpenTelemetry` instance. Applications that export spans themselves need the OpenTelemetry SDK and OTLP exporter in addition to AgentScope. Keep their versions aligned through the OpenTelemetry BOM (the version below matches the one currently used by AgentScope):
+
+```xml
+<properties>
+    <opentelemetry.version>1.61.0</opentelemetry.version>
+</properties>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-bom</artifactId>
+            <version>${opentelemetry.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-sdk</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-exporter-otlp</artifactId>
+    </dependency>
+</dependencies>
+```
+
+Build and register the SDK once per process before constructing the agent. The optional environment variable in this example can contain a value such as `Basic <base64-credentials>` for a backend that requires an `Authorization` header, including Langfuse:
 
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
-import java.util.List;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+
+String endpoint =
+        System.getenv().getOrDefault(
+                "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
+String authorization = System.getenv("OTEL_EXPORTER_OTLP_AUTHORIZATION");
+
+var exporterBuilder = OtlpHttpSpanExporter.builder().setEndpoint(endpoint);
+if (authorization != null && !authorization.isBlank()) {
+    exporterBuilder.addHeader("Authorization", authorization);
+}
+
+SdkTracerProvider tracerProvider =
+        SdkTracerProvider.builder()
+                .addSpanProcessor(
+                        BatchSpanProcessor.builder(exporterBuilder.build()).build())
+                .build();
+
+OpenTelemetrySdk.builder()
+        .setTracerProvider(tracerProvider)
+        .buildAndRegisterGlobal();
+Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
 
 ReActAgent agent =
         ReActAgent.builder()
@@ -84,9 +139,11 @@ ReActAgent agent =
                 .sysPrompt("You are a helpful assistant.")
                 .model(model)
                 .toolkit(toolkit)
-                .middlewares(List.of(new OtelTracingMiddleware()))
+                .middleware(new OtelTracingMiddleware())
                 .build();
 ```
+
+The SDK must be registered before the middleware is used. If your runtime (for example, Spring Boot OpenTelemetry auto-configuration) already registers `GlobalOpenTelemetry`, reuse it and only add the middleware. Do not call the deprecated `TracerRegistry.register(...)` in the new setup. Close the `SdkTracerProvider` during application shutdown so its batch processor can flush pending spans.
 
 Each reply produces a nested span tree with attributes such as agent name, session ID, model name, token counts, tool name, and inputs.
 
@@ -113,6 +170,24 @@ ReActAgent agent =
                 .enableTaskList(true)
                 .build();
 ```
+
+### FinalAnswerFilterMiddleware
+
+`FinalAnswerFilterMiddleware` exposes only the text from the final ReAct reasoning round. Text from rounds that produce tool calls is suppressed, while tool and other non-text events continue to stream normally.
+
+```java
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new FinalAnswerFilterMiddleware())
+                .build();
+```
+
+The middleware buffers each round's text until the model call ends, because it cannot know whether the round is final until no tool call is observed.
 
 ## Custom middleware
 
@@ -218,12 +293,23 @@ Things to keep in mind:
 
 ### Execution order
 
-Onion hooks (`onAgent`, `onReasoning`, `onActing`, `onModelCall`) — **the first middleware in the list is outermost**:
+Onion hooks (`onAgent`, `onReasoning`, `onActing`, `onModelCall`) are ordered by `MiddlewareBase.order()` — **higher values are outermost**. The default order is `1`; middlewares with the same order retain their builder registration order:
 
 ```
-middlewares = [mw1, mw2]
+middlewares = [mw1(order=2), mw2(order=1)]
 // Order:
 // mw1 pre → mw2 pre → inner → mw2 post → mw1 post
+```
+
+Override `order()` to move a custom middleware relative to the default order. For example, an order of `0` runs inside middleware that keeps the default order of `1`:
+
+```java
+MiddlewareBase lowerPriority = new MiddlewareBase() {
+    @Override
+    public int order() {
+        return 0;
+    }
+};
 ```
 
 For streaming / event-emitting hooks, the inner middleware sees each emitted event first:

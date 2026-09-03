@@ -77,6 +77,21 @@ public class Msg implements State {
     public static final String METADATA_CONFIRM_RESULTS = "agentscope_confirm_results";
 
     /**
+     * Metadata key storing the {@code replyId} of the {@code RequireUserConfirmEvent} that paused
+     * this assistant turn. Used to correlate the later {@code UserConfirmResultEvent}.
+     */
+    public static final String METADATA_CONFIRM_REQUEST_REPLY_ID =
+            "agentscope_confirm_request_reply_id";
+
+    /**
+     * Metadata key storing the {@code replyId} of the {@code RequireExternalExecutionEvent} that
+     * paused this assistant turn. Used to correlate the later
+     * {@code ExternalExecutionResultEvent}.
+     */
+    public static final String METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID =
+            "agentscope_external_execution_request_reply_id";
+
+    /**
      * Metadata key (boolean) marking a message as <em>synthetic</em>: framework-injected rather
      * than authored by the user, the model, or a tool. Synthetic messages (e.g. the per-turn todo
      * reminder produced by {@code TaskReminderMiddleware}) are appended transiently to the
@@ -667,6 +682,23 @@ public class Msg implements State {
                 this.role,
                 newContent,
                 this.metadata,
+                this.timestamp,
+                this.usage);
+    }
+
+    /**
+     * Returns a copy of this message with the given metadata.
+     *
+     * @param newMetadata the replacement metadata
+     * @return a new Msg with identical content but replaced metadata
+     */
+    public Msg withMetadata(Map<String, Object> newMetadata) {
+        return new Msg(
+                this.id,
+                this.name,
+                this.role,
+                this.content,
+                newMetadata,
                 this.timestamp,
                 this.usage);
     }

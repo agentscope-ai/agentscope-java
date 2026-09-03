@@ -72,6 +72,20 @@ import java.util.UUID;
 })
 public abstract class AgentEvent {
 
+    /**
+     * Well-known {@link #metadata} key correlating a forwarded subagent event to a harness
+     * {@code TaskRecord} / remote Agent Protocol task id. Distinct from {@link #source}, which
+     * identifies the originating agent path ({@code parentSession/agentId}).
+     */
+    public static final String METADATA_TASK_ID = "taskId";
+
+    /**
+     * Well-known {@link #metadata} key identifying the parent agent's session that initiated a
+     * remote subagent run. Distinct from {@link #source} (which embeds the same id as a path
+     * prefix) and from {@link #METADATA_TASK_ID} (which identifies the harness task).
+     */
+    public static final String METADATA_PARENT_SESSION_ID = "parentSessionId";
+
     private final String id;
     private final String createdAt;
     private String source;
@@ -129,6 +143,27 @@ public abstract class AgentEvent {
      */
     public AgentEvent withMetadata(Map<String, Object> metadata) {
         this.metadata = metadata != null ? new LinkedHashMap<>(metadata) : null;
+        return this;
+    }
+
+    /**
+     * Merges a single metadata entry into this event (creates the map if absent) and returns it
+     * for chaining. Passing a {@code null} value removes the key when present.
+     */
+    public AgentEvent withMetadataEntry(String key, Object value) {
+        if (key == null || key.isBlank()) {
+            return this;
+        }
+        Map<String, Object> next = new LinkedHashMap<>();
+        if (this.metadata != null) {
+            next.putAll(this.metadata);
+        }
+        if (value == null) {
+            next.remove(key);
+        } else {
+            next.put(key, value);
+        }
+        this.metadata = next.isEmpty() ? null : next;
         return this;
     }
 

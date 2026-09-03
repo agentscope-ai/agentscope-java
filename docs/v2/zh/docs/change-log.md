@@ -133,6 +133,28 @@ v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在
 
 `isCheckRunning()` 仍可调用（返回 `false`），`Builder.checkRunning(boolean)` 仍可调用（被忽略），均已标 `@Deprecated`。
 
+#### A.8 `TracerRegistry` + `TelemetryTracer` → `OtelTracingMiddleware`
+
+旧的 tracing 配置会在框架中全局注册一个 `Tracer`：
+
+```java
+TracerRegistry.register(TelemetryTracer.builder().tracer(tracer).build());
+```
+
+在当前 2.0 源码中，`TelemetryTracer` 位于 `agentscope-extensions-studio` 模块，而不是 `agentscope-core`。Studio 集成仍会使用它，但仅仅为了恢复应用级 tracing 而引入 Studio 扩展并不是推荐迁移方式。`Tracer` 接口与 `TracerRegistry` 都已标记为待删除。
+
+应用 tracing 应改用标准 OpenTelemetry 组件：
+
+| 旧配置 | 2.0 替代方案 |
+|---|---|
+| `TelemetryTracer.builder().endpoint(...)` | 构建 `OtlpHttpSpanExporter` 并添加到 `SdkTracerProvider` |
+| `TelemetryTracer.builder().addHeader(...)` | 调用 `OtlpHttpSpanExporter.builder().addHeader(...)` |
+| `TracerRegistry.register(...)` | 通过 `OpenTelemetrySdk.buildAndRegisterGlobal()` 注册 SDK |
+| 框架级全局 tracer | 为每个需要输出 span 的 agent 添加 `new OtelTracingMiddleware()` |
+| `TracerRegistry.resetToNoop()` / tracer shutdown | 应用关闭时关闭由应用持有的 `SdkTracerProvider` |
+
+Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，再让 agent 使用 middleware。所需依赖、完整 OTLP 配置以及自定义认证 header 示例见 [Middleware — OtelTracingMiddleware](building-blocks/middleware.md#oteltracingmiddleware)。
+
 ---
 
 ### Part B —— 推荐迁移（`@Deprecated(forRemoval = true)`，仍可调用）
@@ -194,7 +216,7 @@ Python 2.0 的 `agent.reply_stream()` 只返回一种事件流签名（`AsyncGen
 - **类型（软弃用，暂不 `forRemoval`）**
   - `io.agentscope.core.agent.Event`、`EventType`、`EventSource`
   - 这些类目前仍被 harness（子 agent 事件转发：`SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`）、AGUI、A2A、chat-completions-web、kotlin extension 等内部模块作为事件总线 / 适配器的输入消费。等这些模块完成迁移到 `AgentEvent` 后再翻成 `forRemoval = true`，避免一次性把下游全打成警告
-  - **当前 gap**：`HarnessAgent.streamEvents(...)` 暂时**不转发子 agent 事件** —— `AgentEvent` 体系还没有等价的 `EventSource` 通道；需要子 agent 事件流的场景仍需用 `stream(...)`（已弃用），等通道落地后再统一切换
+  - `HarnessAgent.streamEvents(...)` 会转发子 agent 事件（`source` 非空路径），远程 Agent Protocol 子 agent 在 `remoteStreaming` 开启时同样支持
 
 新代码统一改用：
 
@@ -253,6 +275,7 @@ ReActAgent agent = ReActAgent.builder()
 - 新增 `AgentEventConverter` 与 `AguiEventEnricher` 扩展点：converter 负责语义映射，enricher 负责 `timestamp` / `rawEvent` 等横切属性；Spring Boot starter 会自动收集对应 bean
 - 所有 `AguiEvent` 支持 AG-UI base event properties；默认不启用 `BaseEventPropertiesEnricher`，显式开启后只补缺失 `timestamp`，不默认填 `rawEvent`
 - `AguiAdapterConfig.emitTokenUsage` 可选输出 `CUSTOM token_usage` 事件，包含当前模型调用 delta 与本次 run cumulative token usage
+- **行为变更：** `source != null` 的 AgentEvent（子 agent 事件）默认映射为 AG-UI `CUSTOM`（`subagent.lifecycle` / `subagent.text` / `subagent.thinking` / `subagent.tool_call` / `subagent.tool_result` / `subagent.require_confirm`），不再走原生 `TEXT_MESSAGE_*` / `RUN_*`。设 `emitSubagentEventsAsNative(true)` 可恢复旧的原生映射
 - Spring Boot starter 支持 `AguiRuntimeContextResolver` 和自定义 `AguiAgentAdapterFactory`，并支持 frontend tool injection / merge mode 与 HITL interrupt 输出
 
 详见 → [AG-UI](../integration/protocol/agui.md)

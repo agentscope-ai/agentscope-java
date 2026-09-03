@@ -1,6 +1,16 @@
 # AG-UI
 
+## 兼容性说明
+
 `agentscope-extensions-agui` 把 AgentScope v2 的 `AgentEvent` 流转换为 [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) 事件，让前端 UI 可以实时渲染 agent 的运行过程，包括文本、推理内容、工具调用、状态、自定义事件、token usage 和 HITL interrupt。
+
+`RUN_ERROR` 和 `RUN_FINISHED` 是互斥终态事件。只有还需要旧版 `RUN_ERROR` + `RUN_FINISHED` 序列时，才开启 `emitRunFinishedAfterError=true`。
+
+`AguiMessage.content` 现在使用类型化消息内容表示。仅处理纯文本时，请使用 `getTextContent()`。
+
+已支持多模态输入，但是暂不支持文档类型。
+
+`AguiMessageConverter.toAguiMessage()` 目前只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
 
 ## 何时使用
 
@@ -69,7 +79,30 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 | token usage（`emitTokenUsage=true`） | `CUSTOM`，`name=token_usage` |
 | 未映射 `AgentEvent`                 | `RAW`，包含官方 `event` 和 `source` 字段 |
 
-正常运行的 `RUN_STARTED` 和 `RUN_FINISHED` 由上游 `AgentStartEvent` / `AgentEndEvent` 决定。正常流结束但上游没有发 `AgentEndEvent` 时，adapter 不会额外补 `RUN_FINISHED`。异常路径会输出带 `timestamp` 的 `RUN_ERROR`，并补发一个 `RUN_FINISHED`。
+正常运行的 `RUN_STARTED` 和 `RUN_FINISHED` 由上游 `AgentStartEvent` / `AgentEndEvent` 决定。正常流结束但上游没有发 `AgentEndEvent` 时，adapter 不会额外补 `RUN_FINISHED`。异常路径会输出带 `timestamp` 的 `RUN_ERROR`。 `RUN_ERROR` 和 `RUN_FINISHED` 是互斥终态事件。只有旧客户端仍依赖错误后补发完成事件时，才设置 `emitRunFinishedAfterError=true`（Spring Boot 配置为 `agentscope.agui.emit-run-finished-after-error=true`）。
+
+## 子 agent 事件
+
+默认（`emitSubagentEventsAsNative=false`）下，带非空 `source` 的 AgentEvent（子 / 远程子 agent 事件）**不会**映射为原生的 `TEXT_MESSAGE_*` / `RUN_*` / 工具调用事件，而是变成 `subagent.*` 命名空间下的 AG-UI `CUSTOM` 事件，避免污染父 run 的生命周期与文本流：
+
+| CUSTOM `name` | 典型 AgentEvent |
+| --- | --- |
+| `subagent.lifecycle` | `AgentStartEvent` / `AgentEndEvent` |
+| `subagent.text` | `TextBlockDeltaEvent` |
+| `subagent.thinking` | `ThinkingBlockDeltaEvent` |
+| `subagent.tool_call` | `ToolCallStartEvent` / `ToolCallEndEvent` |
+| `subagent.tool_result` | `ToolResultEndEvent` |
+| `subagent.require_confirm` | `RequireUserConfirmEvent` |
+
+payload 至少包含 `source` 与 `type`（以及 `delta`、`toolCallId` 等类型相关字段）。
+
+若要恢复子事件与父事件使用同一套原生 converter 的旧行为：
+
+```java
+AguiAdapterConfig config = AguiAdapterConfig.builder()
+    .emitSubagentEventsAsNative(true)
+    .build();
+```
 
 ## AG-UI Base Event Properties
 
@@ -185,8 +218,14 @@ agentscope:
     emit-tool-call-args: true
     emit-token-usage: false
     enable-reasoning: false
+    emit-run-finished-after-error: false
     server-side-memory: false
+    interrupt-on-disconnect: true
 ```
+
+`interrupt-on-disconnect` 用于控制 MVC/WebFlux 的 SSE 连接关闭、超时或发送事件失败时是否中断
+Agent run。默认值为 `true`，用于保持现有行为兼容。设置为 `false` 后，客户端断开时 Agent
+会继续执行；连接关闭期间产生的事件不会由 starter 重放。
 
 可以通过 bean 扩展默认链路：
 
@@ -223,7 +262,12 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 
 ## HITL Interrupt
 
-当模型请求工具但需要用户审批或外部执行挂起时，AG-UI adapter 会把挂起结果转换为 `RUN_FINISHED` 的 interrupt outcome：
+当一次 run 因工具决策暂停时，AG-UI adapter 会在 `RUN_FINISHED` 上输出官方 interrupt outcome。AgentScope Java 内置了两类 tool-call interrupt 路径：
+
+- **工具挂起 / 外部执行**：挂起的 `ToolResultBlock` 会转换成 `tool_call` interrupt，恢复时桥接回 `ToolResultBlock`。
+- **权限确认**：`RequireUserConfirmEvent` 会转换成带 AgentScope metadata 的 `tool_call` interrupt，恢复时桥接为 `ConfirmResult`。
+
+这两类场景都使用官方 AG-UI `reason: "tool_call"`，因为 interrupt 绑定到具体 `toolCallId`。不要把这类工具审批写成 `reason: "confirmation"`。
 
 ```json
 {
@@ -232,11 +276,27 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
     "type": "interrupt",
     "interrupts": [
       {
+        "id": "reply-1:call-1",
         "reason": "tool_call",
         "toolCallId": "call-1",
         "message": "Need approval before running this tool",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "approved": { "type": "boolean" },
+            "editedArgs": {
+              "type": "object",
+              "description": "Full replacement of the tool args. Not merged."
+            }
+          },
+          "required": ["approved"]
+        },
         "metadata": {
-          "toolName": "request_approval"
+          "agentscope.interruptKind": "permission_confirm",
+          "toolName": "request_approval",
+          "toolInput": { "path": "/tmp/report.txt" },
+          "toolContent": "{\"path\":\"/tmp/report.txt\"}",
+          "replyId": "reply-1"
         }
       }
     ]
@@ -256,7 +316,10 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
       "interruptId": "reply-1:call-1",
       "status": "resolved",
       "payload": {
-        "approved": true
+        "approved": true,
+        "editedArgs": {
+          "path": "/tmp/reviewed-report.txt"
+        }
       }
     }
   ]
@@ -265,9 +328,9 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 
 `status` 支持官方的 `resolved` 和 `cancelled`。对于用户拒绝某个工具请求的常见审批场景，建议仍使用 `resolved`，并在 `payload` 中表达业务决策，例如 `{ "approved": false }`；`cancelled` 更适合表示该 interrupt 本身被取消。
 
-AgentScope Java 会把 tool-call interrupt 的 `resume[]` 桥接为 core 需要的 `ToolResultBlock`，从而恢复上一次挂起的工具调用。通过 Spring `AguiRequestProcessor` 入口时，processor 会记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，并按 `interruptId` 解析真实 `toolCallId`。
+对于权限确认，只有 `payload.approved` 是布尔值 `true` 时才会批准工具；缺失、非布尔值或 `false` 都会视为拒绝。`payload.editedArgs` 如果存在，必须是 JSON object，并且是对原始工具参数的**完整替换**，不是局部 merge。AgentScope Java 会根据 `editedArgs` 同时重建 `ToolUseBlock.input` 和原始 JSON `ToolUseBlock.content`，因此被批准的工具会使用修改后的参数执行。
 
-当前内置恢复只覆盖 AG-UI adapter 生成的 tool-call interrupt。自定义 interrupt 如果不是 tool-call 语义，通常需要自定义 `AgentEventConverter` / `AguiEventEnricher` 或请求处理层来解释 `payload`。
+前端不需要在 `resume[]` 中回传 `metadata`；只需要发送 `interruptId`、`status` 和 `payload`。通过 Spring `AguiRequestProcessor` 入口时，AgentScope Java 会在服务端记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，校验下一次 `resume[]` 是否覆盖所有 open interrupts，并把原始 interrupt 传给 adapter 做恢复转换。
 
 ## 示例项目
 

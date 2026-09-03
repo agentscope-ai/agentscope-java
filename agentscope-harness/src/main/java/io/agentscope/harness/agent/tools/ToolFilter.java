@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,12 +26,14 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Applies the {@link ToolsConfig#getAllow() allow} / {@link ToolsConfig#getDeny() deny} lists from
- * {@code workspace/tools.json} against a {@link Toolkit}'s registered tools.
+ * {@code workspace/tools.json} (or Managed Agents toolset export) against a {@link Toolkit}.
  *
  * <p>Semantics:
  *
  * <ul>
- *   <li>When {@code allow} is non-empty, only tools whose name appears in it are kept.
+ *   <li>When {@code allow} is non-empty, <em>catalogued</em> tools not listed are removed.
+ *   <li>{@link HarnessPlatformTools} names always survive {@code allow} (Harness runtime must keep
+ *       working). Explicit {@code deny} still removes them.
  *   <li>{@code deny} entries are always removed, regardless of {@code allow}.
  *   <li>When both are empty/absent the toolkit is left untouched.
  * </ul>
@@ -73,13 +75,23 @@ public final class ToolFilter {
         }
 
         Set<String> toRemove = new LinkedHashSet<>();
+        Set<String> protectedKept = new LinkedHashSet<>();
         for (String name : registered) {
-            boolean keep = allowSetView == null || allowSetView.contains(name);
-            if (denySetView != null && denySetView.contains(name)) {
-                keep = false;
-            }
-            if (!keep) {
+            boolean denied = denySetView != null && denySetView.contains(name);
+            if (denied) {
                 toRemove.add(name);
+                continue;
+            }
+            boolean allowed =
+                    allowSetView == null
+                            || allowSetView.contains(name)
+                            || HarnessPlatformTools.isPlatformTool(name);
+            if (!allowed) {
+                toRemove.add(name);
+            } else if (allowSetView != null
+                    && !allowSetView.contains(name)
+                    && HarnessPlatformTools.isPlatformTool(name)) {
+                protectedKept.add(name);
             }
         }
         for (String name : toRemove) {
@@ -87,11 +99,21 @@ public final class ToolFilter {
         }
 
         Set<String> remaining = new TreeSet<>(toolkit.getToolNames());
-        log.info(
-                "tools.json filter applied: removed {} tool(s); {} tool(s) remain: {}",
-                toRemove.size(),
-                remaining.size(),
-                remaining);
+        if (protectedKept.isEmpty()) {
+            log.info(
+                    "tools.json filter applied: removed {} tool(s); {} tool(s) remain: {}",
+                    toRemove.size(),
+                    remaining.size(),
+                    remaining);
+        } else {
+            log.info(
+                    "tools.json filter applied: removed {} tool(s); kept {} platform tool(s)"
+                            + " outside allow; {} tool(s) remain: {}",
+                    toRemove.size(),
+                    protectedKept.size(),
+                    remaining.size(),
+                    remaining);
+        }
     }
 
     private static void warnUnknown(Set<String> declared, Set<String> registered, String which) {

@@ -330,11 +330,7 @@ public class DashScopeHttpClient {
      *   <li>If endpointType is {@link EndpointType#MULTIMODAL} → multimodal API</li>
      *   <li>If endpointType is {@link EndpointType#AUTO}:
      *     <ul>
-     *       <li>Models starting with "qvq" → multimodal API</li>
-     *       <li>Models containing "-vl" → multimodal API</li>
-     *       <li>Models containing "-asr" → multimodal API</li>
-     *       <li>Models starting with "qwen3.5" → multimodal API</li>
-     *       <li>Models starting with "qwen3.6" → multimodal API</li>
+     *       <li>Models recognized by {@link #isMultimodalModel(String)} → multimodal API</li>
      *       <li>All other models → text generation API</li>
      *     </ul>
      *   </li>
@@ -376,6 +372,7 @@ public class DashScopeHttpClient {
      *   <li>Models starting with "qwen3.5" (e.g., qwen3.5-plus, qwen3.5-flash)</li>
      *   <li>Models starting with "qwen3.6" (e.g., qwen3.6-plus, qwen3.6-flash)</li>
      *   <li>Models starting with "qwen3.7" where not "qwen3.7-max" (e.g., qwen3.7-plus)</li>
+     *   <li>Models starting with "qwen3.8-max" (e.g., qwen3.8-max)</li>
      *   <li>Models containing "kimi-k2.5"/"kimi-k2.6" (e.g., kimi-k2.6, kimi/kimi-k2.5)</li>
      * </ul>
      *
@@ -405,6 +402,7 @@ public class DashScopeHttpClient {
                 || lowerModelName.startsWith("qwen3.5")
                 || lowerModelName.startsWith("qwen3.6")
                 || lowerModelName.startsWith("qwen3.7")
+                || lowerModelName.startsWith("qwen3.8-max")
                 || lowerModelName.contains("kimi-k2.5")
                 || lowerModelName.contains("kimi-k2.6");
     }

@@ -78,7 +78,7 @@ public class Toolkit {
     private final ToolExecutor executor;
 
     /**
-     * Create a Toolkit with default configuration (sequential execution using Reactor).
+     * Create a Toolkit with default configuration (parallel execution using Reactor).
      */
     public Toolkit() {
         this(ToolkitConfig.defaultConfig());
@@ -629,6 +629,24 @@ public class Toolkit {
      */
     public void registerToolGroup(ToolGroup group) {
         groupManager.registerToolGroup(group);
+    }
+
+    /**
+     * Add an already-registered tool to an existing tool group.
+     *
+     * <p>A tool may belong to multiple groups. Adding the same tool to the same group more than
+     * once has no additional effect.
+     *
+     * @param groupName Name of the existing tool group
+     * @param toolName Name of the registered tool
+     * @throws IllegalArgumentException if the group or tool doesn't exist
+     */
+    public void addToolToGroup(String groupName, String toolName) {
+        groupManager.validateGroupExists(groupName);
+        if (toolRegistry.getTool(toolName) == null) {
+            throw new IllegalArgumentException("Tool not found: " + toolName);
+        }
+        groupManager.addToolToGroup(groupName, toolName);
     }
 
     /**

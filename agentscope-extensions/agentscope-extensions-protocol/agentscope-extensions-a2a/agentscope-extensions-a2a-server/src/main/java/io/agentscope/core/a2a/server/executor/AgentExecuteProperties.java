@@ -32,10 +32,11 @@ public class AgentExecuteProperties {
     private final boolean completeWithMessage;
 
     /**
-     * Whether the agent task execution should require an inner message such as tool_call result.
+     * Whether the agent task execution should require inner messages such as tool results and hints.
      *
-     * <p>If is {@code true}, the agent execution will handle {@link io.agentscope.core.agent.Event} with
-     * {@link io.agentscope.core.agent.EventType#TOOL_RESULT} and {@link io.agentscope.core.agent.EventType#HINT}.
+     * <p>If this is {@code true}, the agent execution will expose inner
+     * {@link io.agentscope.core.event.AgentEvent} payloads such as tool-result deltas and hint
+     * blocks to the A2A client.
      */
     private final boolean requireInnerMessage;
 
