@@ -54,6 +54,7 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
+import io.agentscope.core.formatter.FailedAttempt;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.StructuredOutputGenerator;
@@ -1265,6 +1266,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return doNativeStructuredCall(msgs, jsonSchema)
                     .onErrorResume(
                             e -> {
+                                if (e instanceof StructuredOutputValidationException) {
+                                    // Exhausted retries (maxAttempts / token budget) is a
+                                    // deliberate fail-closed decision; degrading to the
+                                    // synthetic tool path would spend more tokens and
+                                    // defeat the documented contract.
+                                    return Mono.error(e);
+                                }
                                 log.warn(
                                         "Native structured output failed ({}) — falling back to"
                                                 + " synthetic tool path",
@@ -2290,25 +2298,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * (native path only: json_schema response format, no fallback tool).
          *
          * <p>When the final reasoning message does not conform to the schema,
-         * the failed attempt is discarded (its reasoning context never reaches
-         * the conversation state), an error-feedback correction message is
-         * appended to the conversation, and reasoning restarts with a fresh
-         * context — so no failed-turn thinking or tool state leaks into the
-         * final result. Token usage from failed attempts is carried forward
-         * and aggregated into the final message so retried tokens are still
-         * accounted for. Exhausting {@code maxAttempts} fails the call with
-         * {@link StructuredOutputValidationException}.
+         * an error-feedback correction message is appended to the conversation
+         * and reasoning restarts with a fresh per-turn context. The failed
+         * attempt's message stays in the conversation (the correction refers
+         * to it, so the model can see what to fix), but its thinking/tool
+         * state never reaches the final returned message: every retry builds
+         * from a new {@code ReasoningContext}, so only the conforming
+         * attempt's state is returned. Token usage from failed attempts is
+         * carried forward and aggregated into the final message so retried
+         * tokens are still accounted for.
+         *
+         * <p>Each failure is observed via the {@code structured_output.failed_attempt}
+         * event and the policy's {@code onFailedAttempt} listener, and is
+         * accumulated on the terminal {@link StructuredOutputValidationException}.
+         * When attempts are exhausted — or the retry policy's cumulative token
+         * budget is reached — the call fails with that exception and the
+         * conversation is rolled back to its pre-call state, so failed
+         * attempts leave nothing in the persisted session.
          *
          * <p>Note: streaming hooks have already observed the failed turn's
          * events by the time validation runs (process-level visibility);
          * only the final conforming message is persisted.
          */
         private Mono<Msg> reasoningWithOutputValidation(int iter, boolean ignoreMaxIters) {
-            return reasoningWithOutputValidation(iter, ignoreMaxIters, 1, null);
+            return reasoningWithOutputValidation(iter, ignoreMaxIters, 1, null, new ArrayList<>());
         }
 
         private Mono<Msg> reasoningWithOutputValidation(
-                int iter, boolean ignoreMaxIters, int attempt, ChatUsage carriedUsage) {
+                int iter,
+                boolean ignoreMaxIters,
+                int attempt,
+                ChatUsage carriedUsage,
+                List<FailedAttempt> failedAttempts) {
             Mono<Msg> base = reasoning(iter, ignoreMaxIters);
             if (nativeResponseFormat == null
                     || soTool != null
@@ -2324,12 +2345,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         String text = extractTextContent(msg);
                         JsonNode payload;
                         List<StructuredOutputValidator.ValidationError> errors;
+                        String parseErrorMessage = null;
                         try {
                             payload =
                                     new com.fasterxml.jackson.databind.ObjectMapper()
                                             .readTree(text);
                             errors = StructuredOutputValidator.validate(payload, schema);
                         } catch (StructuredOutputParseException parseFailure) {
+                            parseErrorMessage = parseFailure.getMessage();
                             errors =
                                     List.of(
                                             new StructuredOutputValidator.ValidationError(
@@ -2338,6 +2361,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             + parseFailure.getMessage()));
                             payload = null;
                         } catch (Exception jsonFailure) {
+                            parseErrorMessage = jsonFailure.getMessage();
                             errors =
                                     List.of(
                                             new StructuredOutputValidator.ValidationError(
@@ -2354,30 +2378,71 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     mergeCollectedMetadata(
                                             msg, sumUsage(carriedUsage, msg.getChatUsage()), null));
                         }
-                        publishEvent(
-                                new CustomEvent(
-                                        "structured_output.failed_attempt",
-                                        Map.of(
-                                                "attempt",
-                                                attempt,
-                                                "agent",
-                                                getName(),
-                                                "errors",
-                                                errors.stream()
-                                                        .map(
-                                                                e ->
-                                                                        e.instanceLocation()
-                                                                                + ": "
-                                                                                + e.message())
-                                                        .limit(5)
-                                                        .toList())));
-                        if (attempt >= policy.maxAttempts()) {
+                        FailedAttempt failed =
+                                new FailedAttempt(
+                                        attempt,
+                                        parseErrorMessage == null
+                                                ? FailedAttempt.Kind.VALIDATION_ERROR
+                                                : FailedAttempt.Kind.PARSE_ERROR,
+                                        parseErrorMessage == null ? errors : List.of(),
+                                        parseErrorMessage,
+                                        text,
+                                        msg.getChatUsage() == null
+                                                ? null
+                                                : (long) msg.getChatUsage().getInputTokens(),
+                                        msg.getChatUsage() == null
+                                                ? null
+                                                : (long) msg.getChatUsage().getOutputTokens());
+                        failedAttempts.add(failed);
+                        if (policy.onFailedAttempt() != null) {
+                            policy.onFailedAttempt().accept(failed);
+                        }
+                        if (policy.emitAttemptEvents()) {
+                            publishEvent(
+                                    new CustomEvent(
+                                            "structured_output.failed_attempt",
+                                            Map.of(
+                                                    "attempt",
+                                                    attempt,
+                                                    "agent",
+                                                    getName(),
+                                                    "errors",
+                                                    errors.stream()
+                                                            .map(
+                                                                    e ->
+                                                                            e.instanceLocation()
+                                                                                    + ": "
+                                                                                    + e.message())
+                                                            .limit(5)
+                                                            .toList())));
+                        }
+                        ChatUsage cumulative = sumUsage(carriedUsage, msg.getChatUsage());
+                        boolean budgetReached =
+                                policy.tokenBudget() != null
+                                        && cumulative != null
+                                        && cumulative.getTotalTokens() >= policy.tokenBudget();
+                        if (attempt >= policy.maxAttempts() || budgetReached) {
+                            if (budgetReached) {
+                                log.warn(
+                                        "Structured output retry stopped by token budget after"
+                                                + " {} attempt(s): {} / {} tokens (agent={},"
+                                                + " schema={})",
+                                        attempt,
+                                        cumulative.getTotalTokens(),
+                                        policy.tokenBudget(),
+                                        getName(),
+                                        schema.getName());
+                            }
                             return Mono.error(
                                     new StructuredOutputValidationException(
-                                            schema.getName(), errors));
+                                            schema.getName(),
+                                            errors,
+                                            parseErrorMessage,
+                                            failedAttempts));
                         }
                         // Error feedback: append a synthetic correction turn, then
-                        // restart reasoning with a fresh context (failed attempt discarded).
+                        // restart reasoning with a fresh context (failed attempt's
+                        // state stays out of the returned message).
                         Msg correction =
                                 Msg.builderForRole(io.agentscope.core.message.MsgRole.USER)
                                         .name("structured_output_correction")
@@ -2390,10 +2455,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         .build();
                         state.contextMutable().add(correction);
                         return reasoningWithOutputValidation(
-                                iter,
-                                true,
-                                attempt + 1,
-                                sumUsage(carriedUsage, msg.getChatUsage()));
+                                iter, true, attempt + 1, cumulative, failedAttempts);
                     });
         }
 

@@ -18,9 +18,9 @@ package io.agentscope.core.formatter;
 import java.util.function.Consumer;
 
 /**
- * Policy controlling the generate-validate-correct retry loop for structured
- * outputs, as applied by structured-output-aware components (for example
- * {@code StructuredOutputValidationMiddleware}).
+ * Policy controlling the generate-validate-correct retry loop that
+ * {@code ReActAgent} applies to native structured-output calls (see
+ * {@code reasoningWithOutputValidation}).
  *
  * <p>All knobs are optional and carry safe defaults:
  *
@@ -28,11 +28,15 @@ import java.util.function.Consumer;
  *   <li>{@code maxAttempts} defaults to {@link #DEFAULT_MAX_ATTEMPTS} — one
  *       initial generation plus up to two error-feedback corrections.</li>
  *   <li>{@code tokenBudget} defaults to {@code null} (unlimited). When set,
- *       generation stops as soon as the cumulative token usage across attempts
- *       reaches the budget; the policy is passed per call via
- *       {@code GenerateOptions.builder().structuredOutputPolicy(...)}.</li>
+ *       retrying stops as soon as the cumulative token usage across attempts
+ *       reaches the budget and the call fails closed with
+ *       {@link StructuredOutputValidationException}; the policy is passed per
+ *       call via {@code GenerateOptions.builder().structuredOutputPolicy(...)}.</li>
  *   <li>{@code onFailedAttempt} observes every failed attempt for logging,
  *       metrics or user-facing progress events.</li>
+ *   <li>{@code emitAttemptEvents} (default {@code true}) controls whether
+ *       {@code structured_output.failed_attempt} events are published into
+ *       the agent event stream.</li>
  * </ul>
  */
 public final class StructuredOutputRetryPolicy {

@@ -830,10 +830,9 @@ public class GenerateOptions {
         }
 
         /**
-         * Sets the per-call retry policy applied by structured-output-aware
-         * middleware (e.g. {@code StructuredOutputValidationMiddleware}) when
-         * the call carries a JSON-schema response format; {@code null} (the
-         * default) lets the component default apply.
+         * Sets the per-call retry policy applied by the agent's structured-output
+         * validation retry loop when the call carries a JSON-schema response
+         * format; {@code null} (the default) lets the component default apply.
          *
          * @param policy the structured-output retry policy
          * @return this builder instance
