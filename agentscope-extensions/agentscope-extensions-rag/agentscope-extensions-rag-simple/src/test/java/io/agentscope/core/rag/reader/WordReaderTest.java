@@ -178,6 +178,32 @@ class WordReaderTest {
     }
 
     @Test
+    @DisplayName("Should treat a paragraph containing only properties as a blank boundary")
+    void testParagraphPropertiesOnlyPreserveChunkBoundary() throws IOException {
+        String paragraph1 = "First travel policy paragraph. ".repeat(7).trim();
+        String paragraph2 = "Second travel policy paragraph. ".repeat(7).trim();
+
+        Path file = tempDir.resolve("paragraph-properties-only.docx");
+        try (XWPFDocument doc = new XWPFDocument();
+                FileOutputStream fos = new FileOutputStream(file.toFile())) {
+            doc.createParagraph().createRun().setText(paragraph1);
+            doc.createParagraph().getCTP().addNewPPr();
+            doc.createParagraph().createRun().setText(paragraph2);
+            doc.write(fos);
+        }
+
+        WordReader reader =
+                new WordReader(300, SplitStrategy.PARAGRAPH, 0, true, true, TableFormat.MARKDOWN);
+        List<Document> documents = reader.read(ReaderInput.fromString(file.toString())).block();
+
+        assertEquals(2, documents.size());
+        assertEquals(
+                paragraph1, ((TextBlock) documents.get(0).getMetadata().getContent()).getText());
+        assertEquals(
+                paragraph2, ((TextBlock) documents.get(1).getMetadata().getContent()).getText());
+    }
+
+    @Test
     @DisplayName("Should join adjacent paragraphs without blank line using a single newline")
     void testAdjacentParagraphsJoinedWithSingleNewline() throws IOException {
         String paragraph1 = "First short paragraph. ".repeat(4).trim();
@@ -187,6 +213,31 @@ class WordReaderTest {
         try (XWPFDocument doc = new XWPFDocument();
                 FileOutputStream fos = new FileOutputStream(file.toFile())) {
             doc.createParagraph().createRun().setText(paragraph1);
+            doc.createParagraph().createRun().setText(paragraph2);
+            doc.write(fos);
+        }
+
+        WordReader reader =
+                new WordReader(300, SplitStrategy.PARAGRAPH, 0, true, true, TableFormat.MARKDOWN);
+        List<Document> documents = reader.read(ReaderInput.fromString(file.toString())).block();
+
+        assertEquals(1, documents.size());
+        assertEquals(
+                paragraph1 + "\n" + paragraph2,
+                ((TextBlock) documents.get(0).getMetadata().getContent()).getText());
+    }
+
+    @Test
+    @DisplayName("Should not treat a break-only paragraph as a blank paragraph boundary")
+    void testBreakOnlyParagraphDoesNotCreateBlankParagraphBoundary() throws IOException {
+        String paragraph1 = "First short paragraph. ".repeat(4).trim();
+        String paragraph2 = "Second short paragraph. ".repeat(4).trim();
+
+        Path file = tempDir.resolve("break-only-paragraph.docx");
+        try (XWPFDocument doc = new XWPFDocument();
+                FileOutputStream fos = new FileOutputStream(file.toFile())) {
+            doc.createParagraph().createRun().setText(paragraph1);
+            doc.createParagraph().createRun().addBreak();
             doc.createParagraph().createRun().setText(paragraph2);
             doc.write(fos);
         }

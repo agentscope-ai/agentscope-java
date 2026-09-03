@@ -41,6 +41,8 @@ import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import reactor.core.publisher.Mono;
 
 /**
@@ -243,7 +245,8 @@ public class WordReader extends AbstractChunkingReader {
                             blocks.add(TextBlock.builder().text(text).build());
                         }
                         lastType = "text";
-                    } else if (!blocks.isEmpty()
+                    } else if (isTrulyBlankParagraph(para)
+                            && !blocks.isEmpty()
                             && ("text".equals(lastType)
                                     || ("table".equals(lastType) && !separateTable))) {
                         // Blank paragraph: append a newline so that consecutive paragraphs
@@ -286,6 +289,17 @@ public class WordReader extends AbstractChunkingReader {
         } catch (IOException e) {
             throw new ReaderException("Failed to parse Word document: " + wordPath, e);
         }
+    }
+
+    private boolean isTrulyBlankParagraph(XWPFParagraph para) {
+        NodeList children = para.getCTP().getDomNode().getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE && !"pPr".equals(child.getLocalName())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
