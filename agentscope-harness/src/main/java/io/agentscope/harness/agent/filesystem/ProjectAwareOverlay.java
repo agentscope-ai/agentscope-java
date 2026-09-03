@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -40,6 +41,12 @@ import java.util.Set;
  * <p>Produced exclusively by {@link io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec}
  * when {@code projectWritable(true)} is set. Other filesystem specs ({@code RemoteFilesystemSpec},
  * {@code SandboxFilesystemSpec}) are not affected.
+ *
+ * <p>Every routed path is first normalized to its agent-visible relative form: a workspace-rooted
+ * absolute path (e.g. {@code <workspace>/src/Foo.java}) has the workspace root and, when namespace
+ * scoping is configured, the caller's namespace prefix stripped, so the absolute and the relative
+ * spelling of the same path behave identically in every operation. Absolute paths outside the
+ * workspace root pass through unchanged and are never classified as workspace metadata.
  *
  * <p>Read operations retain standard overlay semantics: check upper (workspace) first, fall back
  * to lower (project). Shell {@code execute()} delegates to the upper layer as before.
@@ -65,22 +72,49 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
     private final AbstractSandboxFilesystem shellBackend;
     private final LocalFilesystem projectFs;
     private final Path workspaceRoot;
+    private final NamespaceFactory namespaceFactory;
 
     /**
      * @param upper shell-capable workspace filesystem (read-write, workspace root)
      * @param lower read-only project filesystem (overlay fallback)
      * @param projectFs writable project filesystem for non-workspace writes
      * @param workspaceRoot absolute path of the workspace, used to classify absolute paths
+     * @param namespaceFactory namespace factory scoping the workspace and project filesystems;
+     *     used to strip the caller's namespace prefix from workspace-rooted absolute paths;
+     *     {@code null} when no namespace scoping is configured
      */
     public ProjectAwareOverlay(
             AbstractSandboxFilesystem upper,
             AbstractFilesystem lower,
             LocalFilesystem projectFs,
-            Path workspaceRoot) {
+            Path workspaceRoot,
+            NamespaceFactory namespaceFactory) {
         super(upper, lower);
         this.shellBackend = upper;
         this.projectFs = projectFs;
         this.workspaceRoot = workspaceRoot.toAbsolutePath().normalize();
+        this.namespaceFactory = namespaceFactory;
+    }
+
+    /**
+     * Namespace-unaware variant: workspace-rooted absolute paths keep their namespace segment and
+     * may misroute under namespace scoping.
+     *
+     * @deprecated use {@link #ProjectAwareOverlay(AbstractSandboxFilesystem, AbstractFilesystem,
+     *     LocalFilesystem, Path, NamespaceFactory)} so workspace-rooted absolute paths resolve
+     *     identically to their relative spelling under namespace scoping
+     * @param upper shell-capable workspace filesystem (read-write, workspace root)
+     * @param lower read-only project filesystem (overlay fallback)
+     * @param projectFs writable project filesystem for non-workspace writes
+     * @param workspaceRoot absolute path of the workspace, used to classify absolute paths
+     */
+    @Deprecated
+    public ProjectAwareOverlay(
+            AbstractSandboxFilesystem upper,
+            AbstractFilesystem lower,
+            LocalFilesystem projectFs,
+            Path workspaceRoot) {
+        this(upper, lower, projectFs, workspaceRoot, null);
     }
 
     @Override
@@ -98,10 +132,11 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
 
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
-        if (isWorkspacePath(filePath)) {
-            return upper().write(runtimeContext, filePath, content);
+        String target = toWorkspaceRelativePath(runtimeContext, filePath);
+        if (isWorkspacePath(runtimeContext, filePath)) {
+            return upper().write(runtimeContext, target, content);
         }
-        return projectFs.write(runtimeContext, toWorkspaceRelativePath(filePath), content);
+        return projectFs.write(runtimeContext, target, content);
     }
 
     @Override
@@ -111,27 +146,27 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
             String oldString,
             String newString,
             boolean replaceAll) {
-        if (isWorkspacePath(filePath)) {
-            return super.edit(runtimeContext, filePath, oldString, newString, replaceAll);
+        String target = toWorkspaceRelativePath(runtimeContext, filePath);
+        if (isWorkspacePath(runtimeContext, filePath)) {
+            return super.edit(runtimeContext, target, oldString, newString, replaceAll);
         }
-        String target = toWorkspaceRelativePath(filePath);
         if (projectFs.exists(runtimeContext, target)) {
             return projectFs.edit(runtimeContext, target, oldString, newString, replaceAll);
         }
         // Fallback: file may exist only in upper (written before projectWritable was enabled)
-        return super.edit(runtimeContext, filePath, oldString, newString, replaceAll);
+        return super.edit(runtimeContext, target, oldString, newString, replaceAll);
     }
 
     @Override
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
-        if (isWorkspacePath(path)) {
-            return super.delete(runtimeContext, path);
+        String target = toWorkspaceRelativePath(runtimeContext, path);
+        if (isWorkspacePath(runtimeContext, path)) {
+            return super.delete(runtimeContext, target);
         }
-        String target = toWorkspaceRelativePath(path);
         if (projectFs.exists(runtimeContext, target)) {
             return projectFs.delete(runtimeContext, target);
         }
-        return super.delete(runtimeContext, path);
+        return super.delete(runtimeContext, target);
     }
 
     @Override
@@ -140,11 +175,13 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         List<Map.Entry<String, byte[]>> workspaceFiles = new ArrayList<>();
         List<Map.Entry<String, byte[]>> projectFiles = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : files) {
-            if (isWorkspacePath(entry.getKey())) {
+            if (isWorkspacePath(runtimeContext, entry.getKey())) {
                 workspaceFiles.add(entry);
             } else {
                 projectFiles.add(
-                        Map.entry(toWorkspaceRelativePath(entry.getKey()), entry.getValue()));
+                        Map.entry(
+                                toWorkspaceRelativePath(runtimeContext, entry.getKey()),
+                                entry.getValue()));
             }
         }
         List<FileUploadResponse> results = new ArrayList<>();
@@ -161,56 +198,62 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
 
     @Override
     public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
-        return super.read(runtimeContext, toWorkspaceRelativePath(filePath), offset, limit);
+        return super.read(
+                runtimeContext, toWorkspaceRelativePath(runtimeContext, filePath), offset, limit);
     }
 
     @Override
     public boolean exists(RuntimeContext runtimeContext, String path) {
-        return super.exists(runtimeContext, toWorkspaceRelativePath(path));
+        return super.exists(runtimeContext, toWorkspaceRelativePath(runtimeContext, path));
     }
 
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        return super.downloadFiles(
-                runtimeContext, paths.stream().map(this::toWorkspaceRelativePath).toList());
+        List<String> targets =
+                paths.stream().map(path -> toWorkspaceRelativePath(runtimeContext, path)).toList();
+        return super.downloadFiles(runtimeContext, targets);
     }
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        return super.ls(runtimeContext, toWorkspaceRelativePath(path));
+        return super.ls(runtimeContext, toWorkspaceRelativePath(runtimeContext, path));
     }
 
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        return super.grep(runtimeContext, pattern, toWorkspaceRelativePath(path), glob);
+        return super.grep(
+                runtimeContext, pattern, toWorkspaceRelativePath(runtimeContext, path), glob);
     }
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        return super.glob(runtimeContext, pattern, toWorkspaceRelativePath(path));
+        return super.glob(runtimeContext, pattern, toWorkspaceRelativePath(runtimeContext, path));
     }
 
     @Override
     public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
         return super.move(
-                runtimeContext, toWorkspaceRelativePath(fromPath), toWorkspaceRelativePath(toPath));
+                runtimeContext,
+                toWorkspaceRelativePath(runtimeContext, fromPath),
+                toWorkspaceRelativePath(runtimeContext, toPath));
     }
 
     // ==================== Path classification ====================
 
-    boolean isWorkspacePath(String filePath) {
+    boolean isWorkspacePath(RuntimeContext runtimeContext, String filePath) {
         if (filePath == null || filePath.isBlank()) {
             return true;
         }
-        String normalized = filePath.replace('\\', '/').strip();
-
-        String rel = workspaceRelative(normalized);
+        String normalized = normalizeSeparators(filePath);
+        String rel = workspaceRelative(runtimeContext, normalized);
         if (rel != null) {
             return matchesWorkspacePrefix(rel);
         }
-
+        if (Path.of(normalized).isAbsolute()) {
+            return false;
+        }
         while (normalized.startsWith("/")) {
             normalized = normalized.substring(1);
         }
@@ -227,33 +270,58 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
     }
 
     /**
-     * Returns the workspace-relative portion of an absolute path that falls under
-     * {@link #workspaceRoot}, or {@code null} when {@code normalized} is relative or lives
-     * outside the workspace root.
+     * Returns the agent-visible relative form of an absolute path that falls under {@link
+     * #workspaceRoot}: the workspace root and the caller's namespace prefix are stripped, so the
+     * absolute and the relative spelling of the same path are interchangeable. Returns {@code
+     * null} when {@code normalized} is relative, equals the workspace root, or lives outside the
+     * workspace root.
      */
-    private String workspaceRelative(String normalized) {
-        if (!Path.of(normalized).isAbsolute()) {
+    private String workspaceRelative(RuntimeContext runtimeContext, String normalized) {
+        Path absolute = Path.of(normalized);
+        if (!absolute.isAbsolute()) {
             return null;
         }
-        Path norm = Path.of(normalized).normalize();
-        if (!norm.startsWith(workspaceRoot)) {
+        Path normalizedPath = absolute.normalize();
+        if (!normalizedPath.startsWith(workspaceRoot)) {
             return null;
         }
-        String rel = workspaceRoot.relativize(norm).toString().replace('\\', '/');
+        String rel = stripNamespacePrefix(runtimeContext, workspaceRoot.relativize(normalizedPath));
         return rel.isEmpty() ? null : rel;
     }
 
     /**
-     * Rewrites a workspace-rooted absolute path to its workspace-relative form. Non-workspace
-     * paths pass through unchanged. This lets both write routing (which targets {@link #projectFs})
-     * and overlay read/search operations resolve against the matching project or workspace
-     * location instead of being re-rooted under the workspace or duplicated as a path segment.
+     * Removes the caller's namespace prefix from a workspace-relative path when the path starts
+     * with it; without namespace scoping (or when the prefix does not match) the path is returned
+     * unchanged.
      */
-    private String toWorkspaceRelativePath(String filePath) {
+    private String stripNamespacePrefix(RuntimeContext runtimeContext, Path workspaceRelative) {
+        String rel = workspaceRelative.toString().replace('\\', '/');
+        if (namespaceFactory == null) {
+            return rel;
+        }
+        List<String> namespace = namespaceFactory.getNamespace(runtimeContext);
+        if (namespace == null || namespace.isEmpty()) {
+            return rel;
+        }
+        String prefix = String.join("/", namespace);
+        return rel.startsWith(prefix + "/") ? rel.substring(prefix.length() + 1) : rel;
+    }
+
+    /**
+     * Rewrites a workspace-rooted absolute path to its agent-visible relative form (see {@link
+     * #workspaceRelative}); every other path is returned unchanged. All routed operations pass
+     * their inputs through this method so that both spellings of the same path resolve identically
+     * in the workspace, project, and overlay layers.
+     */
+    private String toWorkspaceRelativePath(RuntimeContext runtimeContext, String filePath) {
         if (filePath == null || filePath.isBlank()) {
             return filePath;
         }
-        String rel = workspaceRelative(filePath.replace('\\', '/').strip());
+        String rel = workspaceRelative(runtimeContext, normalizeSeparators(filePath));
         return rel != null ? rel : filePath;
+    }
+
+    private static String normalizeSeparators(String filePath) {
+        return filePath.replace('\\', '/').strip();
     }
 }
