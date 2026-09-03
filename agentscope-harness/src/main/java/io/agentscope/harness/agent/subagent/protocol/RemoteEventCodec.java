@@ -64,8 +64,10 @@ public final class RemoteEventCodec {
      *
      * <p>Every event also carries its full serialization in {@link RemoteAgentEvent#getPayload()},
      * so a client can restore the original instance instead of the lossy flat fields. Event types
-     * without a dedicated wire type are forwarded as {@link RemoteEventType#AGENT_EVENT} and are
-     * only visible at {@code detail=verbose}.
+     * without a dedicated wire type are forwarded as {@link RemoteEventType#AGENT_EVENT}. At
+     * {@code detail=full}, text disposition and authoritative result subtypes are included; other
+     * passthrough subtypes remain visible only at {@code detail=verbose}. The payload stays a JSON
+     * string, and older clients may ignore the unknown passthrough subtype.
      */
     public static Optional<RemoteAgentEvent> fromAgentEvent(AgentEvent event) {
         if (event == null) {

@@ -26,9 +26,22 @@ curl -N "$BASE/api/sessions/$SESSION_ID/events/stream?event_deltas=agent.message
 |---|---|
 | `event_start` | 即将产生某持久化类型；payload 含 `event_id`、`type` |
 | `event_delta` | 增量文本；payload 含 `event_id`、`type`、`delta` |
+| `event_update` | 更新同一预览的文本处置或权威结果状态；payload 含 `event_id`、`type` 及状态字段 |
 
 完整 `agent.message` / `agent.thinking` 仍会在落库后推送。  
 `GET …/events` **永远看不到** delta。多副本下 deltas 仅 turn-owner best-effort。
+
+Managed Web 的 turn runner 已在服务端启用文本处置派生；客户端无需增加服务端配置，只需像上例一样订阅
+`event_deltas=agent.message`，即可收到同一 `event_id` 的 `event_update`：
+
+- `disposition=INTERMEDIATE`：当前预览只是过程文本，UI 可降级为 commentary。
+- `disposition=TERMINAL`：当前预览的文本生命周期结束；这**不等于最终答案**。
+- `authoritative=true`：权威 `AgentResultEvent` 已完成校准。`hasOutput=false` 表示应清除此前预览；有输出时，
+  最终的持久化 `agent.message` 会复用该 `event_id` 并携带权威内容。
+
+`event_update` 与 delta 一样只存在于 SSE 流中，不会落库。最终答案应以权威
+`AgentResultEvent` 映射出的 `agent.message`（或 `authoritative=true` 的空结果更新）为准，而不是仅凭
+`TERMINAL` 判定。
 
 ## 投递入站
 
