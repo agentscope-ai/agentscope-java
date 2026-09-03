@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.GenerateReason;
@@ -198,6 +199,26 @@ class AgentEventStreamsTest {
     }
 
     @Test
+    void emitsTopLevelEndWithoutTerminalWhenAuthoritativeResultIsNull() {
+        AgentResultEvent result = new AgentResultEvent(null);
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        result,
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(4, events.size());
+        assertSame(result, events.get(2));
+        assertSame(end, events.get(3));
+    }
+
+    @Test
     void doesNotLeakPendingTopLevelEndOrTerminalOnError() {
         RuntimeException failure = new RuntimeException("boom");
         AgentEndEvent end = new AgentEndEvent("reply-1");
@@ -232,6 +253,46 @@ class AgentEventStreamsTest {
                                         result))
                 .expectNextCount(2)
                 .expectNext(result)
+                .thenCancel()
+                .verify();
+
+        source.assertCancelled();
+    }
+
+    @Test
+    void cancellationAfterTopLevelEndIsStagedDoesNotLeakTerminalOrEnd() {
+        TestPublisher<AgentEvent> source = TestPublisher.create();
+        AgentResultEvent result = result(GenerateReason.MODEL_STOP);
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+        AtomicBoolean cancellationRequested = new AtomicBoolean();
+
+        Flux<AgentEvent> annotated =
+                AgentEventStreams.withTextOutputDisposition(
+                        source.flux()
+                                .doOnCancel(
+                                        () ->
+                                                assertTrue(
+                                                        cancellationRequested.get(),
+                                                        "source cancelled before verifier"
+                                                                + " cancellation")));
+
+        StepVerifier.create(annotated, 0)
+                .thenRequest(1)
+                .then(() -> source.next(new ModelCallStartEvent("reply-1")))
+                .expectNextMatches(ModelCallStartEvent.class::isInstance)
+                .thenRequest(1)
+                .then(() -> source.next(new TextBlockDeltaEvent("reply-1", "block-1", "answer")))
+                .expectNextMatches(TextBlockDeltaEvent.class::isInstance)
+                .thenRequest(1)
+                .then(() -> source.next(result))
+                .expectNext(result)
+                .then(
+                        () -> {
+                            source.next(end);
+                            source.assertNoRequestOverflow();
+                            source.assertSubscribers();
+                        })
+                .then(() -> cancellationRequested.set(true))
                 .thenCancel()
                 .verify();
 
