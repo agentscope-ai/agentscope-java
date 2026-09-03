@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.GenerateReason;
@@ -264,19 +263,10 @@ class AgentEventStreamsTest {
         TestPublisher<AgentEvent> source = TestPublisher.create();
         AgentResultEvent result = result(GenerateReason.MODEL_STOP);
         AgentEndEvent end = new AgentEndEvent("reply-1");
-        AtomicBoolean cancellationRequested = new AtomicBoolean();
+        AgentEvent barrier =
+                tagged(new ModelCallStartEvent("barrier-reply"), "barrier-source", "barrier-task");
 
-        Flux<AgentEvent> annotated =
-                AgentEventStreams.withTextOutputDisposition(
-                        source.flux()
-                                .doOnCancel(
-                                        () ->
-                                                assertTrue(
-                                                        cancellationRequested.get(),
-                                                        "source cancelled before verifier"
-                                                                + " cancellation")));
-
-        StepVerifier.create(annotated, 0)
+        StepVerifier.create(AgentEventStreams.withTextOutputDisposition(source.flux()), 0)
                 .thenRequest(1)
                 .then(() -> source.next(new ModelCallStartEvent("reply-1")))
                 .expectNextMatches(ModelCallStartEvent.class::isInstance)
@@ -286,13 +276,10 @@ class AgentEventStreamsTest {
                 .thenRequest(1)
                 .then(() -> source.next(result))
                 .expectNext(result)
-                .then(
-                        () -> {
-                            source.next(end);
-                            source.assertNoRequestOverflow();
-                            source.assertSubscribers();
-                        })
-                .then(() -> cancellationRequested.set(true))
+                .thenRequest(1)
+                .then(() -> source.next(end))
+                .then(() -> source.next(barrier))
+                .expectNext(barrier)
                 .thenCancel()
                 .verify();
 
