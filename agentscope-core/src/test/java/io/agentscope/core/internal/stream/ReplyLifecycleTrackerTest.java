@@ -44,6 +44,16 @@ class ReplyLifecycleTrackerTest {
     }
 
     @Test
+    void taskScopedEventWithoutSourceIsNotTreatedAsTopLevel() {
+        ReplyLifecycleTracker tracker = new ReplyLifecycleTracker();
+        AgentEvent event =
+                new ModelCallStartEvent("reply-1")
+                        .withMetadataEntry(AgentEvent.METADATA_TASK_ID, "task-1");
+
+        assertFalse(tracker.sourceKey(event).isTopLevel());
+    }
+
+    @Test
     void nonEmptyTextDeltaMarksOnlyItsCurrentReplyAsVisible() {
         ReplyLifecycleTracker tracker = new ReplyLifecycleTracker();
         tracker.observe(new ModelCallStartEvent("reply-1"));

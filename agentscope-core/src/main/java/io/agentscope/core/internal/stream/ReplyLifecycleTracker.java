@@ -60,7 +60,7 @@ public final class ReplyLifecycleTracker {
         }
 
         public boolean isTopLevel() {
-            return source.isEmpty();
+            return source.isEmpty() && taskId.isEmpty();
         }
     }
 
