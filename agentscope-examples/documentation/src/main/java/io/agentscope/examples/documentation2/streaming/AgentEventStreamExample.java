@@ -26,14 +26,15 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 
 /**
- * AgentEventStreamExample - Demonstrates opt-in text output disposition events on top of {@link
- * ReActAgent#streamEvents} and the {@link AgentEvent} hierarchy.
+ * AgentEventStreamExample - Demonstrates the opt-in text output disposition wrapper on top of
+ * {@link ReActAgent#streamEvents} and the {@link AgentEvent} hierarchy.
  *
  * <p>{@code streamEvents()} returns a {@link reactor.core.publisher.Flux}{@code <AgentEvent>}
  * that covers the full agent lifecycle: startup, each model call, every text token, tool
  * invocations, tool results, and shutdown. {@link AgentEventStreams#withTextOutputDisposition}
  * preserves those events and derives lifecycle signals that classify streamed text as intermediate
- * or terminal.
+ * or terminal. This example prints only those derived disposition events; callers can inspect the
+ * unchanged underlying events in the same callback when needed.
  *
  * <p><b>Event sequence for a single-turn response (no tools):</b>
  * <pre>
@@ -43,10 +44,12 @@ import io.agentscope.core.tool.Toolkit;
  *         TEXT_BLOCK_DELTA  (repeated — one per streamed token chunk)
  *       TEXT_BLOCK_END
  *     MODEL_CALL_END        (carries token usage)
+ *   AGENT_RESULT            (authoritative invocation result)
+ *   TEXT_OUTPUT_DISPOSITION (TERMINAL, derived by the opt-in wrapper)
  *   AGENT_END
  * </pre>
  *
- * <p><b>Additional events when a tool is called:</b>
+ * <p><b>Additional underlying events when a tool is called:</b>
  * <pre>
  *     TOOL_CALL_START       (tool name + call ID)
  *       TOOL_CALL_DELTA     (optional — streamed tool input)
@@ -75,7 +78,7 @@ public class AgentEventStreamExample {
         System.out.println("AgentEvent Stream Example");
         System.out.println("=".repeat(60));
         System.out.println(
-                "Shows every lifecycle event emitted by streamEvents(), including tool calls.");
+                "Prints derived text dispositions while preserving the underlying event stream.");
         System.out.println("=".repeat(60) + "\n");
 
         Toolkit toolkit = new Toolkit();

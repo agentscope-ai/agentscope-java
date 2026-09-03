@@ -43,7 +43,9 @@ Task 9 的文档与 Javadoc 已完成，并验证了 Core 显式启用方式、`
 
 - 修正 `RemoteEventCodec`、`RemoteEventType`、`RemoteStreamDetail` 的过时说明。
 - 明确 `detail=full` 会包含 `TEXT_OUTPUT_DISPOSITION` 与 `AGENT_RESULT` 两种 `AGENT_EVENT` subtype；其余 passthrough subtype 仍仅在 `verbose` 下可见。
-- 明确 payload 仍是 JSON `String`，旧客户端可忽略未知 passthrough subtype。
+- 明确 payload 仍是 JSON `String`，`eventType` subtype 也仍是字符串；客户端可以忽略不理解的 subtype。
+- 区分两种 JSON 前向兼容机制：`READ_UNKNOWN_ENUM_VALUES_AS_NULL` 处理未知 wire enum，DTO 的
+  `@JsonIgnoreProperties(ignoreUnknown = true)` 只处理未知字段。
 
 ## 路径差异
 
@@ -103,9 +105,15 @@ Windows 符号链接权限：
 
 ## 默认兼容性复核
 
-- Core：`AgentStreamingTest.testStreamEventCount` 在 Core 回归中通过；示例通过 wrapper 显式 opt-in，未修改原始 `ReActAgent#streamEvents()`。
+- Core：`ReActAgentNewLoopReplyTest.unwrappedTextOnlyStreamPreservesLegacySequenceWithoutDisposition`
+  直接调用未包装的 `ReActAgent#streamEvents()`，断言精确的 8 事件序列
+  `AGENT_START → MODEL_CALL_START → TEXT_BLOCK_START → TEXT_BLOCK_DELTA → TEXT_BLOCK_END → MODEL_CALL_END → AGENT_RESULT → AGENT_END`，
+  并断言不存在 `TextOutputDispositionEvent`。
 - AG-UI：`AguiAdapterConfigTest.testDefaultConfig` 与 `testBuilderWithDefaults` 断言默认关闭；`AguiAgentAdapterV2Test.testTextOutputDispositionRemainsDisabledWithoutChangingLegacySequenceOrMessageId` 覆盖未启用时旧序列和 message ID，AG-UI 全模块 528 个测试通过。
-- Remote：`RemoteAgentEvent.payload` 类型仍为 `String`，DTO 保留 `@JsonIgnoreProperties(ignoreUnknown = true)`；`RemoteEventCodecTest.roundTripTextOutputDispositionAsAgentEventPayload` 与 `RemoteEventCodecPassthroughTest.payloadDecodesEvenWhenTheWireTypeIsUnknownToThisClient` 在 Harness 补充回归中通过。
+- Remote：`RemoteAgentEvent.payload` 类型仍为 `String`；`AgentProtocolTaskClient` 的 JSON mapper 通过
+  `READ_UNKNOWN_ENUM_VALUES_AS_NULL` 将未知 `RemoteEventType` 读为 `null`，而 `RemoteAgentEvent` 的
+  `@JsonIgnoreProperties(ignoreUnknown = true)` 独立忽略未知字段。新增
+  `AgentProtocolTaskClientTest.unknownWireEnumAndFieldDoNotDropStringPayload` 通过真实 SSE JSON 路径同时验证这两点及字符串 payload 保留。
 - Final answer filter：`FinalAnswerFilterMiddlewareTest` 的 `finalRoundEmitsBufferedTextBeforeModelCallEnd`、`intermediateRoundSuppressesTextWhenToolCallIsObserved`、`nonTextEventsAreForwarded`、`stateIsolatedAcrossSubscriptions` 均在 Core 回归中通过。
 
 ## 自审
@@ -118,3 +126,30 @@ Windows 符号链接权限：
 - brief Step 6：将使用指定提交信息 `docs(streaming): 说明文本处置与结果校准用法` 提交，仅保留本任务文件与本报告。
 
 未发现需要新增生产代码、修改默认行为或扩大文档范围的问题。
+
+## 修复轮 1（2026-09-03）
+
+根据复审 findings 做了以下校正：
+
+- `AgentEventStreamExample` 不再声称当前只打印 disposition 的 callback 会显示所有生命周期/工具事件；
+  无工具序列补入真实 `AGENT_RESULT`，并明确 opt-in wrapper 在 `AgentEndEvent` 前派生
+  `TEXT_OUTPUT_DISPOSITION(TERMINAL)`，顺序为 `AGENT_RESULT → TEXT_OUTPUT_DISPOSITION → AGENT_END`。
+- `07-events.md` 明确 `authoritative=true, hasOutput=false` 的 `event_update` 只用于权威结果无输出时清空预览；
+  普通非空结果不另发 authoritative update，而是由复用同一 ID 的持久化 `agent.message` 校准。
+- `SubagentDeclaration#getRemoteStreamDetail()` 及 builder 的公开 Javadoc 明确 FULL 还包括
+  `TEXT_OUTPUT_DISPOSITION` 与 `AGENT_RESULT`。
+- 用真实 `ReActAgent#streamEvents()` characterization 测试替换不相关的旧数量证据；该测试在首次有效运行即通过，
+  说明现有默认行为已经满足要求，因此没有伪造 RED 或修改生产逻辑。
+- 新增真实 SSE JSON characterization 测试，准确区分未知 enum 与未知字段的处理机制。首次命令因 PowerShell
+  未给带点 Maven 属性加引号而未进入构建；第二次在测试前由 Spotless 报告两处格式差异；按建议修正后首次有效行为运行通过。
+
+本轮新增验证：
+
+| 命令 | 退出码 | 结果 |
+| --- | ---: | --- |
+| `mvn -pl agentscope-core test -DskipITs "-Dtest=ReActAgentNewLoopReplyTest#unwrappedTextOnlyStreamPreservesLegacySequenceWithoutDisposition,AgentEventStreamsTest#emitsResultTerminalThenEndOnNormalCompletion"` | 0 | 2 tests，0 failures/errors；同时覆盖未包装默认序列和 wrapper 的 `AGENT_RESULT → TERMINAL → AGENT_END` 顺序 |
+| `mvn -pl agentscope-harness -am test -DskipITs -Dtest=AgentProtocolTaskClientTest "-Dsurefire.failIfNoSpecifiedTests=false"` | 0 | Harness 目标测试 1/1 通过，3 模块 reactor SUCCESS |
+| `mvn spotless:check -DskipTests` | 0 | 91 个 reactor 模块 SUCCESS |
+| `mvn -pl agentscope-examples/documentation -am -DskipTests compile` | 0 | 27 个 reactor 模块 SUCCESS，Documentation 50 个源文件编译成功 |
+
+本轮没有修改生产行为；只收紧兼容性测试、修正文档/Javadoc，并新增 Remote JSON 边界测试。
