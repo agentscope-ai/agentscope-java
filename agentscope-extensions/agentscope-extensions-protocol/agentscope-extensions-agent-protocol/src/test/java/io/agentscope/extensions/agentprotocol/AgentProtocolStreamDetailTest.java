@@ -31,6 +31,8 @@ import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.TextOutputDisposition;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -77,6 +79,7 @@ class AgentProtocolStreamDetailTest {
                 new TextBlockStartEvent("reply", "b1"),
                 new TextBlockDeltaEvent("reply", "b1", "hello"),
                 new TextBlockEndEvent("reply", "b1"),
+                new TextOutputDispositionEvent("reply", TextOutputDisposition.TERMINAL, null),
                 new ToolResultTextDeltaEvent("reply", "call-1", "read_file", "file contents"),
                 new ModelCallEndEvent("reply", new ChatUsage(10, 20, 0, 0.5)),
                 new AgentResultEvent(
@@ -95,13 +98,24 @@ class AgentProtocolStreamDetailTest {
     }
 
     @Test
-    void fullLevelAddsDeltasButNotPassthrough() {
-        Set<RemoteEventType> types = typesFor("full", "t-full");
+    void fullLevelAddsDeltasAndAuthoritativePassthroughEvents() {
+        List<RemoteAgentEvent> events = collect("full", "t-full");
+        Set<RemoteEventType> types =
+                events.stream()
+                        .map(RemoteAgentEvent::getType)
+                        .collect(Collectors.toUnmodifiableSet());
+        Set<String> eventTypes =
+                events.stream()
+                        .map(RemoteAgentEvent::getEventType)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toUnmodifiableSet());
 
         assertTrue(types.contains(RemoteEventType.TEXT_DELTA));
-        assertFalse(
-                types.contains(RemoteEventType.AGENT_EVENT),
-                "full keeps the pre-existing volume for deployments that never asked for more");
+        assertTrue(types.contains(RemoteEventType.AGENT_EVENT));
+        assertTrue(eventTypes.contains("TEXT_OUTPUT_DISPOSITION"), eventTypes.toString());
+        assertTrue(eventTypes.contains("AGENT_RESULT"), eventTypes.toString());
+        assertFalse(eventTypes.contains("TEXT_BLOCK_START"), eventTypes.toString());
+        assertFalse(eventTypes.contains("TOOL_RESULT_TEXT_DELTA"), eventTypes.toString());
     }
 
     @Test

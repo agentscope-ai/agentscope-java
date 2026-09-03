@@ -20,9 +20,11 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
@@ -74,7 +76,12 @@ public final class RemoteEventCodec {
         if (event.getType() != null) {
             dto.setEventType(event.getType().name());
         }
-        dto.setPayload(serializeEvent(event));
+        String payload = serializeEvent(event);
+        if (event instanceof TextOutputDispositionEvent && (payload == null || payload.isBlank())) {
+            log.warn("Dropping text output disposition event because its payload is unavailable");
+            return Optional.empty();
+        }
+        dto.setPayload(payload);
         return Optional.of(withTypedFields(dto, event));
     }
 
@@ -232,9 +239,26 @@ public final class RemoteEventCodec {
         };
     }
 
-    /** Detail check for a whole DTO; equivalent to {@link #matchesDetail(RemoteEventType, String)}. */
+    /**
+     * Detail check for a whole DTO. At {@code full}, disposition and result passthrough events are
+     * included while other {@link RemoteEventType#AGENT_EVENT} values remain verbose-only.
+     */
     public static boolean matchesDetail(RemoteAgentEvent event, String detail) {
-        return event != null && matchesDetail(event.getType(), detail);
+        if (event == null) {
+            return false;
+        }
+        if (event.getType() != RemoteEventType.AGENT_EVENT) {
+            return matchesDetail(event.getType(), detail);
+        }
+        RemoteStreamDetail level = RemoteStreamDetail.parse(detail);
+        return level.includes(RemoteStreamDetail.VERBOSE)
+                || (level.includes(RemoteStreamDetail.FULL)
+                        && isAuthoritativeFullEvent(event.getEventType()));
+    }
+
+    private static boolean isAuthoritativeFullEvent(String eventType) {
+        return AgentEventType.TEXT_OUTPUT_DISPOSITION.name().equals(eventType)
+                || AgentEventType.AGENT_RESULT.name().equals(eventType);
     }
 
     private static RequireUserConfirmEvent toRequireConfirm(RemoteAgentEvent remote) {
