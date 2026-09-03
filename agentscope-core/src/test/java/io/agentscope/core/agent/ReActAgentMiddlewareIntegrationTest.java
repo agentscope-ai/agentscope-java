@@ -26,13 +26,18 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -40,12 +45,18 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -77,6 +88,71 @@ class ReActAgentMiddlewareIntegrationTest {
                     ChatResponse.builder()
                             .content(List.<ContentBlock>of(TextBlock.builder().text(text).build()))
                             .build());
+        }
+    }
+
+    private static final class ToolThenFinalModel extends ChatModelBase {
+        private final AtomicInteger calls = new AtomicInteger();
+
+        @Override
+        public String getModelName() {
+            return "tool-then-final";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            if (calls.getAndIncrement() == 0) {
+                return Flux.just(
+                        ChatResponse.builder()
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("intermediate text")
+                                                        .build(),
+                                                ToolUseBlock.builder()
+                                                        .id("tool-call-1")
+                                                        .name("lookup")
+                                                        .input(Map.of("query", "AgentScope"))
+                                                        .build()))
+                                .build());
+            }
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(
+                                    List.<ContentBlock>of(
+                                            TextBlock.builder().text("final answer").build()))
+                            .build());
+        }
+    }
+
+    private static final class LookupTool extends ToolBase {
+        LookupTool() {
+            super(
+                    "lookup",
+                    "Looks up a query",
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("query", Map.of("type", "string"))),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("allowed"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.just(ToolResultBlock.text("lookup result"));
         }
     }
 
@@ -165,6 +241,35 @@ class ReActAgentMiddlewareIntegrationTest {
                 .toolkit(new Toolkit())
                 .middlewares(middlewares)
                 .build();
+    }
+
+    @Test
+    void finalAnswerFilterSuppressesIntermediateReactRoundText() {
+        ToolThenFinalModel model = new ToolThenFinalModel();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new LookupTool());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hello-system")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(new FinalAnswerFilterMiddleware())
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(2, model.calls.get());
+        assertEquals(
+                List.of("final answer"),
+                events.stream()
+                        .filter(TextBlockDeltaEvent.class::isInstance)
+                        .map(TextBlockDeltaEvent.class::cast)
+                        .map(TextBlockDeltaEvent::getDelta)
+                        .toList());
+        assertEquals(2L, events.stream().filter(ModelCallEndEvent.class::isInstance).count());
+        assertTrue(events.stream().anyMatch(ToolCallStartEvent.class::isInstance));
     }
 
     @Test
