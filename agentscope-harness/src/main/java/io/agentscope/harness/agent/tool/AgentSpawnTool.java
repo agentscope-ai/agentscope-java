@@ -771,7 +771,8 @@ public class AgentSpawnTool {
             String userId,
             String prompt,
             SpawnedAgent spawned,
-            RuntimeContext parentCtx) {
+            RuntimeContext parentCtx,
+            String taskId) {
         return Mono.deferContextual(
                 ctxView -> {
                     DefaultAgentManager manager = managerFor(parentCtx);
@@ -782,18 +783,26 @@ public class AgentSpawnTool {
                         String sourcePath = buildSourcePath(spawned, parentCtx);
                         String replyId = UUID.randomUUID().toString().replace("-", "");
                         AgentEventEmitter taggedEmitter =
-                                event -> parentEmitter.emit(event.withSource(sourcePath));
+                                event ->
+                                        parentEmitter.emit(
+                                                tagForwardedEvent(event, sourcePath, taskId));
 
                         parentEmitter.emit(
-                                new AgentStartEvent(spawned.sessionId(), replyId, spawned.agentId())
-                                        .withSource(sourcePath));
+                                tagForwardedEvent(
+                                        new AgentStartEvent(
+                                                spawned.sessionId(), replyId, spawned.agentId()),
+                                        sourcePath,
+                                        taskId));
 
                         AtomicBoolean endEmitted = new AtomicBoolean();
                         Runnable emitEnd =
                                 () -> {
                                     if (endEmitted.compareAndSet(false, true)) {
                                         parentEmitter.emit(
-                                                new AgentEndEvent(replyId).withSource(sourcePath));
+                                                tagForwardedEvent(
+                                                        new AgentEndEvent(replyId),
+                                                        sourcePath,
+                                                        taskId));
                                     }
                                 };
 
@@ -895,6 +904,7 @@ public class AgentSpawnTool {
                         Mono.<String>create(
                                 sink -> {
                                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
+                                    String taskId = "task_" + UUID.randomUUID();
 
                                     Mono<Msg> inner =
                                             execLocalSync(
@@ -903,7 +913,8 @@ public class AgentSpawnTool {
                                                             userId,
                                                             task,
                                                             spawned,
-                                                            runtimeContext)
+                                                            runtimeContext,
+                                                            taskId)
                                                     .contextWrite(
                                                             c ->
                                                                     reactor.util.context.Context.of(
@@ -954,6 +965,7 @@ public class AgentSpawnTool {
                                                             header,
                                                             timeoutMs,
                                                             agentId,
+                                                            taskId,
                                                             sink,
                                                             forceSync,
                                                             innerSub);
@@ -1005,6 +1017,7 @@ public class AgentSpawnTool {
             String header,
             long timeoutMs,
             String agentId,
+            String taskId,
             reactor.core.publisher.MonoSink<String> sink,
             boolean forceSync,
             Disposable innerSub) {
@@ -1024,7 +1037,6 @@ public class AgentSpawnTool {
                 sink.success(header + "\n" + formatForceSyncTimeout(timeoutMs));
                 return;
             }
-            String taskId = "task_" + UUID.randomUUID();
             String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
             CompletableFuture<String> textFuture = bridge.thenApply(AgentSpawnTool::textOf);
             taskRepository.putTask(
@@ -1195,15 +1207,21 @@ public class AgentSpawnTool {
      */
     static AgentEvent tagRemoteForwardedEvent(
             AgentEvent event, String sourcePath, String taskId, String parentSessionId) {
+        event = tagForwardedEvent(event, sourcePath, taskId);
+        if (event == null) return null;
+        if (parentSessionId != null && !parentSessionId.isBlank()) {
+            event.withMetadataEntry(AgentEvent.METADATA_PARENT_SESSION_ID, parentSessionId.trim());
+        }
+        return event;
+    }
+
+    static AgentEvent tagForwardedEvent(AgentEvent event, String sourcePath, String taskId) {
         if (event == null) {
             return null;
         }
         event.withSource(sourcePath);
         if (taskId != null && !taskId.isBlank()) {
             event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
-        }
-        if (parentSessionId != null && !parentSessionId.isBlank()) {
-            event.withMetadataEntry(AgentEvent.METADATA_PARENT_SESSION_ID, parentSessionId.trim());
         }
         return event;
     }

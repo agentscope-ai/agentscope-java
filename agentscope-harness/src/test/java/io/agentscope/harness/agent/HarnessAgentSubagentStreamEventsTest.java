@@ -39,8 +39,11 @@ import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -97,15 +100,18 @@ class HarnessAgentSubagentStreamEventsTest {
     }
 
     private static ChatResponse toolCallChunk(String id, String toolName, Map<String, Object> in) {
+        return new ChatResponse(
+                id, List.of(toolCallBlock(id, toolName, in)), null, Map.of(), "tool_use");
+    }
+
+    private static ToolUseBlock toolCallBlock(String id, String toolName, Map<String, Object> in) {
         String contentJson = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(in);
-        ToolUseBlock tc =
-                ToolUseBlock.builder()
-                        .id("tc-" + id)
-                        .name(toolName)
-                        .input(in)
-                        .content(contentJson)
-                        .build();
-        return new ChatResponse(id, List.of(tc), null, Map.of(), "tool_use");
+        return ToolUseBlock.builder()
+                .id("tc-" + id)
+                .name(toolName)
+                .input(in)
+                .content(contentJson)
+                .build();
     }
 
     private void writeSubagentSpec(String childId, String description, String body)
@@ -195,6 +201,119 @@ class HarnessAgentSubagentStreamEventsTest {
         assertTrue(
                 events.stream().anyMatch(e -> e.getSource() == null),
                 "expected at least one parent event with source == null");
+    }
+
+    @Test
+    void streamEvents_sameSourceConcurrentChildCallsHaveDistinctTaskIds() throws Exception {
+        String childId = "worker";
+        writeSubagentSpec(childId, "Worker", "Complete the assigned task.");
+
+        Model model = mock(Model.class);
+        AtomicInteger streamCalls = new AtomicInteger();
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        ignored -> {
+                            int call = streamCalls.getAndIncrement();
+                            if (call == 0) {
+                                return Flux.just(
+                                        new ChatResponse(
+                                                "p1",
+                                                List.of(
+                                                        toolCallBlock(
+                                                                "first",
+                                                                "agent_spawn",
+                                                                Map.of(
+                                                                        "agent_id",
+                                                                        childId,
+                                                                        "task",
+                                                                        "first task",
+                                                                        "timeout_seconds",
+                                                                        60)),
+                                                        toolCallBlock(
+                                                                "second",
+                                                                "agent_spawn",
+                                                                Map.of(
+                                                                        "agent_id",
+                                                                        childId,
+                                                                        "task",
+                                                                        "second task",
+                                                                        "timeout_seconds",
+                                                                        60))),
+                                                null,
+                                                Map.of(),
+                                                "tool_use"));
+                            }
+                            if (call <= 2) {
+                                return Flux.just(stopChunk("child-" + call, "completed"));
+                            }
+                            return Flux.just(stopChunk("parent-final", "done"));
+                        });
+
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        List<AgentEvent> events =
+                parent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("start")
+                                                .build()),
+                                RuntimeContext.builder().sessionId("sess-shared-source").build())
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        List<AgentEvent> childEvents =
+                events.stream()
+                        .filter(
+                                event ->
+                                        ("sess-shared-source/" + childId).equals(event.getSource()))
+                        .collect(Collectors.toList());
+        assertFalse(
+                childEvents.isEmpty(),
+                "expected events forwarded from both child calls; got: "
+                        + events.stream()
+                                .map(event -> event.getType() + "(src=" + event.getSource() + ")")
+                                .collect(Collectors.joining(", ")));
+        assertTrue(
+                childEvents.stream()
+                        .allMatch(
+                                event ->
+                                        event.getMetadata() != null
+                                                && event.getMetadata()
+                                                        .containsKey(AgentEvent.METADATA_TASK_ID)),
+                "every forwarded child event must carry its taskId");
+
+        Set<Object> taskIds =
+                childEvents.stream()
+                        .map(event -> event.getMetadata().get(AgentEvent.METADATA_TASK_ID))
+                        .collect(Collectors.toCollection(HashSet::new));
+        assertEquals(2, taskIds.size(), "same-source calls must retain distinct taskIds");
+        for (Object taskId : taskIds) {
+            List<AgentEvent> taskEvents =
+                    childEvents.stream()
+                            .filter(
+                                    event ->
+                                            taskId.equals(
+                                                    event.getMetadata()
+                                                            .get(AgentEvent.METADATA_TASK_ID)))
+                            .collect(Collectors.toList());
+            assertTrue(
+                    taskEvents.stream()
+                            .anyMatch(event -> event.getType() == AgentEventType.AGENT_START),
+                    "each task must have a tagged child start event");
+            assertTrue(
+                    taskEvents.stream()
+                            .anyMatch(event -> event.getType() == AgentEventType.AGENT_END),
+                    "each task must have a tagged child end event");
+        }
     }
 
     // -----------------------------------------------------------------
