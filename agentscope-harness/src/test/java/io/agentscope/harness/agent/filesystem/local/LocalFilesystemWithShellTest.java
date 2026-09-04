@@ -16,8 +16,12 @@
 package io.agentscope.harness.agent.filesystem.local;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -96,5 +100,33 @@ class LocalFilesystemWithShellTest {
 
         assertEquals(124, response.exitCode());
         assertTrue(response.output().contains("timed out after 1 seconds"));
+    }
+
+    @Test
+    void readCapturedOutput_drainsInputWhileRetainingOnlyTheConfiguredLimit() throws Exception {
+        var captured =
+                LocalFilesystemWithShell.readCapturedOutput(
+                        new ByteArrayInputStream("0123456789".getBytes(StandardCharsets.UTF_8)), 4);
+
+        assertEquals("0123", new String(captured.bytes(), StandardCharsets.UTF_8));
+        assertTrue(captured.truncated());
+    }
+
+    @Test
+    void readCapturedOutput_propagatesReaderFailures() {
+        InputStream failingStream =
+                new InputStream() {
+                    @Override
+                    public int read() throws IOException {
+                        throw new IOException("reader failure");
+                    }
+                };
+
+        IOException exception =
+                assertThrows(
+                        IOException.class,
+                        () -> LocalFilesystemWithShell.readCapturedOutput(failingStream, 4));
+
+        assertEquals("reader failure", exception.getMessage());
     }
 }

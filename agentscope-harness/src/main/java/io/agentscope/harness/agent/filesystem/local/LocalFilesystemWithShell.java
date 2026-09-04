@@ -21,7 +21,9 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -37,7 +39,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,22 +57,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
     private static final Logger log = LoggerFactory.getLogger(LocalFilesystemWithShell.class);
 
-    private static final ExecutorService STREAM_READER_POOL =
-            Executors.newCachedThreadPool(
-                    new ThreadFactory() {
-                        private final AtomicInteger counter = new AtomicInteger();
-
-                        @Override
-                        public Thread newThread(Runnable runnable) {
-                            Thread thread =
-                                    new Thread(
-                                            runnable,
-                                            "LocalFilesystemWithShell-StreamReader-"
-                                                    + counter.incrementAndGet());
-                            thread.setDaemon(true);
-                            return thread;
-                        }
-                    });
+    private static final int OUTPUT_DRAIN_TIMEOUT_SECONDS = 5;
 
     /** Default timeout in seconds for shell command execution. */
     public static final int DEFAULT_EXECUTE_TIMEOUT = 120;
@@ -342,6 +328,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             throw new IllegalArgumentException("timeout must be positive, got " + effectiveTimeout);
         }
 
+        Process proc = null;
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
             String osName = System.getProperty("os.name").toLowerCase();
@@ -357,79 +344,63 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 pb.environment().putAll(env);
             }
 
-            Process proc = pb.start();
+            proc = pb.start();
+            Process startedProcess = proc;
+            ExecutorService streamReaders =
+                    Executors.newFixedThreadPool(2, newStreamReaderThreadFactory());
+            try {
+                Future<CapturedOutput> stdoutFuture =
+                        streamReaders.submit(
+                                () ->
+                                        readCapturedOutput(
+                                                startedProcess.getInputStream(), maxOutputBytes));
+                Future<CapturedOutput> stderrFuture =
+                        streamReaders.submit(
+                                () ->
+                                        readCapturedOutput(
+                                                startedProcess.getErrorStream(), maxOutputBytes));
 
-            Future<byte[]> stdoutFuture =
-                    STREAM_READER_POOL.submit(() -> proc.getInputStream().readAllBytes());
-            Future<byte[]> stderrFuture =
-                    STREAM_READER_POOL.submit(() -> proc.getErrorStream().readAllBytes());
-
-            boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
-
-            Charset outputCharset = outputCharset(osName);
-            String stdout =
-                    new String(
-                            getOutput(stdoutFuture, finished ? 5 : 1, TimeUnit.SECONDS),
-                            outputCharset);
-            String stderr =
-                    new String(
-                            getOutput(stderrFuture, finished ? 5 : 1, TimeUnit.SECONDS),
-                            outputCharset);
-
-            if (!finished) {
-                proc.destroyForcibly();
-                String msg;
-                if (timeoutSeconds != null) {
-                    msg =
-                            "Error: Command timed out after "
-                                    + effectiveTimeout
-                                    + " seconds (custom timeout). The command may be stuck or"
-                                    + " require more time.";
-                } else {
-                    msg =
-                            "Error: Command timed out after "
-                                    + effectiveTimeout
-                                    + " seconds. For long-running commands, re-run using the"
-                                    + " timeout parameter.";
+                boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
+                if (!finished) {
+                    proc.destroyForcibly();
+                    proc.waitFor(OUTPUT_DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 }
-                return new ExecuteResponse(msg, 124, false);
-            }
 
-            StringBuilder output = new StringBuilder();
-            if (stdout != null && !stdout.isEmpty()) {
-                output.append(stdout);
-            }
-            if (stderr != null && !stderr.isBlank()) {
-                String[] stderrLines = stderr.strip().split("\n");
-                for (String line : stderrLines) {
-                    if (!output.isEmpty()) {
-                        output.append('\n');
-                    }
-                    output.append("[stderr] ").append(line);
+                CapturedOutput stdout = getOutput(stdoutFuture);
+                CapturedOutput stderr = getOutput(stderrFuture);
+                if (!finished) {
+                    return timeoutResponse(effectiveTimeout, timeoutSeconds != null);
                 }
+
+                Charset outputCharset = outputCharset(osName);
+                String outputStr =
+                        formatOutput(
+                                new String(stdout.bytes(), outputCharset),
+                                new String(stderr.bytes(), outputCharset));
+                boolean truncated = stdout.truncated() || stderr.truncated();
+                if (outputStr.length() > maxOutputBytes) {
+                    outputStr = outputStr.substring(0, maxOutputBytes);
+                    truncated = true;
+                }
+                if (truncated) {
+                    outputStr += "\n\n... Output truncated at " + maxOutputBytes + " bytes.";
+                }
+
+                int exitCode = proc.exitValue();
+                if (exitCode != 0) {
+                    outputStr = outputStr.stripTrailing() + "\n\nExit code: " + exitCode;
+                }
+
+                return new ExecuteResponse(outputStr, exitCode, truncated);
+            } finally {
+                streamReaders.shutdownNow();
             }
-
-            String outputStr = output.isEmpty() ? "<no output>" : output.toString();
-
-            boolean truncated = false;
-            if (outputStr.length() > maxOutputBytes) {
-                outputStr =
-                        outputStr.substring(0, maxOutputBytes)
-                                + "\n\n... Output truncated at "
-                                + maxOutputBytes
-                                + " bytes.";
-                truncated = true;
-            }
-
-            int exitCode = proc.exitValue();
-            if (exitCode != 0) {
-                outputStr = outputStr.stripTrailing() + "\n\nExit code: " + exitCode;
-            }
-
-            return new ExecuteResponse(outputStr, exitCode, truncated);
 
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
+                if (proc != null && proc.isAlive()) {
+                    proc.destroyForcibly();
+                }
                 Thread.currentThread().interrupt();
             }
             log.error("Command execution failed: {}", e.getMessage(), e);
@@ -443,18 +414,80 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         }
     }
 
-    private byte[] getOutput(Future<byte[]> future, long timeout, TimeUnit unit) {
-        try {
-            return future.get(timeout, unit);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            future.cancel(true);
-        } catch (ExecutionException | TimeoutException e) {
-            future.cancel(true);
-            log.debug("Failed to collect shell output", e);
-        }
-        return new byte[0];
+    private static ThreadFactory newStreamReaderThreadFactory() {
+        return runnable -> {
+            Thread thread = new Thread(runnable, "LocalFilesystemWithShell-StreamReader");
+            thread.setDaemon(true);
+            return thread;
+        };
     }
+
+    private ExecuteResponse timeoutResponse(int effectiveTimeout, boolean customTimeout) {
+        String msg;
+        if (customTimeout) {
+            msg =
+                    "Error: Command timed out after "
+                            + effectiveTimeout
+                            + " seconds (custom timeout). The command may be stuck or require more"
+                            + " time.";
+        } else {
+            msg =
+                    "Error: Command timed out after "
+                            + effectiveTimeout
+                            + " seconds. For long-running commands, re-run using the timeout"
+                            + " parameter.";
+        }
+        return new ExecuteResponse(msg, 124, false);
+    }
+
+    private static String formatOutput(String stdout, String stderr) {
+        StringBuilder output = new StringBuilder();
+        if (!stdout.isEmpty()) {
+            output.append(stdout);
+        }
+        if (!stderr.isBlank()) {
+            for (String line : stderr.strip().split("\n")) {
+                if (!output.isEmpty()) {
+                    output.append('\n');
+                }
+                output.append("[stderr] ").append(line);
+            }
+        }
+        return output.isEmpty() ? "<no output>" : output.toString();
+    }
+
+    static CapturedOutput readCapturedOutput(InputStream stream, int maxBytes) throws IOException {
+        ByteArrayOutputStream captured = new ByteArrayOutputStream(Math.min(maxBytes, 8_192));
+        byte[] buffer = new byte[8_192];
+        boolean truncated = false;
+        int read;
+        while ((read = stream.read(buffer)) != -1) {
+            int writable = Math.min(read, maxBytes - captured.size());
+            if (writable > 0) {
+                captured.write(buffer, 0, writable);
+            }
+            truncated |= writable < read;
+        }
+        return new CapturedOutput(captured.toByteArray(), truncated);
+    }
+
+    private static CapturedOutput getOutput(Future<CapturedOutput> future)
+            throws IOException, InterruptedException {
+        try {
+            return future.get(OUTPUT_DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException) {
+                throw (IOException) cause;
+            }
+            throw new IOException("Failed to collect shell output", cause);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new IOException("Timed out while collecting shell output", e);
+        }
+    }
+
+    record CapturedOutput(byte[] bytes, boolean truncated) {}
 
     private Path resolveExecuteCwd(RuntimeContext rc) {
         if (shellCwd != null) {
