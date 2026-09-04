@@ -29,6 +29,8 @@ public class StructuredOutputValidationException extends IllegalArgumentExceptio
 
     private final String schemaName;
     private final List<StructuredOutputValidator.ValidationError> errors;
+    private final String parseErrorMessage;
+    private final List<FailedAttempt> failedAttempts;
 
     public StructuredOutputValidationException(
             String schemaName, List<StructuredOutputValidator.ValidationError> errors) {
@@ -46,9 +48,6 @@ public class StructuredOutputValidationException extends IllegalArgumentExceptio
         this.parseErrorMessage = parseErrorMessage;
         this.failedAttempts = failedAttempts == null ? List.of() : List.copyOf(failedAttempts);
     }
-
-    private final String parseErrorMessage;
-    private final List<FailedAttempt> failedAttempts;
 
     private static String buildMessage(
             String schemaName,

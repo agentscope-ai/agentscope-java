@@ -19,8 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class StructuredOutputRetryPolicyTest {
@@ -44,13 +43,11 @@ class StructuredOutputRetryPolicyTest {
     }
 
     @Test
-    void listenerReceivesFailures() {
-        AtomicInteger seen = new AtomicInteger();
-        Consumer<FailedAttempt> listener = a -> seen.incrementAndGet();
+    void nullValidationErrorListIsNormalizedToEmpty() {
         FailedAttempt attempt =
                 new FailedAttempt(
                         1, FailedAttempt.Kind.VALIDATION_ERROR, null, null, "{}", 10L, 5L);
-        listener.accept(attempt);
-        assertEquals(1, seen.get());
+        assertEquals(List.of(), attempt.validationErrors());
+        assertEquals(15L, attempt.totalTokens().orElseThrow());
     }
 }

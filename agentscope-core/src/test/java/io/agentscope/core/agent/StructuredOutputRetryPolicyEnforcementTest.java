@@ -99,7 +99,7 @@ class StructuredOutputRetryPolicyEnforcementTest {
                 .name("agent")
                 .sysPrompt("test")
                 .model(model)
-                .generateOptions(GenerateOptions.builder().structuredOutputPolicy(policy).build())
+                .structuredOutputPolicy(policy)
                 .build();
     }
 
@@ -175,6 +175,69 @@ class StructuredOutputRetryPolicyEnforcementTest {
 
         assertEquals(2, model.calls.size(), "budget (not maxAttempts) stopped the retries");
         assertEquals(2, ex.getFailedAttempts().size());
+    }
+
+    @Test
+    @DisplayName("successful retry keeps residue during correction but cleans it from the session")
+    void successfulRetryCleansResidueFromConversation() {
+        // Structured call 1: invalid; structured call 2+: conforming; plain calls: "ok".
+        SwitchingModel model =
+                new SwitchingModel(new ChatUsage(10, 20, 0)) {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.add(List.copyOf(messages));
+                        boolean structured = options != null && options.getResponseFormat() != null;
+                        boolean firstStructuredAttempt =
+                                structured
+                                        && messages.stream()
+                                                .noneMatch(
+                                                        m ->
+                                                                "structured_output_correction"
+                                                                        .equals(m.getName()));
+                        String text =
+                                structured
+                                        ? (firstStructuredAttempt
+                                                ? "{\"answer\": \"wrong\"}"
+                                                : "{\"answer\": 7}")
+                                        : "ok";
+                        ChatUsage attemptUsage =
+                                firstStructuredAttempt ? usage : new ChatUsage(30, 40, 0);
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .id("m" + calls.size())
+                                        .content(List.of(TextBlock.builder().text(text).build()))
+                                        .usage(attemptUsage)
+                                        .build());
+                    }
+                };
+        ReActAgent agent =
+                agent(model, StructuredOutputRetryPolicy.builder().maxAttempts(3).build());
+
+        Msg result = agent.call(user("answer"), Answer.class).block(Duration.ofSeconds(10));
+        assertEquals("{\"answer\": 7}", result.getTextContent());
+        assertEquals(40, result.getChatUsage().getInputTokens());
+        assertEquals(60, result.getChatUsage().getOutputTokens());
+
+        // During the retry, the model still sees the failed attempt + correction
+        // (it needs them to self-correct)...
+        String retryInput = flattenedInput(model.calls.get(1));
+        assertTrue(retryInput.contains("wrong"), "retry round must see the failed attempt");
+        assertTrue(
+                retryInput.contains("JSON Schema"),
+                "retry round must see the correction turn: " + retryInput);
+
+        // ...but after success the residue is removed from the conversation:
+        // a follow-up plain call sees only the original turns and the final answer.
+        Msg followUp = agent.call(user("follow-up")).block(Duration.ofSeconds(10));
+        assertEquals("ok", followUp.getTextContent());
+        String surviving = flattenedInput(model.calls.get(model.calls.size() - 1));
+        assertTrue(!surviving.contains("wrong"), "failed attempt leaked: " + surviving);
+        assertTrue(
+                !surviving.contains("JSON Schema")
+                        && !surviving.contains("structured_output_correction"),
+                "correction turn leaked: " + surviving);
+        assertTrue(surviving.contains("{\"answer\": 7}"), "final answer must survive");
     }
 
     @Test

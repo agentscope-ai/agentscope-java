@@ -107,6 +107,16 @@ public final class MessageMetadataKeys {
     public static final String STRUCTURED_OUTPUT = "_structured_output";
 
     /**
+     * Metadata key marking structured-output retry residue (failed attempt messages and
+     * correction turns) on the native path. The agent removes tagged messages from the
+     * conversation once a conforming output is produced, mirroring the fallback path's
+     * {@code compressStructuredOutputContext} cleanup.
+     *
+     * <p><b>Type:</b> {@code Boolean}
+     */
+    public static final String STRUCTURED_OUTPUT_RETRY_RESIDUE = "_structured_output_retry_residue";
+
+    /**
      * Metadata key to explicitly mark a message for prompt caching or non-caching.
      *
      * <p>When set to {@code true}, the formatter adds <code>cache_control:

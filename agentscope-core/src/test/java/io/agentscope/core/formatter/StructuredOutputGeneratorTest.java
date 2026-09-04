@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,93 +20,27 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class StructuredOutputGeneratorTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    private static JsonSchema schema() {
-        return JsonSchema.builder()
-                .name("MathResponse")
-                .schema(
-                        Map.of(
-                                "type",
-                                "object",
-                                "properties",
-                                Map.of("answer", Map.of("type", "number")),
-                                "required",
-                                List.of("answer"),
-                                "additionalProperties",
-                                false))
-                .strict(true)
-                .build();
-    }
-
     @Test
-    void passesThroughOnFirstConformingAttempt() throws Exception {
-        JsonNode payload =
-                StructuredOutputGenerator.generateWithRetry(
-                        errors -> "{\"answer\": 42}", schema(), 3);
+    void extractsBareJsonObject() throws Exception {
+        JsonNode payload = StructuredOutputGenerator.extractJsonObject("{\"answer\": 42}");
         assertEquals(42, payload.path("answer").asInt());
-    }
-
-    @Test
-    void retriesWithErrorFeedbackUntilConforming() throws Exception {
-        AtomicInteger calls = new AtomicInteger();
-        JsonNode payload =
-                StructuredOutputGenerator.generateWithRetry(
-                        errors -> {
-                            int attempt = calls.incrementAndGet();
-                            if (attempt == 1) {
-                                return "{\"wrong\": true}"; // first attempt fails validation
-                            }
-                            // second attempt: caller uses error feedback (industry pattern)
-                            assertTrue(
-                                    errors.stream().anyMatch(e -> e.message().contains("answer")));
-                            return "{\"answer\": 7}";
-                        },
-                        schema(),
-                        3);
-        assertEquals(2, calls.get());
-        assertEquals(7, payload.path("answer").asInt());
-    }
-
-    @Test
-    void throwsAfterRetriesExhausted() {
-        AtomicInteger calls = new AtomicInteger();
-        StructuredOutputValidationException ex =
-                assertThrows(
-                        StructuredOutputValidationException.class,
-                        () ->
-                                StructuredOutputGenerator.generateWithRetry(
-                                        errors -> {
-                                            calls.incrementAndGet();
-                                            return "{\"wrong\": true}";
-                                        },
-                                        schema(),
-                                        3));
-        assertEquals(3, calls.get());
-        assertEquals("MathResponse", ex.getSchemaName());
     }
 
     @Test
     void extractsJsonFromMarkdownFence() throws Exception {
         JsonNode payload =
-                StructuredOutputGenerator.generateWithRetry(
-                        errors -> "```json\n{\"answer\": 1}\n```", schema(), 3);
+                StructuredOutputGenerator.extractJsonObject("```json\n{\"answer\": 1}\n```");
         assertEquals(1, payload.path("answer").asInt());
     }
 
     @Test
     void extractsJsonFromLeadingProse() throws Exception {
-        JsonNode payload =
-                StructuredOutputGenerator.generateWithRetry(
-                        errors -> "好的，答案是：{\"answer\": 3}", schema(), 3);
+        JsonNode payload = StructuredOutputGenerator.extractJsonObject("好的，答案是：{\"answer\": 3}");
         assertEquals(3, payload.path("answer").asInt());
     }
 
@@ -114,30 +48,26 @@ class StructuredOutputGeneratorTest {
     void extractsJsonAfterMalformedCandidate() throws Exception {
         // first balanced {...} is not valid JSON — extraction must scan on
         JsonNode payload =
-                StructuredOutputGenerator.generateWithRetry(
-                        errors -> "noise { oops } tail {\"answer\": 5}", schema(), 3);
+                StructuredOutputGenerator.extractJsonObject("noise { oops } tail {\"answer\": 5}");
         assertEquals(5, payload.path("answer").asInt());
     }
 
     @Test
-    void parseFailureEntersTheRetryLoopWithFeedback() throws Exception {
-        AtomicInteger calls = new AtomicInteger();
-        JsonNode payload =
-                StructuredOutputGenerator.generateWithRetry(
-                        errors -> {
-                            int attempt = calls.incrementAndGet();
-                            if (attempt == 1) {
-                                return "I am thinking... no json";
-                            }
-                            assertTrue(
-                                    errors.stream()
-                                            .anyMatch(e -> e.message().contains("valid JSON")));
-                            return "{\"answer\": 8}";
-                        },
-                        schema(),
-                        3);
-        assertEquals(2, calls.get());
-        assertEquals(8, payload.path("answer").asInt());
+    void noJsonFailsClosedWithParseException() {
+        StructuredOutputParseException ex =
+                assertThrows(
+                        StructuredOutputParseException.class,
+                        () ->
+                                StructuredOutputGenerator.extractJsonObject(
+                                        "I am thinking... no json"));
+        assertTrue(ex.getMessage().contains("no JSON object found"));
+    }
+
+    @Test
+    void unbalancedBracesFailClosed() {
+        assertThrows(
+                StructuredOutputParseException.class,
+                () -> StructuredOutputGenerator.extractJsonObject("{\"answer\": 4"));
     }
 
     @Test
@@ -152,12 +82,8 @@ class StructuredOutputGeneratorTest {
     }
 
     @Test
-    void rejectsInvalidArguments() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> StructuredOutputGenerator.generateWithRetry(errors -> "{}", schema(), 0));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> StructuredOutputGenerator.generateWithRetry(null, schema(), 3));
+    void retryPromptEmptyWithoutErrors() {
+        assertEquals("", StructuredOutputGenerator.retryPrompt(List.of()));
+        assertEquals("", StructuredOutputGenerator.retryPrompt(null));
     }
 }

@@ -247,6 +247,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final GenerateOptions generateOptions;
 
     /**
+     * Retry policy for response-side structured output validation (native path).
+     * An agent-level concern — model adapters never consume it — so it lives here
+     * rather than on the model-layer {@link GenerateOptions}.
+     */
+    private final StructuredOutputRetryPolicy structuredOutputPolicy;
+
+    /**
      * Agent-owned toolkit (a deep copy made at {@code build()} time, isolated per agent instance).
      * Shared across this agent's concurrent calls; per-call structured-output tools are NOT
      * registered here — they live on the per-call {@link CallExecution} scope.
@@ -343,6 +350,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
+        this.structuredOutputPolicy = builder.structuredOutputPolicy;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
         List<MiddlewareBase> mws = new ArrayList<>();
@@ -1322,6 +1330,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
+                                        // A conforming output was produced: drop the retry
+                                        // scaffolding before persisting, mirroring the
+                                        // fallback path's context compression.
+                                        removeRetryResidue(scope.state);
                                         Msg out = wrapNativeStructuredResult(result);
                                         return saveStateToSession(scope).thenReturn(out);
                                     })
@@ -1429,6 +1441,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 contextMutable.add(msg);
             }
         }
+    }
+
+    /**
+     * Removes structured-output retry residue (failed attempt messages and correction
+     * turns tagged during the native-path validation retry loop) from the conversation
+     * once a conforming output has been produced — the native counterpart of {@link
+     * #compressStructuredOutputContext}. Keeps the final conforming message and the
+     * caller's original turns; only the retry scaffolding is dropped, so subsequent
+     * calls do not keep paying tokens for it.
+     */
+    private static void removeRetryResidue(AgentState agentState) {
+        agentState
+                .contextMutable()
+                .removeIf(
+                        msg -> {
+                            Map<String, Object> metadata = msg.getMetadata();
+                            return metadata != null
+                                    && Boolean.TRUE.equals(
+                                            metadata.get(
+                                                    MessageMetadataKeys
+                                                            .STRUCTURED_OUTPUT_RETRY_RESIDUE));
+                        });
     }
 
     private boolean isStructuredOutputRelated(Msg msg) {
@@ -1708,6 +1742,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
+
+        /**
+         * Attempt bookkeeping for response-side structured output validation on this call. Lives
+         * on this scope rather than on the validation wrapper's parameters so nested iteration
+         * boundaries share one budget: the same final message bubbles up through every wrapper,
+         * and the counters must neither reset (defeating maxAttempts/tokenBudget) nor
+         * double-count (via the {@code soValidatedFinalMsgId} guard).
+         */
+        int soValidationAttempts = 0;
+
+        /** Id of the final message already validated during this call (dedupe guard). */
+        String soValidatedFinalMsgId;
+
+        /** Token usage accumulated across failed structured-output attempts on this call. */
+        ChatUsage soCarriedUsage;
+
+        /** Recorded failed attempts of structured-output validation on this call. */
+        final List<FailedAttempt> soFailedAttempts = new ArrayList<>();
 
         CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
             this(state, permissionEngine, slotKey, AgentStateStore.UNVERSIONED);
@@ -2321,15 +2373,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * only the final conforming message is persisted.
          */
         private Mono<Msg> reasoningWithOutputValidation(int iter, boolean ignoreMaxIters) {
-            return reasoningWithOutputValidation(iter, ignoreMaxIters, 1, null, new ArrayList<>());
-        }
-
-        private Mono<Msg> reasoningWithOutputValidation(
-                int iter,
-                boolean ignoreMaxIters,
-                int attempt,
-                ChatUsage carriedUsage,
-                List<FailedAttempt> failedAttempts) {
             Mono<Msg> base = reasoning(iter, ignoreMaxIters);
             if (nativeResponseFormat == null
                     || soTool != null
@@ -2342,14 +2385,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             StructuredOutputRetryPolicy policy = effectiveStructuredOutputRetryPolicy();
             return base.flatMap(
                     msg -> {
-                        String text = extractTextContent(msg);
+                        // Nested iteration boundaries: the innermost wrapper already
+                        // validated (and counted) this final message on its way up;
+                        // re-validating here would double-charge the shared budget.
+                        if (msg.getId() != null && msg.getId().equals(soValidatedFinalMsgId)) {
+                            return Mono.just(msg);
+                        }
+                        soValidatedFinalMsgId = msg.getId();
+                        String text = msg.getTextContent() == null ? "" : msg.getTextContent();
                         JsonNode payload;
                         List<StructuredOutputValidator.ValidationError> errors;
                         String parseErrorMessage = null;
                         try {
-                            payload =
-                                    new com.fasterxml.jackson.databind.ObjectMapper()
-                                            .readTree(text);
+                            payload = StructuredOutputGenerator.extractJsonObject(text);
                             errors = StructuredOutputValidator.validate(payload, schema);
                         } catch (StructuredOutputParseException parseFailure) {
                             parseErrorMessage = parseFailure.getMessage();
@@ -2360,27 +2408,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     "output is not a valid JSON object: "
                                                             + parseFailure.getMessage()));
                             payload = null;
-                        } catch (Exception jsonFailure) {
-                            parseErrorMessage = jsonFailure.getMessage();
+                        } catch (Exception extractionFailure) {
+                            parseErrorMessage = extractionFailure.getMessage();
                             errors =
                                     List.of(
                                             new StructuredOutputValidator.ValidationError(
                                                     "$",
                                                     "output is not a valid JSON object: "
-                                                            + jsonFailure.getMessage()));
+                                                            + extractionFailure.getMessage()));
                             payload = null;
                         }
                         if (errors.isEmpty()) {
-                            if (carriedUsage == null) {
+                            if (soCarriedUsage == null) {
                                 return Mono.just(msg);
                             }
                             return Mono.just(
                                     mergeCollectedMetadata(
-                                            msg, sumUsage(carriedUsage, msg.getChatUsage()), null));
+                                            msg,
+                                            sumUsage(soCarriedUsage, msg.getChatUsage()),
+                                            null));
                         }
+                        soValidationAttempts++;
                         FailedAttempt failed =
                                 new FailedAttempt(
-                                        attempt,
+                                        soValidationAttempts,
                                         parseErrorMessage == null
                                                 ? FailedAttempt.Kind.VALIDATION_ERROR
                                                 : FailedAttempt.Kind.PARSE_ERROR,
@@ -2393,17 +2444,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         msg.getChatUsage() == null
                                                 ? null
                                                 : (long) msg.getChatUsage().getOutputTokens());
-                        failedAttempts.add(failed);
-                        if (policy.onFailedAttempt() != null) {
-                            policy.onFailedAttempt().accept(failed);
-                        }
+                        soFailedAttempts.add(failed);
+                        invokeFailedAttemptListener(policy, failed);
                         if (policy.emitAttemptEvents()) {
                             publishEvent(
                                     new CustomEvent(
                                             "structured_output.failed_attempt",
                                             Map.of(
                                                     "attempt",
-                                                    attempt,
+                                                    soValidationAttempts,
                                                     "agent",
                                                     getName(),
                                                     "errors",
@@ -2416,19 +2465,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             .limit(5)
                                                             .toList())));
                         }
-                        ChatUsage cumulative = sumUsage(carriedUsage, msg.getChatUsage());
+                        soCarriedUsage = sumUsage(soCarriedUsage, msg.getChatUsage());
                         boolean budgetReached =
                                 policy.tokenBudget() != null
-                                        && cumulative != null
-                                        && cumulative.getTotalTokens() >= policy.tokenBudget();
-                        if (attempt >= policy.maxAttempts() || budgetReached) {
+                                        && soCarriedUsage != null
+                                        && soCarriedUsage.getTotalTokens() >= policy.tokenBudget();
+                        if (soValidationAttempts >= policy.maxAttempts() || budgetReached) {
                             if (budgetReached) {
                                 log.warn(
                                         "Structured output retry stopped by token budget after"
                                                 + " {} attempt(s): {} / {} tokens (agent={},"
                                                 + " schema={})",
-                                        attempt,
-                                        cumulative.getTotalTokens(),
+                                        soValidationAttempts,
+                                        soCarriedUsage.getTotalTokens(),
                                         policy.tokenBudget(),
                                         getName(),
                                         schema.getName());
@@ -2438,25 +2487,83 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             schema.getName(),
                                             errors,
                                             parseErrorMessage,
-                                            failedAttempts));
+                                            List.copyOf(soFailedAttempts)));
                         }
-                        // Error feedback: append a synthetic correction turn, then
-                        // restart reasoning with a fresh context (failed attempt's
-                        // state stays out of the returned message).
+                        // Error feedback: tag the failed attempt in the conversation as
+                        // retry residue, append a synthetic correction turn, then restart
+                        // reasoning with a fresh context (failed attempt's state stays
+                        // out of the returned message). Residue is removed once a
+                        // conforming output is produced (see removeRetryResidue).
+                        markRetryResidue(msg);
                         Msg correction =
-                                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER)
+                                Msg.builderForRole(MsgRole.USER)
                                         .name("structured_output_correction")
                                         .content(
-                                                io.agentscope.core.message.TextBlock.builder()
+                                                TextBlock.builder()
                                                         .text(
                                                                 StructuredOutputGenerator
                                                                         .retryPrompt(errors))
                                                         .build())
+                                        .metadata(
+                                                Map.of(
+                                                        MessageMetadataKeys
+                                                                .STRUCTURED_OUTPUT_RETRY_RESIDUE,
+                                                        true))
                                         .build();
                         state.contextMutable().add(correction);
-                        return reasoningWithOutputValidation(
-                                iter, true, attempt + 1, cumulative, failedAttempts);
+                        return reasoningWithOutputValidation(iter, true);
                     });
+        }
+
+        /**
+         * Invokes the user-supplied failure listener defensively: listener code must never
+         * take down the agent call (same protection style as tool chunk callbacks).
+         */
+        private void invokeFailedAttemptListener(
+                StructuredOutputRetryPolicy policy, FailedAttempt failed) {
+            if (policy.onFailedAttempt() == null) {
+                return;
+            }
+            try {
+                policy.onFailedAttempt().accept(failed);
+            } catch (Exception e) {
+                log.warn(
+                        "Structured output onFailedAttempt listener failed for attempt {}: {}",
+                        failed.attemptNumber(),
+                        e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
+                        e);
+            }
+        }
+
+        /**
+         * Tags the failed attempt's message in the conversation as retry residue (matched by
+         * message id) so {@code removeRetryResidue} can drop it once the call succeeds.
+         */
+        private void markRetryResidue(Msg msg) {
+            if (msg.getId() == null) {
+                return;
+            }
+            List<Msg> context = state.contextMutable();
+            for (int i = context.size() - 1; i >= 0; i--) {
+                Msg original = context.get(i);
+                if (!msg.getId().equals(original.getId())) {
+                    continue;
+                }
+                Map<String, Object> metadata =
+                        new HashMap<>(
+                                original.getMetadata() != null ? original.getMetadata() : Map.of());
+                metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT_RETRY_RESIDUE, true);
+                context.set(
+                        i,
+                        Msg.builderForRole(original.getRole())
+                                .id(original.getId())
+                                .name(original.getName())
+                                .content(original.getContent())
+                                .metadata(metadata)
+                                .timestamp(original.getTimestamp())
+                                .build());
+                return;
+            }
         }
 
         /** Null-safe aggregation of two {@link ChatUsage} values. */
@@ -2476,29 +2583,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private StructuredOutputRetryPolicy effectiveStructuredOutputRetryPolicy() {
-            io.agentscope.core.formatter.StructuredOutputRetryPolicy configured = null;
-            try {
-                configured = buildGenerateOptions().structuredOutputPolicy();
-            } catch (RuntimeException ignored) {
-                configured = null;
-            }
-            return configured != null
-                    ? configured
-                    : io.agentscope.core.formatter.StructuredOutputRetryPolicy.defaults();
-        }
-
-        private static String extractTextContent(Msg msg) {
-            if (msg == null) {
-                return "";
-            }
-            StringBuilder sb = new StringBuilder();
-            for (io.agentscope.core.message.ContentBlock block : msg.getContent()) {
-                if (block instanceof io.agentscope.core.message.TextBlock tb
-                        && tb.getText() != null) {
-                    sb.append(tb.getText());
-                }
-            }
-            return sb.toString();
+            return structuredOutputPolicy != null
+                    ? structuredOutputPolicy
+                    : StructuredOutputRetryPolicy.defaults();
         }
 
         /**
@@ -4740,6 +4827,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
         GenerateOptions generateOptions;
+        StructuredOutputRetryPolicy structuredOutputPolicy;
         final Set<Hook> hooks = new LinkedHashSet<>();
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private boolean enableMetaTool = false;
@@ -5070,6 +5158,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder generateOptions(GenerateOptions generateOptions) {
             this.generateOptions = generateOptions;
+            return this;
+        }
+
+        /**
+         * Sets the retry policy applied by the agent's response-side structured
+         * output validation loop (native path); {@code null} (the default) lets
+         * {@link StructuredOutputRetryPolicy#defaults()} apply.
+         *
+         * @param structuredOutputPolicy the structured-output retry policy
+         * @return This builder instance for method chaining
+         * @see StructuredOutputRetryPolicy
+         */
+        public Builder structuredOutputPolicy(StructuredOutputRetryPolicy structuredOutputPolicy) {
+            this.structuredOutputPolicy = structuredOutputPolicy;
             return this;
         }
 
