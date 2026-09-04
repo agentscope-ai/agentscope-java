@@ -226,9 +226,11 @@ class DockerSandboxFileTransferTest {
         String lastCpSource;
         String lastCpDest;
         boolean failCp;
+        private final String containerPathPrefix;
 
         RecordingDockerSandbox(DockerSandboxState state) {
             super(state);
+            containerPathPrefix = state.getContainerId() + ":";
         }
 
         List<String> lastCpCommand() {
@@ -248,8 +250,14 @@ class DockerSandboxFileTransferTest {
             if (command.length >= 4 && "cp".equals(command[1])) {
                 String src = command[2];
                 String dst = command[3];
+                boolean upload = dst.startsWith(containerPathPrefix);
+                boolean download = src.startsWith(containerPathPrefix);
+                if (upload == download) {
+                    throw new AssertionError(
+                            "Expected exactly one docker cp endpoint inside the container");
+                }
                 // Record paths before any simulated failure so cleanup can be asserted.
-                if (dst.contains(":")) {
+                if (upload) {
                     lastCpSource = src;
                 } else {
                     lastCpDest = dst;
@@ -257,7 +265,7 @@ class DockerSandboxFileTransferTest {
                 if (failCp) {
                     throw new RuntimeException("simulated docker cp failure");
                 }
-                if (dst.contains(":")) {
+                if (upload) {
                     // upload: host temp -> container:path
                     uploadedContent = Files.readAllBytes(Path.of(src));
                 } else {
