@@ -3767,7 +3767,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // If there are tool calls (even non-existent ones), continue to acting phase
             // where ToolExecutor will return "Tool not found" error for the model to see
             if (toolCalls.isEmpty()) {
-                return true;
+                return msg.getContentBlocks(TextBlock.class).stream()
+                        .anyMatch(
+                                textBlock ->
+                                        textBlock.getText() != null
+                                                && !textBlock.getText().isBlank());
             }
 
             // Server tool calls are executed by the provider and their results arrive in the

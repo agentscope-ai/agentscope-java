@@ -99,6 +99,42 @@ public class AnthropicChatModel extends ChatModelBase {
             AnthropicBaseFormatter formatter,
             ProxyConfig proxyConfig,
             String cacheTtl) {
+        this(
+                baseUrl,
+                apiKey,
+                modelName,
+                streamEnabled,
+                defaultOptions,
+                formatter,
+                proxyConfig,
+                null,
+                cacheTtl);
+    }
+
+    /**
+     * Creates a new Anthropic chat model instance with built-in server tools enabled.
+     *
+     * @param baseUrl        the base URL for Anthropic API (null for default)
+     * @param apiKey         the API key for authentication (null to load from
+     *                       ANTHROPIC_API_KEY env var)
+     * @param modelName      the model name to use
+     * @param streamEnabled  whether streaming should be enabled
+     * @param defaultOptions default generation options
+     * @param formatter      the message formatter to use (null for default)
+     * @param proxyConfig    the proxy configuration (null for no proxy)
+     * @param serverTools    Anthropic built-in server tools to enable
+     * @param cacheTtl       the TTL for prompt-caching markers (null for default 5m)
+     */
+    public AnthropicChatModel(
+            String baseUrl,
+            String apiKey,
+            String modelName,
+            boolean streamEnabled,
+            GenerateOptions defaultOptions,
+            AnthropicBaseFormatter formatter,
+            ProxyConfig proxyConfig,
+            List<AnthropicServerTool> serverTools,
+            String cacheTtl) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -428,7 +464,7 @@ public class AnthropicChatModel extends ChatModelBase {
                             defaultOptions,
                             formatter,
                             proxyConfig,
-                            serverTools);
+                            serverTools,
                             cacheTtl);
             model.setContextWindowSize(
                     contextWindowSize >= 0

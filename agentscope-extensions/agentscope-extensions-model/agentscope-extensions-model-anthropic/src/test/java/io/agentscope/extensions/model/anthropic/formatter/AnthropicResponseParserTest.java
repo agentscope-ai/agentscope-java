@@ -665,6 +665,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                         response.getContent().get(0));
         assertEquals("srvtoolu_stream", toolResult.getId());
         assertTrue(toolResult.isServerTool());
+    }
+
     @Test
     void testParseMessageWithCachedTokens() {
         // input_tokens excludes cached tokens in the Anthropic API; the parser adds them back
