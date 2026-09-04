@@ -18,86 +18,21 @@ package io.agentscope.core.formatter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
-import java.util.function.Function;
 
 /**
- * Generate-and-validate loop for structured outputs with
- * <em>error-feedback retry</em>.
+ * Extraction and error-feedback helpers for structured outputs.
  *
- * <p>This implements the industry-standard remediation pattern (used by
- * Instructor, Guardrails re-ask and Spring AI 2.0 self-correcting structured
- * output): when the model output fails schema validation, the validation
- * errors are fed back into the next generation attempt instead of blindly
- * retrying.
- *
- * <p>Usage:
- * <pre>{@code
- * JsonNode payload = StructuredOutputGenerator.generateWithRetry(
- *     errors -> {
- *         String prompt = errors.isEmpty()
- *             ? originalPrompt
- *             : originalPrompt + StructuredOutputGenerator.retryPrompt(errors);
- *         return model.generate(prompt);
- *     },
- *     schema,
- *     3);
- * }</pre>
+ * <p>{@code ReActAgent}'s native structured-output validation loop uses these
+ * to turn raw model text into a JSON payload and to build the correction
+ * prompt fed back to the model on failed attempts (the industry-standard
+ * remediation pattern, cf. Instructor, Guardrails re-ask and Spring AI 2.0
+ * self-correcting structured output).
  */
 public final class StructuredOutputGenerator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private StructuredOutputGenerator() {}
-
-    /**
-     * Generates a model output and validates it against the schema, retrying
-     * with error feedback until the output conforms or retries are exhausted.
-     *
-     * @param generate   generation callback; receives the validation errors of
-     *                   the previous attempt (empty list on first call) and
-     *                   returns the raw model output text
-     * @param schema     the JSON Schema to validate against
-     * @param maxRetries maximum number of generation attempts (>= 1)
-     * @return the parsed, schema-conforming JSON payload
-     * @throws StructuredOutputValidationException when all attempts fail
-     */
-    public static JsonNode generateWithRetry(
-            Function<List<StructuredOutputValidator.ValidationError>, String> generate,
-            JsonSchema schema,
-            int maxRetries) {
-        if (generate == null || schema == null || maxRetries < 1) {
-            throw new IllegalArgumentException("generate, schema and maxRetries(>=1) are required");
-        }
-        List<StructuredOutputValidator.ValidationError> lastErrors = List.of();
-        for (int attempt = 1; ; attempt++) {
-            String raw = generate.apply(lastErrors);
-            List<StructuredOutputValidator.ValidationError> errors;
-            try {
-                JsonNode payload = extractJsonObject(raw);
-                errors = StructuredOutputValidator.validate(payload, schema);
-                if (errors.isEmpty()) {
-                    return payload;
-                }
-            } catch (StructuredOutputParseException parseException) {
-                errors = List.of(parseErrorAsValidationError(parseException.getMessage()));
-            }
-            if (attempt >= maxRetries) {
-                throw new StructuredOutputValidationException(schema.getName(), errors);
-            }
-            lastErrors = errors;
-        }
-    }
-
-    /**
-     * Wraps a parse failure as a validation error so the correction prompt
-     * keeps the actionable {@code path: message} shape.
-     */
-    static StructuredOutputValidator.ValidationError parseErrorAsValidationError(
-            String parseErrorMessage) {
-        return new StructuredOutputValidator.ValidationError(
-                "$",
-                "output must be a valid JSON object (could not be parsed): " + parseErrorMessage);
-    }
 
     /**
      * Builds a prompt fragment that feeds validation errors back to the model
@@ -132,9 +67,11 @@ public final class StructuredOutputGenerator {
      * the next candidate instead of giving up.
      *
      * @throws StructuredOutputParseException when no valid JSON object can be
-     *     found (fail-closed: never synthesizes a payload from the raw text)
+     *     found (fail-closed: never synthesizes a payload from the raw text —
+     *     synthesizing one would let a lenient schema pass unstructured text
+     *     through and bypass the guarantee entirely)
      */
-    static JsonNode extractJsonObject(String raw) {
+    public static JsonNode extractJsonObject(String raw) {
         String text = raw == null ? "" : raw.trim();
         if (text.startsWith("```")) {
             int firstBreak = text.indexOf('\n');
@@ -146,8 +83,6 @@ public final class StructuredOutputGenerator {
                 text = text.substring(0, closingFence).trim();
             }
         }
-        // P1-2（维护者评审）：fail-closed——提取不到 JSON 时抛出 ParseException 进入重试，
-        // 绝不合成 {"result": raw}（合成会让宽松 schema 静默放行非结构化文本，绕过整个保证）
         int start = text.indexOf('{');
         if (start < 0) {
             throw new StructuredOutputParseException("no JSON object found in model output");
@@ -176,7 +111,7 @@ public final class StructuredOutputGenerator {
                     return MAPPER.readTree(text.substring(start, i + 1));
                 } catch (Exception e) {
                     // This balanced candidate is not valid JSON — keep scanning for
-                    // a later candidate instead of giving up (review feedback)
+                    // a later candidate instead of giving up.
                     start = text.indexOf('{', i + 1);
                     if (start < 0) {
                         throw new StructuredOutputParseException(

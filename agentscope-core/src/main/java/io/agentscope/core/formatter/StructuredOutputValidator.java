@@ -22,7 +22,6 @@ import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Response-side JSON Schema validation for structured outputs.
@@ -32,8 +31,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * validates the model's actual output against the same schema and returns
  * actionable errors (instance location + message).
  *
- * <p>Schemas are compiled once and cached (schema JSON canonical string as
- * key), so repeated validation is cheap.
+ * <p>Schemas are compiled through a shared {@link SchemaRegistry}, whose
+ * built-in cache (keyed by the schema JSON string) makes repeated validation
+ * cheap.
  */
 public final class StructuredOutputValidator {
 
@@ -41,13 +41,13 @@ public final class StructuredOutputValidator {
             SchemaRegistry.withDefaultDialect(
                     SpecificationVersion.DRAFT_2020_12,
                     builder ->
-                            // P2-2（维护者评审）：启用 format assertions（format: email / date-time
-                            // 等真实校验，默认关闭会放行非法格式值）
+                            // Enable format assertions so "format": "email" / "date-time"
+                            // are really checked (disabled by default, which would let
+                            // malformed format values pass).
                             builder.schemaRegistryConfig(
                                     com.networknt.schema.SchemaRegistryConfig.builder()
                                             .formatAssertionsEnabled(true)
                                             .build()));
-    private static final ConcurrentHashMap<String, Schema> CACHE = new ConcurrentHashMap<>();
 
     private StructuredOutputValidator() {}
 
@@ -59,7 +59,7 @@ public final class StructuredOutputValidator {
      * @return the list of validation errors; empty when the output conforms
      */
     public static List<ValidationError> validate(JsonNode output, JsonSchema schema) {
-        // P2-1（维护者评审）：fail-closed——schema 缺失是配置错误，直接抛出而非静默放行
+        // Fail-closed: a missing schema is a configuration error, not a pass.
         if (schema == null || schema.getSchema() == null) {
             throw new IllegalArgumentException(
                     "structured_output_schema_required: schema must not be null");
@@ -67,9 +67,7 @@ public final class StructuredOutputValidator {
         if (output == null) {
             return List.of(new ValidationError("$", "output is null"));
         }
-        Schema compiled =
-                CACHE.computeIfAbsent(
-                        canonical(schema.getSchema()), json -> REGISTRY.getSchema(json));
+        Schema compiled = REGISTRY.getSchema(canonical(schema.getSchema()));
         List<Error> messages = compiled.validate(output);
         if (messages == null || messages.isEmpty()) {
             return List.of();

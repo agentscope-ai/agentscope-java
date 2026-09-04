@@ -38,6 +38,11 @@ public record FailedAttempt(
         Long promptTokens,
         Long completionTokens) {
 
+    /** Normalizes a null error list to empty so consumers never see null. */
+    public FailedAttempt {
+        validationErrors = validationErrors == null ? List.of() : List.copyOf(validationErrors);
+    }
+
     /** Failure stage of an attempt. */
     public enum Kind {
         /** The model output was not valid JSON or not a JSON object. */
