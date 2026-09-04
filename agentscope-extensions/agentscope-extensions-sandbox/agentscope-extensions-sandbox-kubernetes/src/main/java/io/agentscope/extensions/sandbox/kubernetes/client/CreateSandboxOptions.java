@@ -30,6 +30,7 @@ public final class CreateSandboxOptions {
     private final String claimName;
     private final long sandboxReadyTimeoutSeconds;
     private final Long shutdownAfterSeconds;
+    private final Integer ttlSecondsAfterFinished;
     private final Map<String, String> labels;
     private final Map<String, String> podLabels;
     private final Map<String, String> podAnnotations;
@@ -43,7 +44,14 @@ public final class CreateSandboxOptions {
         this.claimName = builder.claimName;
         this.sandboxReadyTimeoutSeconds =
                 builder.sandboxReadyTimeoutSeconds > 0 ? builder.sandboxReadyTimeoutSeconds : 180;
+        if (builder.shutdownAfterSeconds != null && builder.shutdownAfterSeconds <= 0) {
+            throw new IllegalArgumentException("shutdownAfterSeconds must be positive");
+        }
+        if (builder.ttlSecondsAfterFinished != null && builder.ttlSecondsAfterFinished < 0) {
+            throw new IllegalArgumentException("ttlSecondsAfterFinished must not be negative");
+        }
         this.shutdownAfterSeconds = builder.shutdownAfterSeconds;
+        this.ttlSecondsAfterFinished = builder.ttlSecondsAfterFinished;
         this.labels =
                 builder.labels != null
                         ? Collections.unmodifiableMap(builder.labels)
@@ -87,6 +95,10 @@ public final class CreateSandboxOptions {
         return shutdownAfterSeconds;
     }
 
+    public Integer ttlSecondsAfterFinished() {
+        return ttlSecondsAfterFinished;
+    }
+
     public Map<String, String> labels() {
         return labels;
     }
@@ -106,6 +118,7 @@ public final class CreateSandboxOptions {
         private String claimName;
         private long sandboxReadyTimeoutSeconds = 180;
         private Long shutdownAfterSeconds;
+        private Integer ttlSecondsAfterFinished;
         private Map<String, String> labels;
         private Map<String, String> podLabels;
         private Map<String, String> podAnnotations;
@@ -137,6 +150,11 @@ public final class CreateSandboxOptions {
 
         public Builder shutdownAfterSeconds(Long shutdownAfterSeconds) {
             this.shutdownAfterSeconds = shutdownAfterSeconds;
+            return this;
+        }
+
+        public Builder ttlSecondsAfterFinished(Integer ttlSecondsAfterFinished) {
+            this.ttlSecondsAfterFinished = ttlSecondsAfterFinished;
             return this;
         }
 

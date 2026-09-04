@@ -54,6 +54,11 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
     private long perAttemptTimeoutSeconds = 60;
     private long portForwardTimeoutSeconds = 30;
 
+    // claim lifecycle
+    private Boolean claimOwned;
+    private Long shutdownAfterSeconds;
+    private Integer ttlSecondsAfterFinished;
+
     @Override
     public String getType() {
         return "kubernetes";
@@ -190,5 +195,42 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
 
     public void setPortForwardTimeoutSeconds(long portForwardTimeoutSeconds) {
         this.portForwardTimeoutSeconds = portForwardTimeoutSeconds;
+    }
+
+    /**
+     * Returns whether per-call release owns (and therefore deletes) the claim. {@code null} keeps
+     * the compatibility default: claims are owned unless a hard shutdown deadline delegates
+     * cleanup to the controller. A finished-only TTL does not change ownership.
+     */
+    public Boolean getClaimOwned() {
+        return claimOwned;
+    }
+
+    public void setClaimOwned(Boolean claimOwned) {
+        this.claimOwned = claimOwned;
+    }
+
+    /** Returns the optional absolute-lifetime offset applied when the claim is created. */
+    public Long getShutdownAfterSeconds() {
+        return shutdownAfterSeconds;
+    }
+
+    public void setShutdownAfterSeconds(Long shutdownAfterSeconds) {
+        if (shutdownAfterSeconds != null && shutdownAfterSeconds <= 0) {
+            throw new IllegalArgumentException("shutdownAfterSeconds must be positive");
+        }
+        this.shutdownAfterSeconds = shutdownAfterSeconds;
+    }
+
+    /** Returns the optional delay before a finished claim is deleted. */
+    public Integer getTtlSecondsAfterFinished() {
+        return ttlSecondsAfterFinished;
+    }
+
+    public void setTtlSecondsAfterFinished(Integer ttlSecondsAfterFinished) {
+        if (ttlSecondsAfterFinished != null && ttlSecondsAfterFinished < 0) {
+            throw new IllegalArgumentException("ttlSecondsAfterFinished must not be negative");
+        }
+        this.ttlSecondsAfterFinished = ttlSecondsAfterFinished;
     }
 }

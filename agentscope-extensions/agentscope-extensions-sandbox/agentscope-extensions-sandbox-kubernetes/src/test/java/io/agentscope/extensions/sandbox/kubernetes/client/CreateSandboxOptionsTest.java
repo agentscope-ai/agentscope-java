@@ -37,12 +37,35 @@ class CreateSandboxOptionsTest {
         assertEquals(180, opts.sandboxReadyTimeoutSeconds());
         assertNull(opts.claimName());
         assertNull(opts.shutdownAfterSeconds());
+        assertNull(opts.ttlSecondsAfterFinished());
     }
 
     @Test
     void builder_requiresWarmPool() {
         assertThrows(
                 IllegalArgumentException.class, () -> CreateSandboxOptions.builder("").build());
+    }
+
+    @Test
+    void builder_acceptsLifecycleOptions() {
+        CreateSandboxOptions opts =
+                CreateSandboxOptions.builder("pool-1")
+                        .shutdownAfterSeconds(300L)
+                        .ttlSecondsAfterFinished(0)
+                        .build();
+
+        assertEquals(300L, opts.shutdownAfterSeconds());
+        assertEquals(0, opts.ttlSecondsAfterFinished());
+    }
+
+    @Test
+    void builder_rejectsInvalidLifecycleOptions() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CreateSandboxOptions.builder("pool-1").shutdownAfterSeconds(0L).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CreateSandboxOptions.builder("pool-1").ttlSecondsAfterFinished(-1).build());
     }
 
     @Test
