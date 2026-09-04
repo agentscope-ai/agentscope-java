@@ -58,6 +58,10 @@ public class ReasoningContext {
     private int cachedTokens = 0;
     private double time = 0;
 
+    // Provider-specific response metadata to propagate to the final message
+    // (e.g. openai.reasoning.encrypted_content for reasoning replay)
+    private final Map<String, Object> responseMetadata = new HashMap<>();
+
     public ReasoningContext(String agentName) {
         this.agentName = agentName;
     }
@@ -86,6 +90,11 @@ public class ReasoningContext {
             outputTokens = usage.getOutputTokens();
             cachedTokens = usage.getCachedTokens();
             time = usage.getTime();
+        }
+
+        // Propagate provider-specific metadata
+        if (chunk.getMetadata() != null && !chunk.getMetadata().isEmpty()) {
+            responseMetadata.putAll(chunk.getMetadata());
         }
 
         List<Msg> streamingMsgs = new ArrayList<>();
@@ -166,8 +175,8 @@ public class ReasoningContext {
             return null;
         }
 
-        // Build metadata with accumulated ChatUsage
-        Map<String, Object> metadata = new HashMap<>();
+        // Build metadata: start with propagated response metadata, then add ChatUsage
+        Map<String, Object> metadata = new HashMap<>(responseMetadata);
         ChatUsage chatUsage = null;
         if (inputTokens > 0 || outputTokens > 0 || time > 0) {
             chatUsage =

@@ -54,7 +54,7 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
  *   mvn exec:java -pl agentscope-examples/documentation \
- *       -Dexec.mainClass=io.agentscope.examples.documentation2.streaming.SubagentStreamingExample
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.subagent.SubagentStreamingExample
  * </pre>
  */
 public class SubagentStreamingExample {
