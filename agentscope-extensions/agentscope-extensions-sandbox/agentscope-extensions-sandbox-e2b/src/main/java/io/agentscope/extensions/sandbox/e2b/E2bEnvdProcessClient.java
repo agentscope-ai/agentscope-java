@@ -115,21 +115,35 @@ final class E2bEnvdProcessClient {
     private ShellCapture runShellCapture(
             E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
             throws Exception {
+        if (timeoutSeconds <= 0) {
+            throw new IllegalArgumentException(
+                    "timeoutSeconds must be positive: " + timeoutSeconds);
+        }
         OkHttpClient callClient =
-                timeoutSeconds > 0
-                        ? http.newBuilder().callTimeout(timeoutSeconds, TimeUnit.SECONDS).build()
-                        : http;
+                http.newBuilder()
+                        .callTimeout(timeoutSeconds, TimeUnit.SECONDS)
+                        // Disable the idle read timeout: it fires on gaps between bytes and
+                        // would preempt callTimeout (both surface as InterruptedIOException),
+                        // misreporting a short idle stall as a full exec timeout (#2974).
+                        // Total-duration semantics is owned solely by callTimeout.
+                        .readTimeout(0, TimeUnit.SECONDS)
+                        .build();
         String host = envdHost(state);
         String url = host + "/process.Process/Start";
         byte[] envelope = encodeStartRequestEnvelope(shellCommand, cwd);
-        Request req = buildEnvdRequest(url, envelope, connectMediaType(), state).build();
+        // Ask envd to kill the remote process when this lapses; otherwise a
+        // client-side timeout only drops our HTTP stream and leaks the process.
+        Request req =
+                buildEnvdRequest(url, envelope, connectMediaType(), state)
+                        .addHeader("Connect-Timeout-Ms", String.valueOf(timeoutSeconds * 1000L))
+                        .build();
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exit;
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
-                String err = res.body() != null ? res.body().string() : "";
+                String err = res.body().string();
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
                         "envd Start failed HTTP " + res.code() + ": " + err);
@@ -138,6 +152,12 @@ final class E2bEnvdProcessClient {
                 exit = drainStartStream(in, stdout, stderr);
             }
         } catch (InterruptedIOException e) {
+            // External cancellation surfaces here too; don't misreport it as a timeout
+            // and don't swallow the interrupt bit.
+            if (Thread.currentThread().isInterrupted()) {
+                Thread.currentThread().interrupt();
+                throw e;
+            }
             throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
         }
         return new ShellCapture(exit, stdout, stderr);
