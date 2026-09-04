@@ -27,13 +27,17 @@ import io.agentscope.core.formatter.StructuredOutputValidationException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.test.SampleTools;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -238,6 +242,97 @@ class StructuredOutputRetryPolicyEnforcementTest {
                         && !surviving.contains("structured_output_correction"),
                 "correction turn leaked: " + surviving);
         assertTrue(surviving.contains("{\"answer\": 7}"), "final answer must survive");
+    }
+
+    @Test
+    @DisplayName("retry budget survives tool-call iterations: no reset at iteration boundaries")
+    void retryBudgetSurvivesToolCallIterations() {
+        // Sequence on the native structured path:
+        //   call 1: invalid JSON                      -> failure 1
+        //   call 2: tool call (add) interleaved        -> no final message, not validated
+        //   call 3: invalid JSON again after the tool  -> failure 2 -> exhausted (maxAttempts=2)
+        // A per-iteration attempt counter would treat call 3 as attempt 1 of a fresh
+        // budget and allow a fourth call; the call-scoped budget must stop here.
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new SampleTools());
+        SwitchingModel model =
+                new SwitchingModel(new ChatUsage(10, 20, 0)) {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.add(List.copyOf(messages));
+                        boolean structured = options != null && options.getResponseFormat() != null;
+                        if (!structured) {
+                            return Flux.just(textResponse("ok"));
+                        }
+                        boolean hasToolResults =
+                                messages.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
+                        boolean hasCorrection =
+                                messages.stream()
+                                        .anyMatch(
+                                                m ->
+                                                        "structured_output_correction"
+                                                                .equals(m.getName()));
+                        if (!hasCorrection) {
+                            return Flux.just(textResponse("{\"answer\": \"wrong\"}"));
+                        }
+                        if (!hasToolResults) {
+                            return Flux.just(
+                                    ChatResponse.builder()
+                                            .id("tool_round")
+                                            .content(
+                                                    List.of(
+                                                            ToolUseBlock.builder()
+                                                                    .id("call_add")
+                                                                    .name("add")
+                                                                    .input(
+                                                                            Map.of(
+                                                                                    "a", 2,
+                                                                                    "b", 3))
+                                                                    .content("{\"a\":2,\"b\":3}")
+                                                                    .build()))
+                                            .usage(usage)
+                                            .build());
+                        }
+                        return Flux.just(textResponse("{\"answer\": \"still-wrong\"}"));
+                    }
+
+                    private ChatResponse textResponse(String text) {
+                        return ChatResponse.builder()
+                                .id("m" + calls.size())
+                                .content(List.of(TextBlock.builder().text(text).build()))
+                                .usage(usage)
+                                .build();
+                    }
+                };
+        List<FailedAttempt> observed = new CopyOnWriteArrayList<>();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .structuredOutputPolicy(
+                                StructuredOutputRetryPolicy.builder()
+                                        .maxAttempts(2)
+                                        .onFailedAttempt(observed::add)
+                                        .build())
+                        .build();
+
+        StructuredOutputValidationException ex =
+                assertThrows(
+                        StructuredOutputValidationException.class,
+                        () ->
+                                agent.call(user("answer"), Answer.class)
+                                        .block(Duration.ofSeconds(10)));
+
+        assertEquals(3, model.calls.size(), "two validation failures + one tool round only");
+        assertEquals(2, observed.size(), "budget counted across the tool-call iteration");
+        assertEquals(2, ex.getFailedAttempts().size());
+        // The tool really executed between the two failed attempts.
+        assertTrue(
+                model.calls.get(2).stream().anyMatch(m -> m.getRole() == MsgRole.TOOL),
+                "tool result must be part of the third round's input");
     }
 
     @Test
