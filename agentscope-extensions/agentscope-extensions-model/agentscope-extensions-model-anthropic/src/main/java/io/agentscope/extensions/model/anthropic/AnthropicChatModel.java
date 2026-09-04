@@ -34,8 +34,10 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicBaseFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicResponseParser;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
 import java.net.Proxy;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +73,7 @@ public class AnthropicChatModel extends ChatModelBase {
     private final AnthropicClient client;
     private final GenerateOptions defaultOptions;
     private final AnthropicBaseFormatter formatter;
+    private final List<AnthropicServerTool> serverTools;
 
     /**
      * Creates a new Anthropic chat model instance.
@@ -96,6 +99,42 @@ public class AnthropicChatModel extends ChatModelBase {
             AnthropicBaseFormatter formatter,
             ProxyConfig proxyConfig,
             String cacheTtl) {
+        this(
+                baseUrl,
+                apiKey,
+                modelName,
+                streamEnabled,
+                defaultOptions,
+                formatter,
+                proxyConfig,
+                null,
+                cacheTtl);
+    }
+
+    /**
+     * Creates a new Anthropic chat model instance with built-in server tools enabled.
+     *
+     * @param baseUrl        the base URL for Anthropic API (null for default)
+     * @param apiKey         the API key for authentication (null to load from
+     *                       ANTHROPIC_API_KEY env var)
+     * @param modelName      the model name to use
+     * @param streamEnabled  whether streaming should be enabled
+     * @param defaultOptions default generation options
+     * @param formatter      the message formatter to use (null for default)
+     * @param proxyConfig    the proxy configuration (null for no proxy)
+     * @param serverTools    Anthropic built-in server tools to enable
+     * @param cacheTtl       the TTL for prompt-caching markers (null for default 5m)
+     */
+    public AnthropicChatModel(
+            String baseUrl,
+            String apiKey,
+            String modelName,
+            boolean streamEnabled,
+            GenerateOptions defaultOptions,
+            AnthropicBaseFormatter formatter,
+            ProxyConfig proxyConfig,
+            List<AnthropicServerTool> serverTools,
+            String cacheTtl) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -103,6 +142,7 @@ public class AnthropicChatModel extends ChatModelBase {
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new AnthropicChatFormatter();
+        this.serverTools = serverTools != null ? List.copyOf(serverTools) : List.of();
         this.formatter.cacheTtl(cacheTtl);
 
         // Initialize Anthropic client
@@ -209,6 +249,12 @@ public class AnthropicChatModel extends ChatModelBase {
                                     formatter.applyTools(paramsBuilder, tools);
                                 }
 
+                                // Add Anthropic built-in server tools (executed on
+                                // Anthropic's infrastructure, independent of client tools)
+                                for (AnthropicServerTool serverTool : serverTools) {
+                                    paramsBuilder.addTool(serverTool.toToolUnion());
+                                }
+
                                 // Create the request
                                 MessageCreateParams params = paramsBuilder.build();
 
@@ -288,6 +334,7 @@ public class AnthropicChatModel extends ChatModelBase {
         private AnthropicBaseFormatter formatter;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private final List<AnthropicServerTool> serverTools = new ArrayList<>();
         private String cacheTtl;
 
         /**
@@ -388,6 +435,21 @@ public class AnthropicChatModel extends ChatModelBase {
         }
 
         /**
+         * Adds an Anthropic built-in server tool (e.g. web search) to enable on every request.
+         * Server tools are executed on Anthropic's infrastructure within a single model call,
+         * independently of client tools registered in the toolkit.
+         *
+         * @param serverTool the server tool definition
+         * @return this builder
+         */
+        public Builder addServerTool(AnthropicServerTool serverTool) {
+            if (serverTool != null) {
+                this.serverTools.add(serverTool);
+            }
+            return this;
+        }
+
+        /**
          * Builds the AnthropicChatModel instance.
          *
          * @return a new AnthropicChatModel
@@ -402,6 +464,7 @@ public class AnthropicChatModel extends ChatModelBase {
                             defaultOptions,
                             formatter,
                             proxyConfig,
+                            serverTools,
                             cacheTtl);
             model.setContextWindowSize(
                     contextWindowSize >= 0

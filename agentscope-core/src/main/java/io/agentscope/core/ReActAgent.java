@@ -2165,7 +2165,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .map(ToolResultBlock::getId)
                             .collect(Collectors.toSet());
 
+            // Server tool calls are executed by the provider, never by the local toolkit
             return lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
+                    .filter(toolUse -> !toolUse.isServerTool())
                     .map(ToolUseBlock::getId)
                     .filter(id -> !existingResultIds.contains(id))
                     .collect(Collectors.toSet());
@@ -3760,15 +3762,32 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (msg == null) {
                 return true;
             }
-
-            if (hasToolCalls(msg)) {
-                return false;
+            List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
+            // No tool calls - finished
+            // If there are tool calls (even non-existent ones), continue to acting phase
+            // where ToolExecutor will return "Tool not found" error for the model to see
+            if (toolCalls.isEmpty()) {
+                return msg.getContentBlocks(TextBlock.class).stream()
+                        .anyMatch(
+                                textBlock ->
+                                        textBlock.getText() != null
+                                                && !textBlock.getText().isBlank());
             }
 
-            return msg.getContentBlocks(TextBlock.class).stream()
-                    .anyMatch(
-                            textBlock ->
-                                    textBlock.getText() != null && !textBlock.getText().isBlank());
+            // Server tool calls are executed by the provider and their results arrive in the
+            // same assistant message: if every tool call is a server tool with its result
+            // present, there is nothing left to act on. A server tool call without a result
+            // (e.g. pause_turn) keeps the loop running so the conversation goes back to the
+            // provider to continue.
+            Set<String> inlineResultIds =
+                    msg.getContentBlocks(ToolResultBlock.class).stream()
+                            .map(ToolResultBlock::getId)
+                            .collect(Collectors.toSet());
+            return toolCalls.stream()
+                    .allMatch(
+                            toolCall ->
+                                    toolCall.isServerTool()
+                                            && inlineResultIds.contains(toolCall.getId()));
         }
 
         private static boolean hasToolCalls(Msg msg) {
