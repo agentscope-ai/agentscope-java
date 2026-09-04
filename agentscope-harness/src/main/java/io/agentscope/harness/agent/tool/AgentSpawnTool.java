@@ -69,6 +69,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -795,12 +796,16 @@ public class AgentSpawnTool {
                                         taskId));
 
                         AtomicBoolean endEmitted = new AtomicBoolean();
-                        Runnable emitEnd =
-                                () -> {
+                        Consumer<String> emitEnd =
+                                outcome -> {
                                     if (endEmitted.compareAndSet(false, true)) {
                                         parentEmitter.emit(
                                                 tagForwardedEvent(
-                                                        new AgentEndEvent(replyId),
+                                                        new AgentEndEvent(replyId)
+                                                                .withMetadataEntry(
+                                                                        AgentEndEvent
+                                                                                .METADATA_INVOCATION_OUTCOME,
+                                                                        outcome),
                                                         sourcePath,
                                                         taskId));
                                     }
@@ -814,14 +819,15 @@ public class AgentSpawnTool {
                                                         taggedEmitter))
                                 // Emit before success or error reaches the parent, which may
                                 // otherwise complete its event sink before doFinally runs.
-                                .doOnSuccess(ignored -> emitEnd.run())
-                                .doOnError(ignored -> emitEnd.run())
+                                .doOnSuccess(
+                                        ignored -> emitEnd.accept(AgentEndEvent.OUTCOME_SUCCESS))
+                                .doOnError(ignored -> emitEnd.accept(AgentEndEvent.OUTCOME_ERROR))
                                 // Preserve best-effort cancellation signaling without emitting a
                                 // duplicate if cancellation races with normal termination.
                                 .doFinally(
                                         signal -> {
                                             if (signal == SignalType.CANCEL) {
-                                                emitEnd.run();
+                                                emitEnd.accept(AgentEndEvent.OUTCOME_CANCELLED);
                                             }
                                         });
                     }

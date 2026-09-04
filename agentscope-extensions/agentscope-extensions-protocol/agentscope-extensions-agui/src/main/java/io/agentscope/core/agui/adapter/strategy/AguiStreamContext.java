@@ -24,6 +24,8 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextOutputDisposition;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -32,6 +34,7 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -75,6 +78,8 @@ public class AguiStreamContext {
     private String currentReasoningMessageId;
     private final Map<String, List<String>> textMessageIdsByReply = new LinkedHashMap<>();
     private final Map<String, String> activeTextMessageIdsByReply = new LinkedHashMap<>();
+    private final Map<String, TextOutputDispositionState> textOutputDispositionsByReply =
+            new LinkedHashMap<>();
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
@@ -177,6 +182,7 @@ public class AguiStreamContext {
         String messageId = resolveTextMessageId(replyId);
         if (startedTextMessages.add(messageId)) {
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
+            emitRememberedTextOutputDisposition(replyId);
         }
         currentTextReplyId = replyId;
         currentTextMessageId = messageId;
@@ -226,6 +232,14 @@ public class AguiStreamContext {
             return startedTextMessages.contains(replyId) ? List.of(replyId) : List.of();
         }
         return List.copyOf(textMessageIdsByReply.getOrDefault(replyId, List.of()));
+    }
+
+    public void emitTextOutputDisposition(TextOutputDispositionEvent dispositionEvent) {
+        TextOutputDispositionState disposition =
+                new TextOutputDispositionState(
+                        dispositionEvent.getDisposition(), dispositionEvent.getGenerateReason());
+        textOutputDispositionsByReply.put(dispositionEvent.getReplyId(), disposition);
+        emitTextOutputDisposition(dispositionEvent.getReplyId(), disposition);
     }
 
     public void emitFinalMessagesSnapshot(AgentEndEvent endEvent) {
@@ -457,6 +471,29 @@ public class AguiStreamContext {
                 });
     }
 
+    private void emitRememberedTextOutputDisposition(String replyId) {
+        TextOutputDispositionState disposition = textOutputDispositionsByReply.get(replyId);
+        if (disposition != null) {
+            emitTextOutputDisposition(replyId, disposition);
+        }
+    }
+
+    private void emitTextOutputDisposition(String replyId, TextOutputDispositionState disposition) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("replyId", replyId);
+        value.put("messageIds", getTextMessageIds(replyId));
+        value.put("disposition", disposition.disposition().name());
+        value.put(
+                "generateReason",
+                disposition.generateReason() != null ? disposition.generateReason().name() : null);
+        emit(
+                new AguiEvent.Custom(
+                        threadId,
+                        runId,
+                        TextOutputDispositionConverter.EVENT_NAME,
+                        Collections.unmodifiableMap(value)));
+    }
+
     private static boolean isTextSegmentId(String messageId) {
         return messageId != null && TEXT_SEGMENT_ID.matcher(messageId).matches();
     }
@@ -475,6 +512,9 @@ public class AguiStreamContext {
             return data.toString();
         }
     }
+
+    private record TextOutputDispositionState(
+            TextOutputDisposition disposition, GenerateReason generateReason) {}
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();

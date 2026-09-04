@@ -131,7 +131,7 @@ public final class AgentEventStreams {
 
             ReplySnapshot current = observation.after();
             List<AgentEvent> output = new ArrayList<>(2);
-            if (observation.currentReplyEvent() && hasUnclassifiedText(current)) {
+            if (isNormallyCompleted(event) && hasUnclassifiedText(current)) {
                 output.add(
                         disposition(
                                 current.replyId(), TextOutputDisposition.TERMINAL, null, event));
@@ -148,7 +148,7 @@ public final class AgentEventStreams {
                 AgentEndEvent end = entry.getValue();
                 ReplySnapshot current = tracker.snapshot(sourceKey);
                 AgentResultEvent result = current.lastResult();
-                if (Objects.equals(end.getReplyId(), current.replyId())
+                if (isNormallyCompleted(end)
                         && hasUnclassifiedText(current)
                         && result != null
                         && result.getResult() != null) {
@@ -166,6 +166,14 @@ public final class AgentEventStreams {
             }
             pendingTopLevelEnds.clear();
             return output;
+        }
+
+        private static boolean isNormallyCompleted(AgentEndEvent end) {
+            Object outcome =
+                    end.getMetadata() == null
+                            ? null
+                            : end.getMetadata().get(AgentEndEvent.METADATA_INVOCATION_OUTCOME);
+            return outcome == null || AgentEndEvent.OUTCOME_SUCCESS.equals(outcome.toString());
         }
 
         private static boolean hasUnclassifiedText(ReplySnapshot snapshot) {

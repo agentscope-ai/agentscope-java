@@ -15,12 +15,8 @@
  */
 package io.agentscope.core.agui.adapter.strategy;
 
-import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextOutputDispositionEvent;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Set;
 
 /** Converts opt-in text output lifecycle signals to AG-UI custom events and final snapshots. */
@@ -35,21 +31,6 @@ public final class TextOutputDispositionConverter implements AgentEventConverter
 
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
-        TextOutputDispositionEvent dispositionEvent = (TextOutputDispositionEvent) event;
-        Map<String, Object> value = new LinkedHashMap<>();
-        value.put("replyId", dispositionEvent.getReplyId());
-        value.put("messageIds", context.getTextMessageIds(dispositionEvent.getReplyId()));
-        value.put("disposition", dispositionEvent.getDisposition().name());
-        value.put(
-                "generateReason",
-                dispositionEvent.getGenerateReason() != null
-                        ? dispositionEvent.getGenerateReason().name()
-                        : null);
-        context.emit(
-                new AguiEvent.Custom(
-                        context.getThreadId(),
-                        context.getRunId(),
-                        EVENT_NAME,
-                        Collections.unmodifiableMap(value)));
+        context.emitTextOutputDisposition((TextOutputDispositionEvent) event);
     }
 }

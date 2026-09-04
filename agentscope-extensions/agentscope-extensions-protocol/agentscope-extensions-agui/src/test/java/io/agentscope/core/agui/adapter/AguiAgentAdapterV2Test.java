@@ -439,6 +439,67 @@ class AguiAgentAdapterV2Test {
                             .anyMatch(event -> event.getType().name().startsWith("REASONING")));
         }
 
+        @Test
+        void testToolFollowupSegmentInheritsSingleIntermediateDisposition() {
+            AguiAdapterConfig config =
+                    AguiAdapterConfig.builder().textOutputDispositionEnabled(true).build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            config,
+                            new ModelCallStartEvent("reply-1"),
+                            new TextBlockDeltaEvent("reply-1", "text-1", "first"),
+                            new TextBlockEndEvent("reply-1", "text-1"),
+                            new ToolCallStartEvent("reply-1", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-1", "tool-1", "lookup"),
+                            new TextBlockDeltaEvent("reply-1", "text-2", "second"),
+                            new TextBlockEndEvent("reply-1", "text-2"));
+
+            assertEquals(
+                    List.of(
+                            "reply-1:text:0",
+                            "reply-1:text:0",
+                            "reply-1:text:0",
+                            "reply-1:text:1",
+                            "reply-1:text:1",
+                            "reply-1:text:1"),
+                    events.stream()
+                            .filter(
+                                    event ->
+                                            event instanceof AguiEvent.TextMessageStart
+                                                    || event instanceof AguiEvent.TextMessageContent
+                                                    || event instanceof AguiEvent.TextMessageEnd)
+                            .map(
+                                    event -> {
+                                        if (event instanceof AguiEvent.TextMessageStart start) {
+                                            return start.messageId();
+                                        }
+                                        if (event instanceof AguiEvent.TextMessageContent content) {
+                                            return content.messageId();
+                                        }
+                                        return ((AguiEvent.TextMessageEnd) event).messageId();
+                                    })
+                            .toList());
+            List<AguiEvent.Custom> dispositions =
+                    events.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .filter(
+                                    event ->
+                                            "agentscope.text_output.disposition"
+                                                    .equals(event.name()))
+                            .toList();
+            assertEquals(2, dispositions.size());
+            assertEquals(
+                    List.of("reply-1:text:0"), customValue(dispositions.get(0)).get("messageIds"));
+            assertEquals(
+                    List.of("reply-1:text:0", "reply-1:text:1"),
+                    customValue(dispositions.get(1)).get("messageIds"));
+            assertEquals("INTERMEDIATE", customValue(dispositions.get(1)).get("disposition"));
+            assertFalse(
+                    events.stream()
+                            .anyMatch(event -> event.getType().name().startsWith("REASONING")));
+        }
+
         @ParameterizedTest
         @EnumSource(
                 value = GenerateReason.class,

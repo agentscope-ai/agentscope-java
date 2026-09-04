@@ -17,11 +17,16 @@ package io.agentscope.core.event;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
@@ -30,6 +35,45 @@ import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
 
 class AgentEventStreamsTest {
+
+    @Test
+    void realReActAgentClosesLastModelReplyAtInvocationEnd() {
+        ReActAgent agent =
+                ReActAgent.builder().name("test-agent").model(new MockModel("answer")).build();
+        Msg input = Msg.builder().role(MsgRole.USER).textContent("hello").build();
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(agent.streamEvents(List.of(input)))
+                        .collectList()
+                        .block();
+
+        ModelCallStartEvent modelStart =
+                events.stream()
+                        .filter(ModelCallStartEvent.class::isInstance)
+                        .map(ModelCallStartEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        AgentEndEvent agentEnd =
+                events.stream()
+                        .filter(AgentEndEvent.class::isInstance)
+                        .map(AgentEndEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        TextOutputDispositionEvent terminal =
+                events.stream()
+                        .filter(TextOutputDispositionEvent.class::isInstance)
+                        .map(TextOutputDispositionEvent.class::cast)
+                        .filter(
+                                disposition ->
+                                        disposition.getDisposition()
+                                                == TextOutputDisposition.TERMINAL)
+                        .findFirst()
+                        .orElseThrow();
+
+        assertNotEquals(modelStart.getReplyId(), agentEnd.getReplyId());
+        assertEquals(modelStart.getReplyId(), terminal.getReplyId());
+        assertEquals(GenerateReason.MODEL_STOP, terminal.getGenerateReason());
+    }
 
     @Test
     void emitsResultTerminalThenEndOnNormalCompletion() {

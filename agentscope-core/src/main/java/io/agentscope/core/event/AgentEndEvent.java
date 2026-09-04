@@ -23,6 +23,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public class AgentEndEvent extends AgentEvent {
 
+    /** Metadata key describing whether a synthesized invocation end succeeded, failed, or cancelled. */
+    public static final String METADATA_INVOCATION_OUTCOME = "invocationOutcome";
+
+    public static final String OUTCOME_SUCCESS = "success";
+    public static final String OUTCOME_ERROR = "error";
+    public static final String OUTCOME_CANCELLED = "cancelled";
+
     private final String replyId;
 
     @JsonCreator
