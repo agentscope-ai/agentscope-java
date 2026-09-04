@@ -363,14 +363,13 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
                 if (!finished) {
                     proc.destroyForcibly();
-                    proc.waitFor(OUTPUT_DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    stdoutFuture.cancel(true);
+                    stderrFuture.cancel(true);
+                    return timeoutResponse(effectiveTimeout, timeoutSeconds != null);
                 }
 
                 CapturedOutput stdout = getOutput(stdoutFuture);
                 CapturedOutput stderr = getOutput(stderrFuture);
-                if (!finished) {
-                    return timeoutResponse(effectiveTimeout, timeoutSeconds != null);
-                }
 
                 Charset outputCharset = outputCharset(osName);
                 String outputStr =
