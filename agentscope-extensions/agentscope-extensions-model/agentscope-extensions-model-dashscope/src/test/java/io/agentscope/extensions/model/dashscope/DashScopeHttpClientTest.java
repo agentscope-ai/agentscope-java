@@ -251,6 +251,20 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testIsMultimodalModelKimiFamily() {
+        // kimi-k variants with vision/multimodal support
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi-k2.5"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi-k2.6"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi-k2.7-code"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi-k3"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("kimi/kimi-k2.5"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("Moonshot-Kimi-K2.5"));
+        // Text-only kimi models
+        assertFalse(DashScopeHttpClient.isMultimodalModel("kimi-k2-thinking"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel("Moonshot-Kimi-K2-Instruct"));
+    }
+
+    @Test
     void testRequestEndpointTypePassedToEndpointSelection() throws Exception {
         // Verify that endpointType in DashScopeRequest is used for endpoint routing
         String responseJson =
