@@ -19,6 +19,8 @@ import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.BaseEventPropertiesEnricher;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
+import io.agentscope.core.agui.store.SnapshotRecordingEnricher;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +47,9 @@ public class AguiAdapterConfig {
     private final List<AguiEventEnricher> eventEnrichers;
     private final boolean baseEventPropertiesEnricherEnabled;
     private final boolean emitSubagentEventsAsNative;
+    private final boolean snapshotStoreEnabled;
+    private final AguiSnapshotStore snapshotStore;
+    private final SnapshotRecordingEnricher snapshotRecorder;
 
     private AguiAdapterConfig(Builder builder) {
         this.toolMergeMode = builder.toolMergeMode;
@@ -56,9 +61,34 @@ public class AguiAdapterConfig {
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
         this.eventConverters = List.copyOf(builder.eventConverters);
-        this.eventEnrichers = buildEventEnrichers(builder);
+        SnapshotRecordingEnricher recorder = recorderFrom(builder);
+        this.eventEnrichers = buildEventEnrichers(builder, recorder);
         this.baseEventPropertiesEnricherEnabled = builder.baseEventPropertiesEnricherEnabled;
         this.emitSubagentEventsAsNative = builder.emitSubagentEventsAsNative;
+        this.snapshotStoreEnabled = builder.snapshotStoreEnabled;
+        this.snapshotStore = builder.snapshotStore;
+        this.snapshotRecorder = recorder;
+    }
+
+    private static List<AguiEventEnricher> buildEventEnrichers(
+            Builder builder, SnapshotRecordingEnricher recorder) {
+        List<AguiEventEnricher> enrichers = new ArrayList<>();
+        if (builder.baseEventPropertiesEnricherEnabled) {
+            enrichers.add(new BaseEventPropertiesEnricher());
+        }
+        enrichers.addAll(builder.eventEnrichers);
+        if (recorder != null) {
+            // Appended last so it observes fully enriched frames from all converters.
+            enrichers.add(recorder);
+        }
+        return List.copyOf(enrichers);
+    }
+
+    private static SnapshotRecordingEnricher recorderFrom(Builder builder) {
+        if (!builder.snapshotStoreEnabled || builder.snapshotStore == null) {
+            return null;
+        }
+        return new SnapshotRecordingEnricher(builder.snapshotStore);
     }
 
     /**
@@ -184,6 +214,40 @@ public class AguiAdapterConfig {
     }
 
     /**
+     * Check whether the AG-UI presentation snapshot store is enabled.
+     *
+     * <p>When {@code true} and {@link #getSnapshotStore()} is set, a {@link
+     * SnapshotRecordingEnricher} is appended last in the enricher chain so reconnecting clients
+     * can rebuild the visible conversation via {@code POST {path-prefix}/connect}. Default is
+     * {@code false} so existing clients stay byte-identical.
+     *
+     * @return true if the snapshot store is enabled
+     */
+    public boolean isSnapshotStoreEnabled() {
+        return snapshotStoreEnabled;
+    }
+
+    /**
+     * Get the configured presentation snapshot store, or null when disabled.
+     *
+     * @return the snapshot store, or null
+     */
+    public AguiSnapshotStore getSnapshotStore() {
+        return snapshotStore;
+    }
+
+    /**
+     * Get the recording enricher appended to the enricher chain, or null when the snapshot store is
+     * disabled. This is the single instance shared with the chain, so callers (e.g. the request
+     * processor's flush safety net) target the same accumulator that is recording the live stream.
+     *
+     * @return the snapshot recording enricher, or null
+     */
+    public SnapshotRecordingEnricher getSnapshotRecorder() {
+        return snapshotRecorder;
+    }
+
+    /**
      * Creates a new builder for AguiAdapterConfig.
      *
      * @return A new builder instance
@@ -207,6 +271,10 @@ public class AguiAdapterConfig {
             enrichers.add(new BaseEventPropertiesEnricher());
         }
         enrichers.addAll(builder.eventEnrichers);
+        if (builder.snapshotStoreEnabled && builder.snapshotStore != null) {
+            // Appended last so it observes fully enriched frames from all converters.
+            enrichers.add(new SnapshotRecordingEnricher(builder.snapshotStore));
+        }
         return List.copyOf(enrichers);
     }
 
@@ -227,6 +295,8 @@ public class AguiAdapterConfig {
         private final List<AguiEventEnricher> eventEnrichers = new ArrayList<>();
         private boolean baseEventPropertiesEnricherEnabled = false;
         private boolean emitSubagentEventsAsNative = false;
+        private boolean snapshotStoreEnabled = false;
+        private AguiSnapshotStore snapshotStore;
 
         /**
          * Set the tool merge mode.
@@ -405,6 +475,29 @@ public class AguiAdapterConfig {
          */
         public Builder emitSubagentEventsAsNative(boolean emitSubagentEventsAsNative) {
             this.emitSubagentEventsAsNative = emitSubagentEventsAsNative;
+            return this;
+        }
+
+        /**
+         * Enable the AG-UI presentation snapshot store so a {@link SnapshotRecordingEnricher} is
+         * appended last in the enricher chain.
+         *
+         * @param snapshotStoreEnabled true to enable
+         * @return This builder
+         */
+        public Builder snapshotStoreEnabled(boolean snapshotStoreEnabled) {
+            this.snapshotStoreEnabled = snapshotStoreEnabled;
+            return this;
+        }
+
+        /**
+         * Set the presentation snapshot store used to record and hydrate thread state.
+         *
+         * @param snapshotStore the store, or null
+         * @return This builder
+         */
+        public Builder snapshotStore(AguiSnapshotStore snapshotStore) {
+            this.snapshotStore = snapshotStore;
             return this;
         }
 

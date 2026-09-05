@@ -29,7 +29,10 @@ import org.springframework.beans.factory.ObjectProvider;
 /**
  * Persists the source {@link AgentEvent} while the AG-UI adapter projects it.
  *
- * <p>AG-UI frames themselves are not stored — connect replay re-projects through converters.
+ * <p>AG-UI frames themselves are not stored. Presentation replay for reconnect has moved to the
+ * framework presentation snapshot store ({@link io.agentscope.core.agui.store.AguiSnapshotStore});
+ * this enricher now serves only the {@code /threads/{id}/events} inspect API, which is
+ * legitimately an event log rather than presentation state.
  *
  * <p>On {@link AgentStartEvent}, also stores the run's input messages so reconnect can rebuild
  * {@code RUN_STARTED.input.messages} (how CopilotKit restores user / tool turns).

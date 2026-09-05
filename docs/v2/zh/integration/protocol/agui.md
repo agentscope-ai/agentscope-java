@@ -221,6 +221,9 @@ agentscope:
     emit-run-finished-after-error: false
     server-side-memory: false
     interrupt-on-disconnect: true
+    # 展示快照存储（默认均关闭）
+    snapshot-store-enabled: false
+    snapshot-max-threads: 1000
 ```
 
 `interrupt-on-disconnect` 用于控制 MVC/WebFlux 的 SSE 连接关闭、超时或发送事件失败时是否中断
@@ -331,6 +334,59 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 对于权限确认，只有 `payload.approved` 是布尔值 `true` 时才会批准工具；缺失、非布尔值或 `false` 都会视为拒绝。`payload.editedArgs` 如果存在，必须是 JSON object，并且是对原始工具参数的**完整替换**，不是局部 merge。AgentScope Java 会根据 `editedArgs` 同时重建 `ToolUseBlock.input` 和原始 JSON `ToolUseBlock.content`，因此被批准的工具会使用修改后的参数执行。
 
 前端不需要在 `resume[]` 中回传 `metadata`；只需要发送 `interruptId`、`status` 和 `payload`。通过 Spring `AguiRequestProcessor` 入口时，AgentScope Java 会在服务端记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，校验下一次 `resume[]` 是否覆盖所有 open interrupts，并把原始 interrupt 传给 adapter 做恢复转换。
+
+## 展示快照存储
+
+重连的客户端需要在不重新运行 agent 的前提下重建可见会话。AgentScope Java 提供了框架级的**展示快照存储**，物化浏览器当前应渲染的 AG-UI 帧，并通过只读的 `POST {path-prefix}/connect` 水合路由重放它们。
+
+### 职责边界
+
+| 组件 | 角色 | 水合是否修改？ |
+| --- | --- | --- |
+| `AguiSnapshotStore` | 展示状态——派生、可重放、可丢失。回答“浏览器现在应渲染什么”。 | 否（只读） |
+| `AgentStateStore`（核心）+ `AguiResumeCoordinator` | 权威状态——agent 上下文与活跃的人机交互契约。 | 否（只读） |
+
+由于快照只保留**最后一个未解决的 interrupt**，已解决的历史 interrupt 不可能在重连时复活——这一故障模式在数据模型层被消除，而非事后过滤。
+
+### `/connect` 帧契约
+
+`POST {path-prefix}/connect` 接收 `RunAgentInput`（仅使用 `threadId` / `runId`），返回只读 SSE 流。水合是严格只读的：不解析 agent、不修改 resume coordinator、不创建 adapter。帧按如下顺序发送：
+
+```
+RUN_STARTED(threadId, runId)
+MESSAGES_SNAPSHOT(messages)
+STATE_SNAPSHOT(state)                     // state 为空时省略
+ACTIVITY_SNAPSHOT(...) 每个 ActivityFrame  // 没有时省略
+RUN_FINISHED(result=null, outcome=pendingOutcome)
+```
+
+`pendingOutcome` 为 null 时序列化为普通成功运行。空或缺失的快照返回最小三帧握手（`RUN_STARTED` → `MESSAGES_SNAPSHOT([])` → `RUN_FINISHED`）。
+
+只重放最后一个未解决的 interrupt；新 run 开始时存储会丢弃残留 interrupt，因此已解决的 interrupt 永不会再次出现。
+
+### 配置
+
+```yaml
+agentscope:
+  agui:
+    snapshot-store-enabled: false   # 设为 true 以启用 POST {path-prefix}/connect
+    snapshot-max-threads: 1000      # 内存存储容量
+```
+
+两个键默认关闭，因此在显式开启前现有客户端保持字节级一致。启用后，starter 会创建内存版 `AguiSnapshotStore` bean 并注册 `/connect` 路由（WebFlux `RouterFunction` / MVC `@PostMapping`）。
+
+### 自定义存储
+
+如需将快照持久化到外部（例如 Redis），实现 `AguiSnapshotStore` 并暴露为 bean——starter 的 `@ConditionalOnMissingBean` 会优先使用你提供的：
+
+```java
+@Bean
+AguiSnapshotStore aguiSnapshotStore(RedisTemplate<String, byte[]> redis) {
+    return new RedisAguiSnapshotStore(redis);
+}
+```
+
+存储 API 刻意保持极简：`save`、`find`、`delete`，以及一个丢弃残留 interrupt 的 `clearPendingInterrupts` 默认实现。快照是不可变 record，自定义存储可用任意 Jackson 兼容 codec 序列化。
 
 ## 示例项目
 

@@ -52,6 +52,10 @@ agentscope:
     max-thread-sessions: 1000
     session-timeout-minutes: 30
     enable-reasoning: true
+    # Presentation snapshot store: enables POST /agui/connect hydrate so reconnecting clients
+    # rebuild the visible conversation without re-running the agent.
+    snapshot-store-enabled: true
+    snapshot-max-threads: 1000
 
 # Logging
 logging:

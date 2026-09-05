@@ -27,6 +27,10 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.store.AguiSnapshotHydrator;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
+import io.agentscope.core.agui.store.AguiThreadSnapshot;
+import io.agentscope.core.agui.store.SnapshotRecordingEnricher;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -72,6 +76,8 @@ public class AguiRequestProcessor {
     private final AguiAgentAdapterFactory adapterFactory;
     private final AguiResumeCoordinator resumeCoordinator;
     private final AguiRuntimeContextResolver runtimeContextResolver;
+    private final AguiSnapshotStore snapshotStore;
+    private final AguiSnapshotHydrator snapshotHydrator;
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
@@ -83,6 +89,8 @@ public class AguiRequestProcessor {
                         : AguiAgentAdapterFactory.defaultFactory();
         this.resumeCoordinator = new AguiResumeCoordinator();
         this.runtimeContextResolver = builder.runtimeContextResolver;
+        this.snapshotStore = builder.snapshotStore;
+        this.snapshotHydrator = new AguiSnapshotHydrator();
     }
 
     /**
@@ -162,6 +170,12 @@ public class AguiRequestProcessor {
                                                 config.isEmitRunFinishedAfterError()));
                             }
 
+                            // A new run starts: drop any trailing interrupt from a prior run so a
+                            // resolved historical interrupt can never reappear on reconnect.
+                            if (snapshotStore != null) {
+                                snapshotStore.clearPendingInterrupts(threadId);
+                            }
+
                             try {
                                 // Determine effective input based on server-side memory
                                 RunAgentInput effectiveInput = input;
@@ -197,15 +211,57 @@ public class AguiRequestProcessor {
                                                             runErrorSeen.get());
                                                 })
                                         .doFinally(
-                                                signalType ->
-                                                        resumeCoordinator.finishRun(
-                                                                threadId, runId));
+                                                signalType -> {
+                                                    resumeCoordinator.finishRun(threadId, runId);
+                                                    // Safety net for RUN_ERROR paths that bypass
+                                                    // the enricher (e.g. adapter-produced errors).
+                                                    flushSnapshotRecorder(threadId, runId);
+                                                });
                             } catch (Throwable error) {
                                 resumeCoordinator.finishRun(threadId, runId);
+                                flushSnapshotRecorder(threadId, runId);
                                 return processorErrorEvents(input, error);
                             }
                         });
         return new ProcessResult(agent, events, runtimeContext);
+    }
+
+    /**
+     * Rehydrate the visible conversation for a thread from the presentation snapshot store.
+     *
+     * <p>Strictly read-only: resolves {@code threadId} / {@code runId} from the request input,
+     * looks up the stored snapshot, and delegates to {@link AguiSnapshotHydrator}. No agent is
+     * resolved, the resume coordinator is not mutated, and no adapter is created. When no store
+     * is configured (or the thread has no history) the minimal three-frame handshake is returned.
+     *
+     * @param request the AG-UI request context carrying input
+     * @return a flux of read-only hydrate frames
+     */
+    public Flux<AguiEvent> hydrate(AguiRuntimeContextRequest<?> request) {
+        Objects.requireNonNull(request, "request cannot be null");
+        RunAgentInput input = request.getInput();
+        String threadId = input != null ? input.getThreadId() : null;
+        String runId = input != null ? input.getRunId() : null;
+        if (threadId == null) {
+            threadId = "unknown";
+        }
+        if (runId == null) {
+            runId = "unknown";
+        }
+        AguiThreadSnapshot snapshot =
+                snapshotStore != null ? snapshotStore.find(threadId).orElse(null) : null;
+        return Flux.fromIterable(snapshotHydrator.hydrate(snapshot, threadId, runId));
+    }
+
+    private void flushSnapshotRecorder(String threadId, String runId) {
+        SnapshotRecordingEnricher recorder = snapshotRecorder();
+        if (recorder != null) {
+            recorder.flush(threadId, runId);
+        }
+    }
+
+    private SnapshotRecordingEnricher snapshotRecorder() {
+        return config != null ? config.getSnapshotRecorder() : null;
     }
 
     private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
@@ -363,6 +419,7 @@ public class AguiRequestProcessor {
         private AguiAdapterConfig config;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRuntimeContextResolver runtimeContextResolver;
+        private AguiSnapshotStore snapshotStore;
 
         /**
          * Set the agent resolver.
@@ -406,6 +463,19 @@ public class AguiRequestProcessor {
          */
         public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
             this.runtimeContextResolver = runtimeContextResolver;
+            return this;
+        }
+
+        /**
+         * Set the presentation snapshot store used to hydrate reconnects and clear trailing
+         * interrupts. Optional; when null, {@link #hydrate} returns the empty handshake and no
+         * snapshots are recorded.
+         *
+         * @param snapshotStore the snapshot store, or null
+         * @return This builder
+         */
+        public Builder snapshotStore(AguiSnapshotStore snapshotStore) {
+            this.snapshotStore = snapshotStore;
             return this;
         }
 
