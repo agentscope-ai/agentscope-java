@@ -989,6 +989,21 @@ func (r *outboxRepo) MarkFailed(_ context.Context, id uuid.UUID, worker, lastErr
 	return nil
 }
 
+func (r *outboxRepo) MarkDeferred(_ context.Context, id uuid.UUID, worker, lastError string, retryAt time.Time) error {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	event, ok := r.s.outboxEvents[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if event.ClaimedBy != worker || event.DeliveredAt != nil || event.DeadLetteredAt != nil {
+		return store.ErrConflict
+	}
+	event.LastError, event.AvailableAt = lastError, retryAt
+	event.ClaimedBy, event.ClaimedUntil = "", nil
+	return nil
+}
+
 func (r *outboxRepo) ListDeadLetters(_ context.Context, tenant, namespace string, limit int) ([]*controlmodel.OutboxEvent, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()

@@ -28,6 +28,7 @@ import (
 type Request struct {
 	Prompt            string
 	Workspace         string
+	RuntimeStateRoot  string
 	ProviderSessionID string
 	Configuration     json.RawMessage
 	CustomArgs        []string
@@ -94,6 +95,8 @@ var reservedCustomArguments = map[string]bool{
 	"--json": true, "--output-format": true, "--message-file": true,
 	"--model": true, "--sandbox": true, "--permission-mode": true,
 	"--resume": true, "--mcp-config": true, "--config": true,
+	"--config-dir": true, "--strict-mcp-config": true, "--setting-sources": true,
+	"--allowed-mcp-server-names": true, "--tools": true, "--plugin-dir": true,
 	"--skip-git-repo-check": true, "--dangerously-skip-permissions": true,
 	"--dangerously-bypass-approvals-and-sandbox": true,
 	"--yolo": true, "--full-auto": true, "--add-dir": true,

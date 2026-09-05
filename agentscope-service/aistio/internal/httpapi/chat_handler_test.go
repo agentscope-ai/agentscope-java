@@ -101,3 +101,32 @@ func TestConversationTurnIssuesRequireExplicitKind(t *testing.T) {
 		t.Fatalf("explicit diagnostics cannot find Chat turn: items=%+v err=%v", items, err)
 	}
 }
+
+func TestChatMapsOverlappingHostedTurnToConflict(t *testing.T) {
+	st, agent, _, _ := setupHostedConversationAgent(t)
+	server := NewServer(ServerOptions{Store: st, AuthToken: "console"})
+	created := chatRequest(server, http.MethodPost, "/api/v1/chats",
+		`{"tenant":"t","namespace":"n","agentId":"`+agent.ID.String()+`"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create Chat: %d %s", created.Code, created.Body)
+	}
+	var response struct {
+		Chat controlmodel.Chat `json:"chat"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/chats/" + response.Chat.ID.String() + "/turns?tenant=t&namespace=n"
+	first := chatRequest(server, http.MethodPost, path, `{"message":"first"}`)
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first turn: %d %s", first.Code, first.Body)
+	}
+	overlap := chatRequest(server, http.MethodPost, path, `{"message":"overlap"}`)
+	if overlap.Code != http.StatusConflict {
+		t.Fatalf("overlapping turn status=%d, want 409: %s", overlap.Code, overlap.Body)
+	}
+	var conflict ErrorResponse
+	if json.Unmarshal(overlap.Body.Bytes(), &conflict) != nil || conflict.Code != "conversation_turn_conflict" {
+		t.Fatalf("overlapping turn has no stable error code: %s", overlap.Body)
+	}
+}

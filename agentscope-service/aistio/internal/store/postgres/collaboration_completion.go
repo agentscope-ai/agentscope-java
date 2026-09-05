@@ -180,7 +180,8 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 		}
 	}
 	task, err = scanAgentTask(tx.QueryRow(ctx, `UPDATE agent_tasks SET status=$2,result=$3,
-		version=version+1,completed_at=now() WHERE id=$1 RETURNING `+agentTaskColumns,
+		error_code=NULL,error_message=NULL,version=version+1,completed_at=now()
+		WHERE id=$1 RETURNING `+agentTaskColumns,
 		id, controlmodel.AgentTaskCompleted, nullJSON(completion.Result)))
 	if err != nil {
 		return nil, nil, err
@@ -362,7 +363,8 @@ func (r *collaborationRepo) ClaimAgentTaskWithAttempt(ctx context.Context, claim
 	}
 	execution.ID = nonNilUUIDPG(execution.ID)
 	task, err = scanAgentTask(tx.QueryRow(ctx, `UPDATE agent_tasks SET status=$2,
-		runtime_binding=$3,session_id=$4,current_attempt_id=$5,version=version+1,dispatched_at=now()
+		runtime_binding=$3,session_id=$4,current_attempt_id=$5,error_code=NULL,error_message=NULL,
+		version=version+1,dispatched_at=now()
 		WHERE id=$1 RETURNING `+agentTaskColumns, task.ID, controlmodel.AgentTaskDispatched,
 		nullJSON(claim.RuntimeBinding), nullStr(claim.SessionID), execution.ID))
 	if err != nil {

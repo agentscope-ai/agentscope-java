@@ -702,6 +702,7 @@ func (r *collaborationRepo) ClaimAgentTask(_ context.Context, claim store.TaskCl
 	}
 	now := time.Now().UTC()
 	task.Status, task.RuntimeBinding, task.SessionID = controlmodel.AgentTaskDispatched, cloneJSON(claim.RuntimeBinding), claim.SessionID
+	task.ErrorCode, task.ErrorMessage = "", ""
 	task.Version++
 	task.DispatchedAt = &now
 	inputs := r.s.taskInputs[task.ID]
@@ -733,6 +734,7 @@ func (r *collaborationRepo) ClaimAgentTaskWithAttempt(_ context.Context, claim s
 	now := time.Now().UTC()
 	execution.ID = nonNilUUID(execution.ID)
 	task.Status, task.RuntimeBinding, task.SessionID = controlmodel.AgentTaskDispatched, cloneJSON(claim.RuntimeBinding), claim.SessionID
+	task.ErrorCode, task.ErrorMessage = "", ""
 	task.CurrentAttemptID = &execution.ID
 	task.Version++
 	task.DispatchedAt = &now
@@ -956,6 +958,16 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 	if completion.ExpectedVersion > 0 && task.Version != completion.ExpectedVersion || !controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskCompleted) {
 		return nil, store.ErrConflict
 	}
+	var attempt *controlmodel.ExecutionAttempt
+	if task.CurrentAttemptID != nil {
+		attempt = r.s.executions[*task.CurrentAttemptID]
+		if attempt == nil || completion.AttemptID != uuid.Nil && completion.AttemptID != attempt.ID ||
+			completion.DispatchGeneration > 0 && completion.DispatchGeneration != attempt.DispatchGeneration ||
+			completion.LeaseToken != "" && (completion.LeaseToken != attempt.LeaseToken || completion.FencingToken != attempt.FencingToken) ||
+			!controlmodel.CanTransitionExecutionAttempt(attempt.State, controlmodel.ExecutionSucceeded) {
+			return nil, store.ErrConflict
+		}
+	}
 	processed, deferred := uuidSet(completion.ProcessedInputIDs), uuidSet(completion.DeferredInputIDs)
 	now := time.Now().UTC()
 	inputs := r.s.taskInputs[id]
@@ -970,7 +982,26 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 		}
 	}
 	r.s.taskInputs[id] = inputs
+	if attempt != nil {
+		usage := store.AttemptUsage(completion.Usage, completion.Result)
+		attempt.State, attempt.Result, attempt.Checkpoint = controlmodel.ExecutionSucceeded,
+			cloneJSON(completion.Result), cloneJSON(completion.Checkpoint)
+		attempt.Usage = cloneJSON(usage)
+		attempt.Version++
+		attempt.UpdatedAt, attempt.CompletedAt, attempt.LeaseExpiresAt = now, &now, nil
+		if run := r.s.runs[task.OrchestrationRunID]; run != nil {
+			run.Usage = store.MergeUsage(run.Usage, usage)
+		}
+	}
 	task.Status, task.Result, task.Version, task.CompletedAt = controlmodel.AgentTaskCompleted, cloneJSON(completion.Result), task.Version+1, &now
+	task.ErrorCode, task.ErrorMessage = "", ""
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	if err := r.reconcileCompletedTaskLocked(task, attempt, completion.Result, actor, now); err != nil {
+		return nil, err
+	}
+	r.appendActivityLocked(&controlmodel.Activity{Tenant: task.Tenant, Namespace: task.Namespace,
+		IssueID: &task.IssueID, Actor: actor, Action: "agent_task.completed", ObjectType: "agent_task",
+		ObjectRef: task.ID.String(), CausationID: task.CausationID, CorrelationID: task.CorrelationID})
 	r.enqueueEventLocked(task.Tenant, "agent-task", task.ID, "agent-task.completed.v1", task, fmt.Sprintf("agent-task-completed:%s:%d", task.ID, task.Version))
 	return cloneAgentTask(task), nil
 }
@@ -1087,6 +1118,7 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 		}
 	}
 	task.Status, task.Result, task.Version, task.CompletedAt = controlmodel.AgentTaskCompleted, cloneJSON(completion.Result), task.Version+1, &now
+	task.ErrorCode, task.ErrorMessage = "", ""
 	issue.Version, issue.UpdatedAt = issue.Version+1, now
 	if err := r.reconcileCompletedTaskLocked(task, attempt, completion.Result, created.Author, now); err != nil {
 		return nil, nil, err

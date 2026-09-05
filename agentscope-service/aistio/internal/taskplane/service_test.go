@@ -175,3 +175,67 @@ func TestConversationRetryUsesLatestSuccessfulWorkspaceCheckpoint(t *testing.T) 
 		t.Fatalf("retry did not use successful conversation checkpoint: %+v", retryAttempt)
 	}
 }
+
+func TestQueuedConversationRedispatchPreservesSessionAndTurn(t *testing.T) {
+	ctx := context.Background()
+	st, _ := store.Open(ctx, store.DefaultConfig())
+	defer st.Close()
+	pool, _ := st.RuntimeRegistry().UpsertRuntimePool(ctx, &controlmodel.RuntimePool{
+		Tenant: "tenant", Namespace: "default", Name: "coding",
+	})
+	profile, _ := st.RuntimeRegistry().UpsertRuntimeProfile(ctx, &controlmodel.RuntimeProfile{
+		Tenant: "tenant", Namespace: "default", Name: "codex", Provider: "codex",
+	})
+	host, _ := st.RuntimeRegistry().UpsertRuntimeHost(ctx, &controlmodel.RuntimeHost{
+		Tenant: "tenant", Namespace: "default", HostKey: "host", PoolName: pool.Name,
+		State: controlmodel.RuntimeHostOnline, Capacity: 1,
+		Capabilities: json.RawMessage(`{"providers":{"codex":"test"}}`),
+	})
+	agentID, bindingID := uuid.New(), uuid.New()
+	binding := controlmodel.RuntimeBinding{AgentID: agentID, BindingID: bindingID,
+		Kind: controlmodel.DataPlaneHostedRuntime, RuntimeProfileID: profile.ID, RuntimePoolID: pool.ID}
+	issue, _ := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: "tenant", Namespace: "default", Title: "conversation retry",
+		Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "ken"},
+	})
+	_, task, _ := st.Collaboration().AssignIssue(ctx, issue.ID, issue.Version,
+		controlmodel.AssigneeAgent, agentID.String(), issue.Creator)
+	svc := &Service{Store: st}
+	dispatched, first, err := svc.DispatchHostedConversationCandidate(ctx, task.ID,
+		controlmodel.RuntimeBindingCandidate{Binding: binding}, HostedConversationContext{
+			SessionID: "conversation-1", TurnID: "turn-1",
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, _ := svc.Claim(ctx, store.ExecutionClaim{Tenant: "tenant", Namespace: "default",
+		RuntimePoolName: pool.Name, HostID: host.ID, HostGeneration: host.LeaseGeneration,
+		LeaseOwner: "host/1", LeaseToken: "lease-1", LeaseTTL: time.Minute})
+	preparing, _ := svc.MarkPreparing(ctx, claimed.ID, claimed.LeaseToken, claimed.FencingToken)
+	running, _ := svc.MarkRunning(ctx, preparing.ID, preparing.LeaseToken,
+		preparing.FencingToken, "unfinished-native-session", "tenant/conversation-workspace")
+	current, _ := st.Collaboration().GetAgentTask(ctx, dispatched.ID)
+	queued, _, err := st.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, current.ID,
+		store.TaskFailure{ExpectedVersion: current.Version, AttemptID: running.ID,
+			DispatchGeneration: running.DispatchGeneration, LeaseToken: running.LeaseToken,
+			FencingToken: running.FencingToken, Code: "heartbeat_timeout", Message: "host lost"})
+	if err != nil || queued.Status != controlmodel.AgentTaskQueued || queued.ErrorCode == "" {
+		t.Fatalf("requeue: task=%+v err=%v", queued, err)
+	}
+
+	redispatched, retryAttempt, err := svc.DispatchHostedCandidate(ctx, task.ID,
+		controlmodel.RuntimeBindingCandidate{Binding: binding})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retryAttempt.ID == first.ID || retryAttempt.Attempt != 2 ||
+		retryAttempt.SessionID != "conversation-1" || retryAttempt.TurnID != "turn-1" ||
+		retryAttempt.ProviderSessionID != "" ||
+		retryAttempt.WorkspaceKey != "tenant/conversation-workspace" {
+		t.Fatalf("redispatch lost conversation identity: %+v", retryAttempt)
+	}
+	if redispatched.SessionID != "conversation-1" || redispatched.ErrorCode != "" ||
+		redispatched.ErrorMessage != "" {
+		t.Fatalf("redispatched task retained stale failure state: %+v", redispatched)
+	}
+}

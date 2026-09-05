@@ -272,8 +272,9 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 	leaseFailures := make(chan error, 1)
 	go e.renewLoop(runCtx, cancel, hostID, execution, leaseFailures)
 	result, runErr := adapter.Run(runCtx, provider.Request{
-		Prompt: prompt, Workspace: path, ProviderSessionID: execution.ProviderSessionID,
-		Configuration: work.Profile.Configuration, Definition: work.Definition,
+		Prompt: prompt, Workspace: path, RuntimeStateRoot: e.Config.StateRoot,
+		ProviderSessionID: execution.ProviderSessionID,
+		Configuration:     work.Profile.Configuration, Definition: work.Definition,
 		CustomArgs:       hostedCustomArgs(work.ExecutionOverrides),
 		CollaborationMCP: e.Config.CollaborationMCP, CollaborationCLI: e.Config.CollaborationCLI,
 		ControlPlane: e.Config.ControlPlane, TaskToken: work.TaskToken,
@@ -296,6 +297,10 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 				// journal still contains the original event for daemon diagnosis.
 				logAttempt("provider_event_delivery_failed", hostID, execution,
 					work.Profile.Provider, slog.Any("error", err))
+			} else if controlmodel.IsExecutionAttemptTerminal(execution.State) {
+				// A terminal response seals the control-plane timeline. Returning an
+				// error asks the adapter to stop the still-running provider promptly.
+				return context.Canceled
 			}
 		}
 		if event.ProviderSessionID != "" && event.ProviderSessionID != execution.ProviderSessionID {
@@ -372,6 +377,17 @@ func hostedWorkspaceContext(execution *controlmodel.ExecutionAttempt,
 }
 
 func shouldPublishProviderEvent(event provider.Event) bool {
+	var codexEnvelope struct {
+		Type string `json:"type"`
+		Item struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"item"`
+	}
+	if json.Unmarshal(event.Raw, &codexEnvelope) == nil && codexEnvelope.Type == "item.completed" &&
+		codexEnvelope.Item.Type == "error" && strings.Contains(codexEnvelope.Item.Message, "clamping SessionEnd hook timeout") {
+		return false
+	}
 	if event.Type != "system" {
 		return true
 	}
@@ -528,11 +544,11 @@ func (e *Engine) renewLoop(ctx context.Context, cancel context.CancelFunc, hostI
 			if err := e.Client.Renew(ctx, hostID, execution, e.Config.LeaseTTL); err != nil {
 				if !time.Now().Before(leaseDeadline) {
 					logAttempt("lease_expired", hostID, execution, "", slog.Any("error", err))
+					cancel()
 					select {
 					case failures <- err:
 					default:
 					}
-					cancel()
 					return
 				}
 				logAttempt("lease_renew_failed", hostID, execution, "",
@@ -541,6 +557,7 @@ func (e *Engine) renewLoop(ctx context.Context, cancel context.CancelFunc, hostI
 			}
 			leaseDeadline = time.Now().Add(e.Config.LeaseTTL)
 			if controlmodel.IsExecutionAttemptTerminal(execution.State) {
+				cancel()
 				return
 			}
 			if execution.State == controlmodel.ExecutionCancelRequested {

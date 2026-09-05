@@ -5,6 +5,8 @@ package qoder
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,9 +16,9 @@ import (
 func TestBuildArgsDoesNotBypassPermissionsImplicitly(t *testing.T) {
 	args := buildArgs(provider.Request{Workspace: "/tmp/work", ProviderSessionID: "session-1"}, configuration{
 		Model: "qoder-auto", PermissionMode: "accept_edits", AllowedTools: []string{"Read", "Write"},
-	}, "")
+	}, "", "")
 	got := strings.Join(args, " ")
-	want := "-p --output-format stream-json --cwd /tmp/work --resume session-1 --model qoder-auto --permission-mode accept_edits --allowed-tools Read --allowed-tools Write"
+	want := "-p --output-format stream-json --cwd /tmp/work --resume session-1 --model qoder-auto --permission-mode accept_edits --tools Read Write --allowed-tools Read --allowed-tools Write"
 	if got != want {
 		t.Fatalf("args=%q, want %q", got, want)
 	}
@@ -45,11 +47,12 @@ func TestBuildArgsAppliesHeadlessAutomationControls(t *testing.T) {
 	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{
 		ContextWindow: 120000, MaxTurns: 24, MaxOutputTokens: 8000, StrictMCPConfig: true,
 		AllowedTools: []string{"mcp__agentscope-collaboration__*"},
-	}, "/tmp/mcp.json")
+	}, "/tmp/mcp.json", "")
 	got := strings.Join(args, " ")
 	for _, want := range []string{
 		"--mcp-config /tmp/mcp.json --strict-mcp-config",
 		"--context-window 120000",
+		"--tools  --allowed-mcp-server-names agentscope-collaboration",
 		"--allowed-tools mcp__agentscope-collaboration__*",
 		"--max-turns 24",
 		"--max-output-tokens 8000",
@@ -60,11 +63,56 @@ func TestBuildArgsAppliesHeadlessAutomationControls(t *testing.T) {
 	}
 }
 
+func TestBuildArgsDisablesUnlistedAmbientToolsAndMCPServers(t *testing.T) {
+	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{
+		AllowedTools: []string{"Read"},
+	}, "/tmp/mcp.json", "")
+	want := []string{"--tools", "Read", "--allowed-mcp-server-names", "__agentscope_none__"}
+	for i := 0; i <= len(args)-len(want); i++ {
+		if strings.Join(args[i:i+len(want)], "\x00") == strings.Join(want, "\x00") {
+			return
+		}
+	}
+	t.Fatalf("Qoder exposure allowlist missing from args: %#v", args)
+}
+
+func TestLastNonEmptyLineIgnoresDiagnosticPreamble(t *testing.T) {
+	if got := lastNonEmptyLine("ambient warning\nqodercli 1.2.3\n"); got != "qodercli 1.2.3" {
+		t.Fatalf("version=%q", got)
+	}
+}
+
+func TestPrepareIsolatedConfigKeepsAuthenticationAndStableSessionRoot(t *testing.T) {
+	home, state, workspace := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	auth := filepath.Join(home, ".qoder", ".auth")
+	if err := os.MkdirAll(auth, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	request := provider.Request{Workspace: workspace, RuntimeStateRoot: state}
+	first, err := prepareIsolatedConfig(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := prepareIsolatedConfig(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked, err := os.Readlink(filepath.Join(first, ".auth"))
+	if err != nil || first != second || linked != auth {
+		t.Fatalf("isolated config is not stable/authenticated: first=%q second=%q link=%q err=%v",
+			first, second, linked, err)
+	}
+}
+
 func TestBuildArgsIsolatesHostedMCPFromAmbientQoderSettings(t *testing.T) {
-	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{}, "/tmp/mcp.json")
+	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{}, "/tmp/mcp.json", "/state/qoder")
 	got := strings.Join(args, " ")
 	if !strings.Contains(got, "--mcp-config /tmp/mcp.json --strict-mcp-config") {
 		t.Fatalf("hosted MCP configuration was not isolated: %q", got)
+	}
+	if !strings.Contains(got, "--config-dir /state/qoder --setting-sources project") {
+		t.Fatalf("ambient Qoder plugins and settings were not isolated: %q", got)
 	}
 }
 

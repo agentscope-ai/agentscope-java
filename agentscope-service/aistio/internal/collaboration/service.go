@@ -241,15 +241,15 @@ func (s *Service) AcceptIssueFromTask(ctx context.Context, taskID uuid.UUID, rea
 	if issue.Status == controlmodel.IssueDone {
 		return issue, nil
 	}
+	if err = s.validateAcceptanceIgnoringTask(ctx, issue, actor, &task.ID); err != nil {
+		return nil, err
+	}
 	if issue.Status != controlmodel.IssueInProgress && issue.Status != controlmodel.IssueInReview {
 		issue, err = s.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
 			controlmodel.IssueInProgress, actor, "leader reviewing delegated result")
 		if err != nil {
 			return nil, err
 		}
-	}
-	if err = s.validateAcceptanceIgnoringTask(ctx, issue, actor, &task.ID); err != nil {
-		return nil, err
 	}
 	if strings.TrimSpace(reason) == "" {
 		reason = "accepted by Team leader"

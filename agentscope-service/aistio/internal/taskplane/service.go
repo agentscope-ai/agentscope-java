@@ -33,6 +33,21 @@ func (s *Service) DispatchHosted(ctx context.Context, taskID uuid.UUID, binding 
 }
 
 func (s *Service) DispatchHostedCandidate(ctx context.Context, taskID uuid.UUID, candidate controlmodel.RuntimeBindingCandidate) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
+	if s == nil || s.Store == nil {
+		return nil, nil, fmt.Errorf("task plane store is required")
+	}
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var snapshot controlmodel.RuntimeDispatchSnapshot
+	if json.Unmarshal(task.RuntimeBinding, &snapshot) == nil && snapshot.SessionID != "" {
+		conversation, contextErr := s.hostedConversationRetryContext(ctx, task, snapshot)
+		if contextErr != nil {
+			return nil, nil, contextErr
+		}
+		return s.dispatchHostedCandidate(ctx, taskID, candidate, conversation)
+	}
 	return s.dispatchHostedCandidate(ctx, taskID, candidate, HostedConversationContext{})
 }
 
@@ -339,14 +354,40 @@ func (s *Service) RetryTask(ctx context.Context, taskID uuid.UUID) (*controlmode
 	if snapshot.SessionID == "" {
 		return s.DispatchHostedCandidate(ctx, retry.ID, candidate)
 	}
+	conversation, err := s.hostedConversationRetryContext(ctx, failed, snapshot)
+	if err != nil {
+		return retry, nil, err
+	}
+	dispatched, execution, dispatchErr := s.DispatchHostedConversationCandidate(ctx, retry.ID, candidate, conversation)
+	if dispatchErr != nil {
+		return dispatched, execution, dispatchErr
+	}
+	sessions, sessionErr := s.Store.Sessions().List(ctx, store.SessionFilter{Tenant: retry.Tenant,
+		Namespace: retry.Namespace, AgentID: execution.AgentID, SessionID: snapshot.SessionID, Limit: 1})
+	if sessionErr != nil {
+		return dispatched, execution, sessionErr
+	}
+	if len(sessions) > 0 {
+		now := time.Now().UTC()
+		sessions[0].AgentTaskID, sessions[0].Phase, sessions[0].LastActiveAt =
+			&retry.ID, store.SessionPhaseActive, &now
+		if _, sessionErr = s.Store.Sessions().Upsert(ctx, sessions[0]); sessionErr != nil {
+			return dispatched, execution, sessionErr
+		}
+	}
+	return dispatched, execution, nil
+}
+
+func (s *Service) hostedConversationRetryContext(ctx context.Context, failed *controlmodel.AgentTask,
+	snapshot controlmodel.RuntimeDispatchSnapshot) (HostedConversationContext, error) {
 	attempts, listErr := s.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{
 		AgentTaskID: failed.ID, NewestFirst: true, Limit: 1,
 	})
 	if listErr != nil {
-		return retry, nil, listErr
+		return HostedConversationContext{}, listErr
 	}
 	if len(attempts) == 0 {
-		return retry, nil, fmt.Errorf("conversation retry has no previous execution attempt")
+		return HostedConversationContext{}, fmt.Errorf("conversation retry has no previous execution attempt")
 	}
 	failedAttempt := attempts[0]
 	resumeAttempt := failedAttempt
@@ -356,7 +397,7 @@ func (s *Service) RetryTask(ctx context.Context, taskID uuid.UUID) (*controlmode
 		NewestFirst: true, Limit: 100,
 	})
 	if checkpointErr != nil {
-		return retry, nil, checkpointErr
+		return HostedConversationContext{}, checkpointErr
 	}
 	for _, checkpoint := range checkpoints {
 		if checkpoint.State == controlmodel.ExecutionSucceeded {
@@ -381,28 +422,11 @@ func (s *Service) RetryTask(ctx context.Context, taskID uuid.UUID) (*controlmode
 			providerSessionID, workspaceKey, preferredHostID = "", "", nil
 		}
 	}
-	dispatched, execution, dispatchErr := s.DispatchHostedConversationCandidate(ctx, retry.ID, candidate, HostedConversationContext{
+	return HostedConversationContext{
 		SessionID: snapshot.SessionID, TurnID: failedAttempt.TurnID,
 		ProviderSessionID: providerSessionID, WorkspaceKey: workspaceKey,
 		PreferredHostID: preferredHostID,
-	})
-	if dispatchErr != nil {
-		return dispatched, execution, dispatchErr
-	}
-	sessions, sessionErr := s.Store.Sessions().List(ctx, store.SessionFilter{Tenant: retry.Tenant,
-		Namespace: retry.Namespace, AgentID: execution.AgentID, SessionID: snapshot.SessionID, Limit: 1})
-	if sessionErr != nil {
-		return dispatched, execution, sessionErr
-	}
-	if len(sessions) > 0 {
-		now := time.Now().UTC()
-		sessions[0].AgentTaskID, sessions[0].Phase, sessions[0].LastActiveAt =
-			&retry.ID, store.SessionPhaseActive, &now
-		if _, sessionErr = s.Store.Sessions().Upsert(ctx, sessions[0]); sessionErr != nil {
-			return dispatched, execution, sessionErr
-		}
-	}
-	return dispatched, execution, nil
+	}, nil
 }
 
 func executionDuration(execution *controlmodel.ExecutionAttempt) time.Duration {

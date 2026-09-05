@@ -59,7 +59,7 @@ func TestClientPublishesProviderEventWithAttemptCredential(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"event":{"id":"event-1"}}`))
+		_, _ = w.Write([]byte(`{"event":{"id":"event-1"},"attempt":{"id":"` + attemptID.String() + `","state":"failed"}}`))
 	}))
 	defer server.Close()
 	client := &Client{BaseURL: server.URL, HTTPClient: server.Client()}
@@ -68,6 +68,9 @@ func TestClientPublishesProviderEventWithAttemptCredential(t *testing.T) {
 	if err := client.PublishProviderEvent(context.Background(), hostID, attempt, "qoder", 1,
 		provider.Event{Type: "assistant", Raw: json.RawMessage(`{"type":"assistant"}`)}); err != nil {
 		t.Fatal(err)
+	}
+	if attempt.State != controlmodel.ExecutionFailed {
+		t.Fatalf("provider event response did not propagate terminal state: %+v", attempt)
 	}
 }
 

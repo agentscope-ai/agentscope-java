@@ -462,3 +462,157 @@ func TestCrossTeamChildIssueResultWakesParentLeaderAndCanBeAccepted(t *testing.T
 		t.Fatalf("accept parent: %+v %v", root, err)
 	}
 }
+
+func TestWorkerResultWakesOriginalCoordinatorAndLeaderCanAccept(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "delivery", LeaderAgentRef: "leader",
+		Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "worker", Role: "implementer",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, leader, err := svc.CreateIssue(ctx, CreateIssueRequest{Tenant: "tenant", Namespace: "default",
+		Title: "deliver", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: leader.ID, ExpectedVersion: leader.Version})
+	if err == nil {
+		leader, err = st.Collaboration().StartAgentTask(ctx, leader.ID, leader.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, worker, err := svc.CreateChildFromTask(ctx, leader.ID, CreateIssueRequest{Title: "implement",
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, _, err = svc.CompleteTask(ctx, leader.ID, store.TaskCompletion{ExpectedVersion: leader.Version,
+		Summary: "delegated"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorID := leader.RunNodeID
+	worker, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: worker.ID, ExpectedVersion: worker.Version})
+	if err == nil {
+		worker, err = st.Collaboration().StartAgentTask(ctx, worker.ID, worker.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, result, err := svc.CompleteTask(ctx, worker.ID, store.TaskCompletion{ExpectedVersion: worker.Version,
+		Summary: "implemented"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: child.ID, AgentRef: "leader", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var followUp *controlmodel.AgentTask
+	for _, candidate := range tasks {
+		if candidate.TriggerCommentID != nil && *candidate.TriggerCommentID == result.ID {
+			followUp = candidate
+			break
+		}
+	}
+	if followUp == nil || !followUp.LeaderTask || followUp.RunNodeID != coordinatorID {
+		t.Fatalf("worker result did not resume original coordinator: tasks=%+v", tasks)
+	}
+	followUp, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: followUp.ID, ExpectedVersion: followUp.Version})
+	if err == nil {
+		followUp, err = st.Collaboration().StartAgentTask(ctx, followUp.ID, followUp.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := svc.AcceptIssueFromTask(ctx, followUp.ID, "worker result verified")
+	if err != nil || accepted.Status != controlmodel.IssueDone {
+		t.Fatalf("accept delegated Issue: issue=%+v err=%v", accepted, err)
+	}
+	node, err := st.Orchestration().GetNode(ctx, coordinatorID)
+	if err != nil || node.State != controlmodel.RunNodeWaiting {
+		t.Fatalf("original coordinator is not ready for convergence: node=%+v err=%v", node, err)
+	}
+}
+
+func TestTaskRespondThenCompleteReusesSingleResultComment(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	issue, task, err := svc.CreateIssue(ctx, CreateIssueRequest{Tenant: "tenant", Namespace: "default",
+		Title: "answer", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: task.ID, ExpectedVersion: task.Version})
+	if err == nil {
+		task, err = st.Collaboration().StartAgentTask(ctx, task.ID, task.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	responded, err := svc.AddComment(ctx, AddCommentRequest{IssueID: issue.ID,
+		Author: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"}, Content: "final answer",
+		Type: controlmodel.CommentResult, SourceTaskID: &task.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, reused, err := svc.CompleteTask(ctx, task.ID, store.TaskCompletion{ExpectedVersion: task.Version,
+		Summary: "must not duplicate"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"})
+	if err != nil || reused == nil || reused.ID != responded.Comment.ID || completed.Status != controlmodel.AgentTaskCompleted {
+		t.Fatalf("result was not reused: task=%+v comment=%+v err=%v", completed, reused, err)
+	}
+	comments, err := st.Collaboration().ListComments(ctx, issue.ID, store.CommentListOptions{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := 0
+	for _, comment := range comments {
+		if comment.Type == controlmodel.CommentResult && comment.SourceTaskID != nil && *comment.SourceTaskID == task.ID {
+			results++
+		}
+	}
+	if results != 1 {
+		t.Fatalf("result comments=%d, want 1: %+v", results, comments)
+	}
+	run, err := st.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil || run.State != controlmodel.RunSucceeded || run.WaitReason != "" {
+		t.Fatalf("completion with an existing response did not reconcile the run: %+v err=%v", run, err)
+	}
+}
+
+func TestSelfTriggerGuardIgnoresMismatchedTeamContext(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "guarded", LeaderAgentRef: "same-agent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, task, err := svc.CreateIssue(ctx, CreateIssueRequest{Tenant: "tenant", Namespace: "default",
+		Title: "guard", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := svc.guardTarget(ctx, issue, &task.ID, store.CommentTarget{
+		TargetType: controlmodel.AssigneeAgent, TargetRef: "same-agent", AgentRef: "same-agent",
+	})
+	if !target.Blocked || target.ReasonCode != "self_trigger" {
+		t.Fatalf("same Agent bypassed guard through a missing Team ID: %+v", target)
+	}
+}

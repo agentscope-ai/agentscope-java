@@ -657,9 +657,9 @@ func (s *Server) checkpointExecutionAttempt(c *gin.Context) {
 }
 
 // appendExecutionAttemptEvent persists the provider's observable stream on the
-// Run timeline. The Runtime Host journal is deliberately local and ephemeral;
-// these events remain available after the daemon has delivered the terminal
-// state and removed that journal entry.
+// Run timeline while its Attempt is active. A terminal Attempt seals the
+// timeline; the response returns accepted=false so the Runtime Host can stop a
+// provider that is still flushing output.
 func (s *Server) appendExecutionAttemptEvent(c *gin.Context) {
 	hostID, attemptID, req, ok := s.bindExecutionLease(c)
 	if !ok {
@@ -689,6 +689,10 @@ func (s *Server) appendExecutionAttemptEvent(c *gin.Context) {
 		c.JSON(http.StatusConflict, ErrorResponse{Error: "stale execution attempt lease"})
 		return
 	}
+	if controlmodel.IsExecutionAttemptTerminal(attempt.State) {
+		c.JSON(http.StatusOK, gin.H{"attempt": attempt, "accepted": false})
+		return
+	}
 	eventPayload, err := json.Marshal(gin.H{
 		"provider": payload.Provider, "eventType": payload.EventType,
 		"providerSessionId": payload.ProviderSessionID, "raw": payload.Raw,
@@ -712,7 +716,7 @@ func (s *Server) appendExecutionAttemptEvent(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{"event": event})
+	c.JSON(http.StatusAccepted, gin.H{"event": event, "attempt": attempt, "accepted": true})
 }
 
 func (s *Server) failExecutionAttempt(c *gin.Context) {

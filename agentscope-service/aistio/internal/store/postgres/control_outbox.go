@@ -185,6 +185,19 @@ func (r *outboxRepo) MarkFailed(ctx context.Context, id uuid.UUID, worker, lastE
 	return tx.Commit(ctx)
 }
 
+func (r *outboxRepo) MarkDeferred(ctx context.Context, id uuid.UUID, worker, lastError string, retryAt time.Time) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE control_outbox SET last_error=$3,available_at=$4,
+		claimed_by=NULL,claimed_until=NULL WHERE id=$1 AND claimed_by=$2 AND delivered_at IS NULL
+		AND dead_lettered_at IS NULL`, id, worker, nullStr(lastError), retryAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrConflict
+	}
+	return nil
+}
+
 func (r *outboxRepo) ListDeadLetters(ctx context.Context, tenant, namespace string, limit int) ([]*controlmodel.OutboxEvent, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100

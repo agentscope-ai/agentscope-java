@@ -314,3 +314,59 @@ Qoder profile 配置为：
 - `task.respond` 与 `task.complete` 不再产生两次等价 result routing。
 - 并发 Chat turn 返回 409。
 - `run.succeeded` 后事件流行为与公开契约一致，terminal 对象不保留活动 wait reason。
+
+## 修复与复验结果（2026-09-05 21:35 +08:00）
+
+本节记录后续修复工作；前文“仅测试不改代码”只描述首次问题发现阶段。`HST-001` 至 `HST-009` 均已修复，并在修复后的真实故障注入中新增、修复了 `HST-010`。
+
+| 编号 | 状态 | 修复与验证摘要 |
+| --- | --- | --- |
+| HST-001 | 已修复 | follow-up leader 继承原 coordinator 身份，可接受 worker child Issue 并完成原 coordinator node。 |
+| HST-002 | 已修复 | same-agent 防环不再信任可伪造/不一致的 Team context；实测 leader result route 为 `suppressed/self_trigger`。 |
+| HST-003 | 已修复 | 暂时不可调度的 queued Task 使用 deferred outbox，不进入普通失败死信阈值；硬崩溃后成功创建第二个 Attempt。 |
+| HST-004 | 已修复 | renew 看到 terminal Attempt 时主动取消 provider；lease 过期的取消顺序也已消除竞态。 |
+| HST-005 | 已修复 | 并发 Chat turn 返回 HTTP 409 与稳定错误码 `conversation_turn_conflict`。 |
+| HST-006 | 已修复 | `task.complete` 复用同一 Task 已有的 `task.respond` result Comment，不再重复写结果或重复路由。 |
+| HST-007 | 已修复 | terminal Attempt 拒绝晚到 provider event；声明式 Workflow 以 `attempt.succeeded -> node.succeeded -> run.succeeded` 封口，终态 wait reason 清空。 |
+| HST-008 | 已修复 | Qoder 使用隔离且稳定的 config dir，显式限制 built-in tools/MCP server，并阻止 custom args 绕过隔离参数。 |
+| HST-009 | 已修复 | Qoder 版本探测只解析 stdout；已知 Codex SessionEnd hook 限时提示不再发布为 provider error。 |
+| HST-010 | 已修复 | lease sweep 后“同一 Task 重新派发”曾丢失 conversation 身份，导致 Task 成功但 Chat 永久 running；现已继承 `SessionID/TurnID/WorkspaceKey`，并清除旧失败字段。 |
+
+### 实机 Chat 复验
+
+- Qoder Chat：`ca04246e-9fd2-466f-8515-63adbfb9f26f`，Session `2d98c15b-de75-4bb9-a1c7-a97ca1dcc9e3`。
+- 首轮输出为 `QODER_CHAT_TURN_1_OK`；运行中并发提交返回 `409`，body 包含 `code=conversation_turn_conflict`。
+- 第二轮输出为 `PREVIOUS=QODER_CHAT_TURN_1_OK`，两个 turn 的 provider session 均为 `225171fd-853e-41d1-8d29-deb0f611966c`，证明 resume 生效。
+- 两轮 Qoder init event 均为 `plugins=[]`；input tokens 分别为 `4599`、`4955`，相较修复前的 `30627` 明显下降；版本字段稳定为 `1.0.37`。
+
+### 实机 Team lead/worker 复验
+
+- Team：`564b3266-546a-4acd-be6a-1f738201390c`。
+- Root Issue：`0cab10c2-8ba9-4644-aa0c-542599c1ef45`；Run：`c1878e84-cae7-44d7-84d6-e9b8a866e4ce`。
+- 拓扑严格为 2 个 node、3 个 Task：初始 lead、researcher worker、lead follow-up；没有额外 self-trigger Task。
+- worker 写入唯一结果 `WORKER_RESULT:42`，follow-up leader 成功 `issue.accept` child Issue `5eba9cdb-d169-423f-9beb-a47dafc558a6`，写入唯一结果 `LEAD_FINAL:42`，并完成原 coordinator node。
+- 两个 node 与 Run 均为 `succeeded`，终态 `waitReason` 均为空；每个 Task 恰有一个 result Comment；Run 的 74 个事件中没有 Codex hook 假错误。
+
+### 实机声明式 Workflow 复验
+
+- Definition：`d4a83da5-741f-4d8f-b327-158337bd8d44`，Revision：`251b6e4c-fa97-4f36-87c9-ed31b33ce754`。
+- Issue：`aafac30c-2729-47d2-a45c-d953ab20ab0b`；Run：`0a34b050-7ac3-4858-bade-c8a0c72a71c0`。
+- hosted worker node 与 hosted lead node 顺序成功，结果分别为 `WORKFLOW_WORKER:42`、`WORKFLOW_LEAD:accepted:42`，每个 Task 恰有一个 result Comment。
+- 事件 47/48/49 依次为 `attempt.succeeded`、`node.succeeded`、`run.succeeded`；49 后没有任何事件，尤其没有 provider event；Run/node 的终态 wait reason 均为空。
+
+### 实机 lease/outbox 故障注入复验
+
+第一次硬崩溃验证确认 deferred outbox 在 Runtime Host 离线期间重试 14 次仍未 dead-letter，第二个 Attempt 最终成功；同时发现 `HST-010`：第二个 Attempt 缺少 Session/Turn 元数据，Chat 没有 terminal event，Task 还残留 `heartbeat_timeout`。
+
+修复 `HST-010` 后再次执行完整硬崩溃：
+
+- Chat：`e4a717b3-7a19-412d-965f-a5d5757cee27`；Session：`d971bc47-4a42-42f9-8937-3100821d6477`；Task：`9f977331-6759-43ad-918d-bd719800dc31`。
+- provider 进入 90 秒 shell 阻塞后，对 Runtime Host PID 执行硬终止；旧 Attempt `31ab9d61-6da0-4f05-b6d3-695e14750a01` 在 lease sweep 后变为 failed，Task 回到 queued。
+- Host 离线时 outbox 连续 deferred 且 `dead_lettered_at IS NULL`；Host 恢复后 outbox delivered。
+- 新 Attempt `5cd26cfb-975d-44a7-a515-e066eb7ff3b8` 保留与旧 Attempt 完全一致的 SessionID、TurnID 和 WorkspaceKey，随后成功。
+- Chat 最终只有一个 `assistant.message=CONVERSATION_RETRY_OK`、一个 `turn.completed`、零个 `turn.failed`；两个 Attempt 的 provider events 都可见；Task 成功后 `errorCode/errorMessage` 均为空。
+
+### 自动化验证
+
+- `go test ./...`：通过。
+- 覆盖关键回归测试：`TestWorkerResultWakesOriginalCoordinatorAndLeaderCanAccept`、`TestLeaderFollowUpConvergesOriginalCoordinatorAfterDelegation`、`TestTaskRespondThenCompleteReusesSingleResultComment`、`TestSelfTriggerGuardIgnoresMismatchedTeamContext`、`TestDeferredQueuedTaskNeverDeadLettersAndEventuallyDispatches`、`TestRenewLoopCancelsProviderWhenControlPlaneReportsTerminal`、`TestChatMapsOverlappingHostedTurnToConflict`、`TestHostedPlaygroundConversationPersistsEventsAndResumesProviderSession`、`TestQueuedConversationRedispatchPreservesSessionAndTurn`、`TestBuildArgsIsolatesHostedMCPFromAmbientQoderSettings`。
