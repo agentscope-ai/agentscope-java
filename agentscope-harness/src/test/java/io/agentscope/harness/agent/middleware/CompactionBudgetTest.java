@@ -175,21 +175,40 @@ class CompactionBudgetTest {
     }
 
     @Test
-    void thresholdEqualityTriggersAndOverheadDoesNotConsumeTailBudget() {
+    void requestOverheadConsumesTokenTailBudget() {
         Fixture f = new Fixture();
         Msg system = Msg.builder().role(MsgRole.SYSTEM).textContent("规则".repeat(300)).build();
-        List<Msg> conversation = List.of(user("history".repeat(100)), user("latest"));
+        Msg older = user("history".repeat(100));
+        Msg recent = user("recent".repeat(100));
+        Msg latest = user("latest");
         ReasoningInput original =
-                new ReasoningInput(
-                        List.of(system, conversation.get(0), conversation.get(1)), List.of(), null);
+                new ReasoningInput(List.of(system, older, recent, latest), List.of(), null);
         int threshold = TokenCounterUtil.calculateToken(original.messages());
-        CompactionConfig cfg =
-                base(threshold)
-                        .keepTokens(TokenCounterUtil.calculateToken(List.of(conversation.get(1))))
-                        .build();
+        int requestOverhead = TokenCounterUtil.calculateToken(List.of(system));
+        int latestTokens = TokenCounterUtil.calculateToken(List.of(latest));
+        CompactionConfig cfg = base(threshold).keepTokens(requestOverhead + latestTokens).build();
         ReasoningInput next = f.run(original, cfg);
         assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, next.messages().get(1).getName());
-        assertSame(conversation.get(1), next.messages().get(2));
+        assertEquals(3, next.messages().size());
+        assertSame(latest, next.messages().get(2));
+        assertTrue(TokenCounterUtil.calculateToken(List.of(system, latest)) <= cfg.getKeepTokens());
+    }
+
+    @Test
+    void overheadExceedingKeepBudgetStillPreservesFinalMessage() {
+        Fixture f = new Fixture();
+        Msg system = Msg.builder().role(MsgRole.SYSTEM).textContent("规则".repeat(300)).build();
+        Msg latest = user("latest");
+        ReasoningInput original =
+                new ReasoningInput(
+                        List.of(system, user("history".repeat(100)), latest), List.of(), null);
+        CompactionConfig cfg = base(1).keepTokens(1).build();
+
+        ReasoningInput next = f.run(original, cfg);
+
+        assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, next.messages().get(1).getName());
+        assertEquals(3, next.messages().size());
+        assertSame(latest, next.messages().get(2));
     }
 
     @Test

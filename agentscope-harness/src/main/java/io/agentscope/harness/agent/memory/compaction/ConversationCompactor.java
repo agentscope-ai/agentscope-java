@@ -141,7 +141,7 @@ public class ConversationCompactor {
             return Mono.just(preprocessedResult(conversationMessages, messages));
         }
 
-        int cutoff = determineCutoffIndex(messages, totalTokens, config);
+        int cutoff = determineCutoffIndex(messages, totalTokens, config, requestOverheadTokens);
         if (cutoff <= 0) {
             log.debug("Compaction triggered but safe cutoff is 0 — skipping");
             return Mono.just(preprocessedResult(conversationMessages, messages));
@@ -276,10 +276,18 @@ public class ConversationCompactor {
      * <p>The cutoff is adjusted so that ASSISTANT/TOOL pairs are never split.
      */
     private static int determineCutoffIndex(
-            List<Msg> messages, int totalTokens, CompactionConfig config) {
+            List<Msg> messages,
+            int totalTokens,
+            CompactionConfig config,
+            int requestOverheadTokens) {
         int rawCutoff;
         if (config.getKeepTokens() > 0) {
-            rawCutoff = findTokenBasedCutoff(messages, totalTokens, config.getKeepTokens());
+            // keepTokens bounds the rebuilt reasoning request, so fixed system/tool/schema
+            // overhead must be reserved before selecting the conversation tail. If the overhead
+            // exhausts the budget, findTokenBasedCutoff still preserves the final message as the
+            // minimum viable conversational tail.
+            int tailBudget = Math.max(0, config.getKeepTokens() - requestOverheadTokens);
+            rawCutoff = findTokenBasedCutoff(messages, totalTokens, tailBudget);
         } else {
             rawCutoff = findMessageBasedCutoff(messages, config.getKeepMessages());
         }
