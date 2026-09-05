@@ -207,6 +207,8 @@ public class AnthropicToolsHelper {
             builder.maxTokens(maxTokens);
         }
 
+        applyThinking(builder, options, defaultOptions);
+
         // Apply additional parameters (merge defaultOptions first, then options to override)
         // Apply additional headers
         applyAdditionalHeaders(builder, defaultOptions);
@@ -239,10 +241,56 @@ public class AnthropicToolsHelper {
         Map<String, Object> params = opts.getAdditionalBodyParams();
         if (params != null && !params.isEmpty()) {
             for (Map.Entry<String, Object> entry : params.entrySet()) {
+                if ("thinking".equals(entry.getKey())) {
+                    continue;
+                }
                 builder.putAdditionalBodyProperty(entry.getKey(), JsonValue.from(entry.getValue()));
             }
             log.debug("Applied {} additional body params to Anthropic request", params.size());
         }
+    }
+
+    private static void applyThinking(
+            MessageCreateParams.Builder builder,
+            GenerateOptions options,
+            GenerateOptions defaultOptions) {
+        GenerateOptions source =
+                hasThinkingConfiguration(options)
+                        ? options
+                        : hasThinkingConfiguration(defaultOptions) ? defaultOptions : null;
+        if (source == null) {
+            return;
+        }
+
+        Integer thinkingBudget = source.getThinkingBudget();
+        Map<String, Object> bodyParams = source.getAdditionalBodyParams();
+        boolean hasExplicitThinking = bodyParams != null && bodyParams.containsKey("thinking");
+        if (thinkingBudget != null && hasExplicitThinking) {
+            throw new IllegalArgumentException(
+                    "Configure Anthropic thinking with either thinkingBudget or the explicit"
+                            + " thinking body parameter, not both");
+        }
+
+        if (thinkingBudget != null) {
+            builder.enabledThinking(thinkingBudget);
+            return;
+        }
+
+        Object thinking = bodyParams.get("thinking");
+        if (thinking == null) {
+            throw new IllegalArgumentException(
+                    "Anthropic thinking body parameter must not be null");
+        }
+        builder.putAdditionalBodyProperty("thinking", JsonValue.from(thinking));
+    }
+
+    private static boolean hasThinkingConfiguration(GenerateOptions options) {
+        if (options == null) {
+            return false;
+        }
+        Map<String, Object> bodyParams = options.getAdditionalBodyParams();
+        return options.getThinkingBudget() != null
+                || (bodyParams != null && bodyParams.containsKey("thinking"));
     }
 
     private static void applyAdditionalQueryParams(
