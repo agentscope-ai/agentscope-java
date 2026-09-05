@@ -37,6 +37,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
@@ -51,6 +52,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
@@ -301,7 +303,37 @@ public class AguiAgentAdapter {
                 .put(RUNTIME_CONTEXT_STATE_KEY, input.getState())
                 .put(RUNTIME_CONTEXT_FORWARDED_PROPS_KEY, input.getForwardedProps())
                 .put(RUNTIME_CONTEXT_RESUME_KEY, input.getResume())
+                .onStateLoaded(createMessageMergeHandler())
                 .build();
+    }
+
+    /**
+     * Creates the {@code onStateLoaded} callback that deduplicates incoming messages against the
+     * already-persisted AgentState context.
+     *
+     * <p>The last message id in {@code state.getContext()} is used as the anchor: if it is found in
+     * the incoming {@code msgs} list, the anchor and everything before it is removed in place (the
+     * input was a full transcript); otherwise the incoming list is treated as purely incremental and
+     * left untouched. When the context is empty or the state is null the callback is a no-op.
+     */
+    private BiConsumer<RuntimeContext, List<Msg>> createMessageMergeHandler() {
+        return (ctx, msgs) -> {
+            AgentState state = ctx.getAgentState();
+            if (state == null) {
+                return;
+            }
+            List<Msg> context = state.getContext();
+            if (context.isEmpty()) {
+                return;
+            }
+            String anchorId = context.get(context.size() - 1).getId();
+            for (int i = msgs.size() - 1; i >= 0; i--) {
+                if (anchorId.equals(msgs.get(i).getId())) {
+                    msgs.subList(0, i + 1).clear();
+                    return;
+                }
+            }
+        };
     }
 
     @SuppressWarnings("unchecked")
