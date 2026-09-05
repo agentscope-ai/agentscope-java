@@ -82,6 +82,7 @@ public final class MiniMaxModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new MiniMaxFormatter())
                         .nativeStructuredOutput(false)
+                        .supportsToolChoiceSpecific(false)
                         .contextWindowSize(
                                 ModelContextWindows.lookup(modelName, ModelContextWindows.MINIMAX));
 
