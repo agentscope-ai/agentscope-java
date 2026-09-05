@@ -22,27 +22,47 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.State;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-/** Regression tests for durable conversation state when a model stream fails. */
-@DisplayName("ReActAgent failed-call persistence")
+/** Regression tests for durable conversation state after abnormal call termination. */
+@DisplayName("ReActAgent abnormal-call persistence")
 class ReActAgentCallFailurePersistenceTest {
 
     private static final RuntimeContext CONTEXT =
@@ -190,6 +210,213 @@ class ReActAgentCallFailurePersistenceTest {
         assertFalse(textContents(persisted.getContext()).contains("incomplete answer"));
     }
 
+    @ParameterizedTest(name = "structured={0}, native={1}")
+    @CsvSource({"false, false", "true, false", "true, true"})
+    @DisplayName("cancelled calls persist only safe conversation state")
+    void cancelledCallPersistsOnlySafeConversationState(
+            boolean structuredOutput, boolean nativeStructuredOutput) throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CountDownLatch responseEmitted = new CountDownLatch(1);
+        ReActAgent agent =
+                agent(new NeverCompletingModel(responseEmitted, nativeStructuredOutput), store);
+
+        Disposable subscription =
+                structuredOutput
+                        ? agent.call(
+                                        List.of(userMsg("original question")),
+                                        StructuredReply.class,
+                                        CONTEXT)
+                                .subscribe()
+                        : agent.call(List.of(userMsg("original question")), CONTEXT).subscribe();
+        try {
+            assertTrue(responseEmitted.await(5, TimeUnit.SECONDS));
+        } finally {
+            subscription.dispose();
+        }
+
+        AgentState persisted =
+                store.get("u1", "session-1", "agent_state", AgentState.class).orElseThrow();
+        assertEquals(List.of("original question"), textContents(persisted.getContext()));
+        assertFalse(hasToolUse(persisted));
+    }
+
+    @Test
+    @DisplayName("tool execution is cancelled before state is saved")
+    void cancellationStopsAllowedToolBeforeSavingState() throws Exception {
+        CountDownLatch toolStarted = new CountDownLatch(1);
+        CountDownLatch toolCancelled = new CountDownLatch(1);
+        AtomicBoolean savedBeforeToolCancellation = new AtomicBoolean();
+        AtomicInteger savesAfterToolStarted = new AtomicInteger();
+        InMemoryAgentStateStore store =
+                new InMemoryAgentStateStore() {
+                    @Override
+                    public long saveIfVersion(
+                            String userId,
+                            String sessionId,
+                            String key,
+                            State value,
+                            long expectedVersion) {
+                        if (toolStarted.getCount() == 0) {
+                            savesAfterToolStarted.incrementAndGet();
+                            if (toolCancelled.getCount() != 0) {
+                                savedBeforeToolCancellation.set(true);
+                            }
+                        }
+                        return super.saveIfVersion(userId, sessionId, key, value, expectedVersion);
+                    }
+                };
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                new TestTool(
+                        PermissionDecision.allow("allowed"),
+                        Mono.<ToolResultBlock>never()
+                                .doOnSubscribe(ignored -> toolStarted.countDown())
+                                .doOnCancel(toolCancelled::countDown)));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("system prompt")
+                        .model(new FixedResponseModel(incompleteResponse()))
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        Disposable subscription =
+                agent.call(List.of(userMsg("original question")), CONTEXT).subscribe();
+        try {
+            assertTrue(toolStarted.await(5, TimeUnit.SECONDS));
+            assertEquals(
+                    ToolCallState.ALLOWED,
+                    onlyToolUse(agent.getAgentState("u1", "session-1")).getState());
+        } finally {
+            subscription.dispose();
+        }
+
+        assertTrue(toolCancelled.await(5, TimeUnit.SECONDS));
+        assertFalse(savedBeforeToolCancellation.get());
+        assertEquals(1, savesAfterToolStarted.get());
+        AgentState persisted =
+                store.get("u1", "session-1", "agent_state", AgentState.class).orElseThrow();
+        assertEquals(
+                List.of("original question", "incomplete answer"),
+                textContents(persisted.getContext()));
+        assertFalse(hasToolUse(persisted));
+    }
+
+    @Test
+    @DisplayName("cancelling an in-flight normal save does not start a second save")
+    void cancellationDuringNormalSaveDoesNotDoubleWrite() throws Exception {
+        AtomicBoolean responseProduced = new AtomicBoolean();
+        AtomicInteger savesAfterResponse = new AtomicInteger();
+        CountDownLatch saveStarted = new CountDownLatch(1);
+        CountDownLatch releaseSave = new CountDownLatch(1);
+        CountDownLatch saveFinished = new CountDownLatch(1);
+        InMemoryAgentStateStore store =
+                new InMemoryAgentStateStore() {
+                    @Override
+                    public long saveIfVersion(
+                            String userId,
+                            String sessionId,
+                            String key,
+                            State value,
+                            long expectedVersion) {
+                        int saveNumber =
+                                responseProduced.get() ? savesAfterResponse.incrementAndGet() : 0;
+                        if (saveNumber == 1) {
+                            saveStarted.countDown();
+                            awaitUninterruptibly(releaseSave);
+                        }
+                        try {
+                            return super.saveIfVersion(
+                                    userId, sessionId, key, value, expectedVersion);
+                        } finally {
+                            if (saveNumber == 1) {
+                                saveFinished.countDown();
+                            }
+                        }
+                    }
+                };
+        ReActAgent agent =
+                agent(
+                        new FixedResponseModel(
+                                textResponse("done"), () -> responseProduced.set(true)),
+                        store);
+
+        Disposable subscription =
+                agent.call(List.of(userMsg("original question")), CONTEXT).subscribe();
+        try {
+            assertTrue(saveStarted.await(5, TimeUnit.SECONDS));
+            subscription.dispose();
+            assertEquals(1, savesAfterResponse.get());
+        } finally {
+            subscription.dispose();
+            releaseSave.countDown();
+        }
+        assertTrue(saveFinished.await(5, TimeUnit.SECONDS));
+        assertEquals(1, savesAfterResponse.get());
+    }
+
+    @Test
+    @DisplayName("acting failures do not persist tool calls without results")
+    void actingFailureDropsUncommittedToolCall() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("system prompt")
+                        .model(new FixedResponseModel(incompleteResponse()))
+                        .middleware(new FailingActingMiddleware())
+                        .stateStore(store)
+                        .build();
+
+        IllegalStateException thrown =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> agent.call(List.of(userMsg("original question")), CONTEXT).block());
+
+        assertEquals("acting failed", thrown.getMessage());
+        AgentState persisted =
+                store.get("u1", "session-1", "agent_state", AgentState.class).orElseThrow();
+        assertEquals(
+                List.of("original question", "incomplete answer"),
+                textContents(persisted.getContext()));
+        assertFalse(hasToolUse(persisted));
+    }
+
+    @ParameterizedTest(name = "permissionAsking={0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("post-acting failures remove ALLOWED calls but preserve ASKING calls")
+    void postActingFailureKeepsOnlyResumableToolCalls(boolean permissionAsking) {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        Toolkit toolkit = new Toolkit();
+        PermissionDecision decision =
+                permissionAsking
+                        ? PermissionDecision.ask("confirmation required")
+                        : PermissionDecision.allow("allowed");
+        toolkit.registerAgentTool(new TestTool(decision, Mono.just(ToolResultBlock.text("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("system prompt")
+                        .model(new FixedResponseModel(incompleteResponse()))
+                        .toolkit(toolkit)
+                        .middleware(new FailAfterActingMiddleware())
+                        .stateStore(store)
+                        .build();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> agent.call(List.of(userMsg("original question")), CONTEXT).block());
+
+        AgentState persisted =
+                store.get("u1", "session-1", "agent_state", AgentState.class).orElseThrow();
+        if (permissionAsking) {
+            assertEquals(ToolCallState.ASKING, onlyToolUse(persisted).getState());
+        } else {
+            assertFalse(hasToolUse(persisted));
+        }
+    }
+
     private static ReActAgent agent(ChatModelBase model, InMemoryAgentStateStore store) {
         return ReActAgent.builder()
                 .name("asst")
@@ -236,6 +463,36 @@ class ReActAgentCallFailurePersistenceTest {
             }
         }
         return result;
+    }
+
+    private static boolean hasToolUse(AgentState state) {
+        return state.getContext().stream()
+                .flatMap(message -> message.getContentBlocks(ToolUseBlock.class).stream())
+                .findAny()
+                .isPresent();
+    }
+
+    private static ToolUseBlock onlyToolUse(AgentState state) {
+        List<ToolUseBlock> toolUses =
+                state.getContext().stream()
+                        .flatMap(message -> message.getContentBlocks(ToolUseBlock.class).stream())
+                        .toList();
+        assertEquals(1, toolUses.size());
+        return toolUses.get(0);
+    }
+
+    private static void awaitUninterruptibly(CountDownLatch latch) {
+        boolean interrupted = false;
+        while (latch.getCount() != 0) {
+            try {
+                latch.await();
+            } catch (InterruptedException ignored) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static final class AlwaysFailingModel extends ChatModelBase {
@@ -299,6 +556,115 @@ class ReActAgentCallFailurePersistenceTest {
 
         private List<List<Msg>> calls() {
             return calls;
+        }
+    }
+
+    private static final class NeverCompletingModel extends ChatModelBase {
+        private final CountDownLatch responseEmitted;
+        private final boolean nativeStructuredOutput;
+
+        private NeverCompletingModel(
+                CountDownLatch responseEmitted, boolean nativeStructuredOutput) {
+            this.responseEmitted = responseEmitted;
+            this.nativeStructuredOutput = nativeStructuredOutput;
+        }
+
+        @Override
+        public String getModelName() {
+            return "never-completing";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(incompleteResponse())
+                    .doOnComplete(responseEmitted::countDown)
+                    .concatWith(Flux.never());
+        }
+
+        @Override
+        public boolean supportsNativeStructuredOutput() {
+            return nativeStructuredOutput;
+        }
+    }
+
+    private static final class FixedResponseModel extends ChatModelBase {
+        private final ChatResponse response;
+        private final Runnable beforeStream;
+
+        private FixedResponseModel(ChatResponse response) {
+            this(response, () -> {});
+        }
+
+        private FixedResponseModel(ChatResponse response, Runnable beforeStream) {
+            this.response = response;
+            this.beforeStream = beforeStream;
+        }
+
+        @Override
+        public String getModelName() {
+            return "fixed-response";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            beforeStream.run();
+            return Flux.just(response);
+        }
+    }
+
+    private static final class FailingActingMiddleware implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return Flux.error(new IllegalStateException("acting failed"));
+        }
+    }
+
+    private static final class FailAfterActingMiddleware implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .concatWith(Flux.error(new IllegalStateException("post-acting failed")));
+        }
+    }
+
+    private static final class TestTool extends ToolBase {
+        private final PermissionDecision decision;
+        private final Mono<ToolResultBlock> result;
+
+        private TestTool(PermissionDecision decision, Mono<ToolResultBlock> result) {
+            super(
+                    "unfinished_tool",
+                    "test tool",
+                    Map.of("type", "object", "properties", Map.of()),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+            this.decision = decision;
+            this.result = result;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState context) {
+            return Mono.just(decision);
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return result;
         }
     }
 
