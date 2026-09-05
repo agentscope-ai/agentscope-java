@@ -162,6 +162,14 @@ final class HarnessAgentBuilderSupport {
         if (b.localFilesystemSpec != null) {
             return b.localFilesystemSpec.toFilesystem(workspace, nsFactory);
         }
+        if (b.disableLocalWorkspace) {
+            // No default local filesystem: nothing to materialise under the working directory.
+            // Workspace-backed components (WorkspaceMessageBus, WorkspaceAsyncToolRegistry,
+            // workspace task repository, transcript-on-disk, skills staging…) are consequently
+            // skipped or require an explicit custom implementation — exactly the intent for
+            // SaaS/sandboxed builds that never want a .agentscope directory locally.
+            return null;
+        }
         // Default: route through LocalFilesystemSpec so the default project (= ${user.dir})
         // is overlaid below the agent workspace, matching the Claude-Code-style two-layer model.
         return new LocalFilesystemSpec().toFilesystem(workspace, nsFactory);
@@ -759,6 +767,13 @@ final class HarnessAgentBuilderSupport {
             if (distributed != null) {
                 return distributed;
             }
+        }
+        if (b.disableLocalWorkspace) {
+            throw new IllegalStateException(
+                    "disableLocalWorkspace() prevents the workspace-backed default TaskRepository"
+                            + " (which would materialise agents/<agentId>/tasks under the working"
+                            + " directory). Pass an explicit .taskRepository(...), or configure a"
+                            + " DistributedStore that supplies one.");
         }
         Objects.requireNonNull(
                 wsManager,

@@ -1134,6 +1134,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
+     * Resolves the ephemeral workspace used when {@link Builder#disableLocalWorkspace()} is
+     * enabled and no explicit {@link Builder#workspace(Path)} is set. The path lives under the
+     * JVM temp directory so that nothing is materialised in the application's working directory;
+     * it is defensive fallback and is not created eagerly.
+     *
+     * @param agentId the resolved agent id (already non-blank)
+     * @return the ephemeral workspace directory; never {@code null}
+     */
+    static Path resolveEphemeralWorkspace(String agentId) {
+        String safeAgentId = HarnessAgentBuilderSupport.sanitizeIdentifier(agentId);
+        if (safeAgentId == null || safeAgentId.isBlank()) {
+            safeAgentId = "ReActAgent";
+        }
+        return Paths.get(System.getProperty("java.io.tmpdir"))
+                .resolve("agentscope-workspace")
+                .resolve(safeAgentId);
+    }
+
+    /**
      * Returns true when the given session is a local in-process implementation that cannot share
      * state across nodes. Used by sandbox / remote-filesystem fail-fast checks to reject
      * configurations that would silently leak per-node state in distributed deployments.
@@ -1207,6 +1226,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
         String transcriptTenant;
         boolean disableSessionPersistence = false;
         boolean disableWorkspaceContext = false;
+
+        /**
+         * When enabled, the harness never materialises the default local workspace
+         * ({@code ${user.dir}/.agentscope/workspace}) for this build. Intended for
+         * SaaS / containerised deployments where all file IO is handled by a remote
+         * sandbox or an in-memory / distributed store, and a local workspace directory
+         * would only pollute the application's working directory.
+         */
+        boolean disableLocalWorkspace = false;
+
         boolean disableAtPathExpansion = false;
         boolean disableSubagents = false;
         boolean disableDynamicSkills = false;
@@ -2185,6 +2214,42 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Prevents the harness from materialising the default local workspace
+         * ({@code .agentscope/workspace} under the current working directory) for this agent.
+         *
+         * <p>When enabled and no explicit {@link #workspace(Path)} is set, the workspace path
+         * resolves to an ephemeral location under the JVM temp directory
+         * ({@code ${java.io.tmpdir}/agentscope-workspace/<agentId>}) instead of
+         * {@code ${user.dir}/.agentscope/workspace}, and no default local filesystem is created.
+         * This targets SaaS / container deployments that run agents inside a remote sandbox or
+         * with an in-memory / distributed store, and never want a {@code .agentscope} directory
+         * to appear in the application's working directory.
+         *
+         * <p><strong>Required companion configuration:</strong> because the workspace-backed
+         * defaults (JsonFileAgentStateStore, WorkspaceTaskRepository, local filesystem) are not
+         * available in this mode, the build fails fast with a descriptive error unless the caller
+         * supplies the corresponding custom implementations:
+         * <ul>
+         *   <li>an explicit {@link #stateStore(io.agentscope.core.state.AgentStateStore)} (or a
+         *       {@code DistributedStore});</li>
+         *   <li>an explicit {@link #taskRepository(io.agentscope.harness.agent.subagent.task.TaskRepository)}
+         *       when subagents are enabled;</li>
+         *   <li>a set of opt-outs for workspace-local subsystems that are not desired in this
+         *       mode, e.g. {@link #disableFilesystemTools()}, {@link #disableShellTool()},
+         *       {@link #disableMemoryTools()}, {@link #disableMemoryHooks()},
+         *       {@link #disableDynamicSkills()}, {@link #disableDefaultWorkspaceSkills()} and
+         *       {@link #disableTranscript()}. Any such subsystem that is left enabled reads and
+         *       writes the ephemeral temp workspace instead of {@code ${user.dir}}.</li>
+         * </ul>
+         *
+         * @return this builder
+         */
+        public Builder disableLocalWorkspace() {
+            this.disableLocalWorkspace = true;
+            return this;
+        }
+
         public Builder disableAtPathExpansion() {
             this.disableAtPathExpansion = true;
             return this;
@@ -2281,11 +2346,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         "abstractFilesystem() is an escape hatch and is mutually exclusive with"
                                 + " filesystem(...) specs");
             }
-            Path resolvedWorkspace = workspace != null ? workspace : resolveDefaultWorkspace();
             String resolvedAgentId =
                     agentId != null && !agentId.isBlank()
                             ? agentId
                             : (name != null && !name.isBlank() ? name : "ReActAgent");
+            Path resolvedWorkspace =
+                    workspace != null
+                            ? workspace
+                            : (disableLocalWorkspace
+                                    ? resolveEphemeralWorkspace(resolvedAgentId)
+                                    : resolveDefaultWorkspace());
             // ---- DistributedStore auto-wiring ----
             // distributedStore provides storage components; filesystem mode is user's choice.
             // Priority: explicit builder methods > distributedStore > workspace defaults
@@ -2320,6 +2390,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             : new LocalPeriodicGate();
 
             AgentStateStore effectiveSession = stateStoreOverride;
+            if (disableLocalWorkspace && effectiveSession == null) {
+                throw new IllegalStateException(
+                        "disableLocalWorkspace() leaves no default AgentStateStore: the default"
+                            + " JsonFileAgentStateStore would persist to ~/.agentscope/state, which"
+                            + " is exactly what this mode must avoid. Pass an explicit"
+                            + " .stateStore(...) or configure a DistributedStore that supplies"
+                            + " one.");
+            }
             IsolationScope fsIsolationScope = IsolationScope.USER;
             if (remoteFilesystemSpec != null && remoteFilesystemSpec.getIsolationScope() != null) {
                 fsIsolationScope = remoteFilesystemSpec.getIsolationScope();
@@ -2455,6 +2533,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     if (wsManager.getFilesystem() != null) {
                         effectiveTranscriptStore =
                                 new ObjectStoreTranscriptStore(wsManager.getFilesystem());
+                    } else if (disableLocalWorkspace) {
+                        // No local workspace and no filesystem: transcripts would have to be
+                        // persisted to ${user.dir}, which this mode explicitly forbids.
+                        log.warn(
+                                "[harness] disableLocalWorkspace() leaves no transcript backend;"
+                                    + " transcripts are disabled. Supply .transcriptStore(...) or"
+                                    + " omit disableLocalWorkspace() to persist session logs.");
                     } else {
                         effectiveTranscriptStore =
                                 new FilesystemTranscriptStore(
@@ -2463,9 +2548,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                                 .resolve(".agentscope/transcripts"));
                     }
                 }
-                inner.middleware(
-                        new TranscriptMiddleware(
-                                wsManager, effectiveTranscriptStore, transcriptTenant));
+                if (effectiveTranscriptStore != null) {
+                    inner.middleware(
+                            new TranscriptMiddleware(
+                                    wsManager, effectiveTranscriptStore, transcriptTenant));
+                }
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
@@ -2515,7 +2602,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     inner.middleware(compactionHook);
                 }
             }
-            if (!disableToolResultEviction && toolResultEvictionConfig != null) {
+            if (!disableToolResultEviction
+                    && toolResultEvictionConfig != null
+                    && filesystem != null) {
                 inner.middleware(
                         new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
             }
@@ -2618,7 +2707,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
             }
-            if (!disableFilesystemTools) {
+            if (!disableFilesystemTools && filesystem != null) {
                 agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
             }
             if (artifactDeliveryEnabled) {
@@ -2775,7 +2864,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
             if (!orderedSkillRepos.isEmpty()) {
                 io.agentscope.harness.agent.skill.runtime.MarketplaceStager stager =
-                        resolvedWorkspace != null
+                        resolvedWorkspace != null && !disableLocalWorkspace
                                 ? new io.agentscope.harness.agent.skill.runtime.MarketplaceStager(
                                         resolvedWorkspace)
                                 : null;
@@ -2853,7 +2942,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     "HarnessAgent '{}' built [workspace={}, filesystem={}, subagents={}]",
                     name,
                     resolvedWorkspace,
-                    filesystem.getClass().getSimpleName(),
+                    filesystem != null ? filesystem.getClass().getSimpleName() : "none",
                     !leafSubagent && !disableSubagents && model != null);
 
             // ---- Build inner ReActAgent ----
