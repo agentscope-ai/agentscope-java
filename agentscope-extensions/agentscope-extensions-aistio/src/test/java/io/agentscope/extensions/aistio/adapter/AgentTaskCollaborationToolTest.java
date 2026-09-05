@@ -6,6 +6,7 @@ package io.agentscope.extensions.aistio.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,12 +22,33 @@ import io.agentscope.extensions.aistio.transport.ControlPlaneHttpClient;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class AgentTaskCollaborationToolTest {
+
+    @Test
+    void roleInstructionsSeparateLeaderHandoffFromWorkerExecution() throws Exception {
+        JsonNode worker =
+                ControlPlaneHttpClient.mapper()
+                        .readTree("{\"task\":{\"teamId\":\"team-1\",\"teamRole\":\"specialist\"}}");
+        JsonNode leader =
+                ControlPlaneHttpClient.mapper()
+                        .readTree("{\"task\":{\"teamId\":\"team-1\",\"leaderTask\":true}}");
+
+        assertTrue(
+                HarnessAgentTaskStarter.roleInstructions(worker, List.of())
+                        .contains("Team worker, not its coordinator"));
+        assertTrue(
+                HarnessAgentTaskStarter.roleInstructions(leader, List.of())
+                        .contains("return immediately after issue.child.create succeeds"));
+        String followUp = HarnessAgentTaskStarter.roleInstructions(leader, List.of("input-1"));
+        assertTrue(followUp.contains("leader follow-up"));
+        assertTrue(followUp.contains("Never send those mutations in parallel"));
+    }
 
     @Test
     void startFallbackRefreshesFullTaskContext() throws Exception {
@@ -146,6 +168,40 @@ class AgentTaskCollaborationToolTest {
                     "working",
                     call.get().path("params").path("arguments").path("content").asText());
             assertTrue(((TextBlock) result.getOutput().get(0)).getText().contains("comment-1"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void mcpToolFailureSurfacesTheControlPlaneReason() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/mcp/collaboration",
+                exchange ->
+                        respond(
+                                exchange,
+                                "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{"
+                                    + "\"content\":[{\"type\":\"text\",\"text\":\"{\\\"error\\\":\\\"coordinator"
+                                    + " has active worker task"
+                                    + " task-2\\\"}\"}],\"structuredContent\":{\"error\":\"coordinator"
+                                    + " has active worker task task-2\"},\"isError\":true}}"));
+        server.start();
+        try {
+            CollaborationClient client =
+                    new CollaborationClient(
+                            new ControlPlaneHttpClient(
+                                    "http://127.0.0.1:" + server.getAddress().getPort(),
+                                    "internal-token"));
+
+            CollaborationClient.CollaborationHttpException error =
+                    assertThrows(
+                            CollaborationClient.CollaborationHttpException.class,
+                            () ->
+                                    client.callTool(
+                                            "task-1", "task-token", "run.node.complete", Map.of()));
+
+            assertTrue(error.getMessage().contains("coordinator has active worker task task-2"));
         } finally {
             server.stop(0);
         }

@@ -13,6 +13,7 @@ import io.agentscope.extensions.aistio.transport.CollaborationClient;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -32,7 +33,6 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
     private final Supplier<HarnessAgent> agent;
     private final CollaborationClient collaboration;
     private final Set<String> acceptedEvents = ConcurrentHashMap.newKeySet();
-    private final Set<Object> collaborationToolkits = ConcurrentHashMap.newKeySet();
 
     public HarnessAgentTaskStarter(
             Supplier<HarnessAgent> agent, CollaborationClient collaboration) {
@@ -70,7 +70,7 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             envelope = running;
 
             HarnessAgent runtimeAgent = agent.get();
-            registerCollaborationTools(runtimeAgent, assignment);
+            registerCollaborationTools(runtimeAgent, assignment, availableActions(envelope));
 
             String payload = new String(assignment.payload(), StandardCharsets.UTF_8);
             String prompt =
@@ -82,10 +82,9 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             + " progress comments, artifacts, or child Issues. The available"
                             + " CollaborationClient actions are registered as tools with the exact"
                             + " names shown in availableActions. The adapter owns task.complete and"
-                            + " task.fail; do not call them. A Team leader must call"
-                            + " run.node.complete only after all requested and delegated work has"
-                            + " actually converged. Returning text alone never completes a Team"
-                            + " coordinator.\ncontextUrl="
+                            + " task.fail; do not call them."
+                            + roleInstructions(envelope, inputIds)
+                            + "\ncontextUrl="
                             + nullToEmpty(assignment.contextUrl())
                             + "\n"
                             + envelope
@@ -135,21 +134,20 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
     }
 
     private void registerCollaborationTools(
-            HarnessAgent runtimeAgent, AgentTaskAssignment assignment) {
+            HarnessAgent runtimeAgent,
+            AgentTaskAssignment assignment,
+            Set<String> availableActions) {
         Object toolkit = runtimeAgent.getToolkit();
-        if (collaborationToolkits.contains(toolkit)) {
-            return;
-        }
         synchronized (toolkit) {
-            if (collaborationToolkits.contains(toolkit)) {
-                return;
-            }
             for (JsonNode definition :
                     collaboration.tools(assignment.agentTaskId(), assignment.taskToken())) {
                 String name = definition.path("name").asText();
                 // The starter owns the physical task lifecycle. Exposing these two actions would
                 // race the adapter's fenced completion/failure reporting.
                 if ("task.complete".equals(name) || "task.fail".equals(name)) {
+                    continue;
+                }
+                if (!availableActions.contains(name)) {
                     continue;
                 }
                 if (!runtimeAgent.getToolkit().getToolNames().contains(name)) {
@@ -159,8 +157,44 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                                     new AgentTaskCollaborationTool(collaboration, definition));
                 }
             }
-            collaborationToolkits.add(toolkit);
         }
+    }
+
+    static String roleInstructions(JsonNode envelope, List<String> inputIds) {
+        JsonNode task = envelope.path("task");
+        if (task.path("teamId").asText().isBlank()) {
+            return " Complete the requested work and return the result.";
+        }
+        if (!task.path("leaderTask").asBoolean(false)) {
+            return " You are a Team worker, not its coordinator. Do not create or accept child"
+                    + " Issues and do not call run.node.complete, run.node.fail, or run.replan."
+                    + " Complete only the assigned work and return its result; the adapter will"
+                    + " complete this AgentTask.";
+        }
+        if (inputIds.isEmpty()) {
+            return " You are the Team leader's initial task. If you delegate child work, return"
+                    + " immediately after issue.child.create succeeds; do not wait through local"
+                    + " session/task tools and do not call run.node.complete yet. The control plane"
+                    + " will deliver a fresh leader follow-up when a worker result arrives. If no"
+                    + " work is delegated, call run.node.complete after your own work converges."
+                    + " Returning text alone never completes a Team coordinator.";
+        }
+        return " You are a Team leader follow-up with new worker inputs. Validate the supplied"
+                + " result, call issue.accept and wait for its result, then make a separate"
+                + " run.node.complete call only when every child Issue and worker node has"
+                + " converged. Never send those mutations in parallel. Returning text alone never"
+                + " completes a Team coordinator.";
+    }
+
+    private static Set<String> availableActions(JsonNode envelope) {
+        Set<String> actions = new HashSet<>();
+        for (JsonNode action : envelope.path("availableActions")) {
+            String name = action.asText();
+            if (!name.isBlank()) {
+                actions.add(name);
+            }
+        }
+        return actions;
     }
 
     /**

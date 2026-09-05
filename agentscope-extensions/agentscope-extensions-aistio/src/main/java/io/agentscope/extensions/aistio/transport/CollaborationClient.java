@@ -395,9 +395,18 @@ public final class CollaborationClient {
         private final String responseBody;
 
         public CollaborationHttpException(String operation, int status, String responseBody) {
-            super(operation + " failed: HTTP " + status);
+            super(operation + " failed: HTTP " + status + errorDetail(responseBody));
             this.status = status;
             this.responseBody = responseBody;
+        }
+
+        private static String errorDetail(String body) {
+            if (body == null || body.isBlank()) {
+                return "";
+            }
+            String compact = body.replaceAll("\\s+", " ").trim();
+            int limit = Math.min(compact.length(), 512);
+            return ": " + compact.substring(0, limit) + (compact.length() > limit ? "..." : "");
         }
 
         public int status() {
