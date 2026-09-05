@@ -105,7 +105,7 @@ public final class ShellPathPolicy {
             return joinSkills(skillName);
         }
         if (stage instanceof StageResult.Cached cached) {
-            return joinCache(cached.sourceNamespace(), cached.skillName());
+            return joinCache(cached.scopeSegment(), cached.sourceNamespace(), cached.skillName());
         }
         return null;
     }
@@ -124,13 +124,15 @@ public final class ShellPathPolicy {
         };
     }
 
-    private String joinCache(String sourceNs, String skillName) {
+    private String joinCache(String scopeSegment, String sourceNs, String skillName) {
         return switch (mode) {
             case SANDBOX ->
                     escapeSpaces(
                             sandboxPrefix
                                     + "/"
                                     + MarketplaceStager.CACHE_DIR
+                                    + "/"
+                                    + scopeSegment
                                     + "/"
                                     + sourceNs
                                     + "/"
@@ -139,6 +141,7 @@ public final class ShellPathPolicy {
                     escapeSpaces(
                             workspaceRoot
                                     .resolve(MarketplaceStager.CACHE_DIR)
+                                    .resolve(scopeSegment)
                                     .resolve(sourceNs)
                                     .resolve(skillName)
                                     .toAbsolutePath()
