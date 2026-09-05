@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.dashscope.formatter;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -33,7 +34,6 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * DashScope formatter for multi-agent conversations.
@@ -84,11 +84,14 @@ public class DashScopeMultiAgentFormatter
 
         // Process system message first (if any) - output separately
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            result.add(
+            Msg systemMsg = msgs.get(0);
+            DashScopeMessage formattedSystemMessage =
                     DashScopeMessage.builder()
                             .role("system")
-                            .content(extractTextContent(msgs.get(0)))
-                            .build());
+                            .content(extractTextContent(systemMsg))
+                            .build();
+            messageConverter.applyCacheControlFromMetadata(systemMsg, formattedSystemMessage);
+            result.add(formattedSystemMessage);
             startIndex = 1;
         }
 
@@ -101,12 +104,14 @@ public class DashScopeMultiAgentFormatter
             if (group.type == GroupType.AGENT_MESSAGE) {
                 // Format agent messages with conversation history
                 String historyPrompt = isFirstAgentMessage ? conversationHistoryPrompt : "";
-                result.add(
+                DashScopeMessage mergedMessage =
                         conversationMerger.mergeToMessage(
                                 group.messages,
                                 msg -> msg.getName() != null ? msg.getName() : "Unknown",
                                 this::convertToolResultToString,
-                                historyPrompt));
+                                historyPrompt);
+                applyMergedCacheControlMetadata(group.messages, mergedMessage);
+                result.add(mergedMessage);
                 isFirstAgentMessage = false;
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
                 // Format tool sequence directly
@@ -171,14 +176,17 @@ public class DashScopeMultiAgentFormatter
 
         // Process system message first (if any)
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            result.add(
+            Msg systemMsg = msgs.get(0);
+            DashScopeMessage formattedSystemMessage =
                     DashScopeMessage.builder()
                             .role("system")
                             .content(
                                     List.of(
                                             DashScopeContentPart.text(
-                                                    extractTextContent(msgs.get(0)))))
-                            .build());
+                                                    extractTextContent(systemMsg))))
+                            .build();
+            messageConverter.applyCacheControlFromMetadata(systemMsg, formattedSystemMessage);
+            result.add(formattedSystemMessage);
             startIndex = 1;
         }
 
@@ -190,12 +198,14 @@ public class DashScopeMultiAgentFormatter
         for (MessageGroup group : groups) {
             if (group.type == GroupType.AGENT_MESSAGE) {
                 // Format agent messages with conversation history
-                result.add(
+                DashScopeMessage mergedMessage =
                         conversationMerger.mergeToMultiModalMessage(
                                 group.messages,
                                 msg -> msg.getName() != null ? msg.getName() : "Unknown",
                                 this::convertToolResultToString,
-                                isFirstAgentMessage));
+                                isFirstAgentMessage);
+                applyMergedCacheControlMetadata(group.messages, mergedMessage);
+                result.add(mergedMessage);
                 isFirstAgentMessage = false;
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
                 // Format tool sequence directly
@@ -307,7 +317,9 @@ public class DashScopeMultiAgentFormatter
             builder.content(extractTextContent(msg));
         }
 
-        return builder.build();
+        DashScopeMessage result = builder.build();
+        messageConverter.applyCacheControlFromMetadata(msg, result);
+        return result;
     }
 
     /**
@@ -315,19 +327,38 @@ public class DashScopeMultiAgentFormatter
      */
     private DashScopeMessage formatToolResult(Msg msg) {
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        DashScopeMessage message;
         if (result != null) {
-            return DashScopeMessage.builder()
-                    .role("tool")
-                    .toolCallId(result.getId())
-                    .name(result.getName())
-                    .content(convertToolResultToString(result.getOutput()))
-                    .build();
+            message =
+                    DashScopeMessage.builder()
+                            .role("tool")
+                            .toolCallId(result.getId())
+                            .name(result.getName())
+                            .content(convertToolResultToString(result.getOutput()))
+                            .build();
         } else {
-            return DashScopeMessage.builder()
-                    .role("tool")
-                    .toolCallId("tool_call_" + System.currentTimeMillis())
-                    .content(extractTextContent(msg))
-                    .build();
+            message =
+                    DashScopeMessage.builder()
+                            .role("tool")
+                            .toolCallId("tool_call_" + System.currentTimeMillis())
+                            .content(extractTextContent(msg))
+                            .build();
+        }
+        messageConverter.applyCacheControlFromMetadata(msg, message);
+        return message;
+    }
+
+    private void applyMergedCacheControlMetadata(
+            List<Msg> messages, DashScopeMessage mergedMessage) {
+        // A merged output has one content boundary, so the last explicit directive wins.
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg message = messages.get(i);
+            if (message.getMetadata() != null
+                    && message.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL)
+                            instanceof Boolean) {
+                messageConverter.applyCacheControlFromMetadata(message, mergedMessage);
+                return;
+            }
         }
     }
 
@@ -366,25 +397,13 @@ public class DashScopeMultiAgentFormatter
     /**
      * Apply cache control to DashScope messages.
      *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that are explicitly excluded from caching or that already carry
-     * a cache_control value are left untouched.
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to the last content part of all
+     * system messages and the last message in the list. Legacy message-level values are migrated to
+     * the last content part. Messages explicitly excluded from caching are left untouched.
      *
      * @param messages the list of formatted DashScope messages
      */
     public void applyCacheControl(List<DashScopeMessage> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return;
-        }
-        Map<String, String> ephemeral = DashScopeChatFormatter.getEphemeralCacheControl();
-        for (DashScopeMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && DashScopeChatFormatter.shouldAutoCache(msg)) {
-                msg.setCacheControl(ephemeral);
-            }
-        }
-        DashScopeMessage lastMsg = messages.get(messages.size() - 1);
-        if (DashScopeChatFormatter.shouldAutoCache(lastMsg)) {
-            lastMsg.setCacheControl(ephemeral);
-        }
+        DashScopeChatFormatter.applyCacheControlToMessages(messages);
     }
 }

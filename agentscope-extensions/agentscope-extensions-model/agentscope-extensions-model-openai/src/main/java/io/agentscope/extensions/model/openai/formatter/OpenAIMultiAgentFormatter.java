@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
@@ -77,11 +78,13 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
                 }
                 case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
                 case AGENT_CONVERSATION -> {
-                    result.add(
+                    OpenAIMessage mergedMessage =
                             conversationMerger.mergeToUserMessage(
                                     group.messages,
                                     msg -> formatRoleLabel(msg.getRole()),
-                                    this::convertToolResultToString));
+                                    this::convertToolResultToString);
+                    applyMergedCacheControlMetadata(group.messages, mergedMessage);
+                    result.add(mergedMessage);
                 }
                 case BYPASS -> {
                     Msg bypassMsg = group.messages.get(0);
@@ -91,6 +94,19 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
         }
 
         return result;
+    }
+
+    private void applyMergedCacheControlMetadata(List<Msg> messages, OpenAIMessage mergedMessage) {
+        // A merged output has one content boundary, so the last explicit directive wins.
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg message = messages.get(i);
+            if (message.getMetadata() != null
+                    && message.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL)
+                            instanceof Boolean) {
+                messageConverter.applyCacheControlFromMetadata(message, mergedMessage);
+                return;
+            }
+        }
     }
 
     // ========== Private Helper Methods ==========
