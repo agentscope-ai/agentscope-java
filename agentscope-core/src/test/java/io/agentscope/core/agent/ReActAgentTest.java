@@ -40,6 +40,10 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelUtils;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -52,6 +56,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -575,6 +580,50 @@ class ReActAgentTest {
         assertNotNull(response, "Response should not be null");
         assertEquals("Fallback response", TestUtils.extractTextContent(response));
         assertEquals(1, primaryModel.getCallCount(), "Primary model should be tried once");
+        assertEquals(1, fallbackModel.getCallCount(), "Fallback model should be called once");
+    }
+
+    @Test
+    @DisplayName("Should switch to fallback model when the primary returns an empty completion")
+    void testFallbackModelOnEmptyCompletion() {
+        // Primary emits only contentless chunks (role-only gateway response) and completes —
+        // the empty-completion guard must surface the error as the first signal so the
+        // switchOnFirst fallback engages instead of the run ending as silent success
+        Model primaryModel =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        Flux<ChatResponse> responseFlux =
+                                Flux.just(
+                                        new ChatResponse("chunk-1", List.of(), null, null, null),
+                                        new ChatResponse("chunk-2", null, null, null, null));
+                        return ModelUtils.applyTimeoutAndRetry(
+                                responseFlux, options, null, "empty-primary", "test");
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "empty-primary";
+                    }
+                };
+        MockModel fallbackModel = new MockModel("Fallback response");
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(fallbackModel)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("Fallback response", TestUtils.extractTextContent(response));
         assertEquals(1, fallbackModel.getCallCount(), "Fallback model should be called once");
     }
 
