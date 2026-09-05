@@ -28,6 +28,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -63,6 +64,10 @@ class AgentBaseTest {
 
         public TestAgent(String name) {
             super(name);
+        }
+
+        public TestAgent(String agentId, String name) {
+            super(agentId, name, null, List.of());
         }
 
         public TestAgent(String name, boolean checkRunning) {
@@ -120,6 +125,9 @@ class AgentBaseTest {
     void testInitialization() {
         // Verify basic properties
         assertNotNull(agent.getAgentId(), "Agent ID should not be null");
+        assertEquals(
+                agent.getId(), agent.getAgentId(), "Default logical ID should use instance ID");
+        UUID.fromString(agent.getId());
         assertEquals(TestConstants.TEST_AGENT_NAME, agent.getName(), "Agent name should match");
 
         // Verify agent ID is unique
@@ -128,6 +136,30 @@ class AgentBaseTest {
                 agent.getAgentId(),
                 agent2.getAgentId(),
                 "Different agents should have different IDs");
+    }
+
+    @Test
+    @DisplayName("Should separate logical and runtime instance identities")
+    void testCustomLogicalAgentId() {
+        TestAgent first = new TestAgent("catalog-agent", "First");
+        TestAgent second = new TestAgent("catalog-agent", "Second");
+
+        assertEquals("catalog-agent", first.getAgentId());
+        assertEquals(first.getAgentId(), second.getAgentId());
+        assertNotEquals(first.getId(), second.getId());
+        UUID.fromString(first.getId());
+        UUID.fromString(second.getId());
+    }
+
+    @Test
+    @DisplayName("Should fall back to runtime ID for null or blank logical IDs")
+    void testLogicalAgentIdFallback() {
+        TestAgent nullId = new TestAgent(null, "Null");
+        TestAgent blankId = new TestAgent("   ", "Blank");
+
+        assertEquals(nullId.getId(), nullId.getAgentId());
+        assertEquals(blankId.getId(), blankId.getAgentId());
+        assertNotEquals(nullId.getId(), blankId.getId());
     }
 
     @Test
