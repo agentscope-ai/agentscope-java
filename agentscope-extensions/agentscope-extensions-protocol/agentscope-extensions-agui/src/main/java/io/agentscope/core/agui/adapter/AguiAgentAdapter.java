@@ -28,7 +28,6 @@ import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -37,8 +36,9 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.ToolMergeMode;
+import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -158,19 +158,15 @@ public class AguiAgentAdapter {
                                     .incremental(true)
                                     .build();
 
-                    ToolInjection toolInjection = ToolInjection.empty();
                     AgentStream agentStream;
                     try {
-                        toolInjection = injectFrontendTools(input);
                         agentStream =
                                 streamWithRuntimeContext(
                                         msgs, options, effectiveRuntimeContext, input);
                     } catch (Throwable error) {
-                        toolInjection.close();
                         return errorEvents(threadId, runId, input, error, true);
                     }
 
-                    ToolInjection activeToolInjection = toolInjection;
                     AtomicBoolean eventSeen = new AtomicBoolean(false);
 
                     return Flux.concat(
@@ -181,7 +177,6 @@ public class AguiAgentAdapter {
                                                         eventSeen.set(true);
                                                     }),
                                     Flux.defer(() -> agentStream.finish().get()))
-                            .doFinally(signalType -> activeToolInjection.close())
                             .onErrorResume(
                                     error ->
                                             errorEvents(
@@ -203,7 +198,8 @@ public class AguiAgentAdapter {
 
         if (agent instanceof ReActAgent reAct) {
             AguiStreamContext context =
-                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
+                    new AguiStreamContext(
+                            threadId, runId, config, input, externalToolDetector(runtimeContext));
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
@@ -212,7 +208,8 @@ public class AguiAgentAdapter {
         }
         if (AguiUtil.isHarnessAgent(agent)) {
             AguiStreamContext context =
-                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
+                    new AguiStreamContext(
+                            threadId, runId, config, input, externalToolDetector(runtimeContext));
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             invokeHarnessStreamEvents(agent, msgs, runtimeContext),
@@ -282,7 +279,10 @@ public class AguiAgentAdapter {
      * Build the runtime context used for the agent invocation.
      *
      * <p>The caller-provided context is copied first, then AG-UI protocol metadata is applied so
-     * that required request values and session isolation are always preserved.
+     * that required request values and session isolation are always preserved. A per-call tool
+     * request config is built from the frontend tools and carried via {@link
+     * RuntimeContext#getToolRequestConfig()} so the shared toolkit is never mutated and concurrent
+     * runs on the same agent are isolated.
      *
      * @param input The AG-UI run input
      * @param runtimeContext Optional caller-provided runtime context
@@ -290,8 +290,10 @@ public class AguiAgentAdapter {
      */
     protected RuntimeContext buildRuntimeContext(
             RunAgentInput input, RuntimeContext runtimeContext) {
+        ToolRequestConfig perCallRequestConfig = buildToolRequestConfig(input);
         return RuntimeContext.builder(runtimeContext)
                 .sessionId(input.getThreadId())
+                .toolRequestConfig(perCallRequestConfig)
                 .put(RunAgentInput.class, input)
                 .put(RUNTIME_CONTEXT_THREAD_ID_KEY, input.getThreadId())
                 .put(RUNTIME_CONTEXT_RUN_ID_KEY, input.getRunId())
@@ -324,61 +326,64 @@ public class AguiAgentAdapter {
     }
 
     /**
-     * External-tool detector backed by the live toolkit.
+     * Builds a per-call {@link ToolRequestConfig} from the frontend tools carried by {@code input}.
      *
-     * <p>Used to decide whether {@code TOOL_CALL_ARGS} must still be emitted when
-     * {@code emitToolCallArgs} is disabled: external tools (frontend-provided or schema-only)
-     * execute outside the framework, so the client needs their arguments. Returns {@code null}
-     * when the agent exposes no toolkit, in which case the stream context falls back to
-     * matching names from {@link RunAgentInput#getTools()}.
+     * <p>Produces an immutable tool difference (external {@link SchemaOnlyTool}s + merge mode)
+     * rather than copying or mutating the agent's shared toolkit. The resulting config is carried
+     * via {@link RuntimeContext#getToolRequestConfig()}; the shared toolkit is composed with it on
+     * demand by the execution engine.
+     *
+     * @return the per-call request config, or {@link ToolRequestConfig#NONE} when no override is
+     *     needed (the engine uses the shared toolkit as-is)
      */
-    private Predicate<String> externalToolDetector() {
-        Toolkit toolkit = agent.getToolkit();
-        return toolkit == null ? null : toolkit::isExternalTool;
-    }
-
-    private ToolInjection injectFrontendTools(RunAgentInput input) {
+    private ToolRequestConfig buildToolRequestConfig(RunAgentInput input) {
         if (!input.hasTools()) {
-            return ToolInjection.empty();
+            return ToolRequestConfig.NONE;
         }
 
         ToolMergeMode mergeMode =
                 config.getToolMergeMode() != null
                         ? config.getToolMergeMode()
-                        : ToolMergeMode.MERGE_FRONTEND_PRIORITY;
+                        : ToolMergeMode.MERGE_EXTERNAL_PRIORITY;
         if (mergeMode == ToolMergeMode.AGENT_ONLY) {
-            return ToolInjection.empty();
+            return ToolRequestConfig.NONE;
         }
 
+        Toolkit source = agent.getToolkit();
+        if (source == null) {
+            return ToolRequestConfig.NONE;
+        }
+
+        // External tools are schema-only by definition: no groupManager/registry back-reference,
+        // no state, safe to construct per-call and carry in an immutable request config.
+        LinkedHashMap<String, SchemaOnlyTool> external = new LinkedHashMap<>();
+        for (ToolSchema schema : toolConverter.toToolSchemaList(input.getTools())) {
+            external.put(schema.getName(), new SchemaOnlyTool(schema));
+        }
+
+        return new ToolRequestConfig(external, mergeMode);
+    }
+
+    /**
+     * External-tool detector backed by the live toolkit, resolved against the per-call {@link
+     * ToolRequestConfig} carried by {@code runtimeContext}.
+     *
+     * <p>Used to decide whether {@code TOOL_CALL_ARGS} must still be emitted when
+     * {@code emitToolCallArgs} is disabled: external tools (frontend-provided or schema-only)
+     * execute outside the framework, so the client needs their arguments. Frontend-injected tools
+     * live in the request config rather than the shared registry, so resolution goes through {@link
+     * Toolkit#isExternalTool(String, ToolRequestConfig)}. Returns {@code null} when the agent
+     * exposes no toolkit, in which case the stream context falls back to matching names from {@link
+     * RunAgentInput#getTools()}.
+     */
+    private Predicate<String> externalToolDetector(RuntimeContext runtimeContext) {
         Toolkit toolkit = agent.getToolkit();
         if (toolkit == null) {
-            return ToolInjection.empty();
+            return null;
         }
-
-        Map<String, AgentTool> previousTools = new LinkedHashMap<>();
-        if (mergeMode == ToolMergeMode.FRONTEND_ONLY) {
-            for (String toolName : toolkit.getToolNames()) {
-                AgentTool previousTool = toolkit.getTool(toolName);
-                if (previousTool != null) {
-                    previousTools.put(toolName, previousTool);
-                    toolkit.removeTool(toolName);
-                }
-            }
-        }
-
-        List<SchemaOnlyTool> registeredTools = new ArrayList<>();
-        for (ToolSchema schema : toolConverter.toToolSchemaList(input.getTools())) {
-            AgentTool previousTool = toolkit.getTool(schema.getName());
-            if (previousTool != null) {
-                previousTools.putIfAbsent(schema.getName(), previousTool);
-            }
-
-            SchemaOnlyTool frontendTool = new SchemaOnlyTool(schema);
-            toolkit.registerAgentTool(frontendTool);
-            registeredTools.add(frontendTool);
-        }
-
-        return new ToolInjection(toolkit, registeredTools, previousTools);
+        ToolRequestConfig requestConfig =
+                runtimeContext != null ? runtimeContext.getToolRequestConfig() : null;
+        return name -> toolkit.isExternalTool(name, requestConfig);
     }
 
     private Flux<AguiEvent> errorEvents(
