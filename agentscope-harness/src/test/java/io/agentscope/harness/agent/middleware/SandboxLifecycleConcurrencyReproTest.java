@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -27,6 +28,7 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxState;
@@ -114,6 +116,46 @@ class SandboxLifecycleConcurrencyReproTest {
                 "call B must still run against its own sandbox after A released");
     }
 
+    @Test
+    void failedSharedSandboxStartDoesNotRemoveActiveFallback() {
+        SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
+        RecordingSandbox shared = new RecordingSandbox("shared");
+        shared.failStartOnCall(2);
+
+        SandboxManager manager = sharedUserManagedManager(shared);
+        SandboxLifecycleMiddleware mw = new SandboxLifecycleMiddleware(manager, proxy);
+        RuntimeContext ctxA = callContext("s1");
+        RuntimeContext ctxB = callContext("s2");
+
+        mw.acquireForCall(ctxA);
+        assertThrows(RuntimeException.class, () -> mw.acquireForCall(ctxB));
+
+        assertEquals(
+                "shared",
+                proxy.execute(RuntimeContext.empty(), "whoami", null).output(),
+                "a failed start must not remove another call's active fallback binding");
+
+        mw.releaseForCall(ctxA);
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(RuntimeContext.empty(), "whoami", null));
+    }
+
+    @Test
+    void failureAfterFallbackRegistrationClearsOwnBinding() {
+        SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
+        RecordingSandbox sandbox = new RecordingSandbox("failing");
+        sandbox.failStateLookup();
+
+        SandboxManager manager = sharedUserManagedManager(sandbox);
+        SandboxLifecycleMiddleware mw = new SandboxLifecycleMiddleware(manager, proxy);
+
+        assertThrows(RuntimeException.class, () -> mw.acquireForCall(callContext("s1")));
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(RuntimeContext.empty(), "whoami", null));
+    }
+
     private static RuntimeContext callContext(String sessionId) {
         SandboxContext sandboxContext = SandboxContext.builder().build();
         return RuntimeContext.builder()
@@ -158,10 +200,25 @@ class SandboxLifecycleConcurrencyReproTest {
         };
     }
 
+    private static SandboxManager sharedUserManagedManager(RecordingSandbox shared) {
+        SandboxClient<?> client = mock(SandboxClient.class);
+        SessionSandboxStateStore stateStore = mock(SessionSandboxStateStore.class);
+        return new SandboxManager(client, stateStore, "repro-agent") {
+            @Override
+            public SandboxAcquireResult acquire(
+                    SandboxContext sandboxContext, RuntimeContext runtimeContext) {
+                return SandboxAcquireResult.userManaged(shared);
+            }
+        };
+    }
+
     /** Minimal {@link Sandbox} that records teardown and echoes its session id from exec. */
     private static final class RecordingSandbox implements Sandbox {
 
         private final String sessionId;
+        private int failStartOnCall = -1;
+        private boolean failStateLookup;
+        private int startCalls;
         volatile boolean stopped;
 
         RecordingSandbox(String sessionId) {
@@ -169,7 +226,20 @@ class SandboxLifecycleConcurrencyReproTest {
         }
 
         @Override
-        public void start() {}
+        public void start() {
+            startCalls++;
+            if (startCalls == failStartOnCall) {
+                throw new IllegalStateException("start failed");
+            }
+        }
+
+        void failStartOnCall(int call) {
+            this.failStartOnCall = call;
+        }
+
+        void failStateLookup() {
+            this.failStateLookup = true;
+        }
 
         @Override
         public void stop() {
@@ -188,6 +258,9 @@ class SandboxLifecycleConcurrencyReproTest {
 
         @Override
         public SandboxState getState() {
+            if (failStateLookup) {
+                throw new IllegalStateException("state lookup failed");
+            }
             return null;
         }
 

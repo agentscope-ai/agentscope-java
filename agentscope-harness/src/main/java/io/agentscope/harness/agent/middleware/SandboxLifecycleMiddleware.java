@@ -109,6 +109,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
+            boolean fallbackBound = false;
             try {
                 sandbox.start();
                 // Bind the acquired sandbox per-call on this invocation's RuntimeContext rather
@@ -119,12 +120,15 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 // context-free callers (e.g. WorkspaceMessageBus) that do not thread a per-call.
                 ctx.put(SandboxAcquireResult.class, result);
                 filesystemProxy.setSandbox(sandbox);
+                fallbackBound = true;
                 log.debug(
                         "[sandbox-mw] Acquired sandbox {}",
                         sandbox.getState() != null ? sandbox.getState().getSessionId() : "?");
             } catch (Exception e) {
                 ctx.put(SandboxAcquireResult.class, null);
-                filesystemProxy.clearSandboxIfCurrent(sandbox);
+                if (fallbackBound) {
+                    filesystemProxy.clearSandboxIfCurrent(sandbox);
+                }
                 try {
                     sandboxManager.release(result);
                 } catch (Exception releaseErr) {
@@ -159,8 +163,8 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
         ctx.put(SandboxAcquireResult.class, null);
-        // Compare-and-clear the fallback field so a releasing call never nulls a concurrent
-        // sibling's binding (issue #2490); it only clears the field when it still points here.
+        // Remove this call's fallback binding. The proxy restores the most recently acquired
+        // binding that is still active, so a sibling call is neither cleared nor resurrected.
         filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
         SandboxContext sandboxContext = ctx.get(SandboxContext.class);
         try {
