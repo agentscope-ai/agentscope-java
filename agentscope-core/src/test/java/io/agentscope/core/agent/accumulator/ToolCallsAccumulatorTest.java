@@ -386,6 +386,11 @@ class ToolCallsAccumulatorTest {
         assertEquals(1, result.size());
         // Arrays are not valid JSON objects for tool call arguments
         assertEquals("{}", result.get(0).getContent());
+        assertTrue(
+                Boolean.TRUE.equals(
+                        result.get(0)
+                                .getMetadata()
+                                .get(ToolUseBlock.METADATA_RAW_CONTENT_INCOMPLETE)));
     }
 
     @Test

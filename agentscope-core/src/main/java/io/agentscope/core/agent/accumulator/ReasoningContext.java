@@ -43,6 +43,8 @@ import java.util.Map;
  */
 public class ReasoningContext {
 
+    private static final String FINISH_REASON_LENGTH = "length";
+
     private final String agentName;
     private String messageId;
 
@@ -57,6 +59,7 @@ public class ReasoningContext {
     private int outputTokens = 0;
     private int cachedTokens = 0;
     private double time = 0;
+    private String finishReason;
 
     // Provider-specific response metadata to propagate to the final message
     // (e.g. openai.reasoning.encrypted_content for reasoning replay)
@@ -82,6 +85,9 @@ public class ReasoningContext {
      */
     public List<Msg> processChunk(ChatResponse chunk) {
         this.messageId = chunk.getId();
+        if (chunk.getFinishReason() != null && !chunk.getFinishReason().isBlank()) {
+            finishReason = chunk.getFinishReason();
+        }
 
         // Accumulate ChatUsage
         ChatUsage usage = chunk.getUsage();
@@ -168,6 +174,9 @@ public class ReasoningContext {
 
         // Add all tool calls
         List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
+        if (FINISH_REASON_LENGTH.equals(finishReason)) {
+            toolCalls = markLengthLimitedIncompleteToolCalls(toolCalls);
+        }
         blocks.addAll(toolCalls);
 
         // If no content at all, return null
@@ -188,6 +197,9 @@ public class ReasoningContext {
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
         }
+        if (finishReason != null) {
+            metadata.put(MessageMetadataKeys.MODEL_FINISH_REASON, finishReason);
+        }
 
         return AssistantMessage.builder()
                 .id(messageId)
@@ -196,6 +208,42 @@ public class ReasoningContext {
                 .metadata(metadata)
                 .usage(chatUsage)
                 .build();
+    }
+
+    /**
+     * Marks tool calls whose argument stream was truncated when the model reached its output
+     * length limit.
+     *
+     * <p>The accumulator already preserves the legacy fallback of replacing invalid raw argument
+     * JSON with {@code {}}. That fallback must remain available for providers that do not report a
+     * finish reason, because invalid JSON alone does not prove that the response was truncated.
+     * A {@code length} finish reason is the additional evidence that lets the executor distinguish
+     * an incomplete response from a legacy malformed payload and safely avoid invoking the tool.
+     *
+     * <p>Only the affected calls are copied with the internal marker. Complete calls in the same
+     * response keep their original instance and remain executable.
+     */
+    private List<ToolUseBlock> markLengthLimitedIncompleteToolCalls(List<ToolUseBlock> toolCalls) {
+        return toolCalls.stream()
+                .map(
+                        toolCall -> {
+                            if (!Boolean.TRUE.equals(
+                                    toolCall.getMetadata()
+                                            .get(ToolUseBlock.METADATA_RAW_CONTENT_INCOMPLETE))) {
+                                return toolCall;
+                            }
+                            Map<String, Object> metadata = new HashMap<>(toolCall.getMetadata());
+                            metadata.put(ToolUseBlock.METADATA_OUTPUT_LENGTH_LIMIT, true);
+                            return ToolUseBlock.builder()
+                                    .id(toolCall.getId())
+                                    .name(toolCall.getName())
+                                    .input(toolCall.getInput())
+                                    .content(toolCall.getContent())
+                                    .metadata(metadata)
+                                    .state(toolCall.getState())
+                                    .build();
+                        })
+                .toList();
     }
 
     /**
@@ -305,5 +353,12 @@ public class ReasoningContext {
                     .build();
         }
         return null;
+    }
+
+    /**
+     * Returns the last non-blank finish reason reported during the current model response.
+     */
+    public String getFinishReason() {
+        return finishReason;
     }
 }
