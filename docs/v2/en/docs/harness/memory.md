@@ -107,6 +107,8 @@ CompactionConfig.builder()
 
 `MemoryConfig` is the single place to configure flush / consolidation prompts, throttling, retention, and the per-call flush trigger. Every field has a default; not calling `.memory(...)` reproduces the historical behaviour bit-for-bit.
 
+Per-call flush and background consolidation have independent throttle windows. In both cases, the first eligible `call()` runs the work immediately; a minimum gap limits only subsequent runs and is not an initial delay.
+
 ### Example 1: throttle per-call flush to save tokens
 
 A flush LLM call after every agent invocation can add up on long sessions. Throttle it to at most once every 10 minutes:
@@ -123,6 +125,7 @@ HarnessAgent.builder()
 Notes:
 
 - `THROTTLED` only affects **path 1** (per-call flush). The flush embedded in compaction (path 2) and the overflow flush (path 3) still fire on their own triggers — compaction is rare, so those two are infrequent by construction.
+- The first eligible call flushes immediately; `Duration.ofMinutes(10)` limits only later per-call flushes.
 - **Offload is unaffected**, the session JSONL is still written in full every call. `session_search` and session resumption keep working.
 
 ### Example 2: disable per-call flush entirely
@@ -168,7 +171,7 @@ Now flush only happens when compaction does (same cost as raw compaction).
 
 ```java
 .memory(MemoryConfig.builder()
-    .consolidationMinGap(Duration.ofHours(2))   // background merge at most every 2h
+    .consolidationMinGap(Duration.ofHours(2))   // first call may run; later runs at least 2h apart
     .dailyFileRetentionDays(30)                 // archive daily logs after 30 days
     .sessionRetentionDays(60)                   // prune session JSONL after 60 days
     .consolidationMaxTokens(8_000)              // raise MEMORY.md cap to 8K tokens
@@ -201,7 +204,7 @@ HarnessAgent.builder()
 | `flushPrompt` | `null` (uses `DEFAULT_FLUSH_PROMPT`) | SYSTEM prompt for path 1 |
 | `consolidationPrompt` | `null` (uses `DEFAULT_CONSOLIDATION_PROMPT`) | Template for path 2 (must contain two `%d`) |
 | `consolidationMaxTokens` | `4_000` | Token cap for `MEMORY.md` |
-| `consolidationMinGap` | `30 min` | Throttle gap for background maintenance |
+| `consolidationMinGap` | `30 min` | Gap between background maintenance runs; the first eligible call runs immediately |
 | `dailyFileRetentionDays` | `90` | Days before a daily log moves to `memory/archive/` |
 | `sessionRetentionDays` | `180` | Days before a `*.log.jsonl` is pruned |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
@@ -236,11 +239,13 @@ When the model sees a "MEMORY truncated" note in the prompt, it typically calls 
 
 ## Background maintenance
 
-When memory is enabled, a throttled background job also runs (triggered at each `call()` end with a minimum gap, default ~30 minutes max):
+When memory is enabled, a throttled background job also runs. The first eligible `call()` runs it immediately; later calls observe the minimum gap (30 minutes by default):
 
 - Archives daily logs older than `dailyFileRetentionDays` (default 90 days) to `memory/archive/`
 - Runs one `MEMORY.md` consolidation pass
 - Prunes session logs older than `sessionRetentionDays` (default 180 days)
+
+Entering maintenance does not necessarily call the model: consolidation skips the LLM request when there are no new daily ledger entries since the last successful consolidation. `FlushTrigger.never()` does not disable this maintenance path.
 
 All thresholds are tunable via `.memory(MemoryConfig.builder()...)`, though most projects don't need to touch them.
 
