@@ -165,6 +165,11 @@ final class ReflectiveFunctionTool extends ToolBase {
         return methodInvoker.invokeAsync(toolObject, method, param, customConverter);
     }
 
+    @Override
+    public Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
+        return methodInvoker.invokeRawAsync(toolObject, method, param, customConverter);
+    }
+
     Method getMethod() {
         return method;
     }

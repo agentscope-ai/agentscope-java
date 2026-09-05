@@ -178,6 +178,32 @@ public class McpTool extends ToolBase {
      */
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+        return callAsyncForExecution(param)
+                .onErrorResume(
+                        e -> {
+                            logger.error(
+                                    "Error calling MCP tool '{}': {}", getName(), e.getMessage());
+                            String errorMsg =
+                                    e.getMessage() != null
+                                            ? e.getMessage()
+                                            : e.getClass().getSimpleName();
+                            return Mono.just(ToolResultBlock.error("MCP tool error: " + errorMsg));
+                        });
+    }
+
+    /**
+     * Executes this MCP tool through the framework's execution infrastructure.
+     *
+     * <p>Transport-level failures stay as reactive error signals so the executor can apply its
+     * retry policy. Protocol-level business errors ({@code isError=true}) remain completed error
+     * results and are never retried.
+     *
+     * @param param The tool call parameters containing toolUseBlock, input, and agent
+     * @return a Mono that emits the tool result, or signals an error on failure
+     */
+    @Override
+    public Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
+        Objects.requireNonNull(param, "param must not be null");
         logger.debug("Calling MCP tool '{}' with input: {}", getName(), param.getInput());
 
         // Merge preset arguments with input arguments
@@ -190,17 +216,7 @@ public class McpTool extends ToolBase {
                 .callTool(getName(), mergedArgs, metaMap)
                 .map(McpContentConverter::convertCallToolResult)
                 .doOnSuccess(
-                        result -> logger.debug("MCP tool '{}' completed successfully", getName()))
-                .onErrorResume(
-                        e -> {
-                            logger.error(
-                                    "Error calling MCP tool '{}': {}", getName(), e.getMessage());
-                            String errorMsg =
-                                    e.getMessage() != null
-                                            ? e.getMessage()
-                                            : e.getClass().getSimpleName();
-                            return Mono.just(ToolResultBlock.error("MCP tool error: " + errorMsg));
-                        });
+                        result -> logger.debug("MCP tool '{}' completed successfully", getName()));
     }
 
     /**

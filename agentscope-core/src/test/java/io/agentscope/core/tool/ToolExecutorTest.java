@@ -18,19 +18,32 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.mcp.McpTool;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
+import io.modelcontextprotocol.spec.McpSchema;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -669,6 +682,698 @@ class ToolExecutorTest {
         }
     }
 
+    // ==================== Retry Behavior Tests ====================
+
+    @Test
+    @DisplayName("Should retry annotation sync tools that throw exceptions")
+    void shouldRetryAnnotationSyncToolExceptions() {
+        FlakyTools flaky = new FlakyTools();
+        toolkit.registerTool(flaky);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-flaky-sync", "flaky_sync")),
+                                retryConfig(2),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals("\"recovered\"", extractFirstText(responses.get(0)));
+        assertEquals(2, flaky.calls.get());
+    }
+
+    @Test
+    @DisplayName("Should retry annotation Mono tools that fail with exceptions")
+    void shouldRetryAnnotationMonoToolExceptions() {
+        FlakyTools flaky = new FlakyTools();
+        toolkit.registerTool(flaky);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-flaky-mono", "flaky_mono")),
+                                retryConfig(2),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals("\"recovered\"", extractFirstText(responses.get(0)));
+        assertEquals(2, flaky.calls.get());
+    }
+
+    @Test
+    @DisplayName("Should retry annotation CompletableFuture tools that fail with exceptions")
+    void shouldRetryAnnotationFutureToolExceptions() {
+        FlakyTools flaky = new FlakyTools();
+        toolkit.registerTool(flaky);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-flaky-future", "flaky_future")),
+                                retryConfig(2),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals("\"recovered\"", extractFirstText(responses.get(0)));
+        assertEquals(2, flaky.calls.get());
+    }
+
+    @Test
+    @DisplayName("Should retry MCP tool calls on transport failures")
+    void shouldRetryMcpToolTransportFailures() {
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("test-client");
+        McpTool mcpTool = new McpTool("flaky_mcp", "Flaky MCP tool", emptySchema(), wrapper);
+        when(wrapper.callTool(eq("flaky_mcp"), any(), any()))
+                .thenReturn(Mono.error(new IOException("Network down")))
+                .thenReturn(
+                        Mono.just(
+                                new McpSchema.CallToolResult(
+                                        List.of(new McpSchema.TextContent("mcp recovered")),
+                                        false)));
+        toolkit.registerTool(mcpTool);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-flaky-mcp", "flaky_mcp")),
+                                retryConfig(2),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertTrue(extractFirstText(responses.get(0)).contains("mcp recovered"));
+        verify(wrapper, times(2)).callTool(eq("flaky_mcp"), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should not retry MCP protocol-level business errors")
+    void shouldNotRetryMcpProtocolErrors() {
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("test-client");
+        McpTool mcpTool = new McpTool("mcp_error", "Failing MCP tool", emptySchema(), wrapper);
+        when(wrapper.callTool(eq("mcp_error"), any(), any()))
+                .thenReturn(
+                        Mono.just(
+                                new McpSchema.CallToolResult(
+                                        List.of(new McpSchema.TextContent("boom")), true)));
+        toolkit.registerTool(mcpTool);
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-mcp-error", "mcp_error")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(ToolResultState.ERROR, responses.get(0).getState());
+        verify(wrapper, times(1)).callTool(eq("mcp_error"), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should retry custom AgentTool failures that surface as errors")
+    void shouldRetryCustomAgentToolErrors() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "custom_flaky";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Custom tool that fails once";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        int attempt = calls.incrementAndGet();
+                        if (attempt == 1) {
+                            return Mono.error(new IOException("Transient custom failure"));
+                        }
+                        return Mono.just(ToolResultBlock.text("custom recovered"));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-custom-flaky", "custom_flaky")),
+                                retryConfig(2),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals("custom recovered", extractFirstText(responses.get(0)));
+        assertEquals(2, calls.get());
+    }
+
+    @Test
+    @DisplayName("Should not retry tool-returned error results")
+    void shouldNotRetrySemanticErrorResults() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "semantic_error";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that reports a business error result";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.just(ToolResultBlock.error("Business failure"));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-semantic-error", "semantic_error")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertTrue(extractFirstText(responses.get(0)).contains("Business failure"));
+    }
+
+    @Test
+    @DisplayName("Should respect the retryOn predicate")
+    void shouldRespectRetryOnPredicate() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "never_retry";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool whose failures are filtered out by retryOn";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.error(new IOException("Always failing"));
+                    }
+                });
+
+        ExecutionConfig config =
+                ExecutionConfig.builder()
+                        .maxAttempts(3)
+                        .initialBackoff(Duration.ofMillis(1))
+                        .maxBackoff(Duration.ofMillis(10))
+                        .retryOn(error -> false)
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-never-retry", "never_retry")),
+                                config,
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertEquals(ToolResultState.ERROR, responses.get(0).getState());
+    }
+
+    @Test
+    @DisplayName("Should exhaust retries and return an error result with id and name")
+    void shouldExhaustRetriesWithErrorResult() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "always_fail";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that always fails";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.error(new IOException("Always failing"));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-always-fail", "always_fail")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(3, calls.get());
+        ToolResultBlock result = responses.get(0);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("call-always-fail", result.getId());
+        assertEquals("always_fail", result.getName());
+        assertTrue(extractFirstText(result).contains("Always failing"));
+    }
+
+    @Test
+    @DisplayName("Should retry tool execution timeouts when retryOn matches")
+    void shouldRetryTimeouts() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "never_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that never completes";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.never();
+                    }
+                });
+
+        ExecutionConfig config =
+                ExecutionConfig.builder()
+                        .timeout(Duration.ofMillis(100))
+                        .maxAttempts(2)
+                        .initialBackoff(Duration.ofMillis(1))
+                        .maxBackoff(Duration.ofMillis(10))
+                        .retryOn(ExecutionConfig.RETRYABLE_ERRORS)
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(toolCall("call-never", "never_tool")), config, null, null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(2, calls.get());
+        assertTrue(extractFirstText(responses.get(0)).contains("timeout"));
+    }
+
+    @Test
+    @DisplayName("Should isolate retry exhaustion in parallel batches")
+    void shouldIsolateRetryExhaustionInParallelBatches() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "parallel_fail";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that always fails in parallel batches";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.error(new IOException("Always failing"));
+                    }
+                });
+
+        Map<String, Object> addInput = Map.of("a", 1, "b", 2);
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(
+                                        toolCall("call-parallel-fail", "parallel_fail"),
+                                        toolCall("call-parallel-add", "add", addInput)),
+                                retryConfig(2),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(2, responses.size());
+        Map<String, ToolResultBlock> byId =
+                responses.stream()
+                        .collect(Collectors.toMap(ToolResultBlock::getId, Function.identity()));
+        assertEquals(2, calls.get());
+        assertEquals(ToolResultState.ERROR, byId.get("call-parallel-fail").getState());
+        assertEquals("3", extractFirstText(byId.get("call-parallel-add")));
+    }
+
+    @Test
+    @DisplayName("Should not retry external tool suspensions")
+    void shouldNotRetryExternalToolSuspensions() {
+        toolkit.registerSchema(
+                ToolSchema.builder()
+                        .name("external_retry")
+                        .description("External tool with retry config")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("endpoint", Map.of("type", "string"))))
+                        .build());
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(
+                                        toolCall(
+                                                "call-external-retry",
+                                                "external_retry",
+                                                Map.of("endpoint", "/users"))),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertTrue(responses.get(0).isSuspended());
+    }
+
+    @Test
+    @DisplayName("Should not retry annotation tools that suspend via ToolSuspendException")
+    void shouldNotRetryToolSuspensionExceptions() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "suspend_tool", description = "Tool that suspends")
+                    public String suspend() {
+                        calls.incrementAndGet();
+                        throw new ToolSuspendException("awaiting external execution");
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-suspend", "suspend_tool")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertTrue(responses.get(0).isSuspended());
+    }
+
+    @Test
+    @DisplayName("Should not retry Mono tools that suspend via ToolSuspendException")
+    void shouldNotRetryMonoToolSuspension() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "suspend_mono", description = "Mono tool that suspends")
+                    public Mono<String> suspend() {
+                        calls.incrementAndGet();
+                        return Mono.error(new ToolSuspendException("awaiting external execution"));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-suspend-mono", "suspend_mono")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertTrue(responses.get(0).isSuspended());
+    }
+
+    @Test
+    @DisplayName("Should not retry CompletableFuture tools that suspend via ToolSuspendException")
+    void shouldNotRetryFutureToolSuspension() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "suspend_future", description = "Future tool that suspends")
+                    public CompletableFuture<String> suspend() {
+                        calls.incrementAndGet();
+                        return CompletableFuture.failedFuture(
+                                new ToolSuspendException("awaiting external execution"));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-suspend-future", "suspend_future")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertTrue(responses.get(0).isSuspended());
+    }
+
+    @Test
+    @DisplayName("Should not retry ToolSuspendException wrapped in a non-standard exception")
+    void shouldNotRetryWrappedToolSuspension() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "wrapped_suspend";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that suspends behind a custom wrapper";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.just(ToolResultBlock.error("unused"));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.error(
+                                new IllegalStateException(
+                                        "wrapped",
+                                        new ToolSuspendException("awaiting external execution")));
+                    }
+                });
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-wrapped-suspend", "wrapped_suspend")),
+                                retryConfig(3),
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertTrue(responses.get(0).isSuspended());
+    }
+
+    @Test
+    @DisplayName("Should not retry deterministic failures with the retryable-errors predicate")
+    void shouldNotRetryDeterministicFailureWithRetryableErrors() {
+        AtomicInteger calls = new AtomicInteger(0);
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "misconfigured_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that fails deterministically";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        calls.incrementAndGet();
+                        return Mono.error(new IllegalStateException("Not initialized"));
+                    }
+                });
+
+        ExecutionConfig config =
+                ExecutionConfig.builder()
+                        .maxAttempts(3)
+                        .initialBackoff(Duration.ofMillis(1))
+                        .maxBackoff(Duration.ofMillis(10))
+                        .retryOn(ExecutionConfig.RETRYABLE_ERRORS)
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(
+                                List.of(toolCall("call-misconfigured", "misconfigured_tool")),
+                                config,
+                                null,
+                                null)
+                        .block(TIMEOUT);
+
+        assertEquals(1, responses.size());
+        assertEquals(1, calls.get());
+        assertEquals(ToolResultState.ERROR, responses.get(0).getState());
+    }
+
+    @Test
+    @DisplayName("Should keep the callAsync error-result contract on direct calls")
+    void shouldKeepCallAsyncContractOnDirectCalls() {
+        // Custom tool failing with an error signal: direct calls still receive an error result
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "direct_error";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that fails with an error signal";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return emptySchema();
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.error(new IllegalStateException("Direct failure"));
+                    }
+                });
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall("call-direct", "direct_error"))
+                                        .build())
+                        .block(TIMEOUT);
+        assertEquals("Error: Tool execution failed: Direct failure", extractFirstText(result));
+
+        // Annotation tools keep converting exceptions to error results on the direct path
+        ToolResultBlock annotationResult =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                toolCall(
+                                                        "call-direct-annotation",
+                                                        "error_tool",
+                                                        Map.of("message", "direct")))
+                                        .input(Map.of("message", "direct"))
+                                        .build())
+                        .block(TIMEOUT);
+        assertEquals(
+                "Error: Tool execution failed: Tool error: direct",
+                extractFirstText(annotationResult));
+
+        // MCP tools keep their own error formatting on the direct path
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("test-client");
+        McpTool mcpTool = new McpTool("direct_mcp", "Direct MCP tool", emptySchema(), wrapper);
+        when(wrapper.callTool(eq("direct_mcp"), any(), any()))
+                .thenReturn(Mono.error(new RuntimeException("Network error")));
+        toolkit.registerTool(mcpTool);
+        ToolResultBlock mcpResult =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall("call-direct-mcp", "direct_mcp"))
+                                        .build())
+                        .block(TIMEOUT);
+        String mcpText = extractFirstText(mcpResult);
+        assertTrue(mcpText.contains("MCP tool error"));
+        assertTrue(mcpText.contains("Network error"));
+    }
+
+    // ==================== Test Helpers ====================
+
+    private ToolUseBlock toolCall(String id, String name) {
+        return toolCall(id, name, Map.of());
+    }
+
+    private ToolUseBlock toolCall(String id, String name, Map<String, Object> input) {
+        return ToolUseBlock.builder()
+                .id(id)
+                .name(name)
+                .input(input)
+                .content(JsonUtils.getJsonCodec().toJson(input))
+                .build();
+    }
+
+    private ExecutionConfig retryConfig(int maxAttempts) {
+        return ExecutionConfig.builder()
+                .maxAttempts(maxAttempts)
+                .initialBackoff(Duration.ofMillis(1))
+                .maxBackoff(Duration.ofMillis(10))
+                .build();
+    }
+
+    private Map<String, Object> emptySchema() {
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", new HashMap<>());
+        return schema;
+    }
+
     private String extractFirstText(ToolResultBlock response) {
         assertTrue(
                 ToolTestUtils.isValidToolResultBlock(response),
@@ -676,5 +1381,37 @@ class ToolExecutorTest {
         List<ContentBlock> outputs = response.getOutput();
         if (outputs.isEmpty()) return "";
         return ((TextBlock) outputs.get(0)).getText();
+    }
+
+    /** Annotation-based tools that fail on the first call and recover afterwards. */
+    public static class FlakyTools {
+
+        final AtomicInteger calls = new AtomicInteger(0);
+
+        @Tool(name = "flaky_sync", description = "Throws IOException on the first call")
+        public String flakySync() throws IOException {
+            if (calls.incrementAndGet() == 1) {
+                throw new IOException("Transient sync failure");
+            }
+            return "recovered";
+        }
+
+        @Tool(name = "flaky_mono", description = "Fails with IOException on the first call")
+        public Mono<String> flakyMono() {
+            int attempt = calls.incrementAndGet();
+            if (attempt == 1) {
+                return Mono.error(new IOException("Transient mono failure"));
+            }
+            return Mono.just("recovered");
+        }
+
+        @Tool(name = "flaky_future", description = "Fails with IOException on the first call")
+        public CompletableFuture<String> flakyFuture() {
+            int attempt = calls.incrementAndGet();
+            if (attempt == 1) {
+                return CompletableFuture.failedFuture(new IOException("Transient future failure"));
+            }
+            return CompletableFuture.completedFuture("recovered");
+        }
     }
 }
