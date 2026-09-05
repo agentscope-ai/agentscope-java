@@ -94,6 +94,13 @@ public class DashScopeMultiModalTool {
     private static final Logger log = LoggerFactory.getLogger(DashScopeMultiModalTool.class);
 
     /**
+     * Default model of {@code dashscope_image_to_image}. It has to be an edit model: the pure
+     * text-to-image models of the same family reject an {@code input.messages} payload carrying an
+     * image.
+     */
+    private static final String DEFAULT_IMAGE_EDIT_MODEL = "qwen-image-edit";
+
+    /**
      * DashScope API key.
      */
     private final String apiKey;
@@ -239,26 +246,33 @@ public class DashScopeMultiModalTool {
     /**
      * Edit or transform an image based on a text prompt and an input image.
      *
-     * @param imageUrl      The URL, local file path, or Base64 data URL of the input image to edit.
+     * @param imageUrl      The public URL, oss:// URL, local file path, or Base64 data URL of the
+     *                      input image to edit.
      * @param prompt        The text prompt describing the desired edit or transformation.
-     * @param model         The model to use, e.g., 'qwen-image'.
-     * @param size          Size of the output image, e.g., '1024*1024'.
+     * @param model         The image-edit model to use, e.g., 'qwen-image-edit'.
+     * @param size          Size of the output image, e.g., '1024*1024'. Only the 'plus', 'max'
+     *                      and 'qwen-image-2.0' series support it.
      * @param useBase64     Whether to return image as base64 data instead of URL.
      * @return A ToolResultBlock containing the generated image url/base64 or error message.
      */
     @Tool(
             name = "dashscope_image_to_image",
             description =
-                    "Edit or transform an image based on a text prompt and an input image."
-                            + " Returns the edited image as URL or base64.")
+                    "Edit or transform an existing image based on a text prompt and an input"
+                            + " image. The input image must be reachable by the service: a public"
+                            + " http(s) URL (the address an uploaded attachment is served from),"
+                            + " an oss:// URL or a Base64 data URL. A path inside the sandbox"
+                            + " workspace is not readable by this tool, so never invent one - ask"
+                            + " for a link instead. Returns the edited image as URL or base64."
+                            + " Use dashscope_text_to_image when there is no input image.")
     public Mono<ToolResultBlock> dashscopeImageToImage(
             @ToolParam(
                             name = "image_url",
                             description =
                                     "The URL, local file path or Base64 data URL (the format"
-                                        + " pattern is data:[MIME_type];base64,{base64_image},"
-                                        + " e.g., 'data:image/png;base64,iVBORw0KGgo...') of"
-                                        + " the input image to edit")
+                                            + " pattern is data:[MIME_type];base64,{base64_image},"
+                                            + " e.g., 'data:image/png;base64,iVBORw0KGgo...') of"
+                                            + " the input image to edit")
                     String imageUrl,
             @ToolParam(
                             name = "prompt",
@@ -268,13 +282,21 @@ public class DashScopeMultiModalTool {
                     String prompt,
             @ToolParam(
                             name = "model",
-                            description = "The model to use, e.g., 'qwen-image'.",
+                            description =
+                                    "The image-edit model to use, e.g., 'qwen-image-edit',"
+                                            + " 'qwen-image-edit-plus', 'qwen-image-edit-max',"
+                                            + " 'qwen-image-2.0-pro'. Text-to-image models such as"
+                                            + " 'qwen-image' or 'wanx-v1' take no image input.",
                             required = false)
                     String model,
             @ToolParam(
                             name = "size",
                             description =
-                                    "Size of the output image, e.g., '1024*1024', '1280*1280'.",
+                                    "Size of the output image, e.g., '1024*1024', '1280*1280'. Only"
+                                            + " supported by 'qwen-image-edit-plus',"
+                                            + " 'qwen-image-edit-max' and the 'qwen-image-2.0'"
+                                            + " series; otherwise the resolution follows the input"
+                                            + " image.",
                             required = false)
                     String size,
             @ToolParam(
@@ -284,9 +306,10 @@ public class DashScopeMultiModalTool {
                     Boolean useBase64) {
 
         String finalModel =
-                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("qwen-image");
-        String finalSize =
-                Optional.ofNullable(size).filter(s -> !s.trim().isEmpty()).orElse("1024*1024");
+                Optional.ofNullable(model)
+                        .filter(s -> !s.trim().isEmpty())
+                        .orElse(DEFAULT_IMAGE_EDIT_MODEL);
+        String finalSize = resolveOutputSize(finalModel, size);
         Boolean finalUseBase64 = Optional.ofNullable(useBase64).orElse(false);
 
         log.debug(
@@ -298,24 +321,21 @@ public class DashScopeMultiModalTool {
                 finalSize,
                 useBase64);
 
+        if (rejectsImageInput(finalModel)) {
+            log.error(
+                    "dashscope_image_to_image rejected model '{}': it takes no image input on this"
+                            + " endpoint",
+                    finalModel);
+            return Mono.just(ToolResultBlock.error(unsupportedEditModelMessage(finalModel)));
+        }
+
         return Mono.fromCallable(
                         () -> {
-                            List<MultiModalMessage> messages = new ArrayList<>();
-
-                            MultiModalMessage systemMessage =
-                                    MultiModalMessage.builder()
-                                            .role(Role.SYSTEM.getValue())
-                                            .content(
-                                                    List.of(
-                                                            Map.of(
-                                                                    "text",
-                                                                    "You are a helpful"
-                                                                            + " assistant.")))
-                                            .build();
-
+                            // This endpoint takes exactly one message and its role must be `user`.
+                            // A leading system message, or any second message, is rejected with
+                            // "Input should be 'user'" / "messages parameter length invalid".
                             List<Map<String, Object>> content = new ArrayList<>();
-                            content.add(
-                                    Map.of("image", MediaUtils.urlToProtocolUrl(imageUrl)));
+                            content.add(Map.of("image", toEditableImageRef(imageUrl)));
                             content.add(Map.of("text", prompt));
 
                             MultiModalMessage userMessage =
@@ -323,18 +343,20 @@ public class DashScopeMultiModalTool {
                                             .role(Role.USER.getValue())
                                             .content(content)
                                             .build();
+                            List<MultiModalMessage> messages = List.of(userMessage);
 
-                            messages.add(systemMessage);
-                            messages.add(userMessage);
-
-                            MultiModalConversationParam param =
+                            var builder =
                                     MultiModalConversationParam.builder()
                                             .apiKey(this.apiKey)
                                             .model(finalModel)
                                             .messages(messages)
-                                            .header("user-agent", Version.getUserAgent())
-                                            .parameter("size", finalSize)
-                                            .build();
+                                            .header("user-agent", Version.getUserAgent());
+                            // An unsupported or empty `size` fails the whole request, so the entry
+                            // is only added when the model accepts an explicit resolution.
+                            if (finalSize != null) {
+                                builder.parameter("size", finalSize);
+                            }
+                            MultiModalConversationParam param = builder.build();
 
                             MultiModalConversation conv = new MultiModalConversation();
                             MultiModalConversationResult result = conv.call(param);
@@ -344,12 +366,10 @@ public class DashScopeMultiModalTool {
                                     Optional.ofNullable(result)
                                             .map(MultiModalConversationResult::getOutput)
                                             .map(MultiModalConversationOutput::getChoices)
-                                            .flatMap(
-                                                    choices -> choices.stream().findFirst())
+                                            .flatMap(choices -> choices.stream().findFirst())
                                             .map(MultiModalConversationOutput.Choice::getMessage)
                                             .map(MultiModalMessage::getContent)
-                                            .flatMap(
-                                                    contents -> contents.stream().findFirst())
+                                            .flatMap(contents -> contents.stream().findFirst())
                                             .map(m -> m.get("image"))
                                             .map(Object::toString)
                                             .orElse(null);
@@ -361,7 +381,9 @@ public class DashScopeMultiModalTool {
                                                 .map(MultiModalConversationResult::getOutput)
                                                 .map(MultiModalConversationOutput::getChoices)
                                                 .flatMap(c -> c.stream().findFirst())
-                                                .map(MultiModalConversationOutput.Choice::getMessage)
+                                                .map(
+                                                        MultiModalConversationOutput.Choice
+                                                                ::getMessage)
                                                 .map(MultiModalMessage::getContent)
                                                 .flatMap(c -> c.stream().findFirst())
                                                 .map(m -> m.get("text"))
@@ -415,11 +437,77 @@ public class DashScopeMultiModalTool {
                 .onErrorResume(
                         e -> {
                             log.error(
-                                    "Failed to generate image from image '{}'",
-                                    e.getMessage(),
-                                    e);
+                                    "Failed to generate image from image '{}'", e.getMessage(), e);
                             return Mono.just(ToolResultBlock.error(e.getMessage()));
                         });
+    }
+
+    /**
+     * Resolve the {@code size} parameter of an edit request. The base {@code qwen-image-edit} model
+     * has no configurable output resolution and rejects the parameter, so it is dropped with a
+     * warning instead of failing the whole call.
+     */
+    private static String resolveOutputSize(String model, String size) {
+        String requested = Optional.ofNullable(size).filter(s -> !s.trim().isEmpty()).orElse(null);
+        if (requested == null) {
+            return null;
+        }
+        if (!supportsOutputSize(model)) {
+            log.warn(
+                    "dashscope_image_to_image drops size='{}' for model '{}': the output"
+                            + " resolution follows the input image",
+                    requested,
+                    model);
+            return null;
+        }
+        return requested;
+    }
+
+    /** Whether the model accepts an explicit output resolution. */
+    private static boolean supportsOutputSize(String model) {
+        String name = model.toLowerCase();
+        return name.startsWith("qwen-image-edit-plus")
+                || name.startsWith("qwen-image-edit-max")
+                || name.startsWith("qwen-image-2.0");
+    }
+
+    /**
+     * Whether the model cannot consume an input image on this endpoint: the wan family, whose image
+     * editing runs on a different asynchronous task API, and the text-to-image members of the
+     * qwen-image family.
+     */
+    private static boolean rejectsImageInput(String model) {
+        String name = model.toLowerCase();
+        if (name.startsWith("wan")) {
+            return true;
+        }
+        return name.startsWith("qwen-image")
+                && !name.contains("edit")
+                && !name.startsWith("qwen-image-2.0");
+    }
+
+    /** Actionable hint returned instead of an opaque service-side parameter error. */
+    private static String unsupportedEditModelMessage(String model) {
+        return "Model '"
+                + model
+                + "' cannot edit an input image with this tool. Omit the model to"
+                + " use '"
+                + DEFAULT_IMAGE_EDIT_MODEL
+                + "', or pass an edit model:"
+                + " 'qwen-image-edit-plus', 'qwen-image-edit-max', 'qwen-image-2.0-pro'."
+                + " dashscope_text_to_image is the right tool when there is no input image.";
+    }
+
+    /**
+     * Normalize the input image reference. The documented formats are a public http(s) URL, an
+     * {@code oss://} URL returned by the upload API, or a Base64 data URL; an existing local file
+     * is inlined as Base64 rather than sent as a {@code file://} URL, which the endpoint rejects.
+     */
+    private static String toEditableImageRef(String imageUrl) throws IOException {
+        if (MediaUtils.isFileExists(imageUrl)) {
+            return MediaUtils.urlToBase64DataUrl(imageUrl);
+        }
+        return imageUrl;
     }
 
     /**
