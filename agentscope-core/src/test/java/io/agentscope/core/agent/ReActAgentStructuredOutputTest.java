@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
@@ -736,5 +737,103 @@ class ReActAgentStructuredOutputTest {
 
         // The agent should handle null eventMsg gracefully — either by returning
         // empty or by continuing the loop. No NPE should be thrown.
+    }
+
+    @Test
+    @DisplayName(
+            "error-feedback retry: invalid first attempt corrected, failed-turn thinking does not"
+                    + " leak")
+    void testStructuredOutputErrorFeedbackRetry() {
+        // Attempt 1: thinking + invalid JSON (answer is string, schema requires number)
+        // Attempt 2 (after error feedback): conforming JSON
+        MockModel nativeModel =
+                new MockModel(
+                        msgs -> {
+                            boolean hasFeedback =
+                                    msgs.stream()
+                                            .filter(m -> m.getRole() == MsgRole.USER)
+                                            .flatMap(m -> m.getContent().stream())
+                                            .filter(b -> b instanceof TextBlock)
+                                            .map(b -> ((TextBlock) b).getText())
+                                            .anyMatch(
+                                                    t ->
+                                                            t.contains(
+                                                                            "failed JSON Schema"
+                                                                                    + " validation")
+                                                                    || t.contains(
+                                                                            "JSON Schema 校验"));
+                            if (!hasFeedback) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_bad")
+                                                .content(
+                                                        List.of(
+                                                                ThinkingBlock.builder()
+                                                                        .thinking(
+                                                                                "bad attempt"
+                                                                                    + " thinking")
+                                                                        .build(),
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"not-a-number\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_good")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(5, 10, 15))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 6 * 7?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result);
+        assertEquals(42, result.answer);
+
+        boolean leakedThinking =
+                responseMsg.getContent().stream()
+                        .anyMatch(
+                                b ->
+                                        b instanceof ThinkingBlock
+                                                && ((ThinkingBlock) b).getThinking() != null
+                                                && ((ThinkingBlock) b)
+                                                        .getThinking()
+                                                        .contains("bad attempt"));
+        assertTrue(!leakedThinking, "failed-turn thinking leaked into final message");
+    }
+
+    /** Schema target for the error-feedback retry test. */
+    static class MathAnswer {
+        public int answer;
     }
 }
