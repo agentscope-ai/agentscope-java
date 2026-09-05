@@ -122,6 +122,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     private ContractHttpServer http;
     private HttpSelfRegistration httpRegister;
     private ScheduledExecutorService scheduler;
+    private ScheduledExecutorService attemptHeartbeatScheduler;
     private volatile boolean started;
 
     public SessionBridge(AistioConfig config) {
@@ -287,6 +288,16 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                             t.setDaemon(true);
                             return t;
                         });
+        // Attempt leases are correctness-critical. Keep their heartbeats isolated from best-effort
+        // reporting: inventory collection can walk a large workspace and must never starve an
+        // active execution long enough for the control plane to retry it concurrently.
+        attemptHeartbeatScheduler =
+                Executors.newSingleThreadScheduledExecutor(
+                        r -> {
+                            Thread t = new Thread(r, "aistio-attempt-heartbeat");
+                            t.setDaemon(true);
+                            return t;
+                        });
         scheduler.scheduleWithFixedDelay(
                 guarded(this::flushEvents),
                 EVENT_FLUSH_INTERVAL_MS,
@@ -324,6 +335,10 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         if (scheduler != null) {
             scheduler.shutdownNow();
             scheduler = null;
+        }
+        if (attemptHeartbeatScheduler != null) {
+            attemptHeartbeatScheduler.shutdownNow();
+            attemptHeartbeatScheduler = null;
         }
         if (grpc != null) {
             grpc.close();
@@ -749,7 +764,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     }
 
     private ScheduledFuture<?> startAttemptHeartbeat(ExecutionAttemptCommand command) {
-        ScheduledExecutorService current = scheduler;
+        ScheduledExecutorService current = attemptHeartbeatScheduler;
         if (current == null || current.isShutdown()) {
             return null;
         }
