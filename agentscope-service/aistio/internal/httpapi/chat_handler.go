@@ -194,7 +194,7 @@ func (s *Server) sendChatTurn(c *gin.Context) {
 		return
 	}
 	if err = s.sendAgentConversationTurn(c, session, strings.TrimSpace(req.Message), "chat", value.ID.String()); err != nil {
-		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: err.Error()})
+		writeConversationTurnError(c, err)
 		return
 	}
 	_ = s.store.Chats().Touch(c, value.ID)

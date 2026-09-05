@@ -6,6 +6,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -260,6 +261,14 @@ func (s *Server) sendPlaygroundConversationTurn(ctx context.Context, session *st
 	return s.sendAgentConversationTurn(ctx, session, message, "playground_conversation", session.OriginRef)
 }
 
+func writeConversationTurnError(c *gin.Context, err error) {
+	if errors.Is(err, store.ErrConflict) {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error(), Code: "conversation_turn_conflict"})
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: err.Error(), Code: "conversation_unavailable"})
+}
+
 type playgroundInvocationRequest struct {
 	Tenant     string          `json:"tenant"`
 	Namespace  string          `json:"namespace"`
@@ -294,7 +303,7 @@ func (s *Server) invokePlayground(c *gin.Context) {
 			err = s.sendPlaygroundConversationTurn(c, session, strings.TrimSpace(req.Message))
 		}
 		if err != nil {
-			c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: err.Error()})
+			writeConversationTurnError(c, err)
 			return
 		}
 		c.JSON(http.StatusAccepted, gin.H{"invocationId": invocationID, "mode": "conversation", "status": "running",
@@ -328,7 +337,7 @@ func (s *Server) continuePlaygroundConversation(c *gin.Context) {
 		return
 	}
 	if err = s.sendPlaygroundConversationTurn(c, sessions[0], strings.TrimSpace(req.Message)); err != nil {
-		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: err.Error()})
+		writeConversationTurnError(c, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"invocationId": uuid.New(), "mode": "conversation", "status": "running",

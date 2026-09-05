@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/features"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
@@ -237,7 +238,7 @@ func setupHostedConversationAgent(t *testing.T) (store.Store, *controlmodel.Agen
 
 func TestHostedPlaygroundConversationPersistsEventsAndResumesProviderSession(t *testing.T) {
 	st, agent, binding, host := setupHostedConversationAgent(t)
-	server := NewServer(ServerOptions{Store: st, AuthToken: "console"})
+	server := NewServer(ServerOptions{Store: st, AuthToken: "console", Features: features.Gates{RuntimeHost: true}})
 
 	capReq := httptest.NewRequest(http.MethodGet, "/api/v1/agents/"+agent.ID.String()+
 		"/invocation-capabilities?tenant=t&namespace=n", nil)
@@ -326,6 +327,40 @@ func TestHostedPlaygroundConversationPersistsEventsAndResumesProviderSession(t *
 	}
 	if err = server.projectHostedAttemptTerminal(context.Background(), completed); err != nil {
 		t.Fatal(err)
+	}
+	beforeLate, err := st.Orchestration().ListRunEvents(context.Background(), completed.RunID, 0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeToken, _, err := server.runtimeTokens.Mint(host.HostKey, host.Tenant, host.Namespace, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptToken, err := server.taskTokens.MintAttempt(completed.ID, completed.DispatchGeneration,
+		string(completed.BackendKind), host.ID.String(), time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	latePayload, _ := json.Marshal(map[string]any{"leaseToken": completed.LeaseToken,
+		"fencingToken": completed.FencingToken, "ordinal": 99, "provider": "codex",
+		"eventType": "item.completed", "raw": json.RawMessage(`{"item":{"type":"agent_message","text":"late"}}`)})
+	lateReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime-hosts/"+host.ID.String()+
+		"/execution-attempts/"+completed.ID.String()+"/events", bytes.NewReader(latePayload))
+	lateReq.Header.Set("Authorization", "Bearer "+runtimeToken)
+	lateReq.Header.Set("X-Execution-Attempt-Token", attemptToken)
+	lateReq.Header.Set("Content-Type", "application/json")
+	lateOut := httptest.NewRecorder()
+	server.router.ServeHTTP(lateOut, lateReq)
+	var lateResponse struct {
+		Accepted bool `json:"accepted"`
+	}
+	if lateOut.Code != http.StatusOK || json.Unmarshal(lateOut.Body.Bytes(), &lateResponse) != nil || lateResponse.Accepted {
+		t.Fatalf("late provider event was not rejected cleanly: %d %s", lateOut.Code, lateOut.Body)
+	}
+	afterLate, err := st.Orchestration().ListRunEvents(context.Background(), completed.RunID, 0, 1000)
+	if err != nil || len(afterLate) != len(beforeLate) {
+		t.Fatalf("terminal Run timeline changed after late event: before=%d after=%d err=%v",
+			len(beforeLate), len(afterLate), err)
 	}
 
 	continueBody := `{"tenant":"t","namespace":"n","agentId":"` + agent.ID.String() +

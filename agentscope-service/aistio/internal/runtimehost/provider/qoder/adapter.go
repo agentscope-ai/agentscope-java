@@ -7,10 +7,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -65,11 +68,15 @@ func (a *Adapter) binary() string {
 
 func (a *Adapter) Detect(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, a.binary(), "--version")
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("qodercli --version: %w: %s", err, strings.TrimSpace(string(out)))
+		detail := ""
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			detail = strings.TrimSpace(string(exitErr.Stderr))
+		}
+		return "", fmt.Errorf("qodercli --version: %w: %s", err, detail)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return lastNonEmptyLine(string(out)), nil
 }
 
 func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provider.EventSink) (*provider.Result, error) {
@@ -92,7 +99,11 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 		return nil, err
 	}
 	defer cleanup()
-	cmd := exec.CommandContext(ctx, a.binary(), buildArgs(request, cfg, mcpConfig)...)
+	configDir, err := prepareIsolatedConfig(request)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, a.binary(), buildArgs(request, cfg, mcpConfig, configDir)...)
 	cmd.Dir = request.Workspace
 	cmd.Stdin = strings.NewReader(provider.PrependInstructions(request.Prompt, provider.DefinitionInstructions(request)))
 	provider.ApplyTaskEnvironment(cmd, request)
@@ -138,14 +149,18 @@ func qoderExitError(waitErr error, stderr string) error {
 	return fmt.Errorf("Qoder exited: %w: %s", waitErr, detail)
 }
 
-func buildArgs(request provider.Request, cfg configuration, mcpConfig string) []string {
+func buildArgs(request provider.Request, cfg configuration, mcpConfig, configDir string) []string {
 	args := []string{"-p", "--output-format", "stream-json", "--cwd", request.Workspace}
+	if configDir != "" {
+		args = append(args, "--config-dir", configDir, "--setting-sources", "project")
+	}
 	definitionAllowed, definitionDenied := provider.DefinitionToolPolicy(request, map[string]string{
 		"read": "Read", "read_file": "Read", "write": "Write", "write_file": "Write",
 		"edit": "Edit", "shell": "Bash", "bash": "Bash", "grep": "Grep", "glob": "Glob",
 	})
 	allowedTools := provider.MergeUnique(cfg.AllowedTools, definitionAllowed)
 	disallowedTools := provider.MergeUnique(cfg.DisallowedTools, definitionDenied)
+	explicitAllowlist := len(cfg.AllowedTools) > 0 || len(definitionAllowed) > 0
 	if mcpConfig != "" {
 		// Hosted executions must be reproducible and must not inherit arbitrary
 		// user/project MCP entries. Besides leaking ambient capabilities, a
@@ -169,6 +184,23 @@ func buildArgs(request provider.Request, cfg configuration, mcpConfig string) []
 	if cfg.PermissionMode != "" {
 		args = append(args, "--permission-mode", cfg.PermissionMode)
 	}
+	if explicitAllowlist {
+		builtins, mcpServers := qoderToolExposure(allowedTools)
+		args = append(args, "--tools")
+		if len(builtins) == 0 {
+			args = append(args, "")
+		} else {
+			args = append(args, builtins...)
+		}
+		if mcpConfig != "" {
+			args = append(args, "--allowed-mcp-server-names")
+			if len(mcpServers) == 0 {
+				args = append(args, "__agentscope_none__")
+			} else {
+				args = append(args, mcpServers...)
+			}
+		}
+	}
 	for _, tool := range allowedTools {
 		args = append(args, "--allowed-tools", tool)
 	}
@@ -189,6 +221,76 @@ func buildArgs(request provider.Request, cfg configuration, mcpConfig string) []
 	}
 	args = append(args, request.CustomArgs...)
 	return args
+}
+
+func prepareIsolatedConfig(request provider.Request) (string, error) {
+	root := strings.TrimSpace(request.RuntimeStateRoot)
+	if root == "" {
+		cacheRoot, err := os.UserCacheDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve Qoder cache directory: %w", err)
+		}
+		root = filepath.Join(cacheRoot, "aistio-runtime-host")
+	}
+	key := sha256.Sum256([]byte(request.Workspace))
+	dir := filepath.Join(root, "qoder-configs", fmt.Sprintf("%x", key[:16]))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create isolated Qoder config: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", fmt.Errorf("secure isolated Qoder config: %w", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve Qoder authentication directory: %w", err)
+	}
+	sourceRoot := filepath.Join(home, ".qoder")
+	for _, name := range []string{".auth", "installation_id"} {
+		source := filepath.Join(sourceRoot, name)
+		if _, statErr := os.Stat(source); statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			return "", fmt.Errorf("inspect Qoder %s: %w", name, statErr)
+		}
+		target := filepath.Join(dir, name)
+		if existing, linkErr := os.Readlink(target); linkErr == nil {
+			if existing == source {
+				continue
+			}
+			return "", fmt.Errorf("isolated Qoder %s points to an unexpected location", name)
+		} else if !os.IsNotExist(linkErr) {
+			return "", fmt.Errorf("inspect isolated Qoder %s: %w", name, linkErr)
+		}
+		if err = os.Symlink(source, target); err != nil {
+			return "", fmt.Errorf("link Qoder %s into isolated config: %w", name, err)
+		}
+	}
+	return dir, nil
+}
+
+func qoderToolExposure(allowed []string) (builtins, mcpServers []string) {
+	for _, tool := range allowed {
+		if strings.HasPrefix(tool, "mcp__") {
+			serverAndTool := strings.TrimPrefix(tool, "mcp__")
+			if split := strings.Index(serverAndTool, "__"); split > 0 {
+				mcpServers = provider.MergeUnique(mcpServers, []string{serverAndTool[:split]})
+			}
+			continue
+		}
+		builtins = provider.MergeUnique(builtins, []string{tool})
+	}
+	return builtins, mcpServers
+}
+
+func lastNonEmptyLine(output string) string {
+	lines := strings.Split(output, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 func consumeJSONL(reader io.Reader, result *provider.Result, sink provider.EventSink) error {

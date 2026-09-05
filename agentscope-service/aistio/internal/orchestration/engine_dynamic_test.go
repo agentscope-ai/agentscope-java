@@ -207,6 +207,110 @@ func TestTaskCompletionPreservesExplicitCoordinatorCompletion(t *testing.T) {
 	}
 }
 
+func TestLeaderFollowUpConvergesOriginalCoordinatorAfterDelegation(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	collaborationService := &collaboration.Service{Store: st}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "delivery", LeaderAgentRef: "leader",
+		Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "worker", Role: "worker",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, leader, err := collaborationService.CreateIssue(ctx, collaboration.CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "deliver",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: leader.ID, ExpectedVersion: leader.Version})
+	if err == nil {
+		leader, err = st.Collaboration().StartAgentTask(ctx, leader.ID, leader.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, worker, err := collaborationService.CreateChildFromTask(ctx, leader.ID,
+		collaboration.CreateIssueRequest{Title: "implement", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, _, err = collaborationService.CompleteTask(ctx, leader.ID,
+		store.TaskCompletion{ExpectedVersion: leader.Version, Summary: "delegated"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: worker.ID, ExpectedVersion: worker.Version})
+	if err == nil {
+		worker, err = st.Collaboration().StartAgentTask(ctx, worker.ID, worker.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, result, err := collaborationService.CompleteTask(ctx, worker.ID,
+		store.TaskCompletion{ExpectedVersion: worker.Version, Summary: "implemented"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		IssueID: child.ID, AgentRef: "leader", Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var followUp *controlmodel.AgentTask
+	for _, task := range tasks {
+		if task.TriggerCommentID != nil && *task.TriggerCommentID == result.ID {
+			followUp = task
+		}
+	}
+	if followUp == nil || !followUp.LeaderTask || followUp.RunNodeID != leader.RunNodeID {
+		t.Fatalf("invalid coordinator follow-up: %+v", tasks)
+	}
+	followUp, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: followUp.ID, ExpectedVersion: followUp.Version})
+	if err == nil {
+		followUp, err = st.Collaboration().StartAgentTask(ctx, followUp.ID, followUp.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = collaborationService.AcceptIssueFromTask(ctx, followUp.ID, "verified"); err != nil {
+		t.Fatal(err)
+	}
+	output := json.RawMessage(`{"summary":"converged"}`)
+	if _, err = (&Service{Store: st}).CompleteCoordinatorNode(ctx, followUp.ID, output,
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = collaborationService.CompleteTask(ctx, followUp.ID,
+		store.TaskCompletion{ExpectedVersion: followUp.Version, Result: output, Summary: "converged"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	node, err := st.Orchestration().GetNode(ctx, leader.RunNodeID)
+	if err != nil || node.State != controlmodel.RunNodeSucceeded || node.WaitReason != "" {
+		t.Fatalf("coordinator did not finish cleanly: node=%+v err=%v", node, err)
+	}
+	run, err := st.Orchestration().GetRun(ctx, leader.OrchestrationRunID)
+	if err != nil || run.State != controlmodel.RunSucceeded || run.WaitReason != "" {
+		t.Fatalf("adaptive Run did not converge: run=%+v err=%v", run, err)
+	}
+}
+
 func TestSuccessfulTopLevelRunMovesInProgressIssueToReview(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})

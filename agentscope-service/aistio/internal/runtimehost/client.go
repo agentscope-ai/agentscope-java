@@ -247,7 +247,7 @@ func (c *Client) PublishProviderEvent(ctx context.Context, hostID uuid.UUID,
 	payload["eventType"] = event.Type
 	payload["providerSessionId"] = event.ProviderSessionID
 	payload["raw"] = event.Raw
-	return c.executionAction(ctx, hostID, execution.ID, "events", payload, nil)
+	return c.executionAction(ctx, hostID, execution.ID, "events", payload, execution)
 }
 
 func (c *Client) Complete(ctx context.Context, hostID uuid.UUID, execution *controlmodel.ExecutionAttempt, result, checkpoint json.RawMessage) error {

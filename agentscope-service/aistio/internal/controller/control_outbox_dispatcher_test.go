@@ -6,6 +6,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -22,6 +23,16 @@ func (h *testControlHandler) HandleControlEvent(context.Context, *controlmodel.O
 	if h.failures > 0 {
 		h.failures--
 		return errors.New("retry me")
+	}
+	return nil
+}
+
+type deferredControlHandler struct{ failures int }
+
+func (h *deferredControlHandler) HandleControlEvent(context.Context, *controlmodel.OutboxEvent) error {
+	if h.failures > 0 {
+		h.failures--
+		return fmt.Errorf("%w: runtime capacity unavailable", ErrControlEventDeferred)
 	}
 	return nil
 }
@@ -104,5 +115,34 @@ func TestControlOutboxDispatcherRetriesThenDelivers(t *testing.T) {
 	claimed, err := st.Outbox().Claim(ctx, "inspect", now.Add(time.Second), time.Second, 10)
 	if err != nil || len(claimed) != 0 {
 		t.Fatalf("event %s was not delivered: claimed=%d err=%v", event.ID, len(claimed), err)
+	}
+}
+
+func TestDeferredQueuedTaskNeverDeadLettersAndEventuallyDispatches(t *testing.T) {
+	ctx := context.Background()
+	st, err := memory.Open(ctx, store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	event, err := st.Outbox().Enqueue(ctx, &controlmodel.OutboxEvent{Tenant: "default",
+		AggregateType: "agent-task", AggregateID: "task-1", EventType: "agent-task.queued.v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := &deferredControlHandler{failures: 15}
+	dispatcher := &ControlOutboxDispatcher{Store: st, Handler: handler, WorkerID: "deferred", MaxBackoff: time.Millisecond}
+	now := time.Now().UTC()
+	for i := 0; i < 15; i++ {
+		dispatcher.DispatchOnce(ctx, now.Add(time.Duration(i)*2*time.Millisecond))
+	}
+	dead, err := st.Outbox().ListDeadLetters(ctx, "default", "", 10)
+	if err != nil || len(dead) != 0 {
+		t.Fatalf("deferred event was dead-lettered: events=%+v err=%v", dead, err)
+	}
+	dispatcher.DispatchOnce(ctx, now.Add(time.Second))
+	claimed, err := st.Outbox().Claim(ctx, "inspect", now.Add(2*time.Second), time.Second, 10)
+	if err != nil || len(claimed) != 0 {
+		t.Fatalf("event %s did not deliver after recovery: claimed=%+v err=%v", event.ID, claimed, err)
 	}
 }

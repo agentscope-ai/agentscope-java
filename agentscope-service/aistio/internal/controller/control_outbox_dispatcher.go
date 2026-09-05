@@ -20,6 +20,8 @@ type ControlEventHandler interface {
 	HandleControlEvent(context.Context, *controlmodel.OutboxEvent) error
 }
 
+var ErrControlEventDeferred = errors.New("control event delivery deferred")
+
 // ControlOutboxDispatcher provides durable at-least-once delivery. All
 // replicas may run it because Claim uses SKIP LOCKED and a worker lease.
 type ControlOutboxDispatcher struct {
@@ -74,7 +76,13 @@ func (d *ControlOutboxDispatcher) DispatchOnce(ctx context.Context, now time.Tim
 	for _, event := range events {
 		if err := d.Handler.HandleControlEvent(ctx, event); err != nil {
 			retryAt := now.Add(d.retryBackoff(event.Attempts))
-			if markErr := d.Store.Outbox().MarkFailed(ctx, event.ID, d.WorkerID, err.Error(), retryAt); markErr != nil {
+			var markErr error
+			if errors.Is(err, ErrControlEventDeferred) {
+				markErr = d.Store.Outbox().MarkDeferred(ctx, event.ID, d.WorkerID, err.Error(), retryAt)
+			} else {
+				markErr = d.Store.Outbox().MarkFailed(ctx, event.ID, d.WorkerID, err.Error(), retryAt)
+			}
+			if markErr != nil {
 				log.FromContext(ctx).Error(markErr, "marking control event failed", "event", event.ID)
 			}
 			continue
@@ -134,6 +142,10 @@ func (h *CollaborationOutboxHandler) HandleControlEvent(ctx context.Context, eve
 		// state is the idempotency fence, so a second runtime is never started.
 		if task.Status == controlmodel.AgentTaskQueued {
 			if err := h.DispatchAgentTask(ctx, taskID); err != nil {
+				current, loadErr := h.Store.Collaboration().GetAgentTask(ctx, taskID)
+				if loadErr == nil && current.Status == controlmodel.AgentTaskQueued {
+					return fmt.Errorf("%w: %v", ErrControlEventDeferred, err)
+				}
 				return err
 			}
 		}

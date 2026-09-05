@@ -38,6 +38,7 @@ type fakeControlPlane struct {
 	completed       chan struct{}
 	restored        map[uuid.UUID]string
 	terminalOnStart bool
+	terminalOnRenew bool
 	completeCalls   int
 	renewErrors     []error
 	renewed         chan error
@@ -86,7 +87,7 @@ func (f *fakeControlPlane) Start(_ context.Context, _ uuid.UUID, execution *cont
 	}
 	return nil
 }
-func (f *fakeControlPlane) Renew(context.Context, uuid.UUID, *controlmodel.ExecutionAttempt, time.Duration) error {
+func (f *fakeControlPlane) Renew(_ context.Context, _ uuid.UUID, execution *controlmodel.ExecutionAttempt, _ time.Duration) error {
 	f.mu.Lock()
 	var err error
 	if len(f.renewErrors) > 0 {
@@ -95,6 +96,9 @@ func (f *fakeControlPlane) Renew(context.Context, uuid.UUID, *controlmodel.Execu
 	f.mu.Unlock()
 	if f.renewed != nil {
 		f.renewed <- err
+	}
+	if err == nil && f.terminalOnRenew {
+		execution.State = controlmodel.ExecutionFailed
 	}
 	return err
 }
@@ -179,6 +183,19 @@ func TestRenewLoopCancelsProviderAfterLeaseExpires(t *testing.T) {
 	case <-ctx.Done():
 	default:
 		t.Fatal("provider context remained active after lease expiry")
+	}
+}
+
+func TestRenewLoopCancelsProviderWhenControlPlaneReportsTerminal(t *testing.T) {
+	cp := &fakeControlPlane{terminalOnRenew: true, renewed: make(chan error, 1)}
+	engine := &Engine{Config: Config{LeaseTTL: 3 * time.Second}, Client: cp}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, make(chan error, 1))
+	select {
+	case <-ctx.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("terminal renewal response did not cancel the provider context")
 	}
 }
 
@@ -333,6 +350,10 @@ func TestShouldPublishProviderEventFiltersInternalHookNoise(t *testing.T) {
 	}
 	if !shouldPublishProviderEvent(provider.Event{Type: "assistant", Raw: json.RawMessage(`{"type":"assistant"}`)}) {
 		t.Fatal("assistant events should be observable")
+	}
+	if shouldPublishProviderEvent(provider.Event{Type: "item.completed", Raw: json.RawMessage(
+		`{"type":"item.completed","item":{"type":"error","message":"clamping SessionEnd hook timeout from 999999ms"}}`)}) {
+		t.Fatal("non-fatal Codex hook timeout warning should remain local")
 	}
 }
 
