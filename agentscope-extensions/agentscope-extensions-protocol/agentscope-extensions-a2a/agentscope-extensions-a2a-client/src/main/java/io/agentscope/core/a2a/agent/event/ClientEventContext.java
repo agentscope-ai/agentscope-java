@@ -18,13 +18,20 @@ package io.agentscope.core.a2a.agent.event;
 
 import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.A2aAgent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.MiddlewareChain;
+import io.agentscope.core.middleware.ReasoningInput;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 
@@ -35,6 +42,10 @@ import reactor.core.publisher.MonoSink;
  */
 public class ClientEventContext {
 
+    private static final String A2A_REASONING_START = "a2a.reasoning.start";
+    private static final String A2A_REASONING_CHUNK = "a2a.reasoning.chunk";
+    private static final String A2A_REASONING_END = "a2a.reasoning.end";
+
     private final String currentRequestId;
 
     private final A2aAgent agent;
@@ -42,6 +53,8 @@ public class ClientEventContext {
     private MonoSink<Msg> sink;
 
     private List<Hook> hooks;
+
+    private List<MiddlewareBase> middlewares = List.of();
 
     private Task task;
 
@@ -85,6 +98,10 @@ public class ClientEventContext {
         this.hooks = hooks;
     }
 
+    public void setMiddlewares(List<MiddlewareBase> middlewares) {
+        this.middlewares = middlewares != null ? middlewares : List.of();
+    }
+
     public Task getTask() {
         return task;
     }
@@ -124,8 +141,12 @@ public class ClientEventContext {
      * Trigger PreReasoningEvent (triggered only once)
      */
     void publishPreReasoning() {
-        if (hooks != null && !hooks.isEmpty() && preReasoningFired.compareAndSet(false, true)) {
-            List<Msg> msgs = inputMessages == null ? List.of() : inputMessages;
+        if (!preReasoningFired.compareAndSet(false, true)) {
+            return;
+        }
+
+        List<Msg> msgs = inputMessages == null ? List.of() : inputMessages;
+        if (hooks != null && !hooks.isEmpty()) {
             PreReasoningEvent preEvent = new PreReasoningEvent(agent, "A2A", null, msgs);
 
             Mono<PreReasoningEvent> eventMono = Mono.just(preEvent);
@@ -134,14 +155,15 @@ public class ClientEventContext {
             }
             eventMono.block();
         }
+        publishMiddlewareEvent(A2A_REASONING_START, Map.of("messages", msgs));
     }
 
     /**
      * Trigger ReasoningChunkEvent (streaming process)
      */
     void publishReasoningChunk(Msg chunkMsg) {
+        publishPreReasoning(); // If not sent Pre before, send Pre first
         if (hooks != null && !hooks.isEmpty()) {
-            publishPreReasoning(); // If not sent Pre before, send Pre first
             ReasoningChunkEvent chunkEvent =
                     new ReasoningChunkEvent(agent, "A2A", null, chunkMsg, chunkMsg);
 
@@ -151,6 +173,7 @@ public class ClientEventContext {
             }
             eventMono.block();
         }
+        publishMiddlewareEvent(A2A_REASONING_CHUNK, Map.of("message", chunkMsg));
     }
 
     /**
@@ -162,8 +185,13 @@ public class ClientEventContext {
      * modification was applied
      */
     Msg publishPostReasoning(Msg finalMsg) {
-        if (hooks != null && !hooks.isEmpty() && postReasoningFired.compareAndSet(false, true)) {
-            publishPreReasoning();
+        if (!postReasoningFired.compareAndSet(false, true)) {
+            return finalMsg;
+        }
+
+        publishPreReasoning();
+        Msg result = finalMsg;
+        if (hooks != null && !hooks.isEmpty()) {
             PostReasoningEvent postEvent = new PostReasoningEvent(agent, "A2A", null, finalMsg);
 
             Mono<PostReasoningEvent> eventMono = Mono.just(postEvent);
@@ -172,11 +200,39 @@ public class ClientEventContext {
             }
 
             postEvent = eventMono.block();
-            if (postEvent != null) {
-                Msg modifiedMsg = postEvent.getReasoningMessage();
-                return modifiedMsg != null ? modifiedMsg : finalMsg;
+            if (postEvent != null && postEvent.getReasoningMessage() != null) {
+                result = postEvent.getReasoningMessage();
             }
         }
-        return finalMsg;
+        publishMiddlewareEvent(A2A_REASONING_END, Map.of("message", result));
+        return result;
+    }
+
+    /**
+     * Sends the remote reasoning lifecycle event through the configured middleware chain.
+     *
+     * <p>The initial A2A bridge intentionally keeps the existing Hook and {@code stream()} paths
+     * unchanged. Middleware receives a {@link CustomEvent} describing the A2A phase; its returned
+     * stream is consumed so normal Reactor lifecycle operators (for example logging and metrics)
+     * are executed.
+     */
+    private void publishMiddlewareEvent(String name, Map<String, Object> value) {
+        if (middlewares.isEmpty()) {
+            return;
+        }
+        AgentEvent event = new CustomEvent(name, value);
+        Flux<AgentEvent> stream =
+                MiddlewareChain.build(
+                                middlewares,
+                                agent,
+                                null,
+                                MiddlewareBase::onReasoning,
+                                input -> Flux.just(event))
+                        .apply(
+                                new ReasoningInput(
+                                        inputMessages == null ? List.of() : inputMessages,
+                                        List.of(),
+                                        null));
+        stream.then().block();
     }
 }
