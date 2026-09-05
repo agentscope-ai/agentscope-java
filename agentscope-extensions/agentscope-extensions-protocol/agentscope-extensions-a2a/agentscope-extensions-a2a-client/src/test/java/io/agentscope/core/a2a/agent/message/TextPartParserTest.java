@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import io.a2a.spec.TextPart;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import java.util.Map;
@@ -86,5 +87,26 @@ class TextPartParserTest {
         assertInstanceOf(ThinkingBlock.class, result);
         ThinkingBlock thinkingBlock = (ThinkingBlock) result;
         assertEquals("Thinking process", thinkingBlock.getThinking());
+    }
+
+    @Test
+    @DisplayName("Should parse TextPart with hint metadata to HintBlock")
+    void testParseTextPartWithHintMetadata() {
+        Map<String, Object> metadata =
+                Map.of(
+                        MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                        MessageConstants.BlockContent.TYPE_HINT,
+                        MessageConstants.HINT_ID_METADATA_KEY,
+                        "hint-1",
+                        MessageConstants.HINT_SOURCE_METADATA_KEY,
+                        "alice");
+        TextPart part = new TextPart("Check the inbox", metadata);
+
+        ContentBlock result = parser.parse(part);
+
+        HintBlock hintBlock = assertInstanceOf(HintBlock.class, result);
+        assertEquals("hint-1", hintBlock.getId());
+        assertEquals("Check the inbox", hintBlock.getHint());
+        assertEquals("alice", hintBlock.getSource());
     }
 }
