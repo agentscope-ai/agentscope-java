@@ -42,7 +42,7 @@ export interface CreateDeploymentRequest {
   name: string;
   agentId: string;
   agentVersion?: number;
-  environmentId?: string;
+  environmentId: string;
   triggerType: TriggerType;
   cronExpression?: string;
 }
