@@ -70,7 +70,8 @@ class SandboxLifecycleMiddlewareCallbackTest {
         middleware.prestageMarketplaceSkills(RuntimeContext.empty());
 
         assertTrue(Files.isDirectory(cacheDir), ".skills-cache should be created by prestage");
-        Path stagedScript = cacheDir.resolve("test-db").resolve("db-tool").resolve("run.sh");
+        Path stagedScript =
+                cacheDir.resolve("_shared").resolve("test-db").resolve("db-tool").resolve("run.sh");
         assertTrue(Files.exists(stagedScript), "run.sh should be staged");
         String content = Files.readString(stagedScript);
         assertEquals("#!/bin/bash\necho hello", content);
@@ -97,7 +98,7 @@ class SandboxLifecycleMiddlewareCallbackTest {
         middleware.prestageMarketplaceSkills(RuntimeContext.empty());
         middleware.prestageMarketplaceSkills(RuntimeContext.empty());
 
-        Path staged = tempWorkspace.resolve(".skills-cache/src/idempotent-skill/data.txt");
+        Path staged = tempWorkspace.resolve(".skills-cache/_shared/src/idempotent-skill/data.txt");
         assertTrue(Files.exists(staged));
     }
 
@@ -137,7 +138,7 @@ class SandboxLifecycleMiddlewareCallbackTest {
         java.util.function.Consumer<RuntimeContext> callback = skillMw::prestageMarketplaceSkills;
         callback.accept(RuntimeContext.empty());
 
-        Path staged = tempWorkspace.resolve(".skills-cache/cb-src/callback-skill/tool.py");
+        Path staged = tempWorkspace.resolve(".skills-cache/_shared/cb-src/callback-skill/tool.py");
         assertTrue(
                 Files.exists(staged),
                 ".skills-cache should be populated by the callback before sandbox.start()");
