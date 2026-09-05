@@ -41,7 +41,7 @@
     </modules>
 
     <properties>
-        <spring.boot.version>4.0.4</spring.boot.version>
+        <spring.boot.version>4.1.1</spring.boot.version>
         <spring-cloud.version>2025.1.2</spring-cloud.version>
         <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
