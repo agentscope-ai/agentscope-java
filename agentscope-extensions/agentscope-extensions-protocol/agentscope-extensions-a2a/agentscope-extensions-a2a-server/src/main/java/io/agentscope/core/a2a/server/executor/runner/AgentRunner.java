@@ -16,7 +16,7 @@
 
 package io.agentscope.core.a2a.server.executor.runner;
 
-import io.agentscope.core.agent.Event;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import reactor.core.publisher.Flux;
@@ -28,7 +28,7 @@ import reactor.core.publisher.Flux;
  * It provides methods for starting, stopping, and get messages from agents.
  *
  * <p>This interface is designed for extending actual handling logics for {@link io.agentscope.core.agent.Agent},
- * methods will use {@link Msg} as input and use {@link Event} as output.
+ * methods will use {@link Msg} as input and use {@link AgentEvent} as output.
  * Developers can do some pre-processing before call {@link io.agentscope.core.agent.Agent} or post-processing after
  * calling {@link io.agentscope.core.agent.Agent}.
  */
@@ -55,7 +55,7 @@ public interface AgentRunner {
      * @param options the options for agent request, such as `taskId`, `sessionId` or `userId` of this request
      * @return Flux of events emitted during execution
      */
-    Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options);
+    Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options);
 
     /**
      * Stop to handle agent request.

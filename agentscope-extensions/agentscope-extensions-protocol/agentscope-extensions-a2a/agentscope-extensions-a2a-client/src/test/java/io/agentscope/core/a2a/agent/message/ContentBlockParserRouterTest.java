@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.a2a.agent.message;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -29,6 +30,7 @@ import io.a2a.spec.TextPart;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -80,6 +82,24 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(TextPart.class, result);
+    }
+
+    @Test
+    @DisplayName("Should parse HintBlock with its identity and source")
+    void testParseHintBlock() {
+        HintBlock block = new HintBlock("hint-1", "Check the inbox", "alice");
+
+        Part<?> result = router.parse(block);
+
+        assertNotNull(result);
+        TextPart textPart = assertInstanceOf(TextPart.class, result);
+        assertEquals("Check the inbox", textPart.getText());
+        assertEquals(
+                MessageConstants.BlockContent.TYPE_HINT,
+                textPart.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+        assertEquals("hint-1", textPart.getMetadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+        assertEquals(
+                "alice", textPart.getMetadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
     }
 
     @Test

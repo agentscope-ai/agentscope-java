@@ -56,6 +56,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -225,12 +227,40 @@ class DashScopeHttpClientTest {
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.6-plus"));
     }
 
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "qwen3.8-max",
+                "Qwen3.8-Max",
+                "qwen3.8-max-2026-08-01",
+                "qwen3.8-flash",
+                "Qwen3.8-Flash",
+                "qwen3.8-flash-2026-09-01",
+                "qwen3.8-27b"
+            })
+    void testQwen38MultimodalRouting(String modelName) {
+        assertTrue(DashScopeHttpClient.isMultimodalModel(modelName));
+        assertTrue(client.requiresMultimodalApi(modelName, EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint(modelName, EndpointType.AUTO));
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"qwen3.8-2.4t-a95b", "Qwen3.8-2.4T-A95B", "qwen3.8-2.4t-a95b-2026-09-01"})
+    void testQwen38TextOnlyRouting(String modelName) {
+        assertFalse(DashScopeHttpClient.isMultimodalModel(modelName));
+        assertFalse(client.requiresMultimodalApi(modelName, EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint(modelName, EndpointType.AUTO));
+    }
+
     @Test
-    void testIsMultimodalModelIncludesQwen38MaxFamily() {
-        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.8-max"));
-        assertTrue(DashScopeHttpClient.isMultimodalModel("Qwen3.8-Max"));
-        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.8-max-2026-08-01"));
+    void testQwen38ModelNameWithExtraHyphenDoesNotMatch() {
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.8-max"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.8-flash"));
     }
 
     @Test
