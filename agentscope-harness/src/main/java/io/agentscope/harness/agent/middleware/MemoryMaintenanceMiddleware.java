@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -41,9 +42,10 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Middleware that performs periodic memory maintenance after each agent call.
  *
- * <p>Fires on the agent invocation completion (via {@code onAgent concatWith}, after
+ * <p>Fires on the agent invocation completion (via {@code onAgent doOnComplete}, after
  * {@link MemoryFlushMiddleware}) and is throttled by a configurable minimum gap so it
- * does not run on every single call.
+ * does not run on every single call. The maintenance is <em>fire-and-forget</em>: the agent
+ * stream completes immediately while the maintenance runs on a background scheduler.
  *
  * <p>Maintenance steps executed in order:
  * <ol>
@@ -140,28 +142,33 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        // The maintenance body — including the gate claim, which is remote I/O under a
+        // store-backed gate — runs on the background scheduler. Only the in-flight counter is
+        // updated synchronously, so a quiescence check can never observe an empty in-flight
+        // set before the task is counted.
         return next.apply(input)
-                .concatWith(
-                        Mono.<AgentEvent>fromRunnable(() -> maybeRunMaintenance(rc))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .onErrorResume(
-                                        e -> {
-                                            log.warn(
-                                                    "Memory maintenance failed: {}",
-                                                    e.getMessage());
-                                            return Mono.empty();
-                                        }));
+                .doOnComplete(
+                        () -> {
+                            MemoryBackgroundTasks.begin();
+                            Mono.defer(() -> doMaintenance(rc))
+                                    .subscribeOn(Schedulers.boundedElastic())
+                                    .doFinally(signal -> MemoryBackgroundTasks.end())
+                                    .subscribe(
+                                            null,
+                                            e ->
+                                                    log.warn(
+                                                            "Memory maintenance failed: {}",
+                                                            e.getMessage()));
+                        });
     }
 
-    private void maybeRunMaintenance(RuntimeContext rc) {
+    private Mono<Void> doMaintenance(RuntimeContext rc) {
         if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
-            return;
+            // Throttled out; the in-flight slot acquired at dispatch is released when this
+            // Mono completes.
+            return Mono.empty();
         }
-        try {
-            runMaintenance(rc);
-        } catch (Exception e) {
-            log.warn("Memory maintenance failed: {}", e.getMessage());
-        }
+        return Mono.fromRunnable(() -> runMaintenance(rc));
     }
 
     /**
@@ -181,14 +188,9 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
      */
     String timerKeyFor(RuntimeContext rc) {
         return switch (isolationScope) {
-            case USER -> {
-                String uid = rc != null ? rc.getUserId() : null;
-                yield (uid != null && !uid.isBlank()) ? uid : "";
-            }
-            case SESSION -> {
-                String sid = rc != null ? rc.getSessionId() : null;
-                yield (sid != null && !sid.isBlank()) ? sid : "";
-            }
+            case USER -> MemoryFlushMiddleware.blankToEmpty(rc != null ? rc.getUserId() : null);
+            case SESSION ->
+                    MemoryFlushMiddleware.blankToEmpty(rc != null ? rc.getSessionId() : null);
             case AGENT, GLOBAL -> "";
         };
     }
