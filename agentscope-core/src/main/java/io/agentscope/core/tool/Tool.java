@@ -138,6 +138,18 @@ public @interface Tool {
     boolean stateInjected() default false;
 
     /**
+     * Whether to return this tool's result directly to the caller as the turn's final
+     * assistant message, bypassing the next model reasoning iteration.
+     *
+     * <p>In a batch, this takes effect only when <em>every</em> executed tool in the
+     * round has {@code returnDirect = true} <em>and</em> the round yields only
+     * {@code SUCCESS} results; otherwise all results are fed back to the model.
+     *
+     * @return true to short-circuit the ReAct loop after execution
+     */
+    boolean returnDirect() default false;
+
+    /**
      * Sensitive filenames that must require explicit permission for this tool.
      *
      * <p>An empty array sticks with the default list maintained by {@code ToolBase}.
