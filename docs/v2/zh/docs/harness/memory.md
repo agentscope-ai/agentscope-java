@@ -56,6 +56,8 @@ Flush（路径 1）会在以下三个时机被触发：
 2. **压缩前的预提取** —— `CompactionConfig.flushBeforeCompact = true`（默认）时，压缩对话前缀前先 flush 一次。
 3. **上下文溢出兜底** —— 模型真的报 `context_length_exceeded` 时，框架做一次紧急压缩，连带 flush。
 
+`HarnessAgent.Builder.disableMemoryHooks()` 会关闭以上三条 flush 路径（包括普通压缩和紧急压缩中的 flush）以及后台 consolidation。它不会关闭压缩摘要或原始消息 offload；如果还需要禁用 session JSONL，请单独设置 `offloadBeforeCompact(false)`。
+
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
 Flush 和 offload 都是**异步执行**的：它们在响应流结束后通过 `doOnComplete` 以 fire-and-forget 方式启动，不会阻塞当前 `call()` 的返回。换句话说，调用方拿到完整响应之后，flush LLM 调用和 JSONL offload 才在后台开始。
@@ -82,8 +84,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `triggerTokens` | `80_000` | 按 token 估算触发（`0` 表示关闭） |
 | `keepMessages` | `20` | 保留尾部条数 |
 | `keepTokens` | `0` | 非 0 时按 token 预算从尾部往前算，覆盖 `keepMessages` |
-| `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
-| `offloadBeforeCompact` | `true` | 压缩前先把原始消息存一份永不压缩的日志 |
+| `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2）；`disableMemoryHooks()` 会将其覆盖为 `false` |
+| `offloadBeforeCompact` | `true` | 压缩前先把原始消息存一份永不压缩的日志；不受 memory hooks 控制 |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
 
@@ -251,7 +253,7 @@ HarnessAgent.builder()
 ```java
 HarnessAgent.builder()
     ...
-    .disableMemoryHooks()      // 关掉 flush + 后台维护（并去掉「对话结束自动抽取」引导）
+    .disableMemoryHooks()      // 关掉所有 flush 路径 + 后台维护
     .disableMemoryTools()      // 不注册 memory_search / memory_get / memory_save / session_search
                                // 同时去掉对应的 Memory Recall / 工具 Persistence 引导
     .build();
@@ -259,7 +261,7 @@ HarnessAgent.builder()
 
 两者一起用时，还会跳过 `<memory_context>`（`MEMORY.md`）注入，但保留 Domain Knowledge / AGENTS / knowledge 上下文。
 
-`disableMemoryHooks()` 是核选项；只想节流不想关，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。
+`disableMemoryHooks()` 不会关闭压缩摘要和 session JSONL offload。如果原始消息也不能 offload，还需配置 `.compaction(CompactionConfig.builder().offloadBeforeCompact(false).build())`。如果只想限制每轮 flush 的频率，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。
 
 ## 相关文档
 

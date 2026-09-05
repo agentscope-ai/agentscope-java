@@ -161,7 +161,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | Method | What it disables |
 |--------|------------------|
 | `disableWorkspaceContext()` | system-prompt injection (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
-| `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips `<memory_context>` (`MEMORY.md`) injection |
+| `disableMemoryHooks()` | all memory flush paths (including compaction) + background maintenance; not compaction summary or session offload. Also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips `<memory_context>` (`MEMORY.md`) injection |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
