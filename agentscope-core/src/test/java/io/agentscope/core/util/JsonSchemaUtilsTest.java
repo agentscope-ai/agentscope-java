@@ -23,8 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class JsonSchemaUtilsTest {
@@ -155,5 +161,39 @@ class JsonSchemaUtilsTest {
         Map<String, Object> mapSchema = JsonSchemaUtils.generateSchemaFromType(mapType);
         assertNotNull(mapSchema);
         assertEquals("object", mapSchema.get("type"));
+    }
+
+    @Test
+    void testConcurrentSchemaGeneration() throws Exception {
+        int workers = 8;
+        ExecutorService executor = Executors.newFixedThreadPool(workers);
+        CountDownLatch ready = new CountDownLatch(workers);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Void>> futures = new ArrayList<>();
+            for (int i = 0; i < workers; i++) {
+                futures.add(
+                        executor.submit(
+                                () -> {
+                                    ready.countDown();
+                                    start.await();
+                                    for (int attempt = 0; attempt < 25; attempt++) {
+                                        Map<String, Object> schema =
+                                                JsonSchemaUtils.generateSchemaFromClass(
+                                                        NestedModel.class);
+                                        assertEquals("object", schema.get("type"));
+                                    }
+                                    return null;
+                                }));
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            for (Future<Void> future : futures) {
+                future.get(10, TimeUnit.SECONDS);
+            }
+        } finally {
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
     }
 }
