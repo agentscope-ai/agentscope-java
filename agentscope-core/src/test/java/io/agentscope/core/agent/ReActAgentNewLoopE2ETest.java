@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -69,6 +70,7 @@ class ReActAgentNewLoopE2ETest {
         private final List<Supplier<Flux<ChatResponse>>> scripts;
         private final AtomicInteger idx = new AtomicInteger(0);
         final AtomicInteger calls = new AtomicInteger(0);
+        final List<List<Msg>> requests = new ArrayList<>();
 
         ScriptedModel(List<Supplier<Flux<ChatResponse>>> scripts) {
             this.scripts = scripts;
@@ -83,6 +85,7 @@ class ReActAgentNewLoopE2ETest {
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             calls.incrementAndGet();
+            requests.add(List.copyOf(messages));
             int i = idx.getAndIncrement();
             if (i >= scripts.size()) {
                 return Flux.just(textResponse(""));
@@ -415,5 +418,75 @@ class ReActAgentNewLoopE2ETest {
         assertEquals(1L, events.stream().filter(ToolResultEndEvent.class::isInstance).count());
         assertTrue(events.get(0) instanceof AgentStartEvent);
         assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
+    }
+
+    @Test
+    void actingMiddlewareCanRewriteToolResultForEventsAndNextModelCall() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "search", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new AlwaysAllowTool("search"));
+
+        MiddlewareBase rewritingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .map(
+                                        event -> {
+                                            if (!(event
+                                                    instanceof
+                                                    ToolResultTextDeltaEvent textDelta)) {
+                                                return event;
+                                            }
+                                            ToolResultTextDeltaEvent rewritten =
+                                                    new ToolResultTextDeltaEvent(
+                                                            textDelta.getReplyId(),
+                                                            textDelta.getToolCallId(),
+                                                            textDelta.getToolCallName(),
+                                                            "rewritten");
+                                            rewritten.withMetadata(textDelta.getMetadata());
+                                            return rewritten;
+                                        });
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .middleware(rewritingMiddleware)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        List<String> streamedResults =
+                events.stream()
+                        .filter(ToolResultTextDeltaEvent.class::isInstance)
+                        .map(ToolResultTextDeltaEvent.class::cast)
+                        .map(ToolResultTextDeltaEvent::getDelta)
+                        .toList();
+        assertEquals(List.of("rewritten"), streamedResults);
+
+        List<String> nextModelToolResults =
+                model.requests.get(1).stream()
+                        .flatMap(msg -> msg.getContentBlocks(ToolResultBlock.class).stream())
+                        .flatMap(result -> result.getOutput().stream())
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .toList();
+        assertEquals(List.of("rewritten"), nextModelToolResults);
+        assertFalse(nextModelToolResults.contains("search:alpha"));
     }
 }
