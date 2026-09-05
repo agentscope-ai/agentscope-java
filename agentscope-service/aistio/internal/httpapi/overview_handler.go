@@ -140,10 +140,10 @@ func (s *Server) enrichSessionInstance(sess *store.Session, item *SessionWithSna
 		if !dp.Healthy {
 			continue
 		}
-		if item.InstanceHealthy == nil {
-			h := true
-			item.InstanceHealthy = &h
-		}
+		// A healthy peer is the endpoint that resolveSessionEndpoint can actually use,
+		// so it supersedes a stale affinity miss above.
+		h := true
+		item.InstanceHealthy = &h
 		if item.InstanceBaseURL == "" {
 			item.InstanceBaseURL = dp.BaseURL
 		}

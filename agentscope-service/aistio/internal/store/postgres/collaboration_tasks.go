@@ -674,6 +674,9 @@ func (r *collaborationRepo) StartAgentTask(ctx context.Context, id uuid.UUID, ex
 	if err != nil {
 		return nil, err
 	}
+	if err = startIssueForAgentTaskTx(ctx, tx, task); err != nil {
+		return nil, err
+	}
 	if _, err = tx.Exec(ctx, `UPDATE orchestration_runs SET state=$2,wait_reason=NULL,version=version+1,
 		updated_at=now() WHERE id=$1 AND state=$3`, task.OrchestrationRunID, controlmodel.RunRunning,
 		controlmodel.RunWaiting); err != nil {
@@ -683,6 +686,34 @@ func (r *collaborationRepo) StartAgentTask(ctx context.Context, id uuid.UUID, ex
 		return nil, err
 	}
 	return task, nil
+}
+
+func startIssueForAgentTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel.AgentTask) error {
+	issue, err := scanIssue(tx.QueryRow(ctx, `SELECT `+issueColumns+` FROM issues WHERE id=$1 FOR UPDATE`, task.IssueID))
+	if err != nil {
+		return err
+	}
+	if issue.Status != controlmodel.IssueBacklog && issue.Status != controlmodel.IssueTodo {
+		return nil
+	}
+	previousStatus := issue.Status
+	issue, err = scanIssue(tx.QueryRow(ctx, `UPDATE issues SET status=$2,version=version+1,
+		updated_at=now() WHERE id=$1 RETURNING `+issueColumns, issue.ID, controlmodel.IssueInProgress))
+	if err != nil {
+		return err
+	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	details, _ := json.Marshal(map[string]string{"from": string(previousStatus),
+		"to": string(controlmodel.IssueInProgress), "reason": "agent task started"})
+	if err = insertActivityTx(ctx, tx, &controlmodel.Activity{Tenant: issue.Tenant,
+		Namespace: issue.Namespace, IssueID: &issue.ID, Actor: actor,
+		Action: "issue.status_changed", ObjectType: "issue", ObjectRef: issue.ID.String(),
+		CausationID: task.ID.String(), CorrelationID: task.CorrelationID, Details: details}); err != nil {
+		return err
+	}
+	return enqueueCollaborationEventTx(ctx, tx, issue.Tenant, "issue", issue.ID,
+		"issue.status-changed.v1", map[string]any{"issue": issue, "previousStatus": previousStatus},
+		fmt.Sprintf("issue-status:%s:%d", issue.ID, issue.Version))
 }
 
 func (r *collaborationRepo) CompleteAgentTask(ctx context.Context, id uuid.UUID, completion store.TaskCompletion) (*controlmodel.AgentTask, error) {
