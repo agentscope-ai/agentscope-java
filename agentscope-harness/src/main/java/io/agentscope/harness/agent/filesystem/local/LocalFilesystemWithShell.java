@@ -21,7 +21,9 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -30,7 +32,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,6 +60,15 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
     /** Default timeout in seconds for shell command execution. */
     public static final int DEFAULT_EXECUTE_TIMEOUT = 120;
+
+    /** Read buffer size (bytes) for the stream drainer threads. */
+    private static final int DRAIN_CHUNK_BYTES = 8192;
+
+    /** Shared deadline for obtaining immutable stdout and stderr snapshots after process exit. */
+    private static final long DRAIN_TEARDOWN_TIMEOUT_MILLIS = 5000;
+
+    /** Bounded wait for the directly launched process to terminate after a forced destroy. */
+    private static final long PROCESS_TERMINATION_TIMEOUT_MILLIS = 1000;
 
     private final String sandboxId;
     private final int defaultTimeout;
@@ -252,6 +270,10 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         if (timeout <= 0) {
             throw new IllegalArgumentException("timeout must be positive, got " + timeout);
         }
+        if (maxOutputBytes <= 0) {
+            throw new IllegalArgumentException(
+                    "maxOutputBytes must be positive, got " + maxOutputBytes);
+        }
 
         this.defaultTimeout = timeout;
         this.maxOutputBytes = maxOutputBytes;
@@ -318,6 +340,13 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             throw new IllegalArgumentException("timeout must be positive, got " + effectiveTimeout);
         }
 
+        Process proc = null;
+        InputStream stdoutStream = null;
+        InputStream stderrStream = null;
+        ExecutorService drainExecutor = null;
+        Future<BoundedCapture> stdoutFuture = null;
+        Future<BoundedCapture> stderrFuture = null;
+
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
             String osName = System.getProperty("os.name").toLowerCase();
@@ -333,16 +362,24 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 pb.environment().putAll(env);
             }
 
-            Process proc = pb.start();
+            proc = pb.start();
+            proc.getOutputStream().close();
+
+            // stdout/stderr must be drained concurrently with waitFor: if the child writes
+            // more than the OS pipe buffer (~4 KB on Windows, 64 KB default on Linux) while
+            // the parent blocks in waitFor, both sides deadlock and every such command is
+            // misreported as a timeout (exit 124).
+            stdoutStream = proc.getInputStream();
+            stderrStream = proc.getErrorStream();
+            drainExecutor = createDrainExecutor();
+            InputStream stdoutSource = stdoutStream;
+            InputStream stderrSource = stderrStream;
+            stdoutFuture = drainExecutor.submit(() -> drainStream(stdoutSource, maxOutputBytes));
+            stderrFuture = drainExecutor.submit(() -> drainStream(stderrSource, maxOutputBytes));
+            drainExecutor.shutdown();
 
             boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
-
-            Charset outputCharset = outputCharset(osName);
-            String stdout = new String(proc.getInputStream().readAllBytes(), outputCharset);
-            String stderr = new String(proc.getErrorStream().readAllBytes(), outputCharset);
-
             if (!finished) {
-                proc.destroyForcibly();
                 String msg;
                 if (timeoutSeconds != null) {
                     msg =
@@ -360,6 +397,24 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 return new ExecuteResponse(msg, 124, false);
             }
 
+            long captureDeadline =
+                    System.nanoTime()
+                            + TimeUnit.MILLISECONDS.toNanos(DRAIN_TEARDOWN_TIMEOUT_MILLIS);
+            BoundedCapture stdoutBuf = awaitCapture(stdoutFuture, stdoutStream, captureDeadline);
+            BoundedCapture stderrBuf = awaitCapture(stderrFuture, stderrStream, captureDeadline);
+            if (stdoutBuf == null || stderrBuf == null) {
+                return new ExecuteResponse(
+                        "Error: Command output capture did not complete within "
+                                + DRAIN_TEARDOWN_TIMEOUT_MILLIS
+                                + " milliseconds after the process exited.",
+                        1,
+                        false);
+            }
+
+            Charset outputCharset = outputCharset(osName);
+            String stdout = stdoutBuf.asString(outputCharset);
+            String stderr = stderrBuf.asString(outputCharset);
+
             StringBuilder output = new StringBuilder();
             if (stdout != null && !stdout.isEmpty()) {
                 output.append(stdout);
@@ -376,14 +431,13 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
             String outputStr = output.isEmpty() ? "<no output>" : output.toString();
 
-            boolean truncated = false;
+            boolean truncated = stdoutBuf.truncated() || stderrBuf.truncated();
             if (outputStr.length() > maxOutputBytes) {
-                outputStr =
-                        outputStr.substring(0, maxOutputBytes)
-                                + "\n\n... Output truncated at "
-                                + maxOutputBytes
-                                + " bytes.";
+                outputStr = outputStr.substring(0, maxOutputBytes);
                 truncated = true;
+            }
+            if (truncated) {
+                outputStr += "\n\n... Output truncated at " + maxOutputBytes + " bytes.";
             }
 
             int exitCode = proc.exitValue();
@@ -405,6 +459,13 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                             + e.getMessage(),
                     1,
                     false);
+        } finally {
+            destroyProcessTree(proc);
+            discardCapture(stdoutFuture, stdoutStream);
+            discardCapture(stderrFuture, stderrStream);
+            if (drainExecutor != null) {
+                drainExecutor.shutdownNow();
+            }
         }
     }
 
@@ -430,6 +491,210 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             log.warn("Failed to create namespace directory {}: {}", namespaced, e.getMessage());
         }
         return namespaced;
+    }
+
+    private ExecutorService createDrainExecutor() {
+        AtomicInteger readerIndex = new AtomicInteger();
+        return Executors.newFixedThreadPool(
+                2,
+                task -> {
+                    Thread thread =
+                            new Thread(
+                                    task,
+                                    "agentscope-shell-drainer-"
+                                            + sandboxId
+                                            + "-"
+                                            + readerIndex.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                });
+    }
+
+    static BoundedCapture drainStream(InputStream in, int maxOutputBytes) {
+        BoundedCapture capture = new BoundedCapture(maxOutputBytes);
+        drainStream(in, capture);
+        return capture;
+    }
+
+    private static void drainStream(InputStream in, BoundedCapture capture) {
+        byte[] chunk = new byte[DRAIN_CHUNK_BYTES];
+        int n;
+        try {
+            while ((n = in.read(chunk)) != -1) {
+                capture.append(chunk, n);
+            }
+        } catch (IOException ignored) {
+            // Stream closed because the process was destroyed; nothing to do.
+        }
+    }
+
+    static final class BoundedCapture {
+        private final ByteArrayOutputStream buffer;
+        private final int maxBytes;
+        private volatile boolean truncated;
+
+        BoundedCapture(int maxBytes) {
+            this.maxBytes = maxBytes;
+            this.buffer =
+                    new ByteArrayOutputStream(Math.max(0, Math.min(DRAIN_CHUNK_BYTES, maxBytes)));
+        }
+
+        private void append(byte[] chunk, int length) {
+            synchronized (buffer) {
+                int remaining = Math.max(0, maxBytes - buffer.size());
+                int retained = Math.min(remaining, length);
+                if (retained > 0) {
+                    buffer.write(chunk, 0, retained);
+                }
+                if (retained < length) {
+                    truncated = true;
+                }
+            }
+        }
+
+        int size() {
+            return buffer.size();
+        }
+
+        boolean truncated() {
+            return truncated;
+        }
+
+        String asString(Charset charset) {
+            return buffer.toString(charset);
+        }
+    }
+
+    static BoundedCapture awaitCapture(
+            Future<BoundedCapture> future, InputStream stream, long deadlineNanos)
+            throws InterruptedException {
+        long remainingNanos = Math.max(0, deadlineNanos - System.nanoTime());
+        try {
+            return future.get(remainingNanos, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            discardCapture(future, stream);
+            throw e;
+        } catch (TimeoutException e) {
+            log.warn("Timed out while capturing command output");
+            discardCapture(future, stream);
+            return null;
+        } catch (ExecutionException e) {
+            log.warn("Failed while capturing command output", e.getCause());
+            discardCapture(future, stream);
+            return null;
+        }
+    }
+
+    private static void discardCapture(Future<?> future, InputStream stream) {
+        closeQuietly(stream);
+        if (future != null && !future.isDone()) {
+            future.cancel(true);
+        }
+    }
+
+    private static void closeQuietly(InputStream stream) {
+        if (stream == null) {
+            return;
+        }
+        try {
+            stream.close();
+        } catch (IOException e) {
+            log.debug("Failed to close command output stream", e);
+        }
+    }
+
+    private static void destroyProcessTree(Process process) {
+        if (process == null) {
+            return;
+        }
+
+        boolean interrupted = Thread.interrupted();
+        try {
+            ProcessHandle root = process.toHandle();
+            if (!root.isAlive()) {
+                return;
+            }
+
+            List<ProcessHandle> descendants;
+            try (Stream<ProcessHandle> handles = root.descendants()) {
+                descendants = handles.toList();
+            } catch (RuntimeException e) {
+                descendants = List.of();
+                log.warn("Failed to snapshot command descendants before termination", e);
+            }
+
+            // Snapshot before killing the parent, then stop the parent first so it cannot keep
+            // forking. ProcessHandle is inherently best-effort: a child may fork or be reparented
+            // between the snapshot and these destroy calls.
+            try {
+                process.destroyForcibly();
+            } catch (RuntimeException e) {
+                log.warn("Failed to destroy command process", e);
+            }
+            for (ProcessHandle descendant : descendants) {
+                try {
+                    if (descendant.isAlive() && !descendant.destroyForcibly()) {
+                        log.warn("Failed to destroy command descendant pid={}", descendant.pid());
+                    }
+                } catch (RuntimeException e) {
+                    log.warn("Failed to destroy command descendant pid={}", descendant.pid(), e);
+                }
+            }
+
+            long terminationDeadline =
+                    System.nanoTime()
+                            + TimeUnit.MILLISECONDS.toNanos(PROCESS_TERMINATION_TIMEOUT_MILLIS);
+            try {
+                if (!awaitProcessExit(process, terminationDeadline)) {
+                    log.warn("Command process did not terminate after forced destroy");
+                }
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+            for (ProcessHandle descendant : descendants) {
+                try {
+                    if (!awaitProcessExit(descendant, terminationDeadline)) {
+                        log.warn(
+                                "Command descendant did not terminate after forced destroy pid={}",
+                                descendant.pid());
+                    }
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("Failed to destroy command process tree", e);
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private static boolean awaitProcessExit(Process process, long deadlineNanos)
+            throws InterruptedException {
+        if (!process.isAlive()) {
+            return true;
+        }
+        long remainingNanos = Math.max(0, deadlineNanos - System.nanoTime());
+        return process.waitFor(remainingNanos, TimeUnit.NANOSECONDS);
+    }
+
+    private static boolean awaitProcessExit(ProcessHandle process, long deadlineNanos)
+            throws InterruptedException {
+        if (!process.isAlive()) {
+            return true;
+        }
+        long remainingNanos = Math.max(0, deadlineNanos - System.nanoTime());
+        try {
+            process.onExit().get(remainingNanos, TimeUnit.NANOSECONDS);
+            return true;
+        } catch (ExecutionException e) {
+            log.warn("Failed while waiting for command descendant pid={}", process.pid(), e);
+            return !process.isAlive();
+        } catch (TimeoutException e) {
+            return !process.isAlive();
+        }
     }
 
     static Charset outputCharset(String osName) {
