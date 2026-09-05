@@ -398,6 +398,7 @@ final class HarnessAgentBuilderSupport {
         final Toolkit capturedParentToolkit =
                 b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
+        final List<Hook> capturedHooks = List.copyOf(b.hooks);
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
@@ -517,7 +518,8 @@ final class HarnessAgentBuilderSupport {
             }
 
             sub.middlewares(capturedMiddlewares);
-            return sub.build();
+            sub.hooks(capturedHooks);
+            return sub.build(decl.getTools());
         };
     }
 

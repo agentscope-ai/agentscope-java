@@ -34,9 +34,16 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PreActingEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
@@ -48,7 +55,11 @@ import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
@@ -82,6 +93,8 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -913,6 +926,516 @@ class HarnessAgentTest {
                 2,
                 systemPromptHits.get(),
                 "markdown-declared subagent should inherit parent middleware too");
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"programmatic", "static-markdown", "dynamic-markdown", "general-purpose"})
+    void subagentHooks_inheritOrderedHooksOnceAndPreserveToolAllowlist(String source)
+            throws Exception {
+        List<String> childOrder = new CopyOnWriteArrayList<>();
+        List<HookEvent> events = new CopyOnWriteArrayList<>();
+        Hook first = recordingSubagentHook("first", 10, childOrder, events);
+        Hook second =
+                recordingSubagentHook("second", 100, childOrder, new CopyOnWriteArrayList<>());
+        Hook third = recordingSubagentHook("third", 100, childOrder, new CopyOnWriteArrayList<>());
+
+        // Register out of priority order, including the same instance twice.
+        ToolCallParam call = runHookSubagent(source, List.of(second, first, third, first));
+        Agent child = call.getAgent();
+        assertEquals(
+                List.of("first", "second", "third"),
+                childOrder,
+                "the child's PreCallEvent must reach each parent hook once in priority order");
+        assertEquals(1, events.stream().filter(PreCallEvent.class::isInstance).count());
+        assertEquals(1, events.stream().filter(PreActingEvent.class::isInstance).count());
+        assertEquals(1, events.stream().filter(PostActingEvent.class::isInstance).count());
+        assertTrue(events.stream().allMatch(event -> event.getAgent() == child));
+        PreActingEvent acting =
+                events.stream()
+                        .filter(PreActingEvent.class::isInstance)
+                        .map(PreActingEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals("query_logs", acting.getToolUse().getName());
+        assertEquals("child-tool", acting.getToolUse().getId());
+        assertEquals("original", call.getInput().get("query"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"programmatic", "static-markdown", "dynamic-markdown"})
+    void subagentHooks_rewriteToolCallBeforeExecution(String source) throws Exception {
+        Hook governance =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreActingEvent acting
+                                && "query_logs".equals(acting.getToolUse().getName())) {
+                            acting.setToolUse(
+                                    hookToolCall(
+                                            acting.getToolUse().getId(),
+                                            "query_logs",
+                                            Map.of("query", "governed")));
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        ToolCallParam call = runHookSubagent(source, List.of(governance));
+        assertEquals(
+                "governed",
+                call.getInput().get("query"),
+                "the child tool must receive the parent hook's rewritten arguments");
+        assertEquals("child-tool", call.getToolUseBlock().getId());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"programmatic", "static-markdown", "dynamic-markdown", "general-purpose"})
+    void subagentHooks_emptyParentHooksStillExecuteTools(String source) throws Exception {
+        assertEquals("original", runHookSubagent(source, List.of()).getInput().get("query"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"programmatic", "static-markdown", "dynamic-markdown"})
+    void subagentHooks_toolContributionsRespectDeclaredAllowlist(String source) throws Exception {
+        AgentTool forbidden = mockAgentTool("delete_logs");
+        Hook toolBearingHook =
+                new Hook() {
+                    @Override
+                    public List<Object> tools() {
+                        return List.of(forbidden);
+                    }
+
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        return Mono.just(event);
+                    }
+                };
+
+        ReActAgent child =
+                (ReActAgent) runHookSubagent(source, List.of(toolBearingHook)).getAgent();
+        assertEquals(1, child.getHooks().stream().filter(hook -> hook == toolBearingHook).count());
+        assertNotNull(child.getToolkit().getTool("read_file"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"allowlisted", "unrestricted", "general-purpose"})
+    void subagentHooks_filterAnnotatedToolsAndPreserveBuiltins(String source) throws Exception {
+        AnnotatedHookTools tools = new AnnotatedHookTools();
+        AtomicInteger toolsCalls = new AtomicInteger();
+        List<HookEvent> events = new CopyOnWriteArrayList<>();
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public List<Object> tools() {
+                        toolsCalls.incrementAndGet();
+                        return List.of(tools);
+                    }
+
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        events.add(event);
+                        return Mono.just(event);
+                    }
+                };
+        Model model = stubModel("done");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "hook-tools",
+                                        List.of(
+                                                hookToolCall("query", "query_logs", Map.of()),
+                                                hookToolCall("delete", "delete_logs", Map.of())),
+                                        null,
+                                        Map.of(),
+                                        "tool_use")))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "done",
+                                        List.of(TextBlock.builder().text("done").build()),
+                                        null,
+                                        Map.of(),
+                                        "stop")));
+        boolean allowlisted = "allowlisted".equals(source);
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .hook(hook)
+                        .memory(
+                                MemoryConfig.builder()
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build())
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("helper")
+                                        .description("Hook tools helper")
+                                        .tools(allowlisted ? List.of("query_logs") : List.of())
+                                        .build());
+        String childName = "general-purpose".equals(source) ? source : "helper";
+        SubagentEntry entry =
+                builder.buildSubagentEntries(workspace).stream()
+                        .filter(candidate -> childName.equals(candidate.name()))
+                        .findFirst()
+                        .orElseThrow();
+        try (HarnessAgent parent = builder.build();
+                HarnessAgent child =
+                        (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
+            assertNotNull(parent.getDelegate().getToolkit().getTool("delete_logs"));
+            Msg result =
+                    child.call(
+                                    "query logs",
+                                    RuntimeContext.builder()
+                                            .sessionId("hook-tools-" + UUID.randomUUID())
+                                            .build())
+                            .block(Duration.ofSeconds(20));
+            assertNotNull(result);
+            assertEquals("done", result.getTextContent());
+            assertEquals(1, tools.queryCalls.get());
+            assertEquals(
+                    allowlisted ? 0 : 1,
+                    tools.deleteCalls.get(),
+                    "a model request must not execute an unallowlisted Hook tool");
+            assertEquals(2, toolsCalls.get(), "enumerate Hook tools only once per agent build");
+            assertEquals(1, child.getDelegate().getHooks().stream().filter(h -> h == hook).count());
+            assertEquals(1, events.stream().filter(PreCallEvent.class::isInstance).count());
+            assertTrue(events.stream().allMatch(event -> event.getAgent() == child.getDelegate()));
+            assertNotNull(child.getDelegate().getToolkit().getTool("read_file"));
+            assertNotNull(child.getDelegate().getToolkit().getTool("memory_search"));
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<ToolSchema>> schemas = ArgumentCaptor.forClass(List.class);
+            verify(model, times(2)).stream(anyList(), schemas.capture(), any());
+            for (List<ToolSchema> turn : schemas.getAllValues()) {
+                List<String> names = turn.stream().map(ToolSchema::getName).toList();
+                assertTrue(names.contains("query_logs"));
+                assertEquals(!allowlisted, names.contains("delete_logs"));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "deletion-disabled",
+                "tools-json-deny",
+                "tools-json-allow",
+                "tools-json-deny-unrestricted",
+                "tools-json-deny-deletion-disabled"
+            })
+    void subagentHooks_respectEffectiveToolRestrictions(String restriction) throws Exception {
+        boolean deletionDisabled = restriction.contains("deletion-disabled");
+        AgentTool allowed = mockAgentTool("query_logs");
+        AgentTool forbidden = mockAgentTool("delete_logs");
+        when(allowed.callAsync(any()))
+                .thenReturn(
+                        Mono.just(ToolResultBlock.of(TextBlock.builder().text("logs").build())));
+        when(forbidden.callAsync(any()))
+                .thenReturn(
+                        Mono.just(ToolResultBlock.of(TextBlock.builder().text("deleted").build())));
+        Toolkit toolkit =
+                new Toolkit(ToolkitConfig.builder().allowToolDeletion(!deletionDisabled).build());
+        toolkit.registerAgentTool(allowed);
+        if (restriction.startsWith("tools-json")) {
+            if (!deletionDisabled) {
+                toolkit.registerAgentTool(forbidden);
+            }
+            Files.createDirectories(workspace);
+            Files.writeString(
+                    workspace.resolve("tools.json"),
+                    "tools-json-allow".equals(restriction)
+                            ? "{\"allow\":[\"query_logs\"]}"
+                            : "{\"deny\":[\"delete_logs\"]}");
+        }
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public List<Object> tools() {
+                        return List.of(forbidden);
+                    }
+
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        return Mono.just(event);
+                    }
+                };
+        Model model = stubModel("done");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "attempt-tools",
+                                        List.of(
+                                                hookToolCall("query", "query_logs", Map.of()),
+                                                hookToolCall("delete", "delete_logs", Map.of())),
+                                        null,
+                                        Map.of(),
+                                        "tool_use")))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "done",
+                                        List.of(TextBlock.builder().text("done").build()),
+                                        null,
+                                        Map.of(),
+                                        "stop")));
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .toolkit(toolkit)
+                        .hook(hook)
+                        .memory(
+                                MemoryConfig.builder()
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build())
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("helper")
+                                        .description("Effective tool restrictions")
+                                        .workspaceMode(WorkspaceMode.SHARED)
+                                        .tools(
+                                                restriction.endsWith("unrestricted")
+                                                        ? List.of()
+                                                        : deletionDisabled
+                                                                ? List.of("query_logs")
+                                                                : List.of(
+                                                                        "query_logs",
+                                                                        "delete_logs"))
+                                        .build());
+        SubagentEntry entry =
+                builder.buildSubagentEntries(workspace).stream()
+                        .filter(candidate -> "helper".equals(candidate.name()))
+                        .findFirst()
+                        .orElseThrow();
+        try (HarnessAgent parent = builder.build();
+                HarnessAgent child =
+                        (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
+            Msg result =
+                    child.call(
+                                    "query logs",
+                                    RuntimeContext.builder()
+                                            .sessionId("hook-restrictions-" + UUID.randomUUID())
+                                            .build())
+                            .block(Duration.ofSeconds(20));
+            assertNotNull(result);
+            assertEquals("done", result.getTextContent());
+            verify(allowed, times(1)).callAsync(any());
+            verify(forbidden, times(0)).callAsync(any());
+            assertNull(child.getDelegate().getToolkit().getTool("delete_logs"));
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<ToolSchema>> schemas = ArgumentCaptor.forClass(List.class);
+            verify(model, times(2)).stream(anyList(), schemas.capture(), any());
+            for (List<ToolSchema> turn : schemas.getAllValues()) {
+                assertTrue(turn.stream().anyMatch(schema -> "query_logs".equals(schema.getName())));
+                assertFalse(
+                        turn.stream().anyMatch(schema -> "delete_logs".equals(schema.getName())));
+            }
+            if (deletionDisabled) {
+                child.getDelegate().getToolkit().removeTool("query_logs");
+                assertNotNull(
+                        child.getDelegate().getToolkit().getTool("query_logs"),
+                        "construction-time filtering must preserve the runtime deletion policy");
+            }
+        }
+    }
+
+    public static final class AnnotatedHookTools {
+        final AtomicInteger queryCalls = new AtomicInteger();
+        final AtomicInteger deleteCalls = new AtomicInteger();
+
+        @Tool(name = "query_logs", description = "Query test logs")
+        public String queryLogs() {
+            queryCalls.incrementAndGet();
+            return "logs";
+        }
+
+        @Tool(name = "delete_logs", description = "Delete test logs")
+        public String deleteLogs() {
+            deleteCalls.incrementAndGet();
+            return "deleted";
+        }
+    }
+
+    private static Hook recordingSubagentHook(
+            String label, int priority, List<String> order, List<HookEvent> events) {
+        return new Hook() {
+            @Override
+            public int priority() {
+                return priority;
+            }
+
+            @Override
+            public <T extends HookEvent> Mono<T> onEvent(T event) {
+                if (!"parent".equals(event.getAgent().getName())) {
+                    events.add(event);
+                    if (event instanceof PreCallEvent) {
+                        order.add(label);
+                    }
+                }
+                return Mono.just(event);
+            }
+        };
+    }
+
+    /** Runs the real parent model -> agent_spawn -> child model -> local tool path. */
+    private ToolCallParam runHookSubagent(String source, List<Hook> hooks) throws Exception {
+        boolean generalPurpose = "general-purpose".equals(source);
+        String childName = generalPurpose ? "general-purpose" : "helper";
+        Model model = stubModel("parent done");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "spawn",
+                                        List.of(
+                                                hookToolCall(
+                                                        "spawn-tool",
+                                                        "agent_spawn",
+                                                        Map.of(
+                                                                "agent_id",
+                                                                childName,
+                                                                "task",
+                                                                "query the logs",
+                                                                "timeout_seconds",
+                                                                60))),
+                                        null,
+                                        Map.of(),
+                                        "tool_use")))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "child-call",
+                                        List.of(
+                                                hookToolCall(
+                                                        "child-tool",
+                                                        "query_logs",
+                                                        Map.of("query", "original"))),
+                                        null,
+                                        Map.of(),
+                                        "tool_use")))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "child-done",
+                                        List.of(TextBlock.builder().text("child done").build()),
+                                        null,
+                                        Map.of(),
+                                        "stop")))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "parent-done",
+                                        List.of(TextBlock.builder().text("parent done").build()),
+                                        null,
+                                        Map.of(),
+                                        "stop")));
+
+        AgentTool allowed = mockAgentTool("query_logs");
+        when(allowed.getParameters())
+                .thenReturn(
+                        Map.of(
+                                "type", "object",
+                                "properties", Map.of("query", Map.of("type", "string")),
+                                "required", List.of("query")));
+        when(allowed.callAsync(any()))
+                .thenReturn(
+                        Mono.just(ToolResultBlock.of(TextBlock.builder().text("logs").build())));
+        AgentTool forbidden = mockAgentTool("delete_logs");
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(allowed);
+        toolkit.registerAgentTool(forbidden);
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .toolkit(toolkit)
+                        .memory(
+                                MemoryConfig.builder()
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build());
+        if (!hooks.isEmpty()) {
+            builder.hook(hooks.get(0)).hooks(hooks.subList(1, hooks.size()));
+        }
+        if ("programmatic".equals(source)) {
+            builder.subagent(
+                    SubagentDeclaration.builder()
+                            .name(childName)
+                            .description("Hook regression helper")
+                            .tools(List.of("query_logs"))
+                            .build());
+        }
+        if ("static-markdown".equals(source)) {
+            writeHookSubagentMarkdown();
+            builder.disableDynamicSubagents();
+        }
+
+        try (HarnessAgent parent = builder.build()) {
+            if ("dynamic-markdown".equals(source)) {
+                // Added after build: only the runtime reload can discover this declaration.
+                writeHookSubagentMarkdown();
+            }
+            Msg response =
+                    parent.call(
+                                    "start",
+                                    RuntimeContext.builder()
+                                            .sessionId("hooks-" + UUID.randomUUID())
+                                            .build())
+                            .block(Duration.ofSeconds(20));
+            assertNotNull(response);
+            assertEquals("parent done", response.getTextContent());
+            ArgumentCaptor<ToolCallParam> call = ArgumentCaptor.forClass(ToolCallParam.class);
+            verify(allowed, times(1)).callAsync(call.capture());
+            verify(forbidden, times(0)).callAsync(any());
+            ReActAgent child = (ReActAgent) call.getValue().getAgent();
+            assertNotSame(parent.getDelegate(), child);
+            assertEquals(generalPurpose ? "general-purpose-subagent" : childName, child.getName());
+            assertNotNull(child.getToolkit().getTool("query_logs"));
+            assertNotNull(parent.getDelegate().getToolkit().getTool("delete_logs"));
+            if (generalPurpose) {
+                assertNotNull(child.getToolkit().getTool("delete_logs"));
+            } else {
+                assertNull(child.getToolkit().getTool("delete_logs"));
+            }
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<ToolSchema>> schemas = ArgumentCaptor.forClass(List.class);
+            verify(model, times(4)).stream(anyList(), schemas.capture(), any());
+            List<String> childTools =
+                    schemas.getAllValues().get(1).stream().map(ToolSchema::getName).toList();
+            assertTrue(childTools.contains("query_logs"));
+            assertEquals(generalPurpose, childTools.contains("delete_logs"));
+            return call.getValue();
+        }
+    }
+
+    private void writeHookSubagentMarkdown() throws IOException {
+        Files.createDirectories(workspace.resolve("subagents"));
+        Files.writeString(
+                workspace.resolve("subagents/helper.md"),
+                """
+                ---
+                description: Hook regression helper
+                tools: [query_logs]
+                ---
+                Query the logs and report the result.
+                """);
+    }
+
+    private static ToolUseBlock hookToolCall(String id, String name, Map<String, Object> input) {
+        return ToolUseBlock.builder()
+                .id(id)
+                .name(name)
+                .input(input)
+                .content(JsonUtils.getJsonCodec().toJson(input))
+                .build();
     }
 
     @Test

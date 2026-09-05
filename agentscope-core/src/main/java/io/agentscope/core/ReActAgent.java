@@ -146,6 +146,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -5280,6 +5281,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @throws IllegalArgumentException if required parameters are missing or invalid
          */
         public ReActAgent build() {
+            return build(null);
+        }
+
+        /**
+         * Builds an agent after filtering tools contributed by its hooks.
+         *
+         * <p>The filter receives a temporary toolkit containing only resolved {@link Hook#tools()}
+         * contributions, including individual annotated methods. It can remove excluded tools
+         * before they are installed on the agent's toolkit, independently of that toolkit's
+         * runtime deletion policy. Existing tools, execution configuration and Hook instances are
+         * preserved. Passing {@code null} retains normal hook tool registration.
+         *
+         * @param hookToolFilter optional construction-time filter for hook-contributed tools
+         * @return a new ReActAgent instance
+         * @throws IllegalArgumentException if required parameters are missing or invalid
+         */
+        public ReActAgent build(Consumer<Toolkit> hookToolFilter) {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
@@ -5291,7 +5309,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
 
-            registerToolsFromHooks(agentToolkit);
+            if (hookToolFilter == null) {
+                registerToolsFromHooks(agentToolkit);
+            } else {
+                Toolkit hookTools = new Toolkit();
+                registerToolsFromHooks(hookTools);
+                hookToolFilter.accept(hookTools);
+                for (String toolName : hookTools.getToolNames()) {
+                    agentToolkit.registerAgentTool(hookTools.getTool(toolName));
+                }
+            }
 
             if (enableMetaTool) {
                 agentToolkit.registerMetaTool();
