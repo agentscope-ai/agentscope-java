@@ -83,6 +83,11 @@ public class AnthropicResponseParser {
                                     contentBlocks.add(
                                             ThinkingBlock.builder()
                                                     .thinking(thinking.thinking())
+                                                    .metadata(
+                                                            Map.of(
+                                                                    ThinkingBlock
+                                                                            .METADATA_ANTHROPIC_SIGNATURE,
+                                                                    thinking.signature()))
                                                     .build()));
         }
 
@@ -184,6 +189,20 @@ public class AnthropicResponseParser {
                                     contentBlocks.add(
                                             ThinkingBlock.builder()
                                                     .thinking(thinkingDelta.thinking())
+                                                    .build()));
+
+            deltaEvent
+                    .delta()
+                    .signature()
+                    .ifPresent(
+                            signatureDelta ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .metadata(
+                                                            Map.of(
+                                                                    ThinkingBlock
+                                                                            .METADATA_ANTHROPIC_SIGNATURE,
+                                                                    signatureDelta.signature()))
                                                     .build()));
 
             // Input JSON delta (tool calling)
