@@ -29,6 +29,12 @@ import org.slf4j.LoggerFactory;
  * in-flight count is process-wide: {@code close()} blocks until every background task started
  * before the call has finished, so async workspace writes do not race with resource cleanup
  * (e.g. temp workspace deletion in tests).
+ *
+ * <p>Quiescence waiting deliberately <em>abandons</em> rather than cancels: a task that is
+ * still running when the caller's budget elapses keeps running and typically completes, so a
+ * close during an in-flight extraction does not silently drop the last turn's memories. Genuinely
+ * hung work is bounded — and cancelled — by the per-pipeline timeouts in
+ * {@code MemoryFlushMiddleware} / {@code MemoryMaintenanceMiddleware}, not here.
  */
 public final class MemoryBackgroundTasks {
 

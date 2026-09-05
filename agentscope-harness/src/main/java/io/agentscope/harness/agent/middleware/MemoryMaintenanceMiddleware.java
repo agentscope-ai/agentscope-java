@@ -130,6 +130,24 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
+    /**
+     * Upper bound on the maintenance run (gate claim + retention sweep + consolidation LLM
+     * call), so a hung model cannot keep the JVM-wide quiescence count above zero for the rest
+     * of the process lifetime. Mirrors {@code MemoryFlushMiddleware#FLUSH_TIMEOUT}.
+     */
+    static final Duration MAINTENANCE_TIMEOUT = Duration.ofMinutes(5);
+
+    /**
+     * Timeout applied to the maintenance pipeline; production uses {@link
+     * #MAINTENANCE_TIMEOUT}.
+     */
+    private Duration maintenanceTimeout = MAINTENANCE_TIMEOUT;
+
+    /** Test hook to shrink the maintenance timeout; keeps timeout behaviour unit-testable. */
+    void setMaintenanceTimeoutForTests(Duration timeout) {
+        this.maintenanceTimeout = timeout != null ? timeout : MAINTENANCE_TIMEOUT;
+    }
+
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager, MemoryConsolidator consolidator) {
         this(workspaceManager, consolidator, 90, 180, DEFAULT_MIN_GAP);
@@ -152,6 +170,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                             MemoryBackgroundTasks.begin();
                             Mono.defer(() -> doMaintenance(rc))
                                     .subscribeOn(Schedulers.boundedElastic())
+                                    .timeout(maintenanceTimeout)
                                     .doFinally(signal -> MemoryBackgroundTasks.end())
                                     .subscribe(
                                             null,
@@ -163,12 +182,37 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private Mono<Void> doMaintenance(RuntimeContext rc) {
-        if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
-            // Throttled out; the in-flight slot acquired at dispatch is released when this
-            // Mono completes.
+        return Mono.defer(
+                () -> {
+                    if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
+                        // Throttled out; the in-flight slot acquired at dispatch is released
+                        // when this Mono completes.
+                        return Mono.empty();
+                    }
+                    // The pipeline stays reactive end-to-end: the pipeline timeout's cancel
+                    // propagates into the consolidation model stream instead of stranding the
+                    // worker on an inner .block() that no outer dispose can reach.
+                    return Mono.fromRunnable(() -> expireDailyFiles(rc))
+                            .then(consolidateReactive(rc))
+                            .then(Mono.fromRunnable(() -> pruneOldSessions(rc)));
+                });
+    }
+
+    /**
+     * Consolidation segment of the maintenance pipeline. Reactive so cancellation reaches the
+     * underlying model stream; a consolidation failure logs and lets the retention steps still
+     * run, matching the previous try/catch semantics around {@code consolidate().block()}.
+     */
+    private Mono<Void> consolidateReactive(RuntimeContext rc) {
+        if (consolidator == null) {
             return Mono.empty();
         }
-        return Mono.fromRunnable(() -> runMaintenance(rc));
+        return Mono.defer(() -> consolidator.consolidate(rc))
+                .onErrorResume(
+                        e -> {
+                            log.warn("Memory consolidation failed: {}", e.getMessage());
+                            return Mono.empty();
+                        });
     }
 
     /**
@@ -193,14 +237,6 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                     MemoryFlushMiddleware.blankToEmpty(rc != null ? rc.getSessionId() : null);
             case AGENT, GLOBAL -> "";
         };
-    }
-
-    private void runMaintenance(RuntimeContext rc) {
-        log.debug("Running memory maintenance...");
-        expireDailyFiles(rc);
-        consolidateMemory(rc);
-        pruneOldSessions(rc);
-        log.debug("Memory maintenance completed");
     }
 
     private void expireDailyFiles(RuntimeContext rc) {
@@ -237,17 +273,6 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             } catch (Exception e) {
                 // not a date-named file, skip
             }
-        }
-    }
-
-    private void consolidateMemory(RuntimeContext rc) {
-        if (consolidator == null) {
-            return;
-        }
-        try {
-            consolidator.consolidate(rc).block();
-        } catch (Exception e) {
-            log.warn("Memory consolidation failed: {}", e.getMessage());
         }
     }
 
