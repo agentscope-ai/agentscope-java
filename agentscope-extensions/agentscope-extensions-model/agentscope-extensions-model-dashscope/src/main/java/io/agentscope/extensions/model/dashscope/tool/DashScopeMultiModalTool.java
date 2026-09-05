@@ -255,6 +255,10 @@ public class DashScopeMultiModalTool {
     /**
      * Edit or transform an image based on a text prompt and an input image.
      *
+     * <p>Logging contract: only the kind and length of {@code image_url} and the length of
+     * {@code prompt} are logged. Neither the reference itself nor the prompt text reaches the log,
+     * because the reference may be a Base64 data URL carrying the whole image.
+     *
      * @param imageUrl      The public URL, oss:// URL, local file path, or Base64 data URL of the
      *                      input image to edit.
      * @param prompt        The text prompt describing the desired edit or transformation.
@@ -337,10 +341,8 @@ public class DashScopeMultiModalTool {
         String finalSize = resolveOutputSize(finalModel, size);
 
         log.debug(
-                "dashscope_image_to_image called: imageUrl='{}', prompt='{}', model='{}',"
-                        + " size='{}', useBase64='{}'",
-                imageUrl,
-                prompt,
+                "dashscope_image_to_image called: {}, model='{}', size='{}', useBase64='{}'",
+                describeEditRequest(imageUrl, prompt),
                 finalModel,
                 finalSize,
                 useBase64);
@@ -518,6 +520,37 @@ public class DashScopeMultiModalTool {
         return name.startsWith("qwen-image")
                 && !name.contains("edit")
                 && !isNumberedEditGeneration(name);
+    }
+
+    /**
+     * Summarize an edit request for logging without carrying any user payload.
+     *
+     * <p>{@code image_url} is allowed to be a Base64 data URL, so a single call can hand over the
+     * entire encoded image. Writing it to an INFO/DEBUG line puts those bytes in the application
+     * log - typically megabytes per line, and in the clear for anything that collects logs - and
+     * the prompt is user content with no better claim to being logged. Both are therefore reduced
+     * to a kind and a length here; not even a prefix of either value is rendered.
+     */
+    private static String describeEditRequest(String imageUrl, String prompt) {
+        String ref = imageUrl == null ? "" : imageUrl.trim().toLowerCase();
+        String kind;
+        if (ref.isEmpty()) {
+            kind = "absent";
+        } else if (ref.startsWith("data:")) {
+            kind = "base64-data-url";
+        } else if (ref.startsWith("oss://")) {
+            kind = "oss-url";
+        } else if (ref.startsWith("http://") || ref.startsWith("https://")) {
+            kind = "http-url";
+        } else {
+            kind = "local-path";
+        }
+        return "imageRef="
+                + kind
+                + "(len="
+                + ref.length()
+                + "), promptLength="
+                + (prompt == null ? 0 : prompt.length());
     }
 
     /** Actionable hint returned instead of an opaque service-side parameter error. */

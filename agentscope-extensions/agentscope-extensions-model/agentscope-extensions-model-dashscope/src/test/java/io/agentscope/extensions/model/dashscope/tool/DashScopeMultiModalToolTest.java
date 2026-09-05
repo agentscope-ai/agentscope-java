@@ -789,6 +789,54 @@ class DashScopeMultiModalToolTest {
         }
     }
 
+    @Nested
+    @DisplayName("Image edit logging contract")
+    class ImageEditLoggingContractTests {
+
+        /** Use reflection to call the private summarizer used by the debug log. */
+        private String summarize(String imageUrl, String prompt) throws Exception {
+            Method method =
+                    DashScopeMultiModalTool.class.getDeclaredMethod(
+                            "describeEditRequest", String.class, String.class);
+            method.setAccessible(true);
+            return (String) method.invoke(null, imageUrl, prompt);
+        }
+
+        @Test
+        @DisplayName("A Base64 data URL is reduced to kind and length, never to its bytes")
+        void testInlineDataUrlIsNotRendered() throws Exception {
+            String imageUrl = TEST_IMAGE_BASE64_DATA_URL + TEST_BASE64_DATA + TEST_BASE64_DATA;
+            String prompt = "Repaint the sketch of my house at 4 Oak Street";
+
+            String summary = summarize(imageUrl, prompt);
+
+            assertTrue(summary.contains("base64-data-url"), summary);
+            assertTrue(summary.contains("len=" + imageUrl.length()), summary);
+            assertTrue(summary.contains("promptLength=" + prompt.length()), summary);
+            // The encoded image must not appear, not even as a prefix of it.
+            assertFalse(summary.contains(TEST_BASE64_DATA), summary);
+            assertFalse(summary.contains("iVBORw0KGgo"), summary);
+            // Nor may the prompt, which is user content.
+            assertFalse(summary.contains(prompt), summary);
+            assertFalse(summary.contains("Oak Street"), summary);
+        }
+
+        @Test
+        @DisplayName("Every accepted input form is classified by shape, without its address")
+        void testReferenceKindsCarryNoAddress() throws Exception {
+            assertTrue(summarize(TEST_IMAGE0_URL, "x").contains("imageRef=http-url("));
+            assertTrue(summarize("oss://bucket/key.png", "x").contains("imageRef=oss-url("));
+            assertTrue(summarize(TEST_IMAGE_PATH, "x").contains("imageRef=local-path("));
+            assertTrue(summarize("DATA:IMAGE/PNG;BASE64,AAAA", "x").contains("base64-data-url"));
+            // A signed object URL carries credentials in its query string, so the host and path
+            // are not part of the contract either.
+            assertFalse(summarize(TEST_IMAGE0_URL, "x").contains("example.com"));
+            assertFalse(summarize("oss://bucket/key.png", "x").contains("key.png"));
+            assertEquals("imageRef=absent(len=0), promptLength=0", summarize(null, null));
+            assertEquals("imageRef=absent(len=0), promptLength=0", summarize("   ", null));
+        }
+    }
+
     @Test
     @DisplayName("Image to text with web url")
     void testImageToTextWithUrl() {
