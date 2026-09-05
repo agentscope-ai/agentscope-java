@@ -464,6 +464,33 @@ class DashScopeMultiModalToolTest {
     }
 
     @Test
+    @DisplayName("A generation newer than the ones released today is neither blocked nor degraded")
+    void testImageToImageSupportsFutureGenerations() {
+        // The vendor keeps releasing numbered generations of this family. Detecting the generation
+        // by its leading digit rather than by a concrete version has to keep such a model usable,
+        // including an explicit output resolution.
+        AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockImageEditConversation(captured, Map.of("image", TEST_IMAGE0_URL));
+
+        StepVerifier.create(
+                        multiModalTool.dashscopeImageToImage(
+                                TEST_IMAGE0_URL,
+                                "Colorize",
+                                "qwen-image-3.0-pro",
+                                "1280*1280",
+                                false))
+                .expectNextCount(1)
+                .verifyComplete();
+        mockConv.close();
+
+        MultiModalConversationParam param = captured.get();
+        assertNotNull(param);
+        assertEquals("qwen-image-3.0-pro", param.getModel());
+        assertEquals("1280*1280", param.getParameters().get("size"));
+    }
+
+    @Test
     @DisplayName("Image to image drops size for the base edit model instead of failing")
     void testImageToImageSizeIsDroppedForBaseModel() {
         AtomicReference<MultiModalConversationParam> captured = new AtomicReference<>();
@@ -705,16 +732,40 @@ class DashScopeMultiModalToolTest {
             assertFalse(invokeStatic("rejectsImageInput", "Qwen-Image-Edit-Max"));
             assertFalse(invokeStatic("rejectsImageInput", "qwen-image-2.0"));
             assertFalse(invokeStatic("rejectsImageInput", "qwen-image-2.0-pro"));
+            // Same naming scheme, not released yet: must not be refused by a wrong reason.
+            assertFalse(invokeStatic("rejectsImageInput", "qwen-image-3.0"));
+            assertFalse(invokeStatic("rejectsImageInput", "qwen-image-4.5-max"));
+            // Unrecognized families reach the service, which reports the actual cause.
+            assertFalse(invokeStatic("rejectsImageInput", "some-future-editor"));
         }
 
         @Test
-        @DisplayName("Only plus / max / 2.0 series accept an output resolution")
+        @DisplayName("Plus / max tiers and every numbered generation accept a resolution")
         void testSupportsOutputSize() throws Exception {
             assertFalse(invokeStatic("supportsOutputSize", "qwen-image-edit"));
             assertTrue(invokeStatic("supportsOutputSize", "qwen-image-edit-plus"));
             assertTrue(invokeStatic("supportsOutputSize", "qwen-image-edit-max"));
             assertTrue(invokeStatic("supportsOutputSize", "qwen-image-2.0"));
             assertTrue(invokeStatic("supportsOutputSize", "qwen-image-2.0-pro"));
+            assertTrue(invokeStatic("supportsOutputSize", "qwen-image-3.0"));
+            // An unexpected `size` fails the whole request, so a snapshot of the base model stays
+            // off the list: dropping the parameter only degrades the output resolution.
+            assertFalse(
+                    invokeStatic("supportsOutputSize", "qwen-image-edit-2026-05-22"),
+                    "a dated snapshot of the base model must not send a size");
+        }
+
+        @Test
+        @DisplayName("Only a digit after the family prefix marks a numbered generation")
+        void testNumberedEditGenerationBoundary() throws Exception {
+            assertTrue(invokeStatic("isNumberedEditGeneration", "qwen-image-2.0"));
+            assertTrue(invokeStatic("isNumberedEditGeneration", "qwen-image-3.0-pro"));
+            assertTrue(invokeStatic("isNumberedEditGeneration", "qwen-image-10.0"));
+            assertFalse(invokeStatic("isNumberedEditGeneration", "qwen-image-edit"));
+            assertFalse(invokeStatic("isNumberedEditGeneration", "qwen-image-edit-plus"));
+            // Nothing after the separator, and the family name itself, carry no generation.
+            assertFalse(invokeStatic("isNumberedEditGeneration", "qwen-image-"));
+            assertFalse(invokeStatic("isNumberedEditGeneration", "qwen-image"));
         }
 
         @Test

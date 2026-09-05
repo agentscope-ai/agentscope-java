@@ -101,6 +101,15 @@ public class DashScopeMultiModalTool {
     private static final String DEFAULT_IMAGE_EDIT_MODEL = "qwen-image-edit";
 
     /**
+     * Prefix of the qwen-image family. The first generation names its edit models with an
+     * {@code -edit} token ({@code qwen-image-edit}, {@code -plus}, {@code -max}); every numbered
+     * generation from 2.0 on drops that token and carries the generation instead
+     * ({@code qwen-image-2.0}, {@code qwen-image-2.0-pro}). Both spellings edit an input image,
+     * whereas the versionless {@code qwen-image} / {@code qwen-image-plus} are text-to-image only.
+     */
+    private static final String QWEN_IMAGE_PREFIX = "qwen-image-";
+
+    /**
      * DashScope API key.
      */
     private final String apiKey;
@@ -250,8 +259,9 @@ public class DashScopeMultiModalTool {
      *                      input image to edit.
      * @param prompt        The text prompt describing the desired edit or transformation.
      * @param model         The image-edit model to use, e.g., 'qwen-image-edit'.
-     * @param size          Size of the output image, e.g., '1024*1024'. Only the 'plus', 'max'
-     *                      and 'qwen-image-2.0' series support it.
+     * @param size          Size of the output image, e.g., '1024*1024'. Supported by the numbered
+     *                      generations (2.0 and later) and by the first-generation 'plus' and
+     *                      'max' tiers.
      * @param useBase64     Whether to return image as base64 data instead of URL.
      * @return A ToolResultBlock containing the generated image url/base64 or error message.
      */
@@ -285,18 +295,20 @@ public class DashScopeMultiModalTool {
                             description =
                                     "The image-edit model to use, e.g., 'qwen-image-edit',"
                                             + " 'qwen-image-edit-plus', 'qwen-image-edit-max',"
-                                            + " 'qwen-image-2.0-pro'. Text-to-image models such as"
-                                            + " 'qwen-image' or 'wanx-v1' take no image input.",
+                                            + " 'qwen-image-2.0-pro'. Every numbered generation"
+                                            + " (2.0 and later) edits an input image too."
+                                            + " Text-to-image models such as 'qwen-image' or"
+                                            + " 'wanx-v1' take no image input.",
                             required = false)
                     String model,
             @ToolParam(
                             name = "size",
                             description =
-                                    "Size of the output image, e.g., '1024*1024', '1280*1280'. Only"
-                                            + " supported by 'qwen-image-edit-plus',"
-                                            + " 'qwen-image-edit-max' and the 'qwen-image-2.0'"
-                                            + " series; otherwise the resolution follows the input"
-                                            + " image.",
+                                    "Size of the output image, e.g., '1024*1024', '1280*1280'."
+                                            + " Only supported by 'qwen-image-edit-plus',"
+                                            + " 'qwen-image-edit-max' and the numbered generations"
+                                            + " ('qwen-image-2.0' and later); otherwise the"
+                                            + " resolution follows the input image.",
                             required = false)
                     String size,
             @ToolParam(
@@ -309,8 +321,20 @@ public class DashScopeMultiModalTool {
                 Optional.ofNullable(model)
                         .filter(s -> !s.trim().isEmpty())
                         .orElse(DEFAULT_IMAGE_EDIT_MODEL);
-        String finalSize = resolveOutputSize(finalModel, size);
         Boolean finalUseBase64 = Optional.ofNullable(useBase64).orElse(false);
+
+        // Rejected before the request is built, so an unusable model costs no call. This also has
+        // to come first: resolving the size of a request that is about to be refused logs a
+        // warning about a parameter that is never sent.
+        if (rejectsImageInput(finalModel)) {
+            log.error(
+                    "dashscope_image_to_image rejected model '{}': it takes no image input on this"
+                            + " endpoint",
+                    finalModel);
+            return Mono.just(ToolResultBlock.error(unsupportedEditModelMessage(finalModel)));
+        }
+
+        String finalSize = resolveOutputSize(finalModel, size);
 
         log.debug(
                 "dashscope_image_to_image called: imageUrl='{}', prompt='{}', model='{}',"
@@ -320,14 +344,6 @@ public class DashScopeMultiModalTool {
                 finalModel,
                 finalSize,
                 useBase64);
-
-        if (rejectsImageInput(finalModel)) {
-            log.error(
-                    "dashscope_image_to_image rejected model '{}': it takes no image input on this"
-                            + " endpoint",
-                    finalModel);
-            return Mono.just(ToolResultBlock.error(unsupportedEditModelMessage(finalModel)));
-        }
 
         return Mono.fromCallable(
                         () -> {
@@ -466,15 +482,33 @@ public class DashScopeMultiModalTool {
     /** Whether the model accepts an explicit output resolution. */
     private static boolean supportsOutputSize(String model) {
         String name = model.toLowerCase();
-        return name.startsWith("qwen-image-edit-plus")
-                || name.startsWith("qwen-image-edit-max")
-                || name.startsWith("qwen-image-2.0");
+        // Sending a resolution the model does not accept fails the whole request, so the
+        // first-generation names stay on an explicit list. Numbered generations are covered by
+        // pattern: 2.0 accepts a resolution and there is no evidence a later one drops it.
+        return isNumberedEditGeneration(name)
+                || name.startsWith("qwen-image-edit-plus")
+                || name.startsWith("qwen-image-edit-max");
+    }
+
+    /**
+     * Whether the model belongs to a numbered generation of the image family, e.g.
+     * {@code qwen-image-2.0}, {@code qwen-image-3.0-pro}. Matching the leading digit rather than a
+     * concrete version keeps a model that has not been released yet working.
+     */
+    private static boolean isNumberedEditGeneration(String name) {
+        return name.length() > QWEN_IMAGE_PREFIX.length()
+                && name.startsWith(QWEN_IMAGE_PREFIX)
+                && Character.isDigit(name.charAt(QWEN_IMAGE_PREFIX.length()));
     }
 
     /**
      * Whether the model cannot consume an input image on this endpoint: the wan family, whose image
      * editing runs on a different asynchronous task API, and the text-to-image members of the
      * qwen-image family.
+     *
+     * <p>Anything unrecognized is passed through to the service, which reports the real reason. A
+     * false rejection here would silently remove a capability and attribute it to a cause the
+     * message states incorrectly.
      */
     private static boolean rejectsImageInput(String model) {
         String name = model.toLowerCase();
@@ -483,7 +517,7 @@ public class DashScopeMultiModalTool {
         }
         return name.startsWith("qwen-image")
                 && !name.contains("edit")
-                && !name.startsWith("qwen-image-2.0");
+                && !isNumberedEditGeneration(name);
     }
 
     /** Actionable hint returned instead of an opaque service-side parameter error. */
