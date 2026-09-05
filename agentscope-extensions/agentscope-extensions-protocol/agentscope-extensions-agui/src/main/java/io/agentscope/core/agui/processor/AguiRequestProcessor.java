@@ -81,7 +81,11 @@ public class AguiRequestProcessor {
                 builder.adapterFactory != null
                         ? builder.adapterFactory
                         : AguiAgentAdapterFactory.defaultFactory();
-        this.resumeCoordinator = new AguiResumeCoordinator();
+        this.resumeCoordinator =
+                new AguiResumeCoordinator(
+                        builder.resumeStateStore != null
+                                ? builder.resumeStateStore
+                                : new InMemoryAguiResumeStateStore());
         this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
@@ -201,7 +205,11 @@ public class AguiRequestProcessor {
                                                         resumeCoordinator.finishRun(
                                                                 threadId, runId));
                             } catch (Throwable error) {
-                                resumeCoordinator.finishRun(threadId, runId);
+                                try {
+                                    resumeCoordinator.finishRun(threadId, runId);
+                                } catch (RuntimeException ignored) {
+                                    // Best-effort cleanup; preserve the original processing error.
+                                }
                                 return processorErrorEvents(input, error);
                             }
                         });
@@ -363,6 +371,7 @@ public class AguiRequestProcessor {
         private AguiAdapterConfig config;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRuntimeContextResolver runtimeContextResolver;
+        private AguiResumeStateStore resumeStateStore;
 
         /**
          * Set the agent resolver.
@@ -406,6 +415,22 @@ public class AguiRequestProcessor {
          */
         public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
             this.runtimeContextResolver = runtimeContextResolver;
+            return this;
+        }
+
+        /**
+         * Set the store used to coordinate active runs and pending interrupts.
+         *
+         * <p>When omitted, each processor uses its own {@link InMemoryAguiResumeStateStore},
+         * preserving the process-local default. Multi-replica deployments should provide a
+         * shared implementation with the atomic semantics required by {@link
+         * AguiResumeStateStore}.
+         *
+         * @param resumeStateStore The resume coordination state store
+         * @return This builder
+         */
+        public Builder resumeStateStore(AguiResumeStateStore resumeStateStore) {
+            this.resumeStateStore = resumeStateStore;
             return this;
         }
 

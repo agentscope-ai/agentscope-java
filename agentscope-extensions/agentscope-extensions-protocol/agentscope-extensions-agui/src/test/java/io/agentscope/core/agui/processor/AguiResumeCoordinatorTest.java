@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -30,6 +31,9 @@ import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for AguiResumeCoordinator. */
@@ -183,6 +187,141 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
+    void pendingInterruptCanBeResumedByAnotherCoordinator() {
+        AguiResumeStateStore sharedStore = new InMemoryAguiResumeStateStore();
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator(sharedStore);
+        track(
+                firstCoordinator,
+                "run-1",
+                interruptedFinished("run-1", interrupt("interrupt-1")),
+                false);
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator(sharedStore);
+
+        AguiResumeCoordinator.ResumeContractResult result =
+                secondCoordinator.validate(
+                        RunAgentInput.builder()
+                                .threadId("thread-1")
+                                .runId("run-2")
+                                .resume(
+                                        List.of(
+                                                new AguiResume(
+                                                        "interrupt-1",
+                                                        AguiResume.STATUS_RESOLVED,
+                                                        Map.of("approved", true))))
+                                .build());
+
+        assertFalse(result.isError());
+    }
+
+    @Test
+    void defaultStoresRemainCoordinatorLocal() {
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator();
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator();
+        track(
+                firstCoordinator,
+                "run-1",
+                interruptedFinished("run-1", interrupt("interrupt-1")),
+                false);
+
+        AguiResumeCoordinator.ResumeContractResult result =
+                secondCoordinator.validate(resumeInput("run-2", "interrupt-1"));
+
+        assertTrue(result.isError());
+    }
+
+    @Test
+    void sharedStoreSerializesRunsAcrossCoordinatorsAndAllowsClaimAfterRelease() {
+        AguiResumeStateStore sharedStore = new InMemoryAguiResumeStateStore();
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator(sharedStore);
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator(sharedStore);
+
+        assertFalse(firstCoordinator.beginRun(input("run-1")).isError());
+        assertTrue(secondCoordinator.beginRun(input("run-2")).isError());
+
+        firstCoordinator.finishRun("thread-1", "run-1");
+
+        assertFalse(secondCoordinator.beginRun(input("run-2")).isError());
+    }
+
+    @Test
+    void staleResumeValidationCannotClaimAfterAnotherRunConsumesInterrupt() throws Exception {
+        BlockingClaimStore sharedStore = new BlockingClaimStore("run-a");
+        assertTrue(sharedStore.claimRun("thread-1", "seed-run").claimed());
+        assertTrue(
+                sharedStore.replacePendingInterrupts(
+                        "thread-1", "seed-run", Map.of("interrupt-1", interrupt("interrupt-1"))));
+        sharedStore.releaseRun("thread-1", "seed-run");
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator(sharedStore);
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator(sharedStore);
+
+        CompletableFuture<AguiResumeCoordinator.ResumeContractResult> firstResult =
+                CompletableFuture.supplyAsync(
+                        () -> firstCoordinator.beginRun(resumeInput("run-a", "interrupt-1")));
+        sharedStore.awaitBlockedClaim();
+        try {
+            assertFalse(secondCoordinator.beginRun(resumeInput("run-b", "interrupt-1")).isError());
+            secondCoordinator.trackPendingInterrupts(
+                    "thread-1", "run-b", new AguiEvent.RunFinished("thread-1", "run-b"), false);
+            secondCoordinator.finishRun("thread-1", "run-b");
+        } finally {
+            sharedStore.allowBlockedClaim();
+        }
+
+        assertTrue(firstResult.get(5, TimeUnit.SECONDS).isError());
+    }
+
+    @Test
+    void nonResumeRunCannotStartAfterAnotherRunPublishesInterrupt() throws Exception {
+        BlockingClaimStore sharedStore = new BlockingClaimStore("run-b");
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator(sharedStore);
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator(sharedStore);
+
+        CompletableFuture<AguiResumeCoordinator.ResumeContractResult> secondResult =
+                CompletableFuture.supplyAsync(() -> secondCoordinator.beginRun(input("run-b")));
+        sharedStore.awaitBlockedClaim();
+        try {
+            assertFalse(firstCoordinator.beginRun(input("run-a")).isError());
+            firstCoordinator.trackPendingInterrupts(
+                    "thread-1",
+                    "run-a",
+                    interruptedFinished("run-a", interrupt("interrupt-1")),
+                    false);
+            firstCoordinator.finishRun("thread-1", "run-a");
+        } finally {
+            sharedStore.allowBlockedClaim();
+        }
+
+        assertTrue(secondResult.get(5, TimeUnit.SECONDS).isError());
+    }
+
+    @Test
+    void staleCoordinatorCannotReleaseAnotherCoordinatorsRun() {
+        AguiResumeStateStore sharedStore = new InMemoryAguiResumeStateStore();
+        AguiResumeCoordinator firstCoordinator = new AguiResumeCoordinator(sharedStore);
+        AguiResumeCoordinator secondCoordinator = new AguiResumeCoordinator(sharedStore);
+
+        firstCoordinator.beginRun(input("run-1"));
+        firstCoordinator.finishRun("thread-1", "run-1");
+        secondCoordinator.beginRun(input("run-2"));
+
+        firstCoordinator.finishRun("thread-1", "run-1");
+
+        assertTrue(firstCoordinator.beginRun(input("run-3")).isError());
+    }
+
+    @Test
+    void storeFailureIsNotTreatedAsMissingResumeState() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator(new FailingStore());
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> coordinator.validate(resumeInput("run-2", "interrupt-1")));
+
+        assertEquals("shared store unavailable", error.getMessage());
+    }
+
+    @Test
     void beginRunRejectsConcurrentRunOnSameThread() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
 
@@ -204,6 +343,30 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
+    void beginRunReleasesOwnershipWhenValidationFails() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+        track(coordinator, "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
+
+        assertTrue(coordinator.beginRun(input("run-2")).isError());
+
+        assertFalse(coordinator.beginRun(resumeInput("run-3", "interrupt-1")).isError());
+    }
+
+    @Test
+    void beginRunReleasesOwnershipWhenValidationReadThrows() {
+        FailingReadStore store = new FailingReadStore();
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator(store);
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class, () -> coordinator.beginRun(input("run-1")));
+        store.allowReads();
+
+        assertEquals("pending read failed", error.getMessage());
+        assertFalse(coordinator.beginRun(input("run-2")).isError());
+    }
+
+    @Test
     void finishRunDoesNotReleaseDifferentActiveRun() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
         coordinator.beginRun(input("run-1"));
@@ -215,20 +378,18 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
-    void trackIgnoresEventsFromInactiveRun() {
+    void staleRunFinishedCannotOverwriteCurrentRunsPendingInterrupts() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
         coordinator.beginRun(input("run-2"));
+        coordinator.trackPendingInterrupts(
+                "thread-1", "run-2", interruptedFinished("run-2", interrupt("interrupt-2")), false);
 
         coordinator.trackPendingInterrupts(
                 "thread-1", "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
+        coordinator.finishRun("thread-1", "run-2");
 
         AguiResumeCoordinator.ResumeContractResult result =
-                coordinator.validate(
-                        RunAgentInput.builder()
-                                .threadId("thread-1")
-                                .runId("run-3")
-                                .messages(List.of(AguiMessage.userMessage("msg-1", "hello")))
-                                .build());
+                coordinator.validate(resumeInput("run-3", "interrupt-2"));
 
         assertFalse(result.isError());
     }
@@ -294,5 +455,135 @@ class AguiResumeCoordinatorTest {
 
     private static RunAgentInput input(String runId) {
         return RunAgentInput.builder().threadId("thread-1").runId(runId).build();
+    }
+
+    private static RunAgentInput resumeInput(String runId, String interruptId) {
+        return RunAgentInput.builder()
+                .threadId("thread-1")
+                .runId(runId)
+                .resume(
+                        List.of(
+                                new AguiResume(
+                                        interruptId,
+                                        AguiResume.STATUS_RESOLVED,
+                                        Map.of("approved", true))))
+                .build();
+    }
+
+    private static final class FailingStore implements AguiResumeStateStore {
+
+        @Override
+        public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
+            throw failure();
+        }
+
+        @Override
+        public RunClaim claimRun(String threadId, String runId) {
+            throw failure();
+        }
+
+        @Override
+        public void releaseRun(String threadId, String runId) {
+            throw failure();
+        }
+
+        @Override
+        public boolean replacePendingInterrupts(
+                String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
+            throw failure();
+        }
+
+        private IllegalStateException failure() {
+            return new IllegalStateException("shared store unavailable");
+        }
+    }
+
+    private static final class BlockingClaimStore implements AguiResumeStateStore {
+
+        private final AguiResumeStateStore delegate = new InMemoryAguiResumeStateStore();
+        private final String blockedRunId;
+        private final CountDownLatch claimBlocked = new CountDownLatch(1);
+        private final CountDownLatch claimAllowed = new CountDownLatch(1);
+
+        private BlockingClaimStore(String blockedRunId) {
+            this.blockedRunId = blockedRunId;
+        }
+
+        @Override
+        public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
+            return delegate.getPendingInterrupts(threadId);
+        }
+
+        @Override
+        public RunClaim claimRun(String threadId, String runId) {
+            if (blockedRunId.equals(runId)) {
+                claimBlocked.countDown();
+                await(claimAllowed);
+            }
+            return delegate.claimRun(threadId, runId);
+        }
+
+        @Override
+        public void releaseRun(String threadId, String runId) {
+            delegate.releaseRun(threadId, runId);
+        }
+
+        @Override
+        public boolean replacePendingInterrupts(
+                String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
+            return delegate.replacePendingInterrupts(threadId, runId, pendingInterrupts);
+        }
+
+        private void awaitBlockedClaim() {
+            await(claimBlocked);
+        }
+
+        private void allowBlockedClaim() {
+            claimAllowed.countDown();
+        }
+
+        private static void await(CountDownLatch latch) {
+            try {
+                assertTrue(
+                        latch.await(5, TimeUnit.SECONDS), "timed out waiting for test interleave");
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("interrupted while waiting for test interleave", error);
+            }
+        }
+    }
+
+    private static final class FailingReadStore implements AguiResumeStateStore {
+
+        private final AguiResumeStateStore delegate = new InMemoryAguiResumeStateStore();
+        private boolean failReads = true;
+
+        @Override
+        public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
+            if (failReads) {
+                throw new IllegalStateException("pending read failed");
+            }
+            return delegate.getPendingInterrupts(threadId);
+        }
+
+        @Override
+        public RunClaim claimRun(String threadId, String runId) {
+            return delegate.claimRun(threadId, runId);
+        }
+
+        @Override
+        public void releaseRun(String threadId, String runId) {
+            delegate.releaseRun(threadId, runId);
+        }
+
+        @Override
+        public boolean replacePendingInterrupts(
+                String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
+            return delegate.replacePendingInterrupts(threadId, runId, pendingInterrupts);
+        }
+
+        private void allowReads() {
+            failReads = false;
+        }
     }
 }
