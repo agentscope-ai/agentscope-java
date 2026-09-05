@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,12 +83,16 @@ public final class ModelUtils {
             // Apply timeout if configured
             Duration timeout = execConfig.getTimeout();
             if (timeout != null) {
+                // Keep the TimeoutException type on the cause chain so the default retry
+                // predicate (RETRYABLE_ERRORS) classifies this produced timeout as retryable.
                 responseFlux =
                         responseFlux.timeout(
                                 timeout,
                                 Flux.error(
                                         new ModelException(
                                                 "Model request timeout after " + timeout,
+                                                new TimeoutException(
+                                                        "Model request timeout after " + timeout),
                                                 modelName,
                                                 provider)));
                 LOG.debug("Applied timeout: {} for model: {}", timeout, modelName);
@@ -108,7 +113,10 @@ public final class ModelUtils {
                     maxBackoff = Duration.ofSeconds(10);
                 }
                 if (retryOn == null) {
-                    retryOn = error -> true; // retry all errors by default
+                    // Match the documented default: only retry transient/retryable errors
+                    // (429, 5xx, timeouts, network errors). Retrying auth (401/403) or
+                    // request-side (400/422) errors is guaranteed to fail again.
+                    retryOn = ExecutionConfig.RETRYABLE_ERRORS;
                 }
 
                 Retry retrySpec =

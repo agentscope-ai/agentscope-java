@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.dashscope;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.Version;
+import io.agentscope.core.model.ModelHttpException;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -843,8 +844,13 @@ public class DashScopeHttpClient {
 
     /**
      * Exception thrown when DashScope HTTP operations fail.
+     *
+     * <p>Implements the provider-neutral {@link ModelHttpException} contract so the default
+     * retry predicate ({@code RETRYABLE_ERRORS}) classifies 429/5xx as retryable and other 4xx
+     * as non-retryable.
      */
-    public static class DashScopeHttpException extends RuntimeException {
+    public static class DashScopeHttpException extends RuntimeException
+            implements ModelHttpException {
         private final Integer statusCode;
         private final String errorCode;
         private final String responseBody;
