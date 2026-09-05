@@ -130,14 +130,18 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * HarnessAgent is the user-facing harness API that wraps a {@link ReActAgent} with workspace /
@@ -897,22 +901,137 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     // ==================== Call/stream wrappers ====================
 
+    /**
+     * Dedicated scheduler for the blocking guard acquire, kept separate from {@link
+     * Schedulers#boundedElastic()} on purpose. The guard's {@code semaphore.acquire()} can park a
+     * thread for the entire duration of a same-slot peer call (issue #2800); if those long-parked
+     * waiters shared the pool that runs the holder's release, they could consume its whole thread
+     * cap and the release that frees the permit would queue behind them forever — a starvation
+     * deadlock. Releasing stays on {@code boundedElastic}, so it can always make progress and wake a
+     * waiter here. Daemon threads, shared JVM-wide like {@code boundedElastic}, so no disposal.
+     */
+    private static final Scheduler SANDBOX_ACQUIRE_SCHEDULER =
+            Schedulers.newBoundedElastic(
+                    Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE,
+                    Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+                    "as-sandbox-acquire",
+                    60,
+                    true);
+
+    /**
+     * Acquires the sandbox for {@code effective} on {@link #SANDBOX_ACQUIRE_SCHEDULER}, returning
+     * the same context as the reactive resource. The guard's {@code semaphore.acquire()} can block
+     * for the entire duration of a same-slot peer call (issue #2800), so it must never run on the
+     * subscriber's thread — a shared event loop there would stall unrelated sessions. Used as the
+     * resource supplier for the {@code usingWhen} wrappers below.
+     *
+     * <p>Cancellation safety: {@code usingWhen} only registers its cleanup once the resource is
+     * emitted. If the subscription is cancelled after {@code acquireForCall} already took the
+     * permit and started the container but before the value reaches {@code usingWhen}, that value
+     * is dropped unconsumed and cleanup never runs — leaking the permit and container forever
+     * (issue #2800). {@link #acquireOffThread} closes that window by releasing whenever a cancel
+     * and a finished acquire coincide; {@code releaseForCall} is idempotent (it no-ops once the
+     * per-call binding is cleared), so it stays safe even though the normal path releases via
+     * {@code usingWhen}.
+     */
+    private Mono<RuntimeContext> acquireSandboxOffThread(RuntimeContext effective) {
+        return acquireOffThread(
+                effective,
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.acquireForCall(effective);
+                    }
+                },
+                orphaned -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(orphaned);
+                    }
+                });
+    }
+
+    /**
+     * Runs the (potentially blocking) {@code acquire} on {@link #SANDBOX_ACQUIRE_SCHEDULER} and
+     * yields {@code ctx} as the reactive resource. Package-private so a test can inject an arbitrary
+     * blocking action and assert it never runs on the subscriber's thread.
+     */
+    static Mono<RuntimeContext> acquireOffThread(RuntimeContext ctx, Runnable acquire) {
+        return acquireOffThread(ctx, acquire, orphaned -> {});
+    }
+
+    /**
+     * Like {@link #acquireOffThread(RuntimeContext, Runnable)}, but invokes {@code
+     * releaseOnCancel} exactly once if the subscription is cancelled after {@code acquire} has
+     * completed — the window where {@code usingWhen} would otherwise never see the resource and so
+     * never clean it up (issue #2800). Package-private so a test can assert the compensation fires
+     * on cancel-during-acquire.
+     *
+     * <p>{@code doOnDiscard} cannot cover this: a {@link Mono#fromCallable} value produced after
+     * cancellation is dropped without routing through the discard hook. Cancel and acquire land on
+     * different threads (the cancelling subscriber vs. {@link #SANDBOX_ACQUIRE_SCHEDULER}), so the
+     * two events are reconciled through a 2-bit state: bit 0 = acquire finished (permit taken,
+     * result bound), bit 1 = cancelled. Whichever side sets its bit <em>second</em> observes the
+     * other's bit already set and runs the release, so it fires exactly once and never while the
+     * acquire is still binding its result. On the normal path the supplier completes rather than
+     * cancels, so bit 1 is never set and cleanup flows through {@code usingWhen} as usual.
+     */
+    static Mono<RuntimeContext> acquireOffThread(
+            RuntimeContext ctx, Runnable acquire, Consumer<RuntimeContext> releaseOnCancel) {
+        AtomicInteger state = new AtomicInteger(0);
+        Runnable compensate = () -> releaseOnCancel.accept(ctx);
+        return Mono.fromCallable(
+                        () -> {
+                            acquire.run();
+                            // Acquire done: publish bit 0. If a cancel already set bit 1 while we
+                            // were acquiring, this resource will never reach usingWhen — release
+                            // it.
+                            if ((state.getAndUpdate(v -> v | 0b01) & 0b10) != 0) {
+                                compensate.run();
+                            }
+                            return ctx;
+                        })
+                .subscribeOn(SANDBOX_ACQUIRE_SCHEDULER)
+                .doOnCancel(
+                        () -> {
+                            // Cancel: publish bit 1. If acquire already set bit 0, the resource is
+                            // now orphaned (usingWhen registered no cleanup for it) — release it.
+                            if ((state.getAndUpdate(v -> v | 0b10) & 0b01) != 0) {
+                                compensate.run();
+                            }
+                        });
+    }
+
+    /**
+     * Releases the sandbox on a boundedElastic thread. Persist + container stop + {@code
+     * lease.close()} are all blocking, so like {@link #acquireSandboxOffThread} they must stay off
+     * the subscriber's thread. Runs on {@code boundedElastic} rather than {@link
+     * #SANDBOX_ACQUIRE_SCHEDULER} so it can never be starved by the acquire waiters it must wake.
+     * {@code usingWhen} invokes this on complete, error and cancel alike, so the guard lease is
+     * always released.
+     */
+    private Mono<Void> releaseSandboxOffThread(RuntimeContext eff) {
+        return releaseOffThread(
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(eff);
+                    }
+                });
+    }
+
+    /**
+     * Runs the (potentially blocking) {@code release} on a boundedElastic thread. Package-private so
+     * a test can assert the release never runs on the subscriber's thread either.
+     */
+    static Mono<Void> releaseOffThread(Runnable release) {
+        return Mono.<Void>fromRunnable(release).subscribeOn(Schedulers.boundedElastic());
+    }
+
     private Mono<Msg> wrappedCall(
             List<Msg> msgs, RuntimeContext effective, Supplier<Mono<Msg>> inner) {
         Mono<Msg> base =
-                Mono.using(
-                        () -> {
-                            if (sandboxLifecycleMw != null) {
-                                sandboxLifecycleMw.acquireForCall(effective);
-                            }
-                            return effective;
-                        },
+                Mono.usingWhen(
+                        acquireSandboxOffThread(effective),
                         eff -> inner.get(),
-                        eff -> {
-                            if (sandboxLifecycleMw != null) {
-                                sandboxLifecycleMw.releaseForCall(eff);
-                            }
-                        });
+                        this::releaseSandboxOffThread);
         if (compactionHook != null) {
             return base.onErrorResume(
                     e -> {
@@ -931,36 +1050,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
     private Flux<Event> wrappedStream(RuntimeContext effective, Supplier<Flux<Event>> inner) {
-        return Flux.using(
-                () -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
-                    }
-                    return effective;
-                },
+        return Flux.usingWhen(
+                acquireSandboxOffThread(effective),
                 eff -> inner.get(),
-                eff -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.releaseForCall(eff);
-                    }
-                });
+                this::releaseSandboxOffThread);
     }
 
     private Flux<AgentEvent> wrappedStreamEvents(
             RuntimeContext effective, Supplier<Flux<AgentEvent>> inner) {
-        return Flux.using(
-                () -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
-                    }
-                    return effective;
-                },
+        return Flux.usingWhen(
+                acquireSandboxOffThread(effective),
                 eff -> inner.get(),
-                eff -> {
-                    if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.releaseForCall(eff);
-                    }
-                });
+                this::releaseSandboxOffThread);
     }
 
     /**
@@ -2301,7 +2402,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     if (sandboxFilesystemSpec.getSnapshotSpecOverride() == null) {
                         sandboxFilesystemSpec.snapshotSpec(distributedStore.sandboxSnapshotSpec());
                     }
-                    if (sandboxFilesystemSpec.getExecutionGuard() == null) {
+                    // Only adopt the store's guard when it actually supplies one. A store that
+                    // returns null is opting out, NOT requesting a no-op guard — leaving the spec
+                    // null lets the inProcess() default below still serialise same-key calls
+                    // (issue #2800). Injecting a noop here would silently suppress that default.
+                    if (sandboxFilesystemSpec.getExecutionGuard() == null
+                            && distributedStore.sandboxExecutionGuard() != null) {
                         sandboxFilesystemSpec.executionGuard(
                                 distributedStore.sandboxExecutionGuard());
                     }
@@ -2375,10 +2481,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
                 SessionSandboxStateStore stateStore =
                         new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
+                // Default to a JVM-local guard so same-slot concurrent calls (e.g. two requests on
+                // one sessionId) serialise their acquire/persist window instead of racing on the
+                // shared state slot (issue #2800). Multi-instance deployments override this with a
+                // distributed guard via the spec or a DistributedStore.
                 SandboxExecutionGuard executionGuard =
                         sandboxFilesystemSpec.getExecutionGuard() != null
                                 ? sandboxFilesystemSpec.getExecutionGuard()
-                                : SandboxExecutionGuard.noop();
+                                : SandboxExecutionGuard.inProcess();
                 SandboxManager sandboxManager =
                         new SandboxManager(
                                 defaultSandboxContext.getClient(),

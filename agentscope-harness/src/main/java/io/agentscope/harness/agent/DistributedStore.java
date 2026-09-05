@@ -100,13 +100,17 @@ public interface DistributedStore {
     /**
      * Creates the {@link SandboxExecutionGuard} for distributed sandbox concurrency control.
      *
-     * <p>Override this when the store supports distributed locking. The default returns
-     * a no-op guard (no cross-node coordination).
+     * <p>Override this when the store supports distributed locking. The default returns {@code
+     * null}, meaning "this store has no cross-node guard" — <em>not</em> "use a no-op guard".
+     * Returning null lets HarnessAgent fall back to its built-in JVM-local {@code inProcess()}
+     * guard, which still serialises same-key calls within one process (issue #2800). Returning
+     * {@link SandboxExecutionGuard#noop()} instead would suppress that default and re-open the
+     * same-slot race, so only do so to deliberately opt out of all serialisation.
      *
-     * @return a sandbox execution guard; must not be {@code null}
+     * @return a sandbox execution guard, or {@code null} to use HarnessAgent's built-in default
      */
     default SandboxExecutionGuard sandboxExecutionGuard() {
-        return SandboxExecutionGuard.noop();
+        return null;
     }
 
     /**
@@ -303,15 +307,13 @@ public interface DistributedStore {
             Objects.requireNonNull(baseStore, "baseStore is required");
             SandboxSnapshotSpec snap =
                     sandboxSnapshotSpec != null ? sandboxSnapshotSpec : new NoopSnapshotSpec();
-            SandboxExecutionGuard guard =
-                    sandboxExecutionGuard != null
-                            ? sandboxExecutionGuard
-                            : SandboxExecutionGuard.noop();
             return new CompositeDistributedStore(
                     agentStateStore,
                     baseStore,
                     snap,
-                    guard,
+                    // Left null when unset so HarnessAgent falls back to its built-in inProcess()
+                    // guard; coercing to noop() here would suppress that default (issue #2800).
+                    sandboxExecutionGuard,
                     messageBus,
                     asyncToolRegistry,
                     taskRepository,
