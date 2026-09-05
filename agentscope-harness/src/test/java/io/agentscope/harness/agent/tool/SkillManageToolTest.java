@@ -163,6 +163,215 @@ class SkillManageToolTest {
     }
 
     @Test
+    void createWithResources_writesReferenceFile() throws Exception {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("references/api-guide.md", "# API 指南\n参考文档内容");
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "api-skill",
+                                                "content",
+                                                validSkillMd("api-skill", "API 助手"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+        // 验证 reference 文件成功写入
+        assertTrue(
+                Files.isRegularFile(workspace.resolve("skills/api-skill/references/api-guide.md")));
+        assertEquals(
+                "# API 指南\n参考文档内容",
+                Files.readString(workspace.resolve("skills/api-skill/references/api-guide.md")));
+    }
+
+    @Test
+    void createWithNullResources_stillWorks() {
+        // resources 不传的情况（向后兼容，默认 null）
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "create",
+                                                "name", "null-resource-skill",
+                                                "content",
+                                                        validSkillMd(
+                                                                "null-resource-skill",
+                                                                "测试 null resources"))))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+        assertTrue(Files.isRegularFile(workspace.resolve("skills/null-resource-skill/SKILL.md")));
+    }
+
+    @Test
+    void createWithEmptyResources_stillWorks() {
+        // resources 为空 map 的边界情况
+        Map<String, String> resources = new HashMap<>();
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "empty-resource-skill",
+                                                "content",
+                                                validSkillMd(
+                                                        "empty-resource-skill", "测试空 resources"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+        assertTrue(Files.isRegularFile(workspace.resolve("skills/empty-resource-skill/SKILL.md")));
+    }
+
+    @Test
+    void createWithResources_inDraftMode_writesToDraftsDir() {
+        // draft 模式下 resources 也应该正确写入
+        Map<String, String> resources = new HashMap<>();
+        resources.put("scripts/helper.sh", "echo hello");
+
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "draft-resource-skill",
+                                                "content",
+                                                validSkillMd("draft-resource-skill", "Draft 模式测试"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+        assertTrue(
+                Files.isRegularFile(
+                        workspace.resolve(
+                                "skills/_drafts/draft-resource-skill/scripts/helper.sh")));
+    }
+
+    @Test
+    void createWithMultipleResourceTypes_writesAll() {
+        // 多种类型的资源文件同时写入
+        Map<String, String> resources = new HashMap<>();
+        resources.put("references/doc.md", "文档内容");
+        resources.put("scripts/run.sh", "echo run");
+        resources.put("templates/output.txt", "{{result}}");
+        resources.put("assets/image.svg", "<svg></svg>");
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "multi-type-skill",
+                                                "content",
+                                                validSkillMd("multi-type-skill", "多资源类型测试"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), "Expected success, got: " + text(r));
+
+        // 验证所有 4 种子目录的文件都写入成功
+        assertTrue(
+                Files.isRegularFile(
+                        workspace.resolve("skills/multi-type-skill/references/doc.md")));
+        assertTrue(
+                Files.isRegularFile(workspace.resolve("skills/multi-type-skill/scripts/run.sh")));
+        assertTrue(
+                Files.isRegularFile(
+                        workspace.resolve("skills/multi-type-skill/templates/output.txt")));
+        assertTrue(
+                Files.isRegularFile(workspace.resolve("skills/multi-type-skill/assets/image.svg")));
+    }
+
+    @Test
+    void createWithResourceAbsolutePath_rejects() {
+        // 绝对路径应该被拒绝
+        Map<String, String> resources = new HashMap<>();
+        resources.put("/etc/passwd", "evil");
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "absolute-path-skill",
+                                                "content",
+                                                validSkillMd("absolute-path-skill", "绝对路径测试"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertTrue(text(r).startsWith("Error:"));
+    }
+
+    @Test
+    void createWithResourceNoSubdir_rejects() {
+        // 没有子目录，直接在根目录写文件应该被拒绝
+        Map<String, String> resources = new HashMap<>();
+        resources.put("evil.sh", "evil content"); // 没有 references/ 等前缀
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "no-subdir-skill",
+                                                "content",
+                                                validSkillMd("no-subdir-skill", "无子目录测试"),
+                                                "resources",
+                                                resources)))
+                        .block();
+
+        assertTrue(text(r).startsWith("Error:"));
+        assertTrue(text(r).contains("must include a subdirectory"));
+    }
+
+    @Test
+    void createWithInvalidFrontmatter_rejectsWithParseError() {
+        // 构造无效的 YAML frontmatter，触发 SkillUtil.createFrom 抛出异常
+        String invalidContent = "---\nname: test\ndescription: [invalid yaml: :::\n---\nBody";
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "create",
+                                                "name", "invalid-yaml-skill",
+                                                "content", invalidContent)))
+                        .block();
+
+        assertTrue(text(r).startsWith("Error:"));
+        assertTrue(text(r).contains("Failed to parse frontmatter"));
+    }
+
+    @Test
     void createRejectsDuplicate() {
         toolDraftDefault
                 .callAsync(
@@ -490,6 +699,115 @@ class SkillManageToolTest {
                         .block();
         assertFalse(text(r).startsWith("Error:"), text(r));
         assertTrue(text(r).contains("pruning"));
+    }
+
+    // ---- code review feedback: schema, mapOfStrings logging, boolOf compatibility ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void resourcesSchema_includesAdditionalPropertiesTypeHint() {
+        Map<String, Object> params = toolDraftDefault.getParameters();
+        Map<String, Object> properties = (Map<String, Object>) params.get("properties");
+        Map<String, Object> resourcesSchema = (Map<String, Object>) properties.get("resources");
+        Map<String, Object> additionalProperties =
+                (Map<String, Object>) resourcesSchema.get("additionalProperties");
+
+        assertNotNull(additionalProperties, "resources schema should include additionalProperties");
+        assertEquals(
+                "string",
+                additionalProperties.get("type"),
+                "additionalProperties type should be string");
+    }
+
+    @Test
+    void mapOfStrings_withNonStringValue_skipsEntryAndCreatesSkill() {
+        // 当 resources 包含非字符串值时（如数字），应该被静默跳过并继续创建 skill
+        // mapOfStrings 会过滤掉非字符串条目，只保留 String -> String 的条目
+        Map<String, Object> resourcesWithMixedTypes = new HashMap<>();
+        resourcesWithMixedTypes.put("references/valid.md", "# Valid"); // String 值
+        resourcesWithMixedTypes.put("scripts/count.sh", 42); // 非 String 值，会被跳过
+
+        ToolResultBlock r =
+                toolAutoPromote
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action",
+                                                "create",
+                                                "name",
+                                                "mixed-res-skill",
+                                                "content",
+                                                validSkillMd("mixed-res-skill", "测试混合类型 resources"),
+                                                "resources",
+                                                resourcesWithMixedTypes)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), text(r));
+        assertTrue(Files.exists(workspace.resolve("skills/mixed-res-skill/references/valid.md")));
+    }
+
+    @Test
+    void boolOf_supportsBooleanAndStringTypes() {
+        // 测试 boolOf 兼容 Boolean 对象和 String 类型（Java 11+ 兼容性）
+        // replace_all 为 Boolean.TRUE 时应该生效
+        String content = "---\nname: bool-test\ndescription: Test\n---\nFoo\nFoo\n";
+        toolDraftDefault
+                .callAsync(
+                        paramOf(
+                                args(
+                                        "action", "create",
+                                        "name", "bool-test",
+                                        "content", content)))
+                .block();
+
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "patch",
+                                                "name", "bool-test",
+                                                "old_string", "Foo",
+                                                "new_string", "Bar",
+                                                "replace_all", Boolean.TRUE)))
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), text(r));
+        var loaded = draftsRepo.getSkill("bool-test");
+        // 两个 Foo 都应该被替换为 Bar
+        long barCount = loaded.getSkillContent().lines().filter(l -> l.contains("Bar")).count();
+        assertEquals(2, barCount, "Both Foo entries should be replaced");
+    }
+
+    @Test
+    void boolOf_withStringTrue_parsesCorrectly() {
+        // 测试字符串 "true" 作为 bool 值也能被正确解析
+        String content = "---\nname: bool-str-test\ndescription: Test\n---\nFoo\nFoo\n";
+        toolDraftDefault
+                .callAsync(
+                        paramOf(
+                                args(
+                                        "action", "create",
+                                        "name", "bool-str-test",
+                                        "content", content)))
+                .block();
+
+        ToolResultBlock r =
+                toolDraftDefault
+                        .callAsync(
+                                paramOf(
+                                        args(
+                                                "action", "patch",
+                                                "name", "bool-str-test",
+                                                "old_string", "Foo",
+                                                "new_string", "Bar",
+                                                "replace_all", "true"))) // String 类型的 true
+                        .block();
+
+        assertFalse(text(r).startsWith("Error:"), text(r));
+        var loaded = draftsRepo.getSkill("bool-str-test");
+        long barCount = loaded.getSkillContent().lines().filter(l -> l.contains("Bar")).count();
+        assertEquals(2, barCount, "String 'true' should be parsed as boolean true");
     }
 
     // ---- sidecar integration (telemetry) ----
