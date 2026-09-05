@@ -19,7 +19,9 @@ State is addressed by `(userId, sessionId)`:
 | `JsonFileAgentStateStore` | `agentscope-core` | Single-node dev (**HarnessAgent default**) |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | [Multi-replica production default](../distributed/redis.md) |
 | `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [Existing database infrastructure](../distributed/mysql.md) |
-| `OssAgentStateStore` | `agentscope-extensions-oss` | [Alibaba Cloud ecosystem](../distributed/oss.md) |
+| `AliyunOssAgentStateStore` | `agentscope-extensions-oss-aliyun` | [Alibaba Cloud OSS](../distributed/oss.md) |
+| `AwsS3AgentStateStore` | `agentscope-extensions-oss-aws` | [AWS S3](../distributed/oss.md) |
+| `TencentCosAgentStateStore` | `agentscope-extensions-oss-tencent` | [Tencent Cloud COS](../distributed/oss.md) |
 
 ## Standalone Configuration
 
