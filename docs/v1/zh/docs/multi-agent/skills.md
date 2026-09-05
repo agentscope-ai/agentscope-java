@@ -1,5 +1,7 @@
 # Skills（渐进式披露）
 
+> **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
+
 在 **Skills** 模式中，专项能力被打包成可调用的「技能」，用于增强智能体行为。技能主要是**提示驱动**的：智能体先看到技能元数据（如名称、描述），再通过工具（如 `read_skill`）**按需**加载完整技能内容，从而控制初始上下文大小，避免一次性加载所有技能文本。
 
 AgentScope 通过 **SkillBox**、**SkillRepository**（如 `ClasspathSkillRepository`）和技能工具实现该机制。核心能力在 [智能体技能](../task/agent-skill.md) 中说明；本文侧重使用同一机制的 **多智能体示例**（SQL 助手）。
@@ -39,16 +41,8 @@ AgentScope 通过 **SkillBox**、**SkillRepository**（如 `ClasspathSkillReposi
 
 **SQL 助手**示例包含两个技能：**sales_analytics**（客户、订单、收入）和 **inventory_management**（产品、仓库、库存）。用户用自然语言提问；智能体在需要时调用 **read_skill("sales_analytics")** 或 **read_skill("inventory_management")**，再生成 SQL。
 
-- **路径**：`agentscope-examples/multiagent-patterns/skills/`
 - **主要类**：`SkillsConfig`（ClasspathSkillRepository、SkillBox、ReActAgent），`SkillsRunner`（可选演示）。
 - **运行**：设置 `skills.runner.enabled=true` 可在启动时运行单次查询演示（如「写出查询过去一个月内订单金额超过 1000 的所有客户的 SQL」）。
-
-**构建与运行**（在仓库根目录）：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/skills -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/skills spring-boot:run
-```
 
 **在代码中使用**：注入 ReActAgent（如 `sqlAssistantAgent`），传入用户 `Msg` 调用；用 `getTextContent()` 取回复文本。智能体会根据技能描述决定何时调用 **read_skill** 并生成 SQL。
 

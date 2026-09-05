@@ -97,6 +97,14 @@ public class CompositeFilesystem implements AbstractFilesystem {
     private record RouteResult(
             AbstractFilesystem backend, String backendPath, String routePrefix) {}
 
+    /**
+     * Returns the backend filesystem that would serve {@code path}: the longest matching prefix
+     * route, or the default backend when no route matches.
+     */
+    public AbstractFilesystem filesystemFor(String path) {
+        return routeForPath(path).backend();
+    }
+
     private RouteResult routeForPath(String path) {
         // Canonicalize both sides by stripping any leading slash before matching so callers can
         // pass either "/skills/foo" (the {@link AbstractFilesystem} contract) or "skills/foo"

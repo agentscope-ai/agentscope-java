@@ -275,6 +275,12 @@ class ReActAgentStructuredOutputWithToolsTest {
         assertFalse(
                 model.toolListContainsGenerateResponse(),
                 "Native path should not inject generate_response tool");
+
+        ChatUsage usage = result.getUsage();
+        assertNotNull(usage, "Native structured output should preserve usage");
+        assertEquals(10, usage.getInputTokens());
+        assertEquals(20, usage.getOutputTokens());
+        assertEquals(0.5, usage.getTime(), 0.01);
     }
 
     @Test
