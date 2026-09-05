@@ -54,7 +54,7 @@ func (r *Resolver) CancelAttempt(ctx context.Context, attempt *controlmodel.Exec
 		payload, _ := json.Marshal(map[string]any{"attemptId": attempt.ID, "agentTaskId": attempt.AgentTaskID,
 			"runId": attempt.RunID, "nodeId": attempt.NodeID, "generation": attempt.DispatchGeneration,
 			"attemptToken": r.attemptToken(attempt)})
-		return r.External.SendExecutionAttemptCommand(attempt.Tenant, attempt.Namespace, instance.InstanceKey,
+		return r.External.SendExecutionAttemptCommand(attempt.Tenant, attempt.Namespace, attempt.AgentID.String(), instance.InstanceKey,
 			attempt.SessionID, "cancel", payload)
 	default:
 		return fmt.Errorf("unsupported runtime binding kind %q", attempt.BackendKind)
@@ -62,7 +62,7 @@ func (r *Resolver) CancelAttempt(ctx context.Context, attempt *controlmodel.Exec
 }
 
 type ExternalCommander interface {
-	SendExecutionAttemptCommand(tenant, namespace, instanceID, sessionID, command string, params []byte) error
+	SendExecutionAttemptCommand(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error
 }
 
 type Resolver struct {
@@ -308,7 +308,7 @@ func (r *Resolver) dispatchExternal(ctx context.Context, taskID uuid.UUID, candi
 		"contextUrl": "/api/v1/agent-tasks/" + task.ID.String() + "/context",
 		"taskToken":  r.taskTokenForAttempt(task.ID, attempt), "attemptToken": r.attemptToken(attempt),
 		"runtimeBinding": json.RawMessage(snapshot)})
-	if err := r.External.SendExecutionAttemptCommand(task.Tenant, task.Namespace, instance.InstanceKey,
+	if err := r.External.SendExecutionAttemptCommand(task.Tenant, task.Namespace, instance.AgentID.String(), instance.InstanceKey,
 		sessionID, commandAttemptDispatch, payload); err != nil {
 		_, _, _ = r.Store.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID, store.TaskFailure{
 			ExpectedVersion: dispatched.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,

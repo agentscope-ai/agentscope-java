@@ -24,6 +24,61 @@ func openTestStore(t *testing.T) store.Store {
 	return st
 }
 
+func TestAgentTaskStartMovesAssignedIssueIntoProgress(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	issue, task, err := svc.CreateIssue(ctx, CreateIssueRequest{
+		Tenant: "tenant-a", Namespace: "ns-a", Title: "external task",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "external-worker",
+	})
+	if err != nil || task == nil {
+		t.Fatalf("create issue/task: issue=%+v task=%+v err=%v", issue, task, err)
+	}
+	claimed, err := st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: task.ID, ExpectedVersion: task.Version, SessionID: "external-session",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimedIssue, err := st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || claimedIssue.Status != controlmodel.IssueBacklog {
+		t.Fatalf("claim should not start issue: issue=%+v err=%v", claimedIssue, err)
+	}
+	running, err := st.Collaboration().StartAgentTask(ctx, claimed.ID, claimed.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runningIssue, err := st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || runningIssue.Status != controlmodel.IssueInProgress {
+		t.Fatalf("start did not move issue in progress: issue=%+v err=%v", runningIssue, err)
+	}
+	activities, err := st.Collaboration().ListActivities(ctx, issue.ID, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, activity := range activities {
+		if activity.Action == "issue.status_changed" && activity.Actor.Ref == "external-worker" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing issue status activity: %+v", activities)
+	}
+	if _, _, err = svc.CompleteTask(ctx, running.ID, store.TaskCompletion{
+		ExpectedVersion: running.Version, Summary: "done",
+	}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "external-worker"}); err != nil {
+		t.Fatal(err)
+	}
+	completedIssue, err := st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || completedIssue.Status != controlmodel.IssueInReview {
+		t.Fatalf("completion did not request review: issue=%+v err=%v", completedIssue, err)
+	}
+}
+
 func TestHumanFollowUpInheritsUniqueActiveAdaptiveRun(t *testing.T) {
 	ctx := context.Background()
 	st := openTestStore(t)

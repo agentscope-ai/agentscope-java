@@ -17,20 +17,69 @@ package io.agentscope.extensions.aistio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.protobuf.ByteString;
+import io.agentscope.aistio.proto.ExecutionAttemptCommand;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.Task;
 import io.agentscope.core.state.TaskContextState;
 import io.agentscope.extensions.aistio.adapter.AgentScopeAdapter;
 import io.agentscope.extensions.aistio.model.SessionEvent;
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledExecutorService;
 import org.junit.jupiter.api.Test;
 
 class SessionBridgeContractTest {
 
     private static final String SESSION = "sess-1";
+
+    @Test
+    void attemptHeartbeatsDoNotShareTheBestEffortReportingScheduler() throws Exception {
+        AgentScopeAdapter adapter = new AgentScopeAdapter();
+        SessionBridge bridge = bridgeWith(adapter, new StubAgent("a1", null));
+        try {
+            bridge.start();
+            Field reportingField = SessionBridge.class.getDeclaredField("scheduler");
+            reportingField.setAccessible(true);
+            Field heartbeatField =
+                    SessionBridge.class.getDeclaredField("attemptHeartbeatScheduler");
+            heartbeatField.setAccessible(true);
+
+            ScheduledExecutorService reporting =
+                    (ScheduledExecutorService) reportingField.get(bridge);
+            ScheduledExecutorService heartbeats =
+                    (ScheduledExecutorService) heartbeatField.get(bridge);
+            assertNotNull(reporting);
+            assertNotNull(heartbeats);
+            assertNotSame(reporting, heartbeats);
+        } finally {
+            bridge.close();
+        }
+    }
+
+    @Test
+    void executionSessionIdComesFromRuntimeBinding() {
+        ExecutionAttemptCommand command =
+                ExecutionAttemptCommand.newBuilder()
+                        .setAgentTaskId("task-1")
+                        .setRuntimeBinding(
+                                ByteString.copyFromUtf8(
+                                        "{\"backend\":\"external\",\"sessionId\":\"assigned-session\"}"))
+                        .build();
+
+        assertEquals("assigned-session", SessionBridge.executionSessionId(command));
+        assertEquals(
+                "",
+                SessionBridge.executionSessionId(
+                        ExecutionAttemptCommand.newBuilder()
+                                .setAgentTaskId("task-2")
+                                .setRuntimeBinding(ByteString.copyFromUtf8("not-json"))
+                                .build()));
+    }
 
     @Test
     void configCarriesTenantSeparatelyFromNamespace() {

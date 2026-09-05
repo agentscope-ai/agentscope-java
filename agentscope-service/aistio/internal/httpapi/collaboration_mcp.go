@@ -101,6 +101,28 @@ func collaborationMCPTools() []mcpTool {
 	}
 }
 
+func collaborationMCPToolsForTask(task *controlmodel.AgentTask) []mcpTool {
+	tools := collaborationMCPTools()
+	if task == nil {
+		return nil
+	}
+	filtered := make([]mcpTool, 0, len(tools))
+	for _, tool := range tools {
+		switch tool.Name {
+		case "team.get":
+			if task.TeamID == nil {
+				continue
+			}
+		case "issue.child.create", "issue.accept", "run.node.complete", "run.node.fail", "run.replan":
+			if task.TeamID == nil || !task.LeaderTask {
+				continue
+			}
+		}
+		filtered = append(filtered, tool)
+	}
+	return filtered
+}
+
 func (s *Server) collaborationMCP(c *gin.Context) {
 	task, ok := taskPrincipal(c)
 	if !ok {
@@ -125,7 +147,7 @@ func (s *Server) collaborationMCP(c *gin.Context) {
 	case "ping":
 		respond(map[string]any{}, nil)
 	case "tools/list":
-		respond(map[string]any{"tools": collaborationMCPTools()}, nil)
+		respond(map[string]any{"tools": collaborationMCPToolsForTask(task)}, nil)
 	case "tools/call":
 		var params mcpCallParams
 		if err := json.Unmarshal(req.Params, &params); err != nil || params.Name == "" {

@@ -347,10 +347,10 @@ func TestConnectionIdentityIncludesTenant(t *testing.T) {
 	if _, ok := srv.GetConnection(metaA.Namespace, metaA.InstanceKey); ok {
 		t.Fatal("tenant-ambiguous connection lookup must fail closed")
 	}
-	srv.UpdateInventory("tenant-a", metaA.Namespace, metaA.InstanceKey, &asdp.InventoryReport{
+	srv.UpdateInventory("tenant-a", metaA.Namespace, metaA.AgentId, metaA.InstanceKey, &asdp.InventoryReport{
 		Subagents: []*asdp.SubagentInfo{{Name: "worker-a"}},
 	})
-	srv.UpdateInventory("tenant-b", metaB.Namespace, metaB.InstanceKey, &asdp.InventoryReport{
+	srv.UpdateInventory("tenant-b", metaB.Namespace, metaB.AgentId, metaB.InstanceKey, &asdp.InventoryReport{
 		Subagents: []*asdp.SubagentInfo{{Name: "worker-b"}},
 	})
 	invA := srv.GetInventoriesForAgent("tenant-a", metaA.Namespace, metaA.AgentKey)
@@ -360,6 +360,66 @@ func TestConnectionIdentityIncludesTenant(t *testing.T) {
 	}
 	if len(invB) != 1 || invB[0].Report.GetSubagents()[0].GetName() != "worker-b" {
 		t.Fatalf("tenant-b inventory = %+v", invB)
+	}
+}
+
+func TestConnectionIdentityIncludesAgentWhenInstanceKeyIsShared(t *testing.T) {
+	srv, client, cleanup := startTestServer(t, nil)
+	defer cleanup()
+
+	metaA := validMeta()
+	metaA.AgentKey = "agent-a"
+	streamA, ack := doHandshake(t, client, metaA, validConnectReq())
+	if !ack.Accepted {
+		t.Fatalf("agent-a handshake rejected: %s", ack.RejectReason)
+	}
+	metaB := validMeta()
+	metaB.AgentId = "33333333-3333-3333-3333-333333333333"
+	metaB.BindingId = "44444444-4444-4444-4444-444444444444"
+	metaB.AgentKey = "agent-b"
+	streamB, ack := doHandshake(t, client, metaB, validConnectReq())
+	if !ack.Accepted {
+		t.Fatalf("agent-b handshake rejected: %s", ack.RejectReason)
+	}
+	t.Cleanup(func() {
+		_ = streamA.CloseSend()
+		_ = streamB.CloseSend()
+	})
+
+	deadline := time.Now().Add(time.Second)
+	for srv.ConnectionCount() != 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if srv.ConnectionCount() != 2 {
+		t.Fatalf("same instance key for two Agents collapsed to %d connection(s)", srv.ConnectionCount())
+	}
+	if _, ok := srv.GetConnectionForTenant(metaA.Tenant, metaA.Namespace, metaA.InstanceKey); ok {
+		t.Fatal("agent-ambiguous connection lookup must fail closed")
+	}
+	connA, okA := srv.GetConnectionForAgentInstance(metaA.Tenant, metaA.Namespace, metaA.AgentId, metaA.InstanceKey)
+	connB, okB := srv.GetConnectionForAgentInstance(metaB.Tenant, metaB.Namespace, metaB.AgentId, metaB.InstanceKey)
+	if !okA || !okB || connA == connB || connA.AgentID != metaA.AgentId || connB.AgentID != metaB.AgentId {
+		t.Fatalf("agent connection lookup failed: a=%+v/%v b=%+v/%v", connA, okA, connB, okB)
+	}
+
+	payloadA := []byte(`{"attemptId":"attempt-a","agentTaskId":"task-a","runtimeBinding":{"sessionId":"session-a"}}`)
+	if err := srv.Distributor().SendExecutionAttemptCommand(metaA.Tenant, metaA.Namespace, metaA.AgentId,
+		metaA.InstanceKey, "session-a", "dispatch", payloadA); err != nil {
+		t.Fatalf("send agent-a attempt: %v", err)
+	}
+	msgA, err := streamA.Recv()
+	if err != nil || msgA.GetExecutionAttempt().GetAgentTaskId() != "task-a" {
+		t.Fatalf("agent-a received %+v, err=%v", msgA, err)
+	}
+
+	payloadB := []byte(`{"attemptId":"attempt-b","agentTaskId":"task-b","runtimeBinding":{"sessionId":"session-b"}}`)
+	if err := srv.Distributor().SendExecutionAttemptCommand(metaB.Tenant, metaB.Namespace, metaB.AgentId,
+		metaB.InstanceKey, "session-b", "dispatch", payloadB); err != nil {
+		t.Fatalf("send agent-b attempt: %v", err)
+	}
+	msgB, err := streamB.Recv()
+	if err != nil || msgB.GetExecutionAttempt().GetAgentTaskId() != "task-b" {
+		t.Fatalf("agent-b received %+v, err=%v", msgB, err)
 	}
 }
 

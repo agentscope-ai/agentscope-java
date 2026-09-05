@@ -27,7 +27,7 @@ type endpointCommandCapture struct {
 	turns []*asdp.ConversationTurnCommand
 }
 
-func (*endpointCommandCapture) SendSessionCommand(_, _, _, _, _ string) error { return nil }
+func (*endpointCommandCapture) SendSessionCommand(_, _, _, _, _, _ string) error { return nil }
 func (c *endpointCommandCapture) SendConversationTurn(_, _, _ string, command *asdp.ConversationTurnCommand) error {
 	c.turns = append(c.turns, command)
 	return nil

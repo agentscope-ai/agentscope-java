@@ -51,7 +51,7 @@ func TestEngineKeepsDynamicAdaptiveNodeWaiting(t *testing.T) {
 	}
 }
 
-func TestSuccessfulTeamLeaderWithoutDelegationAutoCompletesCoordinator(t *testing.T) {
+func TestSuccessfulTeamLeaderWithoutExplicitCompletionKeepsCoordinatorWaiting(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
 	if err != nil {
@@ -94,12 +94,12 @@ func TestSuccessfulTeamLeaderWithoutDelegationAutoCompletesCoordinator(t *testin
 		t.Fatal(err)
 	}
 	node, err := st.Orchestration().GetNode(ctx, task.RunNodeID)
-	if err != nil || node.State != controlmodel.RunNodeSucceeded || string(node.Output) != string(result) {
-		t.Fatalf("coordinator did not converge: node=%+v err=%v", node, err)
+	if err != nil || node.State != controlmodel.RunNodeWaiting {
+		t.Fatalf("coordinator completed without explicit action: node=%+v err=%v", node, err)
 	}
 	run, err := st.Orchestration().GetRun(ctx, task.OrchestrationRunID)
-	if err != nil || run.State != controlmodel.RunSucceeded {
-		t.Fatalf("Team Run did not complete: run=%+v err=%v", run, err)
+	if err != nil || run.State != controlmodel.RunWaiting {
+		t.Fatalf("Team Run completed without explicit action: run=%+v err=%v", run, err)
 	}
 }
 

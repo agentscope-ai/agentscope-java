@@ -48,6 +48,29 @@ public final class ToolFilter {
     private ToolFilter() {}
 
     /**
+     * Returns whether a tool with {@code name} survives {@code cfg}'s allow/deny rules.
+     *
+     * <p>This is useful when prompt construction depends on a tool being available after filtering.
+     */
+    public static boolean isAllowed(String name, ToolsConfig cfg) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        if (cfg == null) {
+            return true;
+        }
+        List<String> deny = cfg.getDeny();
+        if (deny != null && deny.contains(name)) {
+            return false;
+        }
+        List<String> allow = cfg.getAllow();
+        return allow == null
+                || allow.isEmpty()
+                || allow.contains(name)
+                || HarnessPlatformTools.isPlatformTool(name);
+    }
+
+    /**
      * Removes tools from {@code toolkit} that are excluded by {@code cfg}'s allow/deny lists. A
      * {@code null} {@code cfg} or one with no allow/deny entries is a no-op.
      */
@@ -77,16 +100,7 @@ public final class ToolFilter {
         Set<String> toRemove = new LinkedHashSet<>();
         Set<String> protectedKept = new LinkedHashSet<>();
         for (String name : registered) {
-            boolean denied = denySetView != null && denySetView.contains(name);
-            if (denied) {
-                toRemove.add(name);
-                continue;
-            }
-            boolean allowed =
-                    allowSetView == null
-                            || allowSetView.contains(name)
-                            || HarnessPlatformTools.isPlatformTool(name);
-            if (!allowed) {
+            if (!isAllowed(name, cfg)) {
                 toRemove.add(name);
             } else if (allowSetView != null
                     && !allowSetView.contains(name)

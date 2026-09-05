@@ -945,6 +945,21 @@ func (r *collaborationRepo) StartAgentTask(_ context.Context, id uuid.UUID, expe
 		run.State, run.WaitReason, run.Version, run.UpdatedAt = controlmodel.RunRunning, "", run.Version+1, now
 	}
 	task.Status, task.Version, task.StartedAt = controlmodel.AgentTaskRunning, task.Version+1, &now
+	if issue := r.s.issues[task.IssueID]; issue != nil &&
+		(issue.Status == controlmodel.IssueBacklog || issue.Status == controlmodel.IssueTodo) {
+		previousStatus := issue.Status
+		issue.Status, issue.Version, issue.UpdatedAt = controlmodel.IssueInProgress, issue.Version+1, now
+		actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+		details, _ := json.Marshal(map[string]string{"from": string(previousStatus),
+			"to": string(controlmodel.IssueInProgress), "reason": "agent task started"})
+		r.appendActivityLocked(&controlmodel.Activity{Tenant: issue.Tenant,
+			Namespace: issue.Namespace, IssueID: &issue.ID, Actor: actor,
+			Action: "issue.status_changed", ObjectType: "issue", ObjectRef: issue.ID.String(),
+			CausationID: task.ID.String(), CorrelationID: task.CorrelationID, Details: details})
+		r.enqueueEventLocked(issue.Tenant, "issue", issue.ID, "issue.status-changed.v1",
+			map[string]any{"issue": cloneIssue(issue), "previousStatus": previousStatus},
+			fmt.Sprintf("issue-status:%s:%d", issue.ID, issue.Version))
+	}
 	return cloneAgentTask(task), nil
 }
 

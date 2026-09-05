@@ -56,7 +56,7 @@ import (
 // SessionCommandSender dispatches a session command (compress/terminate)
 // over a live ASDP stream. Implemented by asdp.Distributor.
 type SessionCommandSender interface {
-	SendSessionCommand(tenant, namespace, instanceID, sessionID, command string) error
+	SendSessionCommand(tenant, namespace, agentID, instanceID, sessionID, command string) error
 }
 
 type ConversationTurnSender interface {

@@ -175,6 +175,8 @@ class SkillRuntimeTest {
             assertTrue(out.contains("<files-root>/workspace/skills/alpha</files-root>"));
             assertTrue(out.contains("## Code Execution"));
             assertTrue(out.contains("<files-root>"));
+            assertTrue(out.contains("access to the execute tool"));
+            assertFalse(out.contains("execute_shell_command"));
         }
 
         @Test

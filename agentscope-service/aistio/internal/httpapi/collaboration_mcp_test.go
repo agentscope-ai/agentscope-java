@@ -22,6 +22,39 @@ import (
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
 
+func TestCollaborationMCPToolCatalogFollowsTaskRole(t *testing.T) {
+	teamID := uuid.New()
+	tests := []struct {
+		name          string
+		task          *controlmodel.AgentTask
+		wantTeam      bool
+		wantLeaderOps bool
+	}{
+		{name: "standalone", task: &controlmodel.AgentTask{}},
+		{name: "team worker", task: &controlmodel.AgentTask{TeamID: &teamID}, wantTeam: true},
+		{name: "team leader", task: &controlmodel.AgentTask{TeamID: &teamID, LeaderTask: true}, wantTeam: true, wantLeaderOps: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			names := map[string]bool{}
+			for _, tool := range collaborationMCPToolsForTask(tt.task) {
+				names[tool.Name] = true
+			}
+			if names["team.get"] != tt.wantTeam {
+				t.Fatalf("team.get visibility=%v, want %v", names["team.get"], tt.wantTeam)
+			}
+			for _, name := range []string{"issue.child.create", "issue.accept", "run.node.complete", "run.node.fail", "run.replan"} {
+				if names[name] != tt.wantLeaderOps {
+					t.Fatalf("%s visibility=%v, want %v", name, names[name], tt.wantLeaderOps)
+				}
+			}
+			if !names["issue.get"] || !names["task.complete"] {
+				t.Fatalf("base tools missing: %+v", names)
+			}
+		})
+	}
+}
+
 func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := context.Background()
@@ -75,6 +108,9 @@ func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 	encoded, _ := json.Marshal(listed.Result)
 	if !bytes.Contains(encoded, []byte(`"issue.comment.add"`)) || !bytes.Contains(encoded, []byte(`"artifact.upload"`)) {
 		t.Fatalf("incomplete MCP tool catalog: %s", encoded)
+	}
+	if bytes.Contains(encoded, []byte(`"issue.child.create"`)) || bytes.Contains(encoded, []byte(`"run.node.complete"`)) {
+		t.Fatalf("standalone worker received Team leader tools: %s", encoded)
 	}
 	bearerBody := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	bearerReq := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bearerBody)

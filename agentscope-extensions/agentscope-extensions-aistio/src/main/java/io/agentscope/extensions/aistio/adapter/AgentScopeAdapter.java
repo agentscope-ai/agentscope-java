@@ -532,7 +532,11 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
                     new UnsupportedOperationException(
                             "agentscope-java: AgentTask requires setAgentTaskStarter"));
         }
-        rememberSession(assignment.agentTaskId(), "", requireAgent());
+        String sessionId = assignment.sessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            sessionId = assignment.agentTaskId();
+        }
+        rememberSession(sessionId, "", requireAgent());
         return starter.start(assignment);
     }
 
