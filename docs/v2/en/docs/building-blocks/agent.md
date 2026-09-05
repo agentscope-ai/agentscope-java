@@ -584,6 +584,42 @@ ReActAgent.builder()
         .build();
 ```
 
+#### Multi-level fallback chain (fallbackModels)
+
+For more than one fallback, or when you want failure classification and per-candidate cooldown,
+use `fallbackModels(...)` — an ordered chain tried in sequence. When the active candidate fails
+with a failure that switching can recover from (429 / 5xx / timeout / network / 401 / 403), the
+chain transparently moves to the next candidate. Request-side failures (400 / 422 and other 4xx)
+fail fast without consuming the chain, since they would fail identically on every candidate.
+
+```java
+// Resolve fallback models the same way .model(String) does (reads API keys from env vars).
+import io.agentscope.core.model.ModelRegistry;
+
+ReActAgent.builder()
+        .model("dashscope:qwen-plus")
+        // each failing candidate moves to the next one, in order
+        .fallbackModels(
+                List.of(
+                        ModelRegistry.resolve("dashscope:qwen-max"),    // 1st fallback
+                        ModelRegistry.resolve("openai:gpt-4o-mini")))   // 2nd fallback
+        .build();
+```
+
+Key semantics (implemented by `io.agentscope.core.model.FallbackChainModel`):
+
+- Candidates keep their own **cooldown** state: after a failure a candidate is skipped for a
+  cooldown window (default 30s), then automatically becomes eligible again — recovery is verified
+  by real traffic, no scheduler or background threads are involved.
+- **Mid-stream failures** (after the first chunk was delivered) are deliberately not retried on a
+  fallback: switching mid-response can duplicate already-delivered content. The failure is
+  recorded (cooldown applies) and propagated as-is.
+- Capability queries (`getModelName`, `supportsNativeStructuredOutput`,
+  `getContextWindowSize`) delegate to the currently active candidate.
+- The chain applies inside `ReActAgent` only; the legacy single `fallbackModel` path is unchanged
+  and is still used when no chain is configured. The wrapper itself is public and can also be
+  wired directly via `model(new FallbackChainModel(primary, fallbacks))` for full control.
+
 ### Skills
 
 Skills are hot-loadable Markdown prompt modules that the LLM activates on demand:
