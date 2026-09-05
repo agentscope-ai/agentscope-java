@@ -307,7 +307,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ### `<files-root>` 和 shell 执行
 
-当一个 skill 自带脚本（例如 `scripts/run-checks.sh`），agent 需要绝对路径才能通过 `execute_shell_command` 调用它。这个绝对路径就是 skill 条目里的 `<files-root>`。它怎么算出来取决于文件系统模式：
+当一个 skill 自带脚本（例如 `scripts/run-checks.sh`），agent 需要绝对路径才能通过 `execute` 调用它。这个绝对路径就是 skill 条目里的 `<files-root>`。它怎么算出来取决于文件系统模式：
 
 | 文件系统模式（是否有 shell） | 工作区 skill 的 `<files-root>` | 市场 skill 的 `<files-root>` |
 |---------------------------|----------------------------|---------------------------|
@@ -315,7 +315,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 | Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
 | Local 不带 shell / Composite | （不渲染——没注册 shell 工具） | （不渲染） |
 
-所以 agent 发出来的 shell 命令永远是 `execute_shell_command("python3 <files-root>/scripts/foo.py")`——不用猜路径，不用记每种来源对应哪个前缀。
+所以 agent 发出来的 shell 命令永远是 `execute("python3 <files-root>/scripts/foo.py")`——不用猜路径，不用记每种来源对应哪个前缀。
 
 ### 市场 skill 文件实际落在哪儿
 
@@ -381,7 +381,7 @@ AGENTS.md  skills/  subagents/  knowledge/  .skills-cache/
 于是 agent 直接发：
 
 ```
-execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <目标路径>")
+execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <目标路径>")
 ```
 
 这条命令在容器里跑，读到的就是投影进来的那份文件。agent 不用知道 skill 来自哪一层，前缀由框架算好。
