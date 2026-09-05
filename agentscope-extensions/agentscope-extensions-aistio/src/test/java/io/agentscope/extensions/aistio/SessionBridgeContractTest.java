@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.protobuf.ByteString;
+import io.agentscope.aistio.proto.ExecutionAttemptCommand;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.Task;
 import io.agentscope.core.state.TaskContextState;
@@ -31,6 +33,26 @@ import org.junit.jupiter.api.Test;
 class SessionBridgeContractTest {
 
     private static final String SESSION = "sess-1";
+
+    @Test
+    void executionSessionIdComesFromRuntimeBinding() {
+        ExecutionAttemptCommand command =
+                ExecutionAttemptCommand.newBuilder()
+                        .setAgentTaskId("task-1")
+                        .setRuntimeBinding(
+                                ByteString.copyFromUtf8(
+                                        "{\"backend\":\"external\",\"sessionId\":\"assigned-session\"}"))
+                        .build();
+
+        assertEquals("assigned-session", SessionBridge.executionSessionId(command));
+        assertEquals(
+                "",
+                SessionBridge.executionSessionId(
+                        ExecutionAttemptCommand.newBuilder()
+                                .setAgentTaskId("task-2")
+                                .setRuntimeBinding(ByteString.copyFromUtf8("not-json"))
+                                .build()));
+    }
 
     @Test
     void configCarriesTenantSeparatelyFromNamespace() {

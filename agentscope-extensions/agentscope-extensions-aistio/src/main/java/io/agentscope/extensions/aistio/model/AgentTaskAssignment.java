@@ -15,6 +15,7 @@ public record AgentTaskAssignment(
         String contextUrl,
         String taskToken,
         String attemptToken,
+        String sessionId,
         byte[] payload,
         long timestamp) {
 

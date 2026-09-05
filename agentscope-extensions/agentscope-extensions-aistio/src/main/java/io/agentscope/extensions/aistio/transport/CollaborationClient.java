@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -78,6 +79,20 @@ public final class CollaborationClient {
 
     public JsonNode taskContext(String taskId, String token) {
         return taskSend("GET", taskId, "context", token, null, "task.context");
+    }
+
+    /** Returns the canonical task-scoped collaboration tools advertised by the control plane. */
+    public JsonNode tools(String taskId, String token) {
+        return mcp(token, "tools/list", Map.of("taskId", taskId)).path("tools");
+    }
+
+    /** Invokes one canonical task-scoped collaboration tool through the control-plane MCP. */
+    public JsonNode callTool(
+            String taskId, String token, String toolName, Map<String, Object> arguments) {
+        Map<String, Object> scoped =
+                arguments == null ? new LinkedHashMap<>() : new LinkedHashMap<>(arguments);
+        scoped.put("taskId", taskId);
+        return mcp(token, "tools/call", Map.of("name", toolName, "arguments", scoped));
     }
 
     public JsonNode createChild(String taskId, String token, Object request) {
@@ -277,6 +292,45 @@ public final class CollaborationClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("artifact.download interrupted", e);
+        }
+    }
+
+    private JsonNode mcp(String token, String method, Object params) {
+        try {
+            ControlPlaneHttpClient.Response response =
+                    http.send(
+                            "POST",
+                            "/mcp/collaboration",
+                            Map.of(
+                                    "jsonrpc",
+                                    "2.0",
+                                    "id",
+                                    UUID.randomUUID().toString(),
+                                    "method",
+                                    method,
+                                    "params",
+                                    params == null ? Map.of() : params),
+                            Map.of(TASK_TOKEN_HEADER, token));
+            if (response.status() < 200 || response.status() >= 300) {
+                throw new CollaborationHttpException(method, response.status(), response.body());
+            }
+            JsonNode body = ControlPlaneHttpClient.mapper().readTree(response.body());
+            if (!body.path("error").isMissingNode() && !body.path("error").isNull()) {
+                throw new CollaborationHttpException(
+                        method, response.status(), body.path("error").toString());
+            }
+            JsonNode result = body.path("result");
+            if (result.path("isError").asBoolean(false)) {
+                throw new CollaborationHttpException(
+                        method, response.status(), result.path("content").toString());
+            }
+            JsonNode structured = result.path("structuredContent");
+            return structured.isMissingNode() || structured.isNull() ? result : structured;
+        } catch (IOException e) {
+            throw new IllegalStateException(method + " failed", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(method + " interrupted", e);
         }
     }
 

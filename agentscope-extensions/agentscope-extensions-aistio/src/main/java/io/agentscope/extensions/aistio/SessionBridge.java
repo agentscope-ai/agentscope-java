@@ -712,6 +712,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                                 command.getContextUrl(),
                                 command.getTaskToken(),
                                 command.getAttemptToken(),
+                                executionSessionId(command),
                                 command.getPayload().toByteArray(),
                                 command.getTimestamp()))
                 .doFinally(
@@ -728,6 +729,23 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                                         "aistio: ExecutionAttempt delivery failed attempt="
                                                 + command.getAttemptId(),
                                         error));
+    }
+
+    static String executionSessionId(ExecutionAttemptCommand command) {
+        if (command.getRuntimeBinding().isEmpty()) {
+            return "";
+        }
+        try {
+            return JSON.readTree(command.getRuntimeBinding().toByteArray())
+                    .path("sessionId")
+                    .asText("");
+        } catch (IOException ignored) {
+            LOG.log(
+                    Level.WARNING,
+                    "aistio: ExecutionAttempt runtime binding is not valid JSON for task {0}",
+                    command.getAgentTaskId());
+            return "";
+        }
     }
 
     private ScheduledFuture<?> startAttemptHeartbeat(ExecutionAttemptCommand command) {

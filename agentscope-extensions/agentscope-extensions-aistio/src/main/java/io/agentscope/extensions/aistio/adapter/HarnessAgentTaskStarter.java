@@ -32,6 +32,7 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
     private final Supplier<HarnessAgent> agent;
     private final CollaborationClient collaboration;
     private final Set<String> acceptedEvents = ConcurrentHashMap.newKeySet();
+    private final Set<Object> collaborationToolkits = ConcurrentHashMap.newKeySet();
 
     public HarnessAgentTaskStarter(
             Supplier<HarnessAgent> agent, CollaborationClient collaboration) {
@@ -67,7 +68,9 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             JsonNode running = ensureRunning(assignment, envelope, version);
             version = running.path("task").path("version").asLong(version);
             envelope = running;
-            boolean teamCoordinator = envelope.path("task").path("leaderTask").asBoolean(false);
+
+            HarnessAgent runtimeAgent = agent.get();
+            registerCollaborationTools(runtimeAgent, assignment);
 
             String payload = new String(assignment.payload(), StandardCharsets.UTF_8);
             String prompt =
@@ -76,15 +79,31 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             + " is ready. The JSON below is the authoritative Issue, discussion"
                             + " inputs, Team role, and artifacts. Complete the requested work and"
                             + " return a concise result; use CollaborationClient for fresh reads,"
-                            + " progress comments, artifacts, or child Issues.\ncontextUrl="
+                            + " progress comments, artifacts, or child Issues. The available"
+                            + " CollaborationClient actions are registered as tools with the exact"
+                            + " names shown in availableActions. The adapter owns task.complete and"
+                            + " task.fail; do not call them. A Team leader must call"
+                            + " run.node.complete only after all requested and delegated work has"
+                            + " actually converged. Returning text alone never completes a Team"
+                            + " coordinator.\ncontextUrl="
                             + nullToEmpty(assignment.contextUrl())
                             + "\n"
                             + envelope
                             + (payload.isBlank() ? "" : "\neventPayload=" + payload);
             Msg kickoff = Msg.builder().role(MsgRole.USER).textContent(prompt).build();
+            String sessionId =
+                    assignment.sessionId() == null || assignment.sessionId().isBlank()
+                            ? assignment.agentTaskId()
+                            : assignment.sessionId();
             RuntimeContext context =
-                    RuntimeContext.builder().sessionId(assignment.agentTaskId()).build();
-            Msg response = agent.get().call(kickoff, context).block();
+                    RuntimeContext.builder()
+                            .sessionId(sessionId)
+                            .put(
+                                    AgentTaskToolContext.class,
+                                    new AgentTaskToolContext(
+                                            assignment.agentTaskId(), assignment.taskToken()))
+                            .build();
+            Msg response = runtimeAgent.call(kickoff, context).block();
             String summary = AgentScopeAdapter.textOf(response);
             if (summary == null || summary.isBlank()) {
                 summary = "AgentTask completed";
@@ -98,9 +117,6 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                     result,
                     inputIds,
                     List.of());
-            if (teamCoordinator) {
-                completeTeamCoordinator(assignment, result);
-            }
             LOG.log(Level.INFO, "AgentTask completed: {0}", assignment.agentTaskId());
         } catch (RuntimeException e) {
             try {
@@ -118,31 +134,32 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
         }
     }
 
-    /**
-     * A Team leader task and its coordinator node have deliberately separate lifecycles. The
-     * framework adapter owns the final explicit coordinator action for the simple case where the
-     * leader returned without leaving delegated work behind. If workers, child Issues, or dynamic
-     * nodes are still active, the control plane rejects the completion and keeps the coordinator
-     * waiting for a later turn.
-     */
-    private void completeTeamCoordinator(
-            AgentTaskAssignment assignment, Map<String, String> output) {
-        try {
-            collaboration.completeRunNode(assignment.agentTaskId(), assignment.taskToken(), output);
-            LOG.log(
-                    Level.INFO,
-                    "Team coordinator completed for AgentTask: {0}",
-                    assignment.agentTaskId());
-        } catch (RuntimeException e) {
-            // The logical task is already complete. A coordinator conflict is not a task failure;
-            // it means active delegated work must converge before another coordinator turn can
-            // explicitly close the node.
-            LOG.log(
-                    Level.WARNING,
-                    "Team coordinator remains waiting after AgentTask "
-                            + assignment.agentTaskId()
-                            + ": "
-                            + e.getMessage());
+    private void registerCollaborationTools(
+            HarnessAgent runtimeAgent, AgentTaskAssignment assignment) {
+        Object toolkit = runtimeAgent.getToolkit();
+        if (collaborationToolkits.contains(toolkit)) {
+            return;
+        }
+        synchronized (toolkit) {
+            if (collaborationToolkits.contains(toolkit)) {
+                return;
+            }
+            for (JsonNode definition :
+                    collaboration.tools(assignment.agentTaskId(), assignment.taskToken())) {
+                String name = definition.path("name").asText();
+                // The starter owns the physical task lifecycle. Exposing these two actions would
+                // race the adapter's fenced completion/failure reporting.
+                if ("task.complete".equals(name) || "task.fail".equals(name)) {
+                    continue;
+                }
+                if (!runtimeAgent.getToolkit().getToolNames().contains(name)) {
+                    runtimeAgent
+                            .getToolkit()
+                            .registerAgentTool(
+                                    new AgentTaskCollaborationTool(collaboration, definition));
+                }
+            }
+            collaborationToolkits.add(toolkit);
         }
     }
 
@@ -152,14 +169,17 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
      * transaction, so issuing a second task start would fail its optimistic version check. Keep
      * the HTTP start as a fallback for transports where the ASDP report has not been observed yet.
      */
-    private JsonNode ensureRunning(
+    JsonNode ensureRunning(
             AgentTaskAssignment assignment, JsonNode envelope, long expectedVersion) {
         if ("running".equals(envelope.path("task").path("status").asText())) {
             return envelope;
         }
         try {
-            return collaboration.start(
-                    assignment.agentTaskId(), assignment.taskToken(), expectedVersion);
+            collaboration.start(assignment.agentTaskId(), assignment.taskToken(), expectedVersion);
+            // task.start intentionally returns a compact {task: ...} response. Always refresh the
+            // authoritative context so Issue, discussion inputs, Team, artifacts, and actions are
+            // never lost on this timing-dependent fallback path.
+            return collaboration.taskContext(assignment.agentTaskId(), assignment.taskToken());
         } catch (CollaborationClient.CollaborationHttpException e) {
             if (e.status() != 409) {
                 throw e;
