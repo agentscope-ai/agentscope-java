@@ -163,15 +163,17 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         // sibling's binding (issue #2490); it only clears the field when it still points here.
         filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
         SandboxContext sandboxContext = ctx.get(SandboxContext.class);
-        try {
-            sandboxManager.persistState(result, sandboxContext, ctx);
-        } catch (Exception e) {
-            log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
-        }
+        // Release (stop/persist workspace) first so state mutations made during stop — e.g.
+        // workspaceRootReady or per-session snapshot records — are captured by the persist below.
         try {
             sandboxManager.release(result);
         } catch (Exception e) {
             log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
+        }
+        try {
+            sandboxManager.persistState(result, sandboxContext, ctx);
+        } catch (Exception e) {
+            log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
         }
         result.getLease().close();
     }
