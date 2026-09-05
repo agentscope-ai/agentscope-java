@@ -93,6 +93,8 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -220,6 +222,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /** Tool name used for the per-call structured-output {@code generate_response} tool. */
     public static final String STRUCTURED_OUTPUT_TOOL_NAME = "generate_response";
+
+    /** Maximum retries when the model ignores the fallback structured-output tool. */
+    private static final int STRUCTURED_OUTPUT_MAX_RETRIES = 3;
 
     /**
      * @deprecated Permission HITL no longer uses a Reactor Sink. Confirm results are now
@@ -1349,16 +1354,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     scope.soTool = createStructuredOutputTool(jsonSchema);
 
                     return scope.doCallInner(msgs)
-                            .onErrorResume(error -> saveStateAfterCallFailure(scope, error))
+                            .doOnCancel(() -> cleanupFallbackStructuredOutputContext(scope))
+                            .onErrorResume(
+                                    error -> {
+                                        cleanupFallbackStructuredOutputContext(scope);
+                                        return saveStateAfterCallFailure(scope, error);
+                                    })
                             .flatMap(
                                     result -> {
                                         Msg out = result;
                                         if (scope.soCompleted && scope.soResultMsg != null) {
                                             ChatUsage aggregatedUsage =
-                                                    collectAggregatedUsage(scope.state);
+                                                    collectAggregatedUsage(scope);
                                             ThinkingBlock aggregatedThinking =
                                                     collectLastThinking(scope.state);
-                                            compressStructuredOutputContext(scope.state);
+                                            cleanupFallbackStructuredOutputContext(scope);
                                             Msg extracted =
                                                     extractStructuredResult(scope.soResultMsg);
                                             if (extracted != null) {
@@ -1369,6 +1379,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 aggregatedThinking);
                                             }
                                             scope.state.contextMutable().add(out);
+                                        } else {
+                                            cleanupFallbackStructuredOutputContext(scope);
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
                                     });
@@ -1418,6 +1430,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
     }
 
+    private void cleanupFallbackStructuredOutputContext(CallExecution scope) {
+        compressStructuredOutputContext(scope.state);
+        scope.removeStructuredOutputRetryArtifacts();
+    }
+
     private boolean isStructuredOutputRelated(Msg msg) {
         Map<String, Object> metadata = msg.getMetadata();
         if (metadata != null
@@ -1435,14 +1452,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         .allMatch(tr -> STRUCTURED_OUTPUT_TOOL_NAME.equals(tr.getName()));
     }
 
-    private ChatUsage collectAggregatedUsage(AgentState agentState) {
+    private ChatUsage collectAggregatedUsage(CallExecution scope) {
         int totalInput = 0;
         int totalOutput = 0;
         int totalCached = 0;
         double totalTime = 0;
         boolean hasUsage = false;
-        for (Msg msg : agentState.getContext()) {
-            if (isStructuredOutputRelated(msg) && msg.getRole() == MsgRole.ASSISTANT) {
+        for (Msg msg : scope.state.getContext()) {
+            if ((isStructuredOutputRelated(msg) || scope.isStructuredOutputRetryAttempt(msg))
+                    && msg.getRole() == MsgRole.ASSISTANT) {
                 ChatUsage usage = msg.getChatUsage();
                 if (usage != null) {
                     hasUsage = true;
@@ -1693,6 +1711,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** The tool result message from the successful {@code generate_response} call. */
         Msg soResultMsg;
+
+        /** Number of retries after the model returned a tool-free structured-output response. */
+        int soRetryCount;
+
+        /** Intermediate model responses removed after structured-output retry completes. */
+        final List<Msg> soRetryAttemptMsgs = new ArrayList<>();
 
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
@@ -2317,6 +2341,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             .build(),
                                                     options);
                                 }
+                                if (soTool != null
+                                        && isToolChoiceReminder(event.getInputMessages())) {
+                                    options =
+                                            GenerateOptions.mergeOptions(
+                                                    GenerateOptions.builder()
+                                                            .toolChoice(
+                                                                    new ToolChoice.Specific(
+                                                                            STRUCTURED_OUTPUT_TOOL_NAME))
+                                                            .build(),
+                                                    options);
+                                }
                                 List<Msg> modelInput =
                                         prependSystemMsg(
                                                 event.getInputMessages(), event.getSystemMessage());
@@ -2454,6 +2489,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // Check finish conditions
                                 if (isFinished(eventMsg)) {
+                                    if (eventMsg != null
+                                            && soTool != null
+                                            && !soCompleted
+                                            && soRetryCount < STRUCTURED_OUTPUT_MAX_RETRIES) {
+                                        soRetryCount++;
+                                        log.debug(
+                                                "Model didn't call {}, requesting retry ({}/{})",
+                                                STRUCTURED_OUTPUT_TOOL_NAME,
+                                                soRetryCount,
+                                                STRUCTURED_OUTPUT_MAX_RETRIES);
+                                        soRetryAttemptMsgs.add(eventMsg);
+                                        state.contextMutable()
+                                                .add(createStructuredOutputReminder());
+                                        return reasoning(iter + 1, true);
+                                    }
+                                    if (soTool != null && !soCompleted) {
+                                        removeStructuredOutputRetryArtifacts();
+                                    }
                                     return Mono.justOrEmpty(eventMsg);
                                 }
 
@@ -3798,6 +3851,62 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     Msg.METADATA_REMINDER_KIND,
                                     "empty_response"))
                     .build();
+        }
+
+        /** Build the reminder used to force the fallback structured-output tool on retry. */
+        private static Msg createStructuredOutputReminder() {
+            return Msg.builder()
+                    .name("system")
+                    .role(MsgRole.USER)
+                    .content(
+                            TextBlock.builder()
+                                    .text(
+                                            "Please call the '"
+                                                    + STRUCTURED_OUTPUT_TOOL_NAME
+                                                    + "' function to provide your response.")
+                                    .build())
+                    .metadata(
+                            Map.of(
+                                    MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER,
+                                    true,
+                                    MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
+                                    StructuredOutputReminder.TOOL_CHOICE.toString()))
+                    .build();
+        }
+
+        /** Return whether the latest input asks the model to call the structured-output tool. */
+        private static boolean isToolChoiceReminder(List<Msg> msgs) {
+            if (msgs == null || msgs.isEmpty()) {
+                return false;
+            }
+            Msg last = msgs.get(msgs.size() - 1);
+            Map<String, Object> metadata = last != null ? last.getMetadata() : null;
+            return metadata != null
+                    && Boolean.TRUE.equals(
+                            metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER))
+                    && StructuredOutputReminder.TOOL_CHOICE
+                            .toString()
+                            .equals(
+                                    metadata.get(
+                                            MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE));
+        }
+
+        /** Remove internal reminder messages and intermediate retry responses from context. */
+        private void removeStructuredOutputRetryArtifacts() {
+            state.contextMutable().removeIf(this::isStructuredOutputRetryArtifact);
+        }
+
+        private boolean isStructuredOutputRetryArtifact(Msg msg) {
+            Map<String, Object> metadata = msg.getMetadata();
+            boolean isReminder =
+                    metadata != null
+                            && Boolean.TRUE.equals(
+                                    metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER));
+            return isReminder || isStructuredOutputRetryAttempt(msg);
+        }
+
+        private boolean isStructuredOutputRetryAttempt(Msg msg) {
+            return soRetryAttemptMsgs.stream().anyMatch(attempt -> attempt == msg);
         }
 
         /**
