@@ -1,5 +1,7 @@
 # Custom Workflow
 
+> **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
+
 In the **custom workflow** pattern, you define your own execution flow using **Spring AI Alibaba StateGraph**. You have full control over the graph structure—sequential steps, conditional branches, loops, and parallel execution. Nodes can be **deterministic** (e.g. vector search, DB query), **LLM-based** (e.g. rewrite, classify), or **agentic** (an agent with tools). State is passed between nodes via a shared state map with configurable strategies (replace, append).
 
 This pattern is useful when standard patterns (Pipeline, Routing, Subagents, etc.) do not fit, when you need to mix deterministic logic with agentic behavior, or when your use case requires multi-stage processing with explicit control over the flow.
@@ -54,32 +56,10 @@ START → list_tables → call_get_schema → get_schema → generate_query → 
 
 ## Example project
 
-**Location**: `agentscope-examples/multiagent-patterns/workflow/`
-
 | Package   | Flow | Description |
 |-----------|------|-------------|
 | **ragagent** | Query → Rewrite → Retrieve → Prepare → Agent → Response | RAG: rewrite query, vector retrieve, then ReActAgent with context and `get_latest_news` tool. Uses AgentScope Model, Knowledge (embedding + store), and AgentScopeAgent. |
 | **sqlagent** | START → list_tables → get_schema → generate_query → END | SQL: list tables, get schema for relevant tables, then ReActAgent with SQL tools (list_tables, schema, query). Uses H2 in-memory and AgentScopeAgent. |
-
-**Build and run** (from repo root):
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/workflow -am -B package -DskipTests
-```
-
-**Run RAG workflow** (with optional demo on startup):
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/workflow spring-boot:run \
-  -Dspring-boot.run.arguments="--workflow.rag.enabled=true --workflow.runner.enabled=true"
-```
-
-**Run SQL workflow** (with optional demo on startup):
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/workflow spring-boot:run \
-  -Dspring-boot.run.arguments="--workflow.sql.enabled=true --workflow.runner.enabled=true"
-```
 
 **Configuration**:
 
@@ -94,7 +74,7 @@ START → list_tables → call_get_schema → get_schema → generate_query → 
 - **Routing**: Routing is classify → specialist(s) → merge, often with a single router node. In a custom workflow you could implement the same with your own graph (e.g. router node → branch → specialists → merge node).
 - **Handoffs**: Handoffs use state (e.g. `active_agent`) to route between agent nodes. Custom workflow can do the same with conditional edges and state; Handoffs is a dedicated pattern for “who owns the conversation” transitions.
 
-For implementation details and code, see the workflow example (`agentscope-examples/multiagent-patterns/workflow/`) and the RAG/SQL config classes (`RagAgentConfig`, `SqlAgentConfig`).
+For implementation details, use the snippets on this page and the RAG/SQL config classes (`RagAgentConfig`, `SqlAgentConfig`).
 
 ## Related Documentation
 
