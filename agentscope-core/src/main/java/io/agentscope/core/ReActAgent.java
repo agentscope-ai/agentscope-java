@@ -822,6 +822,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         unbindRuntimeContextFromHooks();
     }
 
+    @Override
+    protected void afterCallScopeExecution(Object callScope) {
+        if (stateStore == null) {
+            return;
+        }
+        CallExecution scope = (CallExecution) callScope;
+        stateCache.computeIfPresent(
+                scope.slotKey,
+                (slot, state) -> {
+                    // APPEND_MERGE may replace this call's cached state with a newer merged
+                    // instance. Only evict when the cache still holds the state owned by this
+                    // call.
+                    if (state != scope.state) {
+                        return state;
+                    }
+                    slotVersions.remove(slot);
+                    permissionEngineCache.remove(slot, scope.permissionEngine);
+                    return null;
+                });
+    }
+
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
         if (run == null) {
             if (toolExecutionContext != null) {
@@ -4170,7 +4191,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Clears all locally cached per-session state and permission engines.
+     * Clears all locally cached per-session state, persistence versions, and permission engines.
      *
      * <p>This only releases the in-memory cache held by this agent. It does not delete or modify
      * any state in the configured {@link AgentStateStore}. A later {@code getAgentState(...)} or
@@ -4182,6 +4203,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public void clearStateCache() {
         stateCache.clear();
+        slotVersions.clear();
         permissionEngineCache.clear();
     }
 
@@ -4199,8 +4221,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Clears the locally cached state and permission engine for one {@code (userId, sessionId)}
-     * slot.
+     * Clears the locally cached state, persistence version, and permission engine for one {@code
+     * (userId, sessionId)} slot.
      *
      * <p>This only releases local references. It does not delete the corresponding state from
      * the configured {@link AgentStateStore}; the next access reloads the persisted state.
@@ -4212,6 +4234,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
         String slot = slotKey(userId, sid);
         stateCache.remove(slot);
+        slotVersions.remove(slot);
         permissionEngineCache.remove(slot);
     }
 
