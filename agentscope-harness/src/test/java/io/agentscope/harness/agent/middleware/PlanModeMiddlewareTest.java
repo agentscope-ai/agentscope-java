@@ -88,7 +88,8 @@ class PlanModeMiddlewareTest {
                         call("1", "read_file"),
                         call("2", "write_file"),
                         call("3", "plan_exit"),
-                        call("4", "todo_write"));
+                        call("4", "todo_write"),
+                        call("5", "agent_release"));
 
         AtomicReference<ActingInput> forwarded = new AtomicReference<>();
         List<AgentEvent> events =
@@ -108,12 +109,12 @@ class PlanModeMiddlewareTest {
                 forwarded.get().toolCalls().stream().map(ToolUseBlock::getName).toList();
         assertEquals(List.of("read_file", "plan_exit", "todo_write"), forwardedNames);
 
-        // The single denied call produced a denied tool-result message in context.
+        // write_file and agent_release are mutating, so both are denied in plan mode.
         long denialMsgs = state.contextMutable().stream().filter(m -> m.getRole() != null).count();
-        assertEquals(1, denialMsgs);
+        assertEquals(2, denialMsgs);
 
-        // Start + delta + end for the one denied call.
-        assertEquals(3, events.size());
+        // Start + delta + end for each denied call.
+        assertEquals(6, events.size());
     }
 
     @Test

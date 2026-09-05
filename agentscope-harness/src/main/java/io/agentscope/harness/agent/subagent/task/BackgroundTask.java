@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Wraps a {@link CompletableFuture} to track background subagent task execution with status,
@@ -148,5 +149,26 @@ public class BackgroundTask {
     public boolean cancel(boolean mayInterruptIfRunning) {
         this.cancelled = true;
         return future.cancel(mayInterruptIfRunning);
+    }
+
+    /**
+     * Runs {@code callback} exactly once when the underlying execution reaches any terminal state.
+     * If the task is already complete, the callback runs immediately on the calling thread.
+     *
+     * <p>This hook intentionally exposes no mutable future state. It is used by resource owners to
+     * tie an execution lease to the real task lifetime, including cancellation and exceptional
+     * completion.
+     */
+    public void onCompletion(Runnable callback) {
+        if (callback == null) {
+            return;
+        }
+        AtomicBoolean invoked = new AtomicBoolean();
+        future.whenComplete(
+                (ignored, error) -> {
+                    if (invoked.compareAndSet(false, true)) {
+                        callback.run();
+                    }
+                });
     }
 }

@@ -118,6 +118,7 @@ class ToolFilterTest {
         assertTrue(names.contains("read_file"));
         assertTrue(names.contains("team"));
         assertTrue(names.contains("agent_spawn"));
+        assertTrue(names.contains("agent_release"));
         assertTrue(names.contains("task_output"));
         assertFalse(names.contains("list_files"));
         assertFalse(names.contains("execute"));
@@ -133,6 +134,7 @@ class ToolFilterTest {
         Set<String> names = toolkit.getToolNames();
         assertFalse(names.contains("team"));
         assertTrue(names.contains("agent_spawn"));
+        assertTrue(names.contains("agent_release"));
         assertTrue(names.contains("task_output"));
     }
 
@@ -176,6 +178,12 @@ class ToolFilterTest {
         @Tool(name = "agent_spawn", description = "stub")
         public String agentSpawn(@ToolParam(name = "agent_id", description = "a") String agentId) {
             return agentId;
+        }
+
+        @Tool(name = "agent_release", description = "stub")
+        public String agentRelease(
+                @ToolParam(name = "agent_key", description = "k") String agentKey) {
+            return agentKey;
         }
 
         @Tool(name = "task_output", description = "stub")

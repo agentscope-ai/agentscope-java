@@ -76,6 +76,7 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
     private final Function<SubagentDeclaration, SubagentFactory> factoryBuilder;
     private final DefaultAgentManager agentManager;
     private volatile Object subagentTool;
+    private volatile AgentSpawnTool ownedAgentSpawnTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
 
@@ -94,10 +95,14 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.agentManager = agentManager;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
-        this.subagentTool =
-                subagentTool != null
-                        ? subagentTool
-                        : new AgentSpawnTool(agentManager, taskRepository, 0);
+        if (subagentTool != null) {
+            this.subagentTool = subagentTool;
+            this.ownedAgentSpawnTool = null;
+        } else {
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
+        }
         this.taskTool = new TaskTool(taskRepository);
     }
 
@@ -118,9 +123,25 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (this.subagentTool instanceof AgentSpawnTool ast) {
             ast.setGatewayBridge(bridge);
         } else {
-            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
         }
         return this;
+    }
+
+    /** Returns the internally-created spawn tool, or {@code null} for an injected tool. */
+    public AgentSpawnTool getOwnedAgentSpawnTool() {
+        return ownedAgentSpawnTool;
+    }
+
+    /** Closes the internally-created spawn tool without touching an injected external tool. */
+    public synchronized void closeOwnedAgentSpawnTool() {
+        AgentSpawnTool spawnTool = ownedAgentSpawnTool;
+        if (spawnTool != null) {
+            ownedAgentSpawnTool = null;
+            spawnTool.close();
+        }
     }
 
     /**
