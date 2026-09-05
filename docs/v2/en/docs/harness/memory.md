@@ -79,13 +79,20 @@ Common options:
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `triggerMessages` | `50` | Trigger by message count (`0` = off) |
-| `triggerTokens` | `80_000` | Trigger by estimated tokens (`0` = off) |
+| `triggerTokens` | `0` | Dynamic: primary model context window minus `reserved`; falls back to `160_000` when unknown. Positive values set an explicit input-token threshold |
+| `reserved` | `20_000` | Headroom used by the dynamic token threshold |
 | `keepMessages` | `20` | Number of tail messages to keep |
-| `keepTokens` | `0` | When non-zero, walk back by token budget; overrides `keepMessages` |
+| `keepTokens` | `-1` | Dynamic tail budget; `0` uses `keepMessages`, positive values set an explicit conversation-tail token budget |
 | `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
 | `offloadBeforeCompact` | `true` | Append raw messages to the never-compacted log before compacting |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
+
+Token triggering includes the system prompt, conversation (including thinking and hint text), tool definitions and explicit response-format schema. The tail budget applies only to conversation messages. Selecting a separate summary model does not change the primary model's dynamic trigger window.
+
+Counts are estimates, not a model-specific tokenizer: ASCII retains the 2.5-characters-per-token approximation, while non-ASCII BMP characters count as one token and supplementary code points as two. For self-hosted models, compare estimates with the same request's reported `inputTokens` and leave room for output and provider chat templates. An explicit `triggerTokens` does not subtract `reserved` automatically. Multimodal costs and provider-level defaults are not fully represented, and an oversized single message or indivisible tool-call group can still exceed the budget.
+
+Argument truncation and tool-result pruning are applied even when they reduce the input below the summary threshold. A failed or empty summary preserves the original working conversation; it never replaces history with a failure placeholder.
 
 **Auto-recovery on overflow**: when the model returns `context_length_exceeded` (or similar), the framework forces one compaction and retries — but only when `compaction(...)` is configured; otherwise the error propagates.
 

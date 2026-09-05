@@ -79,13 +79,20 @@ HarnessAgent agent = HarnessAgent.builder()
 | 参数 | 默认 | 含义 |
 |------|------|------|
 | `triggerMessages` | `50` | 按条数触发（`0` 表示关闭） |
-| `triggerTokens` | `80_000` | 按 token 估算触发（`0` 表示关闭） |
+| `triggerTokens` | `0` | 动态模式：主模型上下文窗口减去 `reserved`；窗口未知时回退到 `160_000`。正数表示显式输入 token 阈值 |
+| `reserved` | `20_000` | 动态 token 阈值使用的预留空间 |
 | `keepMessages` | `20` | 保留尾部条数 |
-| `keepTokens` | `0` | 非 0 时按 token 预算从尾部往前算，覆盖 `keepMessages` |
+| `keepTokens` | `-1` | 动态尾部预算；`0` 使用 `keepMessages`，正数表示显式会话尾部 token 预算 |
 | `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
 | `offloadBeforeCompact` | `true` | 压缩前先把原始消息存一份永不压缩的日志 |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
+
+token 触发判断包含系统提示、会话消息（包括思考和 Hint 文本）、工具定义和显式响应格式 schema。尾部预算仅计算会话消息。指定独立摘要模型不会改变依据主模型窗口计算的动态触发阈值。
+
+计数采用近似估算，并非模型专属 tokenizer：ASCII 保持约 2.5 个字符/token，非 ASCII 的 BMP 字符按 1 token 估算，补充平面码点按 2 token 估算。本地部署模型时，应对照同一次请求上报的 `inputTokens`，为输出和服务端 chat template 留出空间。显式设置 `triggerTokens` 时不会自动减去 `reserved`。多模态开销及模型端默认配置未被完整计入；单条超长消息或不可拆分的工具调用组仍可能超过预算。
+
+即使参数截断或工具结果裁剪使输入低于摘要阈值，处理后的消息也会生效。摘要失败或返回空内容时保留原有工作上下文，不会使用失败占位文本替换历史。
 
 **上下文溢出自动恢复**：模型真的返回 `context_length_exceeded` 等错误时，框架会强制做一轮压缩然后重试一次——前提是你配了 `compaction(...)`，否则错误直接抛回上层。
 

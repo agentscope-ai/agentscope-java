@@ -29,6 +29,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -44,6 +45,55 @@ import reactor.test.StepVerifier;
 
 /** Tests message routing between summarization, memory flushing, and the preserved tail. */
 class ConversationCompactorTest {
+    @Test
+    void legacyOverloadReturnsPrunedHistoryWithoutSummarizing() {
+        RecordingModel model = new RecordingModel();
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, mock(MemoryFlushManager.class));
+        Msg tool =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call")
+                                        .name("search")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("x".repeat(5_000))
+                                                                .build()))
+                                        .build())
+                        .build();
+        CompactionConfig cfg =
+                CompactionConfig.builder()
+                        .triggerMessages(0)
+                        .triggerTokens(1_000)
+                        .keepMessages(1)
+                        .keepTokens(0)
+                        .flushBeforeCompact(false)
+                        .offloadBeforeCompact(false)
+                        .prune(
+                                CompactionConfig.PruneConfig.builder()
+                                        .protectTokens(0)
+                                        .minimumTokens(1)
+                                        .maxOutputChars(100)
+                                        .build())
+                        .build();
+        List<Msg> result =
+                compactor
+                        .compactIfNeeded(
+                                RuntimeContext.empty(),
+                                List.of(tool, message("latest")),
+                                cfg,
+                                "agent",
+                                "session")
+                        .block()
+                        .orElseThrow();
+        assertEquals(2, result.size());
+        assertEquals(tool.getId(), result.get(0).getId());
+        assertTrue(TokenCounterUtil.calculateToken(result) < 1_000);
+        assertTrue(model.inputs.isEmpty());
+    }
 
     /** Verifies that a prior summary is summarized again but is neither flushed nor retained. */
     @Test
