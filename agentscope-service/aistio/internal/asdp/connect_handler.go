@@ -66,12 +66,12 @@ func (h *ConnectHandler) HandleConnect(ctx context.Context, meta *UpstreamMeta, 
 
 	// Proactively tear down a stale connection for the same instance so its
 	// writer goroutine and stream are released before the new one registers.
-	if existing, ok := h.server.GetConnectionForTenant(meta.GetTenant(), meta.Namespace, meta.InstanceKey); ok {
+	if existing, ok := h.server.GetConnectionForAgentInstance(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey); ok {
 		logger.Info("reconnecting existing instance",
 			"agent", existing.AgentName,
 			"instance", meta.InstanceKey,
 		)
-		h.server.UnregisterConnection(meta.GetTenant(), meta.Namespace, meta.InstanceKey)
+		h.server.UnregisterConnection(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey)
 	}
 
 	logger.Info("handshake accepted",
@@ -159,13 +159,13 @@ func identityMatchesAgent(cert *x509.Certificate, namespace, agentName string) b
 }
 
 // HandleDisconnect handles a data plane instance disconnection (stream closed).
-func (h *ConnectHandler) HandleDisconnect(tenant, namespace, instanceID string) {
+func (h *ConnectHandler) HandleDisconnect(tenant, namespace, agentID, instanceID string) {
 	logger := log.Log.WithName("asdp-connect")
 	logger.Info("instance disconnected", "namespace", namespace, "instance", instanceID)
-	h.server.UnregisterConnection(tenant, namespace, instanceID)
+	h.server.UnregisterConnection(tenant, namespace, agentID, instanceID)
 }
 
-// GetInstanceKey returns the routing key for a tenant/namespace/instance tuple.
-func GetInstanceKey(tenant, namespace, instanceID string) string {
-	return fmt.Sprintf("%s/%s/%s", tenant, namespace, instanceID)
+// GetInstanceKey returns the routing key for a tenant/namespace/agent/instance tuple.
+func GetInstanceKey(tenant, namespace, agentID, instanceID string) string {
+	return fmt.Sprintf("%s/%s/%s/%s", tenant, namespace, agentID, instanceID)
 }

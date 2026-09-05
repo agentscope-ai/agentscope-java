@@ -115,7 +115,7 @@ func (d *Distributor) ForgetAgent(namespace, agentName string) {
 }
 
 // PushFullSync pushes all current config snapshots to a newly connected instance.
-func (d *Distributor) PushFullSync(tenant, namespace, agentName, instanceID string) {
+func (d *Distributor) PushFullSync(tenant, namespace, agentID, agentName, instanceID string) {
 	logger := log.Log.WithName("asdp-distributor")
 
 	_, span := tracing.Tracer().Start(context.Background(), "asdp.PushFullSync",
@@ -134,7 +134,7 @@ func (d *Distributor) PushFullSync(tenant, namespace, agentName, instanceID stri
 		return
 	}
 
-	conn, ok := d.server.GetConnectionForTenant(tenant, namespace, instanceID)
+	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID)
 	if !ok {
 		logger.Info("instance not connected for full sync",
 			"agent", agentName, "instance", instanceID)
@@ -174,16 +174,16 @@ var ErrInstanceNotConnected = errors.New("asdp: instance not connected")
 
 // SendSessionCommand sends a session command to a specific instance.
 // It returns ErrInstanceNotConnected when the instance has no live stream.
-func (d *Distributor) SendSessionCommand(tenant, namespace, instanceID, sessionID, command string) error {
-	return d.SendSessionCommandWithParams(tenant, namespace, instanceID, sessionID, command, nil)
+func (d *Distributor) SendSessionCommand(tenant, namespace, agentID, instanceID, sessionID, command string) error {
+	return d.SendSessionCommandWithParams(tenant, namespace, agentID, instanceID, sessionID, command, nil)
 }
 
 // SendSessionCommandWithParams is like SendSessionCommand but includes params
 // (for example an AgentTask locator and task-scoped token).
-func (d *Distributor) SendSessionCommandWithParams(tenant, namespace, instanceID, sessionID, command string, params []byte) error {
+func (d *Distributor) SendSessionCommandWithParams(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error {
 	logger := log.Log.WithName("asdp-distributor")
 
-	conn, ok := d.server.GetConnectionForTenant(tenant, namespace, instanceID)
+	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID)
 	if !ok {
 		logger.Info("instance not connected for session command",
 			"instance", instanceID, "session", sessionID, "command", command)
@@ -211,7 +211,7 @@ func (d *Distributor) SendSessionCommandWithParams(tenant, namespace, instanceID
 // instance. Unlike SessionCommand this command carries a public Invocation ID
 // and must be acknowledged through ConversationTurnReport.
 func (d *Distributor) SendConversationTurn(tenant, namespace, instanceID string, command *ConversationTurnCommand) error {
-	conn, ok := d.server.GetConnectionForTenant(tenant, namespace, instanceID)
+	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, command.GetAgentId(), instanceID)
 	if !ok {
 		return ErrInstanceNotConnected
 	}
@@ -219,8 +219,8 @@ func (d *Distributor) SendConversationTurn(tenant, namespace, instanceID string,
 }
 
 // SendExecutionAttemptCommand sends a task wake only to the selected tenant's stream.
-func (d *Distributor) SendExecutionAttemptCommand(tenant, namespace, instanceID, sessionID, command string, params []byte) error {
-	conn, ok := d.server.GetConnectionForTenant(tenant, namespace, instanceID)
+func (d *Distributor) SendExecutionAttemptCommand(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error {
+	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID)
 	if !ok {
 		return ErrInstanceNotConnected
 	}

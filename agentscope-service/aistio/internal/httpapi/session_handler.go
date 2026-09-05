@@ -927,7 +927,7 @@ func (s *Server) writeSessionOpsError(c *gin.Context, err error) {
 func (s *Server) dispatchSessionCommand(c *gin.Context, sess *store.Session, command string) bool {
 	// 1) ASDP fast path: the instance holds a live gRPC stream.
 	if s.asdpCommands != nil && sess.InstanceRef != "" {
-		if err := s.asdpCommands.SendSessionCommand(sess.Tenant, sess.Namespace, sess.InstanceRef, sess.SessionID, command); err == nil {
+		if err := s.asdpCommands.SendSessionCommand(sess.Tenant, sess.Namespace, sess.AgentID.String(), sess.InstanceRef, sess.SessionID, command); err == nil {
 			return true
 		}
 	}

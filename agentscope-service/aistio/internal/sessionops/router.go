@@ -216,7 +216,7 @@ func (r *Router) dispatch(ctx context.Context, sess *store.Session, entry *datap
 
 	usedASDP := false
 	if r.ASDP != nil && sess.InstanceRef != "" {
-		if err := r.ASDP.SendSessionCommand(sess.Tenant, sess.Namespace, sess.InstanceRef, sess.SessionID, req.Command); err == nil {
+		if err := r.ASDP.SendSessionCommand(sess.Tenant, sess.Namespace, sess.AgentID.String(), sess.InstanceRef, sess.SessionID, req.Command); err == nil {
 			usedASDP = true
 			dpResp = &dpCommandResponse{
 				Accepted:  true,

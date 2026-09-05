@@ -256,7 +256,7 @@ func (s *Server) Stop() {
 // RegisterConnection registers a new data plane connection after handshake.
 func (s *Server) RegisterConnection(conn *Connection) {
 	s.mu.Lock()
-	key := GetInstanceKey(conn.Tenant, conn.Namespace, conn.InstanceID)
+	key := GetInstanceKey(conn.Tenant, conn.Namespace, conn.AgentID, conn.InstanceID)
 	s.connections[key] = conn
 	metrics.RecordGRPCConnection(1)
 	s.mu.Unlock()
@@ -275,9 +275,9 @@ func (s *Server) RegisterConnection(conn *Connection) {
 }
 
 // UnregisterConnection removes a data plane connection.
-func (s *Server) UnregisterConnection(tenant, namespace, instanceID string) {
+func (s *Server) UnregisterConnection(tenant, namespace, agentID, instanceID string) {
 	s.mu.Lock()
-	key := GetInstanceKey(tenant, namespace, instanceID)
+	key := GetInstanceKey(tenant, namespace, agentID, instanceID)
 	var disconnected *Connection
 	if conn, ok := s.connections[key]; ok {
 		disconnected = conn
@@ -318,7 +318,25 @@ func (s *Server) GetConnection(namespace, instanceID string) (*Connection, bool)
 func (s *Server) GetConnectionForTenant(tenant, namespace, instanceID string) (*Connection, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	conn, ok := s.connections[GetInstanceKey(tenant, namespace, instanceID)]
+	var found *Connection
+	for _, conn := range s.connections {
+		if conn.Tenant != tenant || conn.Namespace != namespace || conn.InstanceID != instanceID {
+			continue
+		}
+		if found != nil {
+			return nil, false
+		}
+		found = conn
+	}
+	return found, found != nil
+}
+
+// GetConnectionForAgentInstance retrieves the exact Agent connection without assuming that an
+// instance key is globally unique across different Agents running on the same host.
+func (s *Server) GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID string) (*Connection, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	conn, ok := s.connections[GetInstanceKey(tenant, namespace, agentID, instanceID)]
 	return conn, ok
 }
 
@@ -369,11 +387,11 @@ func (s *Server) ConnectionCount() int {
 }
 
 // UpdateInventory records the latest inventory report for a connected instance.
-func (s *Server) UpdateInventory(tenant, namespace, instanceID string, report *InventoryReport) {
+func (s *Server) UpdateInventory(tenant, namespace, agentID, instanceID string, report *InventoryReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := GetInstanceKey(tenant, namespace, instanceID)
+	key := GetInstanceKey(tenant, namespace, agentID, instanceID)
 	conn, ok := s.connections[key]
 	if !ok {
 		return

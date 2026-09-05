@@ -106,7 +106,7 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 	}
 	s.server.RegisterConnection(conn)
 	defer func() {
-		s.server.connectHandler.HandleDisconnect(meta.GetTenant(), meta.Namespace, meta.InstanceKey)
+		s.server.connectHandler.HandleDisconnect(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey)
 		cancel()
 	}()
 
@@ -132,7 +132,7 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 	}()
 
 	// Push full config sync after handshake.
-	s.server.distributor.PushFullSync(meta.GetTenant(), meta.Namespace, meta.AgentKey, meta.InstanceKey)
+	s.server.distributor.PushFullSync(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.AgentKey, meta.InstanceKey)
 
 	// Phase 3: Recv loop — dispatch upstream messages.
 	for {
@@ -264,7 +264,7 @@ func (s *service) handleContextReport(meta *UpstreamMeta, report *ContextReport)
 func (s *service) handleInventoryReport(meta *UpstreamMeta, report *InventoryReport) {
 	// The latest inventory is always kept in the connection registry for
 	// REST/CLI queries; the sink gets a copy for logging/metrics.
-	s.server.UpdateInventory(meta.GetTenant(), meta.Namespace, meta.InstanceKey, report)
+	s.server.UpdateInventory(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey, report)
 	if s.server.eventSink != nil {
 		s.server.eventSink.HandleInventoryReport(reportIdentity(meta), report)
 	}

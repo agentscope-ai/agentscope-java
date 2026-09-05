@@ -54,7 +54,7 @@ type dpErrorBody struct {
 
 // ASDPSender optionally delivers a session command over a live ASDP stream.
 type ASDPSender interface {
-	SendSessionCommand(tenant, namespace, instanceID, sessionID, command string) error
+	SendSessionCommand(tenant, namespace, agentID, instanceID, sessionID, command string) error
 }
 
 // sendHTTP posts the command to the data-plane contract endpoint.

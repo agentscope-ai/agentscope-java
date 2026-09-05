@@ -35,12 +35,12 @@ func (m *managedRecorder) PostSessionWakeEvent(_ context.Context, _ string, _ st
 func (m *managedRecorder) AbortManagedSession(context.Context, string, string) error { return nil }
 
 type externalRecorder struct {
-	tenant, namespace, instance, session, command string
-	payload                                       []byte
+	tenant, namespace, agent, instance, session, command string
+	payload                                              []byte
 }
 
-func (e *externalRecorder) SendExecutionAttemptCommand(tenant, namespace, instanceID, sessionID, command string, params []byte) error {
-	e.tenant, e.namespace, e.instance, e.session, e.command = tenant, namespace, instanceID, sessionID, command
+func (e *externalRecorder) SendExecutionAttemptCommand(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error {
+	e.tenant, e.namespace, e.agent, e.instance, e.session, e.command = tenant, namespace, agentID, instanceID, sessionID, command
 	e.payload = append([]byte(nil), params...)
 	return nil
 }
@@ -135,7 +135,8 @@ func TestResolverDispatchesSameAgentTaskContractToEveryBackend(t *testing.T) {
 		}
 		if result.AgentInstanceID == nil || *result.AgentInstanceID != instance.ID || result.TaskToken == "" ||
 			result.Execution == nil || result.Execution.BackendKind != controlmodel.DataPlaneExternalApplication ||
-			external.tenant != task.Tenant || external.namespace != task.Namespace || external.instance != instance.InstanceKey || external.command != commandAttemptDispatch {
+			external.tenant != task.Tenant || external.namespace != task.Namespace || external.agent != task.AgentRef ||
+			external.instance != instance.InstanceKey || external.command != commandAttemptDispatch {
 			t.Fatalf("external dispatch: result=%+v command=%+v", result, external)
 		}
 		var payload map[string]any
