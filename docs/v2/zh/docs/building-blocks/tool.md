@@ -225,12 +225,27 @@ public class HumanApprovalTool extends ToolBase {
 
 | 参数类型 | 注入来源 |
 |---------|---------|
-| `ToolEmitter` | 流式中间产物 emitter（无配置时为 no-op） |
+| `ToolEmitter` | 流式中间产物 emitter 和工具调用上下文（无配置时为 no-op） |
 | `Agent` | 当前 agent 实例 |
 | `AgentState` | 当前 call 的 per-session 状态（通过 `RuntimeContext.getAgentState()` 获取） |
 | `RuntimeContext` | 当前 per-call 上下文 |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()`（兼容层，已 deprecated） |
 | 其它用户自定义 POJO 类型 | `runtimeContext.get(ParamType.class)` —— 即调用方在 `RuntimeContext.builder().put(ParamType.class, value)` 注册的对象 |
+
+注入的 `ToolEmitter` 会提供当前工具调用 ID，可用于把进度与前端状态或其它共享存储关联起来：
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    String toolCallId = emitter.getToolCallId();
+    if (toolCallId != null) {
+        progressByToolCall.put(toolCallId, "running");
+    }
+    return "done";
+}
+```
+
+当 emitter 没有工具调用上下文时（例如 no-op 或自定义 emitter），`getToolCallId()` 返回 `null`。
 
 「用户自定义 POJO」的判定：参数没有 `@ToolParam`、不是基本类型、不是 `ContentBlock` / `Msg`、不在 `java.*` / `javax.*` 包下。其余参数（带 `@ToolParam` 或属于上述兜底类型）从 LLM 提供的 JSON 输入按名称取值。
 

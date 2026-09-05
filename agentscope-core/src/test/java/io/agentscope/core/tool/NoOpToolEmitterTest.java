@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import io.agentscope.core.message.ToolResultBlock;
@@ -39,6 +40,12 @@ class NoOpToolEmitterTest {
     void testImplementsToolEmitter() {
         ToolEmitter emitter = NoOpToolEmitter.INSTANCE;
         assertNotNull(emitter);
+    }
+
+    @Test
+    @DisplayName("getToolCallId() should return null when no tool call is available")
+    void testGetToolCallId() {
+        assertNull(NoOpToolEmitter.INSTANCE.getToolCallId());
     }
 
     @Test
