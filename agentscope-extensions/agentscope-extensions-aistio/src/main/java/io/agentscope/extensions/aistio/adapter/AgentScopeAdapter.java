@@ -169,6 +169,7 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         caps.add(CAP_TASK_QUERY);
         caps.add(CAP_PLAN_MODE);
         caps.add(CAP_EXPORT_TRANSCRIPT);
+        caps.add(CAP_CONVERSATION_INBOUND);
         if (runtimeSource != null) {
             caps.add(CAP_SUBAGENT_INVENTORY);
             caps.add(CAP_WORKSPACE_INVENTORY);

@@ -133,7 +133,39 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 
 默认账号和开发密钥只能用于本地环境。
 
-### 2. 运行第一个 Session
+### 2. 连接本机 Coding Agent
+
+`agentscope` CLI 会自动发现 Codex、Claude Code 和 Qoder，签发仅限当前 Host 的运行凭证，
+并在后台启动 Runtime Host。开发环境可直接从源码安装两个相邻的可执行文件：
+
+```bash
+cd aistio
+make install-runtime-cli PREFIX="$HOME/.local"
+agentscope connect
+```
+
+`connect` 会自动发现本地服务并提示输入 AgentScope 用户名和密码；也可以为自动化设置
+`AGENTSCOPE_API_TOKEN`，或使用控制台生成的 `AGENTSCOPE_RUNTIME_TOKEN`。凭证、稳定 Host ID、
+PID 与日志保存在 `~/.agentscope/runtime-host/`，权限仅限当前用户。日常运维只需要：
+
+```bash
+agentscope runtime status
+agentscope runtime logs -f
+agentscope runtime restart
+agentscope runtime stop
+agentscope runtime probe
+```
+
+控制面会自动创建默认 Runtime Pool 和 `auto-<provider>` Runtime Profile；Host 在线后，创建
+Agent 时直接选择 `Codex (<host-key>)` 等本地 Runtime，无需手工填写 daemon 参数。
+
+执行任务时，Runtime Host 会同时为 Coding Agent 注入 `agentscope-collaboration` MCP 和
+task-scoped `agentscope` CLI。Agent 可以用 `agentscope task context` 读取当前任务，使用
+`agentscope task progress/respond --content-file ...` 写回进展或结果，通过
+`agentscope task child`、`agentscope task run graph/replan/node-complete` 参与 Team 协作。
+这些命令只持有当前 Attempt 的短期凭据，不能访问其他 Issue，也不会继承用户或 Runtime Host Token。
+
+### 3. 运行第一个 Session
 
 1. 打开 http://localhost:18080 并登录（`admin` / `admin`）。
 2. 在 **Managed Agents** 中创建 Agent。
@@ -147,7 +179,7 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 把 **DeepSeek Harness** 作为独立运行时接入时，使用 `agentscope-service/aistio/sdk/dsh`（`@agentscope/dsh-aistio`）Cordis 插件：向 aistiod 自注册、提供 `/agentscope/*` 契约、接收 AgentTask，并与其他 runtime 使用同一 Issue/Comment/Artifact 协议。安装与配置见该目录 [README_zh.md](aistio/sdk/dsh/README_zh.md)。
 
 
-### 3. 停止环境
+### 4. 停止环境
 
 ```bash
 scripts/dev-down.sh

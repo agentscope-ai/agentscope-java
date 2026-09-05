@@ -9,7 +9,7 @@ import (
 
 func teamCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "team", Short: "Manage persistent Agent teams"}
-	cmd.AddCommand(teamApplyCmd(), teamListCmd(), teamGetCmd(), teamMembersCmd())
+	cmd.AddCommand(teamApplyCmd(), teamListCmd(), teamGetCmd(), teamMembersCmd(), teamCurrentCmd())
 	return cmd
 }
 func teamApplyCmd() *cobra.Command {

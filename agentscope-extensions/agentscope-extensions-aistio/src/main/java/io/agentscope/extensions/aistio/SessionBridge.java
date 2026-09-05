@@ -16,6 +16,9 @@
 package io.agentscope.extensions.aistio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.aistio.proto.ConversationTurnCommand;
+import io.agentscope.aistio.proto.ConversationTurnReport;
+import io.agentscope.aistio.proto.EventReportAck;
 import io.agentscope.aistio.proto.ExecutionAttemptCommand;
 import io.agentscope.aistio.proto.ExecutionAttemptReport;
 import io.agentscope.aistio.proto.SessionEventMsg;
@@ -42,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -55,7 +59,7 @@ import reactor.core.publisher.Mono;
  * The reporting engine that sits between a framework adapter and the aistio control plane.
  *
  * <p>It owns everything the adapter should not care about: sequence numbering, the Level-2 event
- * buffer, incremental context tracking, Level-1 aggregation, debounced Level-4 pushes, inventory,
+ * durable event outbox, incremental context tracking, Level-1 aggregation, debounced Level-4 pushes, inventory,
  * command dispatch from both channels, and the in-process contract server.
  *
  * <p><b>Bypass principle:</b> every reporting path swallows its own failures. Nothing here may
@@ -84,7 +88,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     private static final long LEVEL1_INTERVAL_MS = 10_000L;
     private static final long EVENT_FLUSH_INTERVAL_MS = 5_000L;
     private static final int EVENT_BATCH_SIZE = 20;
-    private static final int EVENT_BUFFER_MAX = 1_000;
+    private static final long EVENT_ACK_TIMEOUT_MS = 15_000L;
     private static final long CONTEXT_PUSH_COOLDOWN_MS = 30_000L;
     private static final long INVENTORY_INTERVAL_MS = 30_000L;
     private static final long ATTEMPT_HEARTBEAT_INTERVAL_MS = 15_000L;
@@ -108,7 +112,10 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
 
     private final Map<String, Integer> sequences = new ConcurrentHashMap<>();
     private final Map<String, Long> lastContextPush = new ConcurrentHashMap<>();
-    private final List<SessionEvent> eventBuffer = new ArrayList<>();
+    private final EventJournal eventJournal;
+
+    private String inFlightEventReportId;
+    private long inFlightEventReportAt;
 
     private FrameworkAdapter adapter;
     private GrpcTransport grpc;
@@ -119,6 +126,19 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
 
     public SessionBridge(AistioConfig config) {
         this.config = config;
+        EventJournal journal = null;
+        if (config.enableEvents() && config.startGrpc()) {
+            try {
+                journal = new EventJournal(config);
+                sequences.putAll(journal.latestSequences());
+            } catch (IOException e) {
+                LOG.log(
+                        Level.SEVERE,
+                        "aistio: event journal cannot be opened; event reporting is disabled",
+                        e);
+            }
+        }
+        eventJournal = journal;
     }
 
     // ─── adapter mounting ───
@@ -245,6 +265,8 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             grpc.setSessionCommandHandler(
                     (sessionId, command, params) -> dispatchCommand(sessionId, command, params));
             grpc.setExecutionAttemptHandler(this::onExecutionAttempt);
+            grpc.setConversationTurnHandler(this::onConversationTurn);
+            grpc.setEventAckHandler(this::onEventAck);
             if (httpRegister != null) {
                 httpRegister.setIdentityListener(
                         identity ->
@@ -328,7 +350,7 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
 
     public Set<String> capabilities() {
         Set<String> caps = new TreeSet<>(Set.of("session-reporting", "context-reporting"));
-        if (config.enableEvents()) {
+        if (eventJournal != null) {
             caps.add("event-reporting");
         }
         if (adapter != null) {
@@ -369,15 +391,15 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                 busyFlags.put(sessionId, false);
             }
 
-            if (config.enableEvents()) {
-                eventBuffer.add(event);
-                int overflow = eventBuffer.size() - EVENT_BUFFER_MAX;
-                if (overflow > 0) {
-                    // Bounded queue: drop the oldest Level-2 events so a long disconnect
-                    // cannot grow the agent's heap without limit.
-                    eventBuffer.subList(0, overflow).clear();
+            if (eventJournal != null) {
+                try {
+                    eventJournal.append(event.toProto());
+                } catch (IOException e) {
+                    // Do not break the Agent's conversation, but make the durability failure loud.
+                    // The sequence is intentionally not reused.
+                    LOG.log(Level.SEVERE, "aistio: failed to persist event journal", e);
                 }
-                flushNeeded = eventBuffer.size() >= EVENT_BATCH_SIZE;
+                flushNeeded = eventJournal.size() >= EVENT_BATCH_SIZE;
             } else {
                 flushNeeded = false;
             }
@@ -521,22 +543,66 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
     // ─── Level 2 ───
 
     private void flushEvents() {
-        if (grpc == null) {
+        if (grpc == null || eventJournal == null) {
             return;
         }
-        List<SessionEvent> batch;
+        List<SessionEventMsg> payload;
+        String reportId;
         synchronized (lock) {
-            if (eventBuffer.isEmpty()) {
+            if (eventJournal.isEmpty()) {
                 return;
             }
-            batch = List.copyOf(eventBuffer);
-            eventBuffer.clear();
+            long now = System.currentTimeMillis();
+            if (inFlightEventReportId != null
+                    && now - inFlightEventReportAt < EVENT_ACK_TIMEOUT_MS) {
+                return;
+            }
+            reportId = UUID.randomUUID().toString();
+            payload = eventJournal.first(EVENT_BATCH_SIZE);
+            inFlightEventReportId = reportId;
+            inFlightEventReportAt = now;
         }
-        List<SessionEventMsg> payload = new ArrayList<>(batch.size());
-        for (SessionEvent e : batch) {
-            payload.add(e.toProto());
+        if (!grpc.reportEvents(reportId, payload)) {
+            synchronized (lock) {
+                if (reportId.equals(inFlightEventReportId)) {
+                    inFlightEventReportId = null;
+                }
+            }
         }
-        grpc.reportEvents(payload);
+    }
+
+    private void onEventAck(EventReportAck ack) {
+        boolean hasMore;
+        synchronized (lock) {
+            if (ack == null
+                    || inFlightEventReportId == null
+                    || !inFlightEventReportId.equals(ack.getReportId())) {
+                return;
+            }
+            Map<String, Integer> committed = new LinkedHashMap<>();
+            ack.getCommittedList()
+                    .forEach(
+                            cursor ->
+                                    committed.merge(
+                                            cursor.getSessionId(),
+                                            cursor.getCommittedSeq(),
+                                            Math::max));
+            try {
+                eventJournal.acknowledge(committed);
+            } catch (IOException e) {
+                LOG.log(Level.SEVERE, "aistio: failed to checkpoint event acknowledgement", e);
+                // Keep the batch pending. Replaying it is safe because the control plane is
+                // idempotent on (session, seq).
+            }
+            inFlightEventReportId = null;
+            hasMore = !eventJournal.isEmpty();
+        }
+        if (!ack.getError().isEmpty()) {
+            LOG.log(Level.FINE, "aistio: event report partially committed: {0}", ack.getError());
+        }
+        if (hasMore && ack.getError().isEmpty()) {
+            flushEvents();
+        }
     }
 
     // ─── Level 4 ───
@@ -699,6 +765,67 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             throw new UnsupportedOperationException("no framework adapter attached");
         }
         adapter.handleCommand(sessionId, command, params).block(ADAPTER_CALL_TIMEOUT);
+    }
+
+    private void onConversationTurn(ConversationTurnCommand command) {
+        if (grpc == null || adapter == null) {
+            return;
+        }
+        reportConversationTurn(command, "accepted", null, null);
+        String content;
+        try {
+            content = readNotice(command.getInput().toByteArray());
+            if (content == null || content.isBlank()) {
+                throw new IllegalArgumentException("conversation input.message is required");
+            }
+        } catch (RuntimeException e) {
+            reportConversationTurn(command, "failed", null, e);
+            return;
+        }
+        long remainingMillis = command.getDeadline() - System.currentTimeMillis();
+        if (remainingMillis <= 0) {
+            reportConversationTurn(
+                    command,
+                    "failed",
+                    null,
+                    new IllegalStateException("conversation deadline expired"));
+            return;
+        }
+        reportConversationTurn(command, "started", null, null);
+        adapter.injectUserMessage(command.getSessionId(), content)
+                .timeout(Duration.ofMillis(remainingMillis))
+                .subscribe(
+                        ignored -> {},
+                        error -> reportConversationTurn(command, "failed", null, error),
+                        () ->
+                                reportConversationTurn(
+                                        command, "completed", "{\"accepted\":true}", null));
+    }
+
+    private void reportConversationTurn(
+            ConversationTurnCommand command, String action, String payload, Throwable error) {
+        if (grpc == null) {
+            return;
+        }
+        ConversationTurnReport.Builder report =
+                ConversationTurnReport.newBuilder()
+                        .setInvocationId(command.getInvocationId())
+                        .setConversationId(command.getConversationId())
+                        .setTurnId(command.getTurnId())
+                        .setSessionId(command.getSessionId())
+                        .setGeneration(command.getGeneration())
+                        .setAction(action);
+        if (payload != null) {
+            report.setPayload(com.google.protobuf.ByteString.copyFromUtf8(payload));
+        }
+        if (error != null) {
+            String message =
+                    error.getMessage() == null
+                            ? error.getClass().getSimpleName()
+                            : error.getMessage();
+            report.setErrorCode("conversation_failed").setErrorMessage(message);
+        }
+        grpc.reportConversationTurn(report.build());
     }
 
     // ─── ContractProvider ───
@@ -999,6 +1126,9 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         try {
             var root = JSON.readTree(payload);
             String content = root.path("content").asText("");
+            if (content.isEmpty()) {
+                content = root.path("message").asText("");
+            }
             return content.isEmpty() ? root.toString() : content;
         } catch (IOException e) {
             return new String(payload, StandardCharsets.UTF_8);

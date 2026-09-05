@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
@@ -8,9 +11,101 @@ import (
 )
 
 func runtimeCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "runtime", Short: "Manage Runtime Hosts, profiles, and pools"}
-	cmd.AddCommand(runtimeHostCmd(), runtimeProfileCmd(), runtimePoolCmd())
+	cmd := &cobra.Command{Use: "runtime", Short: "Manage the local runtime daemon and control-plane runtime resources"}
+	cmd.AddCommand(
+		localRuntimeStartCmd(),
+		localRuntimeStopCmd(),
+		localRuntimeRestartCmd(),
+		localRuntimeStatusCmd(),
+		localRuntimeLogsCmd(),
+		localRuntimeProbeCmd(),
+		runtimeDiagnoseCmd(),
+		runtimeHostCmd(),
+		runtimeProfileCmd(),
+		runtimePoolCmd(),
+	)
 	return cmd
+}
+
+func runtimeDiagnoseCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "diagnose ATTEMPT_ID",
+		Short: "Collect an ExecutionAttempt, its Run graph, and durable provider events",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			attemptID := url.PathEscape(args[0])
+			var attemptResponse struct {
+				Attempt struct {
+					ID                string          `json:"id"`
+					AgentTaskID       string          `json:"agentTaskId"`
+					RunID             string          `json:"runId"`
+					NodeID            string          `json:"nodeId"`
+					State             string          `json:"state"`
+					BackendKind       string          `json:"backendKind"`
+					RuntimeProfile    string          `json:"runtimeProfileName"`
+					RuntimePool       string          `json:"runtimePoolName"`
+					HostID            string          `json:"hostId"`
+					ProviderSessionID string          `json:"providerSessionId"`
+					WorkspaceKey      string          `json:"workspaceKey"`
+					Result            json.RawMessage `json:"result"`
+					FailureCode       string          `json:"failureCode"`
+					FailureMessage    string          `json:"failureMessage"`
+					CreatedAt         string          `json:"createdAt"`
+					StartedAt         string          `json:"startedAt"`
+					CompletedAt       string          `json:"completedAt"`
+				} `json:"attempt"`
+			}
+			if err := runtimeGetJSON("/api/v1/execution-attempts/"+attemptID, &attemptResponse); err != nil {
+				return err
+			}
+			if attemptResponse.Attempt.RunID == "" {
+				return fmt.Errorf("execution attempt response has no runId")
+			}
+			var graph, events any
+			runID := url.PathEscape(attemptResponse.Attempt.RunID)
+			if err := runtimeGetJSON("/api/v1/orchestration-runs/"+runID+"/graph", &graph); err != nil {
+				return err
+			}
+			if err := runtimeGetJSON("/api/v1/orchestration-runs/"+runID+"/events?limit=500", &events); err != nil {
+				return err
+			}
+			recommendation := "Inspect the provider events and daemon logs with `agentscope runtime logs -f`."
+			switch attemptResponse.Attempt.FailureCode {
+			case "provider_permission_denied":
+				recommendation = "The provider refused a required tool. Check the Agent hosted Settings allowlist and the resolved RuntimeProfile."
+			case "provider_unavailable":
+				recommendation = "Run `agentscope runtime probe` and reconnect so the provider is detected and registered."
+			case "workspace_prepare_failed", "definition_materialize_failed":
+				recommendation = "Check the workspace root permissions and daemon logs for this Attempt ID."
+			}
+			output := map[string]any{
+				"attemptId": args[0], "attempt": attemptResponse.Attempt,
+				"graph": graph, "events": events, "recommendation": recommendation,
+			}
+			encoded, _ := json.MarshalIndent(output, "", "  ")
+			fmt.Println(string(encoded))
+			return nil
+		},
+	}
+}
+
+func runtimeGetJSON(path string, target any) error {
+	response, err := doAPI(http.MethodGet, path, nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 16<<20))
+	if err != nil {
+		return err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("request %s failed (%d): %s", path, response.StatusCode, body)
+	}
+	if err := json.Unmarshal(body, target); err != nil {
+		return fmt.Errorf("decode %s: %w", path, err)
+	}
+	return nil
 }
 func runtimeHostCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "host"}

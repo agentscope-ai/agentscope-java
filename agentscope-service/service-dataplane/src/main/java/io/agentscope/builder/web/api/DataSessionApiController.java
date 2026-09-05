@@ -44,6 +44,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -200,6 +201,7 @@ public class DataSessionApiController {
             @PathVariable("id") String id,
             @RequestParam(value = "after", required = false) Long after,
             @RequestParam(value = "event_deltas", required = false) List<String> eventDeltas,
+            @RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
         if (eventDeltas != null) {
@@ -221,7 +223,8 @@ public class DataSessionApiController {
             }
         }
 
-        long afterSeq = after != null ? after : 0L;
+        long afterSeq =
+                Math.max(after != null ? after : 0L, lastEventId != null ? lastEventId : 0L);
         return Mono.fromCallable(
                         () -> {
                             sessionService.get(userId, id);
@@ -343,7 +346,11 @@ public class DataSessionApiController {
     private ServerSentEvent<String> toSse(SessionEventDto dto) {
         try {
             String json = objectMapper.writeValueAsString(dto);
-            return ServerSentEvent.<String>builder().event(dto.type()).data(json).build();
+            return ServerSentEvent.<String>builder()
+                    .id(dto.seq() > 0 ? String.valueOf(dto.seq()) : null)
+                    .event(dto.type())
+                    .data(json)
+                    .build();
         } catch (JsonProcessingException ex) {
             return ServerSentEvent.<String>builder().event("error").data("{}").build();
         }

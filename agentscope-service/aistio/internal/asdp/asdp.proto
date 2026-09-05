@@ -40,6 +40,7 @@ message Upstream {
     EventReport      event_report   = 15;  // Level 2 event stream
     ContextReport    context_report = 16;  // Level 4 effective context
     InventoryReport  inventory      = 17;  // instance inventory (subagents / workspaces / health)
+    ConversationTurnReport conversation_turn = 18;
   }
 }
 
@@ -130,6 +131,24 @@ message InstanceHealth {
 // every 20 events). Written by the control plane into the session_events table.
 message EventReport {
   repeated SessionEventMsg events = 1;
+  // Stable across retries. The control plane acknowledges this report only
+  // after every returned cursor has been durably committed.
+  string report_id = 2;
+}
+
+// EventReportAck is the durable commit acknowledgement for an EventReport.
+// A cursor is emitted only through the highest contiguous sequence committed
+// for that session in this report. Missing cursors remain pending and are
+// retransmitted by the data plane.
+message EventReportAck {
+  string report_id = 1;
+  repeated SessionEventCursor committed = 2;
+  string error = 3;
+}
+
+message SessionEventCursor {
+  string session_id = 1;
+  int32 committed_seq = 2;
 }
 
 message SessionEventMsg {
@@ -138,10 +157,10 @@ message SessionEventMsg {
   string event_type     = 3;   // session_start | message | tool_call | tool_result | session_end | compaction
   int64  occurred_at    = 4;   // unix milliseconds
   string role           = 5;   // user | assistant | system | tool
-  string content        = 6;   // summary (recommended <= 500 chars), not full text
+  string content        = 6;   // complete message/event text for durable replay
   string tool_name      = 7;
-  bytes  tool_input     = 8;   // JSON, may be truncated
-  string tool_output    = 9;   // summary
+  bytes  tool_input     = 8;   // JSON
+  string tool_output    = 9;
   int32  tokens_in      = 10;
   int32  tokens_out     = 11;
   int32  duration_ms    = 12;
@@ -202,6 +221,8 @@ message Downstream {
     SessionCommand   session_cmd = 12;
     ExecutionAttemptCommand execution_attempt = 13;
     Heartbeat        heartbeat   = 14;
+    ConversationTurnCommand conversation_turn = 15;
+    EventReportAck event_ack = 16;
   }
 }
 
@@ -237,6 +258,36 @@ message SessionCommand {
   string session_id = 1;
   string command    = 2;  // compress | terminate | abort | undo | redo | ...
   bytes  params     = 3;
+}
+
+// ConversationTurnCommand is the explicit online invocation protocol. It is
+// separate from SessionCommand because user turns require public invocation
+// identity, fencing, acknowledgement, streaming, and a final result.
+message ConversationTurnCommand {
+  string invocation_id = 1;
+  string conversation_id = 2;
+  string turn_id = 3;
+  string session_id = 4;
+  string agent_id = 5;
+  string binding_id = 6;
+  string instance_id = 7;
+  int64 generation = 8;
+  bytes input = 9;
+  int64 deadline = 10;
+  string correlation_id = 11;
+}
+
+message ConversationTurnReport {
+  string invocation_id = 1;
+  string conversation_id = 2;
+  string turn_id = 3;
+  string session_id = 4;
+  int64 generation = 5;
+  string action = 6; // accepted | started | delta | completed | failed | cancelled
+  int64 sequence = 7;
+  bytes payload = 8;
+  string error_code = 9;
+  string error_message = 10;
 }
 
 message ExecutionAttemptCommand {

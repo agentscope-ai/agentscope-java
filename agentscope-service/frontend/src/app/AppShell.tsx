@@ -8,11 +8,9 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import {
   Activity,
   Bot,
-  Boxes,
   BriefcaseBusiness,
   CircleGauge,
   ClipboardCheck,
-  Cpu,
   Database,
   FileStack,
   LogOut,
@@ -21,7 +19,6 @@ import {
   Network,
   PlayCircle,
   Search,
-  Server,
   Settings2,
   ShieldCheck,
   UsersRound,
@@ -39,6 +36,8 @@ type NavItem = {
   icon: ComponentType<{ className?: string }>;
   end?: boolean;
   admin?: boolean;
+  operator?: boolean;
+  write?: boolean;
 };
 
 type NavGroup = { label?: string; items: NavItem[] };
@@ -51,8 +50,8 @@ const workNavigation: NavGroup[] = [
     label: 'Work',
     items: [
       { to: '/work/issues', label: 'Issues', icon: FileStack },
-      { to: '/work/approvals', label: 'Inbox & approvals', icon: ClipboardCheck },
-      { to: '/work/automations', label: 'Schedules / automations', icon: BriefcaseBusiness },
+      { to: '/work/approvals', label: 'Approvals', icon: ClipboardCheck },
+      { to: '/work/automations', label: 'Automations', icon: BriefcaseBusiness },
       { to: '/work/activity', label: 'Activity', icon: Activity },
     ],
   },
@@ -60,51 +59,30 @@ const workNavigation: NavGroup[] = [
 
 const agentCenterNavigation: NavGroup[] = [
   {
-    label: 'Catalog & design',
+    label: 'Design',
     items: [
       { to: '/agent-center/agents', label: 'Agents', icon: Bot },
       { to: '/agent-center/teams', label: 'Teams', icon: UsersRound },
       { to: '/agent-center/workflows', label: 'Workflows', icon: Network },
-      { to: '/agent-center/endpoints', label: 'Applications / endpoints', icon: PlayCircle },
-      { to: '/agent-center/entrypoints', label: 'Entrypoints / channels', icon: Network },
+      { to: '/agent-center/endpoints', label: 'Endpoints', icon: PlayCircle },
+      { to: '/agent-center/playground', label: 'Playground', icon: PlayCircle, write: true },
+      { to: '/agent-center/entrypoints', label: 'Channels', icon: Network },
+    ],
+  },
+  {
+    label: 'Activity',
+    items: [
+      { to: '/agent-center/activity/executions', label: 'Executions', icon: PlayCircle, operator: true },
+      { to: '/agent-center/activity/sessions', label: 'Sessions', icon: MessageSquare, operator: true },
     ],
   },
   {
     label: 'Resources',
     items: [
       { to: '/agent-center/workspaces', label: 'Workspaces', icon: FileStack },
-      { to: '/agent-center/environments', label: 'Skills & tools', icon: Settings2 },
+      { to: '/agent-center/environments', label: 'Environments', icon: Settings2 },
       { to: '/agent-center/memory', label: 'Memory', icon: Database },
       { to: '/agent-center/vaults', label: 'Vault', icon: ShieldCheck },
-    ],
-  },
-];
-
-const operationsNavigation: NavGroup[] = [
-  {
-    items: [{ to: '/operations/overview', label: 'Overview', icon: CircleGauge, end: true }],
-  },
-  {
-    label: 'Fleet',
-    items: [
-      { to: '/operations/instances', label: 'Agent instances / fleet', icon: Boxes },
-      { to: '/operations/runtime/hosts', label: 'Runtime hosts', icon: Server },
-      { to: '/operations/runtime/profiles', label: 'Profiles / pools', icon: Cpu },
-    ],
-  },
-  {
-    label: 'Execution',
-    items: [
-      { to: '/operations/sessions', label: 'Sessions', icon: MessageSquare },
-      { to: '/operations/runs', label: 'Runs', icon: PlayCircle },
-      { to: '/operations/tasks', label: 'AgentTasks / attempts', icon: Activity },
-    ],
-  },
-  {
-    label: 'Governance',
-    items: [
-      { to: '/operations/runtime/policy', label: 'Usage / budget / policy', icon: ShieldCheck },
-      { to: '/operations/governance', label: 'Audit / dead letters', icon: ClipboardCheck },
     ],
   },
 ];
@@ -112,20 +90,24 @@ const operationsNavigation: NavGroup[] = [
 const routeLabels: Array<[string, string, string]> = [
   ['/work/overview', 'Work Hub', 'Overview'],
   ['/work/issues', 'Work Hub', 'Issues'],
-  ['/work/approvals', 'Work Hub', 'Inbox & approvals'],
-  ['/work/automations', 'Work Hub', 'Schedules / automations'],
+  ['/work/approvals', 'Work Hub', 'Approvals'],
+  ['/work/automations', 'Work Hub', 'Automations'],
   ['/work/activity', 'Work Hub', 'Activity'],
   ['/agent-center/agents', 'Agent Center', 'Agents'],
   ['/agent-center/teams', 'Agent Center', 'Teams'],
   ['/agent-center/workflows', 'Agent Center', 'Workflows'],
-  ['/agent-center/endpoints', 'Agent Center', 'Applications / endpoints'],
-  ['/operations/overview', 'Operations', 'Overview'],
-  ['/operations/instances', 'Operations', 'Agent instances'],
-  ['/operations/sessions', 'Operations', 'Sessions'],
-  ['/operations/runs', 'Operations', 'Runs'],
-  ['/operations/tasks', 'Operations', 'AgentTasks / attempts'],
-  ['/operations/runtime', 'Operations', 'Runtime fleet'],
-  ['/operations/governance', 'Operations', 'Audit / dead letters'],
+  ['/agent-center/endpoints', 'Agent Center', 'Endpoints'],
+  ['/agent-center/playground', 'Agent Center', 'Playground'],
+  ['/agent-center/activity/executions', 'Agent Center', 'Executions'],
+  ['/agent-center/activity/sessions', 'Agent Center', 'Sessions'],
+  ['/agent-center/activity/tasks', 'Agent Center', 'Agent step diagnostics'],
+  ['/agent-center/entrypoints', 'Agent Center', 'Channels'],
+  ['/agent-center/workspaces', 'Agent Center', 'Workspaces'],
+  ['/agent-center/environments', 'Agent Center', 'Environments'],
+  ['/agent-center/memory', 'Agent Center', 'Memory'],
+  ['/agent-center/vaults', 'Agent Center', 'Vault'],
+  ['/managed/profile', 'Console', 'Profile'],
+  ['/managed/admin/users', 'Console', 'Users'],
 ];
 
 function matches(pathname: string, to: string, end?: boolean): boolean {
@@ -199,15 +181,10 @@ export default function AppShell() {
   const roles = getRoles().map((role) => role.toLowerCase());
   const scope = useControlPlaneScope();
 	useCollaborationEvents(scope.tenant, scope.namespace);
-  const area = location.pathname.startsWith('/agent-center')
-    ? 'agent-center'
-    : location.pathname.startsWith('/operations') ? 'operations' : 'work';
+  const area = location.pathname.startsWith('/agent-center') ? 'agent-center' : 'work';
   const canAgentCenter = admin || roles.includes('agent_developer') || roles.includes('operator');
-  const canOperations = admin || roles.includes('operator');
-  const navigation = area === 'agent-center'
-    ? agentCenterNavigation
-    : area === 'operations' ? operationsNavigation : workNavigation;
-  const home = area === 'agent-center' ? '/agent-center/agents' : area === 'operations' ? '/operations/overview' : '/work/overview';
+  const navigation = area === 'agent-center' ? agentCenterNavigation : workNavigation;
+  const home = area === 'agent-center' ? '/agent-center/agents' : '/work/overview';
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const openCommand = useCallback(() => {
@@ -232,7 +209,7 @@ export default function AppShell() {
             <img src="/logo.svg" alt="AgentScope" className="h-9 w-9 shrink-0" width={36} height={36} />
             <div className="min-w-0">
               <div className="text-lg font-bold tracking-tight text-foreground">AgentScope Service</div>
-              <div className="truncate text-xs text-muted-foreground">{area === 'work' ? 'Work Hub' : area === 'agent-center' ? 'Agent Center' : 'Operations'}</div>
+              <div className="truncate text-xs text-muted-foreground">{area === 'work' ? 'Work Hub' : 'Agent Center'}</div>
             </div>
           </Link>
         </div>
@@ -247,7 +224,7 @@ export default function AppShell() {
                   {group.label}
                 </div>
               )}
-              {group.items.filter((item) => !item.admin || admin).map((item) => (
+              {group.items.filter((item) => (!item.admin || admin) && (!item.operator || admin || roles.includes('operator')) && (!item.write || admin || roles.includes('agent_developer'))).map((item) => (
                 <SidebarLink key={item.to} item={item} />
               ))}
             </div>
@@ -289,11 +266,6 @@ export default function AppShell() {
                 aria-current={area === 'agent-center' ? 'page' : undefined}
                 className={cn('rounded-md px-3 py-1.5 transition-colors', area === 'agent-center' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
               >Agent Center</Link>}
-              {canOperations && <Link
-                to="/operations/overview"
-                aria-current={area === 'operations' ? 'page' : undefined}
-                className={cn('rounded-md px-3 py-1.5 transition-colors', area === 'operations' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
-              >Operations</Link>}
             </nav>
             <div className="hidden min-w-0 items-center gap-2 text-sm xl:flex">
               <span className="text-muted-foreground">{context?.[1] || 'Console'}</span>
@@ -306,7 +278,7 @@ export default function AppShell() {
             <div className="hidden font-mono text-xs text-muted-foreground md:block">{scope.tenant} / {scope.namespace}</div>
           </div>
         </header>
-        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-auto bg-canvas focus:outline-none">
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-auto bg-white focus:outline-none">
           <Outlet />
         </main>
       </div>

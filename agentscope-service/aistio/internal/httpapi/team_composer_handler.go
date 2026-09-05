@@ -6,6 +6,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -136,7 +138,7 @@ func (s *Server) createTeamProposal(c *gin.Context) {
 		return
 	}
 	for i := range members {
-		members[i].Role = "worker"
+		members[i].Role = fmt.Sprintf("worker-%d", i)
 		if i == 0 {
 			members[i].Role = "leader"
 		}
@@ -209,39 +211,38 @@ func (s *Server) confirmTeamProposalInternal(ctx context.Context, proposal *cont
 	if err != nil {
 		return nil, nil, err
 	}
-	snapshot, _ := json.Marshal(gin.H{"origin": "dynamic", "proposalId": proposal.ID, "members": proposal.Members, "requirements": json.RawMessage(proposal.Requirements)})
-	if _, err = s.store.Orchestration().PutTeamSnapshot(ctx, &controlmodel.RunTeamSnapshot{RunID: run.ID, TeamID: proposal.ID, Tenant: proposal.Tenant, Namespace: proposal.Namespace, Snapshot: snapshot}); err != nil {
+	if len(proposal.Members) == 0 {
+		return nil, nil, fmt.Errorf("Team proposal has no members")
+	}
+	var requirements teamRequirements
+	_ = json.Unmarshal(proposal.Requirements, &requirements)
+	dynamicTeam := controlmodel.CollaborationTeam{ID: proposal.ID, Tenant: proposal.Tenant,
+		Namespace: proposal.Namespace, Name: "Dynamic Team", LeaderAgentRef: proposal.Members[0].AgentID.String(),
+		Status: controlmodel.TeamActive,
+		Policy: controlmodel.TeamPolicy{MaxActiveTasks: int32(requirements.MaxMembers), MaxFanout: int32(requirements.MaxMembers),
+			MaxHops: 8, MaxChildDepth: 4, MaxChildIssues: 32, MaxIssueCostMicros: requirements.MaxBudgetMicros}}
+	for _, member := range proposal.Members[1:] {
+		dynamicTeam.Members = append(dynamicTeam.Members, controlmodel.CollaborationTeamMember{ID: uuid.NewSHA1(proposal.ID, []byte(member.AgentID.String()+":"+member.Role)),
+			TeamID: proposal.ID, Tenant: proposal.Tenant, Namespace: proposal.Namespace,
+			AgentRef: member.AgentID.String(), Role: member.Role})
+	}
+	leader := proposal.Members[0]
+	if _, _, err = orchestration.MaterializeTeamCoordinator(ctx, s.store, orchestration.MaterializeTeamRequest{
+		Run: run, IssueID: proposal.IssueID, Team: &dynamicTeam,
+		NodeID: uuid.NewSHA1(run.ID, []byte("team-coordinator")), NodeKey: "team-coordinator", Actor: actor,
+	}); err != nil {
 		return nil, nil, err
 	}
-	for i, member := range proposal.Members {
-		nodeID := uuid.NewSHA1(run.ID, []byte(member.AgentID.String()))
-		node, createErr := s.store.Orchestration().CreateNode(ctx, &controlmodel.RunNode{ID: nodeID, RunID: run.ID, Tenant: proposal.Tenant, Namespace: proposal.Namespace, NodeKey: "agent-" + member.AgentID.String(), Type: controlmodel.RunNodeAgent, Role: member.Role, IssueID: &proposal.IssueID, State: controlmodel.RunNodeReady, Iteration: 1})
-		if createErr == store.ErrConflict {
-			node, _ = s.store.Orchestration().GetNode(ctx, nodeID)
-		} else if createErr != nil {
-			return nil, nil, createErr
-		}
-		if node != nil {
-			existing, listErr := s.store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{RunID: run.ID, NodeID: node.ID, AgentRef: member.AgentID.String(), Limit: 1})
-			if listErr != nil {
-				return nil, nil, listErr
-			}
-			if len(existing) == 0 {
-				if _, createErr = s.store.Collaboration().CreateRunAgentTask(ctx, store.RunTaskRequest{RunID: run.ID, NodeID: node.ID, IssueID: proposal.IssueID, AgentRef: member.AgentID.String(), TeamID: &proposal.ID, TeamRole: member.Role, Leader: i == 0, Originator: actor}); createErr != nil {
-					return nil, nil, createErr
-				}
-			}
-		}
+	if err = (&orchestration.Engine{Store: s.store}).ReconcileRun(ctx, run.ID); err != nil {
+		return nil, nil, err
 	}
 	confirmed, err := s.store.TeamProposals().Confirm(ctx, proposal.ID, proposal.Version, run.ID)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, task := range proposal.Members {
-		items, _ := s.store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{RunID: run.ID, AgentRef: task.AgentID.String(), Status: controlmodel.AgentTaskQueued, Limit: 10})
-		for _, item := range items {
-			_ = s.DispatchAgentTask(ctx, item.ID)
-		}
+	items, _ := s.store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{RunID: run.ID, AgentRef: leader.AgentID.String(), Status: controlmodel.AgentTaskQueued, Limit: 10})
+	for _, item := range items {
+		_ = s.DispatchAgentTask(ctx, item.ID)
 	}
 	return confirmed, run, nil
 }

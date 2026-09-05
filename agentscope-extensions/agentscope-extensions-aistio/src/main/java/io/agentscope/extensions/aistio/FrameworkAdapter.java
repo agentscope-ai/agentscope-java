@@ -52,6 +52,7 @@ public interface FrameworkAdapter {
     String CAP_PLAN_MODE = "plan-mode";
     String CAP_AGENT_TASK = "agent-task";
     String CAP_EXPORT_TRANSCRIPT = "export-transcript";
+    String CAP_CONVERSATION_INBOUND = "conversation-inbound";
 
     String COMMAND_COMPRESS = "compress";
     String COMMAND_TERMINATE = "terminate";

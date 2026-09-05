@@ -67,6 +67,15 @@ func (r *collaborationRepo) CreateIssue(_ context.Context, issue *controlmodel.I
 	if copy.Priority == "" {
 		copy.Priority = "none"
 	}
+	if copy.Kind == "" {
+		copy.Kind = controlmodel.IssueKindUserWork
+	}
+	if copy.Visibility == "" {
+		copy.Visibility = controlmodel.IssueVisibilityWorkHub
+	}
+	if copy.CompletionPolicy == "" {
+		copy.CompletionPolicy = controlmodel.IssueCompletionReview
+	}
 	if len(copy.AcceptanceCriteria) == 0 {
 		copy.AcceptanceCriteria = json.RawMessage(`[]`)
 	}
@@ -76,20 +85,55 @@ func (r *collaborationRepo) CreateIssue(_ context.Context, issue *controlmodel.I
 	copy.Version = 1
 	copy.CreatedAt, copy.UpdatedAt = now, now
 	r.s.issues[copy.ID] = copy
-	if copy.AssigneeType == controlmodel.AssigneeTeam {
-		teamID, err := uuid.Parse(copy.AssigneeRef)
-		team := r.s.collabTeams[teamID]
-		if err != nil || team == nil || team.Tenant != copy.Tenant || team.Namespace != copy.Namespace || team.ArchivedAt != nil {
+	var parentTaskID *uuid.UUID
+	var sourceTeam *controlmodel.CollaborationTeam
+	if copy.SourceType == "agent-task" {
+		sourceID, err := uuid.Parse(copy.SourceRef)
+		source := r.s.agentTasks[sourceID]
+		if err != nil || source == nil || source.Tenant != copy.Tenant || source.Namespace != copy.Namespace {
 			delete(r.s.issues, copy.ID)
 			return nil, store.ErrNotFound
 		}
-		r.newTaskLocked(copy, team.LeaderAgentRef, "assignment", nil, &teamID, "leader", true, copy.Creator, nil, nil)
+		parentTaskID = &sourceID
+		if source.TeamID != nil {
+			snapshot := r.s.runSnapshots[source.OrchestrationRunID.String()+"\x00"+source.TeamID.String()]
+			if snapshot == nil || json.Unmarshal(snapshot.Snapshot, &sourceTeam) != nil || sourceTeam == nil {
+				delete(r.s.issues, copy.ID)
+				return nil, store.ErrConflict
+			}
+		}
+	}
+	if copy.AssigneeType == controlmodel.AssigneeTeam {
+		teamID, err := uuid.Parse(copy.AssigneeRef)
+		team := r.s.collabTeams[teamID]
+		if sourceTeam != nil && sourceTeam.ID == teamID {
+			team = sourceTeam
+		}
+		if err != nil || team == nil || team.Tenant != copy.Tenant || team.Namespace != copy.Namespace || team.Status != controlmodel.TeamActive || team.ArchivedAt != nil {
+			delete(r.s.issues, copy.ID)
+			return nil, store.ErrNotFound
+		}
+		r.newTaskLocked(copy, team.LeaderAgentRef, "assignment", nil, &teamID, "leader", true, copy.Creator, parentTaskID, nil)
 	} else if copy.AssigneeType == controlmodel.AssigneeAgent {
 		if copy.AssigneeRef == "" {
 			delete(r.s.issues, copy.ID)
 			return nil, store.ErrConflict
 		}
-		r.newTaskLocked(copy, copy.AssigneeRef, "assignment", nil, nil, "", false, copy.Creator, nil, nil)
+		var teamID *uuid.UUID
+		teamRole := ""
+		leader := false
+		if sourceTeam != nil {
+			role, member := snapshotTeamAgentRole(sourceTeam, copy.AssigneeRef)
+			if !member && !sourceTeam.Policy.AllowExternalDelegation {
+				delete(r.s.issues, copy.ID)
+				return nil, store.ErrConflict
+			}
+			if !member {
+				role = "external"
+			}
+			teamID, teamRole, leader = &sourceTeam.ID, role, role == "leader"
+		}
+		r.newTaskLocked(copy, copy.AssigneeRef, "assignment", nil, teamID, teamRole, leader, copy.Creator, parentTaskID, nil)
 	}
 	r.appendActivityLocked(&controlmodel.Activity{
 		Tenant: copy.Tenant, Namespace: copy.Namespace, IssueID: &copy.ID,
@@ -121,6 +165,9 @@ func (r *collaborationRepo) ListIssues(_ context.Context, filter store.IssueFilt
 			continue
 		}
 		if filter.Status != "" && issue.Status != filter.Status || filter.AssigneeType != "" && issue.AssigneeType != filter.AssigneeType || filter.AssigneeRef != "" && issue.AssigneeRef != filter.AssigneeRef {
+			continue
+		}
+		if filter.Kind != "" && issue.Kind != filter.Kind || filter.Visibility != "" && issue.Visibility != filter.Visibility {
 			continue
 		}
 		if filter.ParentID != nil && (issue.ParentIssueID == nil || *issue.ParentIssueID != *filter.ParentID) {
@@ -235,7 +282,7 @@ func (r *collaborationRepo) AssignIssue(_ context.Context, id uuid.UUID, expecte
 			return nil, nil, store.ErrNotFound
 		}
 		team := r.s.collabTeams[tid]
-		if team.Tenant != issue.Tenant || team.Namespace != issue.Namespace || team.ArchivedAt != nil {
+		if team.Tenant != issue.Tenant || team.Namespace != issue.Namespace || team.Status != controlmodel.TeamActive || team.ArchivedAt != nil {
 			return nil, nil, store.ErrNotFound
 		}
 		agentRef, teamID, leader = team.LeaderAgentRef, &tid, true
@@ -1043,10 +1090,10 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 		}
 	}
 	task.Status, task.Result, task.Version, task.CompletedAt = controlmodel.AgentTaskCompleted, cloneJSON(completion.Result), task.Version+1, &now
+	issue.Version, issue.UpdatedAt = issue.Version+1, now
 	if err := r.reconcileCompletedTaskLocked(task, attempt, completion.Result, created.Author, now); err != nil {
 		return nil, nil, err
 	}
-	issue.Version, issue.UpdatedAt = issue.Version+1, now
 	r.appendActivityLocked(&controlmodel.Activity{Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: &issue.ID, Actor: created.Author, Action: "agent_task.completed", ObjectType: "agent_task", ObjectRef: task.ID.String(), CausationID: task.CausationID, CorrelationID: task.CorrelationID})
 	r.enqueueEventLocked(issue.Tenant, "comment", created.ID, "comment.created.v1", map[string]any{"comment": created, "routes": routes}, "comment-created:"+created.ID.String())
 	r.enqueueEventLocked(task.Tenant, "agent-task", task.ID, "agent-task.completed.v1", task, fmt.Sprintf("agent-task-completed:%s:%d", task.ID, task.Version))
@@ -1066,16 +1113,20 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 	if node.Type == controlmodel.RunNodeTeam && task.LeaderTask {
 		next = controlmodel.RunNodeWaiting
 	}
-	if node.State == controlmodel.RunNodeReady {
-		node.State, node.Version, node.UpdatedAt = controlmodel.RunNodeRunning, node.Version+1, now
-		node.StartedAt = &now
-	}
-	if !controlmodel.CanTransitionRunNode(node.State, next) {
-		return store.ErrConflict
-	}
-	node.State, node.Output, node.Version, node.UpdatedAt = next, cloneJSON(output), node.Version+1, now
-	if next == controlmodel.RunNodeSucceeded {
-		node.CompletedAt = &now
+	coordinatorAlreadyTerminal := node.Type == controlmodel.RunNodeTeam && task.LeaderTask &&
+		controlmodel.IsRunNodeTerminal(node.State)
+	if !coordinatorAlreadyTerminal {
+		if node.State == controlmodel.RunNodeReady {
+			node.State, node.Version, node.UpdatedAt = controlmodel.RunNodeRunning, node.Version+1, now
+			node.StartedAt = &now
+		}
+		if !controlmodel.CanTransitionRunNode(node.State, next) {
+			return store.ErrConflict
+		}
+		node.State, node.Output, node.Version, node.UpdatedAt = next, cloneJSON(output), node.Version+1, now
+		if next == controlmodel.RunNodeSucceeded {
+			node.CompletedAt = &now
+		}
 	}
 	appendEvent := func(event *controlmodel.RunEvent) {
 		event.ID, event.RunID, event.Tenant, event.Namespace = uuid.New(), run.ID, run.Tenant, run.Namespace
@@ -1087,9 +1138,14 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 			Type: "attempt.succeeded", IdempotencyKey: "attempt-succeeded:" + attempt.ID.String(),
 			CausationID: task.CausationID, CorrelationID: task.CorrelationID})
 	}
-	appendEvent(&controlmodel.RunEvent{NodeID: &node.ID, AgentTaskID: &task.ID, Type: "node." + string(next),
-		IdempotencyKey: "node-" + string(next) + ":" + node.ID.String(), CausationID: task.CausationID,
-		CorrelationID: task.CorrelationID})
+	if !coordinatorAlreadyTerminal {
+		appendEvent(&controlmodel.RunEvent{NodeID: &node.ID, AgentTaskID: &task.ID, Type: "node." + string(next),
+			IdempotencyKey: "node-" + string(next) + ":" + node.ID.String(), CausationID: task.CausationID,
+			CorrelationID: task.CorrelationID})
+	}
+	if coordinatorAlreadyTerminal {
+		return nil
+	}
 	if next == controlmodel.RunNodeWaiting {
 		if run.State == controlmodel.RunRunning {
 			run.State, run.WaitReason, run.Version, run.UpdatedAt = controlmodel.RunWaiting, "team_coordinator", run.Version+1, now
@@ -1107,6 +1163,24 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 		appendEvent(&controlmodel.RunEvent{Type: "run.succeeded",
 			IdempotencyKey: "run-succeeded:" + run.ID.String(), CausationID: task.CausationID,
 			CorrelationID: task.CorrelationID})
+		if run.ParentRunID == nil {
+			if issue := r.s.issues[run.RootIssueID]; issue != nil && issue.Status == controlmodel.IssueInProgress {
+				target, reason := controlmodel.IssueInReview, "execution completed; awaiting acceptance"
+				if issue.CompletionPolicy == controlmodel.IssueCompletionAutomatic {
+					target, reason = controlmodel.IssueDone, "automatic Endpoint Job execution completed"
+					issue.ResolvedAt = &now
+				}
+				issue.Status, issue.Version, issue.UpdatedAt = target, issue.Version+1, now
+				details, _ := json.Marshal(map[string]string{"from": string(controlmodel.IssueInProgress),
+					"to": string(target), "reason": reason})
+				r.appendActivityLocked(&controlmodel.Activity{Tenant: issue.Tenant, Namespace: issue.Namespace,
+					IssueID: &issue.ID, Actor: actor, Action: "issue.status_changed", ObjectType: "issue",
+					ObjectRef: issue.ID.String(), Details: details})
+				r.enqueueEventLocked(issue.Tenant, "issue", issue.ID, "issue.status-changed.v1",
+					map[string]any{"issue": cloneIssue(issue), "previousStatus": controlmodel.IssueInProgress},
+					fmt.Sprintf("issue-status:%s:%d", issue.ID, issue.Version))
+			}
+		}
 	}
 	return nil
 }
@@ -1243,6 +1317,9 @@ func (r *collaborationRepo) CreateTeam(_ context.Context, team *controlmodel.Col
 	defer r.s.mu.Unlock()
 	copy := cloneTeam(team)
 	copy.ID = nonNilUUID(copy.ID)
+	if copy.Status == "" {
+		copy.Status = controlmodel.TeamActive
+	}
 	for _, existing := range r.s.collabTeams {
 		if existing.Tenant == copy.Tenant && existing.Namespace == copy.Namespace && existing.Name == copy.Name && existing.ArchivedAt == nil {
 			return nil, store.ErrConflict
@@ -1262,7 +1339,7 @@ func (r *collaborationRepo) GetTeam(_ context.Context, id uuid.UUID) (*controlmo
 		return nil, store.ErrNotFound
 	}
 	out := cloneTeam(team)
-	out.Members = append([]controlmodel.CollaborationTeamMember(nil), r.s.collabMembers[id]...)
+	out.Members = activeTeamMembers(r.s.collabMembers[id])
 	return out, nil
 }
 
@@ -1275,7 +1352,7 @@ func (r *collaborationRepo) ListTeams(_ context.Context, tenant, namespace strin
 			continue
 		}
 		copy := cloneTeam(team)
-		copy.Members = append([]controlmodel.CollaborationTeamMember(nil), r.s.collabMembers[team.ID]...)
+		copy.Members = activeTeamMembers(r.s.collabMembers[team.ID])
 		out = append(out, copy)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -1292,11 +1369,18 @@ func (r *collaborationRepo) UpdateTeam(_ context.Context, team *controlmodel.Col
 	if expectedVersion > 0 && current.Version != expectedVersion {
 		return nil, store.ErrConflict
 	}
+	for _, member := range r.s.collabMembers[team.ID] {
+		if member.ArchivedAt == nil && member.AgentRef == team.LeaderAgentRef {
+			return nil, store.ErrConflict
+		}
+	}
 	next := cloneTeam(team)
 	next.Tenant, next.Namespace, next.CreatedAt = current.Tenant, current.Namespace, current.CreatedAt
 	next.Version, next.UpdatedAt = current.Version+1, time.Now().UTC()
 	r.s.collabTeams[next.ID] = next
-	return cloneTeam(next), nil
+	out := cloneTeam(next)
+	out.Members = activeTeamMembers(r.s.collabMembers[next.ID])
+	return out, nil
 }
 
 func (r *collaborationRepo) AddTeamMember(_ context.Context, member *controlmodel.CollaborationTeamMember) (*controlmodel.CollaborationTeamMember, error) {
@@ -1305,6 +1389,9 @@ func (r *collaborationRepo) AddTeamMember(_ context.Context, member *controlmode
 	team := r.s.collabTeams[member.TeamID]
 	if team == nil {
 		return nil, store.ErrNotFound
+	}
+	if team.LeaderAgentRef == member.AgentRef {
+		return nil, store.ErrConflict
 	}
 	for _, existing := range r.s.collabMembers[member.TeamID] {
 		if existing.AgentRef == member.AgentRef && existing.ArchivedAt == nil || existing.Role == member.Role && existing.ArchivedAt == nil {
@@ -1315,7 +1402,51 @@ func (r *collaborationRepo) AddTeamMember(_ context.Context, member *controlmode
 	copy.ID = nonNilUUID(copy.ID)
 	copy.Tenant, copy.Namespace, copy.CreatedAt = team.Tenant, team.Namespace, time.Now().UTC()
 	r.s.collabMembers[copy.TeamID] = append(r.s.collabMembers[copy.TeamID], copy)
+	team.Version++
+	team.UpdatedAt = copy.CreatedAt
 	return &copy, nil
+}
+
+func (r *collaborationRepo) UpdateTeamMember(_ context.Context, member *controlmodel.CollaborationTeamMember, expectedTeamVersion int64) (*controlmodel.CollaborationTeamMember, error) {
+	if member == nil || member.TeamID == uuid.Nil || member.ID == uuid.Nil || strings.TrimSpace(member.Role) == "" {
+		return nil, store.ErrConflict
+	}
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	team := r.s.collabTeams[member.TeamID]
+	if team == nil {
+		return nil, store.ErrNotFound
+	}
+	if expectedTeamVersion > 0 && team.Version != expectedTeamVersion {
+		return nil, store.ErrConflict
+	}
+	members := r.s.collabMembers[member.TeamID]
+	index := -1
+	for i := range members {
+		if members[i].ArchivedAt != nil {
+			continue
+		}
+		if members[i].ID == member.ID {
+			index = i
+			continue
+		}
+		if members[i].Role == member.Role {
+			return nil, store.ErrConflict
+		}
+	}
+	if index < 0 {
+		return nil, store.ErrNotFound
+	}
+	next := members[index]
+	next.Role = member.Role
+	next.Instructions = member.Instructions
+	next.CapabilityRequirements = cloneJSON(member.CapabilityRequirements)
+	next.RuntimeBindingPolicy = cloneJSON(member.RuntimeBindingPolicy)
+	members[index] = next
+	r.s.collabMembers[member.TeamID] = members
+	team.Version++
+	team.UpdatedAt = time.Now().UTC()
+	return cloneTeamMember(&next), nil
 }
 
 func (r *collaborationRepo) RemoveTeamMember(_ context.Context, teamID, memberID uuid.UUID) error {
@@ -1327,6 +1458,10 @@ func (r *collaborationRepo) RemoveTeamMember(_ context.Context, teamID, memberID
 			now := time.Now().UTC()
 			members[i].ArchivedAt = &now
 			r.s.collabMembers[teamID] = members
+			if team := r.s.collabTeams[teamID]; team != nil {
+				team.Version++
+				team.UpdatedAt = now
+			}
 			return nil
 		}
 	}
@@ -1646,8 +1781,9 @@ func (r *collaborationRepo) SweepTimedOutAgentTasks(ctx context.Context, now tim
 		if len(items) >= limit || task.TeamID == nil || task.Status != controlmodel.AgentTaskRunning && task.Status != controlmodel.AgentTaskDispatched {
 			continue
 		}
-		team := r.s.collabTeams[*task.TeamID]
-		if team == nil || team.Policy.TaskTimeoutSeconds <= 0 {
+		snapshot := r.s.runSnapshots[task.OrchestrationRunID.String()+"\x00"+task.TeamID.String()]
+		var team controlmodel.CollaborationTeam
+		if snapshot == nil || json.Unmarshal(snapshot.Snapshot, &team) != nil || team.Policy.TaskTimeoutSeconds <= 0 {
 			continue
 		}
 		started := task.CreatedAt
@@ -1817,7 +1953,7 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 		if r.s.runSnapshots[key] == nil {
 			team := cloneTeam(r.s.collabTeams[*task.TeamID])
 			if team != nil {
-				team.Members = cloneTeamMembers(r.s.collabMembers[*task.TeamID])
+				team.Members = activeTeamMembers(r.s.collabMembers[*task.TeamID])
 				snapshot, _ := json.Marshal(team)
 				r.s.runSnapshots[key] = &controlmodel.RunTeamSnapshot{RunID: task.OrchestrationRunID,
 					TeamID: *task.TeamID, Tenant: task.Tenant, Namespace: task.Namespace,
@@ -1958,6 +2094,41 @@ func cloneTeamMembers(in []controlmodel.CollaborationTeamMember) []controlmodel.
 		out[i].RuntimeBindingPolicy = cloneJSON(in[i].RuntimeBindingPolicy)
 	}
 	return out
+}
+
+func cloneTeamMember(in *controlmodel.CollaborationTeamMember) *controlmodel.CollaborationTeamMember {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.CapabilityRequirements = cloneJSON(in.CapabilityRequirements)
+	out.RuntimeBindingPolicy = cloneJSON(in.RuntimeBindingPolicy)
+	return &out
+}
+
+func activeTeamMembers(in []controlmodel.CollaborationTeamMember) []controlmodel.CollaborationTeamMember {
+	active := make([]controlmodel.CollaborationTeamMember, 0, len(in))
+	for _, member := range in {
+		if member.ArchivedAt == nil {
+			active = append(active, member)
+		}
+	}
+	return cloneTeamMembers(active)
+}
+
+func snapshotTeamAgentRole(team *controlmodel.CollaborationTeam, agentRef string) (string, bool) {
+	if team == nil {
+		return "", false
+	}
+	if team.LeaderAgentRef == agentRef {
+		return "leader", true
+	}
+	for _, member := range team.Members {
+		if member.ArchivedAt == nil && member.AgentRef == agentRef {
+			return member.Role, true
+		}
+	}
+	return "", false
 }
 
 func cloneArtifact(in *controlmodel.Artifact) *controlmodel.Artifact {

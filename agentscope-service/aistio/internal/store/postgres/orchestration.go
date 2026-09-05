@@ -20,6 +20,8 @@ import (
 
 type orchestrationRepo struct{ pool *pgxpool.Pool }
 
+const runEventNotifyChannel = "aistio_run_events"
+
 func orchNotFound(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return store.ErrNotFound
@@ -395,6 +397,9 @@ func (r *orchestrationRepo) AppendRunEvent(ctx context.Context, in *controlmodel
 	if err != nil {
 		return nil, err
 	}
+	if _, err = tx.Exec(ctx, "SELECT pg_notify('"+runEventNotifyChannel+"', $1)", in.RunID.String()); err != nil {
+		return nil, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -418,6 +423,40 @@ func (r *orchestrationRepo) ListRunEvents(ctx context.Context, runID uuid.UUID, 
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+func (r *orchestrationRepo) WaitForRunEvent(ctx context.Context, runID uuid.UUID, after int64) error {
+	conn, err := r.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("postgres run events acquire listener: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, "LISTEN "+runEventNotifyChannel); err != nil {
+		return fmt.Errorf("postgres run events listen: %w", err)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, _ = conn.Exec(cleanupCtx, "UNLISTEN "+runEventNotifyChannel)
+	}()
+
+	var available bool
+	if err := conn.QueryRow(ctx,
+		"SELECT EXISTS (SELECT 1 FROM orchestration_run_events WHERE run_id=$1 AND sequence>$2)",
+		runID, after).Scan(&available); err != nil {
+		return fmt.Errorf("postgres run events check listener cursor: %w", err)
+	}
+	if available {
+		return nil
+	}
+	for {
+		notification, err := conn.Conn().WaitForNotification(ctx)
+		if err != nil {
+			return err
+		}
+		if notification.Payload == runID.String() {
+			return nil
+		}
+	}
 }
 
 const policyCols = `id,tenant,namespace,agent_id,candidates,selection_mode,fallback_mode,max_concurrency,queue_timeout_seconds,attempt_timeout_seconds,retry_policy,version,created_at,updated_at,archived_at`

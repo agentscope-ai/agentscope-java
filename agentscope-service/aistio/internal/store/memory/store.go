@@ -38,6 +38,7 @@ type Store struct {
 	sessKey         map[string]uuid.UUID // agent/ns/sessionID -> uuid
 	snapshots       []store.SessionSnapshot
 	events          []store.SessionEvent
+	eventSignals    map[uuid.UUID]chan struct{}
 	contexts        []store.ContextSnapshot
 	tokens          []store.TokenUsageMetric
 	agents          []store.AgentMetric
@@ -54,49 +55,54 @@ type Store struct {
 	dpTasks     map[string]*store.DPTask          // tenant+\x00+parentAgent+\x00+session+\x00+taskID
 
 	// Control-plane registry, task, execution, and outbox authority.
-	logicalAgents       map[uuid.UUID]*controlmodel.Agent
-	agentBindings       map[uuid.UUID]*controlmodel.AgentBinding
-	agentCredentials    map[uuid.UUID]*controlmodel.AgentRegistrationCredential
-	agentInstances      map[uuid.UUID]*controlmodel.AgentInstance
-	runtimeProfiles     map[string]*controlmodel.RuntimeProfile
-	runtimePools        map[string]*controlmodel.RuntimePool
-	runtimeHosts        map[uuid.UUID]*controlmodel.RuntimeHost
-	executions          map[uuid.UUID]*controlmodel.ExecutionAttempt
-	definitions         map[uuid.UUID]*controlmodel.OrchestrationDefinition
-	revisions           map[uuid.UUID]*controlmodel.OrchestrationRevision
-	runs                map[uuid.UUID]*controlmodel.OrchestrationRun
-	runNodes            map[uuid.UUID]*controlmodel.RunNode
-	runEdges            map[uuid.UUID]*controlmodel.RunEdge
-	runSnapshots        map[string]*controlmodel.RunTeamSnapshot
-	runEvents           map[uuid.UUID][]*controlmodel.RunEvent
-	runtimePolicies     map[string]*controlmodel.AgentRuntimePolicy
-	outboxEvents        map[uuid.UUID]*controlmodel.OutboxEvent
-	issues              map[uuid.UUID]*controlmodel.Issue
-	comments            map[uuid.UUID]*controlmodel.Comment
-	commentMentions     map[uuid.UUID][]controlmodel.Mention
-	commentRoutes       map[uuid.UUID][]controlmodel.CommentRoute
-	agentTasks          map[uuid.UUID]*controlmodel.AgentTask
-	taskInputs          map[uuid.UUID][]controlmodel.AgentTaskInput
-	collabTeams         map[uuid.UUID]*controlmodel.CollaborationTeam
-	collabMembers       map[uuid.UUID][]controlmodel.CollaborationTeamMember
-	artifacts           map[uuid.UUID]*controlmodel.Artifact
-	artifactLinks       map[uuid.UUID][]controlmodel.ArtifactLink
-	subscribers         map[uuid.UUID][]controlmodel.IssueSubscriber
-	approvals           map[uuid.UUID]*controlmodel.Approval
-	inboxItems          map[uuid.UUID]*controlmodel.InboxItem
-	activities          []controlmodel.Activity
-	automations         map[uuid.UUID]*controlmodel.Automation
-	automationRuns      map[uuid.UUID]*controlmodel.AutomationRun
-	workSources         map[uuid.UUID]*controlmodel.WorkSource
-	webhookDeliveries   map[uuid.UUID]*controlmodel.WebhookDelivery
-	issueExternalRefs   map[string]*controlmodel.IssueExternalRef
-	commentExternalRefs map[uuid.UUID]*controlmodel.CommentExternalRef
-	externalLinks       map[uuid.UUID]*controlmodel.ExternalLink
-	agentEndpoints      map[uuid.UUID]*controlmodel.AgentEndpoint
-	endpointJobs        map[uuid.UUID]*controlmodel.EndpointJob
-	teamProposals       map[uuid.UUID]*controlmodel.TeamProposal
-	nextBusID           int64
-	nextFencing         int64
+	logicalAgents         map[uuid.UUID]*controlmodel.Agent
+	agentBindings         map[uuid.UUID]*controlmodel.AgentBinding
+	agentCredentials      map[uuid.UUID]*controlmodel.AgentRegistrationCredential
+	agentInstances        map[uuid.UUID]*controlmodel.AgentInstance
+	runtimeProfiles       map[string]*controlmodel.RuntimeProfile
+	runtimePools          map[string]*controlmodel.RuntimePool
+	runtimeHosts          map[uuid.UUID]*controlmodel.RuntimeHost
+	executions            map[uuid.UUID]*controlmodel.ExecutionAttempt
+	definitions           map[uuid.UUID]*controlmodel.OrchestrationDefinition
+	revisions             map[uuid.UUID]*controlmodel.OrchestrationRevision
+	runs                  map[uuid.UUID]*controlmodel.OrchestrationRun
+	runNodes              map[uuid.UUID]*controlmodel.RunNode
+	runEdges              map[uuid.UUID]*controlmodel.RunEdge
+	runSnapshots          map[string]*controlmodel.RunTeamSnapshot
+	runEvents             map[uuid.UUID][]*controlmodel.RunEvent
+	runEventSignals       map[uuid.UUID]chan struct{}
+	runtimePolicies       map[string]*controlmodel.AgentRuntimePolicy
+	outboxEvents          map[uuid.UUID]*controlmodel.OutboxEvent
+	issues                map[uuid.UUID]*controlmodel.Issue
+	comments              map[uuid.UUID]*controlmodel.Comment
+	commentMentions       map[uuid.UUID][]controlmodel.Mention
+	commentRoutes         map[uuid.UUID][]controlmodel.CommentRoute
+	agentTasks            map[uuid.UUID]*controlmodel.AgentTask
+	taskInputs            map[uuid.UUID][]controlmodel.AgentTaskInput
+	collabTeams           map[uuid.UUID]*controlmodel.CollaborationTeam
+	collabMembers         map[uuid.UUID][]controlmodel.CollaborationTeamMember
+	artifacts             map[uuid.UUID]*controlmodel.Artifact
+	artifactLinks         map[uuid.UUID][]controlmodel.ArtifactLink
+	subscribers           map[uuid.UUID][]controlmodel.IssueSubscriber
+	approvals             map[uuid.UUID]*controlmodel.Approval
+	inboxItems            map[uuid.UUID]*controlmodel.InboxItem
+	activities            []controlmodel.Activity
+	automations           map[uuid.UUID]*controlmodel.Automation
+	automationRuns        map[uuid.UUID]*controlmodel.AutomationRun
+	workSources           map[uuid.UUID]*controlmodel.WorkSource
+	webhookDeliveries     map[uuid.UUID]*controlmodel.WebhookDelivery
+	issueExternalRefs     map[string]*controlmodel.IssueExternalRef
+	commentExternalRefs   map[uuid.UUID]*controlmodel.CommentExternalRef
+	externalLinks         map[uuid.UUID]*controlmodel.ExternalLink
+	endpoints             map[uuid.UUID]*controlmodel.Endpoint
+	endpointReleases      map[uuid.UUID]*controlmodel.EndpointRelease
+	endpointCredentials   map[uuid.UUID]*controlmodel.EndpointCredential
+	endpointInvocations   map[uuid.UUID]*controlmodel.EndpointInvocation
+	endpointConversations map[uuid.UUID]*controlmodel.EndpointConversation
+	endpointRateWindows   map[string]*endpointRateWindow
+	teamProposals         map[uuid.UUID]*controlmodel.TeamProposal
+	nextBusID             int64
+	nextFencing           int64
 
 	nextSnapID int64
 	nextEvtID  int64
@@ -124,55 +130,61 @@ type memBusEntry struct {
 // Open creates a memory store.
 func Open(_ context.Context, cfg store.Config) (store.Store, error) {
 	s := &Store{
-		sessions:            make(map[uuid.UUID]*store.Session),
-		sessKey:             make(map[string]uuid.UUID),
-		sessionLocks:        newKeyedMutex(),
-		kv:                  make(map[string]*store.KVItem),
-		locks:               make(map[string]*store.Lock),
-		dpSnapshots:         make(map[string]*memSnapshot),
-		asyncTools:          make(map[string]*store.AsyncToolRecord),
-		dpTasks:             make(map[string]*store.DPTask),
-		logicalAgents:       make(map[uuid.UUID]*controlmodel.Agent),
-		agentBindings:       make(map[uuid.UUID]*controlmodel.AgentBinding),
-		agentCredentials:    make(map[uuid.UUID]*controlmodel.AgentRegistrationCredential),
-		agentInstances:      make(map[uuid.UUID]*controlmodel.AgentInstance),
-		runtimeProfiles:     make(map[string]*controlmodel.RuntimeProfile),
-		runtimePools:        make(map[string]*controlmodel.RuntimePool),
-		runtimeHosts:        make(map[uuid.UUID]*controlmodel.RuntimeHost),
-		executions:          make(map[uuid.UUID]*controlmodel.ExecutionAttempt),
-		definitions:         make(map[uuid.UUID]*controlmodel.OrchestrationDefinition),
-		revisions:           make(map[uuid.UUID]*controlmodel.OrchestrationRevision),
-		runs:                make(map[uuid.UUID]*controlmodel.OrchestrationRun),
-		runNodes:            make(map[uuid.UUID]*controlmodel.RunNode),
-		runEdges:            make(map[uuid.UUID]*controlmodel.RunEdge),
-		runSnapshots:        make(map[string]*controlmodel.RunTeamSnapshot),
-		runEvents:           make(map[uuid.UUID][]*controlmodel.RunEvent),
-		runtimePolicies:     make(map[string]*controlmodel.AgentRuntimePolicy),
-		outboxEvents:        make(map[uuid.UUID]*controlmodel.OutboxEvent),
-		issues:              make(map[uuid.UUID]*controlmodel.Issue),
-		comments:            make(map[uuid.UUID]*controlmodel.Comment),
-		commentMentions:     make(map[uuid.UUID][]controlmodel.Mention),
-		commentRoutes:       make(map[uuid.UUID][]controlmodel.CommentRoute),
-		agentTasks:          make(map[uuid.UUID]*controlmodel.AgentTask),
-		taskInputs:          make(map[uuid.UUID][]controlmodel.AgentTaskInput),
-		collabTeams:         make(map[uuid.UUID]*controlmodel.CollaborationTeam),
-		collabMembers:       make(map[uuid.UUID][]controlmodel.CollaborationTeamMember),
-		artifacts:           make(map[uuid.UUID]*controlmodel.Artifact),
-		artifactLinks:       make(map[uuid.UUID][]controlmodel.ArtifactLink),
-		subscribers:         make(map[uuid.UUID][]controlmodel.IssueSubscriber),
-		approvals:           make(map[uuid.UUID]*controlmodel.Approval),
-		inboxItems:          make(map[uuid.UUID]*controlmodel.InboxItem),
-		automations:         make(map[uuid.UUID]*controlmodel.Automation),
-		automationRuns:      make(map[uuid.UUID]*controlmodel.AutomationRun),
-		workSources:         make(map[uuid.UUID]*controlmodel.WorkSource),
-		webhookDeliveries:   make(map[uuid.UUID]*controlmodel.WebhookDelivery),
-		issueExternalRefs:   make(map[string]*controlmodel.IssueExternalRef),
-		commentExternalRefs: make(map[uuid.UUID]*controlmodel.CommentExternalRef),
-		externalLinks:       make(map[uuid.UUID]*controlmodel.ExternalLink),
-		agentEndpoints:      make(map[uuid.UUID]*controlmodel.AgentEndpoint),
-		endpointJobs:        make(map[uuid.UUID]*controlmodel.EndpointJob),
-		teamProposals:       make(map[uuid.UUID]*controlmodel.TeamProposal),
-		retention:           cfg.Retention,
+		sessions:              make(map[uuid.UUID]*store.Session),
+		sessKey:               make(map[string]uuid.UUID),
+		eventSignals:          make(map[uuid.UUID]chan struct{}),
+		sessionLocks:          newKeyedMutex(),
+		kv:                    make(map[string]*store.KVItem),
+		locks:                 make(map[string]*store.Lock),
+		dpSnapshots:           make(map[string]*memSnapshot),
+		asyncTools:            make(map[string]*store.AsyncToolRecord),
+		dpTasks:               make(map[string]*store.DPTask),
+		logicalAgents:         make(map[uuid.UUID]*controlmodel.Agent),
+		agentBindings:         make(map[uuid.UUID]*controlmodel.AgentBinding),
+		agentCredentials:      make(map[uuid.UUID]*controlmodel.AgentRegistrationCredential),
+		agentInstances:        make(map[uuid.UUID]*controlmodel.AgentInstance),
+		runtimeProfiles:       make(map[string]*controlmodel.RuntimeProfile),
+		runtimePools:          make(map[string]*controlmodel.RuntimePool),
+		runtimeHosts:          make(map[uuid.UUID]*controlmodel.RuntimeHost),
+		executions:            make(map[uuid.UUID]*controlmodel.ExecutionAttempt),
+		definitions:           make(map[uuid.UUID]*controlmodel.OrchestrationDefinition),
+		revisions:             make(map[uuid.UUID]*controlmodel.OrchestrationRevision),
+		runs:                  make(map[uuid.UUID]*controlmodel.OrchestrationRun),
+		runNodes:              make(map[uuid.UUID]*controlmodel.RunNode),
+		runEdges:              make(map[uuid.UUID]*controlmodel.RunEdge),
+		runSnapshots:          make(map[string]*controlmodel.RunTeamSnapshot),
+		runEvents:             make(map[uuid.UUID][]*controlmodel.RunEvent),
+		runEventSignals:       make(map[uuid.UUID]chan struct{}),
+		runtimePolicies:       make(map[string]*controlmodel.AgentRuntimePolicy),
+		outboxEvents:          make(map[uuid.UUID]*controlmodel.OutboxEvent),
+		issues:                make(map[uuid.UUID]*controlmodel.Issue),
+		comments:              make(map[uuid.UUID]*controlmodel.Comment),
+		commentMentions:       make(map[uuid.UUID][]controlmodel.Mention),
+		commentRoutes:         make(map[uuid.UUID][]controlmodel.CommentRoute),
+		agentTasks:            make(map[uuid.UUID]*controlmodel.AgentTask),
+		taskInputs:            make(map[uuid.UUID][]controlmodel.AgentTaskInput),
+		collabTeams:           make(map[uuid.UUID]*controlmodel.CollaborationTeam),
+		collabMembers:         make(map[uuid.UUID][]controlmodel.CollaborationTeamMember),
+		artifacts:             make(map[uuid.UUID]*controlmodel.Artifact),
+		artifactLinks:         make(map[uuid.UUID][]controlmodel.ArtifactLink),
+		subscribers:           make(map[uuid.UUID][]controlmodel.IssueSubscriber),
+		approvals:             make(map[uuid.UUID]*controlmodel.Approval),
+		inboxItems:            make(map[uuid.UUID]*controlmodel.InboxItem),
+		automations:           make(map[uuid.UUID]*controlmodel.Automation),
+		automationRuns:        make(map[uuid.UUID]*controlmodel.AutomationRun),
+		workSources:           make(map[uuid.UUID]*controlmodel.WorkSource),
+		webhookDeliveries:     make(map[uuid.UUID]*controlmodel.WebhookDelivery),
+		issueExternalRefs:     make(map[string]*controlmodel.IssueExternalRef),
+		commentExternalRefs:   make(map[uuid.UUID]*controlmodel.CommentExternalRef),
+		externalLinks:         make(map[uuid.UUID]*controlmodel.ExternalLink),
+		endpoints:             make(map[uuid.UUID]*controlmodel.Endpoint),
+		endpointReleases:      make(map[uuid.UUID]*controlmodel.EndpointRelease),
+		endpointCredentials:   make(map[uuid.UUID]*controlmodel.EndpointCredential),
+		endpointInvocations:   make(map[uuid.UUID]*controlmodel.EndpointInvocation),
+		endpointConversations: make(map[uuid.UUID]*controlmodel.EndpointConversation),
+		endpointRateWindows:   make(map[string]*endpointRateWindow),
+		teamProposals:         make(map[uuid.UUID]*controlmodel.TeamProposal),
+		retention:             cfg.Retention,
 	}
 	return s, nil
 }
@@ -193,16 +205,16 @@ func (s *Store) Orchestration() store.OrchestrationRepository { return &orchestr
 func (s *Store) Outbox() store.OutboxRepository {
 	return &outboxRepo{controlPlaneRepo: &controlPlaneRepo{s}}
 }
-func (s *Store) Collaboration() store.CollaborationRepository  { return &collaborationRepo{s} }
-func (s *Store) WorkSources() store.WorkSourceRepository       { return &workSourceRepo{s} }
-func (s *Store) AgentEndpoints() store.AgentEndpointRepository { return &agentEndpointRepo{s} }
-func (s *Store) TeamProposals() store.TeamProposalRepository   { return &teamProposalRepo{s} }
-func (s *Store) KV() store.KVRepository                        { return &kvRepo{s} }
-func (s *Store) Locks() store.LockRepository                   { return &lockRepo{s} }
-func (s *Store) Snapshots() store.SnapshotRepository           { return &snapshotRepo{s} }
-func (s *Store) Bus() store.BusRepository                      { return &busRepo{s} }
-func (s *Store) AsyncTools() store.AsyncToolRepository         { return &asyncToolRepo{s} }
-func (s *Store) DPTasks() store.DPTaskRepository               { return &dpTaskRepo{s} }
+func (s *Store) Collaboration() store.CollaborationRepository { return &collaborationRepo{s} }
+func (s *Store) WorkSources() store.WorkSourceRepository      { return &workSourceRepo{s} }
+func (s *Store) Endpoints() store.EndpointRepository          { return &endpointRepo{s} }
+func (s *Store) TeamProposals() store.TeamProposalRepository  { return &teamProposalRepo{s} }
+func (s *Store) KV() store.KVRepository                       { return &kvRepo{s} }
+func (s *Store) Locks() store.LockRepository                  { return &lockRepo{s} }
+func (s *Store) Snapshots() store.SnapshotRepository          { return &snapshotRepo{s} }
+func (s *Store) Bus() store.BusRepository                     { return &busRepo{s} }
+func (s *Store) AsyncTools() store.AsyncToolRepository        { return &asyncToolRepo{s} }
+func (s *Store) DPTasks() store.DPTaskRepository              { return &dpTaskRepo{s} }
 
 func (s *Store) Migrate(context.Context) error { return nil }
 func (s *Store) Ping(context.Context) error    { return nil }

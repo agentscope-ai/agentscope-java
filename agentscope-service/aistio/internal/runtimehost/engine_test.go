@@ -17,6 +17,8 @@ package runtimehost
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,11 +31,23 @@ import (
 )
 
 type fakeControlPlane struct {
-	mu        sync.Mutex
-	host      *controlmodel.RuntimeHost
-	work      *ClaimedWork
-	claimed   bool
-	completed chan struct{}
+	mu              sync.Mutex
+	host            *controlmodel.RuntimeHost
+	work            *ClaimedWork
+	claimed         bool
+	completed       chan struct{}
+	restored        map[uuid.UUID]string
+	terminalOnStart bool
+	completeCalls   int
+	renewErrors     []error
+	renewed         chan error
+}
+
+func (f *fakeControlPlane) RestoreAttemptToken(id uuid.UUID, token string) {
+	if f.restored == nil {
+		f.restored = make(map[uuid.UUID]string)
+	}
+	f.restored[id] = token
 }
 
 func (f *fakeControlPlane) Register(_ context.Context, registration Registration) (*controlmodel.RuntimeHost, error) {
@@ -65,11 +79,24 @@ func (f *fakeControlPlane) Prepare(_ context.Context, _ uuid.UUID, execution *co
 	return nil
 }
 func (f *fakeControlPlane) Start(_ context.Context, _ uuid.UUID, execution *controlmodel.ExecutionAttempt, _, _ string) error {
-	execution.State = controlmodel.ExecutionRunning
+	if f.terminalOnStart {
+		execution.State = controlmodel.ExecutionSucceeded
+	} else {
+		execution.State = controlmodel.ExecutionRunning
+	}
 	return nil
 }
 func (f *fakeControlPlane) Renew(context.Context, uuid.UUID, *controlmodel.ExecutionAttempt, time.Duration) error {
-	return nil
+	f.mu.Lock()
+	var err error
+	if len(f.renewErrors) > 0 {
+		err, f.renewErrors = f.renewErrors[0], f.renewErrors[1:]
+	}
+	f.mu.Unlock()
+	if f.renewed != nil {
+		f.renewed <- err
+	}
+	return err
 }
 func (f *fakeControlPlane) Checkpoint(_ context.Context, _ uuid.UUID, execution *controlmodel.ExecutionAttempt, providerSessionID string, checkpoint json.RawMessage) error {
 	execution.ProviderSessionID = providerSessionID
@@ -77,9 +104,109 @@ func (f *fakeControlPlane) Checkpoint(_ context.Context, _ uuid.UUID, execution 
 	return nil
 }
 func (f *fakeControlPlane) Complete(_ context.Context, _ uuid.UUID, execution *controlmodel.ExecutionAttempt, _, _ json.RawMessage) error {
+	f.mu.Lock()
+	f.completeCalls++
+	f.mu.Unlock()
 	execution.State = controlmodel.ExecutionSucceeded
 	close(f.completed)
 	return nil
+}
+
+func TestHostedWorkspaceContextFallsBackToImmutableDispatchSnapshot(t *testing.T) {
+	policy := json.RawMessage(`{"workspaceKey":"tenant/legacy-task"}`)
+	snapshot, err := json.Marshal(controlmodel.RuntimeDispatchSnapshot{
+		SessionID: "conversation-1", Policy: policy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID, workspaceKey := hostedWorkspaceContext(&controlmodel.ExecutionAttempt{
+		RuntimeBinding: snapshot,
+	}, &controlmodel.AgentTask{SessionID: "task-fallback"})
+	if sessionID != "conversation-1" || workspaceKey != "tenant/legacy-task" {
+		t.Fatalf("session=%q workspace=%q", sessionID, workspaceKey)
+	}
+
+	sessionID, workspaceKey = hostedWorkspaceContext(&controlmodel.ExecutionAttempt{},
+		&controlmodel.AgentTask{SessionID: "task-fallback"})
+	if sessionID != "task-fallback" || workspaceKey != "" {
+		t.Fatalf("task fallback session=%q workspace=%q", sessionID, workspaceKey)
+	}
+}
+
+func TestRenewLoopToleratesTransientControlPlaneFailureWithinLease(t *testing.T) {
+	transient := errors.New("control plane restarting")
+	cp := &fakeControlPlane{renewErrors: []error{transient}, renewed: make(chan error, 1)}
+	engine := &Engine{Config: Config{LeaseTTL: 3 * time.Second}, Client: cp}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	failures := make(chan error, 1)
+	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, failures)
+	select {
+	case got := <-cp.renewed:
+		if !errors.Is(got, transient) {
+			t.Fatalf("renew error=%v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("renew was not attempted")
+	}
+	select {
+	case <-ctx.Done():
+		t.Fatal("transient renewal failure cancelled provider before lease expiry")
+	case err := <-failures:
+		t.Fatalf("transient renewal failure was reported as lease loss: %v", err)
+	default:
+	}
+}
+
+func TestRenewLoopCancelsProviderAfterLeaseExpires(t *testing.T) {
+	leaseFailure := errors.New("control plane unavailable")
+	cp := &fakeControlPlane{renewErrors: []error{leaseFailure}, renewed: make(chan error, 1)}
+	engine := &Engine{Config: Config{LeaseTTL: 100 * time.Millisecond}, Client: cp}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	failures := make(chan error, 1)
+	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, failures)
+	select {
+	case err := <-failures:
+		if !errors.Is(err, leaseFailure) {
+			t.Fatalf("lease failure=%v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expired lease did not stop provider")
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("provider context remained active after lease expiry")
+	}
+}
+
+func TestEngineConvergesWhenAgentCompletesThroughCollaboration(t *testing.T) {
+	taskID, attemptID, hostID := uuid.New(), uuid.New(), uuid.New()
+	cp := &fakeControlPlane{terminalOnStart: true, completed: make(chan struct{})}
+	work := &ClaimedWork{
+		Task: &controlmodel.AgentTask{ID: taskID, Tenant: "tenant", Namespace: "default", AgentRef: "coder"},
+		Context: &collaboration.ContextEnvelope{
+			Task:  &controlmodel.AgentTask{ID: taskID, Tenant: "tenant", Namespace: "default", AgentRef: "coder"},
+			Issue: &controlmodel.Issue{ID: uuid.New(), Tenant: "tenant", Namespace: "default", Title: "work"},
+		},
+		Attempt: &controlmodel.ExecutionAttempt{ID: attemptID, AgentTaskID: taskID, Tenant: "tenant",
+			Namespace: "default", BackendKind: controlmodel.DataPlaneHostedRuntime, State: controlmodel.ExecutionAssigned,
+			LeaseToken: "lease", FencingToken: 1},
+		Profile: &controlmodel.RuntimeProfile{Provider: "fake"},
+	}
+	stateRoot := t.TempDir()
+	engine := &Engine{Config: Config{WorkspaceRoot: t.TempDir(), StateRoot: stateRoot},
+		Client: cp, Providers: map[string]provider.Adapter{"fake": fakeProvider{}}}
+	engine.execute(context.Background(), hostID, work)
+	if cp.completeCalls != 0 {
+		t.Fatalf("daemon completion was delivered %d times after the Agent had already completed", cp.completeCalls)
+	}
+	records, err := (&Journal{Root: stateRoot}).List()
+	if err != nil || len(records) != 0 {
+		t.Fatalf("terminal convergence retained journal records=%v err=%v", records, err)
+	}
 }
 func (f *fakeControlPlane) Fail(context.Context, uuid.UUID, *controlmodel.ExecutionAttempt, string, string, json.RawMessage) error {
 	return nil
@@ -146,5 +273,91 @@ func TestEngineExecutesClaimedWork(t *testing.T) {
 	}
 	if cp.work.Attempt.ProviderSessionID != "provider-session-1" {
 		t.Fatalf("provider session was not checkpointed: %q", cp.work.Attempt.ProviderSessionID)
+	}
+	var advertised struct {
+		Providers            map[string]string              `json:"providers"`
+		ProviderCapabilities map[string]provider.Descriptor `json:"providerCapabilities"`
+	}
+	if err := json.Unmarshal(engine.capabilities, &advertised); err != nil {
+		t.Fatal(err)
+	}
+	if advertised.Providers["fake"] != "fake/1.0" ||
+		!advertised.ProviderCapabilities["fake"].Workspace.Supported {
+		t.Fatalf("capabilities=%s", engine.capabilities)
+	}
+}
+
+func TestAppendRuntimeContextIncludesAvailableCollaboration(t *testing.T) {
+	teamID := uuid.New()
+	task := &controlmodel.AgentTask{TeamID: &teamID, TeamRole: "leader", LeaderTask: true}
+	prompt, err := appendRuntimeContext("do work", task,
+		provider.Descriptor{MCP: provider.Capability{Supported: true}}, "http://runtime.test/mcp", "", "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"agentscope-collaboration", teamID.String(), "role leader", "run.node.complete"} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("runtime prompt is missing %q: %s", required, prompt)
+		}
+	}
+}
+
+func TestAppendRuntimeContextRejectsUnsupportedTeamLeader(t *testing.T) {
+	task := &controlmodel.AgentTask{LeaderTask: true}
+	_, err := appendRuntimeContext("do work", task, provider.Descriptor{}, "", "", "")
+	if err == nil || !strings.Contains(err.Error(), "collaboration MCP or AgentScope CLI") {
+		t.Fatalf("expected collaboration capability error, got %v", err)
+	}
+}
+
+func TestAppendRuntimeContextAllowsShellCollaborationFallback(t *testing.T) {
+	task := &controlmodel.AgentTask{LeaderTask: true}
+	prompt, err := appendRuntimeContext("do work", task,
+		provider.Descriptor{Shell: provider.Capability{Supported: true}}, "", "/opt/agentscope", "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"agentscope task context", "agentscope task run graph", "fallback"} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("runtime prompt is missing %q: %s", required, prompt)
+		}
+	}
+}
+
+func TestShouldPublishProviderEventFiltersInternalHookNoise(t *testing.T) {
+	if shouldPublishProviderEvent(provider.Event{Type: "system", Raw: json.RawMessage(`{"subtype":"hook_progress"}`)}) {
+		t.Fatal("hook progress should remain local instead of flooding the Run timeline")
+	}
+	if !shouldPublishProviderEvent(provider.Event{Type: "system", Raw: json.RawMessage(`{"subtype":"init"}`)}) {
+		t.Fatal("provider initialization should be observable")
+	}
+	if !shouldPublishProviderEvent(provider.Event{Type: "assistant", Raw: json.RawMessage(`{"type":"assistant"}`)}) {
+		t.Fatal("assistant events should be observable")
+	}
+}
+
+func TestEngineReplaysDurableTerminalOutbox(t *testing.T) {
+	stateRoot := t.TempDir()
+	attempt := &controlmodel.ExecutionAttempt{ID: uuid.New(), LeaseToken: "lease", FencingToken: 7}
+	hostID := uuid.New()
+	j := &Journal{Root: stateRoot}
+	if err := j.Save(&JournalRecord{Attempt: attempt, HostID: hostID, AttemptToken: "attempt-token",
+		PendingTerminal: &PendingTerminal{Action: "complete", Result: json.RawMessage(`{"output":"done"}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	cp := &fakeControlPlane{completed: make(chan struct{})}
+	engine := &Engine{Config: Config{StateRoot: stateRoot}, Client: cp}
+	engine.replayPendingTerminals(context.Background())
+	select {
+	case <-cp.completed:
+	default:
+		t.Fatal("pending terminal action was not delivered")
+	}
+	if cp.restored[attempt.ID] != "attempt-token" {
+		t.Fatalf("attempt token was not restored: %+v", cp.restored)
+	}
+	records, err := j.List()
+	if err != nil || len(records) != 0 {
+		t.Fatalf("delivered terminal record was retained: records=%+v err=%v", records, err)
 	}
 }

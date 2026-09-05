@@ -16,8 +16,11 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
@@ -58,5 +61,61 @@ func TestRuntimeControlSweeperFencesLostAttemptAndRequeuesTask(t *testing.T) {
 	task, _ = st.Collaboration().GetAgentTask(ctx, task.ID)
 	if task.Status != controlmodel.AgentTaskQueued || task.CurrentAttemptID == nil || *task.CurrentAttemptID != execution.ID {
 		t.Fatalf("task status=%s", task.Status)
+	}
+}
+
+func TestRuntimeControlSweeperProjectsTerminalRunToEndpointJob(t *testing.T) {
+	ctx := context.Background()
+	st, err := memory.Open(ctx, store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "endpoint:test"}
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: "t", Namespace: "n", Title: "job", Creator: actor, Status: controlmodel.IssueInProgress,
+		Kind: controlmodel.IssueKindEndpointJob, CompletionPolicy: controlmodel.IssueCompletionAutomatic,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{
+		Tenant: "t", Namespace: "n", RootIssueID: issue.ID, State: controlmodel.RunRunning, CreatedBy: actor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = st.Orchestration().TransitionRun(ctx, run.ID, run.Version, controlmodel.RunFailed,
+		nil, "team_coordinator_failed", "leader did not converge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := st.Endpoints().Create(ctx, &controlmodel.Endpoint{
+		Tenant: "t", Namespace: "n", Name: "team", Slug: "team", TargetType: controlmodel.EndpointTargetTeam,
+		TargetRef: uuid.New(), InvocationMode: controlmodel.EndpointJobMode,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, _, err := st.Endpoints().ReserveInvocation(ctx, &controlmodel.EndpointInvocation{
+		EndpointID: endpoint.ID, Mode: controlmodel.EndpointJobMode, PrincipalRef: "caller",
+		IdempotencyKey: "job-1", Status: controlmodel.EndpointInvocationRunning, RunID: &run.ID, IssueID: &issue.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	(&RuntimeControlSweeper{Store: st}).Sweep(ctx, time.Now().UTC())
+	invocation, err = st.Endpoints().GetInvocation(ctx, invocation.ID)
+	if err != nil || invocation.Status != controlmodel.EndpointInvocationFailed ||
+		invocation.ErrorCode != "team_coordinator_failed" || invocation.CompletedAt == nil {
+		t.Fatalf("terminal Run was not projected: invocation=%+v err=%v", invocation, err)
+	}
+	var result map[string]any
+	if json.Unmarshal(invocation.Result, &result) != nil || result["runState"] != string(controlmodel.RunFailed) {
+		t.Fatalf("unexpected invocation result: %s", invocation.Result)
+	}
+	issue, err = st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || issue.Status != controlmodel.IssueCancelled {
+		t.Fatalf("terminal Endpoint Job issue was not closed: issue=%+v err=%v", issue, err)
 	}
 }

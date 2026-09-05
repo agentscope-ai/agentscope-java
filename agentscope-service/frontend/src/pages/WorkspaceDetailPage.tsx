@@ -16,6 +16,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useControlPlaneScope } from '../app/ScopeContext';
 import {
   browseMarketplaceSkills,
   createMarketplace,
@@ -59,6 +60,7 @@ const card: React.CSSProperties = {
 export default function WorkspaceDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const scope = useControlPlaneScope();
   const [searchParams, setSearchParams] = useSearchParams();
   const [ws, setWs] = useState<WorkspaceSummary | null>(null);
   const tabParam = searchParams.get('tab');
@@ -217,9 +219,9 @@ export default function WorkspaceDetailPage() {
   }
 
   return (
-    <div style={{ padding: '36px 40px', maxWidth: 1040 }}>
+    <div className="console-page-legacy" style={{ padding: '36px 40px', maxWidth: 1040 }}>
       <button
-        onClick={() => navigate('/managed/workspaces')}
+        onClick={() => navigate(scope.scopedPath('/agent-center/workspaces'))}
         style={{
           background: 'transparent',
           border: 'none',

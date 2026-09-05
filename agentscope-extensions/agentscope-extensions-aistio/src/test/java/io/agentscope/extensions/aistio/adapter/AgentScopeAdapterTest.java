@@ -80,6 +80,7 @@ class AgentScopeAdapterTest {
                         FrameworkAdapter.CAP_SESSION_ABORT,
                         FrameworkAdapter.CAP_TASK_QUERY,
                         FrameworkAdapter.CAP_PLAN_MODE,
+                        FrameworkAdapter.CAP_CONVERSATION_INBOUND,
                         FrameworkAdapter.CAP_EXPORT_TRANSCRIPT),
                 new AgentScopeAdapter().capabilities());
     }

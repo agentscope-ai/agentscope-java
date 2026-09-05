@@ -50,6 +50,7 @@ var resourceMapping = map[string]struct {
 	"runtime-profiles":          {resource: "agents", group: "agentscope.io"},
 	"runtime-pools":             {resource: "agents", group: "agentscope.io"},
 	"runtime-hosts":             {resource: "agents", group: "agentscope.io"},
+	"runtime-host-enrollments":  {resource: "agents", group: "agentscope.io"},
 	// Sessions are store-backed (no dedicated CRD); authorize against the
 	// owning "agents" resource.
 	"sessions":     {resource: "agents", group: "agentscope.io"},

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -53,6 +54,96 @@ type ObservedSession struct {
 	EffectiveMessageCount int32
 	InstanceRef           string
 	InstanceIP            string
+}
+
+type ObservedConversationTurn struct {
+	InvocationID   string
+	ConversationID string
+	TurnID         string
+	SessionID      string
+	Generation     int64
+	Action         string
+	Sequence       int64
+	Payload        json.RawMessage
+	ErrorCode      string
+	ErrorMessage   string
+}
+
+// ApplyConversationTurnReport applies a report only when the authenticated
+// connection still owns the frozen Endpoint conversation identity.
+func (s *SessionEventSink) ApplyConversationTurnReport(ctx context.Context, identity RuntimeReportIdentity, report ObservedConversationTurn) error {
+	resolved, err := s.resolveRuntimeReportIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+	invocationID, err := uuid.Parse(report.InvocationID)
+	if err != nil {
+		return store.ErrNotFound
+	}
+	conversationID, err := uuid.Parse(report.ConversationID)
+	if err != nil {
+		return store.ErrNotFound
+	}
+	turnID, err := uuid.Parse(report.TurnID)
+	if err != nil {
+		return store.ErrNotFound
+	}
+	invocation, err := s.Store.Endpoints().GetInvocation(ctx, invocationID)
+	if err != nil || invocation.Mode != controlmodel.EndpointConversationMode || invocation.ConversationID == nil ||
+		*invocation.ConversationID != conversationID || invocation.TurnID == nil || *invocation.TurnID != turnID ||
+		invocation.SessionID != report.SessionID {
+		return store.ErrNotFound
+	}
+	conversation, err := s.Store.Endpoints().GetConversation(ctx, conversationID)
+	if err != nil || conversation.EndpointID != invocation.EndpointID || conversation.AgentID != resolved.AgentUUID ||
+		conversation.BindingID != resolved.BindingUUID || conversation.AgentInstanceID != resolved.AgentInstanceUUID ||
+		conversation.InstanceGeneration != identity.InstanceGeneration || report.Generation != identity.InstanceGeneration ||
+		conversation.SessionID != report.SessionID {
+		return store.ErrNotFound
+	}
+	now := time.Now().UTC()
+	switch report.Action {
+	case "accepted", "started":
+		invocation.Status = controlmodel.EndpointInvocationRunning
+		if invocation.StartedAt == nil {
+			invocation.StartedAt = &now
+		}
+	case "delta":
+		if invocation.Status == controlmodel.EndpointInvocationAccepted || invocation.Status == controlmodel.EndpointInvocationDispatching {
+			invocation.Status = controlmodel.EndpointInvocationRunning
+		}
+	case "completed":
+		invocation.Status, invocation.Result, invocation.CompletedAt = controlmodel.EndpointInvocationCompleted, report.Payload, &now
+	case "failed":
+		invocation.Status, invocation.ErrorCode = controlmodel.EndpointInvocationFailed, report.ErrorCode
+		invocation.ErrorMessage, invocation.CompletedAt = report.ErrorMessage, &now
+	case "cancelled":
+		invocation.Status, invocation.CompletedAt = controlmodel.EndpointInvocationCancelled, &now
+	default:
+		return fmt.Errorf("unsupported ConversationTurn action %q", report.Action)
+	}
+	if _, err = s.Store.Endpoints().UpdateInvocation(ctx, invocation); err != nil {
+		return err
+	}
+	conversation.LastTurnAt = &now
+	if _, err = s.Store.Endpoints().UpdateConversation(ctx, conversation); err != nil {
+		return err
+	}
+	sessions, err := s.Store.Sessions().List(ctx, store.SessionFilter{Tenant: identity.Tenant,
+		Namespace: identity.Namespace, AgentID: resolved.AgentUUID, SessionID: report.SessionID, Limit: 1})
+	if err != nil || len(sessions) == 0 || report.Sequence <= 0 {
+		return err
+	}
+	content := ""
+	var payload struct {
+		Content string `json:"content"`
+	}
+	if json.Unmarshal(report.Payload, &payload) == nil {
+		content = payload.Content
+	}
+	return s.Store.Events().Append(ctx, &store.SessionEvent{SessionFK: sessions[0].ID, Seq: int(report.Sequence),
+		EventType: "endpoint." + report.Action, Role: "assistant", Content: content,
+		FrameworkMeta: report.Payload, OccurredAt: now})
 }
 
 // ApplyExecutionAttemptReport projects a fenced external-runtime report into
@@ -386,64 +477,100 @@ func (s *SessionEventSink) ApplySessionReport(ctx context.Context, identity Runt
 
 // ApplyEventReport appends a batch of Level-2 events to the Store.
 // Duplicate (session, seq) appends are treated as idempotent success.
-func (s *SessionEventSink) ApplyEventReport(ctx context.Context, identity RuntimeReportIdentity, events []ObservedEvent) {
+func (s *SessionEventSink) ApplyEventReport(ctx context.Context, identity RuntimeReportIdentity, events []ObservedEvent) (map[string]int32, error) {
 	logger := log.FromContext(ctx).WithName("asdp-event-sink")
 	logger = logger.WithValues("tenant", identity.Tenant, "agentId", identity.AgentID)
+	committed := map[string]int32{}
 	if s.Store == nil || len(events) == 0 {
-		return
+		return committed, nil
 	}
 	resolvedIdentity, err := s.resolveRuntimeReportIdentity(ctx, identity)
 	if err != nil {
 		logger.Error(err, "rejected runtime event report")
-		return
+		return committed, err
 	}
 
-	// Group by session so each session FK is resolved once per batch.
-	fks := map[string]uuid.UUID{} // sessionID -> session FK
-	failed := map[string]bool{}
-	for i := range events {
-		e := events[i]
-		if e.SessionID == "" || failed[e.SessionID] {
-			continue
-		}
-		fk, ok := fks[e.SessionID]
-		if !ok {
-			resolved, err := s.resolveSessionFK(ctx, resolvedIdentity, e.SessionID)
-			if err != nil {
-				logger.Error(err, "failed to resolve session for events", "sessionID", e.SessionID)
-				failed[e.SessionID] = true
-				continue
-			}
-			fk = resolved
-			fks[e.SessionID] = fk
-		}
-		occurredAt := e.OccurredAt
-		if occurredAt.IsZero() {
-			occurredAt = time.Now().UTC()
-		}
-		err := s.Store.Events().Append(ctx, &store.SessionEvent{
-			SessionFK:     fk,
-			Seq:           int(e.Seq),
-			EventType:     e.EventType,
-			Role:          e.Role,
-			Content:       e.Content,
-			ToolName:      e.ToolName,
-			ToolInput:     e.ToolInput,
-			ToolOutput:    e.ToolOutput,
-			TokensIn:      int(e.TokensIn),
-			TokensOut:     int(e.TokensOut),
-			DurationMs:    int(e.DurationMs),
-			FrameworkMeta: e.FrameworkMeta,
-			OccurredAt:    occurredAt,
-		})
-		switch {
-		case err == nil:
-		case errors.Is(err, store.ErrConflict):
-			// duplicate (session, seq) — idempotent success
-		default:
-			logger.Error(err, "failed to append session event", "sessionID", e.SessionID, "seq", e.Seq)
+	// Process each session in sequence order and stop at the first gap/failure.
+	// This makes every returned watermark a contiguous durable prefix.
+	grouped := map[string][]ObservedEvent{}
+	for _, event := range events {
+		if event.SessionID != "" && event.Seq > 0 {
+			grouped[event.SessionID] = append(grouped[event.SessionID], event)
 		}
 	}
+	failed := map[string]bool{}
+	for sessionID, sessionEvents := range grouped {
+		sort.SliceStable(sessionEvents, func(i, j int) bool { return sessionEvents[i].Seq < sessionEvents[j].Seq })
+		fk, err := s.resolveSessionFK(ctx, resolvedIdentity, sessionID)
+		if err != nil {
+			logger.Error(err, "failed to resolve session for events", "sessionID", sessionID)
+			failed[sessionID] = true
+			continue
+		}
+		latest := int32(0)
+		stored, err := s.Store.Events().List(ctx, fk)
+		if err != nil {
+			logger.Error(err, "failed to read session event watermark", "sessionID", sessionID)
+			failed[sessionID] = true
+			continue
+		}
+		// Derive the largest contiguous prefix, not merely MAX(seq). Older
+		// writers may have left a hole; a replay that fills it must not be
+		// mistaken for an already committed duplicate.
+		storedSeqs := make(map[int32]struct{}, len(stored))
+		for _, persisted := range stored {
+			if persisted.Seq > 0 {
+				storedSeqs[int32(persisted.Seq)] = struct{}{}
+			}
+		}
+		for {
+			if _, ok := storedSeqs[latest+1]; !ok {
+				break
+			}
+			latest++
+		}
+		for _, event := range sessionEvents {
+			if event.Seq <= latest {
+				committed[sessionID] = latest // replay of an already committed prefix
+				continue
+			}
+			if event.Seq != latest+1 {
+				logger.Info("refusing non-contiguous session event", "sessionID", sessionID, "expected", latest+1, "seq", event.Seq)
+				failed[sessionID] = true
+				break
+			}
+			occurredAt := event.OccurredAt
+			if occurredAt.IsZero() {
+				occurredAt = time.Now().UTC()
+			}
+			err = s.Store.Events().Append(ctx, &store.SessionEvent{
+				SessionFK: fk, Seq: int(event.Seq), EventType: event.EventType, Role: event.Role,
+				Content: event.Content, ToolName: event.ToolName, ToolInput: event.ToolInput,
+				ToolOutput: event.ToolOutput, TokensIn: int(event.TokensIn), TokensOut: int(event.TokensOut),
+				DurationMs: int(event.DurationMs), FrameworkMeta: event.FrameworkMeta, OccurredAt: occurredAt,
+			})
+			if err != nil && !errors.Is(err, store.ErrConflict) {
+				logger.Error(err, "failed to append session event", "sessionID", sessionID, "seq", event.Seq)
+				failed[sessionID] = true
+				break
+			}
+			latest = event.Seq
+			for {
+				if _, ok := storedSeqs[latest+1]; !ok {
+					break
+				}
+				latest++
+			}
+			committed[sessionID] = latest
+		}
+	}
+	if len(grouped) == 0 && len(events) > 0 {
+		return committed, fmt.Errorf("event report contains no valid session sequence")
+	}
+	if len(failed) > 0 {
+		return committed, fmt.Errorf("one or more session event streams were not committed")
+	}
+	return committed, nil
 }
 
 // ApplyContextReport writes a Level-4 effective-context snapshot to the Store.

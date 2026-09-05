@@ -42,12 +42,13 @@ func freePort(t *testing.T) int {
 
 // testEventSink captures upstream events for assertions.
 type testEventSink struct {
-	mu               sync.Mutex
-	sessionReports   []capturedSessionReport
-	attemptReports   []capturedExecutionAttemptReport
-	eventReports     []*asdp.EventReport
-	contextReports   []*asdp.ContextReport
-	inventoryReports []*asdp.InventoryReport
+	mu                  sync.Mutex
+	sessionReports      []capturedSessionReport
+	attemptReports      []capturedExecutionAttemptReport
+	conversationReports []*asdp.ConversationTurnReport
+	eventReports        []*asdp.EventReport
+	contextReports      []*asdp.ContextReport
+	inventoryReports    []*asdp.InventoryReport
 }
 
 func (s *testEventSink) HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtimeName, sdkVersion string, capabilities []string) {
@@ -96,10 +97,21 @@ func (s *testEventSink) HandleExecutionAttemptReport(tenant, namespace, agentID,
 	})
 }
 
-func (s *testEventSink) HandleEventReport(identity asdp.ReportIdentity, report *asdp.EventReport) {
+func (s *testEventSink) HandleConversationTurnReport(identity asdp.ReportIdentity, report *asdp.ConversationTurnReport) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.conversationReports = append(s.conversationReports, report)
+}
+
+func (s *testEventSink) HandleEventReport(identity asdp.ReportIdentity, report *asdp.EventReport) *asdp.EventReportAck {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.eventReports = append(s.eventReports, report)
+	ack := &asdp.EventReportAck{ReportId: report.GetReportId()}
+	for _, event := range report.GetEvents() {
+		ack.Committed = append(ack.Committed, &asdp.SessionEventCursor{SessionId: event.GetSessionId(), CommittedSeq: event.GetSeq()})
+	}
+	return ack
 }
 
 func (s *testEventSink) HandleContextReport(identity asdp.ReportIdentity, report *asdp.ContextReport) {
@@ -609,12 +621,26 @@ func TestEventContextInventoryReports(t *testing.T) {
 	if err := stream.Send(&asdp.Upstream{
 		Meta: meta,
 		Payload: &asdp.Upstream_EventReport{EventReport: &asdp.EventReport{
+			ReportId: "report-1",
 			Events: []*asdp.SessionEventMsg{
 				{SessionId: "sess-1", Seq: 1, EventType: "message", Role: "user", Content: "hi", OccurredAt: time.Now().UnixMilli()},
 			},
 		}},
 	}); err != nil {
 		t.Fatalf("send EventReport: %v", err)
+	}
+	for {
+		downstream, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("receive EventReportAck: %v", err)
+		}
+		if eventAck := downstream.GetEventAck(); eventAck != nil {
+			if eventAck.ReportId != "report-1" || len(eventAck.Committed) != 1 ||
+				eventAck.Committed[0].SessionId != "sess-1" || eventAck.Committed[0].CommittedSeq != 1 {
+				t.Fatalf("unexpected EventReportAck: %+v", eventAck)
+			}
+			break
+		}
 	}
 
 	// Level 4: context report.

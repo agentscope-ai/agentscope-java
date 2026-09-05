@@ -46,6 +46,10 @@ func (r *eventRepo) Append(_ context.Context, event *store.SessionEvent) error {
 		cp.FrameworkMeta = append([]byte(nil), event.FrameworkMeta...)
 	}
 	r.s.events = append(r.s.events, cp)
+	if signal := r.s.eventSignals[event.SessionFK]; signal != nil {
+		close(signal)
+	}
+	r.s.eventSignals[event.SessionFK] = make(chan struct{})
 	return nil
 }
 
@@ -72,6 +76,9 @@ func (r *eventRepo) List(_ context.Context, sessionFK uuid.UUID, opts ...store.E
 			continue
 		}
 		if o.BeforeSeq != nil && e.Seq >= *o.BeforeSeq {
+			continue
+		}
+		if o.AfterSeq != nil && e.Seq <= *o.AfterSeq {
 			continue
 		}
 		cp := e
@@ -101,6 +108,28 @@ func (r *eventRepo) List(_ context.Context, sessionFK uuid.UUID, opts ...store.E
 		out = out[:o.Limit]
 	}
 	return out, nil
+}
+
+func (r *eventRepo) WaitForNew(ctx context.Context, sessionFK uuid.UUID, afterSeq int) error {
+	r.s.mu.Lock()
+	for i := range r.s.events {
+		if r.s.events[i].SessionFK == sessionFK && r.s.events[i].Seq > afterSeq {
+			r.s.mu.Unlock()
+			return nil
+		}
+	}
+	signal := r.s.eventSignals[sessionFK]
+	if signal == nil {
+		signal = make(chan struct{})
+		r.s.eventSignals[sessionFK] = signal
+	}
+	r.s.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-signal:
+		return nil
+	}
 }
 
 type contextRepo struct{ s *Store }

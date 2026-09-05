@@ -39,7 +39,7 @@ type Store interface {
 	Outbox() OutboxRepository
 	Collaboration() CollaborationRepository
 	WorkSources() WorkSourceRepository
-	AgentEndpoints() AgentEndpointRepository
+	Endpoints() EndpointRepository
 	TeamProposals() TeamProposalRepository
 
 	// Hosted DistributedStore backends (data-plane coordination).
@@ -104,6 +104,10 @@ type TurnRepository interface {
 type EventRepository interface {
 	Append(ctx context.Context, event *SessionEvent) error
 	List(ctx context.Context, sessionFK uuid.UUID, opts ...EventOption) ([]*SessionEvent, error)
+	// WaitForNew blocks until an event with seq greater than afterSeq is
+	// available for the session or ctx is cancelled. Implementations should use
+	// a notification primitive rather than polling durable storage.
+	WaitForNew(ctx context.Context, sessionFK uuid.UUID, afterSeq int) error
 }
 
 // ContextSnapshotRepository manages context_snapshots (Level 4).
@@ -267,6 +271,7 @@ func ResolveEventOptions(opts []EventOption) EventListOpts {
 		Until:       o.Until,
 		Before:      o.Before,
 		BeforeSeq:   o.BeforeSeq,
+		AfterSeq:    o.AfterSeq,
 		Limit:       o.Limit,
 		Offset:      o.Offset,
 		NewestFirst: o.NewestFirst,

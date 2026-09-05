@@ -15,20 +15,33 @@
 package httpapi
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/spring-ai-alibaba/aistio/internal/dataplane"
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
+
+func TestSessionEventWaitTimedOutRecognizesWrappedDeadline(t *testing.T) {
+	if !sessionEventWaitTimedOut(fmt.Errorf("postgres wait: %w", context.DeadlineExceeded)) {
+		t.Fatal("wrapped deadline should produce an SSE heartbeat instead of closing the stream")
+	}
+	if sessionEventWaitTimedOut(context.Canceled) {
+		t.Fatal("client cancellation must close the stream")
+	}
+}
 
 func TestGetSessionMessages_TranscriptHitSkipsCapability(t *testing.T) {
 	st, err := memory.Open(context.Background(), store.Config{})
@@ -77,6 +90,55 @@ func TestGetSessionMessages_TranscriptHitSkipsCapability(t *testing.T) {
 	}
 	if page.Total != 1 || len(page.Messages) != 1 || page.Messages[0].Content != "hi" {
 		t.Fatalf("unexpected page: %+v", page)
+	}
+}
+
+func TestGetSessionMessages_ProjectsDurableEventsBeforeLiveQuery(t *testing.T) {
+	st, err := memory.Open(context.Background(), store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Sessions().Upsert(context.Background(), &store.Session{
+		SessionID: "event-only", AgentName: "agent-events", Namespace: "default",
+		Framework: "agentscope", Phase: store.SessionPhaseIdle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []*store.SessionEvent{
+		{SessionFK: sess.ID, Seq: 1, EventType: "session_start"},
+		{SessionFK: sess.ID, Seq: 2, EventType: "message", Role: "user", Content: "hello"},
+		{SessionFK: sess.ID, Seq: 3, EventType: "message", Role: "assistant", Content: "hi"},
+	} {
+		if err := st.Events().Append(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	calledProber := false
+	s := NewServer(ServerOptions{
+		Store: st,
+		Prober: &stubProber{fetchMessages: func() (*prober.MessagePage, error) {
+			calledProber = true
+			return nil, nil
+		}},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+sess.ID.String()+"/messages?fromEnd=true&limit=1", nil)
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if calledProber {
+		t.Fatal("live message-query should not run when durable message events exist")
+	}
+	var page prober.MessagePage
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Source != "events" || page.Total != 2 || page.Offset != 1 || len(page.Messages) != 1 ||
+		page.Messages[0].Role != "assistant" || page.Messages[0].Content != "hi" {
+		t.Fatalf("unexpected event projection: %+v", page)
 	}
 }
 
@@ -196,6 +258,171 @@ func TestGetSessionEvents_BeforeSeqReversePaging(t *testing.T) {
 	if body.Events[0].Seq != 2 || body.Events[1].Seq != 3 {
 		t.Fatalf("want seq 2,3 got %d,%d", body.Events[0].Seq, body.Events[1].Seq)
 	}
+}
+
+func TestGetSessionEvents_AfterSeqForwardGapRepair(t *testing.T) {
+	st, err := memory.Open(context.Background(), store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Sessions().Upsert(context.Background(), &store.Session{
+		SessionID: "ev-forward", AgentName: "agent-e", Namespace: "default",
+		Framework: "x", Phase: store.SessionPhaseIdle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 5; i++ {
+		if err := st.Events().Append(context.Background(), &store.SessionEvent{
+			SessionFK: sess.ID, Seq: i, EventType: "message", Content: "c",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := NewServer(ServerOptions{Store: st})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+sess.ID.String()+"/events?after=2&limit=2", nil)
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Events []*store.SessionEvent `json:"events"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Events) != 2 || body.Events[0].Seq != 3 || body.Events[1].Seq != 4 {
+		t.Fatalf("want seq 3,4 got %+v", body.Events)
+	}
+}
+
+func TestStreamSessionEvents_ResumesAfterExclusiveSequence(t *testing.T) {
+	st, err := memory.Open(context.Background(), store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Sessions().Upsert(context.Background(), &store.Session{
+		SessionID: "stream-1", AgentName: "agent-stream", Namespace: "default",
+		Framework: "agentscope", Phase: store.SessionPhaseIdle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []*store.SessionEvent{
+		{SessionFK: sess.ID, Seq: 1, EventType: "message", Role: "user", Content: "old"},
+		{SessionFK: sess.ID, Seq: 2, EventType: "message", Role: "assistant", Content: "new"},
+	} {
+		if err := st.Events().Append(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := NewServer(ServerOptions{Store: st})
+	testServer := httptest.NewServer(s.router)
+	defer testServer.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		testServer.URL+"/api/v1/sessions/"+sess.ID.String()+"/events/stream?after=1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	if contentType := resp.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("content-type=%q", contentType)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	var eventID string
+	var payload store.SessionEvent
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "id: ") {
+			eventID = strings.TrimPrefix(line, "id: ")
+		}
+		if strings.HasPrefix(line, "data: ") {
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &payload); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if eventID != "2" || payload.Seq != 2 || payload.Content != "new" {
+		t.Fatalf("unexpected resumed event id=%q payload=%+v", eventID, payload)
+	}
+}
+
+func TestStreamSessionEvents_OutlivesServerWriteTimeout(t *testing.T) {
+	st, err := memory.Open(context.Background(), store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Sessions().Upsert(context.Background(), &store.Session{
+		SessionID: "stream-deadline", AgentName: "agent-stream", Namespace: "default",
+		Framework: "agentscope", Phase: store.SessionPhaseIdle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewServer(ServerOptions{Store: st})
+	testServer := httptest.NewUnstartedServer(s.router)
+	testServer.Config.WriteTimeout = 50 * time.Millisecond
+	testServer.Start()
+	defer testServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		testServer.URL+"/api/v1/sessions/"+sess.ID.String()+"/events/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Publish only after the server-wide deadline would have expired. The SSE
+	// handler must have cleared that deadline for this connection.
+	time.Sleep(100 * time.Millisecond)
+	if err := st.Events().Append(context.Background(), &store.SessionEvent{
+		SessionFK: sess.ID, Seq: 1, EventType: "message", Role: "assistant", Content: "still-open",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var event store.SessionEvent
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Seq != 1 || event.Content != "still-open" {
+			t.Fatalf("unexpected event after write timeout: %+v", event)
+		}
+		return
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("stream closed at the server write timeout: %v", err)
+	}
+	t.Fatal("stream closed before the event published after the server write timeout")
 }
 
 func TestFilesystemTranscriptMessages(t *testing.T) {

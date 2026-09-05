@@ -61,19 +61,18 @@ func testAgentCatalog(t *testing.T, ctx context.Context, s store.Store) {
 	wg.Wait()
 	close(outcomes)
 	created := 0
-	winningIndex := -1
 	var registered *store.ExternalAgentRegistrationResult
 	for value := range outcomes {
 		if value.err == nil {
 			created++
-			winningIndex, registered = value.index, value.result
+			registered = value.result
 			continue
 		}
 		if !errors.Is(value.err, store.ErrConflict) {
 			t.Fatalf("concurrent registration returned %v, want conflict", value.err)
 		}
 	}
-	if created != 1 || registered == nil || !registered.CredentialCreated || registered.Agent.Status != controlmodel.AgentActive {
+	if created != contenders || registered == nil || !registered.CredentialCreated || registered.Agent.Status != controlmodel.AgentActive {
 		t.Fatalf("concurrent registration did not converge: created=%d result=%+v", created, registered)
 	}
 	agents, err := s.AgentCatalog().ListAgents(ctx, store.AgentFilter{Tenant: tenant, Namespace: "default"})
@@ -88,23 +87,23 @@ func testAgentCatalog(t *testing.T, ctx context.Context, s store.Store) {
 	if err != nil || len(policies) != 1 || policies[0].AgentRef != registered.Agent.ID.String() {
 		t.Fatalf("default runtime policy is not unique: policies=%+v err=%v", policies, err)
 	}
-	winningHash := sha256.Sum256([]byte(fmt.Sprintf("credential-%d", winningIndex)))
+	followUpHash := sha256.Sum256([]byte("follow-up"))
 	followUp, err := s.AgentCatalog().RegisterExternal(ctx, store.ExternalAgentRegistration{
 		Tenant: tenant, Namespace: "default", AgentKey: "reviewer", InstanceKey: "scale-out",
-		ClaimCredentialHash: winningHash[:], Capabilities: json.RawMessage(`{"review":true}`), Capacity: 4,
+		NewCredentialHash: followUpHash[:], Capabilities: json.RawMessage(`{"review":true}`), Capacity: 4,
 	})
-	if err != nil || followUp.CredentialCreated || followUp.Agent.ID != registered.Agent.ID || followUp.Binding.ID != registered.Binding.ID {
-		t.Fatalf("credential claim did not reuse logical identity: result=%+v err=%v", followUp, err)
+	if err != nil || !followUp.CredentialCreated || followUp.Agent.ID != registered.Agent.ID || followUp.Binding.ID != registered.Binding.ID {
+		t.Fatalf("open registration did not reuse logical identity: result=%+v err=%v", followUp, err)
 	}
 	badHash := sha256.Sum256([]byte("forged"))
 	if _, err := s.AgentCatalog().RegisterExternal(ctx, store.ExternalAgentRegistration{
 		Tenant: tenant, Namespace: "default", AgentKey: "reviewer", InstanceKey: "forged",
-		ClaimCredentialHash: badHash[:],
-	}); !errors.Is(err, store.ErrForbidden) {
-		t.Fatalf("forged credential was not rejected: %v", err)
+		NewCredentialHash: badHash[:],
+	}); err != nil {
+		t.Fatalf("open registration was rejected: %v", err)
 	}
 	instances, err := s.RuntimeRegistry().ListAgentInstances(ctx, tenant, "default", registered.Agent.ID)
-	if err != nil || len(instances) != 2 {
+	if err != nil || len(instances) != contenders+2 {
 		t.Fatalf("scale-out should add instances only: instances=%+v err=%v", instances, err)
 	}
 }
@@ -299,12 +298,29 @@ func testCollaboration(t *testing.T, ctx context.Context, s store.Store) {
 	if err != nil {
 		t.Fatalf("create team: %v", err)
 	}
-	member, err := repo.AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{TeamID: team.ID, Role: "lead", AgentRef: "lead"})
+	member, err := repo.AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{TeamID: team.ID, Role: "worker", AgentRef: "worker"})
 	if err != nil || member.ID == uuid.Nil {
 		t.Fatalf("add team member: member=%+v err=%v", member, err)
 	}
+	team, err = repo.GetTeam(ctx, team.ID)
+	if err != nil || team.Version != 2 || len(team.Members) != 1 {
+		t.Fatalf("Team version after member add: team=%+v err=%v", team, err)
+	}
+	member.Role, member.Instructions = "coordinator", "Own the delivery hand-off"
+	member, err = repo.UpdateTeamMember(ctx, member, team.Version)
+	if err != nil || member.Role != "coordinator" || member.Instructions == "" {
+		t.Fatalf("update team member: member=%+v err=%v", member, err)
+	}
+	team, err = repo.GetTeam(ctx, team.ID)
+	if err != nil || team.Version != 3 || len(team.Members) != 1 || team.Members[0].Role != "coordinator" {
+		t.Fatalf("Team version after member update: team=%+v err=%v", team, err)
+	}
 	if err := repo.RemoveTeamMember(ctx, team.ID, member.ID); err != nil {
 		t.Fatalf("remove team member: %v", err)
+	}
+	team, err = repo.GetTeam(ctx, team.ID)
+	if err != nil || team.Version != 4 || len(team.Members) != 0 {
+		t.Fatalf("Team version after member removal: team=%+v err=%v", team, err)
 	}
 	artifact, err := repo.CreateArtifact(ctx, &controlmodel.Artifact{Tenant: issue.Tenant, Namespace: issue.Namespace,
 		StorageProvider: "contract", StorageKey: "objects/result", Filename: "result.txt", ContentType: "text/plain",

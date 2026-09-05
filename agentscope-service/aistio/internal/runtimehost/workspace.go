@@ -39,6 +39,22 @@ type WorkspaceManager struct {
 }
 
 func (m *WorkspaceManager) Prepare(ctx context.Context, envelope *collaboration.ContextEnvelope) (path, key, prompt string, err error) {
+	return m.PrepareForSession(ctx, envelope, "")
+}
+
+// PrepareForSession keeps a Hosted Conversation in one workspace across its
+// per-turn AgentTasks. Ordinary Jobs retain task-scoped isolation.
+func (m *WorkspaceManager) PrepareForSession(ctx context.Context, envelope *collaboration.ContextEnvelope,
+	sessionID string) (path, key, prompt string, err error) {
+	return m.PrepareForExecution(ctx, envelope, sessionID, "")
+}
+
+// PrepareForExecution reuses the exact workspace selected by a previous turn
+// when one is supplied. This is required by providers such as Qoder whose
+// native session index is scoped to the working directory. It also preserves
+// conversations created by Runtime Hosts that predate stable session paths.
+func (m *WorkspaceManager) PrepareForExecution(ctx context.Context, envelope *collaboration.ContextEnvelope,
+	sessionID, existingKey string) (path, key, prompt string, err error) {
 	if envelope == nil || envelope.Task == nil || envelope.Issue == nil {
 		return "", "", "", fmt.Errorf("task context is required")
 	}
@@ -47,7 +63,18 @@ func (m *WorkspaceManager) Prepare(ctx context.Context, envelope *collaboration.
 	if err != nil {
 		return "", "", "", err
 	}
-	key = filepath.Join(safeSegment(task.Tenant), task.ID.String())
+	key, err = safeWorkspaceKey(existingKey)
+	if err != nil {
+		return "", "", "", err
+	}
+	if key == "" {
+		if strings.TrimSpace(sessionID) != "" {
+			key = filepath.Join(safeSegment(task.Tenant), safeSegment(task.Namespace), "conversations",
+				safeSegment(task.AgentRef), safeSegment(sessionID))
+		} else {
+			key = filepath.Join(safeSegment(task.Tenant), task.ID.String())
+		}
+	}
 	path = filepath.Join(root, key)
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return "", "", "", err
@@ -74,6 +101,19 @@ func (m *WorkspaceManager) Prepare(ctx context.Context, envelope *collaboration.
 		}
 	}
 	return path, key, prompt, nil
+}
+
+func safeWorkspaceKey(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	key := filepath.Clean(value)
+	if filepath.IsAbs(key) || key == "." || key == ".." ||
+		strings.HasPrefix(key, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("workspace key %q is outside the workspace root", value)
+	}
+	return key, nil
 }
 
 func safeSegment(value string) string {

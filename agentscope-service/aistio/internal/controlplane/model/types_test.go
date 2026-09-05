@@ -21,6 +21,27 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestHostedExecutionOverridesResolveProfileWithoutMutatingIt(t *testing.T) {
+	base := json.RawMessage(`{"sandbox":"read-only","skipGitRepoCheck":false}`)
+	overrides := &HostedExecutionOverrides{ReasoningEffort: "high", ServiceTier: "priority",
+		ProviderConfiguration: json.RawMessage(`{"sandbox":"workspace-write"}`)}
+	resolved, err := overrides.ResolveProviderConfiguration(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values map[string]any
+	if err = json.Unmarshal(resolved, &values); err != nil {
+		t.Fatal(err)
+	}
+	if values["sandbox"] != "workspace-write" || values["reasoningEffort"] != "high" ||
+		values["serviceTier"] != "priority" || values["skipGitRepoCheck"] != false {
+		t.Fatalf("resolved configuration=%v", values)
+	}
+	if string(base) != `{"sandbox":"read-only","skipGitRepoCheck":false}` {
+		t.Fatalf("base configuration mutated: %s", base)
+	}
+}
+
 func TestRuntimeBindingValidate(t *testing.T) {
 	valid := []RuntimeBinding{
 		{AgentID: uuid.New(), BindingID: uuid.New(), Kind: DataPlaneManaged, ManagedOwnerRef: "owner-1", ManagedDefinitionRef: "definition-1"},
@@ -66,5 +87,24 @@ func TestRuntimeSecurityMatchesNestedLabelsAndBackend(t *testing.T) {
 	}
 	if RuntimeSecurityMatches(DataPlaneManaged, nil, json.RawMessage(`{"region":"cn"}`)) {
 		t.Fatal("managed target without required labels was accepted")
+	}
+}
+
+func TestRuntimeHostMatchesProfileAndPool(t *testing.T) {
+	capabilities := json.RawMessage(`{"providers":{"codex":"0.152.1"},"sandbox":{"network":false}}`)
+	profile := &RuntimeProfile{Provider: "codex", Requirements: json.RawMessage(`{"sandbox":{"network":false}}`)}
+	if !RuntimeHostMatchesProfile(capabilities, profile) {
+		t.Fatal("matching provider installation and requirements were rejected")
+	}
+	profile.Provider = "claude-code"
+	if RuntimeHostMatchesProfile(capabilities, profile) {
+		t.Fatal("Host without the requested provider was accepted")
+	}
+	pool := &RuntimePool{HostSelector: json.RawMessage(`{"region":"cn"}`)}
+	if !RuntimeHostMatchesPool(json.RawMessage(`{"region":"cn","tier":"local"}`), pool) {
+		t.Fatal("matching pool selector was rejected")
+	}
+	if RuntimeHostMatchesPool(json.RawMessage(`{"region":"us"}`), pool) {
+		t.Fatal("mismatched pool selector was accepted")
 	}
 }

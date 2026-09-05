@@ -41,12 +41,21 @@ class SessionBridgeContractTest {
                         .build();
         assertEquals("tenant-a", config.tenant());
         assertEquals("namespace-a", config.namespace());
+        assertEquals(false, config.enableEvents());
+        AistioConfig grpcConfig =
+                AistioConfig.builder("test-agent")
+                        .controlPlane("localhost:15010")
+                        .controlPlaneHttp("http://localhost:8081")
+                        .startGrpc(true)
+                        .build();
+        assertEquals(true, grpcConfig.enableEvents());
     }
 
     private SessionBridge bridgeWith(AgentScopeAdapter adapter, StubAgent agent) {
         SessionBridge bridge =
                 new SessionBridge(
                         AistioConfig.builder("test-agent")
+                                .enableEvents(false)
                                 .startHttp(false)
                                 .startGrpc(false)
                                 .build());
@@ -162,5 +171,6 @@ class SessionBridgeContractTest {
         assertTrue(bridge.capabilities().contains(FrameworkAdapter.CAP_SESSION_ABORT));
         assertTrue(bridge.capabilities().contains(FrameworkAdapter.CAP_TASK_QUERY));
         assertTrue(bridge.capabilities().contains(FrameworkAdapter.CAP_PLAN_MODE));
+        assertTrue(bridge.capabilities().contains(FrameworkAdapter.CAP_CONVERSATION_INBOUND));
     }
 }

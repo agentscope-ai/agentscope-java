@@ -41,7 +41,10 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 		if err != nil {
 			return err
 		}
-		if controlmodel.IsOrchestrationRunTerminal(run.State) || run.State == controlmodel.RunPaused || run.State == controlmodel.RunCancelling {
+		if controlmodel.IsOrchestrationRunTerminal(run.State) {
+			return e.convergeCompletedIssue(ctx, run)
+		}
+		if run.State == controlmodel.RunPaused || run.State == controlmodel.RunCancelling {
 			return nil
 		}
 		nodes, err := e.Store.Orchestration().ListNodes(ctx, runID)
@@ -249,11 +252,13 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 				if loadErr != nil {
 					return e.failNode(ctx, node, loadErr)
 				}
-				snapshot, _ := json.Marshal(team)
-				_, err = e.Store.Orchestration().PutTeamSnapshot(ctx, &controlmodel.RunTeamSnapshot{RunID: run.ID, TeamID: team.ID, Tenant: run.Tenant, Namespace: run.Namespace, Snapshot: snapshot})
-				if err == nil {
-					_, err = e.Store.Collaboration().CreateRunAgentTask(ctx, store.RunTaskRequest{RunID: run.ID, NodeID: node.ID, IssueID: *node.IssueID, AgentRef: team.LeaderAgentRef, TeamID: &team.ID, TeamRole: "leader", Leader: true, RuntimeCandidate: cfg.RuntimeCandidate, Originator: run.CreatedBy})
+				if team.Status != controlmodel.TeamActive {
+					return e.failNode(ctx, node, fmt.Errorf("Team %s is not active", team.ID))
 				}
+				_, _, err = MaterializeTeamCoordinator(ctx, e.Store, MaterializeTeamRequest{
+					Run: run, IssueID: *node.IssueID, Team: team, NodeID: node.ID, NodeKey: node.NodeKey,
+					RuntimeCandidate: cfg.RuntimeCandidate, Actor: run.CreatedBy,
+				})
 				if err == nil {
 					_, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeWaiting, inputJSON, "team_coordinator", "")
 				}
@@ -372,8 +377,11 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 			} else if failed > 0 {
 				target = controlmodel.RunFailed
 			}
-			_, err = e.Store.Orchestration().TransitionRun(ctx, runID, run.Version, target, nil, "", "")
-			return err
+			run, err = e.Store.Orchestration().TransitionRun(ctx, runID, run.Version, target, nil, "", "")
+			if err != nil {
+				return err
+			}
+			return e.convergeCompletedIssue(ctx, run)
 		}
 		run, _ = e.Store.Orchestration().GetRun(ctx, runID)
 		if waiting > 0 && runnable == 0 && run.State == controlmodel.RunRunning {
@@ -387,6 +395,38 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 		return nil
 	}
 	return fmt.Errorf("orchestration reconciliation exceeded iteration limit")
+}
+
+// convergeCompletedIssue keeps human Work acceptance separate from physical
+// execution. Human-facing Work requests review, while an operational
+// Endpoint Job with an automatic completion policy closes with its Run.
+// Subruns never advance their shared root Issue ahead of the parent Run.
+func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.OrchestrationRun) error {
+	if run == nil || run.ParentRunID != nil ||
+		(run.State != controlmodel.RunSucceeded && run.State != controlmodel.RunPartialSucceeded) {
+		return nil
+	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-run:" + run.ID.String()}
+	for attempt := 0; attempt < 3; attempt++ {
+		issue, err := e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
+		if err != nil {
+			return err
+		}
+		if issue.Status != controlmodel.IssueInProgress {
+			return nil
+		}
+		target, reason := controlmodel.IssueInReview, "execution completed; awaiting acceptance"
+		if issue.CompletionPolicy == controlmodel.IssueCompletionAutomatic {
+			target, reason = controlmodel.IssueDone, "automatic Endpoint Job execution completed"
+		}
+		if _, err = e.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+			target, actor, reason); err == nil {
+			return nil
+		} else if err != store.ErrConflict {
+			return err
+		}
+	}
+	return store.ErrConflict
 }
 
 func buildCELVars(run *controlmodel.OrchestrationRun, issue *controlmodel.Issue, nodes []*controlmodel.RunNode) map[string]any {
@@ -448,9 +488,24 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 			if !controlmodel.IsAgentTaskTerminal(latest.Status) {
 				continue
 			}
-			// A successful Team leader turn does not complete its coordinator;
-			// the leader must call run.node.complete/fail explicitly.
+			// For a successful Team leader turn, an explicit
+			// run.node.complete/fail wins when the leader used it. For
+			// simple Team work with no delegation, however, the successful leader
+			// result is already a converged outcome and should not wait forever for
+			// a redundant control-plane callback.
 			if node.Type == controlmodel.RunNodeTeam && latest.Status == controlmodel.AgentTaskCompleted {
+				converged, convergeErr := e.teamCoordinatorCanAutoComplete(ctx, run, node, latest, nodes, tasks)
+				if convergeErr != nil {
+					return changed, convergeErr
+				}
+				if converged {
+					_, transitionErr := e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version,
+						controlmodel.RunNodeSucceeded, latest.Result, "", "")
+					if transitionErr != nil && transitionErr != store.ErrConflict {
+						return changed, transitionErr
+					}
+					changed = transitionErr == nil
+				}
 				continue
 			}
 			if latest.Status == controlmodel.AgentTaskCompleted {
@@ -541,6 +596,37 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 		}
 	}
 	return changed, nil
+}
+
+func (e *Engine) teamCoordinatorCanAutoComplete(ctx context.Context, run *controlmodel.OrchestrationRun,
+	node *controlmodel.RunNode, latest *controlmodel.AgentTask, nodes []*controlmodel.RunNode,
+	tasks []*controlmodel.AgentTask) (bool, error) {
+	if run == nil || node == nil || latest == nil || !latest.LeaderTask ||
+		latest.Status != controlmodel.AgentTaskCompleted {
+		return false, nil
+	}
+	for _, task := range tasks {
+		if task.ID != latest.ID && !controlmodel.IsAgentTaskTerminal(task.Status) {
+			return false, nil
+		}
+	}
+	for _, candidate := range nodes {
+		if candidate.ID != node.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
+			return false, nil
+		}
+	}
+	children, err := e.Store.Collaboration().ListIssues(ctx, store.IssueFilter{
+		Tenant: run.Tenant, Namespace: run.Namespace, ParentID: &latest.IssueID, Limit: 500,
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, child := range children {
+		if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (e *Engine) createSubrun(ctx context.Context, parent *controlmodel.OrchestrationRun, node *controlmodel.RunNode, revision *controlmodel.OrchestrationRevision, input json.RawMessage) (*controlmodel.OrchestrationRun, error) {

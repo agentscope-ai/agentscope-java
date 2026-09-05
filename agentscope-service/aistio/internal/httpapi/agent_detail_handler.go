@@ -125,7 +125,7 @@ func (s *Server) getAgentDetailOverview(c *gin.Context) {
 			availableCapacity += instance.Capacity - instance.ActiveSessions
 		}
 	}
-	if !unlimitedCapacity {
+	if len(instances) > 0 && !unlimitedCapacity {
 		overview.Instances.Capacity = &totalCapacity
 		overview.Instances.Available = &availableCapacity
 	}
@@ -176,16 +176,16 @@ func (s *Server) getAgentDetailOverview(c *gin.Context) {
 		overview.Usage.Status = telemetryNotReporting
 	}
 
-	endpoints, _ := s.store.AgentEndpoints().List(c, agent.Tenant, agent.Namespace)
+	endpoints, _ := s.store.Endpoints().List(c, agent.Tenant, agent.Namespace)
 	for _, endpoint := range endpoints {
 		if endpoint.TargetType != controlmodel.EndpointTargetAgent || endpoint.TargetRef != agentID {
 			continue
 		}
 		overview.Entrypoints.Total++
-		if endpoint.Enabled {
+		if endpoint.Status == controlmodel.EndpointPublished {
 			overview.Entrypoints.Enabled++
 		}
-		if endpoint.InvocationMode == controlmodel.EndpointConversation {
+		if endpoint.InvocationMode == controlmodel.EndpointConversationMode {
 			overview.Entrypoints.Conversation++
 		} else if endpoint.InvocationMode == controlmodel.EndpointJobMode {
 			overview.Entrypoints.Jobs++
@@ -204,6 +204,16 @@ func parseAgentDetailWindow(raw string) time.Duration {
 
 func (s *Server) inspectAgentReadiness(ctx *gin.Context, agent *controlmodel.Agent,
 	bindings []*controlmodel.AgentBinding, instances []*controlmodel.AgentInstance) (agentReadiness, int) {
+	policy, err := s.store.Orchestration().GetRuntimePolicy(ctx, agent.Tenant, agent.Namespace, agent.ID.String())
+	if err != nil {
+		return inspectAgentReadinessCandidates(ctx, s, agent, bindings, instances, nil)
+	}
+	return inspectAgentReadinessCandidates(ctx, s, agent, bindings, instances, policy.Candidates)
+}
+
+func inspectAgentReadinessCandidates(ctx *gin.Context, s *Server, agent *controlmodel.Agent,
+	bindings []*controlmodel.AgentBinding, instances []*controlmodel.AgentInstance,
+	candidates []controlmodel.RuntimeBindingCandidate) (agentReadiness, int) {
 	if agent.Status != controlmodel.AgentActive {
 		return agentReadiness{State: "inactive", Mode: "online", Reason: "Agent lifecycle is not active"}, 0
 	}
@@ -213,15 +223,14 @@ func (s *Server) inspectAgentReadiness(ctx *gin.Context, agent *controlmodel.Age
 			enabled[binding.ID] = binding
 		}
 	}
-	policy, err := s.store.Orchestration().GetRuntimePolicy(ctx, agent.Tenant, agent.Namespace, agent.ID.String())
-	if len(enabled) == 0 || err != nil || len(policy.Candidates) == 0 {
+	if len(enabled) == 0 || len(candidates) == 0 {
 		return agentReadiness{State: "unbound", Mode: "online", Reason: "No enabled runtime policy candidate"}, 0
 	}
 	dispatchable := 0
 	selectedIndex := -1
 	selectedMode := "online"
 	selectedBinding := uuid.Nil
-	for index, candidate := range policy.Candidates {
+	for index, candidate := range candidates {
 		binding := enabled[candidate.Binding.BindingID]
 		if binding == nil || binding.Kind != candidate.Binding.Kind {
 			continue

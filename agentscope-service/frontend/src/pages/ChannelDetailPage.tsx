@@ -34,6 +34,7 @@ import PlatformCredentialsForm, {
   credentialsFromProperties,
   propertiesFromCredentials,
 } from '../components/PlatformCredentialsForm';
+import { AgentIdentity, AgentPicker } from '../components/AgentPicker';
 
 const DM_SCOPES = ['MAIN', 'PER_PEER'];
 
@@ -276,11 +277,11 @@ export default function ChannelDetailPage() {
   }
 
   if (!detail && !err) {
-    return <div style={S.root}>Loading…</div>;
+    return <div className="console-page-legacy" style={S.root}>Loading…</div>;
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <button style={S.backLink} onClick={() => navigate('/managed/channels')}>← All channels</button>
       <h1 style={S.title}>{channelId}</h1>
       <div style={S.subtle}>IM identity configuration. Credentials switch with the selected platform.</div>
@@ -321,13 +322,8 @@ export default function ChannelDetailPage() {
                 </select>
               </div>
               <div style={{ gridColumn: '1 / span 2' }}>
-                <label style={S.field}>Default agent id</label>
-                <input
-                  style={S.input}
-                  value={defaultAgentId}
-                  onChange={e => setDefaultAgentId(e.target.value)}
-                  placeholder="e.g. default"
-                />
+                <label style={S.field}>Default Agent</label>
+                <AgentPicker value={defaultAgentId} onChange={setDefaultAgentId} aria-label="Channel default Agent" />
               </div>
             </div>
             <div style={{ marginTop: 18 }}>
@@ -369,7 +365,7 @@ export default function ChannelDetailPage() {
             ) : bindings.map((b, i) => (
               <div key={i} style={S.bindingRow}>
                 <span style={{ ...S.badge, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>
-                  → {b.agentId}
+                  → <AgentIdentity agentId={b.agentId} showId={false} />
                 </span>
                 <span style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.86rem', color: '#475569' }}>
                   {describe(b)}
@@ -432,11 +428,11 @@ function BindingDialog({ form, isNew, onChange, onCancel, onSave }: DialogProps)
         <div style={S.grid2}>
           <div>
             <label style={S.field}>Hand off to agent</label>
-            <input
-              style={S.input}
+            <AgentPicker
               value={form.agentId}
-              onChange={e => onChange({ ...form, agentId: e.target.value })}
-              placeholder="e.g. support-bot"
+              onChange={agentId => onChange({ ...form, agentId })}
+              required
+              aria-label="Transfer target Agent"
             />
           </div>
           <div>

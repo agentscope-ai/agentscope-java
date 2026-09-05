@@ -1,10 +1,11 @@
 # Aistio
 
 IMG ?= aistio:latest
+PREFIX ?= /usr/local
 CONTROLLER_GEN ?= $(shell command -v controller-gen 2>/dev/null || printf '%s/bin/controller-gen' "$$(go env GOPATH)")
 HELM_CHART ?= helm/aistio
 
-.PHONY: all build test run generate manifests fmt vet ci verify sync-helm helm-lint helm-template docker-build docker-push clean install-tools proto
+.PHONY: all build build-runtime-cli install-runtime-cli test run generate manifests fmt vet ci verify sync-helm helm-lint helm-template docker-build docker-push clean install-tools proto
 
 ci: vet test
 
@@ -34,6 +35,16 @@ build:
 	go build -o bin/aistiod ./cmd/aistiod
 	go build -o bin/aistio-runtime-host ./cmd/aistio-runtime-host
 	go build -o bin/aistioctl ./cmd/aistioctl
+	go build -o bin/agentscope ./cmd/aistioctl
+
+build-runtime-cli:
+	go build -o bin/aistio-runtime-host ./cmd/aistio-runtime-host
+	go build -o bin/agentscope ./cmd/aistioctl
+
+install-runtime-cli: build-runtime-cli
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	install -m 0755 bin/agentscope $(DESTDIR)$(PREFIX)/bin/agentscope
+	install -m 0755 bin/aistio-runtime-host $(DESTDIR)$(PREFIX)/bin/aistio-runtime-host
 
 run: build
 	./bin/aistiod

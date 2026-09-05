@@ -29,7 +29,7 @@
         control_plane_http="http://aistiod.aistio-system:8080",
         agent_key="my-claude-agent",
         namespace="default",
-        enable_events=False,      # Level 2 默认关
+        enable_events=True,       # 持久化事件是会话历史的默认事实源
         contract_http_port=8080,
     )
 """
@@ -75,11 +75,13 @@ def instrument(
     namespace: str = "default",
     instance_key: Optional[str] = None,
     generation: int = 0,
-    enable_events: bool = False,
+    enable_events: bool = True,
+    event_journal_dir: str = "",
     contract_http_port: int = 8080,
     contract_http_base_url: str = "",
     session_affinity: str = "",
     start_http: bool = True,
+    start_grpc: bool = True,
     adapter: Optional[FrameworkAdapter] = None,
 ) -> SessionBridge:
     """一行代码接入任何框架（framework-integration §3.1 / sdk-design §5.4）。
@@ -117,10 +119,12 @@ def instrument(
         instance_key=instance_key,
         generation=generation,
         enable_events=enable_events,
+        event_journal_dir=event_journal_dir,
         contract_http_port=contract_http_port,
         contract_http_base_url=contract_http_base_url,
         session_affinity=session_affinity,
         start_http=start_http,
+        start_grpc=start_grpc,
     )
     bridge.attach_target(target, adapter=adapter)
     bridge.start()

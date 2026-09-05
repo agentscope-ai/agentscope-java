@@ -176,13 +176,20 @@ func (r *executionAttemptRepo) List(ctx context.Context, filter store.ExecutionA
 	if limit <= 0 {
 		limit = 100
 	}
+	order := "ASC"
+	if filter.NewestFirst {
+		order = "DESC"
+	}
 	rows, err := r.pool.Query(ctx, `SELECT `+executionAttemptColumns+` FROM execution_attempts WHERE
 		($1::uuid='00000000-0000-0000-0000-000000000000' OR agent_task_id=$1)
-		AND ($2='' OR tenant=$2) AND ($3='' OR namespace=$3)
-		AND ($4='' OR runtime_pool_name=$4)
-		AND ($5::uuid='00000000-0000-0000-0000-000000000000' OR host_id=$5)
-		AND ($6='' OR state=$6) ORDER BY created_at LIMIT $7`, filter.AgentTaskID,
-		filter.Tenant, filter.Namespace, filter.RuntimePoolName, filter.HostID, filter.State, limit)
+		AND ($2::uuid='00000000-0000-0000-0000-000000000000' OR agent_id=$2)
+		AND ($3::uuid='00000000-0000-0000-0000-000000000000' OR binding_id=$3)
+		AND ($4='' OR tenant=$4) AND ($5='' OR namespace=$5)
+		AND ($6='' OR session_id=$6) AND ($7='' OR runtime_pool_name=$7)
+		AND ($8::uuid='00000000-0000-0000-0000-000000000000' OR host_id=$8)
+		AND ($9='' OR state=$9) ORDER BY created_at `+order+` LIMIT $10`, filter.AgentTaskID,
+		filter.AgentID, filter.BindingID, filter.Tenant, filter.Namespace, filter.SessionID,
+		filter.RuntimePoolName, filter.HostID, filter.State, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -214,11 +221,21 @@ func (r *executionAttemptRepo) Claim(ctx context.Context, claim store.ExecutionC
 		WHERE e.state=$8 AND e.backend_kind=$9
 			AND ($1='' OR e.tenant=$1) AND ($2='' OR e.namespace=$2)
 			AND ($3='' OR e.runtime_pool_name=$3)
+			AND (COALESCE(e.runtime_binding #>> '{policy,preferredHostId}','')='' OR
+				e.runtime_binding #>> '{policy,preferredHostId}'=$4::text)
 			AND e.runtime_pool_name=h.pool_name
 			AND h.tenant=e.tenant AND h.namespace=e.namespace
 			AND h.state=$10 AND h.lease_generation=$12
 			AND (h.capacity=0 OR h.active<h.capacity)
 			AND COALESCE(e.required_capabilities,'{}'::jsonb) <@ COALESCE(h.capabilities,'{}'::jsonb)
+			AND (NOT (COALESCE(e.runtime_binding,'{}'::jsonb) ? 'runtimeProfile') OR (
+				COALESCE(h.capabilities->'providers','{}'::jsonb) ?
+					(e.runtime_binding #>> '{runtimeProfile,provider}')
+				AND COALESCE(e.runtime_binding->'runtimeProfile'->'requirements','{}'::jsonb) <@
+					COALESCE(h.capabilities,'{}'::jsonb)))
+			AND (NOT (COALESCE(e.runtime_binding,'{}'::jsonb) ? 'runtimePool') OR
+				COALESCE(e.runtime_binding->'runtimePool'->'hostSelector','{}'::jsonb) <@
+					COALESCE(h.labels,'{}'::jsonb))
 			AND COALESCE(e.runtime_binding->'securityConstraints','{}'::jsonb) <@
 				(jsonb_build_object('backendKind',e.backend_kind) || COALESCE(h.labels,'{}'::jsonb))
 		ORDER BY (SELECT COUNT(*) FROM execution_attempts active WHERE active.tenant=e.tenant

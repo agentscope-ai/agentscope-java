@@ -23,7 +23,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -42,8 +41,10 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
 	"github.com/spring-ai-alibaba/aistio/internal/product"
 	"github.com/spring-ai-alibaba/aistio/internal/realtime"
+	"github.com/spring-ai-alibaba/aistio/internal/runtimeauth"
 	"github.com/spring-ai-alibaba/aistio/internal/runtimebinding"
 	"github.com/spring-ai-alibaba/aistio/internal/scheduler"
+	"github.com/spring-ai-alibaba/aistio/internal/secretcrypto"
 	"github.com/spring-ai-alibaba/aistio/internal/sessionops"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/taskauth"
@@ -56,6 +57,10 @@ import (
 // over a live ASDP stream. Implemented by asdp.Distributor.
 type SessionCommandSender interface {
 	SendSessionCommand(tenant, namespace, instanceID, sessionID, command string) error
+}
+
+type ConversationTurnSender interface {
+	SendConversationTurn(tenant, namespace, instanceID string, command *asdp.ConversationTurnCommand) error
 }
 
 // InventoryProvider exposes the latest per-instance inventory reports held
@@ -99,6 +104,10 @@ type ServerOptions struct {
 	// TaskTokenSecret signs task-scoped credentials. All replicas must use the
 	// same value; when omitted a random process-local development key is used.
 	TaskTokenSecret string
+	// EndpointCredentialSecret encrypts recoverable Endpoint API keys at rest.
+	// All replicas must use the same stable value. It falls back to the task,
+	// console, then internal secret for local compatibility.
+	EndpointCredentialSecret string
 	// HostedStore enables the /api/v1/dp/* hosted DistributedStore API.
 	HostedStore bool
 	// TranscriptMessages optionally reads Level-3 message history from a
@@ -114,34 +123,34 @@ type ServerOptions struct {
 
 // Server is the REST API server for the control plane.
 type Server struct {
-	client              client.Client
-	store               store.Store
-	prober              prober.DataPlaneProber
-	router              *gin.Engine
-	httpServer          *http.Server
-	experimental        bool
-	authToken           string
-	tlsCertFile         string
-	tlsKeyFile          string
-	kubeClient          kubernetes.Interface
-	asdpCommands        SessionCommandSender
-	asdpInventory       InventoryProvider
-	product             *product.Server
-	staticDir           string
-	registry            *dataplane.Registry
-	internalToken       string
-	hostedStore         bool
-	transcriptMessages  TranscriptMessagesFunc
-	sessionOps          *sessionops.Router
-	features            features.Gates
-	taskPlane           *taskplane.Service
-	runtimeBindings     *runtimebinding.Resolver
-	taskTokens          taskauth.Manager
-	artifactProvider    artifact.Provider
-	collaborationEvents *realtime.Hub
-	workSources         *worksource.Service
-	endpointRateMu      sync.Mutex
-	endpointRates       map[uuid.UUID]*endpointRateWindow
+	client                client.Client
+	store                 store.Store
+	prober                prober.DataPlaneProber
+	router                *gin.Engine
+	httpServer            *http.Server
+	experimental          bool
+	authToken             string
+	tlsCertFile           string
+	tlsKeyFile            string
+	kubeClient            kubernetes.Interface
+	asdpCommands          SessionCommandSender
+	asdpInventory         InventoryProvider
+	product               *product.Server
+	staticDir             string
+	registry              *dataplane.Registry
+	internalToken         string
+	hostedStore           bool
+	transcriptMessages    TranscriptMessagesFunc
+	sessionOps            *sessionops.Router
+	features              features.Gates
+	taskPlane             *taskplane.Service
+	runtimeBindings       *runtimebinding.Resolver
+	taskTokens            taskauth.Manager
+	runtimeTokens         runtimeauth.Manager
+	endpointCredentialKey []byte
+	artifactProvider      artifact.Provider
+	collaborationEvents   *realtime.Hub
+	workSources           *worksource.Service
 }
 
 // NewServer creates a new API server.
@@ -172,7 +181,6 @@ func NewServer(opts ServerOptions) *Server {
 		transcriptMessages:  opts.TranscriptMessages,
 		artifactProvider:    opts.ArtifactProvider,
 		collaborationEvents: opts.CollaborationEvents,
-		endpointRates:       make(map[uuid.UUID]*endpointRateWindow),
 		httpServer: &http.Server{
 			Addr:         opts.Addr,
 			Handler:      router,
@@ -180,6 +188,22 @@ func NewServer(opts ServerOptions) *Server {
 			WriteTimeout: 30 * time.Second,
 		},
 	}
+	credentialMaster := strings.TrimSpace(opts.EndpointCredentialSecret)
+	if credentialMaster == "" {
+		credentialMaster = opts.TaskTokenSecret
+	}
+	if credentialMaster == "" {
+		credentialMaster = opts.AuthToken
+	}
+	if credentialMaster == "" {
+		credentialMaster = opts.InternalToken
+	}
+	if credentialMaster == "" {
+		// This fallback is only reachable in unauthenticated local tests. A
+		// durable deployment always configures one of the secrets above.
+		credentialMaster = "aistio-local-endpoint-credential-key"
+	}
+	s.endpointCredentialKey = secretcrypto.DeriveKey(credentialMaster)
 
 	if s.transcriptMessages == nil {
 		if root := strings.TrimSpace(os.Getenv("AISTIO_TRANSCRIPT_FS_ROOT")); root != "" {
@@ -208,6 +232,7 @@ func NewServer(opts ServerOptions) *Server {
 			ctrl.Log.WithName("httpapi").Info("using a process-local task token key; configure TaskTokenSecret for multi-replica deployments")
 		}
 		s.taskTokens = taskauth.Manager{Secret: secret, TTL: time.Hour}
+		s.runtimeTokens = runtimeauth.Manager{Secret: secret, TTL: 30 * 24 * time.Hour}
 		s.taskPlane = &taskplane.Service{Store: opts.Store}
 		s.taskPlane.CommentSink = s.workSources.QueueComment
 		var external runtimebinding.ExternalCommander
@@ -257,10 +282,15 @@ func (s *Server) registerRoutes() {
 		s.router.POST("/api/v1/agent-registrations", s.registerExternalAgent)
 		s.router.POST("/api/v1/work-sources/:workSourceId/webhooks/github", s.githubWorkSourceWebhook)
 		s.router.POST("/invoke/v1/endpoints/:slug/conversations", s.invokeEndpointConversation)
-		s.router.GET("/invoke/v1/endpoints/:slug/conversations/:sessionId/events", s.getEndpointConversationEvents)
+		s.router.POST("/invoke/v1/conversations/:conversationId/turns", s.continueEndpointConversation)
+		s.router.GET("/invoke/v1/conversations/:conversationId", s.getEndpointConversation)
+		s.router.GET("/invoke/v1/conversations/:conversationId/events", s.getEndpointConversationEvents)
 		s.router.POST("/invoke/v1/endpoints/:slug/jobs", s.invokeEndpointJob)
-		s.router.GET("/invoke/v1/jobs/:issueId", s.getEndpointJob)
-		s.router.GET("/invoke/v1/jobs/:issueId/events", s.getEndpointJobEvents)
+		s.router.GET("/invoke/v1/jobs/:invocationId", s.getEndpointJob)
+		s.router.GET("/invoke/v1/jobs/:invocationId/events", s.getEndpointJobEvents)
+		s.router.GET("/invoke/v1/jobs/:invocationId/artifacts", s.getEndpointJobArtifacts)
+		s.router.GET("/invoke/v1/jobs/:invocationId/artifacts/:artifactId", s.downloadEndpointJobArtifact)
+		s.router.POST("/invoke/v1/jobs/:invocationId/cancel", s.cancelEndpointJob)
 	}
 
 	// Managed Agents control plane. Mounted on an unprefixed group so its
@@ -279,12 +309,29 @@ func (s *Server) registerRoutes() {
 		v1.GET("/me/navigation", s.navigationAccess)
 		// Fleet overview + token metrics (store-backed).
 		if s.store != nil {
+			v1.POST("/entity-identities:resolve", s.resolveEntityIdentities)
+			v1.POST("/runtime-host-enrollments", s.createRuntimeHostEnrollment)
+			v1.POST("/playground/invocations", s.invokePlayground)
+			v1.POST("/playground/sessions/:sessionId/turns", s.continuePlaygroundConversation)
 			v1.POST("/issues/:issueId/team-proposals", s.createTeamProposal)
 			v1.POST("/issues/:issueId/team-proposals/:proposalId/confirm", s.confirmTeamProposal)
-			v1.GET("/agent-endpoints", s.listAgentEndpoints)
-			v1.POST("/agent-endpoints", s.createAgentEndpoint)
-			v1.GET("/agent-endpoints/:endpointId", s.getAgentEndpoint)
-			v1.PATCH("/agent-endpoints/:endpointId", s.patchAgentEndpoint)
+			v1.GET("/endpoints", s.listEndpoints)
+			v1.POST("/endpoints", s.createEndpoint)
+			v1.GET("/endpoints/:endpointId", s.getEndpoint)
+			v1.PATCH("/endpoints/:endpointId", s.patchEndpoint)
+			v1.DELETE("/endpoints/:endpointId", s.archiveEndpoint)
+			v1.GET("/endpoints/:endpointId/readiness", s.getEndpointReadiness)
+			v1.GET("/endpoints/:endpointId/invocations", s.listEndpointInvocations)
+			v1.POST("/endpoints/:endpointId/publish", s.publishEndpoint)
+			v1.POST("/endpoints/:endpointId/disable", s.disableEndpoint)
+			v1.GET("/endpoints/:endpointId/releases", s.listEndpointReleases)
+			v1.POST("/endpoints/:endpointId/releases", s.deployEndpointRelease)
+			v1.POST("/endpoints/:endpointId/releases/:releaseId/rollback", s.rollbackEndpointRelease)
+			v1.GET("/endpoints/:endpointId/credentials", s.listEndpointCredentials)
+			v1.POST("/endpoints/:endpointId/credentials", s.createEndpointCredential)
+			v1.POST("/endpoints/:endpointId/credentials/:credentialId/rotate", s.rotateEndpointCredential)
+			v1.POST("/endpoints/:endpointId/credentials/:credentialId/reveal", s.revealEndpointCredential)
+			v1.DELETE("/endpoints/:endpointId/credentials/:credentialId", s.revokeEndpointCredential)
 			v1.GET("/work-sources", s.listWorkSources)
 			v1.POST("/work-sources", s.createWorkSource)
 			v1.GET("/work-sources/:workSourceId", s.getWorkSource)
@@ -327,9 +374,12 @@ func (s *Server) registerRoutes() {
 			agents.GET("/:agentId/bindings", s.listAgentBindings)
 			agents.POST("/:agentId/bindings", s.createAgentBinding)
 			agents.PATCH("/:agentId/bindings/:bindingId", s.patchAgentBinding)
+			agents.GET("/:agentId/hosted-settings", s.getHostedAgentSettings)
+			agents.PATCH("/:agentId/hosted-settings", s.patchHostedAgentSettings)
 			agents.GET("/:agentId/instances", s.listCatalogAgentInstances)
 			agents.GET("/:agentId/overview", s.getAgentDetailOverview)
 			agents.GET("/:agentId/runtime-inventory", s.getAgentRuntimeInventory)
+			agents.GET("/:agentId/invocation-capabilities", s.getAgentInvocationCapabilities)
 			v1.POST("/agent-registrations/:agentId/credentials/rotate", s.rotateAgentRegistrationCredential)
 			v1.DELETE("/agent-registrations/:agentId/credentials/:credentialId", s.revokeAgentRegistrationCredential)
 		}
@@ -374,6 +424,7 @@ func (s *Server) registerRoutes() {
 				sessions.GET("/:sessionId", s.getSession)
 				sessions.GET("/:sessionId/context", s.getSessionContext)
 				sessions.GET("/:sessionId/events", s.getSessionEvents)
+				sessions.GET("/:sessionId/events/stream", s.streamSessionEvents)
 				sessions.GET("/:sessionId/messages", s.getSessionMessages)
 				sessions.GET("/:sessionId/tasks", s.getSessionTasks)
 				sessions.GET("/:sessionId/subagent-tasks", s.getSessionSubagentTasks)
@@ -497,6 +548,7 @@ func (s *Server) registerRoutes() {
 			issues.POST("/:issueId/comments/:commentId/resolve", s.resolveIssueComment)
 			issues.POST("/:issueId/comments/preview-routing", s.previewIssueCommentRouting)
 			issues.GET("/:issueId/activity", s.listIssueActivities)
+			issues.GET("/:issueId/artifacts", s.listIssueArtifacts)
 			issues.GET("/:issueId/subscribers", s.listIssueSubscribers)
 			issues.POST("/:issueId/subscribers", s.subscribeIssue)
 			issues.DELETE("/:issueId/subscribers/:subscriberType/:subscriberRef", s.unsubscribeIssue)
@@ -530,8 +582,10 @@ func (s *Server) registerRoutes() {
 			teams.POST("/from-proposal/:proposalId", s.saveTeamProposalAsTeam)
 			teams.GET("", s.listCollaborationTeams)
 			teams.GET("/:teamId", s.getCollaborationTeam)
+			teams.GET("/:teamId/overview", s.getCollaborationTeamOverview)
 			teams.PATCH("/:teamId", s.updateCollaborationTeam)
 			teams.POST("/:teamId/members", s.addCollaborationTeamMember)
+			teams.PATCH("/:teamId/members/:memberId", s.updateCollaborationTeamMember)
 			teams.DELETE("/:teamId/members/:memberId", s.removeCollaborationTeamMember)
 
 			artifacts := collab.Group("/artifacts")
@@ -583,7 +637,7 @@ func (s *Server) registerRoutes() {
 	// The initial HTTP transport is versioned independently from Application ASDP.
 	if s.store != nil && s.features.RuntimeHost {
 		hosts := s.router.Group("/api/v1/runtime-hosts")
-		hosts.Use(s.internalTokenMiddleware())
+		hosts.Use(s.runtimeHostCredentialMiddleware())
 		{
 			hosts.POST("/register", s.registerRuntimeHost)
 			hosts.POST("/:hostId/heartbeat", s.heartbeatRuntimeHost)
@@ -593,6 +647,7 @@ func (s *Server) registerRoutes() {
 			hosts.POST("/:hostId/execution-attempts/:attemptId/preparing", s.prepareExecutionAttempt)
 			hosts.POST("/:hostId/execution-attempts/:attemptId/running", s.startExecutionAttempt)
 			hosts.POST("/:hostId/execution-attempts/:attemptId/checkpoint", s.checkpointExecutionAttempt)
+			hosts.POST("/:hostId/execution-attempts/:attemptId/events", s.appendExecutionAttemptEvent)
 			hosts.POST("/:hostId/execution-attempts/:attemptId/complete", s.completeExecutionAttempt)
 			hosts.POST("/:hostId/execution-attempts/:attemptId/fail", s.failExecutionAttempt)
 			hosts.POST("/:hostId/execution-attempts/:attemptId/cancelled", s.cancelledExecutionAttempt)
@@ -677,23 +732,34 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 // configured identity sources as the management API, without running Gin
 // middleware or granting management-route authorization.
 func (s *Server) validPlatformToken(ctx context.Context, token string) bool {
+	_, ok := s.platformPrincipal(ctx, token)
+	return ok
+}
+
+func (s *Server) platformPrincipal(ctx context.Context, token string) (string, bool) {
 	if token == "" {
-		return false
+		return "", false
 	}
 	if s.product != nil {
-		if _, err := s.product.VerifyToken(token); err == nil {
-			return true
+		if claims, err := s.product.VerifyToken(token); err == nil {
+			return "platform-user:" + claims.Subject, true
 		}
 	}
 	if s.authToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.authToken)) == 1 {
-		return true
+		return "platform-static", true
 	}
 	if s.kubeClient != nil {
 		result, err := s.kubeClient.AuthenticationV1().TokenReviews().Create(ctx,
 			&authv1.TokenReview{Spec: authv1.TokenReviewSpec{Token: token}}, metav1.CreateOptions{})
-		return err == nil && result.Status.Authenticated
+		if err == nil && result.Status.Authenticated {
+			principal := result.Status.User.UID
+			if principal == "" {
+				principal = result.Status.User.Username
+			}
+			return "workload:" + principal, principal != ""
+		}
 	}
-	return false
+	return "", false
 }
 
 // requestBearerToken also accepts a WebSocket subprotocol credential because
@@ -717,7 +783,13 @@ func requestBearerToken(c *gin.Context) string {
 // or the normal console/JWT/kube auth chain.
 func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if token := c.GetHeader("X-Agent-Task-Token"); token != "" {
+		token := c.GetHeader("X-Agent-Task-Token")
+		bearerCandidate := false
+		if token == "" && c.Request.URL.Path == "/mcp/collaboration" {
+			token = requestBearerToken(c)
+			bearerCandidate = token != ""
+		}
+		if token != "" {
 			verify := s.verifyActiveTaskToken
 			if c.Request.Method == http.MethodPost &&
 				(strings.HasSuffix(c.Request.URL.Path, "/run/node/complete") ||
@@ -726,13 +798,16 @@ func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 			}
 			task, err := verify(c.Request.Context(), token, uuid.Nil)
 			if err != nil {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
+				if !bearerCandidate {
+					c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
+					return
+				}
+			} else {
+				c.Set(ctxInternalAuth, true)
+				c.Set(ctxTaskAuth, task)
+				c.Next()
 				return
 			}
-			c.Set(ctxInternalAuth, true)
-			c.Set(ctxTaskAuth, task)
-			c.Next()
-			return
 		}
 		if s.internalToken != "" {
 			if tok := c.GetHeader("X-Builder-Internal-Token"); tok != "" && tok == s.internalToken {

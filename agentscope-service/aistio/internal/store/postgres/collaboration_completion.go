@@ -185,10 +185,10 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := reconcileCompletedTaskTx(ctx, tx, task, attempt, completion.Result, created.Author); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE issues SET version=version+1,updated_at=now() WHERE id=$1`, issue.ID); err != nil {
 		return nil, nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE issues SET version=version+1,updated_at=now() WHERE id=$1`, issue.ID); err != nil {
+	if err := reconcileCompletedTaskTx(ctx, tx, task, attempt, completion.Result, created.Author); err != nil {
 		return nil, nil, err
 	}
 	if err := insertActivityTx(ctx, tx, &controlmodel.Activity{Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: &issue.ID, Actor: created.Author, Action: "agent_task.completed", ObjectType: "agent_task", ObjectRef: task.ID.String(), CausationID: task.CausationID, CorrelationID: task.CorrelationID}); err != nil {
@@ -230,23 +230,27 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 	if node.Type == controlmodel.RunNodeTeam && task.LeaderTask {
 		next = controlmodel.RunNodeWaiting
 	}
-	if node.State == controlmodel.RunNodeReady {
-		if _, err := tx.Exec(ctx, `UPDATE orchestration_run_nodes SET state=$2,started_at=COALESCE(started_at,now()),
-			version=version+1,updated_at=now() WHERE id=$1`, node.ID, controlmodel.RunNodeRunning); err != nil {
+	coordinatorAlreadyTerminal := node.Type == controlmodel.RunNodeTeam && task.LeaderTask &&
+		controlmodel.IsRunNodeTerminal(node.State)
+	if !coordinatorAlreadyTerminal {
+		if node.State == controlmodel.RunNodeReady {
+			if _, err := tx.Exec(ctx, `UPDATE orchestration_run_nodes SET state=$2,started_at=COALESCE(started_at,now()),
+				version=version+1,updated_at=now() WHERE id=$1`, node.ID, controlmodel.RunNodeRunning); err != nil {
+				return err
+			}
+			node.State = controlmodel.RunNodeRunning
+			node.Version++
+		}
+		if !controlmodel.CanTransitionRunNode(node.State, next) {
+			return store.ErrConflict
+		}
+		node, err = scanNode(tx.QueryRow(ctx, `UPDATE orchestration_run_nodes SET state=$2,output=$3,
+			version=version+1,updated_at=now(),started_at=COALESCE(started_at,now()),
+			completed_at=CASE WHEN $2='succeeded' THEN now() ELSE completed_at END
+			WHERE id=$1 RETURNING `+nodeCols, node.ID, next, nullJSON(output)))
+		if err != nil {
 			return err
 		}
-		node.State = controlmodel.RunNodeRunning
-		node.Version++
-	}
-	if !controlmodel.CanTransitionRunNode(node.State, next) {
-		return store.ErrConflict
-	}
-	node, err = scanNode(tx.QueryRow(ctx, `UPDATE orchestration_run_nodes SET state=$2,output=$3,
-		version=version+1,updated_at=now(),started_at=COALESCE(started_at,now()),
-		completed_at=CASE WHEN $2='succeeded' THEN now() ELSE completed_at END
-		WHERE id=$1 RETURNING `+nodeCols, node.ID, next, nullJSON(output)))
-	if err != nil {
-		return err
 	}
 	if attempt != nil {
 		if err := appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
@@ -257,12 +261,20 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 			return err
 		}
 	}
-	if err := appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
-		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &task.RunNodeID,
-		AgentTaskID: &task.ID, Type: "node." + string(next), Actor: actor,
-		CausationID: task.CausationID, CorrelationID: task.CorrelationID,
-		IdempotencyKey: "node-" + string(next) + ":" + node.ID.String()}); err != nil {
-		return err
+	if !coordinatorAlreadyTerminal {
+		if err := appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
+			Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &task.RunNodeID,
+			AgentTaskID: &task.ID, Type: "node." + string(next), Actor: actor,
+			CausationID: task.CausationID, CorrelationID: task.CorrelationID,
+			IdempotencyKey: "node-" + string(next) + ":" + node.ID.String()}); err != nil {
+			return err
+		}
+	}
+	// The leader may explicitly converge the coordinator while its provider
+	// process is still running. Preserve that terminal decision when the
+	// Runtime Host subsequently records physical task completion.
+	if coordinatorAlreadyTerminal {
+		return nil
 	}
 	if next != controlmodel.RunNodeSucceeded {
 		_, err = tx.Exec(ctx, `UPDATE orchestration_runs SET state=$2,wait_reason='team_coordinator',
@@ -281,12 +293,55 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 			controlmodel.RunSucceeded, nullJSON(output), controlmodel.RunRunning, controlmodel.RunWaiting); err != nil {
 			return err
 		}
-		return appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
+		if err := appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
 			Tenant: task.Tenant, Namespace: task.Namespace, Type: "run.succeeded", Actor: actor,
 			CausationID: task.CausationID, CorrelationID: task.CorrelationID,
-			IdempotencyKey: "run-succeeded:" + task.OrchestrationRunID.String()})
+			IdempotencyKey: "run-succeeded:" + task.OrchestrationRunID.String()}); err != nil {
+			return err
+		}
+		return requestIssueReviewForCompletedRunTx(ctx, tx, task.OrchestrationRunID, actor)
 	}
 	return nil
+}
+
+func requestIssueReviewForCompletedRunTx(ctx context.Context, tx pgx.Tx, runID uuid.UUID, actor controlmodel.Actor) error {
+	var rootIssueID uuid.UUID
+	var parentRunID *uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT root_issue_id,parent_run_id FROM orchestration_runs WHERE id=$1`, runID).
+		Scan(&rootIssueID, &parentRunID); err != nil {
+		return err
+	}
+	if parentRunID != nil {
+		return nil
+	}
+	issue, err := scanIssue(tx.QueryRow(ctx, `UPDATE issues SET
+		status=CASE WHEN completion_policy=$2 THEN $3 ELSE $4 END,
+		resolved_at=CASE WHEN completion_policy=$2 THEN now() ELSE resolved_at END,
+		version=version+1,updated_at=now()
+		WHERE id=$1 AND status=$5 RETURNING `+issueColumns, rootIssueID,
+		controlmodel.IssueCompletionAutomatic, controlmodel.IssueDone,
+		controlmodel.IssueInReview, controlmodel.IssueInProgress))
+	if err == store.ErrNotFound {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	reason := "execution completed; awaiting acceptance"
+	if issue.Status == controlmodel.IssueDone {
+		reason = "automatic Endpoint Job execution completed"
+	}
+	details, _ := json.Marshal(map[string]string{"from": string(controlmodel.IssueInProgress),
+		"to": string(issue.Status), "reason": reason})
+	if err = insertActivityTx(ctx, tx, &controlmodel.Activity{Tenant: issue.Tenant,
+		Namespace: issue.Namespace, IssueID: &issue.ID, Actor: actor,
+		Action: "issue.status_changed", ObjectType: "issue", ObjectRef: issue.ID.String(),
+		Details: details}); err != nil {
+		return err
+	}
+	return enqueueCollaborationEventTx(ctx, tx, issue.Tenant, "issue", issue.ID,
+		"issue.status-changed.v1", map[string]any{"issue": issue, "previousStatus": controlmodel.IssueInProgress},
+		fmt.Sprintf("issue-status:%s:%d", issue.ID, issue.Version))
 }
 
 func (r *collaborationRepo) ClaimAgentTaskWithAttempt(ctx context.Context, claim store.TaskClaim, execution *controlmodel.ExecutionAttempt) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {

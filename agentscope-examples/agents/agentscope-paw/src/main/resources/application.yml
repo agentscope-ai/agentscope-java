@@ -40,9 +40,6 @@ claw:
     enabled: ${CLAW_AISTIO_ENABLED:false}
     control-http: ${AISTIO_CONTROL_HTTP:http://localhost:8081}
     internal-token: ${BUILDER_INTERNAL_TOKEN:local-dev-internal-token-at-least-32chars}
-    # Optional explicit override. When omitted, Paw securely persists the one-time credential
-    # under ${claw.home}/.aistio/registration.json so restarts retain the same logical Agent.
-    registration-credential: ${CLAW_AISTIO_REGISTRATION_CREDENTIAL:}
     agent-name: ${CLAW_AISTIO_AGENT_NAME:default}
     tenant: ${CLAW_AISTIO_TENANT:default}
     namespace: ${CLAW_AISTIO_NAMESPACE:default}

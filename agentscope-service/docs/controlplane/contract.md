@@ -374,7 +374,7 @@ Host: <agent-pod-ip>:8080
 
 #### `POST /agentscope/sessions/{id}/messages`
 
-向指定会话注入一条用户消息（控制面 / Console 发起聊天，sdk-design 方案 A）。忙时返回 `409` + `hint=wait_idle`。第一版成功响应为 `202 Accepted`（与 Command 成功体同形），客户端随后轮询 `GET .../messages`。
+向指定会话注入一条用户消息（控制面 / Console 发起聊天，sdk-design 方案 A）。忙时返回 `409` + `hint=wait_idle`。成功响应为 `202 Accepted`（与 Command 成功体同形）；客户端从控制面持久事件 SSE 观察后续输出，断线时按 `seq` 恢复，不轮询 messages。
 
 **请求：**
 
@@ -454,7 +454,9 @@ Content-Type: application/json
 
 #### `GET /agentscope/sessions/{id}/messages`
 
-Level 3 完整消息历史（Level 2 事件流只存摘要；全文走本端点按需拉取，不主动上报）。
+Level 3 兼容消息查询。新会话界面的事实源是默认开启、保留完整内容的 Level 2 事件日志；
+本端点供旧版数据面或需要运行时原生消息分页的调用方使用，控制面不再要求
+`message-query` 才能展示会话。
 
 **响应（200 OK）：**
 
@@ -671,7 +673,7 @@ go test ./test/mock/ ./internal/sessionops/ -count=1
 | 词汇 | 含义 | 对应通道与端点 |
 |------|------|----------------|
 | `session-reporting` | 会话摘要快照上报 | ASDP `SessionReport`；HTTP `GET /agentscope/sessions` |
-| `event-reporting` | 事件流摘要上报（默认关闭，SDK `enable_events` 开启） | ASDP `EventReport` |
+| `event-reporting` | 完整事件流上报（SDK 默认开启；本地持久化、ACK 后出队） | ASDP `EventReport` / `EventReportAck` |
 | `context-reporting` | 生效 Context 变更主动推送（hash 变更防抖 + compaction 立即推） | ASDP `ContextReport` |
 | `context-query` | 按需查询当前生效 Context | HTTP `GET /agentscope/sessions/{id}/context` |
 | `message-query` | 完整消息历史分页拉取 | HTTP `GET /agentscope/sessions/{id}/messages` |

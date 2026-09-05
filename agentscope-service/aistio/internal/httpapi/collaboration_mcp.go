@@ -228,7 +228,7 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		if task.TeamID == nil {
 			return nil, fmt.Errorf("AgentTask has no Team context")
 		}
-		team, err := s.store.Collaboration().GetTeam(ctx, *task.TeamID)
+		team, err := svc.TeamForTask(ctx, task)
 		return map[string]any{"team": team}, err
 	case "approval.request":
 		approval := &controlmodel.Approval{Tenant: task.Tenant, Namespace: task.Namespace,
@@ -298,7 +298,7 @@ func (s *Server) uploadMCPArtifact(ctx context.Context, task *controlmodel.Agent
 	}
 	policy := controlmodel.TeamPolicy{}
 	if task.TeamID != nil {
-		if team, loadErr := s.store.Collaboration().GetTeam(ctx, *task.TeamID); loadErr == nil {
+		if team, loadErr := s.collaborationService().TeamForTask(ctx, task); loadErr == nil {
 			policy = team.Policy
 		}
 	}

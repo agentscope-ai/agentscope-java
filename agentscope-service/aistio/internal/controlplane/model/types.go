@@ -112,28 +112,58 @@ const (
 
 // RuntimeBinding chooses how an AgentDefinition is materialized.
 type RuntimeBinding struct {
-	AgentID              uuid.UUID         `json:"agentId"`
-	BindingID            uuid.UUID         `json:"bindingId"`
-	Kind                 DataPlaneKind     `json:"kind"`
-	ManagedOwnerRef      string            `json:"managedOwnerRef,omitempty"`
-	ManagedDefinitionRef string            `json:"managedDefinitionRef,omitempty"`
-	InstanceSelector     map[string]string `json:"instanceSelector,omitempty"`
-	RuntimeProfileID     uuid.UUID         `json:"runtimeProfileId,omitempty"`
-	RuntimePoolID        uuid.UUID         `json:"runtimePoolId,omitempty"`
+	AgentID              uuid.UUID                 `json:"agentId"`
+	BindingID            uuid.UUID                 `json:"bindingId"`
+	Kind                 DataPlaneKind             `json:"kind"`
+	ManagedOwnerRef      string                    `json:"managedOwnerRef,omitempty"`
+	ManagedDefinitionRef string                    `json:"managedDefinitionRef,omitempty"`
+	InstanceSelector     map[string]string         `json:"instanceSelector,omitempty"`
+	RuntimeProfileID     uuid.UUID                 `json:"runtimeProfileId,omitempty"`
+	RuntimePoolID        uuid.UUID                 `json:"runtimePoolId,omitempty"`
+	ExecutionOverrides   *HostedExecutionOverrides `json:"executionOverrides,omitempty"`
 }
 
 // RuntimeDispatchSnapshot freezes the selected backend for one AgentTask
 // dispatch. Registry or Team configuration changes never mutate this record.
 type RuntimeDispatchSnapshot struct {
-	Binding             RuntimeBinding  `json:"binding"`
-	SelectionSource     string          `json:"selectionSource,omitempty"`
-	CandidateIndex      int32           `json:"candidateIndex,omitempty"`
-	AgentInstanceID     *uuid.UUID      `json:"agentInstanceId,omitempty"`
-	SessionID           string          `json:"sessionId,omitempty"`
-	Capabilities        json.RawMessage `json:"capabilities,omitempty"`
-	SecurityConstraints json.RawMessage `json:"securityConstraints,omitempty"`
-	Policy              json.RawMessage `json:"policy,omitempty"`
-	ResolvedAt          time.Time       `json:"resolvedAt"`
+	Binding                       RuntimeBinding            `json:"binding"`
+	RuntimeProfile                *RuntimeProfile           `json:"runtimeProfile,omitempty"`
+	RuntimePool                   *RuntimePool              `json:"runtimePool,omitempty"`
+	ExecutionOverrides            *HostedExecutionOverrides `json:"executionOverrides,omitempty"`
+	ResolvedProviderConfiguration json.RawMessage           `json:"resolvedProviderConfiguration,omitempty"`
+	SelectionSource               string                    `json:"selectionSource,omitempty"`
+	CandidateIndex                int32                     `json:"candidateIndex,omitempty"`
+	AgentInstanceID               *uuid.UUID                `json:"agentInstanceId,omitempty"`
+	SessionID                     string                    `json:"sessionId,omitempty"`
+	Capabilities                  json.RawMessage           `json:"capabilities,omitempty"`
+	SecurityConstraints           json.RawMessage           `json:"securityConstraints,omitempty"`
+	Policy                        json.RawMessage           `json:"policy,omitempty"`
+	ResolvedAt                    time.Time                 `json:"resolvedAt"`
+}
+
+// RuntimeHostMatchesProfile verifies both the provider installation advertised
+// by a Host and the immutable capability requirements captured at dispatch.
+func RuntimeHostMatchesProfile(capabilities json.RawMessage, profile *RuntimeProfile) bool {
+	if profile == nil || profile.Provider == "" {
+		return false
+	}
+	if !JSONContains(capabilities, profile.Requirements) {
+		return false
+	}
+	var advertised struct {
+		Providers map[string]any `json:"providers"`
+	}
+	if json.Unmarshal(capabilities, &advertised) != nil {
+		return false
+	}
+	_, ok := advertised.Providers[profile.Provider]
+	return ok
+}
+
+// RuntimeHostMatchesPool applies the immutable Host selector captured with the
+// pool. Pool membership by name alone is not sufficient admission.
+func RuntimeHostMatchesPool(labels json.RawMessage, pool *RuntimePool) bool {
+	return pool != nil && JSONContains(labels, pool.HostSelector)
 }
 
 // Validate checks that a binding contains only the reference required by its kind.
@@ -151,6 +181,9 @@ func (b RuntimeBinding) Validate() error {
 	case DataPlaneHostedRuntime:
 		if b.RuntimeProfileID == uuid.Nil || b.RuntimePoolID == uuid.Nil {
 			return fmt.Errorf("hosted runtime binding requires runtimeProfileId and runtimePoolId")
+		}
+		if err := b.ExecutionOverrides.Validate(); err != nil {
+			return err
 		}
 	default:
 		return fmt.Errorf("unsupported runtime binding kind %q", b.Kind)

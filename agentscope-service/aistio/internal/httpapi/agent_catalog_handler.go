@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/dataplane"
 	"github.com/spring-ai-alibaba/aistio/internal/product"
+	runtimeprovider "github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -108,15 +110,6 @@ func (s *Server) registerExternalAgent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "agentKey and instanceKey are required"})
 		return
 	}
-	provided := c.GetHeader("X-Agent-Registration-Credential")
-	if provided == "" {
-		provided = bearerToken(c)
-	}
-	bootstrap := c.GetHeader("X-Builder-Internal-Token")
-	trustedBootstrap := s.internalToken != "" && (bootstrap == s.internalToken || provided == s.internalToken)
-	if trustedBootstrap && provided == s.internalToken {
-		provided = ""
-	}
 	plaintext, newHash, err := newRegistrationToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to generate registration credential"})
@@ -132,8 +125,8 @@ func (s *Server) registerExternalAgent(c *gin.Context) {
 		DisplayName: req.DisplayName, Description: req.Description, OwnerType: req.OwnerType, OwnerRef: req.OwnerRef,
 		InstanceKey: req.InstanceKey, Framework: req.Framework, FrameworkVersion: req.FrameworkVersion,
 		SDKVersion: req.SDKVersion, RoutingKey: req.RoutingKey, Capabilities: req.Capabilities,
-		Labels: req.Labels, Capacity: req.Capacity, TrustedBootstrap: trustedBootstrap,
-		ClaimCredentialHash: registrationTokenHash(provided), NewCredentialHash: newHash,
+		Labels: req.Labels, Capacity: req.Capacity, TrustedBootstrap: true,
+		NewCredentialHash:   newHash,
 		CredentialExpiresAt: expires,
 	})
 	if err != nil {
@@ -148,11 +141,9 @@ func (s *Server) registerExternalAgent(c *gin.Context) {
 	}
 	status := http.StatusOK
 	response := gin.H{"agent": result.Agent, "binding": result.Binding, "instance": result.Instance}
-	if result.CredentialCreated {
-		status = http.StatusCreated
-		response["registrationCredential"] = plaintext
-		response["credential"] = result.Credential
-	}
+	status = http.StatusCreated
+	response["registrationCredential"] = plaintext
+	response["credential"] = result.Credential
 	c.JSON(status, response)
 }
 
@@ -176,9 +167,26 @@ func (s *Server) listCatalogAgents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": agents})
 }
 
-// listAgentRuntimeOptions exposes only the Hosted Agent binding choices in
-// Agent Center. It avoids granting Agent developers access to Operations
-// inventory APIs while still allowing them to create a valid Hosted Agent.
+type agentRuntimeOption struct {
+	ID               string          `json:"id"`
+	Name             string          `json:"name"`
+	Provider         string          `json:"provider"`
+	Version          string          `json:"version,omitempty"`
+	RuntimeProfileID uuid.UUID       `json:"runtimeProfileId"`
+	RuntimePoolID    uuid.UUID       `json:"runtimePoolId"`
+	HostCount        int             `json:"hostCount"`
+	Capabilities     json.RawMessage `json:"capabilities,omitempty"`
+	hostKeys         []string
+}
+
+type advertisedRuntimeCapabilities struct {
+	Providers            map[string]string          `json:"providers"`
+	ProviderCapabilities map[string]json.RawMessage `json:"providerCapabilities"`
+}
+
+// listAgentRuntimeOptions flattens the operator-facing Profile/Pool/Host
+// model into the same concept Agent authors care about: an available Runtime.
+// The original collections remain in the response for API compatibility.
 func (s *Server) listAgentRuntimeOptions(c *gin.Context) {
 	tenant, namespace := c.Query("tenant"), c.Query("namespace")
 	if tenant == "" {
@@ -197,7 +205,77 @@ func (s *Server) listAgentRuntimeOptions(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"profiles": profiles, "pools": pools})
+	hosts, err := s.store.RuntimeRegistry().ListRuntimeHosts(
+		c.Request.Context(), tenant, namespace, "", controlmodel.RuntimeHostOnline)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	poolByName := make(map[string]*controlmodel.RuntimePool, len(pools))
+	for _, pool := range pools {
+		poolByName[pool.Name] = pool
+	}
+	defaultProfileByProvider := make(map[string]*controlmodel.RuntimeProfile)
+	for _, profile := range profiles {
+		current := defaultProfileByProvider[profile.Provider]
+		if current == nil || profile.Name == automaticRuntimeProfileName(profile.Provider) {
+			defaultProfileByProvider[profile.Provider] = profile
+		}
+	}
+	optionsByID := make(map[string]*agentRuntimeOption)
+	for _, host := range hosts {
+		pool := poolByName[host.PoolName]
+		if pool == nil {
+			continue
+		}
+		var advertised advertisedRuntimeCapabilities
+		if json.Unmarshal(host.Capabilities, &advertised) != nil {
+			continue
+		}
+		for providerName, version := range advertised.Providers {
+			profile := defaultProfileByProvider[providerName]
+			if profile == nil {
+				continue
+			}
+			id := profile.ID.String() + ":" + pool.ID.String()
+			option := optionsByID[id]
+			if option == nil {
+				displayName := profile.Provider
+				capabilities := advertised.ProviderCapabilities[providerName]
+				var descriptor struct {
+					DisplayName string `json:"displayName"`
+				}
+				if json.Unmarshal(capabilities, &descriptor) == nil && descriptor.DisplayName != "" {
+					displayName = descriptor.DisplayName
+				}
+				option = &agentRuntimeOption{
+					ID: id, Name: displayName, Provider: providerName, Version: version,
+					RuntimeProfileID: profile.ID, RuntimePoolID: pool.ID,
+					Capabilities: capabilities,
+				}
+				optionsByID[id] = option
+			}
+			option.HostCount++
+			option.hostKeys = append(option.hostKeys, host.HostKey)
+		}
+	}
+	runtimes := make([]*agentRuntimeOption, 0, len(optionsByID))
+	for _, option := range optionsByID {
+		sort.Strings(option.hostKeys)
+		if option.HostCount == 1 {
+			option.Name += " (" + option.hostKeys[0] + ")"
+		} else {
+			option.Name += fmt.Sprintf(" (%d hosts)", option.HostCount)
+		}
+		runtimes = append(runtimes, option)
+	}
+	sort.Slice(runtimes, func(i, j int) bool {
+		if runtimes[i].Provider != runtimes[j].Provider {
+			return runtimes[i].Provider < runtimes[j].Provider
+		}
+		return runtimes[i].Name < runtimes[j].Name
+	})
+	c.JSON(http.StatusOK, gin.H{"runtimes": runtimes, "profiles": profiles, "pools": pools})
 }
 
 type createCatalogAgentRequest struct {
@@ -409,6 +487,24 @@ func (s *Server) createCatalogAgent(c *gin.Context) {
 		if profileErr != nil || poolErr != nil || profile.Tenant != prepared.Tenant || profile.Namespace != prepared.Namespace || pool.Tenant != prepared.Tenant || pool.Namespace != prepared.Namespace {
 			fail(fmt.Errorf("hosted runtime profile and pool must exist in the Agent scope"))
 			return
+		}
+		// A Hosted Agent uses the same portable definition as a Managed Agent.
+		// RuntimeProfile and RuntimePool are execution details, not an alternate
+		// place to store instructions, skills, tools, or workspace intent.
+		if req.Definition != nil {
+			if s.product == nil {
+				fail(fmt.Errorf("Agent definition control plane is unavailable"))
+				return
+			}
+			if req.Definition.Name == "" {
+				req.Definition.Name = prepared.DisplayName
+			}
+			definition, err = s.product.EnsureManagedDefinition(
+				c.Request.Context(), prepared.OwnerRef, prepared.ID.String(), *req.Definition)
+			if err != nil {
+				fail(err)
+				return
+			}
 		}
 	default:
 		fail(fmt.Errorf("unsupported binding kind %q", req.Binding.Kind))
@@ -691,6 +787,274 @@ func (s *Server) patchAgentBinding(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"binding": updated})
+}
+
+type hostedAgentSettingsResponse struct {
+	AgentID            uuid.UUID                              `json:"agentId"`
+	BindingID          uuid.UUID                              `json:"bindingId"`
+	BindingVersion     int64                                  `json:"bindingVersion"`
+	RuntimeProfile     *controlmodel.RuntimeProfile           `json:"runtimeProfile"`
+	RuntimePool        *controlmodel.RuntimePool              `json:"runtimePool"`
+	ExecutionOverrides *controlmodel.HostedExecutionOverrides `json:"executionOverrides,omitempty"`
+	MaxConcurrency     int32                                  `json:"maxConcurrency"`
+	PolicyVersion      int64                                  `json:"policyVersion"`
+}
+
+func (s *Server) hostedAgentSettings(ctx context.Context, agentID uuid.UUID) (*hostedAgentSettingsResponse, *controlmodel.AgentBinding, *controlmodel.AgentRuntimePolicy, error) {
+	agent, err := s.store.AgentCatalog().GetAgent(ctx, agentID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	bindings, err := s.store.AgentCatalog().ListBindings(ctx, agent.ID, true)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var binding *controlmodel.AgentBinding
+	for _, candidate := range bindings {
+		if candidate.Kind == controlmodel.DataPlaneHostedRuntime && candidate.Enabled && candidate.ArchivedAt == nil {
+			binding = candidate
+			break
+		}
+	}
+	if binding == nil {
+		return nil, nil, nil, store.ErrNotFound
+	}
+	var configuration controlmodel.HostedBindingConfiguration
+	if err = json.Unmarshal(binding.Configuration, &configuration); err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid hosted binding configuration: %w", err)
+	}
+	profile, err := s.store.RuntimeRegistry().GetRuntimeProfileByID(ctx, configuration.RuntimeProfileID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	pool, err := s.store.RuntimeRegistry().GetRuntimePoolByID(ctx, configuration.RuntimePoolID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	policy, err := s.store.Orchestration().GetRuntimePolicy(ctx, agent.Tenant, agent.Namespace, agent.ID.String())
+	if errors.Is(err, store.ErrNotFound) {
+		policy, err = nil, nil
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	response := &hostedAgentSettingsResponse{AgentID: agent.ID, BindingID: binding.ID,
+		BindingVersion: binding.Version, RuntimeProfile: profile, RuntimePool: pool,
+		ExecutionOverrides: configuration.ExecutionOverrides}
+	if policy != nil {
+		response.MaxConcurrency, response.PolicyVersion = policy.MaxConcurrency, policy.Version
+	}
+	return response, binding, policy, nil
+}
+
+func (s *Server) getHostedAgentSettings(c *gin.Context) {
+	agentID, ok := parseUUIDParam(c, "agentId")
+	if !ok {
+		return
+	}
+	settings, _, _, err := s.hostedAgentSettings(c.Request.Context(), agentID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"settings": settings})
+}
+
+type patchHostedAgentSettingsRequest struct {
+	RuntimeProfileID   uuid.UUID                              `json:"runtimeProfileId"`
+	RuntimePoolID      uuid.UUID                              `json:"runtimePoolId"`
+	ExecutionOverrides *controlmodel.HostedExecutionOverrides `json:"executionOverrides,omitempty"`
+	MaxConcurrency     *int32                                 `json:"maxConcurrency,omitempty"`
+	BindingVersion     int64                                  `json:"bindingVersion"`
+	PolicyVersion      int64                                  `json:"policyVersion"`
+}
+
+func validateHostedExecutionOverrides(profile *controlmodel.RuntimeProfile, overrides *controlmodel.HostedExecutionOverrides) error {
+	if err := overrides.Validate(); err != nil || overrides == nil {
+		return err
+	}
+	for _, value := range []string{overrides.ReasoningEffort, overrides.ServiceTier} {
+		if len(value) > 64 || strings.ContainsAny(value, " \t\r\n\x00") {
+			return fmt.Errorf("reasoningEffort and serviceTier must be single setting tokens")
+		}
+	}
+	if _, err := runtimeprovider.ValidateCustomArgs(overrides.CustomArgs); err != nil {
+		return err
+	}
+	configuration := map[string]any{}
+	if len(overrides.ProviderConfiguration) > 0 {
+		_ = json.Unmarshal(overrides.ProviderConfiguration, &configuration)
+	}
+	allowed := map[string]map[string]bool{
+		"codex":       {"profile": true, "sandbox": true, "skipGitRepoCheck": true},
+		"claude-code": {"permissionMode": true, "allowedTools": true, "disallowedTools": true, "maxTurns": true, "appendSystemPrompt": true},
+		"qoder":       {"permissionMode": true, "allowedTools": true, "disallowedTools": true, "maxTurns": true, "maxOutputTokens": true, "contextWindow": true, "strictMCPConfig": true, "appendSystemPrompt": true, "agent": true},
+		"qwenpaw":     {"agent": true, "permissionMode": true, "runtimeProvider": true, "localDiagnostics": true},
+		"openclaw":    {"fallbacks": true, "thinking": true, "codeMode": true, "timeoutSeconds": true, "localModelLean": true, "isolated": true, "authEnvOnly": true},
+	}
+	for key := range configuration {
+		if !allowed[profile.Provider][key] {
+			return fmt.Errorf("provider setting %q is not supported for %s", key, profile.Provider)
+		}
+	}
+	for _, key := range []string{"profile", "sandbox", "permissionMode", "appendSystemPrompt", "agent", "runtimeProvider", "thinking", "codeMode"} {
+		if value, exists := configuration[key]; exists {
+			text, valid := value.(string)
+			if !valid || len(text) > 16*1024 || strings.ContainsRune(text, '\x00') {
+				return fmt.Errorf("provider setting %q must be a valid string", key)
+			}
+		}
+	}
+	for _, key := range []string{"skipGitRepoCheck", "strictMCPConfig", "localDiagnostics", "localModelLean", "isolated", "authEnvOnly"} {
+		if value, exists := configuration[key]; exists {
+			if _, valid := value.(bool); !valid {
+				return fmt.Errorf("provider setting %q must be a boolean", key)
+			}
+		}
+	}
+	for _, key := range []string{"maxTurns", "maxOutputTokens", "contextWindow", "timeoutSeconds"} {
+		if value, exists := configuration[key]; exists {
+			number, valid := value.(float64)
+			if !valid || number < 0 || number != float64(int64(number)) {
+				return fmt.Errorf("provider setting %q must be a non-negative integer", key)
+			}
+		}
+	}
+	for _, key := range []string{"allowedTools", "disallowedTools", "fallbacks"} {
+		if value, exists := configuration[key]; exists {
+			items, valid := value.([]any)
+			if !valid || len(items) > 64 {
+				return fmt.Errorf("provider setting %q must be a list of at most 64 strings", key)
+			}
+			for _, item := range items {
+				text, ok := item.(string)
+				if !ok || strings.TrimSpace(text) == "" || len(text) > 512 || strings.ContainsRune(text, '\x00') {
+					return fmt.Errorf("provider setting %q contains an invalid value", key)
+				}
+			}
+		}
+	}
+	base := map[string]any{}
+	_ = json.Unmarshal(profile.Configuration, &base)
+	if profile.Provider == "codex" {
+		if sandbox, ok := configuration["sandbox"].(string); ok && sandbox != "" {
+			rank := map[string]int{"read-only": 0, "workspace-write": 1, "danger-full-access": 2}
+			requested, valid := rank[sandbox]
+			if !valid {
+				return fmt.Errorf("unsupported Codex sandbox %q", sandbox)
+			}
+			baseline := 1
+			if configured, ok := base["sandbox"].(string); ok {
+				if value, found := rank[configured]; found {
+					baseline = value
+				}
+			}
+			if requested > baseline {
+				return fmt.Errorf("Agent sandbox cannot be more permissive than Runtime Profile sandbox")
+			}
+		}
+	}
+	if mode, ok := configuration["permissionMode"].(string); ok {
+		lower := strings.ToLower(mode)
+		if strings.Contains(lower, "bypass") || strings.Contains(lower, "danger") || strings.Contains(lower, "yolo") {
+			if baseline, _ := base["permissionMode"].(string); baseline != mode {
+				return fmt.Errorf("Agent permissionMode cannot relax the Runtime Profile security baseline")
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) patchHostedAgentSettings(c *gin.Context) {
+	agentID, ok := parseUUIDParam(c, "agentId")
+	if !ok {
+		return
+	}
+	var req patchHostedAgentSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.BindingVersion <= 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "runtimeProfileId, runtimePoolId, and a valid bindingVersion are required"})
+		return
+	}
+	if req.MaxConcurrency != nil && (*req.MaxConcurrency < 0 || *req.MaxConcurrency > 50) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "maxConcurrency must be between 0 and 50"})
+		return
+	}
+	if err := req.ExecutionOverrides.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	currentSettings, binding, policy, err := s.hostedAgentSettings(c.Request.Context(), agentID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if req.RuntimeProfileID == uuid.Nil {
+		req.RuntimeProfileID = currentSettings.RuntimeProfile.ID
+	}
+	if req.RuntimePoolID == uuid.Nil {
+		req.RuntimePoolID = currentSettings.RuntimePool.ID
+	}
+	if req.ExecutionOverrides == nil {
+		req.ExecutionOverrides = currentSettings.ExecutionOverrides
+	}
+	profile, profileErr := s.store.RuntimeRegistry().GetRuntimeProfileByID(c.Request.Context(), req.RuntimeProfileID)
+	pool, poolErr := s.store.RuntimeRegistry().GetRuntimePoolByID(c.Request.Context(), req.RuntimePoolID)
+	agent, agentErr := s.store.AgentCatalog().GetAgent(c.Request.Context(), agentID)
+	if profileErr != nil || poolErr != nil || agentErr != nil || profile.Tenant != agent.Tenant || profile.Namespace != agent.Namespace || pool.Tenant != agent.Tenant || pool.Namespace != agent.Namespace {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "hosted runtime profile and pool must exist in the Agent scope"})
+		return
+	}
+	if err = validateHostedExecutionOverrides(profile, req.ExecutionOverrides); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	configuration, _ := json.Marshal(controlmodel.HostedBindingConfiguration{RuntimeProfileID: req.RuntimeProfileID,
+		RuntimePoolID: req.RuntimePoolID, ExecutionOverrides: req.ExecutionOverrides})
+	previousConfiguration := append(json.RawMessage(nil), binding.Configuration...)
+	binding.Configuration = configuration
+	updatedBinding, err := s.store.AgentCatalog().UpdateBinding(c.Request.Context(), binding, req.BindingVersion)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	runtimeBinding, err := updatedBinding.RuntimeBinding()
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if policy == nil {
+		policy = &controlmodel.AgentRuntimePolicy{Tenant: agent.Tenant, Namespace: agent.Namespace,
+			AgentRef: agent.ID.String(), SelectionMode: "ordered", FallbackMode: "disabled"}
+	} else if req.PolicyVersion > 0 {
+		policy.Version = req.PolicyVersion
+	}
+	if req.MaxConcurrency != nil {
+		policy.MaxConcurrency = *req.MaxConcurrency
+	}
+	matched := false
+	for index := range policy.Candidates {
+		if policy.Candidates[index].Binding.BindingID == binding.ID {
+			policy.Candidates[index].Binding = runtimeBinding
+			matched = true
+		}
+	}
+	if !matched {
+		policy.Candidates = append(policy.Candidates, controlmodel.RuntimeBindingCandidate{Binding: runtimeBinding})
+	}
+	if _, err = s.store.Orchestration().PutRuntimePolicy(c.Request.Context(), policy); err != nil {
+		// Best-effort compensation keeps the binding and policy aligned when the
+		// optimistic policy update loses a race.
+		updatedBinding.Configuration = previousConfiguration
+		_, _ = s.store.AgentCatalog().UpdateBinding(c.Request.Context(), updatedBinding, updatedBinding.Version)
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	settings, _, _, err := s.hostedAgentSettings(c.Request.Context(), agentID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"settings": settings})
 }
 
 func (s *Server) listCatalogAgentInstances(c *gin.Context) {

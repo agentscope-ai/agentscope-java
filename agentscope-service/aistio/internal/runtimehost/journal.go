@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,12 +32,23 @@ import (
 type Journal struct{ Root string }
 
 type JournalRecord struct {
-	Attempt   *controlmodel.ExecutionAttempt `json:"attempt"`
-	Task      *controlmodel.AgentTask        `json:"task"`
-	Context   *collaboration.ContextEnvelope `json:"context"`
-	Workspace string                         `json:"workspace,omitempty"`
-	Events    []provider.Event               `json:"events,omitempty"`
-	UpdatedAt time.Time                      `json:"updatedAt"`
+	Attempt         *controlmodel.ExecutionAttempt `json:"attempt"`
+	Task            *controlmodel.AgentTask        `json:"task"`
+	Context         *collaboration.ContextEnvelope `json:"context"`
+	HostID          uuid.UUID                      `json:"hostId,omitempty"`
+	AttemptToken    string                         `json:"attemptToken,omitempty"`
+	Workspace       string                         `json:"workspace,omitempty"`
+	Events          []provider.Event               `json:"events,omitempty"`
+	PendingTerminal *PendingTerminal               `json:"pendingTerminal,omitempty"`
+	UpdatedAt       time.Time                      `json:"updatedAt"`
+}
+
+type PendingTerminal struct {
+	Action         string          `json:"action"`
+	Result         json.RawMessage `json:"result,omitempty"`
+	Checkpoint     json.RawMessage `json:"checkpoint,omitempty"`
+	FailureCode    string          `json:"failureCode,omitempty"`
+	FailureMessage string          `json:"failureMessage,omitempty"`
 }
 
 func (j *Journal) path(id uuid.UUID) string {
@@ -69,4 +81,40 @@ func (j *Journal) Remove(id uuid.UUID) error {
 		return nil
 	}
 	return err
+}
+
+// List loads durable attempt records in stable order. Terminal records form a
+// local outbox and are replayed after daemon restarts.
+func (j *Journal) List() ([]*JournalRecord, error) {
+	dir := filepath.Join(j.Root, "execution-attempts")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	sort.Strings(paths)
+	records := make([]*JournalRecord, 0, len(paths))
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil, readErr
+		}
+		var record JournalRecord
+		if unmarshalErr := json.Unmarshal(data, &record); unmarshalErr != nil || record.Attempt == nil || record.Attempt.ID == uuid.Nil {
+			if unmarshalErr == nil {
+				unmarshalErr = fmt.Errorf("missing execution attempt")
+			}
+			return nil, fmt.Errorf("decode runtime host journal %s: %w", path, unmarshalErr)
+		}
+		records = append(records, &record)
+	}
+	return records, nil
 }

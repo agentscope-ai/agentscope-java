@@ -16,13 +16,12 @@ export function useCommandPaletteShortcut(open: () => void) {
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   if (!open) return null
   const links = [
-    ['Issues', '/control/issues'],
-    ['AgentTasks', '/control/tasks'],
-    ['Teams', '/control/teams'],
-    ['Orchestration Definitions', '/control/orchestration/definitions'],
-    ['Orchestration Runs', '/control/orchestration/runs'],
-    ['Inbox & approvals', '/control/approvals'],
-    ['Automations', '/control/automations'],
+    ['Issues', '/work/issues'],
+    ['Executions', '/agent-center/activity/executions'],
+    ['Teams', '/agent-center/teams'],
+    ['Workflows', '/agent-center/workflows'],
+    ['Approvals', '/work/approvals'],
+    ['Automations', '/work/automations'],
   ]
   return (
     <div className="fixed inset-0 z-50 bg-black/30 p-6" onClick={() => onOpenChange(false)}>

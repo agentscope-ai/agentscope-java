@@ -213,8 +213,8 @@ type MessagePage struct {
 	Limit     int           `json:"limit"`
 	Total     int           `json:"total"`
 	Messages  []MessageItem `json:"messages"`
-	// Source is "transcript" when served from CP transcript storage, or
-	// "dataplane" when proxied to a live instance.
+	// Source is "transcript" for CP transcript storage, "events" for a
+	// projection of durable CP events, or "dataplane" for a live instance.
 	Source string `json:"source,omitempty"`
 }
 

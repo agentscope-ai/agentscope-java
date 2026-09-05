@@ -18,6 +18,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AgentDefinition, listAgents } from '../api/agents';
 import NewManagedSessionForm from '../components/NewManagedSessionForm';
+import { AgentPicker } from '../components/AgentPicker';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 640 },
@@ -72,7 +73,7 @@ export default function SessionCreatePage() {
   }, [prefAgentId]);
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <Link to={agentId ? `/managed/sessions?agentId=${encodeURIComponent(agentId)}` : '/managed/sessions'} style={S.back}>
         ← Sessions
       </Link>
@@ -84,17 +85,9 @@ export default function SessionCreatePage() {
       {loadErr && <div style={S.err}>{loadErr}</div>}
 
       <label style={S.field}>Agent</label>
-      <select
-        style={S.select}
-        value={agentId}
-        onChange={e => setAgentId(e.target.value)}
-        required
-      >
-        <option value="">Select agent…</option>
-        {agents.map(a => (
-          <option key={a.id} value={a.id}>{a.name}</option>
-        ))}
-      </select>
+      <div style={{ marginBottom: 18 }}>
+        <AgentPicker value={agentId} onChange={setAgentId} required aria-label="Session Agent" />
+      </div>
 
       {agentId ? (
         <div style={S.panel}>

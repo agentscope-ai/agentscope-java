@@ -406,7 +406,10 @@ func (s *Scheduler) available(ctx context.Context, task *controlmodel.AgentTask,
 			return false, err
 		}
 		for _, host := range hosts {
-			if (host.Capacity <= 0 || host.Active < host.Capacity) && capabilitiesMatch(host.Capabilities, candidate.RequiredCapabilities) &&
+			if (host.Capacity <= 0 || host.Active < host.Capacity) &&
+				controlmodel.RuntimeHostMatchesProfile(host.Capabilities, profile) &&
+				controlmodel.RuntimeHostMatchesPool(host.Labels, pool) &&
+				capabilitiesMatch(host.Capabilities, candidate.RequiredCapabilities) &&
 				controlmodel.RuntimeSecurityMatches(candidate.Binding.Kind, host.Labels, candidate.SecurityConstraints) {
 				return true, nil
 			}

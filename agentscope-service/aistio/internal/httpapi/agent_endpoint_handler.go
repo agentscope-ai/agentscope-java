@@ -4,6 +4,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,15 +21,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/spring-ai-alibaba/aistio/internal/asdp"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
+	"github.com/spring-ai-alibaba/aistio/internal/secretcrypto"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
-
-type endpointRateWindow struct {
-	Started time.Time
-	Count   int
-}
 
 type endpointRateLimit struct {
 	Requests      int `json:"requests"`
@@ -38,43 +37,258 @@ type endpointAuthPolicy struct {
 	Type string `json:"type"`
 }
 
-func newEndpointKey() (string, []byte, error) {
+var endpointSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
+type endpointReadiness struct {
+	State      string `json:"state"`
+	Reason     string `json:"reason"`
+	Compatible bool   `json:"compatible"`
+}
+
+const endpointPrincipalContextKey = "endpoint-principal"
+
+func newEndpointKey() (string, string, []byte, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
-	key := "asep_" + base64.RawURLEncoding.EncodeToString(raw)
+	encoded := base64.RawURLEncoding.EncodeToString(raw)
+	key := "asep_" + encoded
 	sum := sha256.Sum256([]byte(key))
-	return key, sum[:], nil
+	return key, encoded[:10], sum[:], nil
 }
-func endpointPublic(v *controlmodel.AgentEndpoint) *controlmodel.AgentEndpoint {
+
+func endpointCredentialAAD(endpointID, credentialID uuid.UUID) []byte {
+	return []byte(endpointID.String() + ":" + credentialID.String())
+}
+
+func (s *Server) buildEndpointCredential(endpointID uuid.UUID, name string, scopes json.RawMessage,
+	expiresAt *time.Time, rotatedFrom *uuid.UUID) (*controlmodel.EndpointCredential, string, error) {
+	key, prefix, hash, err := newEndpointKey()
+	if err != nil {
+		return nil, "", err
+	}
+	credentialID := uuid.New()
+	ciphertext, err := secretcrypto.Encrypt(s.endpointCredentialKey, []byte(key),
+		endpointCredentialAAD(endpointID, credentialID))
+	if err != nil {
+		return nil, "", err
+	}
+	return &controlmodel.EndpointCredential{
+		ID: credentialID, EndpointID: endpointID, Name: name, KeyPrefix: prefix,
+		SecretHash: hash, SecretCiphertext: ciphertext, Status: controlmodel.EndpointCredentialActive,
+		Scopes: scopes, ExpiresAt: expiresAt, RotatedFrom: rotatedFrom,
+	}, key, nil
+}
+
+func endpointKeyPrefix(key string) string {
+	encoded := strings.TrimPrefix(strings.TrimSpace(key), "asep_")
+	if len(encoded) < 10 || encoded == key {
+		return ""
+	}
+	return encoded[:10]
+}
+
+func requestCorrelationID(c *gin.Context) string {
+	if value := strings.TrimSpace(c.GetHeader("X-Correlation-ID")); value != "" {
+		return value
+	}
+	return uuid.NewString()
+}
+
+func endpointPublic(v *controlmodel.Endpoint) *controlmodel.Endpoint {
 	if v == nil {
 		return nil
 	}
 	c := *v
-	c.CredentialHash = nil
 	return &c
 }
-func validateEndpoint(in *controlmodel.AgentEndpoint) error {
-	if in.Name == "" || in.Slug == "" || in.TargetRef == uuid.Nil {
-		return fmt.Errorf("name, slug and targetRef are required")
+
+func endpointInvocationPublic(v *controlmodel.EndpointInvocation) gin.H {
+	if v == nil {
+		return nil
 	}
-	if in.InvocationMode != controlmodel.EndpointConversation && in.InvocationMode != controlmodel.EndpointJobMode {
-		return fmt.Errorf("invocationMode must be conversation or job")
+	out := gin.H{"id": v.ID, "endpointId": v.EndpointID, "mode": v.Mode, "status": v.Status,
+		"correlationId": v.CorrelationID, "createdAt": v.CreatedAt, "updatedAt": v.UpdatedAt}
+	if v.ConversationID != nil {
+		out["conversationId"] = v.ConversationID
 	}
-	if in.InvocationMode == controlmodel.EndpointConversation && in.TargetType != controlmodel.EndpointTargetAgent {
-		return fmt.Errorf("conversation endpoints require targetType=agent")
+	if v.TurnID != nil {
+		out["turnId"] = v.TurnID
+	}
+	if v.SessionID != "" {
+		out["sessionId"] = v.SessionID
+	}
+	if v.IssueID != nil {
+		out["issueId"] = v.IssueID
+	}
+	if v.RunID != nil {
+		out["runId"] = v.RunID
+	}
+	if len(v.Result) > 0 {
+		out["result"] = v.Result
+	}
+	if v.ErrorCode != "" {
+		out["errorCode"], out["errorMessage"] = v.ErrorCode, v.ErrorMessage
+	}
+	if v.StartedAt != nil {
+		out["startedAt"] = v.StartedAt
+	}
+	if v.CompletedAt != nil {
+		out["completedAt"] = v.CompletedAt
+	}
+	return out
+}
+
+func endpointConversationPublic(v *controlmodel.EndpointConversation) gin.H {
+	if v == nil {
+		return nil
+	}
+	out := gin.H{"id": v.ID, "endpointId": v.EndpointID, "sessionId": v.SessionID,
+		"status": v.Status, "createdAt": v.CreatedAt, "updatedAt": v.UpdatedAt}
+	if v.LastTurnAt != nil {
+		out["lastTurnAt"] = v.LastTurnAt
+	}
+	return out
+}
+
+func sameJSON(a, b json.RawMessage) bool {
+	var compactA, compactB bytes.Buffer
+	if json.Compact(&compactA, a) != nil || json.Compact(&compactB, b) != nil {
+		return bytes.Equal(a, b)
+	}
+	return bytes.Equal(compactA.Bytes(), compactB.Bytes())
+}
+
+func validateEndpointSchema(raw json.RawMessage) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return fmt.Errorf("schema must be a JSON object: %w", err)
 	}
 	return nil
 }
-func (s *Server) validateEndpointTarget(c *gin.Context, in *controlmodel.AgentEndpoint) error {
+
+// validateEndpointInput intentionally implements the stable, useful subset of
+// JSON Schema needed at the public boundary. Unknown keywords remain forward
+// compatible instead of being interpreted incorrectly.
+func validateEndpointInput(schemaRaw json.RawMessage, value any) error {
+	if len(schemaRaw) == 0 || string(schemaRaw) == "null" {
+		return nil
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(schemaRaw, &schema); err != nil {
+		return fmt.Errorf("Endpoint input schema is invalid")
+	}
+	return validateEndpointSchemaValue(schema, value, "input")
+}
+
+func validateEndpointSchemaValue(schema map[string]any, value any, path string) error {
+	typeName, _ := schema["type"].(string)
+	switch typeName {
+	case "object":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s must be an object", path)
+		}
+		if required, ok := schema["required"].([]any); ok {
+			for _, item := range required {
+				name, _ := item.(string)
+				if name != "" {
+					if _, exists := object[name]; !exists {
+						return fmt.Errorf("%s.%s is required", path, name)
+					}
+				}
+			}
+		}
+		if properties, ok := schema["properties"].(map[string]any); ok {
+			for name, childRaw := range properties {
+				child, schemaOK := childRaw.(map[string]any)
+				childValue, exists := object[name]
+				if schemaOK && exists {
+					if err := validateEndpointSchemaValue(child, childValue, path+"."+name); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	case "array":
+		items, ok := value.([]any)
+		if !ok {
+			return fmt.Errorf("%s must be an array", path)
+		}
+		if child, ok := schema["items"].(map[string]any); ok {
+			for i, item := range items {
+				if err := validateEndpointSchemaValue(child, item, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+					return err
+				}
+			}
+		}
+	case "string":
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("%s must be a string", path)
+		}
+	case "number":
+		if _, ok := value.(float64); !ok {
+			return fmt.Errorf("%s must be a number", path)
+		}
+	case "integer":
+		number, ok := value.(float64)
+		if !ok || number != float64(int64(number)) {
+			return fmt.Errorf("%s must be an integer", path)
+		}
+	case "boolean":
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf("%s must be a boolean", path)
+		}
+	case "null":
+		if value != nil {
+			return fmt.Errorf("%s must be null", path)
+		}
+	}
+	return nil
+}
+
+func validateEndpoint(in *controlmodel.Endpoint) error {
+	if in.Name == "" || in.Slug == "" || in.TargetRef == uuid.Nil {
+		return fmt.Errorf("name, slug and targetRef are required")
+	}
+	if !endpointSlugPattern.MatchString(in.Slug) {
+		return fmt.Errorf("slug must contain lowercase letters, numbers, and single hyphen separators")
+	}
+	if in.InvocationMode != controlmodel.EndpointConversationMode && in.InvocationMode != controlmodel.EndpointJobMode {
+		return fmt.Errorf("invocationMode must be conversation or job")
+	}
+	if in.InvocationMode == controlmodel.EndpointConversationMode && in.TargetType != controlmodel.EndpointTargetAgent {
+		return fmt.Errorf("conversation endpoints require targetType=agent")
+	}
+	if err := validateEndpointSchema(in.InputSchema); err != nil {
+		return fmt.Errorf("inputSchema: %w", err)
+	}
+	if err := validateEndpointSchema(in.OutputSchema); err != nil {
+		return fmt.Errorf("outputSchema: %w", err)
+	}
+	if in.TimeoutSeconds < 0 || in.MaxPayloadBytes < 0 {
+		return fmt.Errorf("timeoutSeconds and maxPayloadBytes cannot be negative")
+	}
+	if len(in.RateLimit) > 0 {
+		var rate endpointRateLimit
+		if err := json.Unmarshal(in.RateLimit, &rate); err != nil || rate.Requests <= 0 || rate.WindowSeconds <= 0 {
+			return fmt.Errorf("rateLimit requires positive requests and windowSeconds")
+		}
+	}
+	return nil
+}
+func (s *Server) validateEndpointTarget(c *gin.Context, in *controlmodel.Endpoint) error {
 	switch in.TargetType {
 	case controlmodel.EndpointTargetAgent:
 		_, err := s.activeAgentInScope(c, in.Tenant, in.Namespace, in.TargetRef.String())
 		return err
 	case controlmodel.EndpointTargetTeam:
 		t, err := s.store.Collaboration().GetTeam(c, in.TargetRef)
-		if err == nil && (t.Tenant != in.Tenant || t.Namespace != in.Namespace) {
+		if err == nil && (t.Tenant != in.Tenant || t.Namespace != in.Namespace || t.Status != controlmodel.TeamActive) {
 			return store.ErrNotFound
 		}
 		return err
@@ -89,8 +303,8 @@ func (s *Server) validateEndpointTarget(c *gin.Context, in *controlmodel.AgentEn
 	}
 }
 
-func (s *Server) createAgentEndpoint(c *gin.Context) {
-	var in controlmodel.AgentEndpoint
+func (s *Server) createEndpoint(c *gin.Context) {
+	var in controlmodel.Endpoint
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
@@ -121,30 +335,30 @@ func (s *Server) createAgentEndpoint(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "authPolicy.type must be api_key or platform"})
 		return
 	}
-	var key string
-	if authPolicy.Type == "api_key" {
-		var hash []byte
-		var err error
-		key, hash, err = newEndpointKey()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "generate endpoint credential"})
-			return
-		}
-		in.CredentialHash = hash
-	}
-	in.Enabled = true
-	v, err := s.store.AgentEndpoints().Create(c, &in)
+	in.Status = controlmodel.EndpointDraft
+	v, err := s.store.Endpoints().Create(c, &in)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
 	response := gin.H{"endpoint": endpointPublic(v)}
-	if key != "" {
+	if authPolicy.Type == "api_key" {
+		candidate, key, keyErr := s.buildEndpointCredential(v.ID, "default", nil, nil, nil)
+		if keyErr != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "generate endpoint credential"})
+			return
+		}
+		credential, createErr := s.store.Endpoints().CreateCredential(c, candidate)
+		if createErr != nil {
+			s.writeControlPlaneError(c, createErr)
+			return
+		}
 		response["credential"] = key
+		response["credentialResource"] = credential
 	}
 	c.JSON(http.StatusCreated, response)
 }
-func (s *Server) listAgentEndpoints(c *gin.Context) {
+func (s *Server) listEndpoints(c *gin.Context) {
 	tenant, namespace := c.Query("tenant"), c.Query("namespace")
 	if tenant == "" {
 		tenant = "default"
@@ -152,14 +366,16 @@ func (s *Server) listAgentEndpoints(c *gin.Context) {
 	if namespace == "" {
 		namespace = defaultNamespace
 	}
-	items, err := s.store.AgentEndpoints().List(c, tenant, namespace)
+	items, err := s.store.Endpoints().List(c, tenant, namespace)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
 	targetType := strings.TrimSpace(c.Query("targetType"))
 	targetRef := strings.TrimSpace(c.Query("targetRef"))
-	var filtered []*controlmodel.AgentEndpoint
+	// Keep the collection contract stable for empty namespaces. A nil slice is
+	// encoded as JSON null and breaks clients that correctly expect an array.
+	filtered := make([]*controlmodel.Endpoint, 0, len(items))
 	for i := range items {
 		if targetType != "" && string(items[i].TargetType) != targetType {
 			continue
@@ -171,34 +387,41 @@ func (s *Server) listAgentEndpoints(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"items": filtered})
 }
-func (s *Server) getAgentEndpoint(c *gin.Context) {
+func (s *Server) getEndpoint(c *gin.Context) {
 	id, ok := parseUUIDParam(c, "endpointId")
 	if !ok {
 		return
 	}
-	v, err := s.store.AgentEndpoints().Get(c, id)
+	v, err := s.store.Endpoints().Get(c, id)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"endpoint": endpointPublic(v)})
 }
-func (s *Server) patchAgentEndpoint(c *gin.Context) {
+func (s *Server) patchEndpoint(c *gin.Context) {
 	id, ok := parseUUIDParam(c, "endpointId")
 	if !ok {
 		return
 	}
-	v, err := s.store.AgentEndpoints().Get(c, id)
+	v, err := s.store.Endpoints().Get(c, id)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
+	if v.Status == controlmodel.EndpointArchived {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "archived Endpoint is immutable"})
+		return
+	}
 	var in struct {
-		Name             *string          `json:"name"`
-		Enabled          *bool            `json:"enabled"`
-		RateLimit        *json.RawMessage `json:"rateLimit"`
-		Version          int64            `json:"version"`
-		RotateCredential bool             `json:"rotateCredential"`
+		Name            *string         `json:"name"`
+		Description     *string         `json:"description"`
+		InputSchema     json.RawMessage `json:"inputSchema"`
+		OutputSchema    json.RawMessage `json:"outputSchema"`
+		RateLimit       json.RawMessage `json:"rateLimit"`
+		TimeoutSeconds  *int            `json:"timeoutSeconds"`
+		MaxPayloadBytes *int64          `json:"maxPayloadBytes"`
+		Version         int64           `json:"version"`
 	}
 	if err = c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
@@ -208,36 +431,602 @@ func (s *Server) patchAgentEndpoint(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "version is required"})
 		return
 	}
+	if v.Status == controlmodel.EndpointPublished && (len(in.InputSchema) > 0 || len(in.OutputSchema) > 0) {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "disable the Endpoint before changing its public schema"})
+		return
+	}
 	if in.Name != nil {
 		v.Name = *in.Name
 	}
-	if in.Enabled != nil {
-		v.Enabled = *in.Enabled
+	if in.Description != nil {
+		v.Description = *in.Description
 	}
-	if in.RateLimit != nil {
-		v.RateLimit = *in.RateLimit
-	}
-	response := gin.H{}
-	if in.RotateCredential {
-		key, hash, e := newEndpointKey()
-		if e != nil {
-			c.JSON(500, ErrorResponse{Error: e.Error()})
+	if len(in.InputSchema) > 0 {
+		if schemaErr := validateEndpointSchema(in.InputSchema); schemaErr != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "inputSchema: " + schemaErr.Error()})
 			return
 		}
-		v.CredentialHash = hash
-		response["credential"] = key
+		v.InputSchema = in.InputSchema
+		if string(in.InputSchema) == "null" {
+			v.InputSchema = nil
+		}
 	}
-	v, err = s.store.AgentEndpoints().Update(c, v, in.Version)
+	if len(in.OutputSchema) > 0 {
+		if schemaErr := validateEndpointSchema(in.OutputSchema); schemaErr != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "outputSchema: " + schemaErr.Error()})
+			return
+		}
+		v.OutputSchema = in.OutputSchema
+		if string(in.OutputSchema) == "null" {
+			v.OutputSchema = nil
+		}
+	}
+	if len(in.RateLimit) > 0 {
+		if string(in.RateLimit) == "null" {
+			v.RateLimit = nil
+		} else {
+			var rate endpointRateLimit
+			if json.Unmarshal(in.RateLimit, &rate) != nil || rate.Requests <= 0 || rate.WindowSeconds <= 0 {
+				c.JSON(http.StatusBadRequest, ErrorResponse{Error: "rateLimit requires positive requests and windowSeconds"})
+				return
+			}
+			v.RateLimit = in.RateLimit
+		}
+	}
+	if in.TimeoutSeconds != nil {
+		if *in.TimeoutSeconds <= 0 {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "timeoutSeconds must be positive"})
+			return
+		}
+		v.TimeoutSeconds = *in.TimeoutSeconds
+	}
+	if in.MaxPayloadBytes != nil {
+		if *in.MaxPayloadBytes <= 0 {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "maxPayloadBytes must be positive"})
+			return
+		}
+		v.MaxPayloadBytes = *in.MaxPayloadBytes
+	}
+	v, err = s.store.Endpoints().Update(c, v, in.Version)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	response["endpoint"] = endpointPublic(v)
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{"endpoint": endpointPublic(v)})
 }
 
-func (s *Server) authenticateEndpoint(c *gin.Context, endpoint *controlmodel.AgentEndpoint) bool {
-	if endpoint == nil || !endpoint.Enabled {
+func (s *Server) inspectEndpointReadiness(ctx *gin.Context, endpoint *controlmodel.Endpoint) endpointReadiness {
+	if endpoint.Status == controlmodel.EndpointArchived {
+		return endpointReadiness{State: "disabled", Reason: "Endpoint is archived"}
+	}
+	switch endpoint.TargetType {
+	case controlmodel.EndpointTargetAgent:
+		agent, err := s.activeAgentInScope(ctx, endpoint.Tenant, endpoint.Namespace, endpoint.TargetRef.String())
+		if err != nil {
+			return endpointReadiness{State: "unavailable", Reason: "Target Agent is not active"}
+		}
+		bindings, _ := s.store.AgentCatalog().ListBindings(ctx, agent.ID, true)
+		instances, _ := s.store.RuntimeRegistry().ListAgentInstances(ctx, endpoint.Tenant, endpoint.Namespace, agent.ID)
+		readiness, _ := s.inspectAgentReadiness(ctx, agent, bindings, instances)
+		if endpoint.InvocationMode == controlmodel.EndpointJobMode {
+			compatible := readiness.State != "inactive" && readiness.State != "unbound"
+			return endpointReadiness{State: readiness.State, Reason: readiness.Reason, Compatible: compatible}
+		}
+		policy, policyErr := s.store.Orchestration().GetRuntimePolicy(ctx, endpoint.Tenant, endpoint.Namespace, agent.ID.String())
+		if policyErr != nil {
+			return endpointReadiness{State: "unavailable", Reason: "Agent has no runtime policy"}
+		}
+		for _, candidate := range policy.Candidates {
+			binding, bindingErr := s.store.AgentCatalog().GetBinding(ctx, candidate.Binding.BindingID)
+			if bindingErr != nil || !binding.Enabled || binding.ArchivedAt != nil {
+				continue
+			}
+			switch binding.Kind {
+			case controlmodel.DataPlaneManaged:
+				if s.product != nil && controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints) {
+					return endpointReadiness{State: readiness.State, Reason: readiness.Reason, Compatible: true}
+				}
+			case controlmodel.DataPlaneExternalApplication:
+				for _, instance := range instances {
+					if externalConversationCandidate(instance, binding, candidate) {
+						return endpointReadiness{State: readiness.State, Reason: readiness.Reason, Compatible: true}
+					}
+				}
+			case controlmodel.DataPlaneHostedRuntime:
+				if s.hostedConversationCandidate(ctx, agent, candidate) {
+					return endpointReadiness{State: readiness.State, Reason: readiness.Reason, Compatible: true}
+				}
+			}
+		}
+		return endpointReadiness{State: "incompatible", Reason: "No runtime candidate supports conversation-inbound"}
+	case controlmodel.EndpointTargetTeam:
+		if endpoint.InvocationMode != controlmodel.EndpointJobMode {
+			return endpointReadiness{State: "incompatible", Reason: "Team endpoints support job mode only"}
+		}
+		team, err := s.store.Collaboration().GetTeam(ctx, endpoint.TargetRef)
+		if err != nil || team.Tenant != endpoint.Tenant || team.Namespace != endpoint.Namespace ||
+			team.LeaderAgentRef == "" || team.Status != controlmodel.TeamActive || team.ArchivedAt != nil {
+			return endpointReadiness{State: "incompatible", Reason: "Team target has no valid leader"}
+		}
+		leaderID, parseErr := uuid.Parse(team.LeaderAgentRef)
+		if parseErr != nil {
+			return endpointReadiness{State: "incompatible", Reason: "Team leader does not reference a stable agentId"}
+		}
+		leader, agentErr := s.activeAgentInScope(ctx, endpoint.Tenant, endpoint.Namespace, leaderID.String())
+		if agentErr != nil {
+			return endpointReadiness{State: "incompatible", Reason: "Team leader Agent is not active"}
+		}
+		bindings, _ := s.store.AgentCatalog().ListBindings(ctx, leader.ID, true)
+		instances, _ := s.store.RuntimeRegistry().ListAgentInstances(ctx, endpoint.Tenant, endpoint.Namespace, leader.ID)
+		readiness, _ := s.inspectAgentReadiness(ctx, leader, bindings, instances)
+		compatible := readiness.State != "inactive" && readiness.State != "unbound"
+		return endpointReadiness{State: readiness.State, Reason: "Team leader: " + readiness.Reason, Compatible: compatible}
+	case controlmodel.EndpointTargetOrchestrationRevision:
+		if endpoint.InvocationMode != controlmodel.EndpointJobMode {
+			return endpointReadiness{State: "incompatible", Reason: "Workflow endpoints support job mode only"}
+		}
+		revision, err := s.store.Orchestration().GetRevision(ctx, endpoint.TargetRef)
+		if err != nil || revision.Tenant != endpoint.Tenant || revision.Namespace != endpoint.Namespace {
+			return endpointReadiness{State: "incompatible", Reason: "Workflow revision is unavailable"}
+		}
+		return endpointReadiness{State: "ready", Reason: "Published immutable revision is available", Compatible: true}
+	default:
+		return endpointReadiness{State: "incompatible", Reason: "Unsupported Endpoint target"}
+	}
+}
+
+func (s *Server) getEndpointReadiness(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"readiness": s.inspectEndpointReadiness(c, endpoint)})
+}
+
+func (s *Server) publishEndpoint(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if endpoint.Status == controlmodel.EndpointArchived {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "archived Endpoint cannot be published"})
+		return
+	}
+	if endpoint.Status == controlmodel.EndpointPublished {
+		c.JSON(http.StatusOK, gin.H{"endpoint": endpointPublic(endpoint), "readiness": s.inspectEndpointReadiness(c, endpoint)})
+		return
+	}
+	var request struct {
+		Version int64 `json:"version"`
+	}
+	if err = c.ShouldBindJSON(&request); err != nil || request.Version == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "version is required"})
+		return
+	}
+	readiness := s.inspectEndpointReadiness(c, endpoint)
+	if !readiness.Compatible {
+		c.JSON(http.StatusConflict, gin.H{"error": "endpoint target is incompatible", "readiness": readiness})
+		return
+	}
+	if endpoint.ActiveReleaseID == nil {
+		endpoint, _, err = s.store.Endpoints().DeployRelease(c, endpoint.ID, endpoint.TargetType,
+			endpoint.TargetRef, request.Version, collaborationActor(c, s), "initial publication")
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+	}
+	endpoint.Status = controlmodel.EndpointPublished
+	endpoint, err = s.store.Endpoints().Update(c, endpoint, endpoint.Version)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"endpoint": endpointPublic(endpoint), "readiness": readiness})
+}
+
+func (s *Server) listEndpointReleases(c *gin.Context) {
+	endpointID, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	if _, err := s.store.Endpoints().Get(c, endpointID); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	items, err := s.store.Endpoints().ListReleases(c, endpointID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (s *Server) deployEndpointRelease(c *gin.Context) {
+	endpointID, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, endpointID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if endpoint.Status == controlmodel.EndpointArchived {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "archived Endpoint cannot deploy releases"})
+		return
+	}
+	if endpoint.Status == controlmodel.EndpointDraft || endpoint.ActiveReleaseID == nil {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "publish the Endpoint before deploying another release"})
+		return
+	}
+	var request struct {
+		TargetRef uuid.UUID `json:"targetRef"`
+		Version   int64     `json:"version"`
+		Reason    string    `json:"reason"`
+	}
+	if err = c.ShouldBindJSON(&request); err != nil || request.TargetRef == uuid.Nil || request.Version == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "targetRef and version are required"})
+		return
+	}
+	candidate := *endpoint
+	candidate.TargetRef = request.TargetRef
+	if err = s.validateEndpointTarget(c, &candidate); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	readiness := s.inspectEndpointReadiness(c, &candidate)
+	if !readiness.Compatible {
+		c.JSON(http.StatusConflict, gin.H{"error": "release target is incompatible", "readiness": readiness})
+		return
+	}
+	endpoint, release, err := s.store.Endpoints().DeployRelease(c, endpointID, endpoint.TargetType,
+		request.TargetRef, request.Version, collaborationActor(c, s), strings.TrimSpace(request.Reason))
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"endpoint": endpointPublic(endpoint), "release": release, "readiness": readiness})
+}
+
+func (s *Server) rollbackEndpointRelease(c *gin.Context) {
+	endpointID, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	releaseID, ok := parseUUIDParam(c, "releaseId")
+	if !ok {
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, endpointID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if endpoint.Status == controlmodel.EndpointArchived || endpoint.ActiveReleaseID == nil {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "Endpoint has no active release to roll back"})
+		return
+	}
+	previous, err := s.store.Endpoints().GetRelease(c, endpointID, releaseID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	var request struct {
+		Version int64 `json:"version"`
+	}
+	if err = c.ShouldBindJSON(&request); err != nil || request.Version == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "version is required"})
+		return
+	}
+	if previous.TargetType != endpoint.TargetType {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "release target type no longer matches Endpoint"})
+		return
+	}
+	candidate := *endpoint
+	candidate.TargetRef = previous.TargetRef
+	if err = s.validateEndpointTarget(c, &candidate); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	readiness := s.inspectEndpointReadiness(c, &candidate)
+	if !readiness.Compatible {
+		c.JSON(http.StatusConflict, gin.H{"error": "rollback target is incompatible", "readiness": readiness})
+		return
+	}
+	endpoint, release, err := s.store.Endpoints().DeployRelease(c, endpointID, endpoint.TargetType,
+		previous.TargetRef, request.Version, collaborationActor(c, s), fmt.Sprintf("rollback to release %d", previous.Number))
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"endpoint": endpointPublic(endpoint), "release": release, "readiness": readiness})
+}
+
+func (s *Server) disableEndpoint(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if endpoint.Status != controlmodel.EndpointPublished {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "only a published Endpoint can be disabled"})
+		return
+	}
+	var request struct {
+		Version int64 `json:"version"`
+	}
+	if err = c.ShouldBindJSON(&request); err != nil || request.Version == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "version is required"})
+		return
+	}
+	endpoint.Status = controlmodel.EndpointDisabled
+	endpoint, err = s.store.Endpoints().Update(c, endpoint, request.Version)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"endpoint": endpointPublic(endpoint)})
+}
+
+func (s *Server) archiveEndpoint(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	var request struct {
+		Version int64 `json:"version"`
+	}
+	if err = c.ShouldBindJSON(&request); err != nil || request.Version == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "version is required"})
+		return
+	}
+	now := time.Now().UTC()
+	endpoint.Status, endpoint.ArchivedAt = controlmodel.EndpointArchived, &now
+	endpoint, err = s.store.Endpoints().Update(c, endpoint, request.Version)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"endpoint": endpointPublic(endpoint)})
+}
+
+func (s *Server) listEndpointInvocations(c *gin.Context) {
+	endpointID, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	if _, err := s.store.Endpoints().Get(c, endpointID); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	filter := store.EndpointInvocationFilter{EndpointID: endpointID, Limit: limit}
+	if mode := controlmodel.EndpointInvocationMode(c.Query("mode")); mode == controlmodel.EndpointJobMode || mode == controlmodel.EndpointConversationMode {
+		filter.Mode = mode
+	}
+	if status := controlmodel.EndpointInvocationStatus(c.Query("status")); status != "" {
+		filter.Status = status
+	}
+	items, err := s.store.Endpoints().ListInvocations(c, filter)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (s *Server) listEndpointCredentials(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	credentials, err := s.store.Endpoints().ListCredentials(c, id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": credentials})
+}
+
+func (s *Server) createEndpointCredential(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if endpoint.Status == controlmodel.EndpointArchived {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "archived Endpoint cannot create credentials"})
+		return
+	}
+	var request struct {
+		Name      string          `json:"name"`
+		Scopes    json.RawMessage `json:"scopes"`
+		ExpiresAt *time.Time      `json:"expiresAt"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if strings.TrimSpace(request.Name) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "name is required"})
+		return
+	}
+	candidate, key, err := s.buildEndpointCredential(id, strings.TrimSpace(request.Name),
+		request.Scopes, request.ExpiresAt, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "generate endpoint credential"})
+		return
+	}
+	credential, err := s.store.Endpoints().CreateCredential(c, candidate)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"credential": credential, "secret": key})
+}
+
+func (s *Server) rotateEndpointCredential(c *gin.Context) {
+	endpointID, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, endpointID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if endpoint.Status == controlmodel.EndpointArchived {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "archived Endpoint cannot rotate credentials"})
+		return
+	}
+	credentialID, ok := parseUUIDParam(c, "credentialId")
+	if !ok {
+		return
+	}
+	credentials, err := s.store.Endpoints().ListCredentials(c, endpointID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	var previous *controlmodel.EndpointCredential
+	for _, credential := range credentials {
+		if credential.ID == credentialID && credential.Status == controlmodel.EndpointCredentialActive {
+			previous = credential
+			break
+		}
+	}
+	if previous == nil {
+		s.writeControlPlaneError(c, store.ErrNotFound)
+		return
+	}
+	root := previous.ID
+	if previous.RotatedFrom != nil {
+		root = *previous.RotatedFrom
+	}
+	candidate, key, err := s.buildEndpointCredential(endpointID, previous.Name,
+		previous.Scopes, previous.ExpiresAt, &root)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "generate endpoint credential"})
+		return
+	}
+	candidate.Name = fmt.Sprintf("%s-%s", previous.Name, candidate.KeyPrefix[:6])
+	credential, err := s.store.Endpoints().CreateCredential(c, candidate)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"credential": credential, "secret": key})
+}
+
+func (s *Server) revealEndpointCredential(c *gin.Context) {
+	endpointID, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	credentialID, ok := parseUUIDParam(c, "credentialId")
+	if !ok {
+		return
+	}
+	if _, err := s.store.Endpoints().Get(c, endpointID); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	credentials, err := s.store.Endpoints().ListCredentials(c, endpointID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	var credential *controlmodel.EndpointCredential
+	for _, item := range credentials {
+		if item.ID == credentialID {
+			credential = item
+			break
+		}
+	}
+	if credential == nil {
+		s.writeControlPlaneError(c, store.ErrNotFound)
+		return
+	}
+	if credential.Status != controlmodel.EndpointCredentialActive {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "only active credentials can be revealed"})
+		return
+	}
+	if len(credential.SecretCiphertext) == 0 {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "credential predates recoverable storage; rotate it once to enable copy"})
+		return
+	}
+	plaintext, err := secretcrypto.Decrypt(s.endpointCredentialKey, credential.SecretCiphertext,
+		endpointCredentialAAD(endpointID, credentialID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "credential cannot be decrypted with the configured key"})
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	c.JSON(http.StatusOK, gin.H{"credentialId": credential.ID, "secret": string(plaintext)})
+}
+
+func (s *Server) revokeEndpointCredential(c *gin.Context) {
+	endpointID, ok := parseUUIDParam(c, "endpointId")
+	if !ok {
+		return
+	}
+	credentialID, ok := parseUUIDParam(c, "credentialId")
+	if !ok {
+		return
+	}
+	credentials, err := s.store.Endpoints().ListCredentials(c, endpointID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	for _, credential := range credentials {
+		if credential.ID != credentialID {
+			continue
+		}
+		now := time.Now().UTC()
+		credential.Status, credential.RevokedAt = controlmodel.EndpointCredentialRevoked, &now
+		credential, err = s.store.Endpoints().UpdateCredential(c, credential)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"credential": credential})
+		return
+	}
+	s.writeControlPlaneError(c, store.ErrNotFound)
+}
+
+func (s *Server) authenticateEndpoint(c *gin.Context, endpoint *controlmodel.Endpoint, requirePublished bool) bool {
+	if endpoint == nil || endpoint.Status == controlmodel.EndpointArchived ||
+		(requirePublished && endpoint.Status != controlmodel.EndpointPublished) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "endpoint is unavailable"})
 		return false
 	}
@@ -247,25 +1036,42 @@ func (s *Server) authenticateEndpoint(c *gin.Context, endpoint *controlmodel.Age
 		return false
 	}
 	if policy.Type == "platform" {
-		if !s.validPlatformToken(c.Request.Context(), requestBearerToken(c)) {
+		principal, ok := s.platformPrincipal(c.Request.Context(), requestBearerToken(c))
+		if !ok {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid platform credential"})
 			return false
 		}
+		c.Set(endpointPrincipalContextKey, principal)
 		return true
 	}
 	key := c.GetHeader("X-API-Key")
 	if key == "" {
 		key = bearerToken(c)
 	}
-	sum := sha256.Sum256([]byte(key))
-	if len(endpoint.CredentialHash) != len(sum) || subtle.ConstantTimeCompare(endpoint.CredentialHash, sum[:]) != 1 {
+	prefix := endpointKeyPrefix(key)
+	credential, err := s.store.Endpoints().GetCredentialByPrefix(c, endpoint.ID, prefix)
+	if err != nil || credential.Status != controlmodel.EndpointCredentialActive ||
+		(credential.ExpiresAt != nil && !credential.ExpiresAt.After(time.Now().UTC())) {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid endpoint credential"})
 		return false
 	}
+	sum := sha256.Sum256([]byte(key))
+	if len(credential.SecretHash) != len(sum) || subtle.ConstantTimeCompare(credential.SecretHash, sum[:]) != 1 {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid endpoint credential"})
+		return false
+	}
+	now := time.Now().UTC()
+	credential.LastUsedAt = &now
+	_, _ = s.store.Endpoints().UpdateCredential(c, credential)
+	principalID := credential.ID
+	if credential.RotatedFrom != nil {
+		principalID = *credential.RotatedFrom
+	}
+	c.Set(endpointPrincipalContextKey, "api-key:"+principalID.String())
 	return true
 }
 
-func (s *Server) allowEndpointRequest(c *gin.Context, endpoint *controlmodel.AgentEndpoint) bool {
+func (s *Server) allowEndpointRequest(c *gin.Context, endpoint *controlmodel.Endpoint) bool {
 	var limit endpointRateLimit
 	if len(endpoint.RateLimit) == 0 || json.Unmarshal(endpoint.RateLimit, &limit) != nil || limit.Requests <= 0 {
 		return true
@@ -274,16 +1080,13 @@ func (s *Server) allowEndpointRequest(c *gin.Context, endpoint *controlmodel.Age
 		limit.WindowSeconds = 60
 	}
 	now := time.Now().UTC()
-	s.endpointRateMu.Lock()
-	window := s.endpointRates[endpoint.ID]
-	if window == nil || now.Sub(window.Started) >= time.Duration(limit.WindowSeconds)*time.Second {
-		window = &endpointRateWindow{Started: now}
-		s.endpointRates[endpoint.ID] = window
+	principal, _ := c.Get(endpointPrincipalContextKey)
+	allowed, retryAfter, err := s.store.Endpoints().ConsumeRateLimit(c, endpoint.ID, fmt.Sprint(principal),
+		limit.Requests, limit.WindowSeconds, now)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Endpoint rate limiter is unavailable"})
+		return false
 	}
-	window.Count++
-	allowed := window.Count <= limit.Requests
-	retryAfter := time.Duration(limit.WindowSeconds)*time.Second - now.Sub(window.Started)
-	s.endpointRateMu.Unlock()
 	if allowed {
 		return true
 	}
@@ -293,26 +1096,51 @@ func (s *Server) allowEndpointRequest(c *gin.Context, endpoint *controlmodel.Age
 }
 
 func (s *Server) invokeEndpointConversation(c *gin.Context) {
-	endpoint, err := s.store.AgentEndpoints().GetBySlug(c, c.Param("slug"))
+	endpoint, err := s.store.Endpoints().GetBySlug(c, c.Param("slug"))
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	if !s.authenticateEndpoint(c, endpoint) {
+	if !s.authenticateEndpoint(c, endpoint, true) {
 		return
 	}
 	if !s.allowEndpointRequest(c, endpoint) {
 		return
 	}
-	if endpoint.InvocationMode != controlmodel.EndpointConversation || endpoint.TargetType != controlmodel.EndpointTargetAgent {
+	if endpoint.InvocationMode != controlmodel.EndpointConversationMode || endpoint.TargetType != controlmodel.EndpointTargetAgent {
 		c.JSON(http.StatusConflict, ErrorResponse{Error: "endpoint does not accept conversations"})
 		return
 	}
-	var req struct {
-		SessionID string `json:"sessionId"`
-		Message   string `json:"message"`
+	s.invokeEndpointConversationTurn(c, endpoint, uuid.Nil)
+}
+
+func (s *Server) continueEndpointConversation(c *gin.Context) {
+	conversationID, err := uuid.Parse(c.Param("conversationId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid conversationId"})
+		return
 	}
-	if err = c.ShouldBindJSON(&req); err != nil {
+	conversation, err := s.store.Endpoints().GetConversation(c, conversationID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, conversation.EndpointID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if !s.authenticateEndpoint(c, endpoint, true) || !s.allowEndpointRequest(c, endpoint) {
+		return
+	}
+	s.invokeEndpointConversationTurn(c, endpoint, conversationID)
+}
+
+func (s *Server) invokeEndpointConversationTurn(c *gin.Context, endpoint *controlmodel.Endpoint, conversationID uuid.UUID) {
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
@@ -320,95 +1148,198 @@ func (s *Server) invokeEndpointConversation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "message is required"})
 		return
 	}
-	session, err := s.dispatchEndpointConversation(c.Request.Context(), endpoint, req.SessionID, req.Message)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: err.Error()})
+	if endpoint.MaxPayloadBytes > 0 && int64(len(req.Message)) > endpoint.MaxPayloadBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, ErrorResponse{Error: "Endpoint payload is too large"})
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{"sessionId": session.SessionID, "eventsUrl": "/invoke/v1/endpoints/" + endpoint.Slug + "/conversations/" + session.SessionID + "/events"})
+	if schemaErr := validateEndpointInput(endpoint.InputSchema, map[string]any{"message": req.Message}); schemaErr != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: schemaErr.Error()})
+		return
+	}
+	idem := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if idem == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Idempotency-Key is required"})
+		return
+	}
+	principalValue, _ := c.Get(endpointPrincipalContextKey)
+	principal := fmt.Sprint(principalValue)
+	payload, _ := json.Marshal(gin.H{"message": req.Message})
+	var conversation *controlmodel.EndpointConversation
+	var session *store.Session
+	var invocation *controlmodel.EndpointInvocation
+	var fresh bool
+	var err error
+	if conversationID != uuid.Nil {
+		conversation, session, err = s.loadEndpointConversationSession(c, endpoint, conversationID, principal)
+		if err == nil {
+			turnID := uuid.New()
+			invocation, fresh, err = s.store.Endpoints().ReserveInvocation(c, &controlmodel.EndpointInvocation{
+				EndpointID: endpoint.ID, Mode: controlmodel.EndpointConversationMode, PrincipalType: "credential",
+				PrincipalRef: principal, IdempotencyKey: idem, Status: controlmodel.EndpointInvocationDispatching,
+				ConversationID: &conversation.ID, TurnID: &turnID, SessionID: session.SessionID,
+				Input: payload, CorrelationID: requestCorrelationID(c),
+			})
+		}
+	} else {
+		invocation, fresh, err = s.store.Endpoints().ReserveInvocation(c, &controlmodel.EndpointInvocation{
+			EndpointID: endpoint.ID, Mode: controlmodel.EndpointConversationMode, PrincipalType: "credential",
+			PrincipalRef: principal, IdempotencyKey: idem, Status: controlmodel.EndpointInvocationDispatching,
+			Input: payload, CorrelationID: requestCorrelationID(c),
+		})
+		if err == nil && !fresh {
+			if !sameJSON(invocation.Input, payload) {
+				c.JSON(http.StatusConflict, ErrorResponse{Error: "Idempotency-Key was already used with different input"})
+				return
+			}
+			if invocation.ConversationID == nil {
+				c.JSON(http.StatusAccepted, gin.H{"invocationId": invocation.ID, "status": invocation.Status})
+				return
+			}
+			conversation, session, err = s.loadEndpointConversationSession(c, endpoint, *invocation.ConversationID, principal)
+		}
+		if err == nil && fresh {
+			session, err = s.resolveEndpointConversation(c.Request.Context(), endpoint, invocation.ID.String())
+			if err == nil {
+				conversation, err = s.store.Endpoints().CreateConversation(c, &controlmodel.EndpointConversation{
+					EndpointID: endpoint.ID, AgentID: session.AgentID, SessionID: session.SessionID,
+					BindingID: session.BindingID, AgentInstanceID: session.AgentInstanceID,
+					InstanceGeneration: session.InstanceGeneration, Status: controlmodel.EndpointConversationActive,
+					PrincipalRef: principal,
+				})
+			}
+			if err == nil {
+				turnID := uuid.New()
+				invocation.ConversationID, invocation.TurnID, invocation.SessionID = &conversation.ID, &turnID, session.SessionID
+				invocation, err = s.store.Endpoints().UpdateInvocation(c, invocation)
+			}
+		}
+	}
+	if err != nil {
+		if invocation != nil && fresh {
+			s.failEndpointInvocation(c, invocation, "conversation_resolve_failed", err)
+		}
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if !fresh && !sameJSON(invocation.Input, payload) {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "Idempotency-Key was already used with different input"})
+		return
+	}
+	if fresh {
+		err = s.sendEndpointConversationTurn(c.Request.Context(), endpoint, conversation, invocation, req.Message)
+		if err != nil {
+			s.failEndpointInvocation(c, invocation, "conversation_dispatch_failed", err)
+			c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusAccepted, gin.H{
+		"invocationId": invocation.ID, "conversationId": conversation.ID, "turnId": invocation.TurnID,
+		"sessionId": session.SessionID, "sessionRef": session.ID, "status": invocation.Status,
+		"eventsUrl": "/invoke/v1/conversations/" + conversation.ID.String() + "/events?invocationId=" + invocation.ID.String(),
+		"statusUrl": "/invoke/v1/conversations/" + conversation.ID.String(),
+	})
 }
 
-type endpointConversationSender interface {
-	SendSessionCommandWithParams(tenant, namespace, instanceID, sessionID, command string, params []byte) error
+func (s *Server) loadEndpointConversationSession(ctx context.Context, endpoint *controlmodel.Endpoint,
+	conversationID uuid.UUID, principal string) (*controlmodel.EndpointConversation, *store.Session, error) {
+	conversation, err := s.store.Endpoints().GetConversation(ctx, conversationID)
+	if err != nil || conversation.EndpointID != endpoint.ID || conversation.Status != controlmodel.EndpointConversationActive ||
+		conversation.PrincipalRef != principal {
+		return nil, nil, store.ErrNotFound
+	}
+	sessions, err := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: endpoint.Tenant,
+		Namespace: endpoint.Namespace, AgentID: conversation.AgentID, SessionID: conversation.SessionID, Limit: 1})
+	if err != nil || len(sessions) == 0 {
+		return nil, nil, store.ErrNotFound
+	}
+	return conversation, sessions[0], nil
 }
 
-func (s *Server) dispatchEndpointConversation(ctx context.Context, endpoint *controlmodel.AgentEndpoint, requestedSessionID, message string) (*store.Session, error) {
+func (s *Server) resolveEndpointConversation(ctx context.Context, endpoint *controlmodel.Endpoint, requestedSessionID string) (*store.Session, error) {
 	agent, err := s.store.AgentCatalog().GetAgent(ctx, endpoint.TargetRef)
 	if err != nil || agent.Status != controlmodel.AgentActive {
 		return nil, fmt.Errorf("endpoint Agent is unavailable")
 	}
-	policy, err := s.store.Orchestration().GetRuntimePolicy(ctx, endpoint.Tenant, endpoint.Namespace, agent.ID.String())
-	if err != nil || policy.SelectionMode != "ordered" || len(policy.Candidates) == 0 {
-		return nil, fmt.Errorf("endpoint Agent has no runtime policy")
+	return s.resolveAgentConversation(ctx, agent, requestedSessionID, "endpoint", endpoint.ID.String())
+}
+
+func (s *Server) sendEndpointConversationTurn(ctx context.Context, endpoint *controlmodel.Endpoint,
+	conversation *controlmodel.EndpointConversation, invocation *controlmodel.EndpointInvocation, message string) error {
+	binding, err := s.store.AgentCatalog().GetBinding(ctx, conversation.BindingID)
+	if err != nil || !binding.Enabled || binding.ArchivedAt != nil || binding.AgentID != conversation.AgentID {
+		return fmt.Errorf("conversation Binding is unavailable")
 	}
-	binding := policy.Candidates[0].Binding
-	stored, err := s.store.AgentCatalog().GetBinding(ctx, binding.BindingID)
-	if err != nil || stored.AgentID != agent.ID || !stored.Enabled || stored.ArchivedAt != nil {
-		return nil, fmt.Errorf("endpoint Agent binding is unavailable")
-	}
-	if requestedSessionID == "" {
-		requestedSessionID = uuid.NewString()
-	}
-	now := time.Now().UTC()
-	contextPayload, _ := json.Marshal(gin.H{"endpointId": endpoint.ID, "message": message})
-	sessionID, instanceRef := requestedSessionID, ""
-	var agentInstanceID uuid.UUID
-	var instanceGeneration int64
 	switch binding.Kind {
 	case controlmodel.DataPlaneManaged:
 		if s.product == nil {
-			return nil, fmt.Errorf("Managed runtime is unavailable")
+			return fmt.Errorf("Managed runtime is unavailable")
 		}
-		sessionID, err = s.product.FindOrCreateSessionID(ctx, binding.ManagedOwnerRef, binding.ManagedDefinitionRef, "", "agent-endpoint|"+requestedSessionID)
-		if err == nil {
-			err = s.product.PostSessionWakeEvent(ctx, sessionID, binding.ManagedOwnerRef, message)
+		var cfg controlmodel.ManagedBindingConfiguration
+		if json.Unmarshal(binding.Configuration, &cfg) != nil {
+			return fmt.Errorf("Managed binding configuration is invalid")
 		}
+		if err = s.product.PostSessionWakeEvent(ctx, conversation.SessionID, cfg.OwnerRef, message); err == nil {
+			now := time.Now().UTC()
+			invocation.Status, invocation.StartedAt = controlmodel.EndpointInvocationRunning, &now
+			_, _ = s.store.Endpoints().UpdateInvocation(ctx, invocation)
+		}
+		return err
 	case controlmodel.DataPlaneExternalApplication:
-		sender, ok := s.asdpCommands.(endpointConversationSender)
+		if conversation.AgentInstanceID == uuid.Nil {
+			return fmt.Errorf("conversation AgentInstance is unavailable")
+		}
+		instance, instanceErr := s.store.RuntimeRegistry().GetAgentInstance(ctx, conversation.AgentInstanceID)
+		if instanceErr != nil || instance.BindingID != binding.ID || instance.Generation != conversation.InstanceGeneration ||
+			instance.Health != controlmodel.RuntimeHealthHealthy {
+			return fmt.Errorf("conversation AgentInstance is unavailable")
+		}
+		sender, ok := s.asdpCommands.(ConversationTurnSender)
 		if !ok {
-			return nil, fmt.Errorf("External conversation transport is unavailable")
+			return fmt.Errorf("External conversation transport is unavailable")
 		}
-		instances, listErr := s.store.RuntimeRegistry().ListAgentInstances(ctx, endpoint.Tenant, endpoint.Namespace, agent.ID)
-		if listErr != nil {
-			return nil, listErr
-		}
-		for _, instance := range instances {
-			if instance.BindingID == binding.BindingID && instance.Health == controlmodel.RuntimeHealthHealthy &&
-				(instance.Capacity <= 0 || instance.ActiveSessions < instance.Capacity) {
-				instanceRef = instance.InstanceKey
-				agentInstanceID = instance.ID
-				instanceGeneration = instance.Generation
-				break
-			}
-		}
-		if instanceRef == "" {
-			return nil, fmt.Errorf("no healthy AgentInstance is available")
-		}
-		params, _ := json.Marshal(gin.H{"message": message, "endpointId": endpoint.ID})
-		err = sender.SendSessionCommandWithParams(endpoint.Tenant, endpoint.Namespace, instanceRef, sessionID, "message", params)
+		input, _ := json.Marshal(gin.H{"message": message})
+		deadline := time.Now().Add(time.Duration(endpoint.TimeoutSeconds) * time.Second).UnixMilli()
+		return sender.SendConversationTurn(endpoint.Tenant, endpoint.Namespace, instance.InstanceKey, &asdp.ConversationTurnCommand{
+			InvocationId: invocation.ID.String(), ConversationId: conversation.ID.String(), TurnId: invocation.TurnID.String(),
+			SessionId: conversation.SessionID, AgentId: conversation.AgentID.String(), BindingId: conversation.BindingID.String(),
+			InstanceId: instance.ID.String(), Generation: conversation.InstanceGeneration, Input: input,
+			Deadline: deadline, CorrelationId: invocation.CorrelationID,
+		})
 	case controlmodel.DataPlaneHostedRuntime:
-		return nil, fmt.Errorf("hosted-runtime does not support online conversations")
+		if invocation.TurnID == nil {
+			return fmt.Errorf("conversation turnId is missing")
+		}
+		sessions, listErr := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: endpoint.Tenant,
+			Namespace: endpoint.Namespace, AgentID: conversation.AgentID,
+			SessionID: conversation.SessionID, Limit: 1})
+		if listErr != nil || len(sessions) == 0 {
+			return fmt.Errorf("conversation Session is unavailable")
+		}
+		result, dispatchErr := s.dispatchHostedConversationTurn(ctx, sessions[0], binding, message,
+			invocation.TurnID.String(), "endpoint_conversation", invocation.ID.String())
+		if dispatchErr != nil {
+			return dispatchErr
+		}
+		now := time.Now().UTC()
+		invocation.Status, invocation.StartedAt = controlmodel.EndpointInvocationRunning, &now
+		invocation.IssueID, invocation.RunID = &result.IssueID, &result.RunID
+		conversation.LastTurnAt = &now
+		_, _ = s.store.Endpoints().UpdateConversation(ctx, conversation)
+		_, dispatchErr = s.store.Endpoints().UpdateInvocation(ctx, invocation)
+		return dispatchErr
 	default:
-		return nil, fmt.Errorf("unsupported conversation binding %q", binding.Kind)
+		return fmt.Errorf("runtime binding %q does not support conversations", binding.Kind)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return s.store.Sessions().Upsert(ctx, &store.Session{Tenant: endpoint.Tenant, Namespace: endpoint.Namespace,
-		AgentID: agent.ID, BindingID: binding.BindingID, AgentInstanceID: agentInstanceID,
-		InstanceGeneration: instanceGeneration, AgentName: agent.AgentKey, SessionID: sessionID, InstanceRef: instanceRef,
-		OriginType: "endpoint", OriginRef: endpoint.ID.String(),
-		Framework: "agent-endpoint", Phase: store.SessionPhaseActive, TaskContext: contextPayload,
-		StartedAt: &now, LastActiveAt: &now})
 }
 
 func (s *Server) invokeEndpointJob(c *gin.Context) {
-	endpoint, err := s.store.AgentEndpoints().GetBySlug(c, c.Param("slug"))
+	endpoint, err := s.store.Endpoints().GetBySlug(c, c.Param("slug"))
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	if !s.authenticateEndpoint(c, endpoint) {
+	if !s.authenticateEndpoint(c, endpoint, true) {
 		return
 	}
 	if !s.allowEndpointRequest(c, endpoint) {
@@ -432,21 +1363,54 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
+	if endpoint.MaxPayloadBytes > 0 && int64(len(req.Title)+len(req.Description)+len(req.Input)) > endpoint.MaxPayloadBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, ErrorResponse{Error: "Endpoint payload is too large"})
+		return
+	}
+	var inputValue any
+	if len(req.Input) > 0 && string(req.Input) != "null" {
+		if err = json.Unmarshal(req.Input, &inputValue); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "input must be valid JSON"})
+			return
+		}
+	}
+	if schemaErr := validateEndpointInput(endpoint.InputSchema, inputValue); schemaErr != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: schemaErr.Error()})
+		return
+	}
 	if req.Title == "" {
 		req.Title = "Endpoint job"
 	}
-	reservation, fresh, err := s.store.AgentEndpoints().ReserveJob(c, endpoint.ID, idem)
+	input, _ := json.Marshal(gin.H{"title": req.Title, "description": req.Description, "input": req.Input})
+	principal, _ := c.Get(endpointPrincipalContextKey)
+	invocation, fresh, err := s.store.Endpoints().ReserveInvocation(c, &controlmodel.EndpointInvocation{
+		EndpointID: endpoint.ID, Mode: controlmodel.EndpointJobMode, PrincipalType: "credential",
+		PrincipalRef: fmt.Sprint(principal), IdempotencyKey: idem, Status: controlmodel.EndpointInvocationAccepted,
+		Input: input, CorrelationID: requestCorrelationID(c),
+	})
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	if !fresh && reservation.IssueID != nil && reservation.RunID != nil {
-		s.endpointJobAccepted(c, *reservation.IssueID, *reservation.RunID)
+	if !fresh {
+		if !sameJSON(invocation.Input, input) {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Idempotency-Key was already used with different input"})
+			return
+		}
+		s.endpointJobAccepted(c, invocation)
 		return
 	}
-	issueID := uuid.NewSHA1(endpoint.ID, []byte("issue:"+idem))
+	now := time.Now().UTC()
+	invocation.Status, invocation.StartedAt = controlmodel.EndpointInvocationDispatching, &now
+	invocation, _ = s.store.Endpoints().UpdateInvocation(c, invocation)
+	issueID := uuid.NewSHA1(invocation.ID, []byte("issue"))
 	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "endpoint:" + endpoint.ID.String()}
-	issue := &controlmodel.Issue{ID: issueID, Tenant: endpoint.Tenant, Namespace: endpoint.Namespace, Title: req.Title, Description: req.Description, Status: controlmodel.IssueInProgress, Priority: "normal", Creator: actor, SourceType: "agent_endpoint", SourceRef: endpoint.ID.String()}
+	issue := &controlmodel.Issue{ID: issueID, Tenant: endpoint.Tenant, Namespace: endpoint.Namespace,
+		Title: req.Title, Description: req.Description, Status: controlmodel.IssueInProgress, Priority: "normal",
+		Kind: controlmodel.IssueKindEndpointJob, Visibility: controlmodel.IssueVisibilityOperational,
+		CompletionPolicy: controlmodel.IssueCompletionAutomatic, Creator: actor,
+		SourceType: "endpoint", SourceRef: invocation.ID.String(),
+		ExecutionTargetType: string(endpoint.TargetType), ExecutionTargetRef: endpoint.TargetRef.String()}
 	var assigneeType controlmodel.AssigneeType
 	var assigneeRef string
 	switch endpoint.TargetType {
@@ -457,6 +1421,7 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 	}
 	createdIssue, err := s.store.Collaboration().CreateIssue(c, issue)
 	if err != nil && err != store.ErrConflict {
+		s.failEndpointInvocation(c, invocation, "issue_create_failed", err)
 		s.writeControlPlaneError(c, err)
 		return
 	}
@@ -464,6 +1429,7 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 		createdIssue, err = s.store.Collaboration().GetIssue(c, issueID)
 	}
 	if err != nil {
+		s.failEndpointInvocation(c, invocation, "issue_load_failed", err)
 		s.writeControlPlaneError(c, err)
 		return
 	}
@@ -472,6 +1438,7 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 	if assigneeType != "" && (createdIssue.AssigneeType != assigneeType || createdIssue.AssigneeRef != assigneeRef) {
 		createdIssue.AssigneeType, createdIssue.AssigneeRef = assigneeType, assigneeRef
 		if _, err = s.store.Collaboration().UpdateIssue(c, createdIssue, createdIssue.Version, actor); err != nil {
+			s.failEndpointInvocation(c, invocation, "issue_assign_failed", err)
 			s.writeControlPlaneError(c, err)
 			return
 		}
@@ -485,7 +1452,7 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 		}
 		run, err = s.orchestrationService().Start(c, revision.DefinitionID, orchestration.StartRequest{
 			RevisionID: &revision.ID, IdempotencyKey: endpoint.ID.String() + ":" + idem,
-			Input: req.Input, IssueID: &issueID, TriggerType: "agent_endpoint",
+			Input: req.Input, IssueID: &issueID, TriggerType: "endpoint",
 			TriggerRef: endpoint.ID.String(), Actor: actor,
 		})
 	} else {
@@ -493,10 +1460,10 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 		if endpoint.TargetType == controlmodel.EndpointTargetTeam {
 			mode = controlmodel.RunModeAdaptive
 		}
-		runID := uuid.NewSHA1(endpoint.ID, []byte("run:"+idem))
+		runID := uuid.NewSHA1(invocation.ID, []byte("run"))
 		run, err = s.store.Orchestration().CreateRun(c, &controlmodel.OrchestrationRun{ID: runID,
 			Tenant: endpoint.Tenant, Namespace: endpoint.Namespace, RootIssueID: issueID, Mode: mode,
-			TriggerType: "agent_endpoint", TriggerRef: endpoint.ID.String(),
+			TriggerType: "endpoint", TriggerRef: endpoint.ID.String(),
 			IdempotencyKey: endpoint.ID.String() + ":" + idem, Input: req.Input,
 			State: controlmodel.RunRunning, CreatedBy: actor})
 		if err == nil {
@@ -504,6 +1471,7 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 		}
 	}
 	if err != nil {
+		s.failEndpointInvocation(c, invocation, "run_create_failed", err)
 		s.writeControlPlaneError(c, err)
 		return
 	}
@@ -513,33 +1481,32 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 			_ = s.DispatchAgentTask(c.Request.Context(), task.ID)
 		}
 	}
-	if _, err = s.store.AgentEndpoints().CompleteJob(c, reservation.ID, issueID, run.ID); err != nil {
+	invocation.IssueID, invocation.RunID = &issueID, &run.ID
+	invocation.Status = controlmodel.EndpointInvocationRunning
+	invocation, err = s.store.Endpoints().UpdateInvocation(c, invocation)
+	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	s.endpointJobAccepted(c, issueID, run.ID)
+	s.endpointJobAccepted(c, invocation)
 }
 
-func (s *Server) materializeEndpointTarget(ctx context.Context, endpoint *controlmodel.AgentEndpoint, run *controlmodel.OrchestrationRun, issueID uuid.UUID, actor controlmodel.Actor) error {
+func (s *Server) materializeEndpointTarget(ctx context.Context, endpoint *controlmodel.Endpoint, run *controlmodel.OrchestrationRun, issueID uuid.UUID, actor controlmodel.Actor) error {
 	nodeType := controlmodel.RunNodeAgent
 	agentID := endpoint.TargetRef
-	var teamID *uuid.UUID
 	if endpoint.TargetType == controlmodel.EndpointTargetTeam {
 		team, err := s.store.Collaboration().GetTeam(ctx, endpoint.TargetRef)
 		if err != nil {
 			return err
 		}
-		snapshot, _ := json.Marshal(team)
-		if _, err = s.store.Orchestration().PutTeamSnapshot(ctx, &controlmodel.RunTeamSnapshot{
-			RunID: run.ID, TeamID: team.ID, Tenant: run.Tenant, Namespace: run.Namespace, Snapshot: snapshot,
-		}); err != nil {
+		_, _, err = orchestration.MaterializeTeamCoordinator(ctx, s.store, orchestration.MaterializeTeamRequest{
+			Run: run, IssueID: issueID, Team: team, NodeID: uuid.NewSHA1(run.ID, []byte("target")),
+			NodeKey: "target", Actor: actor,
+		})
+		if err != nil {
 			return err
 		}
-		leaderID, parseErr := uuid.Parse(team.LeaderAgentRef)
-		if parseErr != nil {
-			return fmt.Errorf("Team leaderAgentRef must be an agentId: %w", parseErr)
-		}
-		nodeType, agentID, teamID = controlmodel.RunNodeTeam, leaderID, &team.ID
+		return (&orchestration.Engine{Store: s.store}).ReconcileRun(ctx, run.ID)
 	}
 	nodeID := uuid.NewSHA1(run.ID, []byte("target"))
 	node, err := s.store.Orchestration().CreateNode(ctx, &controlmodel.RunNode{ID: nodeID, RunID: run.ID,
@@ -556,8 +1523,7 @@ func (s *Server) materializeEndpointTarget(ctx context.Context, endpoint *contro
 		return err
 	}
 	_, err = s.store.Collaboration().CreateRunAgentTask(ctx, store.RunTaskRequest{RunID: run.ID,
-		NodeID: node.ID, IssueID: issueID, AgentRef: agentID.String(), TeamID: teamID,
-		TeamRole: map[bool]string{true: "leader"}[teamID != nil], Leader: teamID != nil, Originator: actor})
+		NodeID: node.ID, IssueID: issueID, AgentRef: agentID.String(), Originator: actor})
 	if err != nil {
 		return err
 	}
@@ -565,92 +1531,412 @@ func (s *Server) materializeEndpointTarget(ctx context.Context, endpoint *contro
 }
 
 func (s *Server) getEndpointConversationEvents(c *gin.Context) {
-	endpoint, err := s.store.AgentEndpoints().GetBySlug(c, c.Param("slug"))
+	conversationID, err := uuid.Parse(c.Param("conversationId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid conversationId"})
+		return
+	}
+	conversation, err := s.store.Endpoints().GetConversation(c, conversationID)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	if !s.authenticateEndpoint(c, endpoint) {
-		return
-	}
-	session, err := s.store.Sessions().Get(c, endpoint.Tenant, endpoint.TargetRef.String(), endpoint.Namespace, c.Param("sessionId"))
+	endpoint, err := s.store.Endpoints().Get(c, conversation.EndpointID)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	after, _ := strconv.ParseInt(c.GetHeader("Last-Event-ID"), 10, 64)
-	events, err := s.store.Events().List(c, session.ID, store.WithEventLimit(1000))
-	if err != nil {
-		s.writeControlPlaneError(c, err)
+	if !s.authenticateEndpoint(c, endpoint, false) {
 		return
 	}
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	for _, event := range events {
-		if event.ID <= after {
+	principal, _ := c.Get(endpointPrincipalContextKey)
+	if conversation.PrincipalRef != fmt.Sprint(principal) {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "conversation is unavailable"})
+		return
+	}
+	sessions, err := s.store.Sessions().List(c, store.SessionFilter{Tenant: endpoint.Tenant,
+		Namespace: endpoint.Namespace, AgentID: conversation.AgentID, SessionID: conversation.SessionID, Limit: 1})
+	if err != nil || len(sessions) == 0 {
+		s.writeControlPlaneError(c, store.ErrNotFound)
+		return
+	}
+	session := sessions[0]
+	after, _ := strconv.Atoi(c.Query("after"))
+	if headerAfter, parseErr := strconv.Atoi(c.GetHeader("Last-Event-ID")); parseErr == nil && headerAfter > after {
+		after = headerAfter
+	}
+	var invocation *controlmodel.EndpointInvocation
+	if raw := strings.TrimSpace(c.Query("invocationId")); raw != "" {
+		invocationID, parseErr := uuid.Parse(raw)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid invocationId"})
+			return
+		}
+		invocation, err = s.store.Endpoints().GetInvocation(c, invocationID)
+		if err != nil || invocation.ConversationID == nil || *invocation.ConversationID != conversation.ID {
+			s.writeControlPlaneError(c, store.ErrNotFound)
+			return
+		}
+	}
+	prepareEventStream(c)
+	flusher, _ := c.Writer.(http.Flusher)
+	for {
+		events, listErr := s.store.Events().List(c, session.ID,
+			store.WithEventAfterSeq(after), store.WithEventLimit(1000))
+		if listErr != nil {
+			return
+		}
+		for _, event := range events {
+			payload, _ := json.Marshal(event)
+			_, _ = fmt.Fprintf(c.Writer, "id: %d\nevent: %s\ndata: %s\n\n", event.Seq, event.EventType, payload)
+			after = event.Seq
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		if invocation != nil {
+			latest, loadErr := s.store.Endpoints().GetInvocation(c, invocation.ID)
+			if loadErr == nil {
+				latest = s.expireEndpointInvocation(c, endpoint, latest)
+			}
+			if loadErr == nil && endpointInvocationTerminal(latest.Status) {
+				return
+			}
+		}
+		if len(events) > 0 {
 			continue
 		}
-		payload, _ := json.Marshal(event)
-		_, _ = fmt.Fprintf(c.Writer, "id: %d\nevent: %s\ndata: %s\n\n", event.ID, event.EventType, payload)
+		waitCtx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		waitErr := s.store.Events().WaitForNew(waitCtx, session.ID, after)
+		cancel()
+		if waitErr == nil {
+			continue
+		}
+		if c.Request.Context().Err() != nil {
+			return
+		}
+		if waitErr == context.DeadlineExceeded {
+			_, _ = fmt.Fprint(c.Writer, ": heartbeat\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+			continue
+		}
+		return
 	}
-	c.Writer.Flush()
 }
-func (s *Server) endpointJobAccepted(c *gin.Context, issueID, runID uuid.UUID) {
-	c.JSON(http.StatusAccepted, gin.H{"issueId": issueID, "runId": runID, "statusUrl": "/invoke/v1/jobs/" + issueID.String(), "eventsUrl": "/invoke/v1/jobs/" + issueID.String() + "/events"})
-}
-func (s *Server) loadAuthorizedEndpointJob(c *gin.Context) (*controlmodel.EndpointJob, *controlmodel.AgentEndpoint, bool) {
-	issueID, err := uuid.Parse(c.Param("issueId"))
+
+func (s *Server) getEndpointConversation(c *gin.Context) {
+	conversationID, err := uuid.Parse(c.Param("conversationId"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid issueId"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid conversationId"})
+		return
+	}
+	conversation, err := s.store.Endpoints().GetConversation(c, conversationID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	endpoint, err := s.store.Endpoints().Get(c, conversation.EndpointID)
+	if err != nil || !s.authenticateEndpoint(c, endpoint, false) {
+		return
+	}
+	principal, _ := c.Get(endpointPrincipalContextKey)
+	if conversation.PrincipalRef != fmt.Sprint(principal) {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "conversation is unavailable"})
+		return
+	}
+	invocations, _ := s.store.Endpoints().ListInvocations(c, store.EndpointInvocationFilter{
+		EndpointID: endpoint.ID, Mode: controlmodel.EndpointConversationMode, Limit: 100,
+	})
+	turns := make([]*controlmodel.EndpointInvocation, 0)
+	for _, invocation := range invocations {
+		if invocation.ConversationID != nil && *invocation.ConversationID == conversation.ID {
+			turns = append(turns, s.expireEndpointInvocation(c, endpoint, invocation))
+		}
+	}
+	publicTurns := make([]gin.H, 0, len(turns))
+	for _, turn := range turns {
+		publicTurns = append(publicTurns, endpointInvocationPublic(turn))
+	}
+	c.JSON(http.StatusOK, gin.H{"conversation": endpointConversationPublic(conversation), "turns": publicTurns})
+}
+func (s *Server) failEndpointInvocation(ctx context.Context, invocation *controlmodel.EndpointInvocation, code string, cause error) {
+	if invocation == nil {
+		return
+	}
+	now := time.Now().UTC()
+	invocation.Status, invocation.ErrorCode = controlmodel.EndpointInvocationFailed, code
+	invocation.ErrorMessage, invocation.CompletedAt = cause.Error(), &now
+	_, _ = s.store.Endpoints().UpdateInvocation(ctx, invocation)
+}
+
+func (s *Server) expireEndpointInvocation(ctx context.Context, endpoint *controlmodel.Endpoint,
+	invocation *controlmodel.EndpointInvocation) *controlmodel.EndpointInvocation {
+	if invocation == nil || endpoint == nil || endpointInvocationTerminal(invocation.Status) || endpoint.TimeoutSeconds <= 0 ||
+		time.Now().UTC().Before(invocation.CreatedAt.Add(time.Duration(endpoint.TimeoutSeconds)*time.Second)) {
+		return invocation
+	}
+	now := time.Now().UTC()
+	if invocation.Mode == controlmodel.EndpointJobMode && invocation.RunID != nil {
+		_, _ = s.orchestrationService().Cancel(ctx, *invocation.RunID)
+	}
+	invocation.Status, invocation.ErrorCode = controlmodel.EndpointInvocationTimedOut, "endpoint_timeout"
+	invocation.ErrorMessage, invocation.CompletedAt = "Endpoint invocation exceeded its configured timeout", &now
+	updated, err := s.store.Endpoints().UpdateInvocation(ctx, invocation)
+	if err == nil {
+		return updated
+	}
+	return invocation
+}
+
+func (s *Server) endpointJobAccepted(c *gin.Context, invocation *controlmodel.EndpointInvocation) {
+	response := gin.H{
+		"invocationId": invocation.ID, "status": invocation.Status,
+		"statusUrl": "/invoke/v1/jobs/" + invocation.ID.String(),
+		"eventsUrl": "/invoke/v1/jobs/" + invocation.ID.String() + "/events",
+	}
+	if invocation.IssueID != nil {
+		response["issueId"] = invocation.IssueID
+	}
+	if invocation.RunID != nil {
+		response["runId"] = invocation.RunID
+	}
+	c.JSON(http.StatusAccepted, response)
+}
+
+func (s *Server) loadAuthorizedEndpointJob(c *gin.Context) (*controlmodel.EndpointInvocation, *controlmodel.Endpoint, bool) {
+	invocationID, err := uuid.Parse(c.Param("invocationId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid invocationId"})
 		return nil, nil, false
 	}
-	job, err := s.store.AgentEndpoints().GetJobByIssue(c, issueID)
+	invocation, err := s.store.Endpoints().GetInvocation(c, invocationID)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return nil, nil, false
 	}
-	endpoint, err := s.store.AgentEndpoints().Get(c, job.EndpointID)
+	if invocation.Mode != controlmodel.EndpointJobMode {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "invocation is not a job"})
+		return nil, nil, false
+	}
+	endpoint, err := s.store.Endpoints().Get(c, invocation.EndpointID)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return nil, nil, false
 	}
-	return job, endpoint, s.authenticateEndpoint(c, endpoint)
+	if !s.authenticateEndpoint(c, endpoint, false) {
+		return nil, nil, false
+	}
+	principal, _ := c.Get(endpointPrincipalContextKey)
+	if invocation.PrincipalRef != fmt.Sprint(principal) {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "job is unavailable"})
+		return nil, nil, false
+	}
+	return invocation, endpoint, true
 }
 func (s *Server) getEndpointJob(c *gin.Context) {
-	job, _, ok := s.loadAuthorizedEndpointJob(c)
+	invocation, endpoint, ok := s.loadAuthorizedEndpointJob(c)
 	if !ok {
 		return
 	}
-	issue, err := s.store.Collaboration().GetIssue(c, *job.IssueID)
-	if err != nil {
-		s.writeControlPlaneError(c, err)
-		return
+	var issue *controlmodel.Issue
+	var run *controlmodel.OrchestrationRun
+	if invocation.RunID != nil {
+		run, _ = s.store.Orchestration().GetRun(c, *invocation.RunID)
+		if run != nil && controlmodel.IsOrchestrationRunTerminal(run.State) {
+			// Also converges Jobs completed before the Issue review invariant was
+			// introduced. Reconciliation is idempotent and never auto-accepts work.
+			_ = (&orchestration.Engine{Store: s.store}).ReconcileRun(c, run.ID)
+		}
+		if run != nil && controlmodel.IsOrchestrationRunTerminal(run.State) && invocation.CompletedAt == nil {
+			now := time.Now().UTC()
+			invocation.CompletedAt = &now
+			switch run.State {
+			case controlmodel.RunSucceeded, controlmodel.RunPartialSucceeded:
+				invocation.Status = controlmodel.EndpointInvocationCompleted
+			case controlmodel.RunCancelled:
+				invocation.Status = controlmodel.EndpointInvocationCancelled
+			default:
+				invocation.Status = controlmodel.EndpointInvocationFailed
+				invocation.ErrorCode = "run_failed"
+			}
+			invocation.Result, _ = json.Marshal(gin.H{"runState": run.State})
+			invocation, _ = s.store.Endpoints().UpdateInvocation(c, invocation)
+		}
 	}
-	run, err := s.store.Orchestration().GetRun(c, *job.RunID)
-	if err != nil {
-		s.writeControlPlaneError(c, err)
-		return
+	if invocation.IssueID != nil {
+		issue, _ = s.store.Collaboration().GetIssue(c, *invocation.IssueID)
 	}
-	c.JSON(http.StatusOK, gin.H{"issue": issue, "run": run})
+	invocation = s.expireEndpointInvocation(c, endpoint, invocation)
+	response := gin.H{"invocation": endpointInvocationPublic(invocation)}
+	if issue != nil {
+		response["issue"] = gin.H{"id": issue.ID, "status": issue.Status, "updatedAt": issue.UpdatedAt}
+	}
+	if run != nil {
+		response["run"] = gin.H{"id": run.ID, "state": run.State, "updatedAt": run.UpdatedAt}
+	}
+	c.JSON(http.StatusOK, response)
 }
-func (s *Server) getEndpointJobEvents(c *gin.Context) {
-	job, _, ok := s.loadAuthorizedEndpointJob(c)
+
+func (s *Server) getEndpointJobArtifacts(c *gin.Context) {
+	invocation, endpoint, ok := s.loadAuthorizedEndpointJob(c)
 	if !ok {
 		return
 	}
-	after, _ := strconv.ParseInt(c.GetHeader("Last-Event-ID"), 10, 64)
-	events, err := s.store.Orchestration().ListRunEvents(c, *job.RunID, after, 1000)
+	if invocation.IssueID == nil {
+		c.JSON(http.StatusOK, gin.H{"items": []*controlmodel.Artifact{}})
+		return
+	}
+	items, err := s.store.Collaboration().ListArtifacts(c, endpoint.Tenant, endpoint.Namespace,
+		"issue", invocation.IssueID.String())
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	for _, event := range events {
-		payload, _ := json.Marshal(event)
-		_, _ = fmt.Fprintf(c.Writer, "id: %d\nevent: %s\ndata: %s\n\n", event.Sequence, event.Type, payload)
+	public := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		public = append(public, gin.H{"id": item.ID, "filename": item.Filename, "contentType": item.ContentType,
+			"sizeBytes": item.SizeBytes, "createdAt": item.CreatedAt, "expiresAt": item.ExpiresAt,
+			"downloadUrl": "/invoke/v1/jobs/" + invocation.ID.String() + "/artifacts/" + item.ID.String()})
 	}
-	c.Writer.Flush()
+	c.JSON(http.StatusOK, gin.H{"items": public})
+}
+
+func (s *Server) downloadEndpointJobArtifact(c *gin.Context) {
+	invocation, endpoint, ok := s.loadAuthorizedEndpointJob(c)
+	if !ok {
+		return
+	}
+	artifactID, parseErr := uuid.Parse(c.Param("artifactId"))
+	if parseErr != nil || invocation.IssueID == nil {
+		s.writeControlPlaneError(c, store.ErrNotFound)
+		return
+	}
+	item, links, err := s.store.Collaboration().GetArtifact(c, artifactID)
+	if err != nil || item.Tenant != endpoint.Tenant || item.Namespace != endpoint.Namespace {
+		s.writeControlPlaneError(c, store.ErrNotFound)
+		return
+	}
+	linked := false
+	for _, link := range links {
+		if link.TargetType == "issue" && link.TargetRef == invocation.IssueID.String() {
+			linked = true
+			break
+		}
+	}
+	if !linked {
+		s.writeControlPlaneError(c, store.ErrNotFound)
+		return
+	}
+	if item.ExpiresAt != nil && item.ExpiresAt.Before(time.Now().UTC()) {
+		c.JSON(http.StatusGone, ErrorResponse{Error: "artifact has expired"})
+		return
+	}
+	if s.artifactProvider == nil || item.StorageProvider != s.artifactProvider.Name() {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "artifact provider is unavailable"})
+		return
+	}
+	reader, info, err := s.artifactProvider.Open(c, item.StorageKey)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "artifact is unavailable"})
+		return
+	}
+	defer reader.Close()
+	if info.Checksum != item.Checksum {
+		c.JSON(http.StatusUnprocessableEntity, ErrorResponse{Error: "artifact checksum mismatch"})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", item.Filename))
+	c.DataFromReader(http.StatusOK, info.Size, item.ContentType, reader, nil)
+}
+
+func (s *Server) getEndpointJobEvents(c *gin.Context) {
+	invocation, endpoint, ok := s.loadAuthorizedEndpointJob(c)
+	if !ok {
+		return
+	}
+	if invocation.RunID == nil {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "job has not created a Run"})
+		return
+	}
+	after, _ := strconv.ParseInt(c.Query("after"), 10, 64)
+	if headerAfter, parseErr := strconv.ParseInt(c.GetHeader("Last-Event-ID"), 10, 64); parseErr == nil && headerAfter > after {
+		after = headerAfter
+	}
+	prepareEventStream(c)
+	flusher, _ := c.Writer.(http.Flusher)
+	for {
+		events, listErr := s.store.Orchestration().ListRunEvents(c, *invocation.RunID, after, 1000)
+		if listErr != nil {
+			return
+		}
+		for _, event := range events {
+			payload, _ := json.Marshal(event)
+			_, _ = fmt.Fprintf(c.Writer, "id: %d\nevent: %s\ndata: %s\n\n", event.Sequence, event.Type, payload)
+			after = event.Sequence
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		run, _ := s.store.Orchestration().GetRun(c, *invocation.RunID)
+		if run != nil && controlmodel.IsOrchestrationRunTerminal(run.State) {
+			return
+		}
+		latest, loadErr := s.store.Endpoints().GetInvocation(c, invocation.ID)
+		if loadErr == nil && endpointInvocationTerminal(s.expireEndpointInvocation(c, endpoint, latest).Status) {
+			return
+		}
+		if len(events) > 0 {
+			continue
+		}
+		waitCtx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		waitErr := s.store.Orchestration().WaitForRunEvent(waitCtx, *invocation.RunID, after)
+		cancel()
+		if waitErr == nil {
+			continue
+		}
+		if c.Request.Context().Err() != nil {
+			return
+		}
+		if waitErr == context.DeadlineExceeded {
+			_, _ = fmt.Fprint(c.Writer, ": heartbeat\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+			continue
+		}
+		return
+	}
+}
+
+func prepareEventStream(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache, no-transform")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+}
+
+func endpointInvocationTerminal(status controlmodel.EndpointInvocationStatus) bool {
+	return status == controlmodel.EndpointInvocationCompleted || status == controlmodel.EndpointInvocationFailed ||
+		status == controlmodel.EndpointInvocationCancelled || status == controlmodel.EndpointInvocationTimedOut
+}
+
+func (s *Server) cancelEndpointJob(c *gin.Context) {
+	invocation, _, ok := s.loadAuthorizedEndpointJob(c)
+	if !ok {
+		return
+	}
+	if invocation.RunID == nil {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "job has not created a Run"})
+		return
+	}
+	if _, err := s.orchestrationService().Cancel(c, *invocation.RunID); err != nil && err != store.ErrConflict {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	now := time.Now().UTC()
+	invocation.Status, invocation.CompletedAt = controlmodel.EndpointInvocationCancelled, &now
+	invocation, _ = s.store.Endpoints().UpdateInvocation(c, invocation)
+	c.JSON(http.StatusOK, gin.H{"invocation": endpointInvocationPublic(invocation)})
 }

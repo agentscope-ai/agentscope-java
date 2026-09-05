@@ -40,8 +40,9 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Append-only session event log. Sequence numbers are allocated with conflict retry so control and
  * data planes can append concurrently against the shared {@code (session_id, seq)} unique
- * constraint. Live SSE fan-out polls the database by cursor so events written by any plane /
- * replica are visible to subscribers.
+ * constraint. Live SSE fan-out is notification-driven and always reads from the durable sequence
+ * cursor, so events written by any plane or replica are visible without treating notifications as
+ * data.
  */
 @Service
 public class SessionEventLog {
@@ -53,19 +54,22 @@ public class SessionEventLog {
     private final ManagedJsonHelper jsonHelper;
     private final TransactionTemplate transactionTemplate;
     private final DeletedSessionRegistry deletedSessions;
-    private final long pollIntervalMs;
+    private final SessionEventNotifier notifier;
+    private final long recoveryIntervalMs;
 
     public SessionEventLog(
             SessionEventEntityRepository repository,
             ManagedJsonHelper jsonHelper,
             TransactionTemplate transactionTemplate,
             DeletedSessionRegistry deletedSessions,
-            @Value("${builder.session-event.poll-interval-ms:500}") long pollIntervalMs) {
+            SessionEventNotifier notifier,
+            @Value("${builder.session-event.recovery-interval-ms:30000}") long recoveryIntervalMs) {
         this.repository = repository;
         this.jsonHelper = jsonHelper;
         this.transactionTemplate = transactionTemplate;
         this.deletedSessions = deletedSessions;
-        this.pollIntervalMs = Math.max(50L, pollIntervalMs);
+        this.notifier = notifier;
+        this.recoveryIntervalMs = Math.max(1_000L, recoveryIntervalMs);
     }
 
     /**
@@ -90,8 +94,11 @@ public class SessionEventLog {
         RuntimeException lastConflict = null;
         for (int attempt = 0; attempt < MAX_SEQ_RETRIES; attempt++) {
             try {
-                return transactionTemplate.execute(
-                        status -> appendOnce(sessionId, type, payload, eventId));
+                SessionEventDto appended =
+                        transactionTemplate.execute(
+                                status -> appendOnce(sessionId, type, payload, eventId));
+                notifier.publish(sessionId);
+                return appended;
             } catch (RuntimeException ex) {
                 if (!isSeqConflict(ex)) {
                     throw ex;
@@ -216,8 +223,9 @@ public class SessionEventLog {
     }
 
     /**
-     * Polls the database for events with sequence strictly greater than {@code afterSeq}. Works
-     * across control/data planes and data-plane replicas without process-local sinks.
+     * Reads events with sequence strictly greater than {@code afterSeq} after an immediate,
+     * in-process, or PostgreSQL cross-replica notification. A low-frequency recovery tick protects
+     * against notification loss and databases without LISTEN/NOTIFY support.
      *
      * <p>Each poll runs inside {@link TransactionTemplate}: PostgreSQL {@code @Lob} CLOB/OID
      * payload reads require a transaction, and calling {@link #listAfter} via {@code this.} would
@@ -225,9 +233,12 @@ public class SessionEventLog {
      */
     public Flux<SessionEventDto> subscribe(String sessionId, long afterSeq) {
         AtomicLong cursor = new AtomicLong(Math.max(0L, afterSeq));
-        return Flux.interval(Duration.ofMillis(pollIntervalMs))
-                .concatMap(
-                        tick ->
+        Flux<Long> recovery = Flux.interval(Duration.ofMillis(recoveryIntervalMs));
+        Flux<Long> wakeups =
+                Flux.merge(Flux.just(0L), recovery, notifier.wakeups(sessionId).map(ignored -> 0L))
+                        .onBackpressureLatest();
+        return wakeups.concatMap(
+                        ignored ->
                                 Mono.fromCallable(
                                                 () ->
                                                         transactionTemplate.execute(
@@ -245,7 +256,7 @@ public class SessionEventLog {
                         });
     }
 
-    /** Repository read used by transactional entry points and {@link #subscribe} polls. */
+    /** Repository read used by transactional entry points and resumable subscriptions. */
     private List<SessionEventDto> listAfterUnchecked(String sessionId, long afterSeq) {
         return repository
                 .findBySessionIdAndSeqGreaterThanOrderBySeqAsc(sessionId, afterSeq)

@@ -236,7 +236,7 @@ func (r *agentCatalogRepo) RegisterExternal(ctx context.Context, req store.Exter
 	var binding *controlmodel.AgentBinding
 	var credential *controlmodel.AgentRegistrationCredential
 	if newAgent {
-		if !req.TrustedBootstrap || len(req.NewCredentialHash) == 0 {
+		if len(req.NewCredentialHash) == 0 {
 			return nil, store.ErrForbidden
 		}
 		agentID := uuid.New()
@@ -260,10 +260,6 @@ func (r *agentCatalogRepo) RegisterExternal(ctx context.Context, req store.Exter
 		if err != nil {
 			return nil, err
 		}
-		credential, err = insertCredential(ctx, tx, agent.ID, req.NewCredentialHash, req.CredentialExpiresAt)
-		if err != nil {
-			return nil, catalogConflict(err)
-		}
 		runtimeBinding, _ := binding.RuntimeBinding()
 		candidates, _ := json.Marshal([]controlmodel.RuntimeBindingCandidate{{Binding: runtimeBinding}})
 		if _, err = tx.Exec(ctx, `INSERT INTO agent_runtime_policies
@@ -276,21 +272,6 @@ func (r *agentCatalogRepo) RegisterExternal(ctx context.Context, req store.Exter
 		if agent.Status != controlmodel.AgentActive {
 			return nil, store.ErrForbidden
 		}
-		var valid bool
-		if len(req.ClaimCredentialHash) > 0 {
-			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM agent_registration_credentials
-				WHERE agent_id=$1 AND token_hash=$2 AND status=$3 AND (expires_at IS NULL OR expires_at>now()))`,
-				agent.ID, req.ClaimCredentialHash, controlmodel.RegistrationCredentialActive).Scan(&valid)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if !valid {
-			if req.TrustedBootstrap {
-				return nil, store.ErrConflict
-			}
-			return nil, store.ErrForbidden
-		}
 		binding, err = scanAgentBinding(tx.QueryRow(ctx, `SELECT `+bindingColumns+` FROM agent_bindings
 			WHERE agent_id=$1 AND kind=$2 AND enabled AND archived_at IS NULL ORDER BY priority DESC,id LIMIT 1`,
 			agent.ID, controlmodel.DataPlaneExternalApplication))
@@ -300,6 +281,10 @@ func (r *agentCatalogRepo) RegisterExternal(ctx context.Context, req store.Exter
 			}
 			return nil, err
 		}
+	}
+	credential, err = insertCredential(ctx, tx, agent.ID, req.NewCredentialHash, req.CredentialExpiresAt)
+	if err != nil {
+		return nil, catalogConflict(err)
 	}
 
 	instanceID := uuid.New()
@@ -323,7 +308,7 @@ func (r *agentCatalogRepo) RegisterExternal(ctx context.Context, req store.Exter
 		return nil, catalogConflict(err)
 	}
 	return &store.ExternalAgentRegistrationResult{Agent: agent, Binding: binding, Instance: instance,
-		Credential: credential, CredentialCreated: newAgent}, nil
+		Credential: credential, CredentialCreated: true}, nil
 }
 
 func (r *agentCatalogRepo) RotateRegistrationCredential(ctx context.Context, agentID uuid.UUID, hash []byte, expires *time.Time) (*controlmodel.AgentRegistrationCredential, error) {

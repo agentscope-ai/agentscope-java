@@ -52,6 +52,9 @@ type OrchestrationRepository interface {
 	ListTeamSnapshots(context.Context, uuid.UUID) ([]*controlmodel.RunTeamSnapshot, error)
 	AppendRunEvent(context.Context, *controlmodel.RunEvent) (*controlmodel.RunEvent, error)
 	ListRunEvents(context.Context, uuid.UUID, int64, int) ([]*controlmodel.RunEvent, error)
+	// WaitForRunEvent blocks until a durable event exists after the supplied
+	// per-run sequence. Implementations must close the read/wait race.
+	WaitForRunEvent(context.Context, uuid.UUID, int64) error
 
 	PutRuntimePolicy(context.Context, *controlmodel.AgentRuntimePolicy) (*controlmodel.AgentRuntimePolicy, error)
 	GetRuntimePolicy(context.Context, string, string, string) (*controlmodel.AgentRuntimePolicy, error)

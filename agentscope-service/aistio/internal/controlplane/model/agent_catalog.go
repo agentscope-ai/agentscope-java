@@ -6,6 +6,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,8 +72,67 @@ type ExternalBindingConfiguration struct {
 }
 
 type HostedBindingConfiguration struct {
-	RuntimeProfileID uuid.UUID `json:"runtimeProfileId"`
-	RuntimePoolID    uuid.UUID `json:"runtimePoolId"`
+	RuntimeProfileID   uuid.UUID                 `json:"runtimeProfileId"`
+	RuntimePoolID      uuid.UUID                 `json:"runtimePoolId"`
+	ExecutionOverrides *HostedExecutionOverrides `json:"executionOverrides,omitempty"`
+}
+
+// HostedExecutionOverrides contains per-Agent execution preferences layered on
+// top of a reusable RuntimeProfile. Keeping these values on the binding avoids
+// mutating a shared profile when one Agent changes its native CLI behavior.
+type HostedExecutionOverrides struct {
+	ReasoningEffort       string          `json:"reasoningEffort,omitempty"`
+	ServiceTier           string          `json:"serviceTier,omitempty"`
+	ProviderConfiguration json.RawMessage `json:"providerConfiguration,omitempty"`
+	CustomArgs            []string        `json:"customArgs,omitempty"`
+}
+
+func (o *HostedExecutionOverrides) Validate() error {
+	if o == nil {
+		return nil
+	}
+	if len(o.ProviderConfiguration) > 0 && string(o.ProviderConfiguration) != "null" {
+		var value map[string]any
+		if err := json.Unmarshal(o.ProviderConfiguration, &value); err != nil || value == nil {
+			return fmt.Errorf("providerConfiguration must be a JSON object")
+		}
+	}
+	if len(o.CustomArgs) > 64 {
+		return fmt.Errorf("customArgs cannot contain more than 64 arguments")
+	}
+	for _, arg := range o.CustomArgs {
+		if strings.TrimSpace(arg) == "" || len(arg) > 1024 || strings.ContainsRune(arg, '\x00') {
+			return fmt.Errorf("customArgs contains an invalid argument")
+		}
+	}
+	return nil
+}
+
+// ResolveProviderConfiguration applies per-Agent provider values without
+// changing the reusable profile. The result is frozen on each dispatch.
+func (o *HostedExecutionOverrides) ResolveProviderConfiguration(base json.RawMessage) (json.RawMessage, error) {
+	resolved := map[string]any{}
+	if len(base) > 0 && string(base) != "null" {
+		if err := json.Unmarshal(base, &resolved); err != nil || resolved == nil {
+			return nil, fmt.Errorf("runtime profile configuration must be a JSON object")
+		}
+	}
+	if o != nil && len(o.ProviderConfiguration) > 0 && string(o.ProviderConfiguration) != "null" {
+		var overrides map[string]any
+		if err := json.Unmarshal(o.ProviderConfiguration, &overrides); err != nil || overrides == nil {
+			return nil, fmt.Errorf("providerConfiguration must be a JSON object")
+		}
+		for key, value := range overrides {
+			resolved[key] = value
+		}
+	}
+	if o != nil && o.ReasoningEffort != "" {
+		resolved["reasoningEffort"] = o.ReasoningEffort
+	}
+	if o != nil && o.ServiceTier != "" {
+		resolved["serviceTier"] = o.ServiceTier
+	}
+	return json.Marshal(resolved)
 }
 
 func (b AgentBinding) Validate() error {
@@ -94,6 +154,9 @@ func (b AgentBinding) Validate() error {
 		var cfg HostedBindingConfiguration
 		if json.Unmarshal(b.Configuration, &cfg) != nil || cfg.RuntimeProfileID == uuid.Nil || cfg.RuntimePoolID == uuid.Nil {
 			return fmt.Errorf("hosted binding requires runtimeProfileId and runtimePoolId")
+		}
+		if err := cfg.ExecutionOverrides.Validate(); err != nil {
+			return err
 		}
 	default:
 		return fmt.Errorf("unsupported binding kind %q", b.Kind)
@@ -122,6 +185,7 @@ func (b AgentBinding) RuntimeBinding() (RuntimeBinding, error) {
 		var cfg HostedBindingConfiguration
 		_ = json.Unmarshal(b.Configuration, &cfg)
 		result.RuntimeProfileID, result.RuntimePoolID = cfg.RuntimeProfileID, cfg.RuntimePoolID
+		result.ExecutionOverrides = cfg.ExecutionOverrides
 	}
 	return result, result.Validate()
 }

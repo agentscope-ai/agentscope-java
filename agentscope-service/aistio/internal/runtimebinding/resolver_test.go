@@ -15,6 +15,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 	"github.com/spring-ai-alibaba/aistio/internal/taskauth"
+	"github.com/spring-ai-alibaba/aistio/internal/taskplane"
 )
 
 type managedRecorder struct {
@@ -236,5 +237,85 @@ func TestAdaptiveRunTeamSnapshotIsImmutable(t *testing.T) {
 	if err != nil || len(snapshot.Members) != 1 || snapshot.Members[0].AgentRef != "worker" ||
 		string(snapshot.Members[0].RuntimeBindingPolicy) != string(originalPolicy) {
 		t.Fatalf("Run Team snapshot changed with live roster: snapshot=%+v err=%v", snapshot, err)
+	}
+}
+
+func TestTeamLeaderTaskCompletesThroughHostedAttempt(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	tokens := &taskauth.Manager{Secret: []byte("0123456789abcdef0123456789abcdef"), TTL: time.Hour}
+	agent, err := st.AgentCatalog().CreateAgent(ctx, &controlmodel.Agent{Tenant: "tenant-team", Namespace: "default",
+		AgentKey: "hosted-team-leader", Status: controlmodel.AgentActive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, _ := st.RuntimeRegistry().UpsertRuntimeProfile(ctx, &controlmodel.RuntimeProfile{Tenant: agent.Tenant,
+		Namespace: agent.Namespace, Name: "codex-team", Provider: "codex"})
+	pool, _ := st.RuntimeRegistry().UpsertRuntimePool(ctx, &controlmodel.RuntimePool{Tenant: agent.Tenant,
+		Namespace: agent.Namespace, Name: "team-hosts"})
+	configuration, _ := json.Marshal(controlmodel.HostedBindingConfiguration{RuntimeProfileID: profile.ID, RuntimePoolID: pool.ID})
+	binding, err := st.AgentCatalog().CreateBinding(ctx, &controlmodel.AgentBinding{AgentID: agent.ID,
+		Tenant: agent.Tenant, Namespace: agent.Namespace, Kind: controlmodel.DataPlaneHostedRuntime,
+		Configuration: configuration, Priority: 100, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeBinding, _ := binding.RuntimeBinding()
+	if _, err = st.Orchestration().PutRuntimePolicy(ctx, &controlmodel.AgentRuntimePolicy{Tenant: agent.Tenant,
+		Namespace: agent.Namespace, AgentRef: agent.ID.String(), SelectionMode: "ordered", FallbackMode: "disabled",
+		Candidates: []controlmodel.RuntimeBindingCandidate{{Binding: runtimeBinding}}}); err != nil {
+		t.Fatal(err)
+	}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{Tenant: agent.Tenant,
+		Namespace: agent.Namespace, Name: "hosted-team", LeaderAgentRef: agent.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{Tenant: agent.Tenant, Namespace: agent.Namespace,
+		Title: "coordinate hosted work", AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+		Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 10})
+	if err != nil || len(tasks) != 1 || tasks[0].TeamID == nil || *tasks[0].TeamID != team.ID || !tasks[0].LeaderTask {
+		t.Fatalf("Team coordinator task=%+v err=%v", tasks, err)
+	}
+	result, err := (&Resolver{Store: st, Tokens: tokens}).DispatchCandidate(ctx, tasks[0].ID, nil)
+	if err != nil || result.Execution == nil || result.Execution.BackendKind != controlmodel.DataPlaneHostedRuntime {
+		t.Fatalf("hosted Team dispatch=%+v err=%v", result, err)
+	}
+	host, err := st.RuntimeRegistry().UpsertRuntimeHost(ctx, &controlmodel.RuntimeHost{Tenant: agent.Tenant,
+		Namespace: agent.Namespace, HostKey: "team-host", PoolName: pool.Name, State: controlmodel.RuntimeHostOnline,
+		Capacity: 1, Capabilities: json.RawMessage(`{"providers":{"codex":"test"}}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &taskplane.Service{Store: st}
+	claimed, err := svc.Claim(ctx, store.ExecutionClaim{Tenant: agent.Tenant, Namespace: agent.Namespace,
+		RuntimePoolName: pool.Name, HostID: host.ID, HostGeneration: host.LeaseGeneration,
+		LeaseOwner: "team-host/lease", LeaseToken: "lease", LeaseTTL: time.Minute})
+	if err != nil || claimed.ID != result.Execution.ID {
+		t.Fatalf("claim hosted Team attempt=%+v err=%v", claimed, err)
+	}
+	preparing, err := svc.MarkPreparing(ctx, claimed.ID, claimed.LeaseToken, claimed.FencingToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err := svc.MarkRunning(ctx, preparing.ID, preparing.LeaseToken, preparing.FencingToken, "thread-team", "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Complete(ctx, running.ID, running.LeaseToken, running.FencingToken,
+		json.RawMessage(`{"output":"team leader turn complete"}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	final, err := st.Collaboration().GetAgentTask(ctx, tasks[0].ID)
+	if err != nil || final.Status != controlmodel.AgentTaskCompleted {
+		t.Fatalf("hosted Team task did not complete: task=%+v err=%v", final, err)
 	}
 }

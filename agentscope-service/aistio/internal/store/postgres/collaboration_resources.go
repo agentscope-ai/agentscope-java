@@ -17,11 +17,14 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
@@ -38,29 +41,41 @@ func (r *collaborationRepo) CreateTeam(ctx context.Context, team *controlmodel.C
 	if team.Namespace == "" {
 		team.Namespace = "default"
 	}
+	if team.Status == "" {
+		team.Status = controlmodel.TeamActive
+	}
 	policy, err := json.Marshal(team.Policy)
 	if err != nil {
 		return nil, err
 	}
-	return scanCollaborationTeam(r.pool.QueryRow(ctx, `INSERT INTO teams
-		(id,tenant,namespace,name,description,leader_agent_id,policy,version)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,1) RETURNING `+collaborationTeamColumns,
+	created, err := scanCollaborationTeam(r.pool.QueryRow(ctx, `INSERT INTO teams
+		(id,tenant,namespace,name,description,instructions,status,leader_agent_id,policy,version)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1) RETURNING `+collaborationTeamColumns,
 		team.ID, team.Tenant, team.Namespace, team.Name, nullStr(team.Description),
-		team.LeaderAgentRef, policy))
+		nullStr(team.Instructions), team.Status, team.LeaderAgentRef, policy))
+	return created, teamResourceError(err)
 }
 
 func (r *collaborationRepo) GetTeam(ctx context.Context, id uuid.UUID) (*controlmodel.CollaborationTeam, error) {
 	team, err := scanCollaborationTeam(r.pool.QueryRow(ctx, `SELECT `+collaborationTeamColumns+`
 		FROM teams WHERE id=$1`, id))
 	if err != nil {
-		return nil, err
+		return nil, teamResourceError(err)
 	}
 	members, err := r.listTeamMembers(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, teamResourceError(err)
 	}
 	team.Members = members
 	return team, nil
+}
+
+func teamResourceError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return store.ErrConflict
+	}
+	return err
 }
 
 func (r *collaborationRepo) ListTeams(ctx context.Context, tenant, namespace string) ([]*controlmodel.CollaborationTeam, error) {
@@ -87,17 +102,31 @@ func (r *collaborationRepo) ListTeams(ctx context.Context, tenant, namespace str
 }
 
 func (r *collaborationRepo) UpdateTeam(ctx context.Context, team *controlmodel.CollaborationTeam, expectedVersion int64) (*controlmodel.CollaborationTeam, error) {
+	var duplicatesLeader bool
+	if err := r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM team_members
+		WHERE team_id=$1 AND agent_id=$2 AND archived_at IS NULL)`, team.ID, team.LeaderAgentRef).Scan(&duplicatesLeader); err != nil {
+		return nil, err
+	}
+	if duplicatesLeader {
+		return nil, store.ErrConflict
+	}
 	policy, err := json.Marshal(team.Policy)
 	if err != nil {
 		return nil, err
 	}
 	updated, err := scanCollaborationTeam(r.pool.QueryRow(ctx, `UPDATE teams SET
-		name=$2,description=$3,leader_agent_id=$4,policy=$5,version=version+1,
-		updated_at=now() WHERE id=$1 AND ($6<=0 OR version=$6)
+		name=$2,description=$3,instructions=$4,status=$5,leader_agent_id=$6,policy=$7,version=version+1,
+		updated_at=now() WHERE id=$1 AND ($8<=0 OR version=$8)
 		RETURNING `+collaborationTeamColumns, team.ID, team.Name,
-		nullStr(team.Description), team.LeaderAgentRef, policy, expectedVersion))
+		nullStr(team.Description), nullStr(team.Instructions), team.Status, team.LeaderAgentRef, policy, expectedVersion))
 	if err == store.ErrNotFound {
 		return nil, store.ErrConflict
+	}
+	if err != nil {
+		return nil, teamResourceError(err)
+	}
+	if err == nil {
+		updated.Members, err = r.listTeamMembers(ctx, updated.ID)
 	}
 	return updated, err
 }
@@ -106,23 +135,89 @@ func (r *collaborationRepo) AddTeamMember(ctx context.Context, member *controlmo
 	if member == nil || member.TeamID == uuid.Nil || member.AgentRef == "" || member.Role == "" {
 		return nil, fmt.Errorf("teamId, agentRef, and role are required")
 	}
-	team, err := r.GetTeam(ctx, member.TeamID)
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return nil, teamResourceError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	team, err := scanCollaborationTeam(tx.QueryRow(ctx, `SELECT `+collaborationTeamColumns+` FROM teams WHERE id=$1 FOR UPDATE`, member.TeamID))
+	if err != nil {
+		return nil, teamResourceError(err)
+	}
+	if team.LeaderAgentRef == member.AgentRef {
+		return nil, store.ErrConflict
 	}
 	member.ID = nonNilUUIDPG(member.ID)
 	member.Tenant, member.Namespace = team.Tenant, team.Namespace
-	return scanCollaborationMember(r.pool.QueryRow(ctx, `INSERT INTO team_members
+	created, err := scanCollaborationMember(tx.QueryRow(ctx, `INSERT INTO team_members
 		(id,tenant,namespace,team_id,agent_id,role,instructions,
 			 capability_requirements,runtime_binding_policy)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING `+collaborationMemberColumns,
 		member.ID, member.Tenant, member.Namespace, member.TeamID, member.AgentRef,
 		member.Role, nullStr(member.Instructions), nullJSON(member.CapabilityRequirements),
 		nullJSON(member.RuntimeBindingPolicy)))
+	if err != nil {
+		return nil, teamResourceError(err)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE teams SET version=version+1,updated_at=now() WHERE id=$1`, member.TeamID); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+func (r *collaborationRepo) UpdateTeamMember(ctx context.Context, member *controlmodel.CollaborationTeamMember, expectedTeamVersion int64) (*controlmodel.CollaborationTeamMember, error) {
+	if member == nil || member.TeamID == uuid.Nil || member.ID == uuid.Nil || strings.TrimSpace(member.Role) == "" {
+		return nil, store.ErrConflict
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var teamVersion int64
+	if err = tx.QueryRow(ctx, `SELECT version FROM teams WHERE id=$1 AND archived_at IS NULL FOR UPDATE`, member.TeamID).Scan(&teamVersion); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, store.ErrNotFound
+		}
+		return nil, err
+	}
+	if expectedTeamVersion > 0 && teamVersion != expectedTeamVersion {
+		return nil, store.ErrConflict
+	}
+	updated, err := scanCollaborationMember(tx.QueryRow(ctx, `UPDATE team_members SET
+		role=$3,instructions=$4,capability_requirements=$5,runtime_binding_policy=$6
+		WHERE id=$1 AND team_id=$2 AND archived_at IS NULL RETURNING `+collaborationMemberColumns,
+		member.ID, member.TeamID, member.Role, nullStr(member.Instructions),
+		nullJSON(member.CapabilityRequirements), nullJSON(member.RuntimeBindingPolicy)))
+	if err != nil {
+		return nil, teamResourceError(err)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE teams SET version=version+1,updated_at=now() WHERE id=$1`, member.TeamID); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
 func (r *collaborationRepo) RemoveTeamMember(ctx context.Context, teamID, memberID uuid.UUID) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE team_members SET archived_at=now()
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var lockedTeamID uuid.UUID
+	if err = tx.QueryRow(ctx, `SELECT id FROM teams WHERE id=$1 FOR UPDATE`, teamID).Scan(&lockedTeamID); err != nil {
+		if err == pgx.ErrNoRows {
+			return store.ErrNotFound
+		}
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE team_members SET archived_at=now()
 		WHERE id=$1 AND team_id=$2 AND archived_at IS NULL`, memberID, teamID)
 	if err != nil {
 		return err
@@ -130,7 +225,10 @@ func (r *collaborationRepo) RemoveTeamMember(ctx context.Context, teamID, member
 	if tag.RowsAffected() == 0 {
 		return store.ErrNotFound
 	}
-	return nil
+	if _, err = tx.Exec(ctx, `UPDATE teams SET version=version+1,updated_at=now() WHERE id=$1`, teamID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *collaborationRepo) listTeamMembers(ctx context.Context, teamID uuid.UUID) ([]controlmodel.CollaborationTeamMember, error) {
@@ -187,11 +285,12 @@ func (r *collaborationRepo) SweepTimedOutAgentTasks(ctx context.Context, now tim
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := r.pool.Query(ctx, `SELECT t.id,t.version FROM agent_tasks t JOIN teams tm ON tm.id=t.team_id
-		WHERE t.status IN ($1,$2) AND tm.archived_at IS NULL
-		AND COALESCE((tm.policy->>'taskTimeoutSeconds')::bigint,0)>0
+	rows, err := r.pool.Query(ctx, `SELECT t.id,t.version FROM agent_tasks t
+		JOIN orchestration_run_team_snapshots ts ON ts.run_id=t.orchestration_run_id AND ts.team_id=t.team_id
+		WHERE t.status IN ($1,$2)
+		AND COALESCE((ts.snapshot->'policy'->>'taskTimeoutSeconds')::bigint,0)>0
 		AND COALESCE(t.started_at,t.dispatched_at,t.created_at)
-			+ COALESCE((tm.policy->>'taskTimeoutSeconds')::bigint,0) * interval '1 second' <= $3
+			+ COALESCE((ts.snapshot->'policy'->>'taskTimeoutSeconds')::bigint,0) * interval '1 second' <= $3
 		ORDER BY COALESCE(t.started_at,t.dispatched_at,t.created_at),t.id LIMIT $4`,
 		controlmodel.AgentTaskRunning, controlmodel.AgentTaskDispatched, now, limit)
 	if err != nil {

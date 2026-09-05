@@ -22,6 +22,7 @@ import {
   Outlet,
   Route,
   Routes,
+  useLocation,
   useParams,
   useSearchParams,
 } from 'react-router-dom';
@@ -56,27 +57,22 @@ const EnvironmentsHubPage = React.lazy(() => import('./pages/EnvironmentsHubPage
 const MemoryStoresPage = React.lazy(() => import('./pages/MemoryStoresPage'));
 const VaultsPage = React.lazy(() => import('./pages/VaultsPage'));
 const DeploymentsPage = React.lazy(() => import('./features/build/deployments/DeploymentsPage'));
+const EndpointDetailPage = React.lazy(() => import('./features/build/deployments/EndpointDetailPage'));
+const PlaygroundPage = React.lazy(() => import('./features/build/playground/PlaygroundPage'));
 const AgentLayout = React.lazy(() => import('./components/AgentLayout'));
-const OperateAgentsPage = React.lazy(() => import('./features/operate/OperateAgentsPage'));
-const OperateAgentDetailPage = React.lazy(() => import('./features/operate/OperateAgentDetailPage'));
+const ExecutionsPage = React.lazy(() => import('./features/operate/ExecutionsPage'));
 const OperateSessionsPage = React.lazy(() => import('./features/operate/OperateSessionsPage'));
 const OperateSessionDetailPage = React.lazy(() => import('./features/operate/OperateSessionDetailPage'));
-const GovernancePage = React.lazy(() => import('./features/operate/GovernancePage'));
 const TeamsOverviewPage = React.lazy(() => import('./features/teams/TeamsOverviewPage'));
+const TeamDetailPage = React.lazy(() => import('./features/teams/TeamDetailPage'));
 const IssuesPage = React.lazy(() => import('./features/issues/IssuesPage'));
 const IssueDetailPage = React.lazy(() => import('./features/issues/IssueDetailPage'));
-const ControlCenterPage = React.lazy(() => import('./features/control/ControlCenterPage'));
+const WorkOverviewPage = React.lazy(() => import('./features/work/WorkOverviewPage'));
+const WorkActivityPage = React.lazy(() => import('./features/work/WorkActivityPage'));
 const TasksPage = React.lazy(() => import('./features/tasks/TasksPage'));
 const TaskDetailPage = React.lazy(() => import('./features/tasks/TaskDetailPage'));
-const AgentInstancesPage = React.lazy(() => import('./features/agents/AgentInstancesPage'));
 const ApprovalsPage = React.lazy(() => import('./features/approvals/ApprovalsPage'));
 const AutomationsPage = React.lazy(() => import('./features/operate/AutomationsPage'));
-const RuntimeHostsPage = React.lazy(() => import('./features/runtime/RuntimePages').then((module) => ({ default: module.RuntimeHostsPage })));
-const RuntimeHostDetailPage = React.lazy(() => import('./features/runtime/RuntimePages').then((module) => ({ default: module.RuntimeHostDetailPage })));
-const RuntimeProfilesPage = React.lazy(() => import('./features/runtime/RuntimePages').then((module) => ({ default: module.RuntimeProfilesPage })));
-const RuntimePoolsPage = React.lazy(() => import('./features/runtime/RuntimePages').then((module) => ({ default: module.RuntimePoolsPage })));
-const RuntimePolicyPage = React.lazy(() => import('./features/runtime/RuntimePolicyPage'));
-const ManagedOverviewPage = React.lazy(() => import('./features/managed/ManagedOverviewPage'));
 const DefinitionsPage = React.lazy(() => import('./features/orchestration/DefinitionsPage'));
 const RunsPage = React.lazy(() => import('./features/orchestration/RunsPage'));
 
@@ -89,9 +85,25 @@ const queryClient = new QueryClient({
   },
 });
 
-function OperateAgentDetailRoute() {
-  const { name = '' } = useParams();
-  return <OperateAgentDetailPage name={name} />;
+function RedirectWithSearch({ to, param }: { to: string; param?: string }) {
+  const { search } = useLocation();
+  const params = useParams();
+  const suffix = param && params[param] ? `/${encodeURIComponent(params[param]!)}` : '';
+  return <Navigate to={`${to}${suffix}${search}`} replace />;
+}
+
+function LegacyOperationsRedirect() {
+  const { pathname, search } = useLocation();
+  let target = '/agent-center/agents';
+  const execution = pathname.match(/^\/operations\/(?:executions|runs)(?:\/(.+))?$/);
+  const session = pathname.match(/^\/operations\/sessions(?:\/(.+))?$/);
+  const task = pathname.match(/^\/operations\/tasks(?:\/(.+))?$/);
+  if (pathname === '/operations' || pathname === '/operations/' || pathname === '/operations/overview') target = '/agent-center/activity/executions';
+  else if (execution) target = `/agent-center/activity/executions${execution[1] ? `/${execution[1]}` : ''}`;
+  else if (session) target = `/agent-center/activity/sessions${session[1] ? `/${session[1]}` : ''}`;
+  else if (task) target = `/agent-center/activity/tasks${task[1] ? `/${task[1]}` : ''}`;
+  else if (pathname === '/operations/governance') target = '/work/activity';
+  return <Navigate to={`${target}${search}`} replace />;
 }
 
 /** Managed Agent Chat → the durable conversation area. */
@@ -120,12 +132,12 @@ function AgentSessionDetailRedirect() {
   return <Navigate to={`/managed/sessions?agentId=${encodeURIComponent(id)}`} replace />;
 }
 
-type WorkspaceArea = 'work' | 'agent-center' | 'operations';
+type WorkspaceArea = 'work' | 'agent-center';
 
 function defaultWorkspace(): string {
   const roles = getRoles().map((role) => role.toLowerCase());
   if (roles.includes('admin')) return '/work/overview';
-  if (roles.includes('operator')) return '/operations/overview';
+  if (roles.includes('operator')) return '/agent-center/activity/executions';
   if (roles.includes('agent_developer')) return '/agent-center/agents';
   return '/work/overview';
 }
@@ -138,9 +150,15 @@ function WorkspaceAccess({ area }: { area: WorkspaceArea }) {
   const roles = getRoles().map((role) => role.toLowerCase());
   const admin = roles.includes('admin');
   const allowed = area === 'work' || admin ||
-    area === 'agent-center' && (roles.includes('agent_developer') || roles.includes('operator')) ||
-    area === 'operations' && roles.includes('operator');
+    area === 'agent-center' && (roles.includes('agent_developer') || roles.includes('operator'));
   return allowed ? <Outlet /> : <DefaultWorkspaceRedirect />;
+}
+
+function OperatorAccess() {
+  const roles = getRoles().map((role) => role.toLowerCase());
+  return roles.includes('admin') || roles.includes('operator')
+    ? <Outlet />
+    : <Navigate to="/agent-center/agents" replace />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -162,12 +180,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             {/* v5 product workspaces */}
             <Route path="/work" element={<WorkspaceAccess area="work" />}>
               <Route index element={<Navigate to="overview" replace />} />
-              <Route path="overview" element={<ControlCenterPage />} />
+              <Route path="overview" element={<WorkOverviewPage />} />
               <Route path="issues" element={<IssuesPage />} />
               <Route path="issues/:issueId" element={<IssueDetailPage />} />
               <Route path="approvals" element={<ApprovalsPage />} />
               <Route path="automations" element={<AutomationsPage />} />
-              <Route path="activity" element={<ControlCenterPage />} />
+              <Route path="activity" element={<WorkActivityPage />} />
             </Route>
 
             <Route path="/agent-center" element={<WorkspaceAccess area="agent-center" />}>
@@ -175,10 +193,26 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="agents" element={<AgentsHubPage />} />
               <Route path="agents/new" element={<AgentCreatePage />} />
               <Route path="agents/:agentId" element={<AgentCatalogDetailPage />} />
+              <Route path="agents/:agentId/sessions/:sessionId" element={<OperateSessionDetailPage />} />
+              <Route path="agents/:id/manage" element={<AgentLayout />}>
+                <Route index element={<Navigate to="settings" replace />} />
+                <Route path="chat" element={<AgentChatRedirect />} />
+                <Route path="workspace" element={<AgentWorkspacePage />} />
+                <Route path="sessions" element={<AgentSessionsRedirect />} />
+                <Route path="sessions/:key" element={<AgentSessionDetailRedirect />} />
+                <Route path="channels" element={<AgentChannelsPage />} />
+                <Route path="skills" element={<AgentSkillsPage />} />
+                <Route path="tools" element={<AgentToolsPage />} />
+                <Route path="subagents" element={<AgentSubagentsPage />} />
+                <Route path="settings" element={<AgentSettingsPage />} />
+              </Route>
               <Route path="teams" element={<TeamsOverviewPage />} />
+              <Route path="teams/:teamId" element={<TeamDetailPage />} />
               <Route path="workflows" element={<DefinitionsPage />} />
               <Route path="workflows/:definitionId" element={<DefinitionsPage />} />
               <Route path="endpoints" element={<DeploymentsPage />} />
+              <Route path="endpoints/:endpointId" element={<EndpointDetailPage />} />
+              <Route path="playground" element={<PlaygroundPage />} />
               <Route path="entrypoints" element={<ChannelsHubPage />} />
               <Route path="entrypoints/:channelId" element={<ChannelDetailPage />} />
               <Route path="workspaces" element={<WorkspacesHubPage />} />
@@ -186,55 +220,44 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="environments" element={<EnvironmentsHubPage />} />
               <Route path="memory" element={<MemoryStoresPage />} />
               <Route path="vaults" element={<VaultsPage />} />
+              <Route element={<OperatorAccess />}>
+                <Route path="activity" element={<Navigate to="executions" replace />} />
+                <Route path="activity/executions" element={<ExecutionsPage />} />
+                <Route path="activity/executions/:runId" element={<RunsPage />} />
+                <Route path="activity/sessions" element={<OperateSessionsPage />} />
+                <Route path="activity/sessions/:sessionId" element={<OperateSessionDetailPage />} />
+                <Route path="activity/tasks" element={<TasksPage />} />
+                <Route path="activity/tasks/:taskId" element={<TaskDetailPage />} />
+              </Route>
             </Route>
 
-            <Route path="/operations" element={<WorkspaceAccess area="operations" />}>
-              <Route index element={<Navigate to="overview" replace />} />
-              <Route path="overview" element={<ControlCenterPage />} />
-              <Route path="instances" element={<AgentInstancesPage />} />
-              <Route path="runtime/hosts" element={<RuntimeHostsPage />} />
-              <Route path="runtime/hosts/:hostId" element={<RuntimeHostDetailPage />} />
-              <Route path="runtime/profiles" element={<RuntimeProfilesPage />} />
-              <Route path="runtime/pools" element={<RuntimePoolsPage />} />
-              <Route path="runtime/policy" element={<RuntimePolicyPage />} />
-              <Route path="sessions" element={<OperateSessionsPage />} />
-              <Route path="sessions/:sessionId" element={<OperateSessionDetailPage />} />
-              <Route path="runs" element={<RunsPage />} />
-              <Route path="runs/:runId" element={<RunsPage />} />
-              <Route path="tasks" element={<TasksPage />} />
-              <Route path="tasks/:taskId" element={<TaskDetailPage />} />
-              <Route path="governance" element={<GovernancePage />} />
-            </Route>
+            <Route path="/operations/*" element={<LegacyOperationsRedirect />} />
 
-            {/* Control Plane product area */}
-            <Route path="/control" element={<Navigate to="/control/overview" replace />} />
-            <Route path="/control/overview" element={<ControlCenterPage />} />
-            <Route path="/control/issues" element={<IssuesPage />} />
-            <Route path="/control/issues/:issueId" element={<IssueDetailPage />} />
-            <Route path="/control/tasks" element={<TasksPage />} />
-            <Route path="/control/tasks/:taskId" element={<TaskDetailPage />} />
-            <Route path="/control/sessions" element={<OperateSessionsPage />} />
-            <Route path="/control/sessions/:sessionId" element={<OperateSessionDetailPage />} />
-            <Route path="/control/runtime/hosts" element={<RuntimeHostsPage />} />
-            <Route path="/control/runtime/hosts/:hostId" element={<RuntimeHostDetailPage />} />
-            <Route path="/control/runtime/profiles" element={<RuntimeProfilesPage />} />
-            <Route path="/control/runtime/pools" element={<RuntimePoolsPage />} />
-            <Route path="/control/runtime/policy" element={<RuntimePolicyPage />} />
-            <Route path="/control/approvals" element={<ApprovalsPage />} />
-            <Route path="/control/automations" element={<AutomationsPage />} />
-            <Route path="/control/governance" element={<GovernancePage />} />
-            <Route path="/control/teams" element={<TeamsOverviewPage />} />
-            <Route path="/control/orchestration/definitions" element={<DefinitionsPage />} />
-            <Route path="/control/orchestration/definitions/:definitionId" element={<DefinitionsPage />} />
-            <Route path="/control/orchestration/runs" element={<RunsPage />} />
-            <Route path="/control/orchestration/runs/:runId" element={<RunsPage />} />
+            {/* Legacy control-plane routes */}
+            <Route path="/control" element={<RedirectWithSearch to="/work/overview" />} />
+            <Route path="/control/overview" element={<RedirectWithSearch to="/work/overview" />} />
+            <Route path="/control/issues" element={<RedirectWithSearch to="/work/issues" />} />
+            <Route path="/control/issues/:issueId" element={<RedirectWithSearch to="/work/issues" param="issueId" />} />
+            <Route path="/control/tasks" element={<RedirectWithSearch to="/agent-center/activity/tasks" />} />
+            <Route path="/control/tasks/:taskId" element={<RedirectWithSearch to="/agent-center/activity/tasks" param="taskId" />} />
+            <Route path="/control/sessions" element={<RedirectWithSearch to="/agent-center/activity/sessions" />} />
+            <Route path="/control/sessions/:sessionId" element={<RedirectWithSearch to="/agent-center/activity/sessions" param="sessionId" />} />
+            <Route path="/control/runtime/*" element={<RedirectWithSearch to="/agent-center/agents" />} />
+            <Route path="/control/approvals" element={<RedirectWithSearch to="/work/approvals" />} />
+            <Route path="/control/automations" element={<RedirectWithSearch to="/work/automations" />} />
+            <Route path="/control/governance" element={<RedirectWithSearch to="/work/activity" />} />
+            <Route path="/control/teams" element={<RedirectWithSearch to="/agent-center/teams" />} />
+            <Route path="/control/orchestration/definitions" element={<RedirectWithSearch to="/agent-center/workflows" />} />
+            <Route path="/control/orchestration/definitions/:definitionId" element={<RedirectWithSearch to="/agent-center/workflows" param="definitionId" />} />
+            <Route path="/control/orchestration/runs" element={<RedirectWithSearch to="/agent-center/activity/executions" />} />
+            <Route path="/control/orchestration/runs/:runId" element={<RedirectWithSearch to="/agent-center/activity/executions" param="runId" />} />
 
             {/* Managed Agents product area */}
-            <Route path="/managed" element={<Navigate to="/managed/overview" replace />} />
-            <Route path="/managed/overview" element={<ManagedOverviewPage />} />
-            <Route path="/managed/registered-agents" element={<OperateAgentsPage />} />
-            <Route path="/managed/registered-agents/:name" element={<OperateAgentDetailRoute />} />
-            <Route path="/managed/agent-instances" element={<AgentInstancesPage />} />
+            <Route path="/managed" element={<RedirectWithSearch to="/agent-center/agents" />} />
+            <Route path="/managed/overview" element={<RedirectWithSearch to="/agent-center/agents" />} />
+            <Route path="/managed/registered-agents" element={<RedirectWithSearch to="/agent-center/agents" />} />
+            <Route path="/managed/registered-agents/:name" element={<RedirectWithSearch to="/agent-center/agents" />} />
+            <Route path="/managed/agent-instances" element={<RedirectWithSearch to="/agent-center/agents" />} />
             <Route path="/managed/agents" element={<AgentsHubPage />} />
             <Route path="/managed/agents/new" element={<AgentCreatePage />} />
             <Route path="/managed/sessions" element={<SessionsHubPage />} />

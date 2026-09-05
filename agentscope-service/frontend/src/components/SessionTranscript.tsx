@@ -27,7 +27,6 @@ import { Environment, listEnvironments } from '../api/environments';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 import { Vault, listVaults } from '../api/vaults';
 import { Link, useNavigate } from 'react-router-dom';
-import SessionEventTimeline from './SessionEventTimeline';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 1100 },
@@ -83,7 +82,7 @@ function parseOverrides(raw: string | null | undefined): Record<string, unknown>
 }
 
 /**
- * Managed session details: mounts, overrides, event timeline, archive/restore/delete.
+ * Managed session settings: mounts, overrides, archive/restore/delete.
  */
 export default function SessionTranscript({
   agentId,
@@ -363,7 +362,6 @@ export default function SessionTranscript({
         </form>
       </div>
 
-      <SessionEventTimeline managedSessionId={sessionId} />
     </div>
   );
 }

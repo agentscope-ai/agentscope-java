@@ -127,7 +127,7 @@ export default function SessionDetailPage() {
   const fromTask = !!taskRef;
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.bar}>
         <Link
           to={`/managed/sessions?agentId=${encodeURIComponent(session.agentId)}`}

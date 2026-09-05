@@ -18,14 +18,20 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/runtimeauth"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
+
+const runtimeHostClaimsContextKey = "runtimeHostClaims"
 
 type runtimeHostRegistrationRequest struct {
 	Tenant        string          `json:"tenant"`
@@ -40,6 +46,171 @@ type runtimeHostRegistrationRequest struct {
 	Capacity      int32           `json:"capacity"`
 }
 
+func (s *Server) createRuntimeHostEnrollment(c *gin.Context) {
+	var request struct {
+		HostKey   string `json:"hostKey"`
+		Tenant    string `json:"tenant"`
+		Namespace string `json:"namespace"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil || strings.TrimSpace(request.HostKey) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "hostKey is required"})
+		return
+	}
+	if len(request.HostKey) > 200 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "hostKey is too long"})
+		return
+	}
+	if request.Tenant == "" {
+		request.Tenant = "default"
+	}
+	if request.Namespace == "" {
+		request.Namespace = defaultNamespace
+	}
+	token, claims, err := s.runtimeTokens.Mint(request.HostKey, request.Tenant, request.Namespace, time.Now().UTC())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "generate Runtime Host credential"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"runtimeToken": token,
+		"hostKey":      claims.HostKey,
+		"tenant":       claims.Tenant,
+		"namespace":    claims.Namespace,
+		"expiresAt":    time.Unix(claims.ExpiresAt, 0).UTC(),
+	})
+}
+
+// runtimeHostCredentialMiddleware accepts the legacy shared internal secret
+// on private links and Host-scoped credentials on public Gateway links.
+func (s *Server) runtimeHostCredentialMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if token := c.GetHeader("X-Builder-Internal-Token"); s.internalToken != "" && token == s.internalToken {
+			c.Next()
+			return
+		}
+		claims, err := s.runtimeTokens.Verify(requestBearerToken(c), time.Now().UTC())
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid Runtime Host credential"})
+			return
+		}
+		if rawID := c.Param("hostId"); rawID != "" {
+			hostID, parseErr := uuid.Parse(rawID)
+			host, loadErr := s.store.RuntimeRegistry().GetRuntimeHost(c.Request.Context(), hostID)
+			if parseErr != nil || loadErr != nil || host.HostKey != claims.HostKey || host.Tenant != claims.Tenant || host.Namespace != claims.Namespace {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: "Runtime Host credential scope mismatch"})
+				return
+			}
+		}
+		c.Set(runtimeHostClaimsContextKey, claims)
+		c.Next()
+	}
+}
+
+var runtimeProfileNameCleaner = regexp.MustCompile(`[^a-z0-9-]+`)
+
+func automaticRuntimeProfileName(provider string) string {
+	name := strings.ToLower(strings.TrimSpace(provider))
+	name = strings.ReplaceAll(name, "_", "-")
+	name = runtimeProfileNameCleaner.ReplaceAllString(name, "-")
+	name = strings.Trim(name, "-")
+	if name == "" {
+		return ""
+	}
+	return "auto-" + name
+}
+
+// automaticRuntimeProfileConfiguration is the safe, usable baseline applied
+// when `agentscope connect` discovers a provider for the first time. These
+// values describe AgentScope's headless execution contract, not the user's
+// ambient CLI preferences. Per-Agent settings may layer stricter or more
+// specific values over this profile.
+func automaticRuntimeProfileConfiguration(provider string) json.RawMessage {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "codex":
+		return json.RawMessage(`{"sandbox":"workspace-write","skipGitRepoCheck":true}`)
+	case "claude-code":
+		return json.RawMessage(`{"permissionMode":"default","allowedTools":["mcp__agentscope-collaboration__*"]}`)
+	case "qoder":
+		return json.RawMessage(`{"permissionMode":"default","allowedTools":["mcp__agentscope-collaboration__*"],"strictMCPConfig":true}`)
+	case "qwenpaw":
+		return json.RawMessage(`{"permissionMode":"default"}`)
+	case "openclaw":
+		return json.RawMessage(`{"codeMode":"auto","timeoutSeconds":600}`)
+	default:
+		return json.RawMessage(`{}`)
+	}
+}
+
+func emptyRuntimeProfileConfiguration(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return true
+	}
+	var value map[string]any
+	return json.Unmarshal(raw, &value) == nil && len(value) == 0
+}
+
+// ensureRuntimeDefaults turns a Runtime Host's observed processes into the
+// internal Profile/Pool records required by the scheduler. They are not a
+// user-facing product area; Agent authors only see a discovered Runtime choice.
+func (s *Server) ensureRuntimeDefaults(c *gin.Context, req runtimeHostRegistrationRequest) error {
+	registry := s.store.RuntimeRegistry()
+	if _, err := registry.GetRuntimePool(c.Request.Context(), req.Tenant, req.Namespace, req.PoolName); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if _, err = registry.UpsertRuntimePool(c.Request.Context(), &controlmodel.RuntimePool{
+			Tenant: req.Tenant, Namespace: req.Namespace, Name: req.PoolName,
+		}); err != nil {
+			return err
+		}
+	}
+	var capabilities struct {
+		Providers            map[string]string `json:"providers"`
+		ProviderCapabilities map[string]struct {
+			Runtime string `json:"runtime"`
+		} `json:"providerCapabilities"`
+	}
+	if len(req.Capabilities) == 0 || json.Unmarshal(req.Capabilities, &capabilities) != nil {
+		return nil
+	}
+	for providerName := range capabilities.Providers {
+		profileName := automaticRuntimeProfileName(providerName)
+		if profileName == "" {
+			continue
+		}
+		configuration := automaticRuntimeProfileConfiguration(providerName)
+		if current, err := registry.GetRuntimeProfile(c.Request.Context(), req.Tenant, req.Namespace, profileName); err == nil {
+			// Profiles created by older Runtime Hosts used an empty object and
+			// could be unusable in a non-interactive provider. Upgrade only that
+			// legacy shape; never overwrite an operator-customized profile.
+			if emptyRuntimeProfileConfiguration(current.Configuration) && !emptyRuntimeProfileConfiguration(configuration) {
+				current.Configuration = configuration
+				if len(current.Requirements) == 0 {
+					current.Requirements = json.RawMessage(`{}`)
+				}
+				if _, updateErr := registry.UpsertRuntimeProfile(c.Request.Context(), current); updateErr != nil {
+					return updateErr
+				}
+			}
+			continue
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		runtimeName := capabilities.ProviderCapabilities[providerName].Runtime
+		if runtimeName == "" {
+			runtimeName = providerName
+		}
+		if _, err := registry.UpsertRuntimeProfile(c.Request.Context(), &controlmodel.RuntimeProfile{
+			Tenant: req.Tenant, Namespace: req.Namespace, Name: profileName,
+			Provider: providerName, Runtime: runtimeName,
+			Configuration: configuration, Requirements: json.RawMessage(`{}`),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Server) registerRuntimeHost(c *gin.Context) {
 	var req runtimeHostRegistrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.HostKey == "" || req.PoolName == "" {
@@ -51,6 +222,17 @@ func (s *Server) registerRuntimeHost(c *gin.Context) {
 	}
 	if req.Namespace == "" {
 		req.Namespace = defaultNamespace
+	}
+	if rawClaims, ok := c.Get(runtimeHostClaimsContextKey); ok {
+		claims, valid := rawClaims.(runtimeauth.Claims)
+		if !valid || claims.HostKey != req.HostKey || claims.Tenant != req.Tenant || claims.Namespace != req.Namespace {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Runtime Host credential scope mismatch"})
+			return
+		}
+	}
+	if err := s.ensureRuntimeDefaults(c, req); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
 	}
 	host, err := s.store.RuntimeRegistry().UpsertRuntimeHost(c.Request.Context(), &controlmodel.RuntimeHost{
 		Tenant: req.Tenant, Namespace: req.Namespace, HostKey: req.HostKey,
@@ -244,25 +426,63 @@ func (s *Server) claimExecutionAttempt(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	profile, err := s.store.RuntimeRegistry().GetRuntimeProfile(c.Request.Context(), execution.Tenant,
-		execution.Namespace, execution.RuntimeProfileName)
-	if err != nil {
-		s.writeControlPlaneError(c, err)
+	var snapshot controlmodel.RuntimeDispatchSnapshot
+	if err = json.Unmarshal(execution.RuntimeBinding, &snapshot); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "invalid execution runtime snapshot"})
 		return
+	}
+	profile := snapshot.RuntimeProfile
+	if profile == nil {
+		// Transitional fallback for Attempts created before hosted snapshots
+		// carried the immutable RuntimeProfile.
+		profile, err = s.store.RuntimeRegistry().GetRuntimeProfile(c.Request.Context(), execution.Tenant,
+			execution.Namespace, execution.RuntimeProfileName)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+	}
+	// Hosts receive the immutable, per-attempt resolved configuration. Keep the
+	// registry profile itself unchanged because it may be shared by many Agents.
+	if len(snapshot.ResolvedProviderConfiguration) > 0 {
+		resolved := *profile
+		resolved.Configuration = append(json.RawMessage(nil), snapshot.ResolvedProviderConfiguration...)
+		profile = &resolved
 	}
 	contextEnvelope, err := s.collaborationService().BuildContext(c.Request.Context(), task.ID)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	attemptToken, err := s.taskTokens.MintAttempt(execution.ID, execution.DispatchGeneration,
+	var definition map[string]any
+	if s.product != nil {
+		if agentID, parseErr := uuid.Parse(task.AgentRef); parseErr == nil {
+			if agent, agentErr := s.store.AgentCatalog().GetAgent(c.Request.Context(), agentID); agentErr == nil {
+				loaded, definitionErr := s.product.RuntimeDefinition(
+					c.Request.Context(), agent.OwnerRef, agent.ID.String())
+				if definitionErr == nil {
+					definition = loaded
+				}
+			}
+		}
+	}
+	hostedTokens := s.taskTokens
+	hostedTokens.TTL = 24 * time.Hour
+	attemptToken, err := hostedTokens.MintAttempt(execution.ID, execution.DispatchGeneration,
 		string(execution.BackendKind), hostID.String(), time.Now().UTC())
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
+	taskToken, err := hostedTokens.MintScoped(task.ID, execution.ID,
+		execution.DispatchGeneration, time.Now().UTC())
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"task": task, "context": contextEnvelope, "attempt": execution,
-		"attemptToken": attemptToken, "runtimeProfile": profile})
+		"attemptToken": attemptToken, "taskToken": taskToken, "runtimeProfile": profile,
+		"executionOverrides": snapshot.ExecutionOverrides, "definition": definition})
 }
 
 func (s *Server) renewExecutionAttempt(c *gin.Context) {
@@ -272,6 +492,19 @@ func (s *Server) renewExecutionAttempt(c *gin.Context) {
 	}
 	if req.LeaseSeconds <= 0 {
 		req.LeaseSeconds = 30
+	}
+	current, err := s.store.ExecutionAttempts().Get(c.Request.Context(), executionID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	// An Agent may complete/fail its own task through the collaboration MCP
+	// while the provider process is still flushing its final JSONL records.
+	// Return that authoritative terminal state instead of turning a successful
+	// cooperative completion into a daemon-side lease error.
+	if controlmodel.IsExecutionAttemptTerminal(current.State) && current.LeaseToken == req.LeaseToken && current.FencingToken == req.FencingToken {
+		c.JSON(http.StatusOK, gin.H{"attempt": current})
+		return
 	}
 	execution, err := s.store.ExecutionAttempts().RenewLease(c.Request.Context(), executionID,
 		req.LeaseToken, req.FencingToken, time.Duration(req.LeaseSeconds)*time.Second)
@@ -330,6 +563,10 @@ func (s *Server) completeExecutionAttempt(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
+	if err = s.projectHostedAttemptTerminal(c.Request.Context(), execution); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"attempt": execution})
 }
 
@@ -352,6 +589,65 @@ func (s *Server) checkpointExecutionAttempt(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"attempt": execution})
 }
 
+// appendExecutionAttemptEvent persists the provider's observable stream on the
+// Run timeline. The Runtime Host journal is deliberately local and ephemeral;
+// these events remain available after the daemon has delivered the terminal
+// state and removed that journal entry.
+func (s *Server) appendExecutionAttemptEvent(c *gin.Context) {
+	hostID, attemptID, req, ok := s.bindExecutionLease(c)
+	if !ok {
+		return
+	}
+	var payload struct {
+		Ordinal           int64           `json:"ordinal"`
+		Provider          string          `json:"provider"`
+		EventType         string          `json:"eventType"`
+		ProviderSessionID string          `json:"providerSessionId,omitempty"`
+		Raw               json.RawMessage `json:"raw,omitempty"`
+	}
+	if err := json.Unmarshal(req.extra, &payload); err != nil || payload.Ordinal <= 0 || strings.TrimSpace(payload.EventType) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "ordinal and eventType are required"})
+		return
+	}
+	if len(payload.Raw) > 256*1024 {
+		c.JSON(http.StatusRequestEntityTooLarge, ErrorResponse{Error: "provider event exceeds 256 KiB"})
+		return
+	}
+	attempt, err := s.store.ExecutionAttempts().Get(c.Request.Context(), attemptID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if attempt.LeaseToken != req.LeaseToken || attempt.FencingToken != req.FencingToken {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "stale execution attempt lease"})
+		return
+	}
+	eventPayload, err := json.Marshal(gin.H{
+		"provider": payload.Provider, "eventType": payload.EventType,
+		"providerSessionId": payload.ProviderSessionID, "raw": payload.Raw,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid provider event"})
+		return
+	}
+	event, err := s.store.Orchestration().AppendRunEvent(c.Request.Context(), &controlmodel.RunEvent{
+		RunID: attempt.RunID, Tenant: attempt.Tenant, Namespace: attempt.Namespace,
+		NodeID: &attempt.NodeID, AgentTaskID: &attempt.AgentTaskID, AttemptID: &attempt.ID,
+		Type: "attempt.provider_event", Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "runtime-host:" + hostID.String()},
+		Payload: eventPayload, IdempotencyKey: "provider-event:" + attempt.ID.String() + ":" + strconv.FormatInt(payload.Ordinal, 10),
+	})
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if err = s.projectHostedProviderEvent(c.Request.Context(), attempt, payload.Provider,
+		payload.EventType, payload.ProviderSessionID, payload.Ordinal, payload.Raw); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"event": event})
+}
+
 func (s *Server) failExecutionAttempt(c *gin.Context) {
 	_, executionID, req, ok := s.bindExecutionLease(c)
 	if !ok {
@@ -369,6 +665,10 @@ func (s *Server) failExecutionAttempt(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
+	if err = s.projectHostedAttemptTerminal(c.Request.Context(), execution); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"attempt": execution})
 }
 
@@ -379,6 +679,10 @@ func (s *Server) cancelledExecutionAttempt(c *gin.Context) {
 	}
 	attempt, err := s.taskPlane.ConfirmCancelled(c.Request.Context(), attemptID, req.LeaseToken, req.FencingToken)
 	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if err = s.projectHostedAttemptTerminal(c.Request.Context(), attempt); err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}

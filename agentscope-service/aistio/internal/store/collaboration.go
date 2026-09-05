@@ -30,6 +30,8 @@ type IssueFilter struct {
 	Status       controlmodel.IssueStatus
 	AssigneeType controlmodel.AssigneeType
 	AssigneeRef  string
+	Kind         controlmodel.IssueKind
+	Visibility   controlmodel.IssueVisibility
 	ParentID     *uuid.UUID
 	Limit        int
 	Offset       int
@@ -201,6 +203,7 @@ type CollaborationRepository interface {
 	ListTeams(ctx context.Context, tenant, namespace string) ([]*controlmodel.CollaborationTeam, error)
 	UpdateTeam(ctx context.Context, team *controlmodel.CollaborationTeam, expectedVersion int64) (*controlmodel.CollaborationTeam, error)
 	AddTeamMember(ctx context.Context, member *controlmodel.CollaborationTeamMember) (*controlmodel.CollaborationTeamMember, error)
+	UpdateTeamMember(ctx context.Context, member *controlmodel.CollaborationTeamMember, expectedTeamVersion int64) (*controlmodel.CollaborationTeamMember, error)
 	RemoveTeamMember(ctx context.Context, teamID, memberID uuid.UUID) error
 
 	CreateArtifact(ctx context.Context, artifact *controlmodel.Artifact, links []controlmodel.ArtifactLink) (*controlmodel.Artifact, error)

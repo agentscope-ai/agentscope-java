@@ -32,6 +32,7 @@ import PlatformCredentialsForm, {
   credentialsFromProperties,
   propertiesFromCredentials,
 } from '../components/PlatformCredentialsForm';
+import { AgentPicker } from '../components/AgentPicker';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -138,7 +139,7 @@ export default function ChannelsHubPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h1 style={S.title}>Channels</h1>
         <button style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New channel</button>
@@ -329,13 +330,8 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
             </select>
           </div>
           <div>
-            <label style={S.formField}>Default agent id</label>
-            <input
-              style={S.input}
-              value={defaultAgentId}
-              onChange={e => setDefaultAgentId(e.target.value)}
-              placeholder="e.g. default"
-            />
+            <label style={S.formField}>Default Agent</label>
+            <AgentPicker value={defaultAgentId} onChange={setDefaultAgentId} aria-label="Channel default Agent" />
           </div>
         </div>
 

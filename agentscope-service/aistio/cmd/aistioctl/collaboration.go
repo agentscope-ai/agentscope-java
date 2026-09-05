@@ -9,14 +9,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
 
 func issueCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "issue", Short: "Work with Issues and discussions"}
-	cmd.AddCommand(issueCreateCmd(), issueListCmd(), issueGetCmd(), issueUpdateCmd(), issueAssignCmd(), issueTransitionCmd(), issueReviewCmd("accept"), issueReviewCmd("reject"), issueReviewCmd("reopen"), issueReviewCmd("archive"), issueSummaryCmd(), issueExportCmd(), issueCommentCmd(), issueChildCmd())
+	cmd.AddCommand(issueCreateCmd(), issueListCmd(), issueGetCmd(), issueCurrentCmd(), issueUpdateCmd(), issueAssignCmd(), issueTransitionCmd(), issueReviewCmd("accept"), issueReviewCmd("reject"), issueReviewCmd("reopen"), issueReviewCmd("archive"), issueSummaryCmd(), issueExportCmd(), issueCommentCmd(), issueChildCmd())
 	return cmd
 }
 func issueCreateCmd() *cobra.Command {
@@ -82,7 +81,7 @@ func issueExportCmd() *cobra.Command {
 }
 func issueGetCmd() *cobra.Command {
 	return &cobra.Command{Use: "get ISSUE_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		return printResponse(doAPI(http.MethodGet, "/api/v1/issues/"+url.PathEscape(args[0]), nil))
+		return printResponse(doAgentOrHumanAPI(http.MethodGet, "/api/v1/issues/"+url.PathEscape(args[0]), nil))
 	}}
 }
 func issueAssignCmd() *cobra.Command {
@@ -125,36 +124,78 @@ func issueChildCmd() *cobra.Command {
 }
 func issueCommentCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "comment"}
-	cmd.AddCommand(&cobra.Command{Use: "list ISSUE_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		return printResponse(doAPI(http.MethodGet, "/api/v1/issues/"+url.PathEscape(args[0])+"/comments", nil))
-	}}, issueCommentAddCmd(), issueCommentResolveCmd())
+	cmd.AddCommand(issueCommentListCmd(), issueCommentAddCmd(), issueCommentResolveCmd())
+	return cmd
+}
+func issueCommentListCmd() *cobra.Command {
+	var rootsOnly, summary bool
+	var threadID, cursor string
+	var tail, limit int
+	cmd := &cobra.Command{Use: "list [ISSUE_ID]", Args: cobra.MaximumNArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		id, err := currentIssueID(optionalIDArg(args))
+		if err != nil {
+			return err
+		}
+		query := url.Values{}
+		if rootsOnly {
+			query.Set("rootsOnly", "true")
+		}
+		if summary {
+			query.Set("summary", "true")
+		}
+		if threadID != "" {
+			query.Set("threadId", threadID)
+		}
+		if cursor != "" {
+			query.Set("cursor", cursor)
+		}
+		if tail > 0 {
+			query.Set("tail", fmt.Sprint(tail))
+		}
+		if limit > 0 {
+			query.Set("limit", fmt.Sprint(limit))
+		}
+		path := "/api/v1/issues/" + url.PathEscape(id) + "/comments"
+		if encoded := query.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+		return printResponse(doAgentOrHumanAPI(http.MethodGet, path, nil))
+	}}
+	cmd.Flags().BoolVar(&rootsOnly, "roots-only", false, "Return only discussion roots")
+	cmd.Flags().BoolVar(&summary, "summary", false, "Include a compact discussion summary")
+	cmd.Flags().StringVar(&threadID, "thread", "", "Return one discussion thread")
+	cmd.Flags().StringVar(&cursor, "cursor", "", "Continue from a response cursor")
+	cmd.Flags().IntVar(&tail, "tail", 0, "Return the newest N comments in a thread")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum comments to return")
 	return cmd
 }
 func issueCommentAddCmd() *cobra.Command {
-	var content, parent string
+	var content, contentFile, parent string
 	var mentions []string
-	cmd := &cobra.Command{Use: "add ISSUE_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "add [ISSUE_ID]", Args: cobra.MaximumNArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		id, err := currentIssueID(optionalIDArg(args))
+		if err != nil {
+			return err
+		}
+		content, err = readContent(content, contentFile)
+		if err != nil {
+			return err
+		}
 		body := map[string]any{"content": content}
 		if parent != "" {
 			body["parentId"] = parent
 		}
-		if len(mentions) > 0 {
-			targets := make([]map[string]string, 0, len(mentions))
-			for _, raw := range mentions {
-				kind, ref, ok := strings.Cut(raw, ":")
-				if !ok || ref == "" || kind != "human" && kind != "agent" && kind != "team" {
-					return fmt.Errorf("invalid mention %q; expected human:REF, agent:REF, or team:REF", raw)
-				}
-				targets = append(targets, map[string]string{"type": kind, "ref": ref})
-			}
+		if targets, parseErr := parseMentionTargets(mentions); parseErr != nil {
+			return parseErr
+		} else if len(targets) > 0 {
 			body["mentions"] = targets
 		}
-		return printResponse(doAPI(http.MethodPost, "/api/v1/issues/"+url.PathEscape(args[0])+"/comments", jsonBody(body)))
+		return printResponse(doAgentOrHumanAPI(http.MethodPost, "/api/v1/issues/"+url.PathEscape(id)+"/comments", jsonBody(body)))
 	}}
-	cmd.Flags().StringVar(&content, "content", "", "Comment content")
+	cmd.Flags().StringVar(&content, "content", "", "Short comment content")
+	cmd.Flags().StringVar(&contentFile, "content-file", "", "UTF-8 file containing the comment")
 	cmd.Flags().StringVar(&parent, "parent", "", "Parent Comment ID")
 	cmd.Flags().StringSliceVar(&mentions, "mention", nil, "Mention target type:ref (repeatable)")
-	_ = cmd.MarkFlagRequired("content")
 	return cmd
 }
 func issueCommentResolveCmd() *cobra.Command {
@@ -168,7 +209,8 @@ func issueCommentResolveCmd() *cobra.Command {
 
 func taskCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "task", Short: "Work with AgentTasks"}
-	cmd.AddCommand(taskListCmd(), taskGetCmd(), taskSimpleActionCmd("retry"), taskSimpleActionCmd("cancel"), taskActionFileCmd("respond"), taskActionFileCmd("complete"), taskActionFileCmd("fail"))
+	cmd.AddCommand(taskListCmd(), taskGetCmd(), taskContextCmd(), taskSimpleActionCmd("retry"), taskSimpleActionCmd("cancel"),
+		taskCommentActionCmd("progress"), taskCommentActionCmd("respond"), taskChildCmd(), taskCompleteCmd(), taskFailCmd(), taskRunCmd())
 	return cmd
 }
 func taskListCmd() *cobra.Command {
@@ -186,32 +228,14 @@ func taskSimpleActionCmd(action string) *cobra.Command {
 	return cmd
 }
 func taskGetCmd() *cobra.Command {
-	return &cobra.Command{Use: "get TASK_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		return printResponse(doAPI(http.MethodGet, "/api/v1/agent-tasks/"+url.PathEscape(args[0]), nil))
-	}}
-}
-func taskActionFileCmd(action string) *cobra.Command {
-	var file, token string
-	cmd := &cobra.Command{Use: action + " TASK_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		body, err := readYAMLAsJSON(file)
+	return &cobra.Command{Use: "get [TASK_ID]", Args: cobra.MaximumNArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		id, err := currentTaskID(optionalIDArg(args))
 		if err != nil {
 			return err
 		}
-		req, err := http.NewRequest(http.MethodPost, apiEndpoint+"/api/v1/agent-tasks/"+url.PathEscape(args[0])+"/"+action, bytes.NewReader(body))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Agent-Task-Token", token)
-		return printResponse(newAPIClient().Do(req))
+		return printResponse(doAgentOrHumanAPI(http.MethodGet, "/api/v1/agent-tasks/"+url.PathEscape(id), nil))
 	}}
-	cmd.Flags().StringVarP(&file, "file", "f", "", "Request YAML or JSON")
-	cmd.Flags().StringVar(&token, "task-token", os.Getenv("AISTIO_AGENT_TASK_TOKEN"), "Task-scoped token")
-	_ = cmd.MarkFlagRequired("file")
-	_ = cmd.MarkFlagRequired("task-token")
-	return cmd
 }
-
 func artifactCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "artifact"}
 	cmd.AddCommand(artifactUploadCmd(), artifactDownloadCmd())
@@ -220,6 +244,15 @@ func artifactCmd() *cobra.Command {
 func artifactUploadCmd() *cobra.Command {
 	var artifactTenant, targetType, targetRef, taskID, taskToken string
 	cmd := &cobra.Command{Use: "upload FILE", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		if taskToken == "" {
+			taskToken = agentTaskToken()
+		}
+		if taskID == "" && taskToken != "" {
+			taskID = os.Getenv("AGENTSCOPE_TASK_ID")
+		}
+		if targetRef == "" && taskToken != "" {
+			targetRef = os.Getenv("AGENTSCOPE_ISSUE_ID")
+		}
 		file, err := os.Open(args[0])
 		if err != nil {
 			return err
@@ -257,12 +290,18 @@ func artifactUploadCmd() *cobra.Command {
 	cmd.Flags().StringVar(&targetType, "target-type", "issue", "issue or agent_task")
 	cmd.Flags().StringVar(&targetRef, "target-ref", "", "Target ID")
 	cmd.Flags().StringVar(&taskID, "task-id", "", "Source AgentTask ID")
-	cmd.Flags().StringVar(&taskToken, "task-token", os.Getenv("AISTIO_AGENT_TASK_TOKEN"), "Task-scoped token")
+	cmd.Flags().StringVar(&taskToken, "task-token", agentTaskToken(), "Task-scoped token")
 	return cmd
 }
 func artifactDownloadCmd() *cobra.Command {
 	var output, taskID, taskToken string
 	cmd := &cobra.Command{Use: "download ARTIFACT_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		if taskToken == "" {
+			taskToken = agentTaskToken()
+		}
+		if taskID == "" && taskToken != "" {
+			taskID = os.Getenv("AGENTSCOPE_TASK_ID")
+		}
 		path := "/api/v1/artifacts/" + url.PathEscape(args[0]) + "/download"
 		if taskID != "" {
 			path += "?taskId=" + url.QueryEscape(taskID)
@@ -291,7 +330,7 @@ func artifactDownloadCmd() *cobra.Command {
 	}}
 	cmd.Flags().StringVarP(&output, "output", "o", "artifact.bin", "Output path")
 	cmd.Flags().StringVar(&taskID, "task-id", "", "AgentTask ID")
-	cmd.Flags().StringVar(&taskToken, "task-token", os.Getenv("AISTIO_AGENT_TASK_TOKEN"), "Task-scoped token")
+	cmd.Flags().StringVar(&taskToken, "task-token", agentTaskToken(), "Task-scoped token")
 	return cmd
 }
 

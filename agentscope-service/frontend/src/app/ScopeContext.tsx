@@ -55,8 +55,14 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
       next.set('namespace', namespace);
       let productPath = pathname;
       if (!pathname.startsWith('/work') && !pathname.startsWith('/agent-center') && !pathname.startsWith('/operations')) {
-        if (pathname.startsWith('/tasks') || pathname.startsWith('/orchestration/runs') || pathname.startsWith('/sessions') || pathname.startsWith('/runtime')) {
-          productPath = `/operations${pathname.replace('/orchestration/runs', '/runs')}`;
+        if (pathname.startsWith('/tasks')) {
+          productPath = `/agent-center/activity${pathname}`;
+        } else if (pathname.startsWith('/orchestration/runs')) {
+          productPath = `/agent-center/activity${pathname.replace('/orchestration/runs', '/executions')}`;
+        } else if (pathname.startsWith('/sessions')) {
+          productPath = `/agent-center/activity${pathname}`;
+        } else if (pathname.startsWith('/runtime')) {
+          productPath = '/agent-center/agents';
         } else if (pathname.startsWith('/teams') || pathname.startsWith('/orchestration/definitions') || pathname.startsWith('/agents')) {
           productPath = `/agent-center${pathname.replace('/orchestration/definitions', '/workflows')}`;
         } else {

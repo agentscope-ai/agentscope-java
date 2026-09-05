@@ -18,8 +18,11 @@ package io.agentscope.extensions.aistio.transport;
 import io.agentscope.aistio.proto.AgentDataPlaneServiceGrpc;
 import io.agentscope.aistio.proto.ConnectRequest;
 import io.agentscope.aistio.proto.ContextReport;
+import io.agentscope.aistio.proto.ConversationTurnCommand;
+import io.agentscope.aistio.proto.ConversationTurnReport;
 import io.agentscope.aistio.proto.Downstream;
 import io.agentscope.aistio.proto.EventReport;
+import io.agentscope.aistio.proto.EventReportAck;
 import io.agentscope.aistio.proto.ExecutionAttemptCommand;
 import io.agentscope.aistio.proto.ExecutionAttemptReport;
 import io.agentscope.aistio.proto.Heartbeat;
@@ -49,8 +52,8 @@ import java.util.logging.Logger;
  * ASDP upstream channel: a single bidirectional gRPC stream multiplexing every report type, the
  * same shape the Go control plane and the Python SDK use.
  *
- * <p>Reconnects with capped exponential backoff. While disconnected, sends are dropped rather than
- * buffered here — the bridge owns buffering, because only it knows which levels are safe to drop.
+ * <p>Reconnects with capped exponential backoff. The bridge owns the durable event outbox and only
+ * advances it after receiving {@link EventReportAck}; non-event telemetry remains best effort.
  */
 public final class GrpcTransport implements AutoCloseable {
 
@@ -70,6 +73,18 @@ public final class GrpcTransport implements AutoCloseable {
     @FunctionalInterface
     public interface ExecutionAttemptCommandHandler {
         void onExecutionAttempt(ExecutionAttemptCommand command);
+    }
+
+    /** Receives a fenced online conversation turn from the control plane. */
+    @FunctionalInterface
+    public interface ConversationTurnCommandHandler {
+        void onConversationTurn(ConversationTurnCommand command);
+    }
+
+    /** Receives a durable commit acknowledgement for a Level-2 event report. */
+    @FunctionalInterface
+    public interface EventAckHandler {
+        void onAck(EventReportAck ack);
     }
 
     private final String target;
@@ -102,6 +117,8 @@ public final class GrpcTransport implements AutoCloseable {
     private volatile ManagedChannel channel;
     private volatile SessionCommandHandler commandHandler;
     private volatile ExecutionAttemptCommandHandler executionAttemptHandler;
+    private volatile ConversationTurnCommandHandler conversationTurnHandler;
+    private volatile EventAckHandler eventAckHandler;
 
     public GrpcTransport(
             String target,
@@ -138,6 +155,14 @@ public final class GrpcTransport implements AutoCloseable {
 
     public void setExecutionAttemptHandler(ExecutionAttemptCommandHandler handler) {
         this.executionAttemptHandler = handler;
+    }
+
+    public void setConversationTurnHandler(ConversationTurnCommandHandler handler) {
+        this.conversationTurnHandler = handler;
+    }
+
+    public void setEventAckHandler(EventAckHandler handler) {
+        this.eventAckHandler = handler;
     }
 
     public boolean isConnected() {
@@ -258,14 +283,18 @@ public final class GrpcTransport implements AutoCloseable {
                         .build());
     }
 
-    public void reportEvents(List<SessionEventMsg> events) {
+    public boolean reportEvents(String reportId, List<SessionEventMsg> events) {
         if (events.isEmpty()) {
-            return;
+            return true;
         }
-        send(
+        return send(
                 Upstream.newBuilder()
                         .setMeta(meta())
-                        .setEventReport(EventReport.newBuilder().addAllEvents(events).build())
+                        .setEventReport(
+                                EventReport.newBuilder()
+                                        .setReportId(reportId)
+                                        .addAllEvents(events)
+                                        .build())
                         .build());
     }
 
@@ -279,6 +308,10 @@ public final class GrpcTransport implements AutoCloseable {
 
     public void reportExecutionAttempt(ExecutionAttemptReport report) {
         send(Upstream.newBuilder().setMeta(meta()).setExecutionAttempt(report).build());
+    }
+
+    public void reportConversationTurn(ConversationTurnReport report) {
+        send(Upstream.newBuilder().setMeta(meta()).setConversationTurn(report).build());
     }
 
     private void sendHeartbeat() {
@@ -295,19 +328,21 @@ public final class GrpcTransport implements AutoCloseable {
                         .build());
     }
 
-    private void send(Upstream message) {
+    private boolean send(Upstream message) {
         StreamObserver<Upstream> observer = stream.get();
         if (observer == null || !connected.get()) {
-            return;
+            return false;
         }
         try {
             synchronized (this) {
                 observer.onNext(message);
             }
+            return true;
         } catch (RuntimeException e) {
-            // The stream broke mid-send; drop this report and let the reconnect path recover.
+            // The bridge retains acknowledged event reports and retries them after reconnect.
             LOG.log(Level.FINE, "aistio: ASDP send failed", e);
             scheduleReconnect();
+            return false;
         }
     }
 
@@ -363,6 +398,26 @@ public final class GrpcTransport implements AutoCloseable {
                     handler.onExecutionAttempt(message.getExecutionAttempt());
                 } catch (RuntimeException e) {
                     LOG.log(Level.FINE, "aistio: ExecutionAttempt command handler failed", e);
+                }
+            } else if (message.hasConversationTurn()) {
+                ConversationTurnCommandHandler handler = conversationTurnHandler;
+                if (handler == null) {
+                    return;
+                }
+                try {
+                    handler.onConversationTurn(message.getConversationTurn());
+                } catch (RuntimeException e) {
+                    LOG.log(Level.FINE, "aistio: conversation turn handler failed", e);
+                }
+            } else if (message.hasEventAck()) {
+                EventAckHandler handler = eventAckHandler;
+                if (handler == null) {
+                    return;
+                }
+                try {
+                    handler.onAck(message.getEventAck());
+                } catch (RuntimeException e) {
+                    LOG.log(Level.FINE, "aistio: event acknowledgement handler failed", e);
                 }
             } else if (message.hasConnectAck() && !message.getConnectAck().getAccepted()) {
                 LOG.log(

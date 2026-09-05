@@ -20,7 +20,7 @@ func approvalRequestCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResponse(doAPI(http.MethodPost, "/api/v1/approvals", body))
+		return printResponse(doAgentOrHumanAPI(http.MethodPost, "/api/v1/approvals", body))
 	}}
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Approval YAML or JSON")
 	_ = cmd.MarkFlagRequired("file")

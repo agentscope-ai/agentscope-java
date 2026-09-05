@@ -23,7 +23,7 @@ CONFIG_TYPE_OVERRIDE: ConfigType
 CONFIG_TYPE_MODEL: ConfigType
 
 class Upstream(_message.Message):
-    __slots__ = ("meta", "connect", "config_ack", "session_report", "execution_attempt", "heartbeat", "event_report", "context_report", "inventory")
+    __slots__ = ("meta", "connect", "config_ack", "session_report", "execution_attempt", "heartbeat", "event_report", "context_report", "inventory", "conversation_turn")
     META_FIELD_NUMBER: _ClassVar[int]
     CONNECT_FIELD_NUMBER: _ClassVar[int]
     CONFIG_ACK_FIELD_NUMBER: _ClassVar[int]
@@ -33,6 +33,7 @@ class Upstream(_message.Message):
     EVENT_REPORT_FIELD_NUMBER: _ClassVar[int]
     CONTEXT_REPORT_FIELD_NUMBER: _ClassVar[int]
     INVENTORY_FIELD_NUMBER: _ClassVar[int]
+    CONVERSATION_TURN_FIELD_NUMBER: _ClassVar[int]
     meta: UpstreamMeta
     connect: ConnectRequest
     config_ack: ConfigAck
@@ -42,7 +43,8 @@ class Upstream(_message.Message):
     event_report: EventReport
     context_report: ContextReport
     inventory: InventoryReport
-    def __init__(self, meta: _Optional[_Union[UpstreamMeta, _Mapping]] = ..., connect: _Optional[_Union[ConnectRequest, _Mapping]] = ..., config_ack: _Optional[_Union[ConfigAck, _Mapping]] = ..., session_report: _Optional[_Union[SessionReport, _Mapping]] = ..., execution_attempt: _Optional[_Union[ExecutionAttemptReport, _Mapping]] = ..., heartbeat: _Optional[_Union[Heartbeat, _Mapping]] = ..., event_report: _Optional[_Union[EventReport, _Mapping]] = ..., context_report: _Optional[_Union[ContextReport, _Mapping]] = ..., inventory: _Optional[_Union[InventoryReport, _Mapping]] = ...) -> None: ...
+    conversation_turn: ConversationTurnReport
+    def __init__(self, meta: _Optional[_Union[UpstreamMeta, _Mapping]] = ..., connect: _Optional[_Union[ConnectRequest, _Mapping]] = ..., config_ack: _Optional[_Union[ConfigAck, _Mapping]] = ..., session_report: _Optional[_Union[SessionReport, _Mapping]] = ..., execution_attempt: _Optional[_Union[ExecutionAttemptReport, _Mapping]] = ..., heartbeat: _Optional[_Union[Heartbeat, _Mapping]] = ..., event_report: _Optional[_Union[EventReport, _Mapping]] = ..., context_report: _Optional[_Union[ContextReport, _Mapping]] = ..., inventory: _Optional[_Union[InventoryReport, _Mapping]] = ..., conversation_turn: _Optional[_Union[ConversationTurnReport, _Mapping]] = ...) -> None: ...
 
 class UpstreamMeta(_message.Message):
     __slots__ = ("agent_key", "instance_key", "namespace", "timestamp", "tenant", "agent_id", "binding_id", "generation")
@@ -88,7 +90,7 @@ class ConfigAck(_message.Message):
     nonce: str
     accepted: bool
     reject_reason: str
-    def __init__(self, config_type: _Optional[_Union[ConfigType, str]] = ..., version: _Optional[str] = ..., nonce: _Optional[str] = ..., accepted: _Optional[bool] = ..., reject_reason: _Optional[str] = ...) -> None: ...
+    def __init__(self, config_type: _Optional[_Union[ConfigType, str]] = ..., version: _Optional[str] = ..., nonce: _Optional[str] = ..., accepted: bool = ..., reject_reason: _Optional[str] = ...) -> None: ...
 
 class SessionReport(_message.Message):
     __slots__ = ("sessions",)
@@ -120,7 +122,7 @@ class SessionSnapshot(_message.Message):
     context_hash: str
     is_compacted: bool
     effective_message_count: int
-    def __init__(self, session_id: _Optional[str] = ..., phase: _Optional[str] = ..., message_count: _Optional[int] = ..., prompt_tokens: _Optional[int] = ..., completion_tokens: _Optional[int] = ..., context_pressure: _Optional[float] = ..., framework: _Optional[str] = ..., framework_version: _Optional[str] = ..., context_hash: _Optional[str] = ..., is_compacted: _Optional[bool] = ..., effective_message_count: _Optional[int] = ...) -> None: ...
+    def __init__(self, session_id: _Optional[str] = ..., phase: _Optional[str] = ..., message_count: _Optional[int] = ..., prompt_tokens: _Optional[int] = ..., completion_tokens: _Optional[int] = ..., context_pressure: _Optional[float] = ..., framework: _Optional[str] = ..., framework_version: _Optional[str] = ..., context_hash: _Optional[str] = ..., is_compacted: bool = ..., effective_message_count: _Optional[int] = ...) -> None: ...
 
 class ExecutionAttemptReport(_message.Message):
     __slots__ = ("attempt_id", "agent_task_id", "run_id", "node_id", "generation", "action", "input_ids", "content", "result", "error_code", "error_message", "checkpoint", "usage", "idempotency_key", "attempt_token")
@@ -174,13 +176,33 @@ class InstanceHealth(_message.Message):
     active_sessions: int
     cpu_usage: float
     memory_usage: float
-    def __init__(self, healthy: _Optional[bool] = ..., reason: _Optional[str] = ..., active_sessions: _Optional[int] = ..., cpu_usage: _Optional[float] = ..., memory_usage: _Optional[float] = ...) -> None: ...
+    def __init__(self, healthy: bool = ..., reason: _Optional[str] = ..., active_sessions: _Optional[int] = ..., cpu_usage: _Optional[float] = ..., memory_usage: _Optional[float] = ...) -> None: ...
 
 class EventReport(_message.Message):
-    __slots__ = ("events",)
+    __slots__ = ("events", "report_id")
     EVENTS_FIELD_NUMBER: _ClassVar[int]
+    REPORT_ID_FIELD_NUMBER: _ClassVar[int]
     events: _containers.RepeatedCompositeFieldContainer[SessionEventMsg]
-    def __init__(self, events: _Optional[_Iterable[_Union[SessionEventMsg, _Mapping]]] = ...) -> None: ...
+    report_id: str
+    def __init__(self, events: _Optional[_Iterable[_Union[SessionEventMsg, _Mapping]]] = ..., report_id: _Optional[str] = ...) -> None: ...
+
+class EventReportAck(_message.Message):
+    __slots__ = ("report_id", "committed", "error")
+    REPORT_ID_FIELD_NUMBER: _ClassVar[int]
+    COMMITTED_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    report_id: str
+    committed: _containers.RepeatedCompositeFieldContainer[SessionEventCursor]
+    error: str
+    def __init__(self, report_id: _Optional[str] = ..., committed: _Optional[_Iterable[_Union[SessionEventCursor, _Mapping]]] = ..., error: _Optional[str] = ...) -> None: ...
+
+class SessionEventCursor(_message.Message):
+    __slots__ = ("session_id", "committed_seq")
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    COMMITTED_SEQ_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    committed_seq: int
+    def __init__(self, session_id: _Optional[str] = ..., committed_seq: _Optional[int] = ...) -> None: ...
 
 class SessionEventMsg(_message.Message):
     __slots__ = ("session_id", "seq", "event_type", "occurred_at", "role", "content", "tool_name", "tool_input", "tool_output", "tokens_in", "tokens_out", "duration_ms", "framework_meta")
@@ -242,7 +264,7 @@ class ContextReport(_message.Message):
     max_tokens: int
     framework: str
     framework_state: bytes
-    def __init__(self, session_id: _Optional[str] = ..., context_hash: _Optional[str] = ..., captured_at: _Optional[int] = ..., system_prompt: _Optional[str] = ..., messages: _Optional[bytes] = ..., tools: _Optional[bytes] = ..., is_compacted: _Optional[bool] = ..., compaction_summary: _Optional[str] = ..., original_message_count: _Optional[int] = ..., compacted_at: _Optional[int] = ..., total_tokens: _Optional[int] = ..., max_tokens: _Optional[int] = ..., framework: _Optional[str] = ..., framework_state: _Optional[bytes] = ...) -> None: ...
+    def __init__(self, session_id: _Optional[str] = ..., context_hash: _Optional[str] = ..., captured_at: _Optional[int] = ..., system_prompt: _Optional[str] = ..., messages: _Optional[bytes] = ..., tools: _Optional[bytes] = ..., is_compacted: bool = ..., compaction_summary: _Optional[str] = ..., original_message_count: _Optional[int] = ..., compacted_at: _Optional[int] = ..., total_tokens: _Optional[int] = ..., max_tokens: _Optional[int] = ..., framework: _Optional[str] = ..., framework_state: _Optional[bytes] = ...) -> None: ...
 
 class InventoryReport(_message.Message):
     __slots__ = ("subagents", "workspaces", "health")
@@ -285,18 +307,22 @@ class WorkspaceInfo(_message.Message):
     def __init__(self, path: _Optional[str] = ..., mode: _Optional[str] = ..., size_bytes: _Optional[int] = ..., owner_ref: _Optional[str] = ...) -> None: ...
 
 class Downstream(_message.Message):
-    __slots__ = ("connect_ack", "config_push", "session_cmd", "execution_attempt", "heartbeat")
+    __slots__ = ("connect_ack", "config_push", "session_cmd", "execution_attempt", "heartbeat", "conversation_turn", "event_ack")
     CONNECT_ACK_FIELD_NUMBER: _ClassVar[int]
     CONFIG_PUSH_FIELD_NUMBER: _ClassVar[int]
     SESSION_CMD_FIELD_NUMBER: _ClassVar[int]
     EXECUTION_ATTEMPT_FIELD_NUMBER: _ClassVar[int]
     HEARTBEAT_FIELD_NUMBER: _ClassVar[int]
+    CONVERSATION_TURN_FIELD_NUMBER: _ClassVar[int]
+    EVENT_ACK_FIELD_NUMBER: _ClassVar[int]
     connect_ack: ConnectResponse
     config_push: ConfigPush
     session_cmd: SessionCommand
     execution_attempt: ExecutionAttemptCommand
     heartbeat: Heartbeat
-    def __init__(self, connect_ack: _Optional[_Union[ConnectResponse, _Mapping]] = ..., config_push: _Optional[_Union[ConfigPush, _Mapping]] = ..., session_cmd: _Optional[_Union[SessionCommand, _Mapping]] = ..., execution_attempt: _Optional[_Union[ExecutionAttemptCommand, _Mapping]] = ..., heartbeat: _Optional[_Union[Heartbeat, _Mapping]] = ...) -> None: ...
+    conversation_turn: ConversationTurnCommand
+    event_ack: EventReportAck
+    def __init__(self, connect_ack: _Optional[_Union[ConnectResponse, _Mapping]] = ..., config_push: _Optional[_Union[ConfigPush, _Mapping]] = ..., session_cmd: _Optional[_Union[SessionCommand, _Mapping]] = ..., execution_attempt: _Optional[_Union[ExecutionAttemptCommand, _Mapping]] = ..., heartbeat: _Optional[_Union[Heartbeat, _Mapping]] = ..., conversation_turn: _Optional[_Union[ConversationTurnCommand, _Mapping]] = ..., event_ack: _Optional[_Union[EventReportAck, _Mapping]] = ...) -> None: ...
 
 class ConnectResponse(_message.Message):
     __slots__ = ("accepted", "reject_reason", "control_plane_version")
@@ -306,7 +332,7 @@ class ConnectResponse(_message.Message):
     accepted: bool
     reject_reason: str
     control_plane_version: str
-    def __init__(self, accepted: _Optional[bool] = ..., reject_reason: _Optional[str] = ..., control_plane_version: _Optional[str] = ...) -> None: ...
+    def __init__(self, accepted: bool = ..., reject_reason: _Optional[str] = ..., control_plane_version: _Optional[str] = ...) -> None: ...
 
 class ConfigPush(_message.Message):
     __slots__ = ("config_type", "version", "resources", "nonce")
@@ -329,6 +355,56 @@ class SessionCommand(_message.Message):
     command: str
     params: bytes
     def __init__(self, session_id: _Optional[str] = ..., command: _Optional[str] = ..., params: _Optional[bytes] = ...) -> None: ...
+
+class ConversationTurnCommand(_message.Message):
+    __slots__ = ("invocation_id", "conversation_id", "turn_id", "session_id", "agent_id", "binding_id", "instance_id", "generation", "input", "deadline", "correlation_id")
+    INVOCATION_ID_FIELD_NUMBER: _ClassVar[int]
+    CONVERSATION_ID_FIELD_NUMBER: _ClassVar[int]
+    TURN_ID_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    AGENT_ID_FIELD_NUMBER: _ClassVar[int]
+    BINDING_ID_FIELD_NUMBER: _ClassVar[int]
+    INSTANCE_ID_FIELD_NUMBER: _ClassVar[int]
+    GENERATION_FIELD_NUMBER: _ClassVar[int]
+    INPUT_FIELD_NUMBER: _ClassVar[int]
+    DEADLINE_FIELD_NUMBER: _ClassVar[int]
+    CORRELATION_ID_FIELD_NUMBER: _ClassVar[int]
+    invocation_id: str
+    conversation_id: str
+    turn_id: str
+    session_id: str
+    agent_id: str
+    binding_id: str
+    instance_id: str
+    generation: int
+    input: bytes
+    deadline: int
+    correlation_id: str
+    def __init__(self, invocation_id: _Optional[str] = ..., conversation_id: _Optional[str] = ..., turn_id: _Optional[str] = ..., session_id: _Optional[str] = ..., agent_id: _Optional[str] = ..., binding_id: _Optional[str] = ..., instance_id: _Optional[str] = ..., generation: _Optional[int] = ..., input: _Optional[bytes] = ..., deadline: _Optional[int] = ..., correlation_id: _Optional[str] = ...) -> None: ...
+
+class ConversationTurnReport(_message.Message):
+    __slots__ = ("invocation_id", "conversation_id", "turn_id", "session_id", "generation", "action", "sequence", "payload", "error_code", "error_message")
+    INVOCATION_ID_FIELD_NUMBER: _ClassVar[int]
+    CONVERSATION_ID_FIELD_NUMBER: _ClassVar[int]
+    TURN_ID_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    GENERATION_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    SEQUENCE_FIELD_NUMBER: _ClassVar[int]
+    PAYLOAD_FIELD_NUMBER: _ClassVar[int]
+    ERROR_CODE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    invocation_id: str
+    conversation_id: str
+    turn_id: str
+    session_id: str
+    generation: int
+    action: str
+    sequence: int
+    payload: bytes
+    error_code: str
+    error_message: str
+    def __init__(self, invocation_id: _Optional[str] = ..., conversation_id: _Optional[str] = ..., turn_id: _Optional[str] = ..., session_id: _Optional[str] = ..., generation: _Optional[int] = ..., action: _Optional[str] = ..., sequence: _Optional[int] = ..., payload: _Optional[bytes] = ..., error_code: _Optional[str] = ..., error_message: _Optional[str] = ...) -> None: ...
 
 class ExecutionAttemptCommand(_message.Message):
     __slots__ = ("attempt_id", "agent_task_id", "run_id", "node_id", "generation", "command", "context_url", "task_token", "attempt_token", "runtime_binding", "payload", "timestamp")

@@ -128,9 +128,14 @@ func (a *sessionSinkAdapter) HandleSessionReport(identity asdp.ReportIdentity, r
 }
 
 // HandleEventReport maps an ASDP Level-2 event batch to the store sink.
-func (a *sessionSinkAdapter) HandleEventReport(identity asdp.ReportIdentity, report *asdp.EventReport) {
-	if report == nil || len(report.Events) == 0 {
-		return
+func (a *sessionSinkAdapter) HandleEventReport(identity asdp.ReportIdentity, report *asdp.EventReport) *asdp.EventReportAck {
+	ack := &asdp.EventReportAck{}
+	if report == nil {
+		return ack
+	}
+	ack.ReportId = report.GetReportId()
+	if len(report.Events) == 0 {
+		return ack
 	}
 	events := make([]controller.ObservedEvent, 0, len(report.Events))
 	for _, e := range report.Events {
@@ -153,7 +158,14 @@ func (a *sessionSinkAdapter) HandleEventReport(identity asdp.ReportIdentity, rep
 			FrameworkMeta: e.GetFrameworkMeta(),
 		})
 	}
-	a.sink.ApplyEventReport(context.Background(), reportIdentity(identity), events)
+	committed, err := a.sink.ApplyEventReport(context.Background(), reportIdentity(identity), events)
+	if err != nil {
+		ack.Error = err.Error()
+	}
+	for sessionID, seq := range committed {
+		ack.Committed = append(ack.Committed, &asdp.SessionEventCursor{SessionId: sessionID, CommittedSeq: seq})
+	}
+	return ack
 }
 
 // HandleContextReport maps an ASDP Level-4 context report to the store sink.
@@ -254,6 +266,18 @@ func (a *sessionSinkAdapter) HandleExecutionAttemptReport(tenant, namespace, age
 		attemptID, taskID, runID, nodeID, report.GetGeneration(), report.GetAction(), inputIDs,
 		report.GetContent(), report.GetResult(), report.GetCheckpoint(), report.GetUsage(),
 		report.GetErrorCode(), report.GetErrorMessage(), report.GetAttemptToken())
+}
+
+func (a *sessionSinkAdapter) HandleConversationTurnReport(identity asdp.ReportIdentity, report *asdp.ConversationTurnReport) {
+	if report == nil {
+		return
+	}
+	_ = a.sink.ApplyConversationTurnReport(context.Background(), reportIdentity(identity), controller.ObservedConversationTurn{
+		InvocationID: report.GetInvocationId(), ConversationID: report.GetConversationId(), TurnID: report.GetTurnId(),
+		SessionID: report.GetSessionId(), Generation: report.GetGeneration(), Action: report.GetAction(),
+		Sequence: report.GetSequence(), Payload: report.GetPayload(), ErrorCode: report.GetErrorCode(),
+		ErrorMessage: report.GetErrorMessage(),
+	})
 }
 
 // unixMsToTime converts unix milliseconds to UTC time; 0 yields the zero time.
@@ -387,7 +411,7 @@ func main() {
 	flag.IntVar(&storageMaxOpenConns, "storage-max-open-conns", 20, "Maximum open connections to the storage backend.")
 	flag.IntVar(&storageMaxIdleConns, "storage-max-idle-conns", 5, "Maximum idle connections to the storage backend.")
 	flag.DurationVar(&storageConnMaxLifetime, "storage-conn-max-lifetime", 30*time.Minute, "Maximum lifetime of a storage backend connection.")
-	flag.DurationVar(&retentionSessionEvents, "retention-session-events", defaultRetention.SessionEvents, "Retention window for session events.")
+	flag.DurationVar(&retentionSessionEvents, "retention-session-events", defaultRetention.SessionEvents, "Retention window for session events; 0 keeps complete history.")
 	flag.DurationVar(&retentionSnapshots, "retention-snapshots", defaultRetention.Snapshots, "Retention window for session snapshots and metrics.")
 	flag.DurationVar(&retentionContexts, "retention-context-snapshots", defaultRetention.ContextSnapshots, "Retention window for full context snapshots.")
 	flag.DurationVar(&retentionMetrics, "retention-metrics", defaultRetention.Metrics, "Retention window for token/agent metrics.")
@@ -663,21 +687,22 @@ func main() {
 	// Build REST API server options. One listener serves the Kubernetes-native
 	// API, the Managed Agents API, and the console SPA.
 	apiOpts := httpapi.ServerOptions{
-		Store:               runtimeStore,
-		Prober:              httpProber,
-		Addr:                httpAddr,
-		Experimental:        enableExperimental,
-		AuthToken:           apiAuthToken,
-		TLSCertFile:         apiTLSCert,
-		TLSKeyFile:          apiTLSKey,
-		Product:             productSrv,
-		StaticDir:           staticDir,
-		Registry:            dpRegistry,
-		InternalToken:       productToken,
-		TaskTokenSecret:     productJWTSecret,
-		HostedStore:         enableHostedStore,
-		ArtifactProvider:    &artifact.LocalProvider{Root: artifactRoot},
-		CollaborationEvents: collaborationEvents,
+		Store:                    runtimeStore,
+		Prober:                   httpProber,
+		Addr:                     httpAddr,
+		Experimental:             enableExperimental,
+		AuthToken:                apiAuthToken,
+		TLSCertFile:              apiTLSCert,
+		TLSKeyFile:               apiTLSKey,
+		Product:                  productSrv,
+		StaticDir:                staticDir,
+		Registry:                 dpRegistry,
+		InternalToken:            productToken,
+		TaskTokenSecret:          productJWTSecret,
+		EndpointCredentialSecret: envOr("AISTIO_ENDPOINT_CREDENTIAL_KEY", productJWTSecret),
+		HostedStore:              enableHostedStore,
+		ArtifactProvider:         &artifact.LocalProvider{Root: artifactRoot},
+		CollaborationEvents:      collaborationEvents,
 		Features: features.Gates{
 			RuntimeHost: enableRuntimeHost,
 		},

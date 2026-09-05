@@ -74,6 +74,19 @@ spring:
               predicates:
                 - Path=/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
 
+            # Public Endpoint invocation API. Keep this route explicit so
+            # streaming, auth and rate policies never depend on the SPA
+            # catch-all route below.
+            - id: endpoint-invocation
+              uri: ${builder.control-plane-url}
+              order: 8
+              predicates:
+                - Path=/invoke/v1/**
+              filters:
+                - RemoveRequestHeader=X-Builder-Environment-Key
+                - RemoveRequestHeader=X-Builder-Internal-Token
+                - RemoveRequestHeader=X-Builder-Internal-User
+
             # ------------------------------------------------------------------
             # Control plane (aistiod) — Managed Agents APIs, the /api/v1
             # management API, and the console SPA, all on one upstream port.

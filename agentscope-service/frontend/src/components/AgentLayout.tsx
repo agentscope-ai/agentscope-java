@@ -18,6 +18,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AgentDefinition, getAgent, ShareTier } from '../api/agents';
 import ShareAgentDialog from './ShareAgentDialog';
+import { useControlPlaneScope } from '../app/ScopeContext';
 
 type TierMin = ShareTier;
 
@@ -41,6 +42,7 @@ export default function AgentLayout() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const scope = useControlPlaneScope();
   const [agent, setAgent] = useState<AgentDefinition | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -61,17 +63,21 @@ export default function AgentLayout() {
   const isClonyOnly = tier === 'CLONE';
   const isGlobal = agent?.scope === 'global';
   const canEdit = !isGlobal && tier === 'EDIT';
+  const canonicalManage = location.pathname.startsWith('/agent-center/');
+  const basePath = canonicalManage
+    ? `/agent-center/agents/${id}/manage`
+    : `/managed/agents/${id}`;
 
   const activeTab =
-    TABS.find(t => location.pathname.startsWith(`/managed/agents/${id}/${t.key}`))?.key ?? 'settings';
+    TABS.find(t => location.pathname.startsWith(`${basePath}/${t.key}`))?.key ?? 'settings';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{
+    <div className="agent-layout" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className="agent-layout-header" style={{
         padding: '22px 32px 0', borderBottom: '1px solid #e2e8f0',
         background: '#ffffff', flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+        <div className="agent-layout-header-row" style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
           <span style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 44, height: 44, borderRadius: 12,
@@ -120,6 +126,18 @@ export default function AgentLayout() {
             </span>
           )}
           <span style={{ flex: 1 }} />
+          {canonicalManage && (
+            <button
+              onClick={() => navigate(scope.scopedPath(`/agent-center/agents/${encodeURIComponent(id)}`))}
+              style={{
+                padding: '8px 14px', background: '#ffffff', color: '#4338ca',
+                border: '1px solid #c7d2fe', borderRadius: 8, cursor: 'pointer',
+                fontSize: '0.88rem', fontWeight: 600,
+              }}
+            >
+              Agent service
+            </button>
+          )}
           {canEdit && (
             <button
               onClick={() => setShareOpen(true)}
@@ -135,7 +153,7 @@ export default function AgentLayout() {
           {err && <span style={{ marginLeft: 12, color: '#dc2626', fontSize: '0.85rem' }}>{err}</span>}
         </div>
 
-        <div
+        {!canonicalManage && <div
           style={{
             marginBottom: 14,
             padding: '10px 14px',
@@ -155,7 +173,7 @@ export default function AgentLayout() {
             </div>
           </div>
           <button
-            onClick={() => navigate(`/agent-center/agents/${encodeURIComponent(id)}?tenant=default&namespace=default`)}
+            onClick={() => navigate(scope.scopedPath(`/agent-center/agents/${encodeURIComponent(id)}`))}
             style={{
               padding: '7px 12px',
               background: '#ffffff',
@@ -170,14 +188,14 @@ export default function AgentLayout() {
           >
             View Agent service →
           </button>
-        </div>
+        </div>}
 
         {isClonyOnly ? (
           <div style={{ paddingBottom: 12, color: '#64748b', fontSize: '0.9rem' }}>
             You have <strong>CLONE-only</strong> access. Use the Clone button on the agents hub to copy this agent into your namespace.
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div className="agent-layout-tabs" style={{ display: 'flex', gap: 4 }}>
             {TABS.map(t => {
               const allowed =
                 isGlobal ? (t.minTier !== 'EDIT')
@@ -187,7 +205,7 @@ export default function AgentLayout() {
               return (
                 <button
                   key={t.key}
-                  onClick={() => navigate(`/managed/agents/${encodeURIComponent(id)}/${t.key}`)}
+                  onClick={() => navigate(canonicalManage ? scope.scopedPath(`${basePath}/${t.key}`) : `${basePath}/${t.key}`)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     background: 'transparent', border: 'none',

@@ -352,6 +352,9 @@ type CreateIssueRequest struct {
 	Title              string
 	Description        string
 	Priority           string
+	Kind               controlmodel.IssueKind
+	Visibility         controlmodel.IssueVisibility
+	CompletionPolicy   controlmodel.IssueCompletionPolicy
 	Creator            controlmodel.Actor
 	AssigneeType       controlmodel.AssigneeType
 	AssigneeRef        string
@@ -399,7 +402,8 @@ func (s *Service) CreateIssue(ctx context.Context, req CreateIssueRequest) (*con
 	issue, err := s.Store.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
 		Tenant: req.Tenant, Namespace: req.Namespace, Title: strings.TrimSpace(req.Title),
 		Description: req.Description, Status: controlmodel.IssueBacklog,
-		Priority: req.Priority, Creator: req.Creator, ParentIssueID: req.ParentIssueID,
+		Priority: req.Priority, Kind: req.Kind, Visibility: req.Visibility,
+		CompletionPolicy: req.CompletionPolicy, Creator: req.Creator, ParentIssueID: req.ParentIssueID,
 		AssigneeType: req.AssigneeType, AssigneeRef: req.AssigneeRef,
 		AcceptanceCriteria: req.AcceptanceCriteria, ContextRefs: req.ContextRefs,
 		SourceType: req.SourceType, SourceRef: req.SourceRef, DueAt: req.DueAt,
@@ -434,9 +438,19 @@ func (s *Service) CreateChildFromTask(ctx context.Context, taskID uuid.UUID, req
 	if err != nil {
 		return nil, nil, err
 	}
-	team, err := s.Store.Collaboration().GetTeam(ctx, *task.TeamID)
+	team, err := s.TeamForTask(ctx, task)
 	if err != nil {
 		return nil, nil, err
+	}
+	switch req.AssigneeType {
+	case controlmodel.AssigneeAgent:
+		if _, member := teamAgentRole(team, req.AssigneeRef); !member && !team.Policy.AllowExternalDelegation {
+			return nil, nil, fmt.Errorf("child Issue assignee is not in the Team snapshot")
+		}
+	case controlmodel.AssigneeTeam:
+		if req.AssigneeRef != task.TeamID.String() && !team.Policy.AllowExternalDelegation {
+			return nil, nil, fmt.Errorf("child Issue Team assignee is outside the Team snapshot")
+		}
 	}
 	maxDepth := team.Policy.MaxChildDepth
 	if maxDepth <= 0 {
@@ -465,8 +479,13 @@ func (s *Service) CreateChildFromTask(ctx context.Context, taskID uuid.UUID, req
 		}
 	}
 	req.Tenant, req.Namespace, req.ParentIssueID = parent.Tenant, parent.Namespace, &parent.ID
+	req.Kind, req.Visibility, req.CompletionPolicy = parent.Kind, parent.Visibility, parent.CompletionPolicy
 	req.Creator = controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
 	req.SourceType, req.SourceRef = "agent-task", task.ID.String()
+	if req.DueAt == nil && team.Policy.IssueSLASeconds > 0 {
+		due := time.Now().UTC().Add(time.Duration(team.Policy.IssueSLASeconds) * time.Second)
+		req.DueAt = &due
+	}
 	return s.CreateIssue(ctx, req)
 }
 
@@ -552,6 +571,27 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 			}
 			continue
 		}
+		if mention.TargetType == controlmodel.AssigneeAgent && req.SourceTaskID != nil {
+			if source, taskErr := s.Store.Collaboration().GetAgentTask(ctx, *req.SourceTaskID); taskErr == nil && source.TeamID != nil {
+				if team, teamErr := s.TeamForTask(ctx, source); teamErr == nil {
+					role, member := teamAgentRole(team, mention.TargetRef)
+					if !member && !team.Policy.AllowExternalDelegation {
+						targets = append(targets, store.CommentTarget{TargetType: mention.TargetType,
+							TargetRef: mention.TargetRef, RouteType: controlmodel.RouteExplicit,
+							Blocked: true, ReasonCode: "target_not_in_team_snapshot"})
+						continue
+					}
+					if !member {
+						role = "external"
+					}
+					resolved := store.CommentTarget{TargetType: controlmodel.AssigneeAgent,
+						TargetRef: mention.TargetRef, AgentRef: mention.TargetRef,
+						TeamID: source.TeamID, TeamRole: role, RouteType: controlmodel.RouteExplicit}
+					targets = append(targets, s.guardTarget(ctx, issue, req.SourceTaskID, resolved))
+					continue
+				}
+			}
+		}
 		resolved, err := s.resolveTarget(ctx, issue, target, controlmodel.RouteExplicit)
 		if err != nil {
 			targets = append(targets, store.CommentTarget{TargetType: target.Type,
@@ -608,6 +648,21 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 	return result, nil
 }
 
+func teamAgentRole(team *controlmodel.CollaborationTeam, agentRef string) (string, bool) {
+	if team == nil {
+		return "", false
+	}
+	if team.LeaderAgentRef == agentRef {
+		return "leader", true
+	}
+	for _, member := range team.Members {
+		if member.ArchivedAt == nil && member.AgentRef == agentRef {
+			return member.Role, true
+		}
+	}
+	return "", false
+}
+
 func (s *Service) policyForIssueOrTask(ctx context.Context, issue *controlmodel.Issue, taskID *uuid.UUID) controlmodel.TeamPolicy {
 	if team := s.teamForIssueOrTask(ctx, issue, taskID); team != nil {
 		return team.Policy
@@ -628,6 +683,11 @@ func (s *Service) teamForIssueOrTask(ctx context.Context, issue *controlmodel.Is
 	if taskID != nil {
 		if task, err := s.Store.Collaboration().GetAgentTask(ctx, *taskID); err == nil {
 			teamID = task.TeamID
+			if teamID != nil {
+				if team, loadErr := s.TeamForTask(ctx, task); loadErr == nil {
+					return team
+				}
+			}
 		}
 	}
 	if teamID == nil && issue != nil && issue.AssigneeType == controlmodel.AssigneeTeam {
@@ -643,13 +703,36 @@ func (s *Service) teamForIssueOrTask(ctx context.Context, issue *controlmodel.Is
 	return nil
 }
 
+// TeamForTask returns the immutable Team definition captured for this Run.
+// The mutable catalog Team controls future Runs only.
+func (s *Service) TeamForTask(ctx context.Context, task *controlmodel.AgentTask) (*controlmodel.CollaborationTeam, error) {
+	if task == nil || task.TeamID == nil {
+		return nil, store.ErrNotFound
+	}
+	snapshots, err := s.Store.Orchestration().ListTeamSnapshots(ctx, task.OrchestrationRunID)
+	if err != nil {
+		return nil, err
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.TeamID != *task.TeamID {
+			continue
+		}
+		var team controlmodel.CollaborationTeam
+		if err = json.Unmarshal(snapshot.Snapshot, &team); err != nil {
+			return nil, fmt.Errorf("decode Run Team snapshot: %w", err)
+		}
+		return &team, nil
+	}
+	return nil, fmt.Errorf("Run %s has no snapshot for Team %s", task.OrchestrationRunID, *task.TeamID)
+}
+
 func (s *Service) RetryTask(ctx context.Context, taskID uuid.UUID, actor controlmodel.Actor) (*controlmodel.AgentTask, error) {
 	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 	if task.TeamID != nil {
-		team, loadErr := s.Store.Collaboration().GetTeam(ctx, *task.TeamID)
+		team, loadErr := s.TeamForTask(ctx, task)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -679,7 +762,7 @@ func (s *Service) guardTarget(ctx context.Context, issue *controlmodel.Issue, so
 	const defaultMaxActiveTasks = 32
 	maxHops, maxActive := defaultMaxHops, int32(defaultMaxActiveTasks)
 	if target.TeamID != nil {
-		if team, err := s.Store.Collaboration().GetTeam(ctx, *target.TeamID); err == nil {
+		if team := s.teamForIssueOrTask(ctx, issue, sourceTaskID); team != nil {
 			if team.Policy.MaxHops > 0 {
 				maxHops = team.Policy.MaxHops
 			}
@@ -775,7 +858,7 @@ func (s *Service) resolveTarget(ctx context.Context, issue *controlmodel.Issue, 
 			return target, store.ErrNotFound
 		}
 		team, err := s.Store.Collaboration().GetTeam(ctx, teamID)
-		if err != nil || team.Tenant != issue.Tenant || team.Namespace != issue.Namespace || team.ArchivedAt != nil {
+		if err != nil || team.Tenant != issue.Tenant || team.Namespace != issue.Namespace || team.Status != controlmodel.TeamActive || team.ArchivedAt != nil {
 			return target, store.ErrNotFound
 		}
 		target.AgentRef, target.TeamID, target.TeamRole = team.LeaderAgentRef, &team.ID, "leader"
@@ -813,7 +896,9 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 		return nil, err
 	}
 	envelope := &ContextEnvelope{Task: task, Issue: issue,
-		AvailableActions: []string{"issue.get", "issue.comment.list", "issue.comment.add", "artifact.upload", "artifact.download", "task.respond", "task.complete", "task.fail"}}
+		AvailableActions: []string{"issue.get", "issue.comment.list", "issue.comment.add", "artifact.upload", "artifact.download",
+			"task.get", "task.progress", "task.respond", "task.complete", "task.fail", "approval.request",
+			"run.get", "run.graph", "run.signal", "run.artifacts"}}
 	for _, input := range task.Inputs {
 		comment, loadErr := s.Store.Collaboration().GetComment(ctx, input.CommentID)
 		if loadErr != nil {
@@ -822,12 +907,13 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 		envelope.Inputs = append(envelope.Inputs, ContextInput{Input: input, Comment: comment})
 	}
 	if task.TeamID != nil {
-		envelope.Team, err = s.Store.Collaboration().GetTeam(ctx, *task.TeamID)
+		envelope.Team, err = s.TeamForTask(ctx, task)
 		if err != nil {
 			return nil, err
 		}
+		envelope.AvailableActions = append(envelope.AvailableActions, "team.get")
 		if task.LeaderTask {
-			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "issue.assign", "team.get")
+			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "run.node.complete", "run.node.fail", "run.replan")
 		}
 	}
 	envelope.Artifacts, err = s.Store.Collaboration().ListArtifacts(ctx, task.Tenant, task.Namespace, "issue", task.IssueID.String())
@@ -875,7 +961,7 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 			return nil, nil, targetErr
 		}
 		if task.TeamID != nil && task.LeaderTask && task.AccountableHumanRef != "" {
-			if team, teamErr := s.Store.Collaboration().GetTeam(ctx, *task.TeamID); teamErr == nil && team.Policy.RequireReview {
+			if team, teamErr := s.TeamForTask(ctx, task); teamErr == nil && team.Policy.RequireReview {
 				targets = append(targets, store.CommentTarget{TargetType: controlmodel.AssigneeHuman,
 					TargetRef: task.AccountableHumanRef, RouteType: controlmodel.RouteReviewRequest})
 			}
@@ -1011,7 +1097,7 @@ func (s *Service) completionTargets(ctx context.Context, task *controlmodel.Agen
 		}
 	}
 	if task.TeamID != nil && !task.LeaderTask {
-		team, err := s.Store.Collaboration().GetTeam(ctx, *task.TeamID)
+		team, err := s.TeamForTask(ctx, task)
 		if err != nil {
 			return nil, err
 		}

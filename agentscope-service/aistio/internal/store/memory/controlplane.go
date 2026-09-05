@@ -550,12 +550,25 @@ func (r *executionRepo) List(_ context.Context, filter store.ExecutionAttemptFil
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.ExecutionAttempt, 0)
 	for _, execution := range r.s.executions {
-		if filter.AgentTaskID != uuid.Nil && execution.AgentTaskID != filter.AgentTaskID || filter.Tenant != "" && execution.Tenant != filter.Tenant || filter.Namespace != "" && execution.Namespace != filter.Namespace || filter.RuntimePoolName != "" && execution.RuntimePoolName != filter.RuntimePoolName || filter.HostID != uuid.Nil && (execution.HostID == nil || *execution.HostID != filter.HostID) || filter.State != "" && execution.State != filter.State {
+		if filter.AgentTaskID != uuid.Nil && execution.AgentTaskID != filter.AgentTaskID ||
+			filter.AgentID != uuid.Nil && execution.AgentID != filter.AgentID ||
+			filter.BindingID != uuid.Nil && execution.BindingID != filter.BindingID ||
+			filter.Tenant != "" && execution.Tenant != filter.Tenant ||
+			filter.Namespace != "" && execution.Namespace != filter.Namespace ||
+			filter.SessionID != "" && execution.SessionID != filter.SessionID ||
+			filter.RuntimePoolName != "" && execution.RuntimePoolName != filter.RuntimePoolName ||
+			filter.HostID != uuid.Nil && (execution.HostID == nil || *execution.HostID != filter.HostID) ||
+			filter.State != "" && execution.State != filter.State {
 			continue
 		}
 		out = append(out, cloneExecution(execution))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	sort.Slice(out, func(i, j int) bool {
+		if filter.NewestFirst {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
 	limit := filter.Limit
 	if limit <= 0 {
 		limit = 100
@@ -595,6 +608,19 @@ func (r *executionRepo) Claim(_ context.Context, claim store.ExecutionClaim) (*c
 		}
 		var snapshot controlmodel.RuntimeDispatchSnapshot
 		if len(execution.RuntimeBinding) > 0 && json.Unmarshal(execution.RuntimeBinding, &snapshot) != nil {
+			continue
+		}
+		var dispatchPolicy struct {
+			PreferredHostID uuid.UUID `json:"preferredHostId"`
+		}
+		_ = json.Unmarshal(snapshot.Policy, &dispatchPolicy)
+		if dispatchPolicy.PreferredHostID != uuid.Nil && dispatchPolicy.PreferredHostID != claim.HostID {
+			continue
+		}
+		if snapshot.RuntimeProfile != nil && !controlmodel.RuntimeHostMatchesProfile(host.Capabilities, snapshot.RuntimeProfile) {
+			continue
+		}
+		if snapshot.RuntimePool != nil && !controlmodel.RuntimeHostMatchesPool(host.Labels, snapshot.RuntimePool) {
 			continue
 		}
 		if !controlmodel.RuntimeSecurityMatches(controlmodel.DataPlaneHostedRuntime, host.Labels, snapshot.SecurityConstraints) {

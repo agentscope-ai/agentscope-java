@@ -201,7 +201,7 @@ export default function MemoryStoresPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h1 style={S.title}>Memory Stores</h1>
         <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New store</button>

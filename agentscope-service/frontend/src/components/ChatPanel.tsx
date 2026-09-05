@@ -27,14 +27,17 @@ import {
   SessionEvent,
   streamEvents,
 } from '../api/managedSessions';
-import MessageBlock, { ContentBlock } from './MessageBlock';
+import { ConversationSurface } from '@/features/conversation/ConversationSurface';
+import { managedEventsToConversation } from '@/features/conversation/adapters';
+import { mergeContiguousEvents } from '@/features/conversation/eventCursor';
+import type { ConversationContentBlock } from '@/features/conversation/model';
 
 type Role = 'user' | 'assistant' | 'system' | 'error';
 
 interface Message {
   id: string;
   role: Role;
-  blocks: ContentBlock[];
+  blocks: ConversationContentBlock[];
   pending?: boolean;
   /** Turn finished: no more blocks are appended to this bubble. */
   closed?: boolean;
@@ -45,8 +48,6 @@ interface PendingConfirmation {
   toolName: string;
   input?: Record<string, unknown>;
 }
-
-const NEAR_BOTTOM_PX = 96;
 
 const S: Record<string, React.CSSProperties> = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#f8fafc' },
@@ -239,25 +240,6 @@ function extractConfirmation(evt: SessionEvent): PendingConfirmation | null {
   return null;
 }
 
-function findScrollableParent(el: HTMLElement | null): HTMLElement | null {
-  let node = el?.parentElement ?? null;
-  while (node && node !== document.body) {
-    const style = getComputedStyle(node);
-    const oy = style.overflowY;
-    if ((oy === 'auto' || oy === 'scroll' || oy === 'overlay')
-      && node.scrollHeight > node.clientHeight + 1) {
-      return node;
-    }
-    node = node.parentElement;
-  }
-  const root = document.scrollingElement;
-  return root instanceof HTMLElement ? root : null;
-}
-
-function isNearBottom(el: HTMLElement, threshold = NEAR_BOTTOM_PX): boolean {
-  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
-}
-
 /**
  * Chat bound to an existing Managed session. Does not create sessions —
  * POST user.message is the only turn driver.
@@ -285,16 +267,17 @@ export default function ChatPanel({
   const [managedSession, setManagedSession] = useState<ManagedSession | null>(null);
   const [envNameById, setEnvNameById] = useState<Map<string, string>>(new Map());
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmation | null>(null);
-  const threadRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<SessionEvent[]>([]);
   const streamHandleRef = useRef<EventStreamHandle | null>(null);
   const pendingUserMsgIdRef = useRef<string | null>(null);
   /** Id of the current open assistant turn bubble; null when no turn is active. */
   const openMsgIdRef = useRef<string | null>(null);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const lastSeqRef = useRef(0);
-  /** When true, keep pinned to latest message as stream grows. */
-  const stickToBottomRef = useRef(true);
+  const bufferedEventsRef = useRef<Map<number, SessionEvent>>(new Map());
+  const gapRepairRef = useRef<Promise<void> | null>(null);
+  const gapRepairTimerRef = useRef<number | null>(null);
+  const activeSessionRef = useRef('');
 
   useEffect(() => {
     listEnvironments()
@@ -302,7 +285,7 @@ export default function ChatPanel({
       .catch(() => setEnvNameById(new Map()));
   }, []);
 
-  const handleManagedEvent = useCallback((evt: SessionEvent) => {
+  const applyManagedEvent = useCallback((evt: SessionEvent) => {
     if (evt.id) {
       if (seenEventIdsRef.current.has(evt.id)) return;
       seenEventIdsRef.current.add(evt.id);
@@ -310,6 +293,11 @@ export default function ChatPanel({
     if (typeof evt.seq === 'number' && evt.seq > lastSeqRef.current) {
       lastSeqRef.current = evt.seq;
     }
+    setTimelineEvents((current) => {
+      const index = current.findIndex((item) => item.id === evt.id);
+      if (index < 0) return [...current, evt];
+      return current.map((item, itemIndex) => itemIndex === index ? evt : item);
+    });
 
     const confirm = extractConfirmation(evt);
     if (confirm) setPendingConfirm(confirm);
@@ -320,7 +308,7 @@ export default function ChatPanel({
       if (!id) return prev;
       return prev.map(m => (m.id === id ? { ...m, pending: false, closed: true } : m));
     };
-    const append = (prev: Message[], seedId: string, block: ContentBlock): Message[] => {
+    const append = (prev: Message[], seedId: string, block: ConversationContentBlock): Message[] => {
       const cur = openMsgIdRef.current;
       if (cur) {
         const existing = prev.find(m => m.id === cur);
@@ -386,7 +374,7 @@ export default function ChatPanel({
       const localUser = pendingUserMsgIdRef.current;
       pendingUserMsgIdRef.current = null;
       setMessages(prev => {
-        let next = closeOpen(prev);
+        const next = closeOpen(prev);
         if (next.some(m => m.id === evt.id)) return next;
         if (localUser && next.some(m => m.id === localUser)) {
           return next.map(m =>
@@ -502,19 +490,76 @@ export default function ChatPanel({
     }
   }, []);
 
+  const repairManagedGap = useCallback(function repairManagedGap() {
+    if (gapRepairRef.current) return gapRepairRef.current;
+    const repairingSession = sessionId;
+    const repair = (async () => {
+      let retry: boolean;
+      try {
+        const recovered = await listEvents(sessionId, { after: lastSeqRef.current });
+        if (activeSessionRef.current !== repairingSession) return;
+        const merged = mergeContiguousEvents(
+          lastSeqRef.current,
+          bufferedEventsRef.current,
+          recovered,
+          event => event.seq,
+        );
+        for (const event of merged.accepted) applyManagedEvent(event);
+        lastSeqRef.current = Math.max(lastSeqRef.current, merged.cursor);
+        retry = bufferedEventsRef.current.size > 0;
+      } catch {
+        retry = activeSessionRef.current === repairingSession;
+      } finally {
+        if (activeSessionRef.current === repairingSession) gapRepairRef.current = null;
+      }
+      if (retry && gapRepairTimerRef.current == null) {
+        gapRepairTimerRef.current = window.setTimeout(() => {
+          gapRepairTimerRef.current = null;
+          void repairManagedGap();
+        }, 1_000);
+      }
+    })();
+    gapRepairRef.current = repair;
+    return repair;
+  }, [applyManagedEvent, sessionId]);
+
+  const handleManagedEvent = useCallback((evt: SessionEvent) => {
+    // Stream-only previews use seq=-1 and are intentionally best-effort. Every
+    // persisted event must remain contiguous; repair from history before
+    // applying an out-of-order live event.
+    if (evt.seq <= 0) {
+      applyManagedEvent(evt);
+      return;
+    }
+    const merged = mergeContiguousEvents(
+      lastSeqRef.current,
+      bufferedEventsRef.current,
+      [evt],
+      event => event.seq,
+    );
+    for (const event of merged.accepted) applyManagedEvent(event);
+    lastSeqRef.current = Math.max(lastSeqRef.current, merged.cursor);
+    if (bufferedEventsRef.current.size > 0) void repairManagedGap();
+  }, [applyManagedEvent, repairManagedGap]);
+
   useEffect(() => {
     let cancelled = false;
+    activeSessionRef.current = sessionId;
     setMessages([]);
     setInput('');
     setRestoring(true);
     setLoadError(null);
     setPendingConfirm(null);
+    setTimelineEvents([]);
     setManagedSession(null);
     seenEventIdsRef.current = new Set();
     lastSeqRef.current = 0;
+    bufferedEventsRef.current.clear();
+    gapRepairRef.current = null;
+    if (gapRepairTimerRef.current != null) window.clearTimeout(gapRepairTimerRef.current);
+    gapRepairTimerRef.current = null;
     openMsgIdRef.current = null;
     pendingUserMsgIdRef.current = null;
-    stickToBottomRef.current = true;
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
 
@@ -532,6 +577,7 @@ export default function ChatPanel({
           }
         }
         setMessages(eventsToMessages(events));
+        setTimelineEvents(events);
         streamHandleRef.current = streamEvents(
           sessionId,
           evt => { if (!cancelled) handleManagedEvent(evt); },
@@ -555,41 +601,13 @@ export default function ChatPanel({
     void run();
     return () => {
       cancelled = true;
+      if (activeSessionRef.current === sessionId) activeSessionRef.current = '';
+      if (gapRepairTimerRef.current != null) window.clearTimeout(gapRepairTimerRef.current);
+      gapRepairTimerRef.current = null;
       streamHandleRef.current?.close();
       streamHandleRef.current = null;
     };
   }, [sessionId, handleManagedEvent]);
-
-  useEffect(() => {
-    const el = threadRef.current;
-    if (!el || !stickToBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages, pendingConfirm]);
-
-  function handleThreadScroll() {
-    const el = threadRef.current;
-    if (!el) return;
-    stickToBottomRef.current = isNearBottom(el);
-  }
-
-  /**
-   * When the thread is already at an edge, forward wheel deltas to the outer
-   * page scroller so nested overflow does not trap scroll-up during streaming.
-   */
-  function handleThreadWheel(e: React.WheelEvent<HTMLDivElement>) {
-    const el = threadRef.current;
-    if (!el) return;
-    const atTop = el.scrollTop <= 0;
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-    const scrollingUp = e.deltaY < 0;
-    const scrollingDown = e.deltaY > 0;
-    if ((scrollingUp && atTop) || (scrollingDown && atBottom)) {
-      const parent = findScrollableParent(el);
-      if (parent && parent !== el) {
-        parent.scrollTop += e.deltaY;
-      }
-    }
-  }
 
   const canSend = useMemo(
     () =>
@@ -610,33 +628,11 @@ export default function ChatPanel({
     return `env: ${env} · vaults: ${vaults} · memory: ${mems}`;
   }, [managedSession, envNameById]);
 
-  /**
-   * Relabels the optimistic user bubble with the server event id so the same event
-   * arriving over the stream reconciles instead of appending a twin. The stream is
-   * deliberately NOT pre-deduped: the user.message handler must run so it closes the
-   * previous turn bubble before the next reply is appended.
-   */
-  function adoptRecordedUserEvent(recorded: SessionEvent[]) {
-    const localUser = pendingUserMsgIdRef.current;
-    if (!localUser) return;
-    const serverEvent = recorded.find(e => e.type === 'user.message' && e.id);
-    if (!serverEvent) return;
-    pendingUserMsgIdRef.current = null;
-    if (typeof serverEvent.seq === 'number' && serverEvent.seq > lastSeqRef.current) {
-      lastSeqRef.current = serverEvent.seq;
-    }
-    setMessages(prev =>
-      prev.some(m => m.id === serverEvent.id)
-        ? prev.filter(m => m.id !== localUser)
-        : prev.map(m => (m.id === localUser ? { ...m, id: serverEvent.id } : m)));
-  }
-
   async function handleSend() {
     if (!canSend) return;
     const text = input.trim();
     setInput('');
     setBusy(true);
-    stickToBottomRef.current = true;
     const userMsg: Message = {
       id: nextId(),
       role: 'user',
@@ -647,7 +643,10 @@ export default function ChatPanel({
 
     try {
       const recorded = await postUserMessage(sessionId, text);
-      adoptRecordedUserEvent(recorded);
+      // Treat the POST response exactly like a stream delivery. A concurrent
+      // writer may have committed a lower sequence first, so never advance the
+      // resume cursor directly to the returned user event.
+      for (const event of recorded) handleManagedEvent(event);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'send failed';
       setMessages(prev => [...prev, {
@@ -658,7 +657,6 @@ export default function ChatPanel({
       pendingUserMsgIdRef.current = null;
     } finally {
       setBusy(false);
-      inputRef.current?.focus();
     }
   }
 
@@ -673,7 +671,6 @@ export default function ChatPanel({
         allow ? undefined : 'Denied by user',
       );
       setPendingConfirm(null);
-      stickToBottomRef.current = true;
       setMessages(prev => [...prev, {
         id: nextId(),
         role: 'system',
@@ -692,13 +689,6 @@ export default function ChatPanel({
       }]);
     } finally {
       setBusy(false);
-    }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
     }
   }
 
@@ -774,39 +764,19 @@ export default function ChatPanel({
           </Link>
         )}
       </div>
-      <div
-        style={S.thread}
-        ref={threadRef}
-        onScroll={handleThreadScroll}
-        onWheel={handleThreadWheel}
-      >
-        {restoring && messages.length === 0 && <div style={S.empty}>Loading conversation…</div>}
-        {!restoring && messages.length === 0 && (
-          <div style={S.empty}>
-            Session ready. Send a message to start the first turn — events stay empty until then.
-          </div>
-        )}
-        {(() => {
-          // Auto-expand the latest assistant turn bubble (even when a follow-up
-          // user message sits after it) so replies and tool calls are readable.
-          let lastAssistant = -1;
-          for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i].role === 'assistant') {
-              lastAssistant = i;
-              break;
-            }
-          }
-          return messages.map((m, i) => (
-            <MessageBlock
-              key={m.id}
-              role={m.role}
-              blocks={m.blocks}
-              pending={m.pending}
-              defaultOpen={i === lastAssistant}
-            />
-          ));
-        })()}
-        {pendingConfirm && !readOnly && (
+      <ConversationSurface
+        className="min-h-0 flex-1 rounded-none border-x-0 border-b-0 shadow-none"
+        messages={messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          blocks: message.blocks,
+          state: message.role === 'error' ? 'error' : message.pending ? 'streaming' : 'complete',
+        }))}
+        events={managedEventsToConversation(timelineEvents)}
+        source="managed event log"
+        loading={restoring}
+        emptyMessage="Session ready. Send a message to start the first turn."
+        accessory={pendingConfirm && !readOnly ? (
           <div style={S.confirmCard}>
             <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 8 }}>
               Allow tool call: {pendingConfirm.toolName}?
@@ -824,36 +794,22 @@ export default function ChatPanel({
               <button type="button" style={S.denyBtn} onClick={() => handleConfirmation(false)} disabled={busy}>Deny</button>
             </div>
           </div>
-        )}
-      </div>
-      <div style={S.composer}>
-        <textarea
-          ref={inputRef}
-          style={S.textarea}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            readOnly
-              ? 'Read-only transcript — sending is disabled'
-              : restoring
-                ? 'Loading…'
-                : pendingConfirm
-                  ? 'Confirm tool call above…'
-                  : `Message ${agentId}…`
-          }
-          rows={1}
-          autoFocus={!readOnly}
-          disabled={readOnly || restoring || !!pendingConfirm}
-        />
-        <button
-          style={{ ...S.send, ...(canSend ? {} : S.sendDisabled) }}
-          onClick={handleSend}
-          disabled={!canSend}
-        >
-          {busy ? '…' : 'Send'}
-        </button>
-      </div>
+        ) : undefined}
+        composer={{
+          value: input,
+          onChange: setInput,
+          onSubmit: handleSend,
+          disabled: readOnly || restoring || !!pendingConfirm,
+          busy,
+          placeholder: readOnly
+            ? 'Read-only transcript — sending is disabled'
+            : restoring
+              ? 'Loading…'
+              : pendingConfirm
+                ? 'Confirm the tool call above…'
+                : `Message ${agentId}…`,
+        }}
+      />
     </div>
   );
 }

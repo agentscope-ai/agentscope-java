@@ -28,17 +28,18 @@ import (
 type collaborationRepo struct{ pool *pgxpool.Pool }
 
 const issueColumns = `id,tenant,namespace,identifier,title,description,status,priority,
-	assignee_type,assignee_ref,creator_type,creator_ref,parent_issue_id,
+	kind,visibility,completion_policy,assignee_type,assignee_ref,execution_target_type,execution_target_ref,creator_type,creator_ref,parent_issue_id,
 	acceptance_criteria,context_refs,source_type,source_ref,due_at,version,
 	created_at,updated_at,resolved_at,archived_at`
 
 func scanIssue(row scannable) (*controlmodel.Issue, error) {
 	issue := &controlmodel.Issue{}
-	var identifier, description, assigneeType, assigneeRef, creatorRef, sourceType, sourceRef *string
+	var identifier, description, assigneeType, assigneeRef, executionTargetType, executionTargetRef, creatorRef, sourceType, sourceRef *string
 	var acceptance, refs []byte
 	err := row.Scan(&issue.ID, &issue.Tenant, &issue.Namespace, &identifier, &issue.Title,
-		&description, &issue.Status, &issue.Priority, &assigneeType, &assigneeRef,
-		&issue.Creator.Type, &creatorRef, &issue.ParentIssueID, &acceptance, &refs,
+		&description, &issue.Status, &issue.Priority, &issue.Kind, &issue.Visibility, &issue.CompletionPolicy,
+		&assigneeType, &assigneeRef,
+		&executionTargetType, &executionTargetRef, &issue.Creator.Type, &creatorRef, &issue.ParentIssueID, &acceptance, &refs,
 		&sourceType, &sourceRef, &issue.DueAt, &issue.Version, &issue.CreatedAt,
 		&issue.UpdatedAt, &issue.ResolvedAt, &issue.ArchivedAt)
 	if err != nil {
@@ -46,6 +47,7 @@ func scanIssue(row scannable) (*controlmodel.Issue, error) {
 	}
 	issue.Identifier, issue.Description = deref(identifier), deref(description)
 	issue.AssigneeType, issue.AssigneeRef = controlmodel.AssigneeType(deref(assigneeType)), deref(assigneeRef)
+	issue.ExecutionTargetType, issue.ExecutionTargetRef = deref(executionTargetType), deref(executionTargetRef)
 	issue.Creator.Ref, issue.SourceType, issue.SourceRef = deref(creatorRef), deref(sourceType), deref(sourceRef)
 	issue.AcceptanceCriteria, issue.ContextRefs = acceptance, refs
 	return issue, nil
@@ -121,19 +123,19 @@ func scanTaskInput(row scannable) (*controlmodel.AgentTaskInput, error) {
 }
 
 const collaborationTeamColumns = `id,tenant,namespace,name,description,
-	leader_agent_id,policy,version,created_at,updated_at,archived_at`
+	instructions,status,leader_agent_id,policy,version,created_at,updated_at,archived_at`
 
 func scanCollaborationTeam(row scannable) (*controlmodel.CollaborationTeam, error) {
 	team := &controlmodel.CollaborationTeam{}
-	var description *string
+	var description, instructions *string
 	var policy []byte
 	err := row.Scan(&team.ID, &team.Tenant, &team.Namespace, &team.Name,
-		&description, &team.LeaderAgentRef, &policy, &team.Version, &team.CreatedAt,
+		&description, &instructions, &team.Status, &team.LeaderAgentRef, &policy, &team.Version, &team.CreatedAt,
 		&team.UpdatedAt, &team.ArchivedAt)
 	if err != nil {
 		return nil, collaborationScanError(err)
 	}
-	team.Description = deref(description)
+	team.Description, team.Instructions = deref(description), deref(instructions)
 	if len(policy) > 0 {
 		if err := jsonUnmarshal(policy, &team.Policy); err != nil {
 			return nil, err

@@ -412,6 +412,10 @@ func (r *orchestrationRepo) AppendRunEvent(_ context.Context, in *controlmodel.R
 		c.OccurredAt = time.Now().UTC()
 	}
 	r.s.runEvents[c.RunID] = append(r.s.runEvents[c.RunID], c)
+	if signal := r.s.runEventSignals[c.RunID]; signal != nil {
+		close(signal)
+	}
+	r.s.runEventSignals[c.RunID] = make(chan struct{})
 	return cloneRunEvent(c), nil
 }
 func (r *orchestrationRepo) ListRunEvents(_ context.Context, runID uuid.UUID, after int64, limit int) ([]*controlmodel.RunEvent, error) {
@@ -427,6 +431,27 @@ func (r *orchestrationRepo) ListRunEvents(_ context.Context, runID uuid.UUID, af
 		}
 	}
 	return out, nil
+}
+func (r *orchestrationRepo) WaitForRunEvent(ctx context.Context, runID uuid.UUID, after int64) error {
+	r.s.mu.Lock()
+	for _, event := range r.s.runEvents[runID] {
+		if event.Sequence > after {
+			r.s.mu.Unlock()
+			return nil
+		}
+	}
+	signal := r.s.runEventSignals[runID]
+	if signal == nil {
+		signal = make(chan struct{})
+		r.s.runEventSignals[runID] = signal
+	}
+	r.s.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-signal:
+		return nil
+	}
 }
 func (r *orchestrationRepo) PutRuntimePolicy(_ context.Context, in *controlmodel.AgentRuntimePolicy) (*controlmodel.AgentRuntimePolicy, error) {
 	r.s.mu.Lock()

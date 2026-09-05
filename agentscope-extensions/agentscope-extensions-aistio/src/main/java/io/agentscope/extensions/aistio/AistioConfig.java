@@ -36,8 +36,11 @@ package io.agentscope.extensions.aistio;
  * @param tenant collaboration tenant
  * @param namespace collaboration / Kubernetes namespace
  * @param instanceKey this replica's stable key; defaults to {@code HOSTNAME} then the local host name
- * @param enableEvents whether to push the Level-2 event stream (off by default: it is the only
- *     level whose volume scales with conversation traffic)
+ * @param enableEvents whether to persist and push the Level-2 event stream (on by default when
+ *     ASDP gRPC is enabled because it is the canonical conversation history used for reconnect
+ *     and replay)
+ * @param eventJournalDir directory for the durable event outbox; empty uses {@code
+ *     ~/.agentscope/aistio/event-journal}
  * @param contractHttpPort port for the in-process {@code /agentscope/*} contract server; {@code 0}
  *     binds an ephemeral port
  * @param contractHttpHost bind address, empty for all interfaces
@@ -61,6 +64,7 @@ public record AistioConfig(
         String namespace,
         String instanceKey,
         boolean enableEvents,
+        String eventJournalDir,
         int contractHttpPort,
         String contractHttpHost,
         String publicBaseUrl,
@@ -84,6 +88,7 @@ public record AistioConfig(
                 registrationCredential == null ? "" : registrationCredential.trim();
         agentId = agentId == null ? "" : agentId.trim();
         bindingId = bindingId == null ? "" : bindingId.trim();
+        eventJournalDir = eventJournalDir == null ? "" : eventJournalDir.trim();
         contractHttpHost = contractHttpHost == null ? "" : contractHttpHost;
         publicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.trim();
         sessionAffinity = sessionAffinity == null ? "" : sessionAffinity;
@@ -132,7 +137,8 @@ public record AistioConfig(
         private String tenant = "default";
         private String namespace = "default";
         private String instanceKey = "";
-        private boolean enableEvents;
+        private Boolean enableEvents;
+        private String eventJournalDir = "";
         private int contractHttpPort = 18090;
         private String contractHttpHost = "";
         private String publicBaseUrl = "";
@@ -193,6 +199,12 @@ public record AistioConfig(
             return this;
         }
 
+        /** Directory used by the durable, acknowledged Level-2 event outbox. */
+        public Builder eventJournalDir(String eventJournalDir) {
+            this.eventJournalDir = eventJournalDir;
+            return this;
+        }
+
         public Builder contractHttpPort(int contractHttpPort) {
             this.contractHttpPort = contractHttpPort;
             return this;
@@ -245,7 +257,8 @@ public record AistioConfig(
                     tenant,
                     namespace,
                     instanceKey,
-                    enableEvents,
+                    enableEvents != null ? enableEvents : startGrpc,
+                    eventJournalDir,
                     contractHttpPort,
                     contractHttpHost,
                     publicBaseUrl,

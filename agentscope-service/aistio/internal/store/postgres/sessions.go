@@ -71,8 +71,20 @@ func (r *sessionRepo) Upsert(ctx context.Context, s *store.Session) (*store.Sess
 			instance_ref = COALESCE(EXCLUDED.instance_ref, sessions.instance_ref),
 			instance_ip = COALESCE(EXCLUDED.instance_ip, sessions.instance_ip),
 			agent_task_id = COALESCE(EXCLUDED.agent_task_id, sessions.agent_task_id),
-			origin_type = COALESCE(EXCLUDED.origin_type, sessions.origin_type),
-			origin_ref = COALESCE(EXCLUDED.origin_ref, sessions.origin_ref),
+			origin_type = CASE
+				WHEN EXCLUDED.origin_type = 'runtime'
+					AND sessions.origin_type IS NOT NULL
+					AND sessions.origin_type <> 'runtime'
+				THEN sessions.origin_type
+				ELSE COALESCE(EXCLUDED.origin_type, sessions.origin_type)
+			END,
+			origin_ref = CASE
+				WHEN EXCLUDED.origin_type = 'runtime'
+					AND sessions.origin_type IS NOT NULL
+					AND sessions.origin_type <> 'runtime'
+				THEN sessions.origin_ref
+				ELSE COALESCE(EXCLUDED.origin_ref, sessions.origin_ref)
+			END,
 			task_context = COALESCE(EXCLUDED.task_context, sessions.task_context),
 			started_at = COALESCE(EXCLUDED.started_at, sessions.started_at),
 			last_active_at = COALESCE(EXCLUDED.last_active_at, sessions.last_active_at),

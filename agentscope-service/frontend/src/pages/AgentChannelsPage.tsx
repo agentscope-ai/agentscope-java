@@ -90,7 +90,7 @@ export default function AgentChannelsPage() {
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [agentId]);
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <h1 style={S.title}>Connect IM</h1>
       <p style={S.subtle}>
         Give this agent an identity on DingTalk / Feishu / WeCom / GitHub / GitLab.

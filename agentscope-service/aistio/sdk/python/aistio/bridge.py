@@ -14,7 +14,7 @@
 
 """``SessionBridge``：统一上报引擎（sdk-design §5.3）。
 
-职责：适配器挂载、Level 2 事件缓冲（~5s 或满 20 条批量）、ContextTracker
+职责：适配器挂载、Level 2 持久化 outbox 与 ACK 重传、ContextTracker
 增量视图、Level 1 聚合（~10s）、Level 4 推送（hash 变更防抖 30s 冷却；
 compaction 后立即推）、Inventory（连接建立后立即一次，之后低频）、命令
 分发（ASDP 与 HTTP 双通道 → ``handle_command``）、内嵌合约 HTTP 服务。
@@ -24,9 +24,11 @@ compaction 后立即推）、Inventory（连接建立后立即一次，之后低
 from __future__ import annotations
 
 import asyncio
+import logging
 import socket
 import threading
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from .adapters.base import (
@@ -44,6 +46,7 @@ from .events import (
     MessagePage,
     SessionEvent,
 )
+from .event_journal import EventJournal
 from .inventory import InstanceHealth, Inventory
 from .proto import asdp_pb2
 from .transport.grpc import GrpcTransport
@@ -57,10 +60,12 @@ SDK_VERSION = "0.1.0"
 LEVEL1_INTERVAL = 10.0  # Level 1 聚合上报周期
 EVENT_FLUSH_INTERVAL = 5.0  # Level 2 定时 flush
 EVENT_BATCH_SIZE = 20  # Level 2 满批 flush
-EVENT_BUFFER_MAX = 1000  # 本地降级有界队列，溢出丢最旧
+EVENT_ACK_TIMEOUT = 15.0
 CONTEXT_PUSH_COOLDOWN = 30.0  # Level 4 推送冷却（防抖）
 INVENTORY_INTERVAL = 30.0  # Inventory 低频刷新
 ASYNC_CALL_TIMEOUT = 10.0  # 适配器 async 方法调用超时
+
+LOGGER = logging.getLogger(__name__)
 
 #: HTTP 合约等级（contract.md：1 发现 / 2 会话 / 3 命令；Level 3/4 查询经 capabilities 细粒度门控）。
 CONTRACT_LEVEL = 3
@@ -83,7 +88,8 @@ class SessionBridge:
         namespace: str = "default",
         instance_key: str = "",
         generation: int = 0,
-        enable_events: bool = False,
+        enable_events: bool = True,
+        event_journal_dir: str = "",
         contract_http_port: int = 8080,
         contract_http_host: str = "",
         contract_http_base_url: str = "",
@@ -100,7 +106,7 @@ class SessionBridge:
         self._agent_key = agent_key
         self._binding_id = binding_id
         self._namespace = namespace
-        self._instance_key = instance_key
+        self._instance_key = instance_key or socket.gethostname() or "unknown"
         self._generation = generation
         self._enable_events = enable_events
         self._http_port = contract_http_port
@@ -116,8 +122,26 @@ class SessionBridge:
         self._lock = threading.RLock()
         self._trackers: Dict[str, ContextTracker] = {}
         self._phases: Dict[str, str] = {}
-        self._seq: Dict[str, int] = {}
-        self._event_buffer: List[SessionEvent] = []
+        self._event_journal: Optional[EventJournal] = None
+        if enable_events:
+            try:
+                self._event_journal = EventJournal(
+                    event_journal_dir,
+                    tenant=self._tenant,
+                    namespace=self._namespace,
+                    agent_key=self._agent_key,
+                    instance_key=self._instance_key,
+                )
+            except OSError:
+                LOGGER.exception(
+                    "aistio: event journal cannot be opened; event reporting is disabled"
+                )
+                self._enable_events = False
+        self._seq: Dict[str, int] = (
+            self._event_journal.latest_sequences if self._event_journal else {}
+        )
+        self._inflight_event_report_id = ""
+        self._inflight_event_report_at = 0.0
         self._last_context_push: Dict[str, float] = {}
 
         self._stop = threading.Event()
@@ -259,6 +283,7 @@ class SessionBridge:
         )
         self._grpc.set_session_command_handler(self._on_session_command)
         self._grpc.set_execution_attempt_handler(self._on_execution_attempt)
+        self._grpc.set_event_ack_handler(self._on_event_ack)
         self._grpc.start()
 
     # ─── capabilities ───
@@ -300,11 +325,14 @@ class SessionBridge:
                 self._phases[event.session_id] = "completed"
 
             if self._enable_events:
-                self._event_buffer.append(event)
-                overflow = len(self._event_buffer) - EVENT_BUFFER_MAX
-                if overflow > 0:
-                    del self._event_buffer[:overflow]  # 溢出丢最旧（内存安全）
-                flush_needed = len(self._event_buffer) >= EVENT_BATCH_SIZE
+                assert self._event_journal is not None
+                try:
+                    self._event_journal.append(event.to_proto())
+                except OSError:
+                    # Observability must not break the Agent's conversation. The failed
+                    # sequence is deliberately not reused, and the gap remains visible.
+                    LOGGER.exception("aistio: failed to persist event journal")
+                flush_needed = len(self._event_journal) >= EVENT_BATCH_SIZE
 
             compaction = event.event_type == EVENT_COMPACTION
 
@@ -319,17 +347,45 @@ class SessionBridge:
     # ─── Level 2：事件流 ───
 
     def _flush_events(self) -> None:
-        if self._grpc is None:
+        if self._grpc is None or self._event_journal is None:
             return
         with self._lock:
-            if not self._event_buffer:
+            if len(self._event_journal) == 0:
                 return
-            batch = self._event_buffer
-            self._event_buffer = []
+            now = time.monotonic()
+            if (
+                self._inflight_event_report_id
+                and now - self._inflight_event_report_at < EVENT_ACK_TIMEOUT
+            ):
+                return
+            report_id = str(uuid.uuid4())
+            batch = self._event_journal.first(EVENT_BATCH_SIZE)
+            self._inflight_event_report_id = report_id
+            self._inflight_event_report_at = now
         try:
-            self._grpc.report_events([e.to_proto() for e in batch])
+            queued = self._grpc.report_events(report_id, batch)
         except Exception:
-            pass
+            queued = False
+        if not queued:
+            with self._lock:
+                if self._inflight_event_report_id == report_id:
+                    self._inflight_event_report_id = ""
+
+    def _on_event_ack(self, ack: "asdp_pb2.EventReportAck") -> None:
+        with self._lock:
+            if not self._inflight_event_report_id or ack.report_id != self._inflight_event_report_id:
+                return
+            committed: Dict[str, int] = {}
+            for cursor in ack.committed:
+                committed[cursor.session_id] = max(
+                    committed.get(cursor.session_id, 0), cursor.committed_seq
+                )
+            assert self._event_journal is not None
+            self._event_journal.acknowledge(committed)
+            self._inflight_event_report_id = ""
+            has_more = len(self._event_journal) > 0
+        if has_more and not ack.error:
+            self._flush_events()
 
     # ─── Level 4：Context 推送 ───
 

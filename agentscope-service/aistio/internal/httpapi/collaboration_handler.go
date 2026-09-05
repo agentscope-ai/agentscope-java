@@ -187,6 +187,7 @@ func (s *Server) listIssues(c *gin.Context) {
 		AssigneeType: controlmodel.AssigneeType(c.Query("assigneeType")),
 		AssigneeRef:  c.Query("assigneeRef"), ParentID: parentID, Limit: limit + 1, Offset: offset,
 		CursorTime: cursorTime, CursorID: cursorID, Search: c.Query("search"), Archived: c.Query("archived") == "true",
+		Kind: controlmodel.IssueKind(c.Query("kind")), Visibility: issueListVisibility(c),
 	})
 	if err != nil {
 		s.writeCollaborationError(c, err)
@@ -199,6 +200,16 @@ func (s *Server) listIssues(c *gin.Context) {
 		next = encodeCollaborationCursor(last.UpdatedAt, last.ID)
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "nextCursor": next})
+}
+
+func issueListVisibility(c *gin.Context) controlmodel.IssueVisibility {
+	if c.Query("includeOperational") == "true" {
+		return ""
+	}
+	if value := controlmodel.IssueVisibility(c.Query("visibility")); value != "" {
+		return value
+	}
+	return controlmodel.IssueVisibilityWorkHub
 }
 
 func (s *Server) getIssue(c *gin.Context) {
@@ -830,6 +841,25 @@ func (s *Server) listIssueActivities(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
+func (s *Server) listIssueArtifacts(c *gin.Context) {
+	issueID, ok := parseUUIDParam(c, "issueId")
+	if !ok {
+		return
+	}
+	issue, err := s.store.Collaboration().GetIssue(c.Request.Context(), issueID)
+	if err != nil {
+		s.writeCollaborationError(c, err)
+		return
+	}
+	items, err := s.store.Collaboration().ListArtifacts(c.Request.Context(), issue.Tenant,
+		issue.Namespace, "issue", issueID.String())
+	if err != nil {
+		s.writeCollaborationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
 func (s *Server) subscribeIssue(c *gin.Context) {
 	issueID, ok := parseUUIDParam(c, "issueId")
 	if !ok {
@@ -1342,6 +1372,13 @@ func (s *Server) createCollaborationTeam(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "tenant and namespace are required"})
 		return
 	}
+	if team.Status == "" {
+		team.Status = controlmodel.TeamActive
+	}
+	if team.Status != controlmodel.TeamActive && team.Status != controlmodel.TeamDisabled {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "status must be active or disabled"})
+		return
+	}
 	if _, err := s.activeAgentInScope(c.Request.Context(), team.Tenant, team.Namespace, team.LeaderAgentRef); err != nil {
 		if _, parseErr := uuid.Parse(team.LeaderAgentRef); parseErr != nil {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "leaderAgentId must be a valid UUID"})
@@ -1396,6 +1433,8 @@ func (s *Server) updateCollaborationTeam(c *gin.Context) {
 	var req struct {
 		Name            string                  `json:"name"`
 		Description     string                  `json:"description,omitempty"`
+		Instructions    *string                 `json:"instructions"`
+		Status          controlmodel.TeamStatus `json:"status,omitempty"`
 		LeaderAgentRef  string                  `json:"leaderAgentId"`
 		Policy          controlmodel.TeamPolicy `json:"policy"`
 		ExpectedVersion int64                   `json:"expectedVersion"`
@@ -1409,6 +1448,12 @@ func (s *Server) updateCollaborationTeam(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	for _, member := range current.Members {
+		if member.AgentRef == req.LeaderAgentRef {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "leader Agent cannot also be a Team member"})
+			return
+		}
+	}
 	if _, err := s.activeAgentInScope(c.Request.Context(), current.Tenant, current.Namespace, req.LeaderAgentRef); err != nil {
 		if _, parseErr := uuid.Parse(req.LeaderAgentRef); parseErr != nil {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "leaderAgentId must be a valid UUID"})
@@ -1417,12 +1462,23 @@ func (s *Server) updateCollaborationTeam(c *gin.Context) {
 		}
 		return
 	}
+	if req.Status == "" {
+		req.Status = current.Status
+	}
+	instructions := current.Instructions
+	if req.Instructions != nil {
+		instructions = *req.Instructions
+	}
+	if req.Status != controlmodel.TeamActive && req.Status != controlmodel.TeamDisabled {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "status must be active or disabled"})
+		return
+	}
 	if err := collaboration.ValidateTeamPolicy(req.Policy); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 	team, err := s.store.Collaboration().UpdateTeam(c.Request.Context(), &controlmodel.CollaborationTeam{
-		ID: id, Name: req.Name, Description: req.Description,
+		ID: id, Name: req.Name, Description: req.Description, Instructions: instructions, Status: req.Status,
 		LeaderAgentRef: req.LeaderAgentRef, Policy: req.Policy,
 	}, req.ExpectedVersion)
 	if err != nil {
@@ -1447,6 +1503,10 @@ func (s *Server) addCollaborationTeamMember(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	if team.LeaderAgentRef == member.AgentRef {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "leader Agent is already represented by the Team leader role"})
+		return
+	}
 	if _, err := s.activeAgentInScope(c.Request.Context(), team.Tenant, team.Namespace, member.AgentRef); err != nil {
 		if _, parseErr := uuid.Parse(member.AgentRef); parseErr != nil {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "agentId must be a valid UUID"})
@@ -1466,6 +1526,57 @@ func (s *Server) addCollaborationTeamMember(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"member": created})
+}
+
+func (s *Server) updateCollaborationTeamMember(c *gin.Context) {
+	teamID, ok := parseUUIDParam(c, "teamId")
+	if !ok {
+		return
+	}
+	memberID, ok := parseUUIDParam(c, "memberId")
+	if !ok {
+		return
+	}
+	var req struct {
+		Role                   string          `json:"role"`
+		Instructions           string          `json:"instructions,omitempty"`
+		CapabilityRequirements json.RawMessage `json:"capabilityRequirements,omitempty"`
+		RuntimeBindingPolicy   json.RawMessage `json:"runtimeBindingPolicy,omitempty"`
+		ExpectedTeamVersion    int64           `json:"expectedTeamVersion"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Role) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "role is required"})
+		return
+	}
+	team, err := s.store.Collaboration().GetTeam(c.Request.Context(), teamID)
+	if err != nil {
+		s.writeCollaborationError(c, err)
+		return
+	}
+	found := false
+	for _, member := range team.Members {
+		if member.ID == memberID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.writeCollaborationError(c, store.ErrNotFound)
+		return
+	}
+	if err := collaboration.ValidateRuntimeBindingPolicy(req.RuntimeBindingPolicy); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	updated, err := s.store.Collaboration().UpdateTeamMember(c.Request.Context(), &controlmodel.CollaborationTeamMember{
+		ID: memberID, TeamID: teamID, Role: strings.TrimSpace(req.Role), Instructions: req.Instructions,
+		CapabilityRequirements: req.CapabilityRequirements, RuntimeBindingPolicy: req.RuntimeBindingPolicy,
+	}, req.ExpectedTeamVersion)
+	if err != nil {
+		s.writeCollaborationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"member": updated})
 }
 
 func (s *Server) removeCollaborationTeamMember(c *gin.Context) {
@@ -1522,7 +1633,7 @@ func (s *Server) uploadArtifact(c *gin.Context) {
 		tenant, namespace = task.Tenant, task.Namespace
 		uploader = controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
 		if task.TeamID != nil {
-			if team, teamErr := s.store.Collaboration().GetTeam(c.Request.Context(), *task.TeamID); teamErr == nil {
+			if team, teamErr := s.collaborationService().TeamForTask(c.Request.Context(), task); teamErr == nil {
 				artifactPolicy = team.Policy
 			}
 		}

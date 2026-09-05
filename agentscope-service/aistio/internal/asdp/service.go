@@ -155,11 +155,16 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 		case *Upstream_ExecutionAttempt:
 			s.handleExecutionAttempt(meta, p.ExecutionAttempt)
 		case *Upstream_EventReport:
-			s.handleEventReport(meta, p.EventReport)
+			ack := s.handleEventReport(meta, p.EventReport)
+			if err := conn.Send(&Downstream{Payload: &Downstream_EventAck{EventAck: ack}}); err != nil {
+				logger.V(1).Info("event acknowledgement failed", "instance", meta.InstanceKey, "reportId", ack.GetReportId())
+			}
 		case *Upstream_ContextReport:
 			s.handleContextReport(meta, p.ContextReport)
 		case *Upstream_Inventory:
 			s.handleInventoryReport(meta, p.Inventory)
+		case *Upstream_ConversationTurn:
+			s.handleConversationTurnReport(meta, p.ConversationTurn)
 		case *Upstream_Heartbeat:
 			if err := conn.Send(&Downstream{
 				Payload: &Downstream_Heartbeat{Heartbeat: &Heartbeat{Timestamp: p.Heartbeat.Timestamp}},
@@ -237,10 +242,17 @@ func (s *service) handleExecutionAttempt(meta *UpstreamMeta, report *ExecutionAt
 	}
 }
 
-func (s *service) handleEventReport(meta *UpstreamMeta, report *EventReport) {
+func (s *service) handleConversationTurnReport(meta *UpstreamMeta, report *ConversationTurnReport) {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleEventReport(reportIdentity(meta), report)
+		s.server.eventSink.HandleConversationTurnReport(reportIdentity(meta), report)
 	}
+}
+
+func (s *service) handleEventReport(meta *UpstreamMeta, report *EventReport) *EventReportAck {
+	if s.server.eventSink != nil {
+		return s.server.eventSink.HandleEventReport(reportIdentity(meta), report)
+	}
+	return &EventReportAck{ReportId: report.GetReportId(), Error: "event sink unavailable"}
 }
 
 func (s *service) handleContextReport(meta *UpstreamMeta, report *ContextReport) {

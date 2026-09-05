@@ -178,7 +178,7 @@ export default function EnvironmentsHubPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h1 style={S.title}>Environments</h1>
         <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New environment</button>

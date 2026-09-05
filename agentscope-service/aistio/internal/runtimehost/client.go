@@ -30,6 +30,7 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider"
 )
 
 var ErrNoWork = errors.New("runtime host: no work")
@@ -39,6 +40,12 @@ type Client struct {
 	InternalToken string
 	HTTPClient    *http.Client
 	attemptTokens sync.Map
+}
+
+func (c *Client) RestoreAttemptToken(attemptID uuid.UUID, token string) {
+	if attemptID != uuid.Nil && token != "" {
+		c.attemptTokens.Store(attemptID, token)
+	}
 }
 
 type ControlPlaneClient interface {
@@ -68,11 +75,14 @@ type Registration struct {
 }
 
 type ClaimedWork struct {
-	Task         *controlmodel.AgentTask        `json:"task"`
-	Context      *collaboration.ContextEnvelope `json:"context"`
-	Attempt      *controlmodel.ExecutionAttempt `json:"attempt"`
-	Profile      *controlmodel.RuntimeProfile   `json:"runtimeProfile,omitempty"`
-	AttemptToken string                         `json:"attemptToken"`
+	Task               *controlmodel.AgentTask                `json:"task"`
+	Context            *collaboration.ContextEnvelope         `json:"context"`
+	Attempt            *controlmodel.ExecutionAttempt         `json:"attempt"`
+	Profile            *controlmodel.RuntimeProfile           `json:"runtimeProfile,omitempty"`
+	ExecutionOverrides *controlmodel.HostedExecutionOverrides `json:"executionOverrides,omitempty"`
+	Definition         *provider.AgentDefinition              `json:"definition,omitempty"`
+	AttemptToken       string                                 `json:"attemptToken"`
+	TaskToken          string                                 `json:"taskToken"`
 }
 
 func (c *Client) httpClient() *http.Client {
@@ -103,7 +113,11 @@ func (c *Client) requestWithHeaders(ctx context.Context, method, path string, bo
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if c.InternalToken != "" {
-		req.Header.Set("X-Builder-Internal-Token", c.InternalToken)
+		if strings.HasPrefix(c.InternalToken, "asrh_") {
+			req.Header.Set("Authorization", "Bearer "+c.InternalToken)
+		} else {
+			req.Header.Set("X-Builder-Internal-Token", c.InternalToken)
+		}
 	}
 	for name, value := range headers {
 		if value != "" && value != "<nil>" {
@@ -170,6 +184,9 @@ func (c *Client) Claim(ctx context.Context, host *controlmodel.RuntimeHost, owne
 	if response.AttemptToken == "" {
 		return nil, fmt.Errorf("claim response missing execution attempt token")
 	}
+	if response.TaskToken == "" {
+		return nil, fmt.Errorf("claim response missing agent task token")
+	}
 	c.attemptTokens.Store(response.Attempt.ID, response.AttemptToken)
 	return &response, nil
 }
@@ -217,6 +234,20 @@ func (c *Client) Checkpoint(ctx context.Context, hostID uuid.UUID, execution *co
 	payload["providerSessionId"] = providerSessionID
 	payload["checkpoint"] = checkpoint
 	return c.executionAction(ctx, hostID, execution.ID, "checkpoint", payload, execution)
+}
+
+// PublishProviderEvent is intentionally optional on ControlPlaneClient so
+// embedders and older test doubles remain source-compatible. Engine detects
+// this capability and treats telemetry delivery as best effort.
+func (c *Client) PublishProviderEvent(ctx context.Context, hostID uuid.UUID,
+	execution *controlmodel.ExecutionAttempt, providerName string, ordinal int64, event provider.Event) error {
+	payload := leasePayload(execution)
+	payload["provider"] = providerName
+	payload["ordinal"] = ordinal
+	payload["eventType"] = event.Type
+	payload["providerSessionId"] = event.ProviderSessionID
+	payload["raw"] = event.Raw
+	return c.executionAction(ctx, hostID, execution.ID, "events", payload, nil)
 }
 
 func (c *Client) Complete(ctx context.Context, hostID uuid.UUID, execution *controlmodel.ExecutionAttempt, result, checkpoint json.RawMessage) error {

@@ -214,6 +214,65 @@ func TestApplySessionReportRejectsStaleGeneration(t *testing.T) {
 	}
 }
 
+func TestApplyConversationTurnReportRequiresFrozenRuntimeIdentity(t *testing.T) {
+	ctx := context.Background()
+	st := newSinkTestStore(t)
+	sink := &SessionEventSink{Store: st}
+	identity := newRuntimeReportIdentity(t, st, "admin", "default", "agent-1", "pod-0")
+	agentID := uuid.MustParse(identity.AgentID)
+	bindingID := uuid.MustParse(identity.BindingID)
+	instances, err := st.RuntimeRegistry().ListAgentInstances(ctx, identity.Tenant, identity.Namespace, agentID)
+	if err != nil || len(instances) != 1 {
+		t.Fatalf("runtime instance: rows=%+v err=%v", instances, err)
+	}
+	endpoint, err := st.Endpoints().Create(ctx, &controlmodel.Endpoint{Tenant: identity.Tenant,
+		Namespace: identity.Namespace, Name: "chat", Slug: "chat", TargetType: controlmodel.EndpointTargetAgent,
+		TargetRef: agentID, InvocationMode: controlmodel.EndpointConversationMode, Status: controlmodel.EndpointPublished})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.Sessions().Upsert(ctx, &store.Session{Tenant: identity.Tenant, Namespace: identity.Namespace,
+		AgentID: agentID, BindingID: bindingID, AgentInstanceID: instances[0].ID,
+		InstanceGeneration: identity.InstanceGeneration, AgentName: identity.AgentKey, InstanceRef: identity.InstanceKey,
+		SessionID: "endpoint-session", OriginType: "endpoint", OriginRef: endpoint.ID.String(), Phase: store.SessionPhaseActive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := st.Endpoints().CreateConversation(ctx, &controlmodel.EndpointConversation{EndpointID: endpoint.ID,
+		AgentID: agentID, SessionID: session.SessionID, BindingID: bindingID, AgentInstanceID: instances[0].ID,
+		InstanceGeneration: identity.InstanceGeneration, Status: controlmodel.EndpointConversationActive, PrincipalRef: "caller"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turnID := uuid.New()
+	invocation, _, err := st.Endpoints().ReserveInvocation(ctx, &controlmodel.EndpointInvocation{EndpointID: endpoint.ID,
+		Mode: controlmodel.EndpointConversationMode, PrincipalRef: "caller", Status: controlmodel.EndpointInvocationDispatching,
+		ConversationID: &conversation.ID, TurnID: &turnID, SessionID: session.SessionID, CorrelationID: "corr-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := ObservedConversationTurn{InvocationID: invocation.ID.String(), ConversationID: conversation.ID.String(),
+		TurnID: turnID.String(), SessionID: session.SessionID, Generation: identity.InstanceGeneration,
+		Action: "completed", Payload: json.RawMessage(`{"answer":"ok"}`)}
+	stale := identity
+	stale.InstanceGeneration++
+	if err = sink.ApplyConversationTurnReport(ctx, stale, report); err == nil {
+		t.Fatalf("stale generation was accepted: %v", err)
+	}
+	forged := identity
+	forged.BindingID = uuid.NewString()
+	if err = sink.ApplyConversationTurnReport(ctx, forged, report); err == nil {
+		t.Fatalf("forged binding was accepted: %v", err)
+	}
+	if err = sink.ApplyConversationTurnReport(ctx, identity, report); err != nil {
+		t.Fatalf("valid report rejected: %v", err)
+	}
+	stored, err := st.Endpoints().GetInvocation(ctx, invocation.ID)
+	if err != nil || stored.Status != controlmodel.EndpointInvocationCompleted || stored.CompletedAt == nil {
+		t.Fatalf("invocation not completed: invocation=%+v err=%v", stored, err)
+	}
+}
+
 func TestApplyEventReportIdempotent(t *testing.T) {
 	st := newSinkTestStore(t)
 	sink := &SessionEventSink{Store: st}
@@ -224,7 +283,10 @@ func TestApplyEventReportIdempotent(t *testing.T) {
 		{SessionID: "sess-x", Seq: 1, EventType: "message", Role: "user", Content: "hi", OccurredAt: time.Now().UTC()},
 		{SessionID: "sess-x", Seq: 2, EventType: "message", Role: "assistant", Content: "hello", OccurredAt: time.Now().UTC()},
 	}
-	sink.ApplyEventReport(ctx, identity, events)
+	committed, err := sink.ApplyEventReport(ctx, identity, events)
+	if err != nil || committed["sess-x"] != 2 {
+		t.Fatalf("ApplyEventReport committed=%v err=%v", committed, err)
+	}
 
 	// Placeholder session must have been created for the unknown session ID.
 	sess, err := st.Sessions().Get(ctx, "admin", "agent-1", "default", "sess-x")
@@ -241,13 +303,69 @@ func TestApplyEventReportIdempotent(t *testing.T) {
 	}
 
 	// Re-applying the same batch must be idempotent (no duplicates).
-	sink.ApplyEventReport(ctx, identity, events)
+	committed, err = sink.ApplyEventReport(ctx, identity, events)
+	if err != nil || committed["sess-x"] != 2 {
+		t.Fatalf("idempotent ApplyEventReport committed=%v err=%v", committed, err)
+	}
 	list, err = st.Events().List(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("Events.List: %v", err)
 	}
 	if len(list) != 2 {
 		t.Errorf("expected idempotent append, got %d events", len(list))
+	}
+}
+
+func TestApplyEventReportAcknowledgesOnlyContiguousDurablePrefix(t *testing.T) {
+	st := newSinkTestStore(t)
+	sink := &SessionEventSink{Store: st}
+	ctx := context.Background()
+	identity := newRuntimeReportIdentity(t, st, "admin", "default", "agent-1", "pod-0")
+
+	committed, err := sink.ApplyEventReport(ctx, identity, []ObservedEvent{
+		{SessionID: "sess-gap", Seq: 2, EventType: "message", Content: "too early"},
+	})
+	if err == nil || len(committed) != 0 {
+		t.Fatalf("gap must not be acknowledged: committed=%v err=%v", committed, err)
+	}
+	committed, err = sink.ApplyEventReport(ctx, identity, []ObservedEvent{
+		{SessionID: "sess-gap", Seq: 2, EventType: "message", Content: "second"},
+		{SessionID: "sess-gap", Seq: 1, EventType: "message", Content: "first"},
+	})
+	if err != nil || committed["sess-gap"] != 2 {
+		t.Fatalf("sorted contiguous report failed: committed=%v err=%v", committed, err)
+	}
+}
+
+func TestApplyEventReportRepairsPreexistingStoredGap(t *testing.T) {
+	ctx := context.Background()
+	st := newSinkTestStore(t)
+	sink := &SessionEventSink{Store: st}
+	identity := newRuntimeReportIdentity(t, st, "admin", "default", "agent-1", "pod-0")
+	if _, err := sink.ApplyEventReport(ctx, identity, []ObservedEvent{
+		{SessionID: "sess-repair", Seq: 1, EventType: "message", Content: "stored"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.Sessions().Get(ctx, identity.Tenant, "agent-1", identity.Namespace, "sess-repair")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Events().Append(ctx, &store.SessionEvent{
+		SessionFK: session.ID, Seq: 3, EventType: "message", Content: "stored",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	committed, err := sink.ApplyEventReport(ctx, identity, []ObservedEvent{
+		{SessionID: "sess-repair", Seq: 2, EventType: "message", Content: "replayed"},
+	})
+	if err != nil || committed["sess-repair"] != 3 {
+		t.Fatalf("repair committed=%v err=%v", committed, err)
+	}
+	events, err := st.Events().List(ctx, session.ID)
+	if err != nil || len(events) != 3 || events[1].Seq != 2 || events[1].Content != "replayed" {
+		t.Fatalf("events=%+v err=%v", events, err)
 	}
 }
 

@@ -76,6 +76,15 @@ func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 	if !bytes.Contains(encoded, []byte(`"issue.comment.add"`)) || !bytes.Contains(encoded, []byte(`"artifact.upload"`)) {
 		t.Fatalf("incomplete MCP tool catalog: %s", encoded)
 	}
+	bearerBody := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	bearerReq := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bearerBody)
+	bearerReq.Header.Set("Authorization", "Bearer "+token)
+	bearerReq.Header.Set("Content-Type", "application/json")
+	bearerResponse := httptest.NewRecorder()
+	srv.router.ServeHTTP(bearerResponse, bearerReq)
+	if bearerResponse.Code != http.StatusOK || !bytes.Contains(bearerResponse.Body.Bytes(), []byte(`"issue.get"`)) {
+		t.Fatalf("task-scoped bearer MCP access failed: status=%d body=%s", bearerResponse.Code, bearerResponse.Body.String())
+	}
 	read := call("tools/call", map[string]any{"name": "issue.get", "arguments": map[string]any{"issueId": issue.ID.String()}})
 	if read.Error != nil {
 		t.Fatalf("issue.get RPC error: %+v", read.Error)

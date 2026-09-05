@@ -1,7 +1,11 @@
 -- +migrate Down
 
-DROP TABLE IF EXISTS endpoint_jobs;
-DROP TABLE IF EXISTS agent_endpoints;
+DROP TABLE IF EXISTS endpoint_invocations;
+DROP TABLE IF EXISTS endpoint_rate_windows;
+DROP TABLE IF EXISTS endpoint_conversations;
+DROP TABLE IF EXISTS endpoint_credentials;
+DROP TABLE IF EXISTS endpoint_releases;
+DROP TABLE IF EXISTS endpoints;
 DROP TABLE IF EXISTS control_outbox;
 DROP TABLE IF EXISTS runtime_hosts;
 DROP TABLE IF EXISTS runtime_pools;

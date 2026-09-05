@@ -183,7 +183,7 @@ export async function getAgent(id: string): Promise<AgentDefinition> {
     if (definitionRes.status === 404) {
       return catalogToDefinition(catalogBody.agent, bindings.find(binding => binding.enabled)?.kind ?? bindings[0]?.kind ?? '');
     }
-    throw await readApiError(definitionRes, 'Failed to load Managed definition');
+    throw await readApiError(definitionRes, 'Failed to load Agent definition');
   }
   const definitionBody = await definitionRes.json() as { definition: AgentDefinition };
   return mergeCatalogDefinition(catalogBody.agent, definitionBody.definition, bindings);
@@ -208,7 +208,9 @@ export async function createAgent(req: AgentCreateRequest): Promise<AgentDefinit
       description: req.description,
       ownerType: 'user',
       binding: { kind: runtimeKind, priority: 100, configuration },
-      definition: runtimeKind === 'managed' ? req : undefined,
+      // Agent behavior is portable. The control plane stores one definition
+      // for Managed and Hosted runtimes; only the execution binding differs.
+      definition: req,
     }),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to create agent');
@@ -374,6 +376,71 @@ export interface HostedRuntimeOption {
   provider?: string;
 }
 
+export interface DiscoveredRuntimeOption extends HostedRuntimeOption {
+  runtimeProfileId: string;
+  runtimePoolId: string;
+  version?: string;
+  hostCount: number;
+  capabilities?: RuntimeCapabilityDescriptor;
+}
+
+export interface RuntimeCapabilityDescriptor {
+  displayName?: string;
+  runtime?: string;
+  instructions?: { supported: boolean; mode?: string; target?: string };
+  workspace?: { supported: boolean; mode?: string; target?: string };
+  skills?: { supported: boolean; mode?: string; target?: string };
+  tools?: { supported: boolean; mode?: string; target?: string };
+  mcp?: { supported: boolean; mode?: string; target?: string };
+  model?: { supported: boolean; mode?: string; target?: string };
+  resume?: boolean;
+}
+
+export interface HostedExecutionOverrides {
+  reasoningEffort?: string;
+  serviceTier?: string;
+  providerConfiguration?: Record<string, unknown>;
+  customArgs?: string[];
+}
+
+export interface HostedAgentSettings {
+  agentId: string;
+  bindingId: string;
+  bindingVersion: number;
+  runtimeProfile: {
+    id: string; name: string; provider: string; runtime?: string; version: number;
+    configuration?: Record<string, unknown>; requirements?: unknown;
+  };
+  runtimePool: { id: string; name: string; version: number };
+  executionOverrides?: HostedExecutionOverrides;
+  maxConcurrency: number;
+  policyVersion: number;
+}
+
+export async function getHostedAgentSettings(agentId: string): Promise<HostedAgentSettings> {
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/hosted-settings`, { headers: authHeaders() });
+  if (!res.ok) throw await readApiError(res, 'Failed to load Hosted Agent settings');
+  return ((await res.json()) as { settings: HostedAgentSettings }).settings;
+}
+
+export async function updateHostedAgentSettings(
+  agentId: string,
+  request: {
+    runtimeProfileId: string;
+    runtimePoolId: string;
+    executionOverrides: HostedExecutionOverrides;
+    maxConcurrency: number;
+    bindingVersion: number;
+    policyVersion: number;
+  },
+): Promise<HostedAgentSettings> {
+  const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/hosted-settings`, {
+    method: 'PATCH', headers: authHeaders(), body: JSON.stringify(request),
+  });
+  if (!res.ok) throw await readApiError(res, 'Failed to update Hosted Agent settings');
+  return ((await res.json()) as { settings: HostedAgentSettings }).settings;
+}
+
 async function getCatalogAgent(id: string): Promise<CatalogAgent> {
   const res = await fetch(`/api/v1/agents/${encodeURIComponent(id)}`, { headers: authHeaders() });
   if (!res.ok) throw await readApiError(res, 'Failed to load Agent identity');
@@ -405,6 +472,7 @@ export async function getAgentRuntimeInventory(id: string): Promise<AgentRuntime
 }
 
 export async function listHostedRuntimeOptions(tenant = 'default', namespace = 'default'): Promise<{
+  runtimes: DiscoveredRuntimeOption[];
   profiles: HostedRuntimeOption[];
   pools: HostedRuntimeOption[];
 }> {

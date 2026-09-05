@@ -48,11 +48,11 @@ A successful Run moves native work to review by default; it does not mark the Is
 
 GitHub is an external authoritative Work Source for title, body, state, and external comments. AgentScope stores a projection plus its own Run, Task, Attempt, Approval, Artifact, Inbox, and audit facts. Outbound mutations update the projection only after the adapter succeeds.
 
-AgentEndpoint reuses the existing Gateway. Conversation mode targets one Agent and manages a Session without an Issue. Job mode targets an Agent, Team, or immutable orchestration revision and creates an Issue and Run with mandatory idempotency.
+Endpoint reuses the existing Gateway and is a governed API façade rather than a replacement for an Agent runtime's native API or UI. Publishing an individual Agent is optional. Conversation mode targets one Agent with an inbound-capable runtime and manages a Session without an Issue. Job mode targets an Agent, Team, or immutable orchestration revision and creates an Issue and Run with mandatory, principal-scoped idempotency. Public callers track a stable Invocation instead of using Issue, Run, or Session identities as the API contract.
 
 ## Authorization and product areas
 
-Work Hub, Agent Center, and Operations are backend authorization boundaries, not only navigation groups. The fixed roles are `user`, `agent_developer`, `operator`, and `admin`. Direct API calls and console routes enforce the same matrix.
+Work Hub and Agent Center are the user-facing product areas. Cross-Agent activity and runtime-infrastructure APIs retain an internal `operations` authorization capability for `operator` and `admin`; it is not exposed as a third product area. The fixed roles are `user`, `agent_developer`, `operator`, and `admin`. Direct API calls and console routes enforce the same matrix.
 
 ## Consequences
 

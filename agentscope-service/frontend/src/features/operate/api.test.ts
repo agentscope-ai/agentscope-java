@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { sessionDetailPath } from './api';
+import { agentSessionDetailPath, sessionDetailPath } from './api';
 
 describe('sessionDetailPath', () => {
-  it('opens the canonical Operations detail page for a stored session', () => {
+  it('uses the Agent-scoped detail route when ownership is known', () => {
+    expect(agentSessionDetailPath('agent-id', { id: 'session-id' })).toBe(
+      '/agent-center/agents/agent-id/sessions/session-id',
+    );
+  });
+
+  it('opens the canonical Agent Center detail page for a stored session', () => {
     expect(sessionDetailPath({ id: 'store/id', sessionId: 'runtime-session' })).toBe(
-      '/operations/sessions/store%2Fid',
+      '/agent-center/activity/sessions/store%2Fid',
     );
   });
 
@@ -16,7 +22,7 @@ describe('sessionDetailPath', () => {
         namespace: 'default',
       }),
     ).toBe(
-      '/operations/sessions/runtime%2Fid?agent=paw+agent&namespace=default',
+      '/agent-center/activity/sessions/runtime%2Fid?agent=paw+agent&namespace=default',
     );
   });
 });

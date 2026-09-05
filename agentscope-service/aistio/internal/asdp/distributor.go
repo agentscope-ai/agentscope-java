@@ -207,6 +207,17 @@ func (d *Distributor) SendSessionCommandWithParams(tenant, namespace, instanceID
 	return conn.Send(down)
 }
 
+// SendConversationTurn delivers one fenced online turn to a connected Agent
+// instance. Unlike SessionCommand this command carries a public Invocation ID
+// and must be acknowledged through ConversationTurnReport.
+func (d *Distributor) SendConversationTurn(tenant, namespace, instanceID string, command *ConversationTurnCommand) error {
+	conn, ok := d.server.GetConnectionForTenant(tenant, namespace, instanceID)
+	if !ok {
+		return ErrInstanceNotConnected
+	}
+	return conn.Send(&Downstream{Payload: &Downstream_ConversationTurn{ConversationTurn: command}})
+}
+
 // SendExecutionAttemptCommand sends a task wake only to the selected tenant's stream.
 func (d *Distributor) SendExecutionAttemptCommand(tenant, namespace, instanceID, sessionID, command string, params []byte) error {
 	conn, ok := d.server.GetConnectionForTenant(tenant, namespace, instanceID)

@@ -115,8 +115,11 @@ type EventSink interface {
 	HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64)
 	HandleSessionReport(identity ReportIdentity, report *SessionReport)
 	HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *ExecutionAttemptReport)
+	HandleConversationTurnReport(identity ReportIdentity, report *ConversationTurnReport)
 	// HandleEventReport processes a Level-2 event stream batch (session_events).
-	HandleEventReport(identity ReportIdentity, report *EventReport)
+	// HandleEventReport returns durable per-session commit watermarks. The
+	// transport must not acknowledge an event that has not reached the Store.
+	HandleEventReport(identity ReportIdentity, report *EventReport) *EventReportAck
 	// HandleContextReport processes a Level-4 effective-context report (context_snapshots).
 	HandleContextReport(identity ReportIdentity, report *ContextReport)
 	// HandleInventoryReport processes an instance inventory report. The latest

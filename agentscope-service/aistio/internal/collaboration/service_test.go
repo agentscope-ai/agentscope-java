@@ -283,6 +283,69 @@ func TestCompletionAtomicallyAggregatesAttemptAndRunUsage(t *testing.T) {
 	}
 }
 
+func TestChildDelegationUsesFrozenTeamRoster(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	human := controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "frozen-roster",
+		LeaderAgentRef: "leader-v1", Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "specialist-v1", Role: "specialist",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	team, err = st.Collaboration().GetTeam(ctx, team.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, leaderTask, err := svc.CreateIssue(ctx, CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "frozen collaboration",
+		Creator: human, AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil || leaderTask == nil {
+		t.Fatalf("create root: issue=%+v task=%+v err=%v", root, leaderTask, err)
+	}
+
+	team.LeaderAgentRef = "leader-v2"
+	team.Policy.AllowExternalDelegation = true
+	team, err = st.Collaboration().UpdateTeam(ctx, team, team.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.Collaboration().RemoveTeamMember(ctx, team.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := svc.TeamForTask(ctx, leaderTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frozen.LeaderAgentRef != "leader-v1" || frozen.Policy.AllowExternalDelegation || len(frozen.Members) != 1 {
+		t.Fatalf("unexpected frozen snapshot: %+v", frozen)
+	}
+
+	_, childTask, err := svc.CreateChildFromTask(ctx, leaderTask.ID, CreateIssueRequest{
+		Title: "delegate to frozen specialist", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "specialist-v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if childTask == nil || childTask.TeamID == nil || *childTask.TeamID != team.ID || childTask.TeamRole != "specialist" || childTask.LeaderTask {
+		t.Fatalf("child task lost frozen Team lineage: %+v", childTask)
+	}
+	if _, _, err = svc.CreateChildFromTask(ctx, leaderTask.ID, CreateIssueRequest{
+		Title: "live leader is not in snapshot", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "leader-v2",
+	}); err == nil || !strings.Contains(err.Error(), "not in the Team snapshot") {
+		t.Fatalf("live roster leaked into running Team: %v", err)
+	}
+}
+
 func TestCrossTeamChildIssueResultWakesParentLeaderAndCanBeAccepted(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
@@ -292,7 +355,8 @@ func TestCrossTeamChildIssueResultWakesParentLeaderAndCanBeAccepted(t *testing.T
 	t.Cleanup(func() { _ = st.Close() })
 	svc := &Service{Store: st}
 	human := controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}
-	teamA, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{Tenant: "tenant", Namespace: "default", Name: "team-a", LeaderAgentRef: "lead-a"})
+	teamA, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{Tenant: "tenant", Namespace: "default", Name: "team-a", LeaderAgentRef: "lead-a",
+		Policy: controlmodel.TeamPolicy{AllowExternalDelegation: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

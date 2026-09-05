@@ -244,7 +244,7 @@ export default function VaultsPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h1 style={S.title}>Vaults</h1>
         <button type="button" style={S.primaryBtn} onClick={() => setCreatingVault(true)}>＋ New vault</button>

@@ -33,6 +33,33 @@ func (s *Service) DispatchHosted(ctx context.Context, taskID uuid.UUID, binding 
 }
 
 func (s *Service) DispatchHostedCandidate(ctx context.Context, taskID uuid.UUID, candidate controlmodel.RuntimeBindingCandidate) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
+	return s.dispatchHostedCandidate(ctx, taskID, candidate, HostedConversationContext{})
+}
+
+// HostedConversationContext binds a physical hosted execution to one logical
+// conversation turn. ProviderSessionID is the opaque resume token returned by
+// the previous attempt; WorkspaceKey identifies the matching host-local
+// working directory. The control plane never interprets either value.
+type HostedConversationContext struct {
+	SessionID         string
+	TurnID            string
+	ProviderSessionID string
+	WorkspaceKey      string
+	PreferredHostID   *uuid.UUID
+}
+
+// DispatchHostedConversationCandidate dispatches one turn while preserving
+// the stable control-plane session and provider-native resume identity.
+func (s *Service) DispatchHostedConversationCandidate(ctx context.Context, taskID uuid.UUID,
+	candidate controlmodel.RuntimeBindingCandidate, conversation HostedConversationContext) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
+	if conversation.SessionID == "" || conversation.TurnID == "" {
+		return nil, nil, fmt.Errorf("hosted conversation dispatch requires sessionId and turnId")
+	}
+	return s.dispatchHostedCandidate(ctx, taskID, candidate, conversation)
+}
+
+func (s *Service) dispatchHostedCandidate(ctx context.Context, taskID uuid.UUID,
+	candidate controlmodel.RuntimeBindingCandidate, conversation HostedConversationContext) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
 	binding, capabilities := candidate.Binding, candidate.RequiredCapabilities
 	if s == nil || s.Store == nil {
 		return nil, nil, fmt.Errorf("task plane store is required")
@@ -58,8 +85,27 @@ func (s *Service) DispatchHostedCandidate(ctx context.Context, taskID uuid.UUID,
 	if err != nil || pool.Tenant != task.Tenant || pool.Namespace != task.Namespace {
 		return nil, nil, fmt.Errorf("runtime pool %q: %w", binding.RuntimePoolID, err)
 	}
+	resolvedConfiguration, err := binding.ExecutionOverrides.ResolveProviderConfiguration(profile.Configuration)
+	if err != nil {
+		return nil, nil, err
+	}
+	dispatchPolicyValues := make(map[string]any)
+	if conversation.PreferredHostID != nil {
+		dispatchPolicyValues["preferredHostId"] = conversation.PreferredHostID
+	}
+	if conversation.WorkspaceKey != "" {
+		dispatchPolicyValues["workspaceKey"] = conversation.WorkspaceKey
+	}
+	var dispatchPolicy json.RawMessage
+	if len(dispatchPolicyValues) > 0 {
+		dispatchPolicy, _ = json.Marshal(dispatchPolicyValues)
+	}
 	snapshot, err := json.Marshal(controlmodel.RuntimeDispatchSnapshot{Binding: binding,
-		Capabilities: capabilities, SecurityConstraints: candidate.SecurityConstraints,
+		RuntimeProfile: profile, RuntimePool: pool, ExecutionOverrides: binding.ExecutionOverrides,
+		ResolvedProviderConfiguration: resolvedConfiguration,
+		SessionID:                     conversation.SessionID,
+		Capabilities:                  capabilities, SecurityConstraints: candidate.SecurityConstraints,
+		Policy:          dispatchPolicy,
 		SelectionSource: candidate.SelectionSource, CandidateIndex: candidate.CandidateIndex,
 		ResolvedAt: time.Now().UTC()})
 	if err != nil {
@@ -67,12 +113,16 @@ func (s *Service) DispatchHostedCandidate(ctx context.Context, taskID uuid.UUID,
 	}
 	dispatched, execution, err := s.Store.Collaboration().ClaimAgentTaskWithAttempt(ctx, store.TaskClaim{
 		TaskID: task.ID, ExpectedVersion: task.Version, RuntimeBinding: snapshot,
+		SessionID: conversation.SessionID,
 	}, &controlmodel.ExecutionAttempt{
 		AgentTaskID: task.ID, Tenant: task.Tenant, Namespace: task.Namespace,
 		AgentID: binding.AgentID, BindingID: binding.BindingID,
 		BackendKind:        controlmodel.DataPlaneHostedRuntime,
 		RuntimeProfileName: profile.Name, RuntimePoolName: pool.Name,
 		RequiredCapabilities: capabilities,
+		SessionID:            conversation.SessionID, TurnID: conversation.TurnID,
+		ProviderSessionID: conversation.ProviderSessionID,
+		WorkspaceKey:      conversation.WorkspaceKey,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -93,11 +143,18 @@ func (s *Service) Claim(ctx context.Context, claim store.ExecutionClaim) (*contr
 		result = "error"
 	}
 	metrics.RecordRuntimeClaim(claim.Namespace, claim.RuntimePoolName, result)
+	if err == nil {
+		s.appendAttemptEvent(ctx, execution, "attempt.assigned", nil)
+	}
 	return execution, err
 }
 
 func (s *Service) MarkPreparing(ctx context.Context, id uuid.UUID, leaseToken string, fencingToken int64) (*controlmodel.ExecutionAttempt, error) {
-	return s.Store.ExecutionAttempts().MarkPreparing(ctx, id, leaseToken, fencingToken)
+	execution, err := s.Store.ExecutionAttempts().MarkPreparing(ctx, id, leaseToken, fencingToken)
+	if err == nil {
+		s.appendAttemptEvent(ctx, execution, "attempt.preparing", nil)
+	}
+	return execution, err
 }
 
 func (s *Service) MarkRunning(ctx context.Context, id uuid.UUID, leaseToken string, fencingToken int64, providerSessionID, workspaceKey string) (*controlmodel.ExecutionAttempt, error) {
@@ -125,13 +182,27 @@ func (s *Service) Checkpoint(ctx context.Context, id uuid.UUID, leaseToken strin
 }
 
 func (s *Service) ConfirmCancelled(ctx context.Context, id uuid.UUID, leaseToken string, fencingToken int64) (*controlmodel.ExecutionAttempt, error) {
-	return s.Store.ExecutionAttempts().ConfirmCancelled(ctx, id, leaseToken, fencingToken)
+	execution, err := s.Store.ExecutionAttempts().Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if execution.State == controlmodel.ExecutionCancelled && execution.LeaseToken == leaseToken && execution.FencingToken == fencingToken {
+		return execution, nil
+	}
+	execution, err = s.Store.ExecutionAttempts().ConfirmCancelled(ctx, id, leaseToken, fencingToken)
+	if err == nil {
+		s.appendAttemptEvent(ctx, execution, "attempt.cancelled", nil)
+	}
+	return execution, err
 }
 
 func (s *Service) Complete(ctx context.Context, id uuid.UUID, leaseToken string, fencingToken int64, result, checkpoint json.RawMessage) (*controlmodel.ExecutionAttempt, error) {
 	execution, err := s.Store.ExecutionAttempts().Get(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if execution.State == controlmodel.ExecutionSucceeded && execution.LeaseToken == leaseToken && execution.FencingToken == fencingToken {
+		return execution, nil
 	}
 	if execution.LeaseToken != leaseToken || execution.FencingToken != fencingToken ||
 		!controlmodel.CanTransitionExecutionAttempt(execution.State, controlmodel.ExecutionSucceeded) {
@@ -177,6 +248,9 @@ func (s *Service) Fail(ctx context.Context, id uuid.UUID, leaseToken string, fen
 	if err != nil {
 		return nil, err
 	}
+	if execution.State == controlmodel.ExecutionFailed && execution.LeaseToken == leaseToken && execution.FencingToken == fencingToken {
+		return execution, nil
+	}
 	task, err := s.Store.Collaboration().GetAgentTask(ctx, execution.AgentTaskID)
 	if err != nil {
 		return nil, err
@@ -190,6 +264,27 @@ func (s *Service) Fail(ctx context.Context, id uuid.UUID, leaseToken string, fen
 	metrics.RecordAgentTaskTransition(failed.Namespace, string(execution.BackendKind), string(failed.Status))
 	metrics.RecordExecutionAttemptTransition(execution.Namespace, string(execution.BackendKind), string(execution.State), code, executionDuration(execution))
 	return execution, nil
+}
+
+func (s *Service) appendAttemptEvent(ctx context.Context, execution *controlmodel.ExecutionAttempt,
+	eventType string, values map[string]any) {
+	if s == nil || s.Store == nil || execution == nil || execution.RunID == uuid.Nil {
+		return
+	}
+	payload := map[string]any{
+		"state": execution.State, "backendKind": execution.BackendKind,
+		"hostId": execution.HostID, "attempt": execution.Attempt,
+	}
+	for key, value := range values {
+		payload[key] = value
+	}
+	encoded, _ := json.Marshal(payload)
+	_, _ = s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{
+		RunID: execution.RunID, Tenant: execution.Tenant, Namespace: execution.Namespace,
+		NodeID: &execution.NodeID, AgentTaskID: &execution.AgentTaskID, AttemptID: &execution.ID,
+		Type: eventType, Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "task-plane"},
+		Payload: encoded, IdempotencyKey: eventType + ":" + execution.ID.String(),
+	})
 }
 
 func (s *Service) CancelTask(ctx context.Context, taskID uuid.UUID, expectedVersion int64) (*controlmodel.AgentTask, error) {
@@ -238,7 +333,76 @@ func (s *Service) RetryTask(ctx context.Context, taskID uuid.UUID) (*controlmode
 	if err := json.Unmarshal(failed.RuntimeBinding, &snapshot); err != nil || snapshot.Binding.Kind != controlmodel.DataPlaneHostedRuntime {
 		return retry, nil, nil
 	}
-	return s.DispatchHosted(ctx, retry.ID, snapshot.Binding, snapshot.Capabilities)
+	candidate := controlmodel.RuntimeBindingCandidate{Binding: snapshot.Binding,
+		RequiredCapabilities: snapshot.Capabilities, SecurityConstraints: snapshot.SecurityConstraints,
+		SelectionSource: snapshot.SelectionSource, CandidateIndex: snapshot.CandidateIndex}
+	if snapshot.SessionID == "" {
+		return s.DispatchHostedCandidate(ctx, retry.ID, candidate)
+	}
+	attempts, listErr := s.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{
+		AgentTaskID: failed.ID, NewestFirst: true, Limit: 1,
+	})
+	if listErr != nil {
+		return retry, nil, listErr
+	}
+	if len(attempts) == 0 {
+		return retry, nil, fmt.Errorf("conversation retry has no previous execution attempt")
+	}
+	failedAttempt := attempts[0]
+	resumeAttempt := failedAttempt
+	checkpoints, checkpointErr := s.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{
+		Tenant: failed.Tenant, Namespace: failed.Namespace, AgentID: snapshot.Binding.AgentID,
+		BindingID: snapshot.Binding.BindingID, SessionID: snapshot.SessionID,
+		NewestFirst: true, Limit: 100,
+	})
+	if checkpointErr != nil {
+		return retry, nil, checkpointErr
+	}
+	for _, checkpoint := range checkpoints {
+		if checkpoint.State == controlmodel.ExecutionSucceeded {
+			resumeAttempt = checkpoint
+			break
+		}
+	}
+	providerSessionID, workspaceKey, preferredHostID := resumeAttempt.ProviderSessionID,
+		resumeAttempt.WorkspaceKey, resumeAttempt.HostID
+	if resumeAttempt.State != controlmodel.ExecutionSucceeded {
+		providerSessionID = ""
+	}
+	if preferredHostID == nil {
+		providerSessionID, workspaceKey = "", ""
+	} else {
+		host, hostErr := s.Store.RuntimeRegistry().GetRuntimeHost(ctx, *preferredHostID)
+		if hostErr != nil || snapshot.RuntimePool == nil || snapshot.RuntimeProfile == nil ||
+			host.State != controlmodel.RuntimeHostOnline ||
+			host.PoolName != snapshot.RuntimePool.Name ||
+			!controlmodel.RuntimeHostMatchesProfile(host.Capabilities, snapshot.RuntimeProfile) ||
+			!controlmodel.RuntimeHostMatchesPool(host.Labels, snapshot.RuntimePool) {
+			providerSessionID, workspaceKey, preferredHostID = "", "", nil
+		}
+	}
+	dispatched, execution, dispatchErr := s.DispatchHostedConversationCandidate(ctx, retry.ID, candidate, HostedConversationContext{
+		SessionID: snapshot.SessionID, TurnID: failedAttempt.TurnID,
+		ProviderSessionID: providerSessionID, WorkspaceKey: workspaceKey,
+		PreferredHostID: preferredHostID,
+	})
+	if dispatchErr != nil {
+		return dispatched, execution, dispatchErr
+	}
+	sessions, sessionErr := s.Store.Sessions().List(ctx, store.SessionFilter{Tenant: retry.Tenant,
+		Namespace: retry.Namespace, AgentID: execution.AgentID, SessionID: snapshot.SessionID, Limit: 1})
+	if sessionErr != nil {
+		return dispatched, execution, sessionErr
+	}
+	if len(sessions) > 0 {
+		now := time.Now().UTC()
+		sessions[0].AgentTaskID, sessions[0].Phase, sessions[0].LastActiveAt =
+			&retry.ID, store.SessionPhaseActive, &now
+		if _, sessionErr = s.Store.Sessions().Upsert(ctx, sessions[0]); sessionErr != nil {
+			return dispatched, execution, sessionErr
+		}
+	}
+	return dispatched, execution, nil
 }
 
 func executionDuration(execution *controlmodel.ExecutionAttempt) time.Duration {

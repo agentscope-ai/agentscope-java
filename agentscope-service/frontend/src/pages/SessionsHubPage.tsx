@@ -195,7 +195,7 @@ export default function SessionsHubPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h2 style={S.title}>Sessions</h2>
         <select

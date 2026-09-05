@@ -1,147 +1,93 @@
 /*
  * Copyright 2024-2026 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Licensed under the Apache License, Version 2.0.
  */
 
-import React, { useEffect, useState } from 'react';
-import { UserProfile, getProfile, changePassword } from '../api/auth';
+import { useEffect, useState } from 'react';
+import { KeyRound, UserRound } from 'lucide-react';
 
-const S: Record<string, React.CSSProperties> = {
-  page: { padding: '36px 40px', maxWidth: 760 },
-  title: { margin: '0 0 28px', fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' },
-  card: {
-    background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14,
-    padding: '24px 28px', marginBottom: 20,
-    boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
-  },
-  cardLabel: {
-    fontSize: '0.78rem', color: '#94a3b8', fontWeight: 700,
-    textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 16, display: 'block',
-  },
-  row: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 },
-  rowLabel: { width: 120, fontSize: '0.88rem', color: '#94a3b8', flexShrink: 0 },
-  rowValue: { fontSize: '0.95rem', color: '#0f172a' },
-  badge: {
-    display: 'inline-block', padding: '3px 11px', borderRadius: 999, fontSize: '0.78rem',
-    fontWeight: 600,
-  },
-  fieldLabel: { display: 'block', fontSize: '0.88rem', fontWeight: 500, color: '#475569', marginBottom: 8 },
-  input: {
-    width: '100%', boxSizing: 'border-box', padding: '11px 14px',
-    background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 9,
-    color: '#0f172a', fontSize: '0.95rem',
-  },
-  saveBtn: {
-    marginTop: 18, padding: '11px 24px',
-    background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
-    color: '#ffffff',
-    border: 'none', borderRadius: 9, cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600,
-    boxShadow: '0 2px 6px rgba(99,102,241,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
-  },
-  success: { color: '#059669', fontSize: '0.9rem', marginTop: 10 },
-  error: { color: '#dc2626', fontSize: '0.9rem', marginTop: 10 },
-};
+import { changePassword, getProfile, type UserProfile } from '../api/auth';
+import { Page, PageHeader } from '../components/Page';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Input } from '../components/ui/input';
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-
   const [curPwd, setCurPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [conPwd, setConPwd] = useState('');
   const [pwdErr, setPwdErr] = useState<string | null>(null);
   const [pwdOk, setPwdOk] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getProfile().then(setProfile).catch(e => setLoadErr(e.message));
+    getProfile().then(setProfile).catch((error) => setLoadErr(error.message));
   }, []);
 
   async function handleChangePwd() {
     setPwdErr(null);
     setPwdOk(false);
-    if (newPwd.length < 6) { setPwdErr('Password must be ≥ 6 characters'); return; }
+    if (newPwd.length < 6) { setPwdErr('Password must be at least 6 characters'); return; }
     if (newPwd !== conPwd) { setPwdErr('Passwords do not match'); return; }
+    setSaving(true);
     try {
       await changePassword(curPwd, newPwd);
       setPwdOk(true);
-      setCurPwd(''); setNewPwd(''); setConPwd('');
-    } catch (e: unknown) {
-      setPwdErr(e instanceof Error ? e.message : 'Error');
+      setCurPwd('');
+      setNewPwd('');
+      setConPwd('');
+    } catch (error: unknown) {
+      setPwdErr(error instanceof Error ? error.message : 'Password update failed');
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <div style={S.page}>
-      <h2 style={S.title}>My Profile</h2>
-      {loadErr && <p style={S.error}>{loadErr}</p>}
+    <Page className="max-w-[1000px]">
+      <PageHeader title="Profile" description="Review your console identity and update account security." />
+      {loadErr && <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{loadErr}</p>}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <Card>
+          <CardHeader>
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"><UserRound className="h-4 w-4" /></span>
+            <CardTitle className="pt-2">Account</CardTitle>
+            <CardDescription>Your authenticated console identity and assigned roles.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {profile ? (
+              <dl className="divide-y divide-slate-100 text-sm">
+                <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 py-3"><dt className="text-slate-500">Username</dt><dd className="font-medium text-slate-900">{profile.username}</dd></div>
+                <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 py-3"><dt className="text-slate-500">User ID</dt><dd className="break-all font-mono text-xs text-slate-600">{profile.userId}</dd></div>
+                <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 py-3"><dt className="text-slate-500">Roles</dt><dd className="flex flex-wrap gap-1.5">{profile.roles.map((role) => <Badge key={role} tone={role === 'admin' ? 'info' : 'default'}>{role}</Badge>)}</dd></div>
+              </dl>
+            ) : <div className="py-8 text-center text-sm text-slate-500">Loading profile…</div>}
+          </CardContent>
+        </Card>
 
-      <div style={S.card}>
-        <span style={S.cardLabel}>Account</span>
-        {profile && (
-          <>
-            <div style={S.row}>
-              <span style={S.rowLabel}>Username</span>
-              <span style={{ ...S.rowValue, fontWeight: 600 }}>{profile.username}</span>
-            </div>
-            <div style={S.row}>
-              <span style={S.rowLabel}>User ID</span>
-              <span style={{ ...S.rowValue, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.88rem', color: '#64748b' }}>
-                {profile.userId}
-              </span>
-            </div>
-            <div style={S.row}>
-              <span style={S.rowLabel}>Role</span>
-              <span>
-                {profile.roles.map(r => (
-                  <span
-                    key={r}
-                    style={{
-                      ...S.badge,
-                      background: r === 'admin' ? '#eef2ff' : '#f1f5f9',
-                      color: r === 'admin' ? '#4338ca' : '#64748b',
-                      border: r === 'admin' ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
-                    }}
-                  >
-                    {r}
-                  </span>
-                ))}
-              </span>
-            </div>
-          </>
-        )}
+        <Card>
+          <CardHeader>
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><KeyRound className="h-4 w-4" /></span>
+            <CardTitle className="pt-2">Change password</CardTitle>
+            <CardDescription>Choose a password with at least six characters.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={(event) => { event.preventDefault(); void handleChangePwd(); }} className="space-y-4">
+              <label className="block space-y-2 text-sm font-medium text-slate-700">Current password<Input type="password" value={curPwd} onChange={(event) => setCurPwd(event.target.value)} autoComplete="current-password" /></label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block space-y-2 text-sm font-medium text-slate-700">New password<Input type="password" value={newPwd} onChange={(event) => setNewPwd(event.target.value)} autoComplete="new-password" /></label>
+                <label className="block space-y-2 text-sm font-medium text-slate-700">Confirm password<Input type="password" value={conPwd} onChange={(event) => setConPwd(event.target.value)} autoComplete="new-password" /></label>
+              </div>
+              {pwdErr && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{pwdErr}</p>}
+              {pwdOk && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Password changed successfully.</p>}
+              <Button type="submit" disabled={saving || !curPwd || !newPwd || !conPwd}>{saving ? 'Updating…' : 'Update password'}</Button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
-
-      <div style={S.card}>
-        <span style={S.cardLabel}>Change Password</span>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-          <div>
-            <label style={S.fieldLabel}>Current</label>
-            <input style={S.input} type="password" value={curPwd} onChange={e => setCurPwd(e.target.value)} />
-          </div>
-          <div>
-            <label style={S.fieldLabel}>New</label>
-            <input style={S.input} type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="≥ 6 chars" />
-          </div>
-          <div>
-            <label style={S.fieldLabel}>Confirm</label>
-            <input style={S.input} type="password" value={conPwd} onChange={e => setConPwd(e.target.value)} />
-          </div>
-        </div>
-        {pwdErr && <p style={S.error}>{pwdErr}</p>}
-        {pwdOk && <p style={S.success}>Password changed successfully!</p>}
-        <button style={S.saveBtn} onClick={handleChangePwd}>Update Password</button>
-      </div>
-    </div>
+    </Page>
   );
 }

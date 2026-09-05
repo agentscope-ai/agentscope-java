@@ -283,7 +283,7 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div style={S.page}>
+    <div className="console-page-legacy" style={S.page}>
       <div style={S.headerBar}>
         <div>
           <h2 style={S.title}>Users</h2>

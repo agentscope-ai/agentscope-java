@@ -125,6 +125,9 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 			}
 		}
 	}
+	if err := w.reconcileEndpointJobInvocations(ctx, batch); err != nil {
+		logger.Error(err, "reconciling Endpoint Job invocation states")
+	}
 	// A lease or heartbeat loss never resurrects an Attempt. Fence the old
 	// record and put the logical Task back on the durable queue atomically.
 	for _, state := range []controlmodel.ExecutionAttemptState{
@@ -195,6 +198,68 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 			}
 		}
 	}
+}
+
+func (w *RuntimeControlSweeper) reconcileEndpointJobInvocations(ctx context.Context, batch int) error {
+	invocations, err := w.Store.Endpoints().ListInvocations(ctx, store.EndpointInvocationFilter{
+		Mode: controlmodel.EndpointJobMode, ActiveOnly: true, Limit: batch,
+	})
+	if err != nil {
+		return err
+	}
+	for _, invocation := range invocations {
+		if invocation.RunID == nil {
+			continue
+		}
+		run, loadErr := w.Store.Orchestration().GetRun(ctx, *invocation.RunID)
+		if loadErr != nil {
+			if errors.Is(loadErr, store.ErrNotFound) {
+				continue
+			}
+			return loadErr
+		}
+		if !controlmodel.IsOrchestrationRunTerminal(run.State) {
+			continue
+		}
+		now := time.Now().UTC()
+		invocation.CompletedAt = &now
+		invocation.Result, _ = json.Marshal(map[string]any{"runState": run.State})
+		switch run.State {
+		case controlmodel.RunSucceeded, controlmodel.RunPartialSucceeded:
+			invocation.Status = controlmodel.EndpointInvocationCompleted
+		case controlmodel.RunCancelled:
+			invocation.Status = controlmodel.EndpointInvocationCancelled
+		default:
+			invocation.Status = controlmodel.EndpointInvocationFailed
+			invocation.ErrorCode, invocation.ErrorMessage = run.FailureCode, run.FailureMessage
+			if invocation.ErrorCode == "" {
+				invocation.ErrorCode = "run_failed"
+			}
+		}
+		if _, updateErr := w.Store.Endpoints().UpdateInvocation(ctx, invocation); updateErr != nil {
+			return updateErr
+		}
+		if invocation.IssueID != nil {
+			issue, issueErr := w.Store.Collaboration().GetIssue(ctx, *invocation.IssueID)
+			if issueErr != nil && !errors.Is(issueErr, store.ErrNotFound) {
+				return issueErr
+			}
+			if issue != nil && issue.Kind == controlmodel.IssueKindEndpointJob &&
+				issue.CompletionPolicy == controlmodel.IssueCompletionAutomatic &&
+				issue.Status != controlmodel.IssueDone && issue.Status != controlmodel.IssueCancelled {
+				target, reason := controlmodel.IssueCancelled, "Endpoint Job execution did not complete successfully"
+				if run.State == controlmodel.RunSucceeded || run.State == controlmodel.RunPartialSucceeded {
+					target, reason = controlmodel.IssueDone, "automatic Endpoint Job execution completed"
+				}
+				_, transitionErr := w.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version, target,
+					controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "endpoint-invocation:" + invocation.ID.String()}, reason)
+				if transitionErr != nil && !errors.Is(transitionErr, store.ErrConflict) {
+					return transitionErr
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (w *RuntimeControlSweeper) emit(ctx context.Context, execution *controlmodel.ExecutionAttempt, eventType, reason string) {

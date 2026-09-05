@@ -118,11 +118,15 @@ type RuntimeRegistryRepository interface {
 // ExecutionAttemptFilter limits physical attempt queries.
 type ExecutionAttemptFilter struct {
 	AgentTaskID     uuid.UUID
+	AgentID         uuid.UUID
+	BindingID       uuid.UUID
 	Tenant          string
 	Namespace       string
+	SessionID       string
 	RuntimePoolName string
 	HostID          uuid.UUID
 	State           controlmodel.ExecutionAttemptState
+	NewestFirst     bool
 	Limit           int
 }
 

@@ -54,7 +54,7 @@ type Store struct {
 	outbox            *outboxRepo
 	collaboration     *collaborationRepo
 	workSources       *workSourceRepo
-	agentEndpoints    *agentEndpointRepo
+	endpoints         *endpointRepo
 	teamProposals     *teamProposalRepo
 }
 
@@ -104,7 +104,7 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 	s.outbox = &outboxRepo{pool: pool}
 	s.collaboration = &collaborationRepo{pool: pool}
 	s.workSources = &workSourceRepo{pool: pool}
-	s.agentEndpoints = &agentEndpointRepo{pool: pool}
+	s.endpoints = &endpointRepo{pool: pool}
 	s.teamProposals = &teamProposalRepo{pool: pool}
 	return s, nil
 }
@@ -121,18 +121,18 @@ func (s *Store) RuntimeRegistry() store.RuntimeRegistryRepository  { return s.ru
 func (s *Store) ExecutionAttempts() store.ExecutionAttemptRepository {
 	return s.executionAttempts
 }
-func (s *Store) Orchestration() store.OrchestrationRepository  { return s.orchestration }
-func (s *Store) Outbox() store.OutboxRepository                { return s.outbox }
-func (s *Store) Collaboration() store.CollaborationRepository  { return s.collaboration }
-func (s *Store) WorkSources() store.WorkSourceRepository       { return s.workSources }
-func (s *Store) AgentEndpoints() store.AgentEndpointRepository { return s.agentEndpoints }
-func (s *Store) TeamProposals() store.TeamProposalRepository   { return s.teamProposals }
-func (s *Store) KV() store.KVRepository                        { return s.kv }
-func (s *Store) Locks() store.LockRepository                   { return s.locks }
-func (s *Store) Snapshots() store.SnapshotRepository           { return s.snapshots }
-func (s *Store) Bus() store.BusRepository                      { return s.bus }
-func (s *Store) AsyncTools() store.AsyncToolRepository         { return s.asyncTools }
-func (s *Store) DPTasks() store.DPTaskRepository               { return s.dpTasks }
+func (s *Store) Orchestration() store.OrchestrationRepository { return s.orchestration }
+func (s *Store) Outbox() store.OutboxRepository               { return s.outbox }
+func (s *Store) Collaboration() store.CollaborationRepository { return s.collaboration }
+func (s *Store) WorkSources() store.WorkSourceRepository      { return s.workSources }
+func (s *Store) Endpoints() store.EndpointRepository          { return s.endpoints }
+func (s *Store) TeamProposals() store.TeamProposalRepository  { return s.teamProposals }
+func (s *Store) KV() store.KVRepository                       { return s.kv }
+func (s *Store) Locks() store.LockRepository                  { return s.locks }
+func (s *Store) Snapshots() store.SnapshotRepository          { return s.snapshots }
+func (s *Store) Bus() store.BusRepository                     { return s.bus }
+func (s *Store) AsyncTools() store.AsyncToolRepository        { return s.asyncTools }
+func (s *Store) DPTasks() store.DPTaskRepository              { return s.dpTasks }
 
 func (s *Store) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)

@@ -1,0 +1,280 @@
+// Copyright 2024-2026 the original author or authors.
+// Licensed under the Apache License, Version 2.0.
+
+package qoder
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os/exec"
+	"strconv"
+	"strings"
+
+	"github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider"
+)
+
+// Adapter uses Qoder's non-interactive stream-json contract. Permission
+// escalation is never enabled implicitly; operators must select a permission
+// mode explicitly in the immutable RuntimeProfile configuration.
+type Adapter struct {
+	Binary string
+}
+
+type configuration struct {
+	Model              string   `json:"model,omitempty"`
+	ReasoningEffort    string   `json:"reasoningEffort,omitempty"`
+	ContextWindow      int      `json:"contextWindow,omitempty"`
+	PermissionMode     string   `json:"permissionMode,omitempty"`
+	AllowedTools       []string `json:"allowedTools,omitempty"`
+	DisallowedTools    []string `json:"disallowedTools,omitempty"`
+	MaxTurns           int      `json:"maxTurns,omitempty"`
+	MaxOutputTokens    int      `json:"maxOutputTokens,omitempty"`
+	StrictMCPConfig    bool     `json:"strictMCPConfig,omitempty"`
+	AppendSystemPrompt string   `json:"appendSystemPrompt,omitempty"`
+	Agent              string   `json:"agent,omitempty"`
+}
+
+func (a *Adapter) Name() string { return "qoder" }
+
+func (a *Adapter) Descriptor() provider.Descriptor {
+	return provider.Descriptor{
+		DisplayName:  "Qoder",
+		Runtime:      "qodercli",
+		Instructions: provider.Capability{Supported: true, Mode: "prompt"},
+		Workspace:    provider.Capability{Supported: true, Mode: "cwd"},
+		Skills:       provider.Capability{Supported: true, Mode: "context-directory", Target: ".agentscope/definition/skills"},
+		Tools:        provider.Capability{Supported: true, Mode: "allowlist"},
+		Shell:        provider.Capability{Supported: true, Mode: "native", Target: "Bash"},
+		MCP:          provider.Capability{Supported: true, Mode: "cli-config", Target: "--mcp-config"},
+		Model:        provider.Capability{Supported: true, Mode: "cli-argument", Target: "--model"},
+		CustomArgs:   provider.Capability{Supported: true, Mode: "argv", Target: "qodercli"},
+		Resume:       true,
+	}
+}
+
+func (a *Adapter) binary() string {
+	if a.Binary != "" {
+		return a.Binary
+	}
+	return "qodercli"
+}
+
+func (a *Adapter) Detect(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, a.binary(), "--version")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("qodercli --version: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provider.EventSink) (*provider.Result, error) {
+	if request.Workspace == "" {
+		return nil, fmt.Errorf("Qoder workspace is required")
+	}
+	customArgs, err := provider.ValidateCustomArgs(request.CustomArgs)
+	if err != nil {
+		return nil, err
+	}
+	request.CustomArgs = customArgs
+	var cfg configuration
+	if len(request.Configuration) > 0 {
+		if err := json.Unmarshal(request.Configuration, &cfg); err != nil {
+			return nil, fmt.Errorf("decode Qoder configuration: %w", err)
+		}
+	}
+	mcpConfig, cleanup, err := provider.WriteMCPConfig(request)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	cmd := exec.CommandContext(ctx, a.binary(), buildArgs(request, cfg, mcpConfig)...)
+	cmd.Dir = request.Workspace
+	cmd.Stdin = strings.NewReader(provider.PrependInstructions(request.Prompt, provider.DefinitionInstructions(request)))
+	provider.ApplyTaskEnvironment(cmd, request)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err = cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start Qoder: %w", err)
+	}
+	result := &provider.Result{ProviderSessionID: request.ProviderSessionID}
+	readErr := consumeJSONL(stdout, result, sink)
+	waitErr := cmd.Wait()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if waitErr != nil {
+		return nil, qoderExitError(waitErr, stderr.String())
+	}
+	result.Checkpoint, _ = json.Marshal(map[string]string{"providerSessionId": result.ProviderSessionID})
+	return result, nil
+}
+
+func qoderExitError(waitErr error, stderr string) error {
+	lines := strings.Split(stderr, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Skipped invalid MCP server ") &&
+			strings.Contains(trimmed, "Unrecognized key(s) in object: 'authType'") {
+			continue
+		}
+		if trimmed != "" {
+			kept = append(kept, line)
+		}
+	}
+	detail := strings.TrimSpace(strings.Join(kept, "\n"))
+	if detail == "" {
+		return fmt.Errorf("Qoder exited: %w", waitErr)
+	}
+	return fmt.Errorf("Qoder exited: %w: %s", waitErr, detail)
+}
+
+func buildArgs(request provider.Request, cfg configuration, mcpConfig string) []string {
+	args := []string{"-p", "--output-format", "stream-json", "--cwd", request.Workspace}
+	definitionAllowed, definitionDenied := provider.DefinitionToolPolicy(request, map[string]string{
+		"read": "Read", "read_file": "Read", "write": "Write", "write_file": "Write",
+		"edit": "Edit", "shell": "Bash", "bash": "Bash", "grep": "Grep", "glob": "Glob",
+	})
+	allowedTools := provider.MergeUnique(cfg.AllowedTools, definitionAllowed)
+	disallowedTools := provider.MergeUnique(cfg.DisallowedTools, definitionDenied)
+	if mcpConfig != "" {
+		// Hosted executions must be reproducible and must not inherit arbitrary
+		// user/project MCP entries. Besides leaking ambient capabilities, a
+		// malformed personal entry can prevent Qoder from resuming a valid
+		// AgentScope session. The temporary file already contains the complete
+		// Agent definition and scoped collaboration server.
+		args = append(args, "--mcp-config", mcpConfig, "--strict-mcp-config")
+	}
+	if request.ProviderSessionID != "" {
+		args = append(args, "--resume", request.ProviderSessionID)
+	}
+	if model := provider.DefinitionModel(request, cfg.Model); model != "" {
+		args = append(args, "--model", model)
+	}
+	if cfg.ReasoningEffort != "" {
+		args = append(args, "--reasoning-effort", cfg.ReasoningEffort)
+	}
+	if cfg.ContextWindow > 0 {
+		args = append(args, "--context-window", strconv.Itoa(cfg.ContextWindow))
+	}
+	if cfg.PermissionMode != "" {
+		args = append(args, "--permission-mode", cfg.PermissionMode)
+	}
+	for _, tool := range allowedTools {
+		args = append(args, "--allowed-tools", tool)
+	}
+	for _, tool := range disallowedTools {
+		args = append(args, "--disallowed-tools", tool)
+	}
+	if cfg.MaxTurns > 0 {
+		args = append(args, "--max-turns", strconv.Itoa(cfg.MaxTurns))
+	}
+	if cfg.MaxOutputTokens > 0 {
+		args = append(args, "--max-output-tokens", strconv.Itoa(cfg.MaxOutputTokens))
+	}
+	if cfg.AppendSystemPrompt != "" {
+		args = append(args, "--append-system-prompt", cfg.AppendSystemPrompt)
+	}
+	if cfg.Agent != "" {
+		args = append(args, "--agent", cfg.Agent)
+	}
+	args = append(args, request.CustomArgs...)
+	return args
+}
+
+func consumeJSONL(reader io.Reader, result *provider.Result, sink provider.EventSink) error {
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	permissionFailure := ""
+	for scanner.Scan() {
+		raw := append(json.RawMessage(nil), scanner.Bytes()...)
+		var envelope struct {
+			Type      string `json:"type"`
+			Subtype   string `json:"subtype"`
+			SessionID string `json:"session_id"`
+			IsError   bool   `json:"is_error"`
+			Result    string `json:"result"`
+			Message   struct {
+				Content []struct {
+					Type    string `json:"type"`
+					Text    string `json:"text"`
+					Content any    `json:"content"`
+					IsError bool   `json:"is_error"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			return fmt.Errorf("decode Qoder JSONL event: %w", err)
+		}
+		if envelope.SessionID != "" {
+			result.ProviderSessionID = envelope.SessionID
+		}
+		if envelope.Result != "" {
+			result.Output = envelope.Result
+		} else if envelope.Type == "assistant" {
+			for _, content := range envelope.Message.Content {
+				if content.Type == "text" {
+					result.Output += content.Text
+				}
+			}
+		}
+		for _, content := range envelope.Message.Content {
+			if !content.IsError {
+				continue
+			}
+			message := content.Text
+			if message == "" && content.Content != nil {
+				message = fmt.Sprint(content.Content)
+			}
+			if isPermissionFailure(message) {
+				permissionFailure = message
+			}
+		}
+		if sink != nil {
+			if err := sink(provider.Event{Type: envelope.Type, ProviderSessionID: envelope.SessionID, Raw: raw}); err != nil {
+				return err
+			}
+		}
+		if envelope.Type == "result" && envelope.IsError {
+			return fmt.Errorf("Qoder result %s: %s", envelope.Subtype, envelope.Result)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if permissionFailure != "" && (result.Output == "" || describesBlockedOutcome(result.Output)) {
+		return provider.NewExecutionError("provider_permission_denied",
+			"Qoder refused a required tool call in non-interactive mode: "+permissionFailure)
+	}
+	return nil
+}
+
+func isPermissionFailure(message string) bool {
+	message = strings.ToLower(message)
+	return (strings.Contains(message, "permission") || strings.Contains(message, "tool use")) &&
+		(strings.Contains(message, "denied") || strings.Contains(message, "rejected") ||
+			strings.Contains(message, "not allowed") || strings.Contains(message, "non-interactive"))
+}
+
+func describesBlockedOutcome(output string) bool {
+	output = strings.ToLower(output)
+	markers := []string{
+		"permission", "denied", "rejected", "not allowed", "cannot", "can't", "unable",
+		"权限", "拒绝", "无法", "不能", "不允许",
+	}
+	for _, marker := range markers {
+		if strings.Contains(output, marker) {
+			return true
+		}
+	}
+	return false
+}

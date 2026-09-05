@@ -56,11 +56,11 @@ function scopedApiPath(path: string): string {
   return `${url.pathname}${url.search}`;
 }
 
-export async function apiFetch<T = unknown>(
+export async function apiResponse(
   path: string,
   init: RequestInit = {},
-): Promise<T> {
-	const requestPath = scopedApiPath(path);
+): Promise<Response> {
+  const requestPath = scopedApiPath(path);
   const headers = new Headers(init.headers);
   const auth = authHeaders();
   Object.entries(auth).forEach(([k, v]) => headers.set(k, v));
@@ -68,8 +68,8 @@ export async function apiFetch<T = unknown>(
     headers.set('Content-Type', 'application/json');
   }
 
-	const res = await fetch(requestPath, { ...init, headers });
-	if (res.status === 401 && !requestPath.includes('/api/auth/login')) {
+  const res = await fetch(requestPath, { ...init, headers });
+  if (res.status === 401 && !requestPath.includes('/api/auth/login')) {
     clearToken();
     if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
       window.location.assign('/login');
@@ -80,6 +80,14 @@ export async function apiFetch<T = unknown>(
     const body = await res.text().catch(() => '');
     throw new ApiError(res.status, body || res.statusText);
   }
+  return res;
+}
+
+export async function apiFetch<T = unknown>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const res = await apiResponse(path, init);
   if (res.status === 204) return undefined as T;
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('application/json')) return res.json();
@@ -94,5 +102,6 @@ export const api = {
     apiFetch<T>(path, { method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) }),
   patch: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, { method: 'PATCH', body: body === undefined ? undefined : JSON.stringify(body) }),
-  delete: <T>(path: string) => apiFetch<T>(path, { method: 'DELETE' }),
+  delete: <T>(path: string, body?: unknown) =>
+    apiFetch<T>(path, { method: 'DELETE', body: body === undefined ? undefined : JSON.stringify(body) }),
 };

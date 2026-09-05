@@ -16,6 +16,9 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	stderrors "errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -151,6 +154,18 @@ func (s *Server) getSessionMessages(c *gin.Context) {
 		}
 	}
 
+	// Level-2 message/tool events are already durable control-plane facts. They
+	// are sufficient for the conversation read model and must be preferred over
+	// an optional live message-query call. This keeps event-reporting-only
+	// runtimes usable after the holding instance disconnects as well.
+	if page, hit, err := s.messagePageFromEvents(c.Request.Context(), sess, offset, limit, fromEnd); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to project messages from events: " + err.Error()})
+		return
+	} else if hit {
+		c.JSON(http.StatusOK, page)
+		return
+	}
+
 	// Live DP fallback — message-query capability applies only here.
 	agent, ok := s.resolveSessionAgent(c, sess)
 	if !ok {
@@ -177,6 +192,92 @@ func (s *Server) getSessionMessages(c *gin.Context) {
 		page.Source = "dataplane"
 	}
 	c.JSON(http.StatusOK, page)
+}
+
+func (s *Server) messagePageFromEvents(ctx context.Context, sess *store.Session, offset, limit int, fromEnd bool) (*prober.MessagePage, bool, error) {
+	events, err := s.store.Events().List(ctx, sess.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	messages := make([]prober.MessageItem, 0, len(events))
+	for _, event := range events {
+		if !eventProjectsToMessage(event) {
+			continue
+		}
+		messages = append(messages, messageFromEvent(event))
+	}
+	if len(messages) == 0 {
+		return nil, false, nil
+	}
+	total := len(messages)
+	if fromEnd && offset == 0 && total > limit {
+		offset = total - limit
+	}
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return &prober.MessagePage{
+		SessionID: sess.SessionID,
+		Offset:    offset,
+		Limit:     limit,
+		Total:     total,
+		Messages:  messages[offset:end],
+		Source:    "events",
+	}, true, nil
+}
+
+func eventProjectsToMessage(event *store.SessionEvent) bool {
+	if event == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(event.EventType)) {
+	case "message", "user_message", "assistant_message", "agent_message", "tool_call", "tool_use", "tool_result":
+		return true
+	default:
+		return strings.TrimSpace(event.Role) != "" &&
+			(event.Content != "" || event.ToolName != "" || len(event.ToolInput) > 0 || event.ToolOutput != "")
+	}
+}
+
+func messageFromEvent(event *store.SessionEvent) prober.MessageItem {
+	role := strings.ToLower(strings.TrimSpace(event.Role))
+	if role == "" {
+		if strings.Contains(strings.ToLower(event.EventType), "result") {
+			role = "tool"
+		} else if event.ToolName != "" || len(event.ToolInput) > 0 {
+			role = "assistant"
+		}
+	}
+	return prober.MessageItem{
+		Seq:        int32(event.Seq),
+		Role:       role,
+		Content:    event.Content,
+		ToolName:   event.ToolName,
+		ToolCallID: eventToolCallID(event.FrameworkMeta),
+		ToolInput:  event.ToolInput,
+		ToolOutput: event.ToolOutput,
+		OccurredAt: event.OccurredAt.UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func eventToolCallID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var metadata map[string]any
+	if json.Unmarshal(raw, &metadata) != nil {
+		return ""
+	}
+	for _, key := range []string{"toolCallId", "toolUseId", "tool_use_id", "callId"} {
+		if value, ok := metadata[key]; ok && value != nil {
+			return fmt.Sprint(value)
+		}
+	}
+	return ""
 }
 
 func (s *Server) fetchMessagesPage(ctx context.Context, endpoint, sessionID string, offset, limit int, fromEnd bool) (*prober.MessagePage, error) {
@@ -226,7 +327,7 @@ func parseTruthyQuery(v string) bool {
 
 // getSessionEvents handles GET /api/v1/sessions/:sessionId/events, returning
 // the Level-2 event stream for the session with optional filters.
-// Supports reverse paging via before (RFC3339 timestamp or integer seq) + limit.
+// Supports reverse paging via before and forward gap repair via after (exclusive seq).
 func (s *Server) getSessionEvents(c *gin.Context) {
 	sess, ok := s.resolveSession(c)
 	if !ok {
@@ -259,10 +360,24 @@ func (s *Server) getSessionEvents(c *gin.Context) {
 			return
 		}
 	}
+	afterSet := false
+	if after := c.Query("after"); after != "" {
+		if beforeSet {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "before and after are mutually exclusive"})
+			return
+		}
+		seq, err := strconv.Atoi(after)
+		if err != nil || seq < 0 {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid after (non-negative integer seq required)"})
+			return
+		}
+		afterSet = true
+		opts = append(opts, store.WithEventAfterSeq(seq))
+	}
 	opts = append(opts, store.WithEventLimit(parseLimit(c, 100)))
 	if offset := parseOffset(c); offset > 0 {
 		opts = append(opts, store.WithEventOffset(offset))
-	} else if !beforeSet {
+	} else if !beforeSet && !afterSet {
 		// First page of reverse paging: newest N events in chronological order.
 		opts = append(opts, store.WithEventNewestFirst())
 	}
@@ -276,6 +391,66 @@ func (s *Server) getSessionEvents(c *gin.Context) {
 		events = []*store.SessionEvent{}
 	}
 	c.JSON(http.StatusOK, gin.H{"events": events})
+}
+
+// streamSessionEvents sends the durable session log as resumable SSE. The
+// initial REST tail plus this stream is the canonical conversation read path;
+// clients derive Messages from these events instead of polling message-query.
+func (s *Server) streamSessionEvents(c *gin.Context) {
+	sess, ok := s.resolveSession(c)
+	if !ok {
+		return
+	}
+	after, _ := strconv.Atoi(c.Query("after"))
+	if headerAfter, err := strconv.Atoi(c.GetHeader("Last-Event-ID")); err == nil && headerAfter > after {
+		after = headerAfter
+	}
+	// http.Server.WriteTimeout is an absolute deadline for the whole response,
+	// not an idle timeout. Clear it for this long-lived stream; heartbeat frames
+	// keep intermediaries alive and the request context still handles clients
+	// that disconnect.
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+	prepareEventStream(c)
+	flusher, _ := c.Writer.(http.Flusher)
+	for {
+		events, err := s.store.Events().List(c.Request.Context(), sess.ID,
+			store.WithEventAfterSeq(after), store.WithEventLimit(1000))
+		if err != nil {
+			return
+		}
+		for _, event := range events {
+			payload, _ := json.Marshal(event)
+			_, _ = fmt.Fprintf(c.Writer, "id: %d\nevent: %s\ndata: %s\n\n", event.Seq, event.EventType, payload)
+			after = event.Seq
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		if len(events) > 0 {
+			continue
+		}
+		waitCtx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		err = s.store.Events().WaitForNew(waitCtx, sess.ID, after)
+		cancel()
+		if err == nil {
+			continue
+		}
+		if c.Request.Context().Err() != nil {
+			return
+		}
+		if sessionEventWaitTimedOut(err) {
+			_, _ = fmt.Fprint(c.Writer, ": heartbeat\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+			continue
+		}
+		return
+	}
+}
+
+func sessionEventWaitTimedOut(err error) bool {
+	return stderrors.Is(err, context.DeadlineExceeded)
 }
 
 // listSessionTurns handles GET /api/v1/sessions/:sessionId/turns.

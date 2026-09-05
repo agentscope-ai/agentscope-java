@@ -79,29 +79,62 @@ const (
 	AssigneeTeam  AssigneeType = "team"
 )
 
+// IssueKind separates human-facing Work from durable execution records.  Team
+// and Workflow Endpoint jobs deliberately keep using the collaboration plane,
+// but are not ordinary Work Hub Issues.
+type IssueKind string
+
+const (
+	IssueKindUserWork         IssueKind = "user_work"
+	IssueKindEndpointJob      IssueKind = "endpoint_job"
+	IssueKindPlaygroundJob    IssueKind = "playground_job"
+	IssueKindAutomationJob    IssueKind = "automation_job"
+	IssueKindConversationTurn IssueKind = "conversation_turn"
+)
+
+type IssueVisibility string
+
+const (
+	IssueVisibilityWorkHub     IssueVisibility = "work_hub"
+	IssueVisibilityOperational IssueVisibility = "operational"
+)
+
+type IssueCompletionPolicy string
+
+const (
+	IssueCompletionReview    IssueCompletionPolicy = "review"
+	IssueCompletionAutomatic IssueCompletionPolicy = "automatic"
+	IssueCompletionExternal  IssueCompletionPolicy = "external"
+)
+
 type Issue struct {
-	ID                 uuid.UUID       `json:"id"`
-	Tenant             string          `json:"tenant"`
-	Namespace          string          `json:"namespace"`
-	Identifier         string          `json:"identifier,omitempty"`
-	Title              string          `json:"title"`
-	Description        string          `json:"description,omitempty"`
-	Status             IssueStatus     `json:"status"`
-	Priority           string          `json:"priority"`
-	AssigneeType       AssigneeType    `json:"assigneeType,omitempty"`
-	AssigneeRef        string          `json:"assigneeRef,omitempty"`
-	Creator            Actor           `json:"creator"`
-	ParentIssueID      *uuid.UUID      `json:"parentIssueId,omitempty"`
-	AcceptanceCriteria json.RawMessage `json:"acceptanceCriteria,omitempty"`
-	ContextRefs        json.RawMessage `json:"contextRefs,omitempty"`
-	SourceType         string          `json:"sourceType,omitempty"`
-	SourceRef          string          `json:"sourceRef,omitempty"`
-	DueAt              *time.Time      `json:"dueAt,omitempty"`
-	Version            int64           `json:"version"`
-	CreatedAt          time.Time       `json:"createdAt"`
-	UpdatedAt          time.Time       `json:"updatedAt"`
-	ResolvedAt         *time.Time      `json:"resolvedAt,omitempty"`
-	ArchivedAt         *time.Time      `json:"archivedAt,omitempty"`
+	ID                  uuid.UUID             `json:"id"`
+	Tenant              string                `json:"tenant"`
+	Namespace           string                `json:"namespace"`
+	Identifier          string                `json:"identifier,omitempty"`
+	Title               string                `json:"title"`
+	Description         string                `json:"description,omitempty"`
+	Status              IssueStatus           `json:"status"`
+	Priority            string                `json:"priority"`
+	Kind                IssueKind             `json:"kind"`
+	Visibility          IssueVisibility       `json:"visibility"`
+	CompletionPolicy    IssueCompletionPolicy `json:"completionPolicy"`
+	AssigneeType        AssigneeType          `json:"assigneeType,omitempty"`
+	AssigneeRef         string                `json:"assigneeRef,omitempty"`
+	ExecutionTargetType string                `json:"executionTargetType,omitempty"`
+	ExecutionTargetRef  string                `json:"executionTargetRef,omitempty"`
+	Creator             Actor                 `json:"creator"`
+	ParentIssueID       *uuid.UUID            `json:"parentIssueId,omitempty"`
+	AcceptanceCriteria  json.RawMessage       `json:"acceptanceCriteria,omitempty"`
+	ContextRefs         json.RawMessage       `json:"contextRefs,omitempty"`
+	SourceType          string                `json:"sourceType,omitempty"`
+	SourceRef           string                `json:"sourceRef,omitempty"`
+	DueAt               *time.Time            `json:"dueAt,omitempty"`
+	Version             int64                 `json:"version"`
+	CreatedAt           time.Time             `json:"createdAt"`
+	UpdatedAt           time.Time             `json:"updatedAt"`
+	ResolvedAt          *time.Time            `json:"resolvedAt,omitempty"`
+	ArchivedAt          *time.Time            `json:"archivedAt,omitempty"`
 }
 
 type CommentType string
@@ -304,10 +337,18 @@ type TeamPolicy struct {
 	TaskTimeoutSeconds        int64    `json:"taskTimeoutSeconds,omitempty"`
 	RequireReview             bool     `json:"requireReview,omitempty"`
 	AllowMentionAll           bool     `json:"allowMentionAll,omitempty"`
+	AllowExternalDelegation   bool     `json:"allowExternalDelegation,omitempty"`
 	SecretPolicy              string   `json:"secretPolicy,omitempty"` // allow/block
 	PIIPolicy                 string   `json:"piiPolicy,omitempty"`    // allow/block
 	AllowedArtifactMediaTypes []string `json:"allowedArtifactMediaTypes,omitempty"`
 }
+
+type TeamStatus string
+
+const (
+	TeamActive   TeamStatus = "active"
+	TeamDisabled TeamStatus = "disabled"
+)
 
 type CollaborationTeam struct {
 	ID             uuid.UUID                 `json:"id"`
@@ -315,6 +356,8 @@ type CollaborationTeam struct {
 	Namespace      string                    `json:"namespace"`
 	Name           string                    `json:"name"`
 	Description    string                    `json:"description,omitempty"`
+	Instructions   string                    `json:"instructions,omitempty"`
+	Status         TeamStatus                `json:"status"`
 	LeaderAgentRef string                    `json:"leaderAgentId"`
 	Policy         TeamPolicy                `json:"policy"`
 	Version        int64                     `json:"version"`

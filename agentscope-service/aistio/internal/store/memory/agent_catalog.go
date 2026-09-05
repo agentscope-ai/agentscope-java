@@ -216,7 +216,7 @@ func (r *agentCatalogRepo) RegisterExternal(_ context.Context, req store.Externa
 	var credential *controlmodel.AgentRegistrationCredential
 	var binding *controlmodel.AgentBinding
 	if agent == nil {
-		if !req.TrustedBootstrap || len(req.NewCredentialHash) == 0 {
+		if len(req.NewCredentialHash) == 0 {
 			return nil, store.ErrForbidden
 		}
 		agent, _ = normalizeAgent(&controlmodel.Agent{Tenant: req.Tenant, Namespace: req.Namespace,
@@ -229,11 +229,6 @@ func (r *agentCatalogRepo) RegisterExternal(_ context.Context, req store.Externa
 			Namespace: agent.Namespace, Kind: controlmodel.DataPlaneExternalApplication,
 			Configuration: cfg, Priority: 100, Enabled: true}, now)
 		r.s.agentBindings[binding.ID] = cloneAgentBinding(binding)
-		credential = &controlmodel.AgentRegistrationCredential{ID: uuid.New(), AgentID: agent.ID,
-			TokenHash: append([]byte(nil), req.NewCredentialHash...), Status: controlmodel.RegistrationCredentialActive,
-			ExpiresAt: req.CredentialExpiresAt, CreatedAt: now, UpdatedAt: now}
-		r.s.agentCredentials[credential.ID] = cloneAgentCredential(credential)
-		createdCredential = true
 		runtimeBinding, _ := binding.RuntimeBinding()
 		policy := &controlmodel.AgentRuntimePolicy{ID: uuid.New(), Tenant: agent.Tenant, Namespace: agent.Namespace,
 			AgentRef: agent.ID.String(), SelectionMode: "ordered", FallbackMode: "disabled", Version: 1,
@@ -242,20 +237,6 @@ func (r *agentCatalogRepo) RegisterExternal(_ context.Context, req store.Externa
 		r.s.runtimePolicies[orchPolicyKey(agent.Tenant, agent.Namespace, agent.ID.String())] = policy
 	} else {
 		if agent.Status != controlmodel.AgentActive {
-			return nil, store.ErrForbidden
-		}
-		valid := false
-		for _, candidate := range r.s.agentCredentials {
-			if candidate.AgentID == agent.ID && candidate.Status == controlmodel.RegistrationCredentialActive &&
-				(candidate.ExpiresAt == nil || candidate.ExpiresAt.After(now)) && bytes.Equal(candidate.TokenHash, req.ClaimCredentialHash) {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			if req.TrustedBootstrap {
-				return nil, store.ErrConflict
-			}
 			return nil, store.ErrForbidden
 		}
 		for _, candidate := range r.s.agentBindings {
@@ -268,6 +249,14 @@ func (r *agentCatalogRepo) RegisterExternal(_ context.Context, req store.Externa
 			return nil, store.ErrConflict
 		}
 	}
+	if len(req.NewCredentialHash) == 0 {
+		return nil, store.ErrForbidden
+	}
+	credential = &controlmodel.AgentRegistrationCredential{ID: uuid.New(), AgentID: agent.ID,
+		TokenHash: append([]byte(nil), req.NewCredentialHash...), Status: controlmodel.RegistrationCredentialActive,
+		ExpiresAt: req.CredentialExpiresAt, CreatedAt: now, UpdatedAt: now}
+	r.s.agentCredentials[credential.ID] = cloneAgentCredential(credential)
+	createdCredential = true
 	var current *controlmodel.AgentInstance
 	for _, candidate := range r.s.agentInstances {
 		if candidate.AgentID == agent.ID && candidate.BindingID == binding.ID && candidate.InstanceKey == req.InstanceKey {
