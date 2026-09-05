@@ -204,6 +204,24 @@ public class AgentSpawnTool {
     public static final String CTX_FORCE_SYNC_TIMEOUT_SECONDS =
             "agentscope.subagent.force_sync_timeout_seconds";
 
+    /**
+     * Optional {@link RuntimeContext} override for the synchronous wait (seconds), applied
+     * regardless of force-sync. Accepts an {@link Integer}/{@link Number} or its string form.
+     *
+     * <p>This is the highest-priority source in the general (non-force-sync) timeout resolution:
+     * per-call {@code RuntimeContext} → {@link SubagentDeclaration#getTimeoutSeconds()} →
+     * LLM {@code timeout_seconds}. Like a declaration timeout, a positive value makes the parent
+     * wait synchronously for up to that many seconds, overriding an LLM request for background
+     * execution ({@code timeout_seconds=0}). It bounds the wait rather than the subagent's
+     * lifetime: once the wait elapses the run is promoted to a background task unless
+     * {@link #CTX_FORCE_SYNC} is enabled. Values {@code <= 0} are ignored (treated as unset);
+     * values above the maximum are clamped.
+     *
+     * <p>Distinct from {@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS}, which only applies when
+     * {@link #CTX_FORCE_SYNC} is enabled and retains top priority in that mode.
+     */
+    public static final String CTX_TIMEOUT_SECONDS = "agentscope.subagent.timeout_seconds";
+
     private static final String BG_RESULT_TEMPLATE =
             """
             status: accepted
@@ -449,8 +467,11 @@ public class AgentSpawnTool {
         }
 
         boolean forceSync = isForceSync(runtimeContext);
-        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
+        // Timeout precedence: per-call RuntimeContext override, the declaration's configured
+        // timeout, then the LLM's timeout_seconds — so operators can bound long-running subagents
+        // whose duration the model cannot estimate reliably.
+        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext, declOpt);
 
         if (timeoutMs == 0) {
             String taskId = "task_" + UUID.randomUUID();
@@ -619,7 +640,6 @@ public class AgentSpawnTool {
         final SpawnedAgent spawned = resolved;
 
         boolean forceSync = isForceSync(runtimeContext);
-        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         DefaultAgentManager manager = managerFor(runtimeContext);
@@ -628,6 +648,7 @@ public class AgentSpawnTool {
         propagateParentDenyRules(
                 parentState, currentUserId, spawned.sessionId(), spawned.agent(), declOpt);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
+        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext, declOpt);
 
         if (timeoutMs == 0) {
             String taskId = "task_" + UUID.randomUUID();
@@ -1516,19 +1537,45 @@ public class AgentSpawnTool {
     }
 
     /**
+     * Resolves the effective sync wait for the current call, without a subagent declaration.
+     *
+     * <p>Equivalent to {@link #resolveEffectiveTimeoutMs(Integer, RuntimeContext, Optional)} with
+     * an empty declaration.
+     */
+    static long resolveEffectiveTimeoutMs(Integer timeoutSeconds, RuntimeContext ctx) {
+        return resolveEffectiveTimeoutMs(timeoutSeconds, ctx, Optional.empty());
+    }
+
+    /**
      * Resolves the effective sync wait for the current call.
      *
      * <p>Precedence under force-sync (highest first):
      *
      * <ol>
      *   <li>{@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS} when present — absolute app override
+     *   <li>{@link #CTX_TIMEOUT_SECONDS} when positive
+     *   <li>{@link SubagentDeclaration#getTimeoutSeconds()} when positive
      *   <li>LLM {@code timeout_seconds}, with {@code 0} coerced to the default sync timeout
      * </ol>
      *
-     * <p>Without force-sync, behavior matches {@link #resolveTimeoutMs} (including async {@code
-     * 0}).
+     * <p>Without force-sync, precedence is:
+     *
+     * <ol>
+     *   <li>{@link #CTX_TIMEOUT_SECONDS} when positive — per-call operator override
+     *   <li>{@link SubagentDeclaration#getTimeoutSeconds()} when positive — per-subagent operator
+     *       configuration
+     *   <li>LLM {@code timeout_seconds} (including async {@code 0}); see {@link #resolveTimeoutMs}
+     * </ol>
+     *
+     * <p>An operator-supplied timeout (context or declaration) expresses an explicit intent to wait
+     * synchronously, so it overrides an LLM request for background execution
+     * ({@code timeout_seconds=0}). It bounds the parent's wait rather than the subagent's lifetime:
+     * timeout promotion to a background task still applies unless {@link #CTX_FORCE_SYNC} is
+     * enabled. Non-positive operator values are treated as unset and fall through to the next
+     * source.
      */
-    static long resolveEffectiveTimeoutMs(Integer timeoutSeconds, RuntimeContext ctx) {
+    static long resolveEffectiveTimeoutMs(
+            Integer timeoutSeconds, RuntimeContext ctx, Optional<SubagentDeclaration> declOpt) {
         boolean forceSync = isForceSync(ctx);
         if (forceSync) {
             Integer override = forceSyncTimeoutSeconds(ctx);
@@ -1537,11 +1584,38 @@ public class AgentSpawnTool {
                 return (long) Math.min(seconds, MAX_TIMEOUT_SECONDS) * 1_000;
             }
         }
+        Integer operatorSeconds = resolveOperatorTimeoutSeconds(ctx, declOpt);
+        if (operatorSeconds != null) {
+            return (long) Math.min(operatorSeconds, MAX_TIMEOUT_SECONDS) * 1_000;
+        }
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
         if (forceSync && timeoutMs == 0L) {
             return (long) DEFAULT_TIMEOUT_SECONDS * 1_000;
         }
         return timeoutMs;
+    }
+
+    /**
+     * Reads the operator-configured sync wait: per-call {@link #CTX_TIMEOUT_SECONDS} first, then
+     * {@link SubagentDeclaration#getTimeoutSeconds()}. Returns {@code null} when neither supplies a
+     * positive value, meaning "defer to the LLM argument".
+     */
+    static Integer resolveOperatorTimeoutSeconds(
+            RuntimeContext ctx, Optional<SubagentDeclaration> declOpt) {
+        if (ctx != null) {
+            Integer ctxSeconds = asPositiveOrZeroInt(ctx.get(CTX_TIMEOUT_SECONDS));
+            if (ctxSeconds != null && ctxSeconds > 0) {
+                return ctxSeconds;
+            }
+        }
+        Integer declSeconds =
+                declOpt != null
+                        ? declOpt.map(SubagentDeclaration::getTimeoutSeconds).orElse(null)
+                        : null;
+        if (declSeconds != null && declSeconds > 0) {
+            return declSeconds;
+        }
+        return null;
     }
 
     /** Reads {@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS}; {@code null} means "no override". */
@@ -1623,7 +1697,7 @@ public class AgentSpawnTool {
             Integer timeoutSeconds,
             Optional<SubagentDeclaration> declOpt) {
         boolean forceSync = isForceSync(runtimeContext);
-        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext);
+        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext, declOpt);
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         DefaultAgentManager manager = managerFor(runtimeContext);
