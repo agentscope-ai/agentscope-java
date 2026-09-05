@@ -105,6 +105,14 @@ public abstract class AgentBase implements Agent {
             new CopyOnWriteArrayList<>();
 
     /**
+     * Active per-call {@link RuntimeContext}s, indexed by {@link RuntimeContext#getRunId()}.
+     * Subclasses that manage call lifecycles (e.g. {@code ReActAgent}) register each call's RC at
+     * call entry and remove it on termination, enabling concurrent multi-session support.
+     */
+    protected final ConcurrentHashMap<String, RuntimeContext> activeContexts =
+            new ConcurrentHashMap<>();
+
+    /**
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
      * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
@@ -199,7 +207,7 @@ public abstract class AgentBase implements Agent {
      *
      * <p>The default implementation attaches {@code context} to the Reactor Context (when
      * non-null) and delegates straight to {@link #runLifecycle}. Subclasses that override this
-     * method must eventually invoke {@code runLifecycle(msgs, doCallFn)} to run the standard
+     * method must eventually invoke {@code runLifecycle(msgs, context, doCallFn)} to run the standard
      * lifecycle (shutdown guard, serialization gate, pre/post hooks, tracing).
      *
      * @param msgs     input messages
@@ -210,7 +218,7 @@ public abstract class AgentBase implements Agent {
      */
     protected Mono<Msg> callInternal(
             List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
-        Mono<Msg> lifecycle = runLifecycle(msgs, doCallFn);
+        Mono<Msg> lifecycle = runLifecycle(msgs, context, doCallFn);
         return context == null
                 ? lifecycle
                 : lifecycle.contextWrite(c -> c.put(RUNTIME_CONTEXT_KEY, context));
@@ -244,57 +252,92 @@ public abstract class AgentBase implements Agent {
             "io.agentscope.core.agent.AgentBase.shutdownRequestId";
 
     /**
-     * Shared {@code call()} lifecycle: acquire execution, then (inside {@code deferContextual} so
-     * the caller-supplied {@link RuntimeContext} is read per-subscription) run {@link
-     * #beforeAgentExecution(List, RuntimeContext)} (which returns this call's per-call scope), carry
-     * that scope on the Reactor Context, and run the preCall → doCall → postCall chain with error
-     * handling, releasing execution on terminate.
+     * Shared {@code call()} lifecycle: resolves the per-call {@link RuntimeContext} per-subscription
+     * (direct argument first, then {@link #RUNTIME_CONTEXT_KEY} on the Reactor Context — the
+     * deprecated {@code stream(..., context)} overloads only use {@code contextWrite}), registers
+     * it in {@link #activeContexts} for the duration of the call, and runs the preCall → doCall →
+     * postCall chain with error handling, releasing execution on terminate. The registration lets
+     * {@code getRuntimeContext(runId)} resolve mid-call; {@link Mono#using} cleanup evicts it on
+     * complete, error, or cancel.
      */
-    protected Mono<Msg> runLifecycle(List<Msg> msgs, Function<List<Msg>, Mono<Msg>> doCallFn) {
-        return Mono.using(
-                this::acquireExecution,
-                resource ->
-                        Mono.deferContextual(
-                                cv -> {
-                                    RuntimeContext rc =
-                                            (RuntimeContext)
-                                                    cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
-                                    // Track this call as a distinct shutdown request (keyed by its
-                                    // own requestId, not the shared agent id) so concurrent calls
-                                    // on
-                                    // one instance are interrupted/saved/unregistered
-                                    // independently.
-                                    String requestId =
-                                            GracefulShutdownManager.getInstance()
-                                                    .registerRequest(this);
-                                    Object gateKey = callSerializationKey(rc);
-                                    // Build the per-call lifecycle lazily so it only runs once the
-                                    // serialization gate (if any) admits this call:
-                                    // beforeAgentExecution resolves/loads the session slot and must
-                                    // not race a concurrent same-session call.
-                                    Mono<Msg> lifecycle =
-                                            Mono.defer(
-                                                    () ->
-                                                            runLifecycleBody(
-                                                                    msgs, rc, doCallFn, requestId));
-                                    Mono<Msg> gated =
-                                            gateKey == null
-                                                    ? lifecycle
-                                                    : serializeOnKey(gateKey, lifecycle);
-                                    return gated.contextWrite(
-                                                    c ->
-                                                            requestId == null || requestId.isEmpty()
-                                                                    ? c
-                                                                    : c.put(
-                                                                            SHUTDOWN_REQUEST_ID_KEY,
-                                                                            requestId))
-                                            .doFinally(
-                                                    sig ->
-                                                            GracefulShutdownManager.getInstance()
-                                                                    .unregisterRequest(requestId));
-                                }),
-                this::releaseExecution,
-                true);
+    protected Mono<Msg> runLifecycle(
+            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        return Mono.deferContextual(
+                cv -> {
+                    // Admit before registering: a rejected shutdown request must not leave an
+                    // active context behind.
+                    GracefulShutdownManager.getInstance().ensureAcceptingRequests();
+                    final RuntimeContext supplied =
+                            context != null
+                                    ? context
+                                    : (RuntimeContext) cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
+                    final RuntimeContext rc = supplied != null ? supplied : RuntimeContext.empty();
+                    // Register before Mono.using so a duplicate runId (shared or copied
+                    // RuntimeContext) is rejected without ever reaching the cleanup path, which
+                    // would otherwise evict the original registration.
+                    if (supplied != null) {
+                        RuntimeContext previous =
+                                activeContexts.putIfAbsent(supplied.getRunId(), supplied);
+                        if (previous != null) {
+                            return Mono.error(
+                                    new IllegalStateException(
+                                            "RuntimeContext runId '"
+                                                    + supplied.getRunId()
+                                                    + "' is already active on this agent; a"
+                                                    + " RuntimeContext must not be reused across"
+                                                    + " concurrent calls. Build a fresh"
+                                                    + " RuntimeContext (or copy via"
+                                                    + " RuntimeContext.builder(rc)) per call."));
+                        }
+                    }
+                    return Mono.using(
+                            this::acquireExecution,
+                            resource ->
+                                    Mono.defer(
+                                            () -> {
+                                                // Track as a distinct shutdown request so
+                                                // concurrent calls on one instance are
+                                                // interrupted/saved independently.
+                                                String requestId =
+                                                        GracefulShutdownManager.getInstance()
+                                                                .registerRequest(this);
+                                                Object gateKey = callSerializationKey(rc);
+                                                // Lazy so the lifecycle starts only after the
+                                                // serialization gate admits this call — the session
+                                                // slot must not load while a same-session call
+                                                // is in flight.
+                                                Mono<Msg> lifecycle =
+                                                        Mono.defer(
+                                                                () ->
+                                                                        runLifecycleBody(
+                                                                                msgs, rc, doCallFn,
+                                                                                requestId));
+                                                Mono<Msg> gated =
+                                                        gateKey == null
+                                                                ? lifecycle
+                                                                : serializeOnKey(
+                                                                        gateKey, lifecycle);
+                                                return gated.contextWrite(
+                                                                c ->
+                                                                        requestId == null
+                                                                                        || requestId
+                                                                                                .isEmpty()
+                                                                                ? c
+                                                                                : c.put(
+                                                                                        SHUTDOWN_REQUEST_ID_KEY,
+                                                                                        requestId))
+                                                        .doFinally(
+                                                                sig ->
+                                                                        GracefulShutdownManager
+                                                                                .getInstance()
+                                                                                .unregisterRequest(
+                                                                                        requestId));
+                                            }),
+                            // rc (not supplied) is what beforeAgentExecution bound
+                            // (including the empty fallback), so identity-based cleanup matches.
+                            resource -> releaseExecution(resource, rc),
+                            true);
+                });
     }
 
     private Mono<Msg> runLifecycleBody(
@@ -454,6 +497,22 @@ public abstract class AgentBase implements Agent {
     @Deprecated
     public void interrupt(InterruptSource source) {}
 
+    /** No-op default; subclasses that maintain per-session state override this. */
+    @Override
+    public void interrupt(RuntimeContext ctx) {}
+
+    /** No-op default; subclasses that maintain per-session state override this. */
+    @Override
+    public void interrupt(RuntimeContext ctx, Msg msg) {}
+
+    /** No-op default; subclasses that maintain per-session state override this. */
+    @Override
+    public void interrupt(String runId) {}
+
+    /** No-op default; subclasses that maintain per-session state override this. */
+    @Override
+    public void interrupt(String runId, Msg msg) {}
+
     /** @deprecated No longer needed; ReActAgent uses per-session InterruptControl. */
     @Deprecated
     protected Mono<Void> checkInterruptedAsync() {
@@ -469,19 +528,16 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
-     * Acquire execution resources for a {@code call()} invocation.
-     * Used as the {@code resourceSupplier} in {@link Mono#using} to guarantee that
-     * {@link #releaseExecution} is always called on completion, error, or cancellation.
-     *
-     * @return this agent instance
+     * Acquire execution resources for a {@code call()} invocation. Used as the
+     * {@code resourceSupplier} in {@link Mono#using} to guarantee that {@link #releaseExecution}
+     * is always called on completion, error, or cancellation.
      */
     private AgentBase acquireExecution() {
-        GracefulShutdownManager.getInstance().ensureAcceptingRequests();
         return this;
     }
 
-    private void releaseExecution(AgentBase resource) {
-        afterAgentExecution();
+    private void releaseExecution(AgentBase resource, RuntimeContext rc) {
+        afterAgentExecution(rc);
     }
 
     /**
@@ -552,23 +608,51 @@ public abstract class AgentBase implements Agent {
     protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
 
     /**
-     * Returns the agent's mutable runtime state, or {@code null} if this agent type does not
-     * maintain an {@link AgentState}.
+     * Returns the single in-flight {@link RuntimeContext}. With concurrent calls on one instance
+     * there is no unambiguous "current" context, so this resolves to {@code null} when none is
+     * active, the sole context when exactly one is active, and fails when several are in flight.
+     *
+     * @return the single active context, or {@code null} when none is in flight
+     * @throws IllegalStateException when more than one context is active (the context is ambiguous)
+     * @deprecated use {@link #getRuntimeContext(String)} with a concrete runId
      */
-    public AgentState getAgentState() {
-        return null;
+    @Override
+    @Deprecated
+    public RuntimeContext getRuntimeContext() {
+        List<RuntimeContext> active = getActiveRuntimeContexts();
+        if (active.isEmpty()) {
+            return null;
+        }
+        if (active.size() == 1) {
+            return active.get(0);
+        }
+        throw new IllegalStateException(
+                active.size()
+                        + " concurrent RuntimeContexts are active; the current context is"
+                        + " ambiguous. Use getRuntimeContext(runId) instead.");
     }
 
     /**
-     * Returns the current per-call {@link RuntimeContext}, or {@code null} when the agent keeps no
-     * per-call scope. The base implementation returns {@code null}; agents with per-call state
-     * (e.g. {@code ReActAgent}) override this to return their active call scope's context. Because
-     * the value is sourced from the agent's most-recently-activated scope, under concurrent calls
-     * on one instance this reflects the latest call — middlewares/tools that need their own call's
-     * context should read it from the per-subscription {@link RuntimeContext} they are handed.
+     * Returns the active {@link RuntimeContext} for the given runId, or {@code null} if no such
+     * call is currently in flight. Looks up the runId in {@link #activeContexts}.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     * @return the matching in-flight context, or {@code null}
      */
-    public RuntimeContext getRuntimeContext() {
-        return null;
+    @Override
+    public RuntimeContext getRuntimeContext(String runId) {
+        return runId != null ? activeContexts.get(runId) : null;
+    }
+
+    /**
+     * Returns a read-only snapshot of all currently in-flight {@link RuntimeContext}s on this agent
+     * instance.
+     *
+     * @return unmodifiable list of active contexts (may be empty)
+     */
+    @Override
+    public List<RuntimeContext> getActiveRuntimeContexts() {
+        return List.copyOf(activeContexts.values());
     }
 
     /**
@@ -590,15 +674,25 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
-     * Invoked in {@code Mono.using} cleanup, before clearing the running state. Pairs with {@link
-     * #beforeAgentExecution(List, RuntimeContext)}. The default is a no-op.
+     * Invoked when a {@code call()} terminates (complete, error, or cancel), paired with {@link
+     * #beforeAgentExecution(List, RuntimeContext)}: removes exactly this call's context from
+     * {@link #activeContexts} and unbinds hooks if this call still owns the shared binding.
+     *
+     * @param rc the per-call {@link RuntimeContext} (never {@code null}; resolved to empty when the
+     *     caller supplied none)
      */
-    protected void afterAgentExecution() {}
+    protected void afterAgentExecution(RuntimeContext rc) {
+        if (rc != null) {
+            activeContexts.remove(rc.getRunId(), rc);
+        }
+        unbindRuntimeContextFromHooks();
+    }
 
     /**
      * Pushes {@code ctx} to all {@link RuntimeContextAware} hooks registered for this agent. The
-     * per-call {@link RuntimeContext} itself is no longer stored on a shared instance field; it
-     * lives on the agent's per-call scope (see {@link #getRuntimeContext()}).
+     * per-call {@link RuntimeContext} is delivered through this setter, the middleware {@code ctx}
+     * parameter, and {@code ToolCallParam.getRuntimeContext()} — it is not stored on a shared
+     * instance field.
      */
     protected void bindRuntimeContextToHooks(RuntimeContext ctx) {
         for (RuntimeContextAware h : runtimeContextAwareHooks) {
@@ -607,7 +701,8 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
-     * Clears the {@link RuntimeContext} previously pushed to all {@link RuntimeContextAware} hooks.
+     * Clears the {@link RuntimeContext} previously pushed to {@link RuntimeContextAware} hooks.
+     * See {@link RuntimeContextAware} for the contract's concurrency limitations.
      */
     protected void unbindRuntimeContextFromHooks() {
         for (RuntimeContextAware h : runtimeContextAwareHooks) {

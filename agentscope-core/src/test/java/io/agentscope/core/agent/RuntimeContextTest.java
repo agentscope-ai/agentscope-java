@@ -17,6 +17,8 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -63,6 +65,46 @@ class RuntimeContextTest {
         assertNull(ctx.getUserId());
         ctx.put("k", "v");
         assertEquals("v", ctx.get("k"));
+    }
+
+    @Test
+    @DisplayName("runId is always non-null, even via empty()")
+    void runIdAlwaysPresent() {
+        assertNotNull(RuntimeContext.empty().getRunId());
+        assertNotNull(RuntimeContext.builder().build().getRunId());
+    }
+
+    @Test
+    @DisplayName("two distinct contexts have distinct runIds")
+    void runIdUnique() {
+        assertNotEquals(RuntimeContext.empty().getRunId(), RuntimeContext.empty().getRunId());
+    }
+
+    @Test
+    @DisplayName("builder().runId(x).build() preserves the explicit value")
+    void runIdExplicitPreserved() {
+        assertEquals("my-run-123", RuntimeContext.builder().runId("my-run-123").build().getRunId());
+    }
+
+    @Test
+    @DisplayName("builder(source) copies runId from source")
+    void runIdCopiedFromSource() {
+        RuntimeContext src = RuntimeContext.builder().runId("src-id").build();
+        assertEquals("src-id", RuntimeContext.builder(src).build().getRunId());
+    }
+
+    @Test
+    @DisplayName("reusing one builder yields distinct auto-generated runIds per build()")
+    void builderReuseYieldsDistinctRunIds() {
+        RuntimeContext.Builder builder = RuntimeContext.builder().userId("u").sessionId("s");
+        RuntimeContext first = builder.build();
+        RuntimeContext second = builder.build();
+        assertNotEquals(
+                first.getRunId(),
+                second.getRunId(),
+                "a reused builder must not hand out the same auto-generated runId twice");
+        assertNotNull(first.getRunId());
+        assertNotNull(second.getRunId());
     }
 
     @Test

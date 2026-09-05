@@ -130,7 +130,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -164,6 +163,7 @@ import reactor.core.publisher.Mono;
  * {@link io.agentscope.core.agent.RuntimeContext}'s {@code (userId, sessionId)} to isolate state.
  * Calls targeting the same session are serialized automatically; different sessions run in parallel.
  */
+@SuppressWarnings("deprecation")
 public class HarnessAgent implements Agent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
@@ -300,9 +300,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
     /**
      * Promote a draft skill from {@code skills/_drafts/} to the live skills root via the
      * configured {@link SkillPromotionGate}.
+     *
+     * @param name the draft skill name
+     * @param reviewerId the reviewer identity
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()}) used to resolve the
+     *     active session's namespace; pass {@code null} when not inside a call
      */
-    public Mono<SkillPromoter.PromotionResult> promoteSkill(String name, String reviewerId) {
-        return promoteSkill(name, reviewerId, getRuntimeContext());
+    public Mono<SkillPromoter.PromotionResult> promoteSkill(
+            String name, String reviewerId, String runId) {
+        return promoteSkill(name, reviewerId, getRuntimeContext(runId));
     }
 
     /**
@@ -503,8 +509,39 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getMaxIters();
     }
 
+    /**
+     * Returns the single in-flight {@link RuntimeContext} on the underlying agent, or {@code null}
+     * when none is active. Throws when several are in flight (the context is ambiguous).
+     *
+     * @deprecated use {@link #getRuntimeContext(String)} with a concrete runId
+     */
+    @Override
+    @Deprecated
     public RuntimeContext getRuntimeContext() {
         return delegate.getRuntimeContext();
+    }
+
+    /**
+     * Returns the active {@link RuntimeContext} for the given runId, or {@code null} if no such
+     * call is currently in flight on the underlying {@link io.agentscope.core.ReActAgent}.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     * @return the matching in-flight context, or {@code null}
+     */
+    @Override
+    public RuntimeContext getRuntimeContext(String runId) {
+        return delegate.getRuntimeContext(runId);
+    }
+
+    /**
+     * Returns a read-only snapshot of all currently in-flight {@link RuntimeContext}s on the
+     * underlying agent instance.
+     *
+     * @return unmodifiable list of active contexts (may be empty)
+     */
+    @Override
+    public List<RuntimeContext> getActiveRuntimeContexts() {
+        return delegate.getActiveRuntimeContexts();
     }
 
     public AgentStateStore getStateStore() {
@@ -556,13 +593,35 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
-     * @deprecated Use {@link #getDelegate()}{@code .getAgentState(RuntimeContext)} or
-     *     {@code .getAgentState(String, String)} with explicit session identity.
+     * @deprecated Use {@link #getAgentState(RuntimeContext)} or {@link #getAgentState(String,
+     *     String)} with explicit session identity.
      */
     @Deprecated
     @Override
     public AgentState getAgentState() {
         return delegate.getAgentState();
+    }
+
+    /**
+     * Returns the {@link AgentState} for the session identified by the given {@link RuntimeContext}.
+     *
+     * @param ctx the runtime context identifying the session
+     * @return the agent state for the identified session
+     */
+    @Override
+    public AgentState getAgentState(RuntimeContext ctx) {
+        return delegate.getAgentState(ctx);
+    }
+
+    /**
+     * Returns the {@link AgentState} for the given {@code (userId, sessionId)} slot.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     * @return the agent state for the identified session
+     */
+    public AgentState getAgentState(String userId, String sessionId) {
+        return delegate.getAgentState(userId, sessionId);
     }
 
     @Override
@@ -580,14 +639,93 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getDescription();
     }
 
+    /**
+     * Interrupts the default session's in-flight call.
+     *
+     * @deprecated Use {@link #interrupt(RuntimeContext)} or {@link #interrupt(String, String)} to
+     *     target a specific session.
+     */
+    @Deprecated
     @Override
     public void interrupt() {
         delegate.interrupt();
     }
 
+    /**
+     * Interrupts the default session's in-flight call with a user message.
+     *
+     * @deprecated Use {@link #interrupt(RuntimeContext, Msg)} or {@link #interrupt(String, String,
+     *     Msg)} to target a specific session.
+     */
+    @Deprecated
     @Override
     public void interrupt(Msg msg) {
         delegate.interrupt(msg);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext}.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     */
+    @Override
+    public void interrupt(RuntimeContext ctx) {
+        delegate.interrupt(ctx);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext} with a user
+     * message.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    @Override
+    public void interrupt(RuntimeContext ctx, Msg msg) {
+        delegate.interrupt(ctx, msg);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by its per-call {@code runId}; no-op when absent.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     */
+    @Override
+    public void interrupt(String runId) {
+        delegate.interrupt(runId);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by its per-call {@code runId} with a user message.
+     *
+     * @param runId the per-call run id (from {@link RuntimeContext#getRunId()})
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    @Override
+    public void interrupt(String runId, Msg msg) {
+        delegate.interrupt(runId, msg);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     */
+    public void interrupt(String userId, String sessionId) {
+        delegate.interrupt(userId, sessionId);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with a user
+     * message.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    public void interrupt(String userId, String sessionId, Msg msg) {
+        delegate.interrupt(userId, sessionId, msg);
     }
 
     // -----------------------------------------------------------------
@@ -2671,16 +2809,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             // ---- Skills ----
-            final AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
-            Supplier<RuntimeContext> currentRcSupplier =
-                    () -> {
-                        ReActAgent self = selfRef.get();
-                        RuntimeContext rc = self != null ? self.getRuntimeContext() : null;
-                        return rc != null ? rc : RuntimeContext.empty();
-                    };
             List<AgentSkillRepository> orderedSkillRepos =
                     HarnessAgentBuilderSupport.composeSkillRepositories(
-                            this, wsManager, filesystem, currentRcSupplier);
+                            this, wsManager, filesystem);
 
             // ---- Skill self-learning: writable workspace skills + skill_manage tool ----
             SkillPromoter pendingSkillPromoter = null;
@@ -2702,10 +2833,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     if (r instanceof WorkspaceSkillRepository wsr && !wsr.isWriteable()) {
                         mainWritableRepo =
                                 new WorkspaceSkillRepository(
-                                        filesystem,
-                                        smConfig.mainDir(),
-                                        currentRcSupplier,
-                                        "workspace-writable");
+                                        filesystem, smConfig.mainDir(), "workspace-writable");
                         orderedSkillRepos.set(i, mainWritableRepo);
                         break;
                     }
@@ -2713,18 +2841,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (mainWritableRepo == null) {
                     mainWritableRepo =
                             new WorkspaceSkillRepository(
-                                    filesystem,
-                                    smConfig.mainDir(),
-                                    currentRcSupplier,
-                                    "workspace-writable");
+                                    filesystem, smConfig.mainDir(), "workspace-writable");
                     orderedSkillRepos.add(mainWritableRepo);
                 }
                 WorkspaceSkillRepository draftsWritableRepo =
                         new WorkspaceSkillRepository(
-                                filesystem,
-                                smConfig.draftsDir(),
-                                currentRcSupplier,
-                                "workspace-drafts");
+                                filesystem, smConfig.draftsDir(), "workspace-drafts");
                 SkillUsageStore usageStore =
                         distributedStore != null
                                 ? SkillUsageStore.baseStore(distributedStore.baseStore())
@@ -2859,7 +2981,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // ---- Build inner ReActAgent ----
             inner.toolkit(agentToolkit);
             ReActAgent delegate = inner.build();
-            selfRef.set(delegate);
 
             return new HarnessAgent(
                     delegate,
