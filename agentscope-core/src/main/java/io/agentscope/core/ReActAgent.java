@@ -3329,6 +3329,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
                 List<ToolUseBlock> toolCalls) {
+            if (toolCalls.stream().anyMatch(t -> t.getState() == ToolCallState.PARSE_FAILED)) {
+                return Mono.just(
+                        toolCalls.stream()
+                                .map(
+                                        toolCall ->
+                                                Map.entry(
+                                                        toolCall,
+                                                        ToolResultBlock.error(
+                                                                toolCall.getId(),
+                                                                "Tool execution rejected: malformed"
+                                                                        + " tool arguments")))
+                                .toList());
+            }
             return dispatchToolCalls(toolCalls)
                     .map(
                             results ->
