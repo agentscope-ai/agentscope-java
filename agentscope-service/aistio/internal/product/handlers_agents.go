@@ -17,6 +17,7 @@ package product
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -79,6 +80,10 @@ type agentRow struct {
 	ArchivedAt                 *int64
 	CreatedAt                  int64
 	UpdatedAt                  int64
+
+	// EffectiveTier 是当前请求用户对该 Agent 持有的控制台 ShareTier
+	// （CLONE/RUN/EDIT），不持久化；空串表示"无权限/未知"。
+	EffectiveTier string
 }
 
 func (a agentRow) toJSON() gin.H {
@@ -127,7 +132,38 @@ func (a agentRow) toJSON() gin.H {
 	if a.MultiagentJSON != nil && *a.MultiagentJSON != "" && *a.MultiagentJSON != "null" {
 		out["multiagent"] = parseJSONRaw(*a.MultiagentJSON)
 	}
+	// tierForCurrentUser 控制控制台 Agent 详情标签页的渲染：EDIT 全部可编辑，
+	// RUN 标签页只读，CLONE 仅显示克隆卡片；无权限时不输出该字段。
+	if a.EffectiveTier != "" {
+		out["tierForCurrentUser"] = a.EffectiveTier
+	}
 	return out
+}
+
+// agentTierForUser 解析当前用户对某 Agent 持有的控制台 ShareTier：
+// owner 本人 → EDIT；否则取 agent_shares 中匹配的最高档授权（授权给该用户的
+// USER 授权，或共享给所有人的 WORKSPACE '*' 授权）。无任何授权时返回空串。
+// 档位排序需与控制台保持一致（CLONE < RUN < EDIT）。
+func (s *Server) agentTierForUser(ctx context.Context, ownerID, agentID, userID string) string {
+	if userID != "" && userID == ownerID {
+		return "EDIT"
+	}
+	if userID == "" {
+		return ""
+	}
+	var tier string
+	err := s.db.Pool.QueryRow(ctx,
+		`SELECT tier FROM agent_shares
+		 WHERE owner_id=$1 AND agent_id=$2
+		   AND ((grantee_type='WORKSPACE' AND grantee_id='*')
+		     OR (grantee_type='USER' AND grantee_id=$3))
+		 ORDER BY CASE tier WHEN 'EDIT' THEN 3 WHEN 'RUN' THEN 2 WHEN 'CLONE' THEN 1 ELSE 0 END DESC
+		 LIMIT 1`,
+		ownerID, agentID, userID).Scan(&tier)
+	if err != nil {
+		return ""
+	}
+	return tier
 }
 
 func deref(p *string) string {
@@ -157,6 +193,26 @@ const agentSelect = `SELECT owner_id, agent_id, workspace_path, workspace_id, na
 	default_environment_id, default_vault_ids_json, default_memory_store_ids_json,
 	head_version, archived_at, created_at, updated_at FROM agents`
 
+// agentVisibilityClause 把可见范围限定为：用户自己拥有的 Agent（$1），
+// 或通过 agent_shares 分享给该用户的 Agent（授权给该用户的 USER 授权，
+// 或共享给所有人的 WORKSPACE '*' 授权）。
+const agentVisibilityClause = `(a.owner_id=$1
+	OR EXISTS (SELECT 1 FROM agent_shares s
+		WHERE s.owner_id=a.owner_id AND s.agent_id=a.agent_id
+		  AND ((s.grantee_type='WORKSPACE' AND s.grantee_id='*')
+		    OR (s.grantee_type='USER' AND s.grantee_id=$1))))`
+
+// agentTierExpr 在 SQL 中按行计算当前用户的有效 ShareTier：owner 为 EDIT；
+// 否则取匹配授权中的最高档（CLONE < RUN < EDIT）。
+const agentTierExpr = `COALESCE(
+	CASE WHEN a.owner_id=$1 THEN 'EDIT' END,
+	(SELECT s.tier FROM agent_shares s
+		WHERE s.owner_id=a.owner_id AND s.agent_id=a.agent_id
+		  AND ((s.grantee_type='WORKSPACE' AND s.grantee_id='*')
+		    OR (s.grantee_type='USER' AND s.grantee_id=$1))
+		ORDER BY CASE s.tier WHEN 'EDIT' THEN 3 WHEN 'RUN' THEN 2 WHEN 'CLONE' THEN 1 ELSE 0 END DESC
+		LIMIT 1))`
+
 func (s *Server) listAgents(c *gin.Context) {
 	owner := currentUserID(c)
 	limit, offset, ok := pageParams(c)
@@ -166,12 +222,16 @@ func (s *Server) listAgents(c *gin.Context) {
 	}
 	var total int64
 	if err := s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT COUNT(*) FROM agents WHERE owner_id=$1 AND archived_at IS NULL`, owner).Scan(&total); err != nil {
+		`SELECT COUNT(*) FROM agents a WHERE a.archived_at IS NULL AND `+agentVisibilityClause,
+		owner).Scan(&total); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeTotalCount(c, total)
-	q := agentSelect + ` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`
+	q := `SELECT a.*, ` + agentTierExpr + ` AS effective_tier
+		FROM (` + agentSelect + `) a
+		WHERE a.archived_at IS NULL AND ` + agentVisibilityClause + `
+		ORDER BY a.updated_at DESC`
 	args := []any{owner}
 	q, args = appendPage(q, limit, offset, args)
 	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
@@ -182,11 +242,18 @@ func (s *Server) listAgents(c *gin.Context) {
 	defer rows.Close()
 	list := []gin.H{}
 	for rows.Next() {
-		a, err := s.scanAgent(rows)
-		if err != nil {
+		var a agentRow
+		var tier *string
+		if err := rows.Scan(
+			&a.OwnerID, &a.AgentID, &a.WorkspacePath, &a.WorkspaceID, &a.Name, &a.Description,
+			&a.SysPrompt, &a.Model, &a.MaxIters, &a.ToolsJSON, &a.McpServersJSON,
+			&a.SkillsJSON, &a.MultiagentJSON,
+			&a.DefaultEnvironmentID, &a.DefaultVaultIDsJSON, &a.DefaultMemoryStoreIDsJSON,
+			&a.HeadVersion, &a.ArchivedAt, &a.CreatedAt, &a.UpdatedAt, &tier); err != nil {
 			writeErr(c, http.StatusInternalServerError, err.Error())
 			return
 		}
+		a.EffectiveTier = deref(tier)
 		list = append(list, a.toJSON())
 	}
 	c.JSON(http.StatusOK, list)
@@ -290,6 +357,7 @@ func (s *Server) createAgent(c *gin.Context) {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	a.EffectiveTier = "EDIT"
 	c.JSON(http.StatusOK, a.toJSON())
 }
 
@@ -313,11 +381,11 @@ func (s *Server) agentSnapshot(owner, id, name, desc, system, model string, maxI
 		"id": id, "name": name, "description": desc, "system": system, "model": model,
 		"maxIters": maxIters, "tools": tools, "mcpServers": mcp, "skills": skills,
 		"multiagent": multi, "scope": "user", "ownerId": owner, "workspacePath": ws,
-		"workspaceId":             nullStr(workspaceID),
-		"defaultEnvironmentId":    nullStr(defaultEnv),
-		"defaultVaultIds":         defaultVault,
-		"defaultMemoryStoreIds":   defaultMem,
-		"version":                 version, "createdAt": created, "updatedAt": updated,
+		"workspaceId":           nullStr(workspaceID),
+		"defaultEnvironmentId":  nullStr(defaultEnv),
+		"defaultVaultIds":       defaultVault,
+		"defaultMemoryStoreIds": defaultMem,
+		"version":               version, "createdAt": created, "updatedAt": updated,
 	}
 }
 
@@ -327,13 +395,37 @@ func (s *Server) loadAgent(ctx context.Context, owner, agentID string) (agentRow
 }
 
 func (s *Server) getAgent(c *gin.Context) {
-	owner := currentUserID(c)
-	a, err := s.loadAgent(c.Request.Context(), owner, c.Param("id"))
+	user := currentUserID(c)
+	agentID := c.Param("id")
+	if a, err := s.loadAgent(c.Request.Context(), user, agentID); err == nil {
+		a.EffectiveTier = "EDIT"
+		c.JSON(http.StatusOK, a.toJSON())
+		return
+	}
+	// 非本人所有：仅当 owner 把该 Agent 分享给当前用户时可读。
+	a, err := s.loadSharedAgent(c.Request.Context(), user, agentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
 	c.JSON(http.StatusOK, a.toJSON())
+}
+
+// loadSharedAgent 加载他人所有、但已通过 agent_shares 分享给当前用户的
+// Agent。Agent 不存在或用户无任何授权时返回错误。
+func (s *Server) loadSharedAgent(ctx context.Context, user, agentID string) (agentRow, error) {
+	row := s.db.Pool.QueryRow(ctx,
+		agentSelect+` WHERE agent_id=$1 AND archived_at IS NULL`, agentID)
+	a, err := s.scanAgent(row)
+	if err != nil {
+		return a, err
+	}
+	tier := s.agentTierForUser(ctx, a.OwnerID, agentID, user)
+	if tier == "" {
+		return a, fmt.Errorf("agent not shared with user")
+	}
+	a.EffectiveTier = tier
+	return a, nil
 }
 
 func (s *Server) updateAgent(c *gin.Context) {
@@ -469,6 +561,7 @@ func (s *Server) updateAgent(c *gin.Context) {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	out.EffectiveTier = "EDIT"
 	c.JSON(http.StatusOK, out.toJSON())
 }
 
@@ -504,6 +597,7 @@ func (s *Server) archiveAgent(c *gin.Context) {
 		return
 	}
 	a, _ := s.loadAgent(c.Request.Context(), owner, c.Param("id"))
+	a.EffectiveTier = "EDIT"
 	c.JSON(http.StatusOK, a.toJSON())
 }
 
