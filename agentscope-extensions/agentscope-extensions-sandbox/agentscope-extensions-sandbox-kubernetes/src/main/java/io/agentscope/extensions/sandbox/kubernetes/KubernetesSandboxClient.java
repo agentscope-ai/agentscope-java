@@ -93,7 +93,7 @@ public class KubernetesSandboxClient
         state.setWorkspaceRoot(merged.getWorkspaceRoot());
         state.setFileApiBaseDir(merged.getFileApiBaseDir());
         state.setWarmPoolName(merged.getWarmPoolName());
-        state.setClaimOwned(true);
+        state.setClaimOwned(resolveClaimOwned(merged));
         state.setWorkspaceRootReady(false);
 
         if (snapshotSpec != null) {
@@ -123,6 +123,8 @@ public class KubernetesSandboxClient
                                     .claimName(claimName)
                                     .sandboxReadyTimeoutSeconds(
                                             merged.getSandboxReadyTimeoutSeconds())
+                                    .shutdownAfterSeconds(merged.getShutdownAfterSeconds())
+                                    .ttlSecondsAfterFinished(merged.getTtlSecondsAfterFinished())
                                     .build());
             state.setSandboxName(sdkSandbox.sandboxId());
             String podIp = sdkSandbox.getPodIp();
@@ -150,6 +152,7 @@ public class KubernetesSandboxClient
                     "Expected KubernetesSandboxState but got: " + state.getClass().getName());
         }
         KubernetesSandboxClientOptions merged = merge(null);
+        applyConfiguredClaimOwnership(k8s, merged);
         try {
             SandboxClient sdkClient = buildSdkClient(merged);
             io.agentscope.extensions.sandbox.kubernetes.client.Sandbox sdkSandbox =
@@ -160,6 +163,26 @@ public class KubernetesSandboxClient
                     SandboxErrorCode.WORKSPACE_START_ERROR,
                     "Failed to resume agent-sandbox client: " + e.getMessage(),
                     e);
+        }
+    }
+
+    /**
+     * Resolves release ownership. Explicit configuration wins; otherwise configuring a
+     * hard shutdown deadline delegates deletion to the cluster. A finished-only TTL does not
+     * implicitly retain a claim because long-running runtimes may never reach Finished.
+     */
+    static boolean resolveClaimOwned(KubernetesSandboxClientOptions options) {
+        if (options.getClaimOwned() != null) {
+            return options.getClaimOwned();
+        }
+        return options.getShutdownAfterSeconds() == null;
+    }
+
+    /** Applies an explicit release policy to persisted state. */
+    static void applyConfiguredClaimOwnership(
+            KubernetesSandboxState state, KubernetesSandboxClientOptions options) {
+        if (options.getClaimOwned() != null) {
+            state.setClaimOwned(options.getClaimOwned());
         }
     }
 
@@ -227,7 +250,7 @@ public class KubernetesSandboxClient
                 opts.getNamespace() != null ? opts.getNamespace() : "default");
     }
 
-    private KubernetesSandboxClientOptions merge(KubernetesSandboxClientOptions callOptions) {
+    KubernetesSandboxClientOptions merge(KubernetesSandboxClientOptions callOptions) {
         KubernetesSandboxClientOptions base =
                 defaultOptions != null ? defaultOptions : new KubernetesSandboxClientOptions();
         if (callOptions == null) {
@@ -267,6 +290,15 @@ public class KubernetesSandboxClient
         if (callOptions.getServerPort() > 0) {
             o.setServerPort(callOptions.getServerPort());
         }
+        if (callOptions.getClaimOwned() != null) {
+            o.setClaimOwned(callOptions.getClaimOwned());
+        }
+        if (callOptions.getShutdownAfterSeconds() != null) {
+            o.setShutdownAfterSeconds(callOptions.getShutdownAfterSeconds());
+        }
+        if (callOptions.getTtlSecondsAfterFinished() != null) {
+            o.setTtlSecondsAfterFinished(callOptions.getTtlSecondsAfterFinished());
+        }
         return o;
     }
 
@@ -288,6 +320,9 @@ public class KubernetesSandboxClient
         o.setRequestTimeoutSeconds(src.getRequestTimeoutSeconds());
         o.setPerAttemptTimeoutSeconds(src.getPerAttemptTimeoutSeconds());
         o.setPortForwardTimeoutSeconds(src.getPortForwardTimeoutSeconds());
+        o.setClaimOwned(src.getClaimOwned());
+        o.setShutdownAfterSeconds(src.getShutdownAfterSeconds());
+        o.setTtlSecondsAfterFinished(src.getTtlSecondsAfterFinished());
         return o;
     }
 

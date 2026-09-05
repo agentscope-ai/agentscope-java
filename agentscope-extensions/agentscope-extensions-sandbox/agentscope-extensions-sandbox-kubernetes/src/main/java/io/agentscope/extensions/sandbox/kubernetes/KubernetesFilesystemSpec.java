@@ -86,6 +86,33 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Controls whether per-call release deletes the {@code SandboxClaim}. When {@code false},
+     * release only closes the client connection so later calls can resume the same claim.
+     */
+    public KubernetesFilesystemSpec claimOwned(boolean claimOwned) {
+        options.setClaimOwned(claimOwned);
+        return this;
+    }
+
+    /**
+     * Sets the claim lifetime from creation. The controller deletes the claim after this many
+     * seconds, even if the sandbox has not reached a finished state.
+     */
+    public KubernetesFilesystemSpec shutdownAfterSeconds(long shutdownAfterSeconds) {
+        options.setShutdownAfterSeconds(shutdownAfterSeconds);
+        return this;
+    }
+
+    /**
+     * Sets how long a finished claim is retained. Zero deletes it immediately after the mirrored
+     * {@code Finished} condition becomes true.
+     */
+    public KubernetesFilesystemSpec ttlSecondsAfterFinished(int ttlSecondsAfterFinished) {
+        options.setTtlSecondsAfterFinished(ttlSecondsAfterFinished);
+        return this;
+    }
+
     public KubernetesFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;

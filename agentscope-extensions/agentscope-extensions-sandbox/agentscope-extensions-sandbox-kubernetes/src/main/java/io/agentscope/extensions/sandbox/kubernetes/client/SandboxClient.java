@@ -105,6 +105,7 @@ public class SandboxClient implements AutoCloseable {
                     namespace,
                     options.labels().isEmpty() ? null : options.labels(),
                     options.shutdownAfterSeconds(),
+                    options.ttlSecondsAfterFinished(),
                     options.podLabels().isEmpty() ? null : options.podLabels(),
                     options.podAnnotations().isEmpty() ? null : options.podAnnotations());
 

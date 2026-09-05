@@ -68,7 +68,7 @@ public class K8sHelper {
      * @param warmPool warm pool name
      * @param namespace Kubernetes namespace
      * @param labels optional claim labels
-     * @param shutdownAfterSeconds optional TTL; when set, populates {@code spec.lifecycle}
+     * @param shutdownAfterSeconds optional lifetime from claim creation
      * @param podLabels optional labels for {@code spec.additionalPodMetadata}
      * @param podAnnotations optional annotations for {@code spec.additionalPodMetadata}
      * @return the created claim
@@ -79,6 +79,67 @@ public class K8sHelper {
             String namespace,
             Map<String, String> labels,
             Long shutdownAfterSeconds,
+            Map<String, String> podLabels,
+            Map<String, String> podAnnotations) {
+        return createSandboxClaim(
+                name,
+                warmPool,
+                namespace,
+                labels,
+                shutdownAfterSeconds,
+                null,
+                podLabels,
+                podAnnotations);
+    }
+
+    /**
+     * Creates a SandboxClaim with optional creation and finished-state lifecycle limits.
+     *
+     * @param name claim name
+     * @param warmPool warm pool name
+     * @param namespace Kubernetes namespace
+     * @param labels optional claim labels
+     * @param shutdownAfterSeconds optional lifetime from claim creation
+     * @param ttlSecondsAfterFinished optional retention after the claim reaches Finished
+     * @param podLabels optional labels for {@code spec.additionalPodMetadata}
+     * @param podAnnotations optional annotations for {@code spec.additionalPodMetadata}
+     * @return the created claim
+     */
+    public SandboxClaim createSandboxClaim(
+            String name,
+            String warmPool,
+            String namespace,
+            Map<String, String> labels,
+            Long shutdownAfterSeconds,
+            Integer ttlSecondsAfterFinished,
+            Map<String, String> podLabels,
+            Map<String, String> podAnnotations) {
+        SandboxClaim claim =
+                buildSandboxClaim(
+                        name,
+                        warmPool,
+                        namespace,
+                        labels,
+                        shutdownAfterSeconds,
+                        ttlSecondsAfterFinished,
+                        podLabels,
+                        podAnnotations);
+
+        SandboxClaim created = client.resource(claim).inNamespace(namespace).create();
+        log.debug(
+                "[sandbox-client] Created SandboxClaim: {}/{}",
+                namespace,
+                created.getMetadata().getName());
+        return created;
+    }
+
+    SandboxClaim buildSandboxClaim(
+            String name,
+            String warmPool,
+            String namespace,
+            Map<String, String> labels,
+            Long shutdownAfterSeconds,
+            Integer ttlSecondsAfterFinished,
             Map<String, String> podLabels,
             Map<String, String> podAnnotations) {
         Map<String, String> claimLabels = new HashMap<>();
@@ -96,14 +157,22 @@ public class K8sHelper {
                         .build());
 
         SandboxClaimSpec spec = new SandboxClaimSpec(warmPool);
+        String shutdownTime = null;
         if (shutdownAfterSeconds != null) {
             if (shutdownAfterSeconds <= 0) {
                 throw new IllegalArgumentException("shutdownAfterSeconds must be positive");
             }
             Instant shutdownAt = Instant.now().plusSeconds(shutdownAfterSeconds);
-            String shutdownTime =
+            shutdownTime =
                     DateTimeFormatter.ISO_INSTANT.format(shutdownAt.atOffset(ZoneOffset.UTC));
-            spec.setLifecycle(new SandboxClaimSpec.Lifecycle(shutdownTime, "Delete"));
+        }
+        if (ttlSecondsAfterFinished != null && ttlSecondsAfterFinished < 0) {
+            throw new IllegalArgumentException("ttlSecondsAfterFinished must not be negative");
+        }
+        if (shutdownTime != null || ttlSecondsAfterFinished != null) {
+            spec.setLifecycle(
+                    new SandboxClaimSpec.Lifecycle(
+                            shutdownTime, "Delete", ttlSecondsAfterFinished));
         }
         if ((podLabels != null && !podLabels.isEmpty())
                 || (podAnnotations != null && !podAnnotations.isEmpty())) {
@@ -115,13 +184,7 @@ public class K8sHelper {
                                     : null));
         }
         claim.setSpec(spec);
-
-        SandboxClaim created = client.resource(claim).inNamespace(namespace).create();
-        log.debug(
-                "[sandbox-client] Created SandboxClaim: {}/{}",
-                namespace,
-                created.getMetadata().getName());
-        return created;
+        return claim;
     }
 
     /**
@@ -201,21 +264,19 @@ public class K8sHelper {
      */
     public String resolveSandboxName(String claimName, String namespace, long timeoutSeconds)
             throws Exception {
-        SandboxClaim current =
-                client.resources(SandboxClaim.class)
-                        .inNamespace(namespace)
-                        .withName(claimName)
-                        .get();
-        if (current != null) {
-            checkClaimFailureConditions(current, claimName);
-            String resolved = extractSandboxName(current);
-            if (resolved != null) {
-                log.debug(
-                        "[sandbox-client] Sandbox name already resolved: {} -> {}",
-                        claimName,
-                        resolved);
-                return resolved;
-            }
+        SandboxClaim current = getSandboxClaim(claimName, namespace);
+        if (current == null) {
+            throw new SandboxNotFoundException(
+                    "SandboxClaim '" + claimName + "' not found in namespace '" + namespace + "'.");
+        }
+        checkClaimFailureConditions(current, claimName);
+        String resolved = extractSandboxName(current);
+        if (resolved != null) {
+            log.debug(
+                    "[sandbox-client] Sandbox name already resolved: {} -> {}",
+                    claimName,
+                    resolved);
+            return resolved;
         }
 
         CompletableFuture<String> future = new CompletableFuture<>();
