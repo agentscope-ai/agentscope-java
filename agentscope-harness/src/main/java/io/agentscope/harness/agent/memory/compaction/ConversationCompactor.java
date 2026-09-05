@@ -86,8 +86,9 @@ public class ConversationCompactor {
      * @param config               compaction configuration
      * @param agentId              agent identifier used for the memory offload path
      * @param sessionId            session identifier used for the memory offload path
-     * @return {@code Optional.empty()} when no compaction was needed; otherwise the replacement
-     *         message list consisting of {@code [summaryUserMsg] + preservedTail}
+     * @return {@code Optional.empty()} when unchanged; otherwise the preprocessed conversation
+     *         or {@code [summaryUserMsg] + preservedTail}. Summary failures propagate without
+     *         replacing the conversation.
      */
     public Mono<Optional<List<Msg>>> compactIfNeeded(
             RuntimeContext rc,
@@ -95,6 +96,33 @@ public class ConversationCompactor {
             CompactionConfig config,
             String agentId,
             String sessionId) {
+        return compactIfNeeded(rc, conversationMessages, config, agentId, sessionId, 0);
+    }
+
+    /**
+     * Compacts conversation history while accounting for the rest of the reasoning request.
+     *
+     * @param rc runtime context
+     * @param conversationMessages conversation without the leading system message
+     * @param config compaction configuration with resolved thresholds
+     * @param agentId agent identifier
+     * @param sessionId session identifier
+     * @param requestOverheadTokens estimated system, tool and response-schema tokens; excluded
+     *     from the conversation tail budget
+     * @return empty if unchanged, otherwise the pruned or summarized conversation
+     */
+    public Mono<Optional<List<Msg>>> compactIfNeeded(
+            RuntimeContext rc,
+            List<Msg> conversationMessages,
+            CompactionConfig config,
+            String agentId,
+            String sessionId,
+            int requestOverheadTokens) {
+
+        if (requestOverheadTokens < 0) {
+            return Mono.error(
+                    new IllegalArgumentException("requestOverheadTokens must be nonnegative"));
+        }
 
         if (conversationMessages == null || conversationMessages.isEmpty()) {
             return Mono.just(Optional.empty());
@@ -108,14 +136,15 @@ public class ConversationCompactor {
                         config.getPruneConfig());
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
-        if (!shouldCompact(messages, totalTokens, config)) {
-            return Mono.just(Optional.empty());
+        long requestTokens = (long) totalTokens + requestOverheadTokens;
+        if (!shouldCompact(messages, requestTokens, config)) {
+            return Mono.just(preprocessedResult(conversationMessages, messages));
         }
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
         if (cutoff <= 0) {
             log.debug("Compaction triggered but safe cutoff is 0 — skipping");
-            return Mono.just(Optional.empty());
+            return Mono.just(preprocessedResult(conversationMessages, messages));
         }
 
         // Keep prior summaries in the summarization input so each compaction builds on the
@@ -127,7 +156,7 @@ public class ConversationCompactor {
         log.info(
                 "Compaction triggered: total={} msgs / {} tokens, cutoff={}, keeping={} msgs",
                 messages.size(),
-                totalTokens,
+                requestTokens,
                 cutoff,
                 tail.size());
 
@@ -210,12 +239,16 @@ public class ConversationCompactor {
                                                 }));
     }
 
+    private static Optional<List<Msg>> preprocessedResult(List<Msg> original, List<Msg> processed) {
+        return processed == original ? Optional.empty() : Optional.of(processed);
+    }
+
     // -------------------------------------------------------------------------
     // Trigger logic
     // -------------------------------------------------------------------------
 
     private static boolean shouldCompact(
-            List<Msg> messages, int totalTokens, CompactionConfig config) {
+            List<Msg> messages, long totalTokens, CompactionConfig config) {
         if (config.getTriggerMessages() > 0 && messages.size() >= config.getTriggerMessages()) {
             log.debug(
                     "Compaction trigger: message count {} >= {}",
@@ -372,15 +405,8 @@ public class ConversationCompactor {
                 .map(StringBuilder::toString)
                 .map(String::strip)
                 .filter(s -> !s.isBlank())
-                .defaultIfEmpty("(Summary unavailable)")
-                .onErrorResume(
-                        e -> {
-                            if (ExceptionUtils.containsInterruptedException(e)) {
-                                return Mono.error(e);
-                            }
-                            log.warn("Summarization LLM call failed: {}", e.getMessage());
-                            return Mono.just("(Summarization failed: " + e.getMessage() + ")");
-                        });
+                .switchIfEmpty(
+                        Mono.error(new IllegalStateException("Summarization returned no text")));
     }
 
     /**
@@ -572,16 +598,7 @@ public class ConversationCompactor {
                             .output(List.of(TextBlock.builder().text(preview).build()))
                             .build();
             newBlocks.set(blockIdx, pruned);
-            result.set(
-                    msgIdx,
-                    Msg.builder()
-                            .id(msg.getId())
-                            .name(msg.getName())
-                            .role(msg.getRole())
-                            .content(newBlocks)
-                            .metadata(msg.getMetadata())
-                            .timestamp(msg.getTimestamp())
-                            .build());
+            result.set(msgIdx, msg.withContent(newBlocks));
         }
 
         log.info("Pruned {} tool results (~{} tokens freed)", toPrune.size(), prunableTokens);
@@ -698,7 +715,7 @@ public class ConversationCompactor {
         if (!anyModified) {
             return msg;
         }
-        return Msg.builder().role(msg.getRole()).name(msg.getName()).content(newBlocks).build();
+        return msg.withContent(newBlocks);
     }
 
     /**

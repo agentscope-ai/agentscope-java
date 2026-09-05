@@ -292,7 +292,8 @@ public class CompactionConfig {
         }
 
         /**
-         * Trigger compaction when estimated token count exceeds this value.
+         * Trigger compaction when estimated input tokens reach this value. Automatic compaction
+         * includes the conversation, system prompt, tool definitions and response schema.
          * {@code 0} (default) = dynamic mode: compute from model's context window minus
          * {@link #reserved(int)}.
          */
