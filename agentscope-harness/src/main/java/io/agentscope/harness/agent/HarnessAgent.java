@@ -582,12 +582,48 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     @Override
     public void interrupt() {
-        delegate.interrupt();
+        // get the active runtime context
+        RuntimeContext active = delegate.getRuntimeContext();
+        if (active != null) {
+            delegate.interrupt(active);
+        } else {
+            delegate.interrupt();
+        }
     }
 
     @Override
     public void interrupt(Msg msg) {
-        delegate.interrupt(msg);
+        RuntimeContext active = delegate.getRuntimeContext();
+        if (active != null) {
+            delegate.interrupt(active, msg);
+        } else {
+            delegate.interrupt(msg);
+        }
+    }
+
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext}.
+     *
+     * <p>Unlike {@link #interrupt()}, this targets the exact {@code (userId, sessionId)} slot
+     * carried by {@code ctx}, so it works for sessions started via
+     * {@link #streamEvents(List, RuntimeContext)} with a custom {@code sessionId} (see issue
+     * #2610). Safe under concurrency: each caller supplies the session it wants to cancel.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     */
+    public void interrupt(RuntimeContext ctx) {
+        delegate.interrupt(ctx);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext} with an
+     * associated user message.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    public void interrupt(RuntimeContext ctx, Msg msg) {
+        delegate.interrupt(ctx, msg);
     }
 
     // -----------------------------------------------------------------

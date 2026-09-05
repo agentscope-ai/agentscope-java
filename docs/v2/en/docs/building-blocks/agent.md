@@ -220,6 +220,34 @@ agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", interruptMsg);
 ```
 
+### HarnessAgent: targeting the active call
+
+On [`HarnessAgent`](../harness/architecture.md), the context-free `interrupt()` / `interrupt(Msg)`
+overloads prefer the **active call's** `RuntimeContext` — the session currently running on the
+agent — and only fall back to the builder-time default session when no call is in flight. Streams
+started via `streamEvents(msgs, ctx)` with a custom `sessionId` are therefore cancelled correctly
+(see issue #2610).
+
+When several sessions run concurrently on the same `HarnessAgent`, target the exact session with
+the `RuntimeContext` overloads — each caller supplies the session it wants to cancel, so this is
+safe under concurrency:
+
+```java
+HarnessAgent agent = ...;  // streamEvents(msgs, ctx) and interrupt(RuntimeContext[, Msg]) are HarnessAgent-specific
+
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("conversation-123")
+        .build();
+
+// start a stream under the custom sessionId
+agent.streamEvents(List.of(new UserMessage("Hello")), ctx).subscribe(...);
+
+// later, from any thread:
+agent.interrupt(ctx);                                     // cancels that stream only
+agent.interrupt(ctx, new UserMessage("User cancelled"));  // with an injected message
+```
+
 ## Running an agent
 
 `call` and `streamEvents` accept the same input messages and drive the same reasoning-acting loop. They differ in how the result is delivered.
