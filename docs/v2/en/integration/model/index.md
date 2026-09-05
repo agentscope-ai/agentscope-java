@@ -7,6 +7,7 @@ Model provider extensions connect AgentScope Java to hosted or local chat model 
 - [GLM](glm.md)
 - [Kimi](kimi.md)
 - [MiniMax](minimax.md)
+- [OrcaRouter](orcarouter.md)
 - [DashScope](dashscope.md)
 - [Gemini](gemini.md)
 - [Anthropic](anthropic.md)
