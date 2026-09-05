@@ -204,8 +204,8 @@ class WaitAsyncResultsToolTest {
     }
 
     @Test
-    @DisplayName("some tasks still running → proceeds to wait normally")
-    void nonTerminalTasksProcedsToWait() throws Exception {
+    @DisplayName("legacy mode times out while all tracked tasks remain non-terminal")
+    void legacyTimesOutWhenTrackedTasksRemainNonTerminal() throws Exception {
         CompletableFuture<String> running = new CompletableFuture<>();
         BackgroundTask runningTask = new BackgroundTask("t1", "agent-1", running);
 
@@ -214,6 +214,131 @@ class WaitAsyncResultsToolTest {
 
         String result = tool.waitForResults(1, ctx());
         assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
+    }
+
+    @Test
+    @DisplayName("legacy mode detects completion when the inbox notification is lost")
+    void legacyDetectsCompletionFromTaskRepositoryWhenNotificationIsLost() throws Exception {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        BackgroundTask task = new BackgroundTask("t1", "agent-1", future);
+        TrackingTaskRepository repo = new TrackingTaskRepository(List.of(task));
+        MessageBus bus = new StubMessageBus(false, () -> future.complete("repository-result"));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(bus, repo);
+
+        String result = tool.waitForResults(1, ctx());
+
+        assertFalse(
+                result.contains("Timeout"), "should detect repository completion, got: " + result);
+        assertTrue(
+                result.contains("task_id: t1"), "should identify completed task, got: " + result);
+        assertTrue(
+                result.contains("repository-result"),
+                "should return actual result, got: " + result);
+        assertTrue(repo.delivered.contains("t1"), "should mark fallback result as delivered");
+    }
+
+    @Test
+    @DisplayName("legacy repository fallback keeps ANY-result semantics")
+    void legacyRepositoryFallbackReturnsAfterAnyTrackedTaskCompletes() throws Exception {
+        CompletableFuture<String> first = new CompletableFuture<>();
+        CompletableFuture<String> second = new CompletableFuture<>();
+        TaskRepository repo =
+                new StubTaskRepository(
+                        List.of(
+                                new BackgroundTask("t1", "agent-1", first),
+                                new BackgroundTask("t2", "agent-2", second)));
+        MessageBus bus = new StubMessageBus(false, () -> first.complete("first-result"));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(bus, repo);
+
+        String result = tool.waitForResults(1, ctx());
+
+        assertTrue(
+                result.contains("task_id: t1"), "should return first completion, got: " + result);
+        assertTrue(result.contains("first-result"), "should embed first result, got: " + result);
+        assertFalse(
+                result.contains("task_id: t2"), "must not wait for or return t2, got: " + result);
+        assertFalse(second.isDone(), "second task should still be running when wait returns");
+    }
+
+    @Test
+    @DisplayName("legacy repository fallback ignores tasks terminal before wait start")
+    void legacyRepositoryFallbackDoesNotConsumeHistoricalCompletion() throws Exception {
+        BackgroundTask historical =
+                new BackgroundTask(
+                        "old", "agent-old", CompletableFuture.completedFuture("historical-result"));
+        BackgroundTask running =
+                new BackgroundTask("current", "agent-current", new CompletableFuture<>());
+        TaskRepository repo = new StubTaskRepository(List.of(historical, running));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+
+        String result = tool.waitForResults(1, ctx());
+
+        assertTrue(
+                result.contains("Timeout"), "should keep waiting for current task, got: " + result);
+        assertFalse(
+                result.contains("historical-result"),
+                "must not return a completion from before wait start, got: " + result);
+    }
+
+    @Test
+    @DisplayName("legacy inbox notification remains the fast path")
+    void legacyInboxNotificationTakesPriorityOverRepositoryFallback() throws Exception {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        TaskRepository repo =
+                new StubTaskRepository(List.of(new BackgroundTask("t1", "agent-1", future)));
+        MessageBus bus = new StubMessageBus(true, () -> future.complete("repository-result"));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(bus, repo);
+
+        long start = System.currentTimeMillis();
+        String result = tool.waitForResults(1, ctx());
+        long elapsed = System.currentTimeMillis() - start;
+
+        assertTrue(result.contains("inbox-any"), "should use existing inbox path, got: " + result);
+        assertFalse(
+                result.contains("repository-result"),
+                "inbox fast path should return before repository fallback, got: " + result);
+        assertTrue(elapsed < 1_000, "available inbox notification should return immediately");
+    }
+
+    @Test
+    @DisplayName("legacy repository fallback returns failed task error")
+    void legacyRepositoryFallbackReturnsFailedTaskError() throws Exception {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        BackgroundTask task = new BackgroundTask("failed", "agent-1", future);
+        TrackingTaskRepository repo = new TrackingTaskRepository(List.of(task));
+        MessageBus bus =
+                new StubMessageBus(
+                        false,
+                        () -> future.completeExceptionally(new IllegalStateException("broken")));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(bus, repo);
+
+        String result = tool.waitForResults(1, ctx());
+
+        assertTrue(
+                result.contains("task_id: failed"), "should identify failed task, got: " + result);
+        assertTrue(result.contains("broken"), "should return task error, got: " + result);
+        assertTrue(repo.delivered.contains("failed"), "should mark failed fallback as delivered");
+    }
+
+    @Test
+    @DisplayName("legacy repository fallback returns cancelled task status")
+    void legacyRepositoryFallbackReturnsCancelledTaskStatus() throws Exception {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        BackgroundTask task = new BackgroundTask("cancelled", "agent-1", future);
+        TrackingTaskRepository repo = new TrackingTaskRepository(List.of(task));
+        MessageBus bus = new StubMessageBus(false, () -> future.cancel(false));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(bus, repo);
+
+        String result = tool.waitForResults(1, ctx());
+
+        assertTrue(
+                result.contains("task_id: cancelled"),
+                "should identify cancelled task, got: " + result);
+        assertTrue(
+                result.contains("status: Cancelled"), "should return cancelled status: " + result);
+        assertTrue(
+                repo.delivered.contains("cancelled"),
+                "should mark cancelled fallback as delivered");
     }
 
     @Test
@@ -381,13 +506,23 @@ class WaitAsyncResultsToolTest {
     private static class StubMessageBus implements MessageBus {
 
         private final AtomicBoolean hasMessages;
+        private final Runnable onPeek;
 
         StubMessageBus(boolean hasMessages) {
-            this.hasMessages = new AtomicBoolean(hasMessages);
+            this(new AtomicBoolean(hasMessages), null);
         }
 
         StubMessageBus(AtomicBoolean hasMessages) {
+            this(hasMessages, null);
+        }
+
+        StubMessageBus(boolean hasMessages, Runnable onPeek) {
+            this(new AtomicBoolean(hasMessages), onPeek);
+        }
+
+        StubMessageBus(AtomicBoolean hasMessages, Runnable onPeek) {
             this.hasMessages = hasMessages;
+            this.onPeek = onPeek;
         }
 
         @Override
@@ -407,6 +542,9 @@ class WaitAsyncResultsToolTest {
 
         @Override
         public Mono<Boolean> queuePeek(String key) {
+            if (onPeek != null) {
+                onPeek.run();
+            }
             return Mono.just(hasMessages.get());
         }
 
