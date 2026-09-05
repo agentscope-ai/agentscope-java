@@ -34,6 +34,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeSearchOptions;
@@ -42,9 +43,11 @@ import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFor
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -53,6 +56,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -548,6 +553,50 @@ class DashScopeChatModelTest {
                         .build();
 
         assertNotNull(thinkingModel);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("Qwen3.8 Flash AUTO routing uses multimodal endpoint and text content parts")
+    void testQwen38FlashAutoRoutingAndMessageFormat(boolean streaming) throws Exception {
+        String responseJson =
+                """
+                {"output":{"choices":[{"message":{"role":"assistant","content":[{"text":"Hi"}]},"finish_reason":"stop"}]}}
+                """;
+        mockServer.enqueue(
+                new MockResponse()
+                        .setHeader(
+                                "Content-Type",
+                                streaming ? "text/event-stream" : "application/json")
+                        .setBody(
+                                streaming
+                                        ? "data: " + responseJson.trim() + "\n\n"
+                                        : responseJson));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen3.8-flash")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .stream(streaming)
+                        .build();
+        Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("Hello").build();
+
+        StepVerifier.create(chatModel.doStream(List.of(userMsg), List.of(), null))
+                .expectNextCount(1)
+                .expectComplete()
+                .verify(Duration.ofSeconds(10));
+
+        RecordedRequest recorded = mockServer.takeRequest(5, TimeUnit.SECONDS);
+        assertNotNull(recorded);
+        assertEquals(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT, recorded.getPath());
+        DashScopeRequest request =
+                JsonUtils.getJsonCodec()
+                        .fromJson(recorded.getBody().readUtf8(), DashScopeRequest.class);
+        assertEquals("qwen3.8-flash", request.getModel());
+        assertEquals(
+                List.of(Map.of("text", "Hello")),
+                request.getInput().getMessages().get(0).getContent());
     }
 
     @Test
