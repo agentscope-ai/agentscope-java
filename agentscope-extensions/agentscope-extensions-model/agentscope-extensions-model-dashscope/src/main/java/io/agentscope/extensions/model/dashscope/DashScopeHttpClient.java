@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.dashscope;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.Version;
+import io.agentscope.core.model.ModelMediaException;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -840,7 +841,11 @@ public class DashScopeHttpClient {
     /**
      * Exception thrown when DashScope HTTP operations fail.
      */
-    public static class DashScopeHttpException extends RuntimeException {
+    public static class DashScopeHttpException extends RuntimeException
+            implements ModelMediaException {
+        private static final String MEDIA_UNAVAILABLE_MESSAGE =
+                "failed to download multimodal content";
+
         private final Integer statusCode;
         private final String errorCode;
         private final String responseBody;
@@ -883,6 +888,18 @@ public class DashScopeHttpClient {
 
         public String getResponseBody() {
             return responseBody;
+        }
+
+        @Override
+        public boolean isMediaUnavailable() {
+            return containsMediaUnavailableMessage(getMessage())
+                    || containsMediaUnavailableMessage(errorCode)
+                    || containsMediaUnavailableMessage(responseBody);
+        }
+
+        private static boolean containsMediaUnavailableMessage(String value) {
+            return value != null
+                    && value.toLowerCase(java.util.Locale.ROOT).contains(MEDIA_UNAVAILABLE_MESSAGE);
         }
     }
 }

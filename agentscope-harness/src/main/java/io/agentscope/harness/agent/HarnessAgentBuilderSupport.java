@@ -40,6 +40,7 @@ import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.HistoricalMediaRecoveryConfig;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
@@ -319,6 +320,9 @@ final class HarnessAgentBuilderSupport {
         final ToolResultEvictionConfig capturedToolResultEvictionConfig =
                 b.toolResultEvictionConfig;
         final boolean capturedDisableToolResultEviction = b.disableToolResultEviction;
+        final HistoricalMediaRecoveryConfig capturedHistoricalMediaRecoveryConfig =
+                b.historicalMediaRecoveryConfig;
+        final boolean capturedDisableHistoricalMediaRecovery = b.disableHistoricalMediaRecovery;
         final boolean capturedAgentTracingLogEnabled = b.agentTracingLogEnabled;
         final List<String> capturedAdditionalContextFiles = List.copyOf(b.additionalContextFiles);
         final int capturedMaxContextTokens = b.maxContextTokens;
@@ -377,6 +381,11 @@ final class HarnessAgentBuilderSupport {
                 sub.disableToolResultEviction();
             } else if (capturedToolResultEvictionConfig != null) {
                 sub.toolResultEviction(capturedToolResultEvictionConfig);
+            }
+            if (capturedDisableHistoricalMediaRecovery) {
+                sub.disableHistoricalMediaRecovery();
+            } else if (capturedHistoricalMediaRecoveryConfig != null) {
+                sub.historicalMediaRecovery(capturedHistoricalMediaRecoveryConfig);
             }
 
             sub.middlewares(capturedMiddlewares);
