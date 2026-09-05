@@ -69,6 +69,13 @@ public class AgentSkillPromptProvider {
             - <skill-id> is always appended for tool loading
             </usage>
 
+            Note: The <available_skills> section below lists only your skills (specialized
+            capabilities). Your tools (file management, network requests, memory, etc.) are
+            described separately in the system prompt. When asked about "what skills you
+            have" or "what skills are available", list ONLY the skills from the
+            <available_skills> section. Do NOT include tools or tool groups in your skills
+            answer — they are capabilities, not skills.
+
             <available_skills>
 
             """;
