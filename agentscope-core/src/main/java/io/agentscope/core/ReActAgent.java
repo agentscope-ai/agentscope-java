@@ -18,6 +18,7 @@ package io.agentscope.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.AgentCallOptions;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -204,12 +205,14 @@ import reactor.util.context.Context;
  *     .build()).block();
  * }</pre>
  *
- * <p><b>Thread Safety:</b> {@code ReActAgent} is <em>not</em> thread-safe. A single instance
- * processes exactly one {@code call()} at a time; a concurrent invocation on the same instance
- * throws {@link IllegalStateException}. For web services or other concurrent scenarios, create
- * one agent instance per request via a factory method. {@link io.agentscope.core.model.Model},
- * {@link io.agentscope.core.tool.Toolkit} (as a template — {@code build()} deep-copies it), and
- * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
+ * <p><b>Thread Safety:</b> Calls sharing a {@code (userId, sessionId)} are serialized, while distinct
+ * sessions may run concurrently. Runtime context, execution state, and streaming hooks are carried
+ * per invocation. Calls using {@link AgentCallOptions} also receive an invocation-local Toolkit and
+ * middleware chain; ordinary calls retain the configured behavior. Configured hook, model, and tool
+ * implementations must still be safe for concurrent use and must not be mutated while calls are
+ * running. All calls are serialized when the agent has a configured legacy {@link
+ * io.agentscope.core.hook.RuntimeContextAware} hook because that compatibility API stores the
+ * current context on the shared hook instance.
  */
 @SuppressWarnings("deprecation")
 public class ReActAgent extends AgentBase implements AutoCloseable {
@@ -240,9 +243,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final GenerateOptions generateOptions;
 
     /**
-     * Agent-owned toolkit (a deep copy made at {@code build()} time, isolated per agent instance).
-     * Shared across this agent's concurrent calls; per-call structured-output tools are NOT
-     * registered here — they live on the per-call {@link CallExecution} scope.
+     * Agent-owned toolkit (a deep copy made at {@code build()} time). Calls carrying {@link
+     * AgentCallOptions} derive an invocation-local copy for request schemas; ordinary calls use this
+     * configured instance directly.
      */
     private final Toolkit toolkit;
 
@@ -473,10 +476,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * before writing. Uses optimistic concurrency when the store supports versioning.
      */
     private Mono<Void> saveStateToSession(CallExecution scope) {
-        if (stateStore == null) {
+        if (stateStore == null || isStateless(scope.rc)) {
             return Mono.empty();
         }
-        syncToolkitToState(scope.state);
+        syncToolkitToState(scope.state, scope.executionToolkit);
         SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
@@ -636,13 +639,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * (falling back to {@link #defaultSessionId} when absent), and atomically swaps the active
      * {@code #state} + {@code #permissionEngine} to that slot's cached entries.
      *
-     * <p>When a {@link AgentStateStore} is configured the state is always reloaded from the store
-     * at the beginning of each call so that distributed deployments (where the same sessionId may
-     * drift across machines) see the latest persisted state rather than a stale local cache entry.
-     * The per-call cost of one store read is negligible compared to the LLM round-trip.
+     * <p>Stateless calls always receive fresh transient state. Otherwise, when a {@link
+     * AgentStateStore} is configured the state is reloaded from the store at the beginning of each
+     * call so distributed deployments see the latest persisted state rather than a stale local
+     * cache entry.
      *
-     * <p>Safe to call from {@code beforeAgentExecution} only — caller must hold the
-     * {@code AgentBase.acquireExecution} lock.
+     * <p>Called from {@code beforeAgentExecution} after the call's serialization gates admit the
+     * invocation.
      */
     private CallExecution activateSlotForContext(RuntimeContext ctx) {
         String sid = ctx != null ? ctx.getSessionId() : null;
@@ -653,9 +656,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(uid, sid);
         final String finalUid = uid;
         final String finalSid = sid;
+        boolean stateless = isStateless(ctx);
         AgentState loaded;
         long loadedVersion = AgentStateStore.UNVERSIONED;
-        if (stateStore != null) {
+        if (stateless) {
+            loaded =
+                    freshState(
+                            initialPermissionContext,
+                            getAgentId(),
+                            finalUid,
+                            finalSid,
+                            initialActiveToolGroups);
+        } else if (stateStore != null) {
             VersionedState<AgentState> versioned =
                     loadOrCreateAgentStateForSlot(
                             stateStore,
@@ -683,7 +695,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             .value());
         }
         PermissionEngine loadedEngine;
-        if (stateStore != null) {
+        if (stateless) {
+            loadedEngine = new PermissionEngine(loaded.getPermissionContext());
+        } else if (stateStore != null) {
             loadedEngine = new PermissionEngine(loaded.getPermissionContext());
             permissionEngineCache.put(slot, loadedEngine);
         } else {
@@ -692,8 +706,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot, loadedVersion);
-        if (toolkit != null) {
-            toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
+        scope.executionToolkit = toolkitForCall(ctx);
+        scope.executionMiddlewares = middlewaresForCall(ctx);
+        if (scope.executionToolkit != null) {
+            scope.executionToolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
         }
         return scope;
     }
@@ -718,8 +734,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     protected Object callSerializationKey(RuntimeContext rc) {
         // Serialize calls per (userId, sessionId) slot: same-session calls share cached AgentState
-        // /
-        // conversation history, so they must run one-at-a-time; distinct sessions run in parallel.
+        // and conversation history, so they must run one-at-a-time; distinct sessions run in
+        // parallel.
         String sid = rc != null ? rc.getSessionId() : null;
         if (sid == null || sid.isBlank()) {
             sid = defaultSessionId;
@@ -743,6 +759,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // Expose the call-scoped AgentState on the RuntimeContext so middlewares / tools resolve
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
+        AgentCallOptions callOptions = ctx.get(AgentCallOptions.class);
+        if (callOptions != null) {
+            scope.previousRuntimeAgentState = ctx.getAgentState();
+            scope.previousRuntimeToolkit = ctx.getToolkit();
+            ctx.setToolkit(scope.executionToolkit);
+        }
         ctx.setAgentState(scope.state);
         this.activeRc = ctx;
         bindRuntimeContextToHooks(ctx);
@@ -756,12 +778,48 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return scope;
     }
 
+    private Toolkit toolkitForCall(RuntimeContext context) {
+        AgentCallOptions callOptions = context != null ? context.get(AgentCallOptions.class) : null;
+        if (callOptions == null) {
+            return toolkit;
+        }
+        Toolkit callToolkit =
+                !callOptions.isIncludeConfiguredTools()
+                        ? toolkit.copyWithoutTools()
+                        : toolkit.copy();
+        if (!callOptions.getExternalToolSchemas().isEmpty()) {
+            callToolkit.registerSchemas(callOptions.getExternalToolSchemas());
+        }
+        return callToolkit;
+    }
+
+    private List<MiddlewareBase> middlewaresForCall(RuntimeContext context) {
+        AgentCallOptions callOptions = context != null ? context.get(AgentCallOptions.class) : null;
+        if (callOptions == null || callOptions.getMiddlewares().isEmpty()) {
+            return middlewares;
+        }
+        List<MiddlewareBase> callMiddlewares =
+                new ArrayList<>(middlewares.size() + callOptions.getMiddlewares().size());
+        callMiddlewares.addAll(middlewares);
+        callMiddlewares.addAll(callOptions.getMiddlewares());
+        return List.copyOf(callMiddlewares);
+    }
+
+    private boolean isStateless(RuntimeContext context) {
+        AgentCallOptions options = context != null ? context.get(AgentCallOptions.class) : null;
+        return options != null && options.isStateless();
+    }
+
     @Override
     protected Mono<Msg> seedSystemMsg(Object callExectution) {
         RuntimeContext rc =
                 callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
+        List<MiddlewareBase> executionMiddlewares =
+                callExectution instanceof CallExecution ce
+                        ? ce.executionMiddlewares
+                        : middlewaresForCall(rc);
         String base = sysPrompt != null ? sysPrompt.trim() : "";
-        return applySystemPromptMiddlewares(base, rc)
+        return applySystemPromptMiddlewares(base, rc, executionMiddlewares)
                 .filter(prompt -> !prompt.isEmpty())
                 .map(
                         prompt ->
@@ -776,12 +834,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return callScope instanceof CallExecution ce ? ce.state : getAgentState();
     }
 
-    private Mono<String> applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
-        if (middlewares.isEmpty()) {
+    private Mono<String> applySystemPromptMiddlewares(
+            String prompt, RuntimeContext ctx, List<MiddlewareBase> executionMiddlewares) {
+        if (executionMiddlewares.isEmpty()) {
             return Mono.just(prompt);
         }
         boolean hasOverride = false;
-        for (MiddlewareBase mw : middlewares) {
+        for (MiddlewareBase mw : executionMiddlewares) {
             try {
                 if (mw.getClass()
                                 .getMethod(
@@ -803,7 +862,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return Mono.just(prompt);
         }
         Mono<String> result = Mono.just(prompt);
-        for (MiddlewareBase mw : middlewares) {
+        for (MiddlewareBase mw : executionMiddlewares) {
             result = result.flatMap(p -> mw.onSystemPrompt(this, ctx, p));
         }
         return result;
@@ -813,13 +872,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {
         CallExecution ce = (CallExecution) callScope;
         ce.systemMsg = systemMsg;
-        syncToolkitToState(ce.state);
+        syncToolkitToState(ce.state, ce.executionToolkit);
     }
 
     @Override
-    protected void afterAgentExecution() {
-        this.activeRc = null;
+    protected void afterCallExecution(Object callScope, RuntimeContext runtimeContext) {
+        if (!(callScope instanceof CallExecution scope)) {
+            return;
+        }
+        if (activeRc == scope.rc) {
+            activeRc = null;
+        }
         unbindRuntimeContextFromHooks();
+        boolean hasCallOptions =
+                runtimeContext != null && runtimeContext.get(AgentCallOptions.class) != null;
+        if (hasCallOptions) {
+            if (scope.rc != null && scope.rc.getToolkit() == scope.executionToolkit) {
+                scope.rc.setToolkit(scope.previousRuntimeToolkit);
+            }
+            if (scope.rc != null && scope.rc.getAgentState() == scope.state) {
+                scope.rc.setAgentState(scope.previousRuntimeAgentState);
+            }
+        }
+        if (!isStateless(runtimeContext)) {
+            return;
+        }
+        stateCache.remove(scope.slotKey, scope.state);
+        permissionEngineCache.remove(scope.slotKey, scope.permissionEngine);
     }
 
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
@@ -1037,6 +1116,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private Flux<AgentEvent> buildAgentStream(
             List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        return Flux.deferContextual(
+                contextView ->
+                        buildAgentStreamWithContext(
+                                msgs, resolveRuntimeContext(context, contextView), doCallFn));
+    }
+
+    private RuntimeContext resolveRuntimeContext(
+            RuntimeContext context, reactor.util.context.ContextView contextView) {
+        if (context != null) {
+            return context;
+        }
+        Object value = contextView.getOrDefault(RUNTIME_CONTEXT_KEY, null);
+        return value instanceof RuntimeContext runtimeContext ? runtimeContext : null;
+    }
+
+    private Flux<AgentEvent> buildAgentStreamWithContext(
+            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
         String replyId = UUID.randomUUID().toString().replace("-", "");
         Function<AgentInput, Flux<AgentEvent>> core =
                 input ->
@@ -1093,7 +1189,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     sink.onCancel(lifecycleDisposable);
                                 },
                                 FluxSink.OverflowStrategy.BUFFER);
-        return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
+        return MiddlewareChain.build(
+                        middlewaresForCall(context), this, context, MiddlewareBase::onAgent, core)
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
@@ -1137,6 +1234,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
         return buildAgentStream(msgs, context, this::doCall);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for JSON Schema structured output with a
+     * caller-supplied {@link RuntimeContext}.
+     *
+     * @param msgs input messages
+     * @param outputSchema JSON Schema describing the required output
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full structured-output invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
+        return buildAgentStream(msgs, context, m -> doCall(m, outputSchema));
     }
 
     /**
@@ -1250,25 +1361,29 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 targetClass != null
                         ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
                         : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
-        boolean hasTools = !toolkit.getToolSchemas().isEmpty();
-        boolean useNative =
-                hasTools
-                        ? model.supportsNativeStructuredOutputWithTools()
-                        : model.supportsNativeStructuredOutput();
-        if (useNative) {
-            return doNativeStructuredCall(msgs, jsonSchema)
-                    .onErrorResume(
-                            e -> {
-                                log.warn(
-                                        "Native structured output failed ({}) — falling back to"
-                                                + " synthetic tool path",
-                                        e.getMessage() != null
-                                                ? e.getMessage()
-                                                : e.getClass().getSimpleName());
-                                return doFallbackStructuredCall(msgs, jsonSchema);
-                            });
-        }
-        return doFallbackStructuredCall(msgs, jsonSchema);
+        return Mono.deferContextual(
+                contextView -> {
+                    boolean hasTools =
+                            !scopeFrom(contextView).executionToolkit.getToolSchemas().isEmpty();
+                    boolean useNative =
+                            hasTools
+                                    ? model.supportsNativeStructuredOutputWithTools()
+                                    : model.supportsNativeStructuredOutput();
+                    if (useNative) {
+                        return doNativeStructuredCall(msgs, jsonSchema)
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn(
+                                                    "Native structured output failed ({}) — falling"
+                                                            + " back to synthetic tool path",
+                                                    e.getMessage() != null
+                                                            ? e.getMessage()
+                                                            : e.getClass().getSimpleName());
+                                            return doFallbackStructuredCall(msgs, jsonSchema);
+                                        });
+                    }
+                    return doFallbackStructuredCall(msgs, jsonSchema);
+                });
     }
 
     /**
@@ -1678,6 +1793,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         RuntimeContext rc;
 
+        /** Toolkit visible only to this invocation when call options are supplied. */
+        Toolkit executionToolkit;
+
+        /** Configured and call-scoped middleware visible only to this invocation. */
+        List<MiddlewareBase> executionMiddlewares;
+
+        /** Toolkit previously attached to the RuntimeContext, restored when this call finishes. */
+        Toolkit previousRuntimeToolkit;
+
+        /** AgentState previously attached to the RuntimeContext, restored after this call. */
+        AgentState previousRuntimeAgentState;
+
         /**
          * Per-call structured-output tool (the {@code generate_response} tool). Non-null only for
          * fallback structured-output calls (when the model does not support native structured
@@ -1707,6 +1834,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             this.state = state;
             this.permissionEngine = permissionEngine;
             this.slotKey = slotKey;
+            this.executionToolkit = ReActAgent.this.toolkit;
+            this.executionMiddlewares = ReActAgent.this.middlewares;
             this.loadedVersion = loadedVersion;
             this.loadedContextSize = state != null ? state.getContext().size() : 0;
         }
@@ -2319,7 +2448,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         prependSystemMsg(
                                                 event.getInputMessages(), event.getSystemMessage());
                                 List<ToolSchema> tools =
-                                        toolkit.getToolSchemas(
+                                        executionToolkit.getToolSchemas(
                                                 state.getToolContext().getActivatedGroups());
                                 // Per-call structured-output tool: expose generate_response to the
                                 // model for this call only (not registered on the shared toolkit).
@@ -2343,7 +2472,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         ri.options());
                                 Flux<AgentEvent> stream =
                                         MiddlewareChain.build(
-                                                        middlewares,
+                                                        executionMiddlewares,
                                                         ReActAgent.this,
                                                         rc,
                                                         MiddlewareBase::onReasoning,
@@ -2504,7 +2633,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             StringBuilder transformedText = new StringBuilder();
             AtomicBoolean sawTransformedTextDelta = new AtomicBoolean(false);
             return MiddlewareChain.build(
-                            middlewares,
+                            executionMiddlewares,
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
@@ -2729,14 +2858,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             AtomicReference<RequestStopEvent> actingStopRequested = new AtomicReference<>();
             return hookDispatcher
-                    .firePreActing(pendingToolCalls, toolkit)
+                    .firePreActing(pendingToolCalls, executionToolkit)
                     .flatMap(
                             toolCalls -> {
                                 Function<ActingInput, Flux<AgentEvent>> actingCore =
                                         ai -> actingStream(ai.toolCalls(), replyId, resultHolder);
                                 Flux<AgentEvent> stream =
                                         MiddlewareChain.build(
-                                                        middlewares,
+                                                        executionMiddlewares,
                                                         ReActAgent.this,
                                                         rc,
                                                         MiddlewareBase::onActing,
@@ -2803,7 +2932,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 buildSuspendedMsg(pendingPairs));
                                                     }
 
-                                                    syncToolkitToState(state);
+                                                    syncToolkitToState(state, executionToolkit);
                                                     return executeIteration(iter + 1);
                                                 });
                             });
@@ -2978,7 +3107,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 Set<String> chunkedToolIds =
                                                         ConcurrentHashMap.newKeySet();
 
-                                                toolkit.setInternalChunkCallback(
+                                                executionToolkit.setInternalChunkCallback(
                                                         (toolUse, chunk) -> {
                                                             if (chunk.getOutput() != null
                                                                     && !chunk.getOutput()
@@ -3018,7 +3147,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             }
                                                             hookDispatcher
                                                                     .fireActingChunk(
-                                                                            toolUse, chunk, toolkit)
+                                                                            toolUse,
+                                                                            chunk,
+                                                                            executionToolkit)
                                                                     .contextWrite(
                                                                             ctx ->
                                                                                     ctx.putAll(
@@ -3177,7 +3308,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (use.getState() == ToolCallState.ALLOWED) {
                 return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
             }
-            AgentTool tool = toolkit.getTool(use.getName());
+            AgentTool tool = executionToolkit.getTool(use.getName());
             if (!(tool instanceof ToolBase tb)) {
                 return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
             }
@@ -3382,7 +3513,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             && toolCalls.stream()
                                     .anyMatch(t -> STRUCTURED_OUTPUT_TOOL_NAME.equals(t.getName()));
             if (!hasStructured) {
-                return toolkit.callTools(
+                return executionToolkit.callTools(
                         toolCalls,
                         toolExecutionConfig,
                         ReActAgent.this,
@@ -3396,7 +3527,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Mono<Map<String, ToolResultBlock>> regularResults =
                     regular.isEmpty()
                             ? Mono.just(Map.of())
-                            : toolkit.callTools(
+                            : executionToolkit
+                                    .callTools(
                                             regular,
                                             toolExecutionConfig,
                                             ReActAgent.this,
@@ -3478,7 +3610,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     ToolResultMessageBuilder.buildToolResultMsg(updatedResult, toolUse, getName());
 
             return hookDispatcher
-                    .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
+                    .firePostActing(toolUse, updatedResult, executionToolkit, toolMsg)
                     .doOnNext(
                             e -> {
                                 if (soTool != null
@@ -3601,7 +3733,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     mci -> summaryModelCallStream(context, mci, options);
 
             return MiddlewareChain.build(
-                            middlewares,
+                            executionMiddlewares,
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
@@ -3832,7 +3964,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             Flux<AgentEvent> stream =
                     MiddlewareChain.build(
-                                    middlewares,
+                                    executionMiddlewares,
                                     ReActAgent.this,
                                     rc,
                                     MiddlewareBase::onActing,
@@ -4428,9 +4560,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return defaultSessionId;
     }
 
-    private void syncToolkitToState(AgentState state) {
-        if (toolkit != null && state != null) {
-            state.getToolContext().setActivatedGroups(toolkit.getActiveGroups());
+    private void syncToolkitToState(AgentState state, Toolkit sourceToolkit) {
+        if (sourceToolkit != null && state != null) {
+            state.getToolContext().setActivatedGroups(sourceToolkit.getActiveGroups());
         }
     }
 

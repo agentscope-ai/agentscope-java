@@ -26,6 +26,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -37,6 +38,7 @@ import reactor.core.publisher.Flux;
 /**
  * Tests for {@link AgentscopeAutoConfiguration}.
  */
+@SuppressWarnings("removal")
 class AgentscopeAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner =
@@ -66,6 +68,20 @@ class AgentscopeAutoConfigurationTest {
                             assertThat(context).hasSingleBean(Model.class);
                             assertThat(context).hasSingleBean(ReActAgent.class);
                         });
+    }
+
+    @Test
+    void shouldRetainLegacyMemoryParameterForCompatibility() {
+        AgentscopeAutoConfiguration configuration = new AgentscopeAutoConfiguration();
+
+        try (ReActAgent agent =
+                configuration.agentscopeReActAgent(
+                        new TestModel(),
+                        new InMemoryMemory(),
+                        new Toolkit(),
+                        new AgentscopeProperties())) {
+            assertThat(agent.getName()).isEqualTo("Assistant");
+        }
     }
 
     @Test

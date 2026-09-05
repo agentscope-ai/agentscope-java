@@ -101,6 +101,7 @@
 运行环境、语言生态、调试与训练流水线。
 
 - [Chat Completions Web](ecosystem/chat-completions-web.md)
+- [Responses Web](ecosystem/responses-web.md)
 - [AgentScope Studio](ecosystem/studio.md)
 - [在线训练（Training）](ecosystem/training.md)
 
