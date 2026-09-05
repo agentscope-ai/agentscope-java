@@ -69,9 +69,10 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		var sourceTeamID *uuid.UUID
 		var sourceRole *string
 		if err := tx.QueryRow(ctx, `SELECT issue_id,correlation_id,hop_count,team_depth,accountable_human_ref,team_id,
-			orchestration_run_id,run_node_id,agent_id,team_role FROM agent_tasks WHERE id=$1`, *sourceTaskID).
+			orchestration_run_id,run_node_id,agent_id,team_role,is_leader_task FROM agent_tasks WHERE id=$1`, *sourceTaskID).
 			Scan(&source.IssueID, &correlation, &source.HopCount, &source.TeamDepth, &source.AccountableHumanRef,
-				&sourceTeamID, &source.OrchestrationRunID, &source.RunNodeID, &source.AgentRef, &sourceRole); err != nil {
+				&sourceTeamID, &source.OrchestrationRunID, &source.RunNodeID, &source.AgentRef, &sourceRole,
+				&source.LeaderTask); err != nil {
 			return nil, err
 		}
 		task.CorrelationID, task.HopCount, task.TeamDepth = deref(correlation), source.HopCount+1, source.TeamDepth
@@ -85,7 +86,8 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		}
 		if !controlmodel.IsOrchestrationRunTerminal(runState) {
 			task.OrchestrationRunID = source.OrchestrationRunID
-			if retryOfTaskID != nil || source.IssueID == issue.ID && source.AgentRef == agentRef && deref(sourceRole) == teamRole {
+			if retryOfTaskID != nil || source.AgentRef == agentRef && deref(sourceRole) == teamRole &&
+				(source.IssueID == issue.ID || source.LeaderTask && leader) {
 				task.RunNodeID = source.RunNodeID
 			}
 		} else if err := createTaskRunNodeTx(ctx, tx, issue, task, &source.OrchestrationRunID); err != nil {

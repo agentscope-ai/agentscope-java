@@ -19,6 +19,7 @@ import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-
 import { AgentDefinition, getAgent, ShareTier } from '../api/agents';
 import ShareAgentDialog from './ShareAgentDialog';
 import { useControlPlaneScope } from '../app/ScopeContext';
+import { agentRuntimePath } from '../features/build/agents/agentNavigation';
 
 type TierMin = ShareTier;
 
@@ -57,7 +58,13 @@ export default function AgentLayout() {
     return () => { cancelled = true; };
   }, [id]);
 
+  useEffect(() => {
+    if (!agent || agent.runtimeKind === 'managed') return;
+    navigate(scope.scopedPath(agentRuntimePath(agent.id)), { replace: true });
+  }, [agent, navigate, scope]);
+
   if (!id) return <div style={{ padding: 32 }}>Missing agent id.</div>;
+  if (agent && agent.runtimeKind !== 'managed') return null;
 
   const tier = agent?.tierForCurrentUser ?? null;
   const isClonyOnly = tier === 'CLONE';
@@ -169,7 +176,7 @@ export default function AgentLayout() {
           <div>
             <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>Runtime</div>
             <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-              Open the canonical Agent Center service view for runtime health, sessions, and capabilities.
+              Open the canonical Agent Center service view for runtime health, sessions, and activity.
             </div>
           </div>
           <button
@@ -192,7 +199,7 @@ export default function AgentLayout() {
 
         {isClonyOnly ? (
           <div style={{ paddingBottom: 12, color: '#64748b', fontSize: '0.9rem' }}>
-            You have <strong>CLONE-only</strong> access. Use the Clone button on the agents hub to copy this agent into your namespace.
+            You have <strong>CLONE-only</strong> access. Use the Clone button on the agents hub to copy this agent {scope.selectorVisible ? 'into your namespace' : 'into your agent catalog'}.
           </div>
         ) : (
           <div className="agent-layout-tabs" style={{ display: 'flex', gap: 4 }}>
@@ -242,7 +249,7 @@ export default function AgentLayout() {
               }}>🔁 Clone-only</div>
               <h2 style={{ margin: '0 0 8px', fontSize: '1.4rem', color: '#0f172a' }}>{agent?.name}</h2>
               <p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '0.95rem', lineHeight: 1.6 }}>
-                {agent?.description || 'The owner has granted you Clone access. Copy this agent into your own namespace to run or edit it.'}
+                {agent?.description || `The owner has granted you Clone access. Copy this agent into your own ${scope.selectorVisible ? 'namespace' : 'agent catalog'} to run or edit it.`}
               </p>
               <button
                 onClick={() => navigate(`/managed/agents?clone=${encodeURIComponent(id)}`)}

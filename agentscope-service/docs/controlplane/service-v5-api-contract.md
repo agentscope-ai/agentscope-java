@@ -77,19 +77,35 @@ Endpoints start as `draft` and must pass a side-effect-free readiness check befo
 
 `AISTIO_ENDPOINT_CREDENTIAL_KEY` is the deployment-managed encryption master key and must be identical on every control-plane replica. It falls back to `BUILDER_JWT_SECRET` for local compatibility. Changing either value without re-encrypting stored credentials makes existing values unrecoverable, although hash-based invocation authentication continues to work.
 
-Team and Workflow pages are the primary publication context: the target is selected by the page, not re-entered by the user, and the resulting public URL links directly to the shared Playground. The standalone Endpoint Catalog is the operational inventory for discovery, lifecycle, contract, security, release history, traffic, and testing. Generic creation remains available for advanced and Agent publication cases.
+Agent, Team, and Workflow detail pages are the publication and discovery context: the target is selected by the owner page, not re-entered by the user, and every API belonging to that object is listed there. The standalone Published APIs catalog is removed. Each listed API links to its complete detail surface for lifecycle, metadata, contract, credentials, release history, traffic, rollback, and public-path testing, then returns to its owning object.
 
-Every call requires an idempotency key. It is scoped by Endpoint, mode, and authenticated principal. The public identity is `invocationId`; internal `issueId`, `runId`, or `sessionId` are links rather than public identifiers. Job creation returns `202` with `invocationId`, `issueId`, `runId`, `statusUrl`, and `eventsUrl`. Conversation turns return `invocationId`, `conversationId`, `turnId`, `sessionId`, and event/status URLs. Event streams are resumable SSE streams using `Last-Event-ID`. The Endpoint Playground uses these same Gateway routes.
+Every call requires an idempotency key. It is scoped by Endpoint, mode, and authenticated principal. The public identity is `invocationId`; internal `issueId`, `runId`, or `sessionId` are links rather than public identifiers. Job creation returns `202` with `invocationId`, `issueId`, `runId`, `statusUrl`, and `eventsUrl`. Conversation turns return `invocationId`, `conversationId`, `turnId`, `sessionId`, and event/status URLs. Event streams are resumable SSE streams using `Last-Event-ID`. Endpoint `Test API` uses these same Gateway routes.
 
-## Control-plane Playground
+## Scope and Runtime Host enrollment
+
+- `GET /api/v1/me/scope` returns the server-authoritative tenant, namespace, scope mode, and whether
+  the console may expose a selector.
+- `POST /api/v1/runtime-host-enrollment-tokens` creates a short-lived `asre_` token bound to that
+  scope. In multi mode tenant and namespace are required and remain subject to operator authorization.
+- `POST /api/v1/runtime-host-enrollments/exchange` accepts only the `asre_` bearer plus a local
+  `hostKey`, returning an `asrh_` Runtime Host credential bound to all three values.
+- `POST /api/v1/runtime-host-enrollments` remains the authenticated interactive-login exchange.
+
+In single scope mode, URL/body scope supplied by a caller cannot override the configured tenant or
+namespace. Tenant and namespace remain persistence and routing fields even when absent from the UI.
+
+## Chat and API testing
 
 - `GET /api/v1/agents/{agentId}/invocation-capabilities`
+- `GET|POST /api/v1/chats`
+- `GET|PATCH /api/v1/chats/{chatId}`
+- `POST /api/v1/chats/{chatId}/turns`
 - `POST /api/v1/playground/invocations`
 - `POST /api/v1/playground/sessions/{sessionId}/turns`
 
-The Agent Center Playground is an authenticated development surface, not an implicit Endpoint. It can invoke an Agent directly in `conversation` or `job` mode and can run Team or Workflow jobs without publishing a public contract. Direct conversation creates a Session with `originType=playground` and no Issue. Direct jobs use an operational `playground_job` Issue and the normal Run → AgentTask → Attempt chain; they remain outside the default Work Hub view and complete automatically with the Run. Runtime policy, Binding validation, instance generation, and capacity checks are identical to normal dispatch.
+Chat is the user-facing direct conversation surface. A Chat is private to its creator, targets one conversation-capable Agent, and owns title, pin, and archive state independently of its runtime Session. Each turn uses the same runtime policy, Binding validation, instance generation, capacity checks, durable Session event log, and hosted resume behavior as other conversation callers. Chat does not become collaborative Work automatically; users create an Issue explicitly when ownership, status, priority, review, or team visibility is required.
 
-The global Playground, Agent Detail, and Endpoint Detail reuse one frontend workbench. Endpoint context remains public-path mode and therefore still requires the real credential, publication state, schema, rate limit, and release. Direct context uses Console RBAC and never creates a hidden or temporary Endpoint.
+The legacy direct Playground routes remain API-compatible during migration, but the global Playground is removed from navigation. Agent Detail links to Chat. Team and Workflow actions remain Job-oriented. Endpoint Detail retains a context-specific `Test API` surface because Endpoint tests must use the public path and therefore require the real credential, publication state, schema, rate limit, and release.
 
 ## Schema policy
 

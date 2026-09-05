@@ -6,7 +6,6 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Activity,
   Bot,
   BriefcaseBusiness,
   CircleGauge,
@@ -17,7 +16,6 @@ import {
   Menu,
   MessageSquare,
   Network,
-  PlayCircle,
   Search,
   Settings2,
   ShieldCheck,
@@ -37,77 +35,62 @@ type NavItem = {
   end?: boolean;
   admin?: boolean;
   operator?: boolean;
-  write?: boolean;
+  agentCenter?: boolean;
 };
 
 type NavGroup = { label?: string; items: NavItem[] };
 
-const workNavigation: NavGroup[] = [
-  {
-    items: [{ to: '/work/overview', label: 'Overview', icon: CircleGauge, end: true }],
-  },
+const navigation: NavGroup[] = [
+  { items: [{ to: '/work/overview', label: 'Overview', icon: CircleGauge, end: true }] },
   {
     label: 'Work',
     items: [
+      { to: '/work/chat', label: 'Chat', icon: MessageSquare },
       { to: '/work/issues', label: 'Issues', icon: FileStack },
       { to: '/work/approvals', label: 'Approvals', icon: ClipboardCheck },
       { to: '/work/automations', label: 'Automations', icon: BriefcaseBusiness },
-      { to: '/work/activity', label: 'Activity', icon: Activity },
     ],
   },
-];
-
-const agentCenterNavigation: NavGroup[] = [
   {
     label: 'Design',
     items: [
-      { to: '/agent-center/agents', label: 'Agents', icon: Bot },
-      { to: '/agent-center/teams', label: 'Teams', icon: UsersRound },
-      { to: '/agent-center/workflows', label: 'Workflows', icon: Network },
-      { to: '/agent-center/endpoints', label: 'Endpoints', icon: PlayCircle },
-      { to: '/agent-center/playground', label: 'Playground', icon: PlayCircle, write: true },
-      { to: '/agent-center/entrypoints', label: 'Channels', icon: Network },
-    ],
-  },
-  {
-    label: 'Activity',
-    items: [
-      { to: '/agent-center/activity/executions', label: 'Executions', icon: PlayCircle, operator: true },
-      { to: '/agent-center/activity/sessions', label: 'Sessions', icon: MessageSquare, operator: true },
+      { to: '/agent-center/agents', label: 'Agents', icon: Bot, agentCenter: true },
+      { to: '/agent-center/teams', label: 'Teams', icon: UsersRound, agentCenter: true },
+      { to: '/agent-center/workflows', label: 'Workflows', icon: Network, agentCenter: true },
+      { to: '/agent-center/entrypoints', label: 'Channels', icon: Network, agentCenter: true, admin: true },
     ],
   },
   {
     label: 'Resources',
     items: [
-      { to: '/agent-center/workspaces', label: 'Workspaces', icon: FileStack },
-      { to: '/agent-center/environments', label: 'Environments', icon: Settings2 },
-      { to: '/agent-center/memory', label: 'Memory', icon: Database },
-      { to: '/agent-center/vaults', label: 'Vault', icon: ShieldCheck },
+      { to: '/agent-center/workspaces', label: 'Workspaces', icon: FileStack, agentCenter: true },
+      { to: '/agent-center/environments', label: 'Environments', icon: Settings2, agentCenter: true },
+      { to: '/agent-center/memory', label: 'Memory', icon: Database, agentCenter: true },
+      { to: '/agent-center/vaults', label: 'Vault', icon: ShieldCheck, agentCenter: true },
     ],
   },
 ];
 
-const routeLabels: Array<[string, string, string]> = [
-  ['/work/overview', 'Work Hub', 'Overview'],
-  ['/work/issues', 'Work Hub', 'Issues'],
-  ['/work/approvals', 'Work Hub', 'Approvals'],
-  ['/work/automations', 'Work Hub', 'Automations'],
-  ['/work/activity', 'Work Hub', 'Activity'],
-  ['/agent-center/agents', 'Agent Center', 'Agents'],
-  ['/agent-center/teams', 'Agent Center', 'Teams'],
-  ['/agent-center/workflows', 'Agent Center', 'Workflows'],
-  ['/agent-center/endpoints', 'Agent Center', 'Endpoints'],
-  ['/agent-center/playground', 'Agent Center', 'Playground'],
-  ['/agent-center/activity/executions', 'Agent Center', 'Executions'],
-  ['/agent-center/activity/sessions', 'Agent Center', 'Sessions'],
-  ['/agent-center/activity/tasks', 'Agent Center', 'Agent step diagnostics'],
-  ['/agent-center/entrypoints', 'Agent Center', 'Channels'],
-  ['/agent-center/workspaces', 'Agent Center', 'Workspaces'],
-  ['/agent-center/environments', 'Agent Center', 'Environments'],
-  ['/agent-center/memory', 'Agent Center', 'Memory'],
-  ['/agent-center/vaults', 'Agent Center', 'Vault'],
-  ['/managed/profile', 'Console', 'Profile'],
-  ['/managed/admin/users', 'Console', 'Users'],
+const routeLabels: Array<[string, string]> = [
+  ['/work/overview', 'Overview'],
+  ['/work/chat', 'Chat'],
+  ['/work/issues', 'Issues'],
+  ['/work/approvals', 'Approvals'],
+  ['/work/automations', 'Automations'],
+  ['/work/activity', 'Activity'],
+  ['/work/executions', 'Executions'],
+  ['/work/sessions', 'Sessions'],
+  ['/agent-center/agents', 'Agents'],
+  ['/agent-center/teams', 'Teams'],
+  ['/agent-center/workflows', 'Workflows'],
+  ['/agent-center/endpoints', 'API details'],
+  ['/agent-center/entrypoints', 'Channels'],
+  ['/agent-center/workspaces', 'Workspaces'],
+  ['/agent-center/environments', 'Environments'],
+  ['/agent-center/memory', 'Memory'],
+  ['/agent-center/vaults', 'Vault'],
+  ['/managed/profile', 'Profile'],
+  ['/managed/admin/users', 'Users'],
 ];
 
 function matches(pathname: string, to: string, end?: boolean): boolean {
@@ -137,13 +120,14 @@ function SidebarLink({ item }: { item: NavItem }) {
 }
 
 function ScopeSelector({ title }: { title?: string }) {
-  const { tenant, namespace, setScope } = useControlPlaneScope();
+  const { tenant, namespace, selectorVisible, setScope } = useControlPlaneScope();
   const [draftTenant, setDraftTenant] = useState(tenant);
   const [draftNamespace, setDraftNamespace] = useState(namespace);
 
   useEffect(() => setDraftTenant(tenant), [tenant]);
   useEffect(() => setDraftNamespace(namespace), [namespace]);
 
+  if (!selectorVisible) return null;
   return (
     <div className="grid grid-cols-2 gap-2 border-b border-border px-3 py-3">
       {title && <div className="col-span-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{title}</div>}
@@ -181,15 +165,15 @@ export default function AppShell() {
   const roles = getRoles().map((role) => role.toLowerCase());
   const scope = useControlPlaneScope();
 	useCollaborationEvents(scope.tenant, scope.namespace);
-  const area = location.pathname.startsWith('/agent-center') ? 'agent-center' : 'work';
   const canAgentCenter = admin || roles.includes('agent_developer') || roles.includes('operator');
-  const navigation = area === 'agent-center' ? agentCenterNavigation : workNavigation;
-  const home = area === 'agent-center' ? '/agent-center/agents' : '/work/overview';
+  const visibleNavigation = navigation.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      (!item.admin || admin) && (!item.operator || admin || roles.includes('operator')) && (!item.agentCenter || canAgentCenter)),
+  })).filter((group) => group.items.length > 0);
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const openCommand = useCallback(() => {
-    if (area === 'work') setCommandOpen(true);
-  }, [area]);
+  const openCommand = useCallback(() => setCommandOpen(true), []);
   useCommandPaletteShortcut(openCommand);
   useEffect(() => setMobileNavOpen(false), [location.pathname]);
   const context = routeLabels.find(([prefix]) => matches(location.pathname, prefix));
@@ -205,11 +189,11 @@ export default function AppShell() {
       {mobileNavOpen && <button type="button" aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" onClick={() => setMobileNavOpen(false)} />}
       <aside className={cn('fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-border bg-white transition-transform lg:static lg:z-auto lg:translate-x-0', mobileNavOpen ? 'translate-x-0' : '-translate-x-full')}>
         <div className="border-b border-border px-4 py-4">
-          <Link className="flex items-center gap-3 rounded-lg" to={home}>
+          <Link className="flex items-center gap-3 rounded-lg" to="/work/overview">
             <img src="/logo.svg" alt="AgentScope" className="h-9 w-9 shrink-0" width={36} height={36} />
             <div className="min-w-0">
               <div className="text-lg font-bold tracking-tight text-foreground">AgentScope Service</div>
-              <div className="truncate text-xs text-muted-foreground">{area === 'work' ? 'Work Hub' : 'Agent Center'}</div>
+              <div className="truncate text-xs text-muted-foreground">Control plane</div>
             </div>
           </Link>
         </div>
@@ -217,18 +201,10 @@ export default function AppShell() {
         <ScopeSelector />
 
         <nav aria-label="Primary navigation" className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-          {navigation.map((group, index) => (
-            <div key={group.label || `primary-${index}`} className="space-y-1">
-              {group.label && (
-                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  {group.label}
-                </div>
-              )}
-              {group.items.filter((item) => (!item.admin || admin) && (!item.operator || admin || roles.includes('operator')) && (!item.write || admin || roles.includes('agent_developer'))).map((item) => (
-                <SidebarLink key={item.to} item={item} />
-              ))}
-            </div>
-          ))}
+          {visibleNavigation.map((group, index) => <div key={group.label || `primary-${index}`} className="space-y-1">
+            {group.label && <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group.label}</div>}
+            {group.items.map((item) => <SidebarLink key={item.to} item={item} />)}
+          </div>)}
         </nav>
 
         <div className="border-t border-border p-3">
@@ -253,36 +229,18 @@ export default function AppShell() {
         <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-3 py-2 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu className="h-4 w-4" /></Button>
-            <nav aria-label="Product area" className="flex rounded-lg border border-border bg-muted p-1 text-xs font-medium">
-              <Link
-                to="/work/overview"
-                aria-current={area === 'work' ? 'page' : undefined}
-                className={cn('rounded-md px-3 py-1.5 transition-colors', area === 'work' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
-              >
-                Work Hub
-              </Link>
-              {canAgentCenter && <Link
-                to="/agent-center/agents"
-                aria-current={area === 'agent-center' ? 'page' : undefined}
-                className={cn('rounded-md px-3 py-1.5 transition-colors', area === 'agent-center' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
-              >Agent Center</Link>}
-            </nav>
-            <div className="hidden min-w-0 items-center gap-2 text-sm xl:flex">
-              <span className="text-muted-foreground">{context?.[1] || 'Console'}</span>
-              <span className="text-slate-300">/</span>
-              <span className="truncate font-medium text-foreground">{context?.[2] || 'Resource'}</span>
-            </div>
+            <div className="hidden min-w-0 text-sm font-medium text-foreground xl:block">{context?.[1] || 'AgentScope'}</div>
           </div>
           <div className="flex items-center gap-3">
-            {area === 'work' && <button type="button" onClick={openCommand} className="flex h-8 items-center gap-2 rounded-lg border border-border bg-muted px-2 text-xs text-muted-foreground hover:bg-slate-100 sm:min-w-52 sm:px-3" aria-label="Search work"><Search className="h-3.5 w-3.5" /><span className="hidden flex-1 text-left sm:block">Search work</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] sm:block">⌘K</kbd></button>}
-            <div className="hidden font-mono text-xs text-muted-foreground md:block">{scope.tenant} / {scope.namespace}</div>
+            <button type="button" onClick={openCommand} className="flex h-8 items-center gap-2 rounded-lg border border-border bg-muted px-2 text-xs text-muted-foreground hover:bg-slate-100 sm:min-w-52 sm:px-3" aria-label="Search"><Search className="h-3.5 w-3.5" /><span className="hidden flex-1 text-left sm:block">Search</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] sm:block">⌘K</kbd></button>
+            {scope.selectorVisible && <div className="hidden font-mono text-xs text-muted-foreground md:block">{scope.tenant} / {scope.namespace}</div>}
           </div>
         </header>
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-auto bg-white focus:outline-none">
           <Outlet />
         </main>
       </div>
-      {area === 'work' && <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />}
+      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
   );
 }

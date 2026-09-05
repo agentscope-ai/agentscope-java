@@ -18,7 +18,7 @@ const (
 )
 
 var workHubResources = map[string]bool{
-	"issues": true, "inbox": true, "approvals": true, "automations": true,
+	"issues": true, "chats": true, "chat-agents": true, "inbox": true, "approvals": true, "automations": true,
 	"activity": true, "events": true,
 }
 
@@ -38,7 +38,7 @@ func requestWorkspace(path string) string {
 	}
 	switch resource {
 	case "overview", "metrics", "agent-instances", "runtime-profiles", "runtime-pools", "runtime-hosts", "runtime-host-enrollments",
-		"sessions", "orchestration-runs", "agent-tasks", "execution-attempts", "agent-runtime-policies",
+		"runtime-host-enrollment-tokens", "sessions", "orchestration-runs", "agent-tasks", "execution-attempts", "agent-runtime-policies",
 		"runtime-bindings", "dataplanes", "audit", "dead-letters", "usage", "budgets":
 		return workspaceOperations
 	default:
@@ -106,12 +106,35 @@ func (s *Server) workspaceRBACMiddleware() gin.HandlerFunc {
 				workspace = workspaceAgentCenter
 			}
 		}
+		if !write && strings.TrimSpace(c.Query("chatId")) != "" && s.chatScopedSessionReadAllowed(c) {
+			workspace = workspaceWorkHub
+		}
 		if !workspaceAllowed(roleSet(c), workspace, write) {
 			c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: "role is not allowed to access this workspace"})
 			return
 		}
 		c.Next()
 	}
+}
+
+func (s *Server) chatScopedSessionReadAllowed(c *gin.Context) bool {
+	if s.store == nil {
+		return false
+	}
+	chatID, err := uuid.Parse(strings.TrimSpace(c.Query("chatId")))
+	if err != nil {
+		return false
+	}
+	resourcePath := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/sessions/")
+	sessionIDText, _, _ := strings.Cut(resourcePath, "/")
+	sessionID, err := uuid.Parse(sessionIDText)
+	if err != nil {
+		return false
+	}
+	chat, err := s.store.Chats().Get(c.Request.Context(), chatID)
+	return err == nil && chat.SessionID == sessionID && chat.CreatorRef == catalogOwnerRef(c, "") &&
+		chat.Tenant == c.DefaultQuery("tenant", "default") &&
+		chat.Namespace == c.DefaultQuery("namespace", "default")
 }
 
 // agentScopedSessionReadAllowed verifies that an Agent Center session-detail
@@ -152,7 +175,7 @@ func (s *Server) navigationAccess(c *gin.Context) {
 		}
 	}
 	defaultArea := workspaceWorkHub
-	if (roles["operator"] || roles["agent_developer"]) && !roles["admin"] {
+	if roles["agent_developer"] && !roles["admin"] && !roles["operator"] {
 		defaultArea = workspaceAgentCenter
 	}
 	c.JSON(http.StatusOK, gin.H{"areas": areas, "defaultArea": defaultArea})

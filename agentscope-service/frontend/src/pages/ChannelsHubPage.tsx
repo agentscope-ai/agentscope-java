@@ -135,7 +135,7 @@ export default function ChannelsHubPage() {
   );
 
   if (!admin) {
-    return <Navigate to="/managed/agents" replace />;
+    return <Navigate to="/agent-center/agents" replace />;
   }
 
   return (
@@ -146,8 +146,8 @@ export default function ChannelsHubPage() {
       </div>
 
       <p style={S.blurb}>
-        Channels are IM identities (one bot account per channel). Prefer connecting from an Agent&apos;s
-        <strong> Connect IM </strong> page; this hub is the ops overview.
+        Channels are external ingress connections for chat platforms and webhook providers. Configure
+        credentials and routing here; Agent pages show the subset targeting that logical Agent.
       </p>
 
       {loading && <div style={{ color: '#64748b', fontSize: '0.95rem' }}>Loading…</div>}
@@ -160,7 +160,7 @@ export default function ChannelsHubPage() {
             <div
               key={c.channelId}
               style={S.card}
-              onClick={() => navigate(`/managed/channels/${encodeURIComponent(c.channelId)}`)}
+              onClick={() => navigate(`/agent-center/entrypoints/${encodeURIComponent(c.channelId)}`)}
               onMouseEnter={e => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
                 e.currentTarget.style.boxShadow = '0 8px 24px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04)';
@@ -229,7 +229,7 @@ export default function ChannelsHubPage() {
           onCreated={(id) => {
             setCreating(false);
             void refresh();
-            navigate(`/managed/channels/${encodeURIComponent(id)}`);
+            navigate(`/agent-center/entrypoints/${encodeURIComponent(id)}`);
           }}
         />
       )}
@@ -299,7 +299,7 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
     <div style={scrim} onClick={onClose}>
       <div style={modal} onClick={e => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 16px', fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
-          New IM identity
+          New channel
         </h3>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>

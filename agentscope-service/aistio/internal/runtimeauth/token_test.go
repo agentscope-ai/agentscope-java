@@ -30,3 +30,46 @@ func TestRuntimeCredentialIsScopedAndExpires(t *testing.T) {
 		t.Fatal("expired token was accepted")
 	}
 }
+
+func TestEnrollmentTokenCarriesScopeAndExpiresQuickly(t *testing.T) {
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	manager := Manager{Secret: []byte("0123456789abcdef0123456789abcdef")}
+	token, minted, err := manager.MintEnrollment("acme", "engineering", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(token, EnrollmentPrefix) {
+		t.Fatalf("token = %q", token)
+	}
+	verified, err := manager.VerifyEnrollment(token, now.Add(time.Minute))
+	if err != nil || verified != minted {
+		t.Fatalf("verified=%+v minted=%+v err=%v", verified, minted, err)
+	}
+	if _, err := manager.VerifyEnrollment(token, now.Add(16*time.Minute)); err == nil {
+		t.Fatal("expired enrollment token was accepted")
+	}
+	runtimeToken, _, err := manager.Mint("host-1", "acme", "engineering", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedEnrollment := EnrollmentPrefix + strings.TrimPrefix(runtimeToken, Prefix)
+	if _, err := manager.VerifyEnrollment(forgedEnrollment, now); err == nil {
+		t.Fatal("Runtime Host credential was accepted as an enrollment token")
+	}
+}
+
+func TestParseUnverifiedReturnsClientRoutingScope(t *testing.T) {
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	manager := Manager{Secret: []byte("0123456789abcdef0123456789abcdef")}
+	token, _, err := manager.Mint("host-1", "acme", "engineering", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := ParseUnverified(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.HostKey != "host-1" || claims.Tenant != "acme" || claims.Namespace != "engineering" {
+		t.Fatalf("claims = %+v", claims)
+	}
+}

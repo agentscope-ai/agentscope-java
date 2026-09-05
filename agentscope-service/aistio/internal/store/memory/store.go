@@ -101,6 +101,7 @@ type Store struct {
 	endpointConversations map[uuid.UUID]*controlmodel.EndpointConversation
 	endpointRateWindows   map[string]*endpointRateWindow
 	teamProposals         map[uuid.UUID]*controlmodel.TeamProposal
+	chats                 map[uuid.UUID]*controlmodel.Chat
 	nextBusID             int64
 	nextFencing           int64
 
@@ -184,6 +185,7 @@ func Open(_ context.Context, cfg store.Config) (store.Store, error) {
 		endpointConversations: make(map[uuid.UUID]*controlmodel.EndpointConversation),
 		endpointRateWindows:   make(map[string]*endpointRateWindow),
 		teamProposals:         make(map[uuid.UUID]*controlmodel.TeamProposal),
+		chats:                 make(map[uuid.UUID]*controlmodel.Chat),
 		retention:             cfg.Retention,
 	}
 	return s, nil
@@ -209,6 +211,7 @@ func (s *Store) Collaboration() store.CollaborationRepository { return &collabor
 func (s *Store) WorkSources() store.WorkSourceRepository      { return &workSourceRepo{s} }
 func (s *Store) Endpoints() store.EndpointRepository          { return &endpointRepo{s} }
 func (s *Store) TeamProposals() store.TeamProposalRepository  { return &teamProposalRepo{s} }
+func (s *Store) Chats() store.ChatRepository                  { return &chatRepo{s} }
 func (s *Store) KV() store.KVRepository                       { return &kvRepo{s} }
 func (s *Store) Locks() store.LockRepository                  { return &lockRepo{s} }
 func (s *Store) Snapshots() store.SnapshotRepository          { return &snapshotRepo{s} }

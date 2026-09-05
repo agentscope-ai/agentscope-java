@@ -110,6 +110,7 @@ func localRuntimeStatusCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Host key:      %s\n", ready.HostKey)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Server:        %s\n", config.ControlPlane)
+			fmt.Fprintf(cmd.OutOrStdout(), "Scope:         %s / %s\n", config.Tenant, config.Namespace)
 			fmt.Fprintf(cmd.OutOrStdout(), "Pool:          %s\n", config.Pool)
 			fmt.Fprintf(cmd.OutOrStdout(), "Providers:     %s\n", providerNames(config.Providers))
 			fmt.Fprintf(cmd.OutOrStdout(), "Configuration: %s\n", path)

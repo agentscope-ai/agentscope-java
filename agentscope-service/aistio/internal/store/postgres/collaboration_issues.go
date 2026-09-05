@@ -219,6 +219,7 @@ func (r *collaborationRepo) ListIssues(ctx context.Context, filter store.IssueFi
 		AND ($3='' OR status=$3) AND ($4='' OR assignee_type=$4)
 		AND ($5='' OR assignee_ref=$5)
 		AND ($13='' OR kind=$13) AND ($14='' OR visibility=$14)
+		AND ($13='conversation_turn' OR kind <> 'conversation_turn')
 		AND ($6::uuid IS NULL OR parent_issue_id=$6)
 		AND ($9::timestamptz IS NULL OR (updated_at,id) < ($9,$10))
 		AND (($11 AND archived_at IS NOT NULL) OR (NOT $11 AND archived_at IS NULL))

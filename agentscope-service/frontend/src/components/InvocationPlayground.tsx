@@ -289,7 +289,7 @@ export function InvocationPlayground({
   return <Card>
     <CardHeader>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><CardTitle className="flex items-center gap-2"><Play className="h-4 w-4" />{direct ? 'Direct Playground' : 'Public Endpoint Playground'}</CardTitle><CardDescription>{direct ? 'Test the target with Console authorization without publishing an Endpoint. Runtime policy and Binding selection are still enforced.' : 'Exercise the published API through its real Gateway authentication, schema, rate limit, and release.'}</CardDescription></div>
+        <div><CardTitle className="flex items-center gap-2"><Play className="h-4 w-4" />{direct ? 'Direct test' : 'Test published API'}</CardTitle><CardDescription>{direct ? 'Test the target with Console authorization. Runtime policy and Binding selection are still enforced.' : 'Exercise the published API through its real Gateway authentication, schema, rate limit, and release.'}</CardDescription></div>
         <Badge tone={direct ? 'info' : 'default'}>{direct ? 'control-plane route' : 'public route'}</Badge>
       </div>
     </CardHeader>
@@ -319,11 +319,11 @@ export function InvocationPlayground({
           className="min-h-[36rem] max-h-[72vh]"
           messages={displayedMessages}
           events={displayedEvents}
-          source={sessionRef ? 'event stream' : 'playground'}
+          source={sessionRef ? 'event stream' : 'API test'}
 		  loading={timeline.loading || (!!jobRunId && jobGraph.isLoading)}
 		  error={timeline.error || (jobGraph.error instanceof Error ? jobGraph.error.message : '')}
           emptyMessage={targetRef ? 'Send a message to start a test conversation.' : 'Choose a target to begin.'}
-          headerActions={result && <div className="flex flex-wrap gap-2">{typeof result.issueId === 'string' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/issues/${result.issueId}`)}>Issue<ExternalLink className="h-3 w-3" /></Link></Button>}{typeof result.runId === 'string' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/agent-center/activity/executions/${result.runId}`)}>Execution<ExternalLink className="h-3 w-3" /></Link></Button>}{(typeof result.sessionRef === 'string' || typeof result.sessionId === 'string') && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/agent-center/activity/sessions/${String(result.sessionRef || result.sessionId)}`)}>Session<ExternalLink className="h-3 w-3" /></Link></Button>}</div>}
+          headerActions={result && <div className="flex flex-wrap gap-2">{typeof result.issueId === 'string' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/issues/${result.issueId}`)}>Issue<ExternalLink className="h-3 w-3" /></Link></Button>}{typeof result.runId === 'string' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/executions/${result.runId}`)}>Execution<ExternalLink className="h-3 w-3" /></Link></Button>}{(typeof result.sessionRef === 'string' || typeof result.sessionId === 'string') && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/sessions/${String(result.sessionRef || result.sessionId)}`)}>Session<ExternalLink className="h-3 w-3" /></Link></Button>}</div>}
           composer={{
             value: message,
             onChange: setMessage,

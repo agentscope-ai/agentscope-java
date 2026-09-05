@@ -115,7 +115,7 @@ export interface ChannelUpsertRequest {
   bindings?: BindingConfigEntry[] | null;
 }
 
-/** Presence API — anthropomorphic IM identity on an agent. */
+/** Agent-scoped convenience projection for channels whose default target is this Agent. */
 export interface AgentPresence {
   channelId: string;
   platform: string;

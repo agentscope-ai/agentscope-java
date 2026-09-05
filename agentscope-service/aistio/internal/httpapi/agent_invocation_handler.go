@@ -214,7 +214,8 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 	return nil, fmt.Errorf("no conversation-capable runtime candidate is available")
 }
 
-func (s *Server) sendPlaygroundConversationTurn(ctx context.Context, session *store.Session, message string) error {
+func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.Session, message,
+	sourceType, sourceRef string) error {
 	binding, err := s.store.AgentCatalog().GetBinding(ctx, session.BindingID)
 	if err != nil || !binding.Enabled || binding.ArchivedAt != nil || binding.AgentID != session.AgentID {
 		return fmt.Errorf("conversation Binding is unavailable")
@@ -248,11 +249,15 @@ func (s *Server) sendPlaygroundConversationTurn(ctx context.Context, session *st
 		})
 	case controlmodel.DataPlaneHostedRuntime:
 		_, err = s.dispatchHostedConversationTurn(ctx, session, binding, message, uuid.NewString(),
-			"playground_conversation", session.OriginRef)
+			sourceType, sourceRef)
 		return err
 	default:
 		return fmt.Errorf("runtime binding %q does not support conversations", binding.Kind)
 	}
+}
+
+func (s *Server) sendPlaygroundConversationTurn(ctx context.Context, session *store.Session, message string) error {
+	return s.sendAgentConversationTurn(ctx, session, message, "playground_conversation", session.OriginRef)
 }
 
 type playgroundInvocationRequest struct {

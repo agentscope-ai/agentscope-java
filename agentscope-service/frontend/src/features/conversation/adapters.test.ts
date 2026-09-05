@@ -27,7 +27,7 @@ describe('conversation adapters', () => {
     });
   });
 
-  it('keeps runtime framework metadata in the raw event payload', () => {
+  it('keeps the complete runtime event in the raw event payload', () => {
     const [event] = runtimeEventsToConversation([{
       seq: 3,
       eventType: 'tool_call',
@@ -37,6 +37,9 @@ describe('conversation adapters', () => {
 
     expect(event.category).toBe('tool');
     expect(event.payload).toMatchObject({
+      seq: 3,
+      eventType: 'tool_call',
+      toolName: 'read_file',
       frameworkMeta: { provider: 'codex', nativeType: 'item.started' },
     });
   });

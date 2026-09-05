@@ -130,7 +130,7 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 				itemType+":"+created.ID.String()+":"+target.TargetRef); err != nil {
 				return nil, nil, err
 			}
-		case target.AgentRef == task.AgentRef && sameAgentTaskRole(task, target):
+		case target.AgentRef == task.AgentRef:
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
 		default:
 			routed, _, coalesced, routeErr := routeAgentTaskInputTx(ctx, tx, issue, created, target)
@@ -244,7 +244,7 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 		if !controlmodel.CanTransitionRunNode(node.State, next) {
 			return store.ErrConflict
 		}
-		node, err = scanNode(tx.QueryRow(ctx, `UPDATE orchestration_run_nodes SET state=$2,output=$3,
+		node, err = scanNode(tx.QueryRow(ctx, `UPDATE orchestration_run_nodes SET state=$2,output=$3,wait_reason=NULL,
 			version=version+1,updated_at=now(),started_at=COALESCE(started_at,now()),
 			completed_at=CASE WHEN $2='succeeded' THEN now() ELSE completed_at END
 			WHERE id=$1 RETURNING `+nodeCols, node.ID, next, nullJSON(output)))
@@ -288,7 +288,7 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 		return err
 	}
 	if active == 0 {
-		if _, err := tx.Exec(ctx, `UPDATE orchestration_runs SET state=$2,output=$3,version=version+1,
+		if _, err := tx.Exec(ctx, `UPDATE orchestration_runs SET state=$2,output=$3,wait_reason=NULL,version=version+1,
 			updated_at=now(),completed_at=now() WHERE id=$1 AND state IN($4,$5)`, task.OrchestrationRunID,
 			controlmodel.RunSucceeded, nullJSON(output), controlmodel.RunRunning, controlmodel.RunWaiting); err != nil {
 			return err
@@ -439,11 +439,4 @@ func uuidSetPG(ids []uuid.UUID) map[uuid.UUID]bool {
 		out[id] = true
 	}
 	return out
-}
-
-func sameAgentTaskRole(task *controlmodel.AgentTask, target store.CommentTarget) bool {
-	if task.TeamID == nil && target.TeamID == nil {
-		return task.TeamRole == target.TeamRole
-	}
-	return task.TeamID != nil && target.TeamID != nil && *task.TeamID == *target.TeamID && task.TeamRole == target.TeamRole
 }

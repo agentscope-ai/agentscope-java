@@ -226,13 +226,13 @@ export default function OperateSessionDetailPage() {
   return (
     <Page>
       <div>
-        <Link to={scope.scopedPath(agentId ? `/agent-center/agents/${encodeURIComponent(agentId)}?tab=sessions` : '/sessions')} className="text-sm text-muted-foreground hover:text-foreground">
+        <Link to={scope.scopedPath(agentId ? `/agent-center/agents/${encodeURIComponent(agentId)}?tab=sessions` : '/work/sessions')} className="text-sm text-muted-foreground hover:text-foreground">
           ← {agentId ? 'Agent' : 'Sessions'}
         </Link>
         <PageHeader
           className="mt-2"
           title={sessionId}
-          description={`${s?.agentName} · ${s?.namespace} · ${s?.framework || 'framework n/a'}${contractLevel ? ` · L${contractLevel}` : ''}${selectedTurnIndex != null ? ` · turn #${selectedTurnIndex}` : ''}`}
+          description={`${s?.agentName}${scope.selectorVisible ? ` · ${s?.namespace}` : ''} · ${s?.framework || 'framework n/a'}${contractLevel ? ` · L${contractLevel}` : ''}${selectedTurnIndex != null ? ` · turn #${selectedTurnIndex}` : ''}`}
           actions={agentScopedReadOnly ? <Badge tone="info">Agent-scoped · read only</Badge> : (
             <>
               <CapabilityGate contractLevel={contractLevel} capabilities={capabilities} action="compress">

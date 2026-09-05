@@ -83,7 +83,7 @@ function ExecutionCard({ group, identities }: { group: ExecutionGroup; identitie
               <Link to={scope.scopedPath(`/work/issues/${run.rootIssueId}`)}>Open issue</Link>
             </Button>
             <Button size="sm" asChild>
-              <Link to={scope.scopedPath(`/agent-center/activity/executions/${run.id}`)}>Execution details</Link>
+              <Link to={scope.scopedPath(`/work/executions/${run.id}`)}>Execution details</Link>
             </Button>
           </div>
         </div>
@@ -104,7 +104,7 @@ function ExecutionCard({ group, identities }: { group: ExecutionGroup; identitie
                       </div>
                       <div className="mt-1 font-mono text-[11px] text-slate-400">AgentTask {task.id.slice(0, 10)} · {task.triggerType.replace(/_/g, ' ')}</div>
                     </div>
-                    <Link className="text-xs font-medium text-indigo-600 hover:underline" to={scope.scopedPath(`/agent-center/activity/tasks/${task.id}`)}>Diagnostics</Link>
+                    <Link className="text-xs font-medium text-indigo-600 hover:underline" to={scope.scopedPath(`/work/executions/tasks/${task.id}`)}>Diagnostics</Link>
                   </div>
                   {taskAttempts.length ? (
                     <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">

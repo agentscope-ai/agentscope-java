@@ -56,6 +56,7 @@ type Store struct {
 	workSources       *workSourceRepo
 	endpoints         *endpointRepo
 	teamProposals     *teamProposalRepo
+	chats             *chatRepo
 }
 
 // Open creates a PostgreSQL store from cfg.
@@ -106,6 +107,7 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 	s.workSources = &workSourceRepo{pool: pool}
 	s.endpoints = &endpointRepo{pool: pool}
 	s.teamProposals = &teamProposalRepo{pool: pool}
+	s.chats = &chatRepo{pool: pool}
 	return s, nil
 }
 
@@ -127,6 +129,7 @@ func (s *Store) Collaboration() store.CollaborationRepository { return s.collabo
 func (s *Store) WorkSources() store.WorkSourceRepository      { return s.workSources }
 func (s *Store) Endpoints() store.EndpointRepository          { return s.endpoints }
 func (s *Store) TeamProposals() store.TeamProposalRepository  { return s.teamProposals }
+func (s *Store) Chats() store.ChatRepository                  { return s.chats }
 func (s *Store) KV() store.KVRepository                       { return s.kv }
 func (s *Store) Locks() store.LockRepository                  { return s.locks }
 func (s *Store) Snapshots() store.SnapshotRepository          { return s.snapshots }

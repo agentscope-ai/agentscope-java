@@ -292,13 +292,13 @@ export function sessionDetailPath(s: {
   namespace?: string;
 }): string {
   if (s.id) {
-    return `/agent-center/activity/sessions/${encodeURIComponent(s.id)}`;
+    return `/work/sessions/${encodeURIComponent(s.id)}`;
   }
   const q = new URLSearchParams();
   if (s.agentName) q.set('agent', s.agentName);
   if (s.namespace) q.set('namespace', s.namespace);
   const qs = q.toString();
-  return `/agent-center/activity/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
+  return `/work/sessions/${encodeURIComponent(s.sessionId)}${qs ? `?${qs}` : ''}`;
 }
 
 export function agentSessionDetailPath(agentId: string, session: { id: string }): string {
@@ -360,7 +360,7 @@ export type SessionEventItem = {
 
 export function fetchSessionEvents(
   id: string,
-  opts?: { limit?: number; before?: string | number; after?: number; eventType?: string; agentId?: string },
+  opts?: { limit?: number; before?: string | number; after?: number; eventType?: string; agentId?: string; chatId?: string },
 ) {
   const q = new URLSearchParams();
   if (opts?.limit != null) q.set('limit', String(opts.limit));
@@ -368,6 +368,7 @@ export function fetchSessionEvents(
   if (opts?.after != null) q.set('after', String(opts.after));
   if (opts?.eventType) q.set('eventType', opts.eventType);
   if (opts?.agentId) q.set('agentId', opts.agentId);
+  if (opts?.chatId) q.set('chatId', opts.chatId);
   const qs = q.toString();
   return api.get<{ events: SessionEventItem[] }>(
     `/api/v1/sessions/${encodeURIComponent(id)}/events${qs ? `?${qs}` : ''}`,
@@ -383,7 +384,7 @@ export function streamSessionEvents(
   id: string,
   onEvent: (event: SessionEventItem) => void,
   onError?: (error: Error) => void,
-  options?: { agentId?: string; getAfter?: () => number; retryMs?: number; maxRetryMs?: number; onOpen?: () => void },
+  options?: { agentId?: string; chatId?: string; getAfter?: () => number; retryMs?: number; maxRetryMs?: number; onOpen?: () => void },
 ): SessionEventStreamHandle {
   const controller = new AbortController();
   let closed = false;
@@ -395,6 +396,7 @@ export function streamSessionEvents(
     const after = options?.getAfter?.() ?? 0;
     if (after > 0) query.set('after', String(after));
     if (options?.agentId) query.set('agentId', options.agentId);
+    if (options?.chatId) query.set('chatId', options.chatId);
     const suffix = query.size ? `?${query}` : '';
     const response = await apiResponse(
       `/api/v1/sessions/${encodeURIComponent(id)}/events/stream${suffix}`,

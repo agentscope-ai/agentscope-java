@@ -41,6 +41,7 @@ type Store interface {
 	WorkSources() WorkSourceRepository
 	Endpoints() EndpointRepository
 	TeamProposals() TeamProposalRepository
+	Chats() ChatRepository
 
 	// Hosted DistributedStore backends (data-plane coordination).
 	KV() KVRepository

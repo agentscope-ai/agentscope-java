@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { getRoles } from '@/api/auth'
 
 export function useCommandPaletteShortcut(open: () => void) {
   useEffect(() => {
@@ -15,13 +16,26 @@ export function useCommandPaletteShortcut(open: () => void) {
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   if (!open) return null
+  const roles = getRoles().map(role => role.toLowerCase())
+  const admin = roles.includes('admin')
+  const canOperate = admin || roles.includes('operator')
+  const canAgentCenter = canOperate || roles.includes('agent_developer')
   const links = [
+    ['Overview', '/work/overview'],
+    ['Chat', '/work/chat'],
     ['Issues', '/work/issues'],
-    ['Executions', '/agent-center/activity/executions'],
-    ['Teams', '/agent-center/teams'],
-    ['Workflows', '/agent-center/workflows'],
     ['Approvals', '/work/approvals'],
     ['Automations', '/work/automations'],
+    ...(canAgentCenter ? [
+      ['Agents', '/agent-center/agents'],
+      ['Teams', '/agent-center/teams'],
+      ['Workflows', '/agent-center/workflows'],
+      ...(admin ? [['Channels', '/agent-center/entrypoints']] : []),
+      ['Workspaces', '/agent-center/workspaces'],
+      ['Environments', '/agent-center/environments'],
+      ['Memory', '/agent-center/memory'],
+      ['Vault', '/agent-center/vaults'],
+    ] : []),
   ]
   return (
     <div className="fixed inset-0 z-50 bg-black/30 p-6" onClick={() => onOpenChange(false)}>

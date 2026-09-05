@@ -72,12 +72,29 @@ func TestEnrollRuntimeHostCredentialUsesPlatformBearer(t *testing.T) {
 		}
 		response.Header().Set("Content-Type", "application/json")
 		response.WriteHeader(http.StatusCreated)
-		_, _ = response.Write([]byte(`{"runtimeToken":"asrh_scoped"}`))
+		_, _ = response.Write([]byte(`{"runtimeToken":"asrh_scoped","hostKey":"host-1","tenant":"acme","namespace":"engineering"}`))
 	}))
 	defer server.Close()
-	token, err := enrollRuntimeHostCredential(context.Background(), server.URL, "platform-token", "host-1", "acme", "engineering")
-	if err != nil || token != "asrh_scoped" {
-		t.Fatalf("token=%q err=%v", token, err)
+	enrollment, err := enrollRuntimeHostCredential(context.Background(), server.URL, "platform-token", "host-1", "acme", "engineering")
+	if err != nil || enrollment.RuntimeToken != "asrh_scoped" || enrollment.Tenant != "acme" || enrollment.Namespace != "engineering" {
+		t.Fatalf("enrollment=%+v err=%v", enrollment, err)
+	}
+}
+
+func TestExchangeRuntimeHostEnrollmentTokenReturnsAssignedScope(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/runtime-host-enrollments/exchange" || request.Header.Get("Authorization") != "Bearer asre_bootstrap" {
+			http.Error(response, "unexpected request", http.StatusUnauthorized)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusCreated)
+		_, _ = response.Write([]byte(`{"runtimeToken":"asrh_scoped","hostKey":"host-1","tenant":"acme","namespace":"engineering"}`))
+	}))
+	defer server.Close()
+	enrollment, err := exchangeRuntimeHostEnrollmentToken(context.Background(), server.URL, "asre_bootstrap", "host-1")
+	if err != nil || enrollment.RuntimeToken != "asrh_scoped" || enrollment.Tenant != "acme" || enrollment.Namespace != "engineering" {
+		t.Fatalf("enrollment=%+v err=%v", enrollment, err)
 	}
 }
 

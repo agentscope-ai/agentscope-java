@@ -1,10 +1,12 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ExternalLink } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   createDefinition,
   getDefinition,
   listDefinitions,
+  listRuns,
   listRevisions,
   publishDefinition,
   startRun,
@@ -20,6 +22,7 @@ import { Page, PageHeader } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { formatRelative } from '@/lib/format';
 
 const starter = (agentId: string): DefinitionSpec => ({
   nodes: [{ key: 'work', type: 'agent', agentId, issueMode: 'inherit', failurePolicy: 'fail_fast' }],
@@ -89,6 +92,12 @@ function DefinitionDetail({ id }: { id: string }) {
   const navigate = useNavigate();
   const detail = useQuery({ queryKey: ['orchestration-definition', id], queryFn: () => getDefinition(id) });
   const revisions = useQuery({ queryKey: ['orchestration-revisions', id], queryFn: () => listRevisions(id) });
+  const runs = useQuery({
+    queryKey: ['orchestration-definition-runs', scope.tenant, scope.namespace, id],
+    queryFn: () => listRuns(scope.tenant, scope.namespace),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
   const initial = detail.data?.definition.draftSpec;
   const [editor, setEditor] = useState('');
   const [issueId, setIssueId] = useState('');
@@ -162,9 +171,15 @@ function DefinitionDetail({ id }: { id: string }) {
   });
   const start = useMutation({
     mutationFn: () => startRun(id, { idempotencyKey: crypto.randomUUID(), input: {}, issueId }),
-    onSuccess: (result) => navigate(scope.scopedPath(`/agent-center/activity/executions/${result.run.id}`)),
+    onSuccess: (result) => navigate(scope.scopedPath(`/work/executions/${result.run.id}`)),
   });
   if (!detail.data) return <Page>Loading definition…</Page>;
+  const revisionItems = revisions.data?.revisions ?? [];
+  const revisionIds = new Set(revisionItems.map(revision => revision.id));
+  const workflowRuns = (runs.data?.runs ?? [])
+    .filter(run => !!run.definitionRevisionId && revisionIds.has(run.definitionRevisionId))
+    .slice(0, 10);
+  const selectedRevision = revisionItems.find(revision => revision.id === publishRevisionId) ?? revisionItems[0];
   return (
     <Page>
       <Link to={scope.scopedPath('/orchestration/definitions')} className="text-sm text-muted-foreground">← Definitions</Link>
@@ -211,19 +226,40 @@ function DefinitionDetail({ id }: { id: string }) {
             <Button className="mt-2" disabled={!issueId} onClick={() => start.mutate()}>Start latest revision</Button>
           </div>
           <div className="rounded-xl border bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-semibold">Recent executions</h2>
+              <Badge>{workflowRuns.length}</Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Runs linked to a published revision of this Workflow.</p>
+            <div className="mt-3 space-y-2">
+              {workflowRuns.map(run => (
+                <Link key={run.id} to={scope.scopedPath(`/work/executions/${run.id}`)} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm hover:bg-muted/40">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">Execution {run.id.slice(0, 8)}</span>
+                    <span className="text-xs text-muted-foreground">{formatRelative(run.createdAt)} · {run.mode}</span>
+                  </span>
+                  <span className="flex items-center gap-2"><Badge>{run.state.replace(/_/g, ' ')}</Badge><ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /></span>
+                </Link>
+              ))}
+              {!runs.isLoading && !workflowRuns.length && <p className="py-3 text-xs text-muted-foreground">No execution has used this Workflow yet.</p>}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-white p-4">
             <h2 className="font-semibold">Published revisions</h2>
-            <div className="mt-3 space-y-2">{revisions.data?.revisions.map((revision) => (
+            <div className="mt-3 space-y-2">{revisionItems.map((revision) => (
               <div key={revision.id} className="rounded-lg border p-3">
-                <div className="flex items-center justify-between gap-2"><span className="text-sm">Revision {revision.revision} · {revision.checksum.slice(0, 10)}</span><Button size="sm" variant={publishRevisionId === revision.id ? 'default' : 'outline'} onClick={() => setPublishRevisionId(revision.id)}>Publish API</Button></div>
+                <div className="flex items-center justify-between gap-2"><span className="text-sm">Revision {revision.revision} · {revision.checksum.slice(0, 10)}</span><Button size="sm" variant={selectedRevision?.id === revision.id ? 'default' : 'outline'} onClick={() => setPublishRevisionId(revision.id)}>API target</Button></div>
                 <details className="mt-2"><summary className="cursor-pointer text-xs text-muted-foreground">View immutable spec</summary><pre className="mt-2 overflow-auto rounded bg-muted p-2 text-[10px]">{JSON.stringify(revision.spec, null, 2)}</pre></details>
               </div>
             ))}</div>
           </div>
-          {publishRevisionId && <PublishEndpointCard
+          {selectedRevision && <PublishEndpointCard
             targetType="orchestration_revision"
-            targetRef={publishRevisionId}
-            targetName={`${detail.data.definition.name} r${revisions.data?.revisions.find(revision => revision.id === publishRevisionId)?.revision ?? ''}`}
+            targetRef={selectedRevision.id}
+            targetName={detail.data.definition.name}
+            ownerPath={`/agent-center/workflows/${detail.data.definition.id}`}
             allowDeployToExisting
+            relatedTargetRefs={revisionItems.map(revision => revision.id)}
           />}
         </aside>
       </div>

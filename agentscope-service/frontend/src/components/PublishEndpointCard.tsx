@@ -18,10 +18,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 
 interface PublishEndpointCardProps {
-  targetType: Extract<EndpointTargetType, 'team' | 'orchestration_revision'>;
+  targetType: EndpointTargetType;
   targetRef: string;
   targetName: string;
+  ownerPath: string;
   allowDeployToExisting?: boolean;
+  relatedTargetRefs?: string[];
 }
 
 const endpointPath = (endpoint: Endpoint) =>
@@ -32,7 +34,14 @@ const slugify = (value: string) => value.toLowerCase().trim()
   .replace(/^-+|-+$/g, '')
   .slice(0, 48);
 
-export function PublishEndpointCard({ targetType, targetRef, targetName, allowDeployToExisting = false }: PublishEndpointCardProps) {
+export function PublishEndpointCard({
+  targetType,
+  targetRef,
+  targetName,
+  ownerPath,
+  allowDeployToExisting = false,
+  relatedTargetRefs,
+}: PublishEndpointCardProps) {
   const scope = useControlPlaneScope();
   const queryClient = useQueryClient();
   const roles = getRoles().map(role => role.toLowerCase());
@@ -41,6 +50,7 @@ export function PublishEndpointCard({ targetType, targetRef, targetName, allowDe
   const [name, setName] = useState(`${targetName} API`);
   const [slug, setSlug] = useState(`${slugify(targetName) || 'endpoint'}-${targetRef.slice(0, 6)}`);
   const [description, setDescription] = useState('');
+  const [mode, setMode] = useState<Endpoint['invocationMode']>(targetType === 'agent' ? 'conversation' : 'job');
   const [deployEndpointId, setDeployEndpointId] = useState('');
   const [secret, setSecret] = useState('');
   const [error, setError] = useState('');
@@ -48,7 +58,8 @@ export function PublishEndpointCard({ targetType, targetRef, targetName, allowDe
   useEffect(() => {
     setName(`${targetName} API`);
     setSlug(`${slugify(targetName) || 'endpoint'}-${targetRef.slice(0, 6)}`);
-  }, [targetName, targetRef]);
+    setMode(targetType === 'agent' ? 'conversation' : 'job');
+  }, [targetName, targetRef, targetType]);
 
   const current = useQuery({
     queryKey: ['endpoints', scope.tenant, scope.namespace, targetType, targetRef],
@@ -58,12 +69,22 @@ export function PublishEndpointCard({ targetType, targetRef, targetName, allowDe
   const compatible = useQuery({
     queryKey: ['endpoints', scope.tenant, scope.namespace, targetType, 'all'],
     queryFn: () => listEndpoints(scope.tenant, scope.namespace, { targetType }),
-    enabled: allowDeployToExisting,
+    enabled: allowDeployToExisting || !!relatedTargetRefs?.length,
   });
-  const currentItems = (current.data?.items ?? []).filter(item => item.status !== 'archived');
-  const deployCandidates = useMemo(() => (compatible.data?.items ?? []).filter(item =>
+  const relatedRefs = useMemo(() => new Set(relatedTargetRefs ?? [targetRef]), [relatedTargetRefs, targetRef]);
+  const currentItems = useMemo(() => {
+    const source = relatedTargetRefs?.length ? compatible.data?.items : current.data?.items;
+    return (source ?? []).filter(item => item.status !== 'archived' && relatedRefs.has(item.targetRef));
+  }, [compatible.data?.items, current.data?.items, relatedRefs, relatedTargetRefs?.length]);
+  const deployCandidates = useMemo(() => currentItems.filter(item =>
     (item.status === 'published' || item.status === 'disabled') && !!item.activeReleaseId && item.targetRef !== targetRef,
-  ), [compatible.data?.items, targetRef]);
+  ), [currentItems, targetRef]);
+
+  const endpointDetailPath = (endpoint: Endpoint, tab?: string) => {
+    const query = new URLSearchParams({ returnTo: ownerPath });
+    if (tab) query.set('tab', tab);
+    return `/agent-center/endpoints/${endpoint.id}?${query}`;
+  };
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['endpoints'] });
@@ -78,7 +99,7 @@ export function PublishEndpointCard({ targetType, targetRef, targetName, allowDe
         description: description.trim(),
         targetType,
         targetRef,
-        invocationMode: 'job',
+        invocationMode: mode,
         authPolicy: { type: 'api_key' },
         rateLimit: { requests: 60, windowSeconds: 60 },
       });
@@ -87,7 +108,7 @@ export function PublishEndpointCard({ targetType, targetRef, targetName, allowDe
     },
     onSuccess: () => { setShowCreate(false); setError(''); refresh(); },
     onError: cause => {
-      setError(`${cause instanceof Error ? cause.message : 'Publication failed'}. If the draft was created, open Endpoints to resolve readiness and publish it.`);
+      setError(`${cause instanceof Error ? cause.message : 'Publication failed'}. If a draft was created, open Manage API below to resolve readiness and publish it.`);
       refresh();
     },
   });
@@ -113,7 +134,7 @@ export function PublishEndpointCard({ targetType, targetRef, targetName, allowDe
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2"><Rocket className="h-4 w-4" />Publish as API</CardTitle>
-            <CardDescription>Expose this {targetType === 'team' ? 'Team' : 'immutable Workflow revision'} as a governed job API. Calls create an operational work record and Run without adding ordinary API traffic to Work Hub.</CardDescription>
+            <CardDescription>Expose this {targetType === 'agent' ? 'Agent' : targetType === 'team' ? 'Team' : 'immutable Workflow revision'} through a governed API owned from this page.</CardDescription>
           </div>
           {canEdit && !showCreate && <Button size="sm" onClick={() => setShowCreate(true)}>New Endpoint</Button>}
         </div>
@@ -125,6 +146,7 @@ export function PublishEndpointCard({ targetType, targetRef, targetName, allowDe
         {showCreate && <form className="grid gap-3 md:grid-cols-2" onSubmit={submit}>
           <label className="grid gap-1 text-sm">Name<Input value={name} onChange={event => setName(event.target.value)} required /></label>
           <label className="grid gap-1 text-sm">Slug<Input value={slug} onChange={event => setSlug(slugify(event.target.value))} required /></label>
+          {targetType === 'agent' && <label className="grid gap-1 text-sm">Mode<select className="h-10 rounded-md border bg-background px-3" value={mode} onChange={event => setMode(event.target.value as Endpoint['invocationMode'])}><option value="conversation">Conversation</option><option value="job">Job</option></select></label>}
           <label className="grid gap-1 text-sm md:col-span-2">Description<Input value={description} onChange={event => setDescription(event.target.value)} /></label>
           <div className="flex gap-2 md:col-span-2"><Button disabled={create.isPending || !name.trim() || !slug.trim()}>{create.isPending ? 'Publishing…' : 'Create & publish'}</Button><Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button></div>
         </form>}
@@ -132,9 +154,9 @@ export function PublishEndpointCard({ targetType, targetRef, targetName, allowDe
         {currentItems.map(endpoint => <div key={endpoint.id} className="rounded-lg border p-3">
           <div className="flex flex-wrap items-center gap-2"><Check className="h-4 w-4 text-emerald-600" /><strong className="text-sm">{endpoint.name}</strong><Badge tone={endpoint.status === 'published' ? 'success' : endpoint.status === 'disabled' ? 'warning' : 'info'}>{endpoint.status}</Badge>{endpoint.activeRelease ? <Badge>release {endpoint.activeRelease}</Badge> : null}</div>
           <code className="mt-2 block break-all text-xs text-muted-foreground">{endpointPath(endpoint)}</code>
-          <div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/agent-center/endpoints/${endpoint.id}?tab=playground`)}>Test in Playground<ExternalLink className="h-3 w-3" /></Link></Button><Button size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(endpointPath(endpoint))}><Copy className="h-3 w-3" />Copy URL</Button></div>
+          <div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(endpointDetailPath(endpoint))}>Manage API<ExternalLink className="h-3 w-3" /></Link></Button>{endpoint.status === 'published' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(endpointDetailPath(endpoint, 'playground'))}>Test API<ExternalLink className="h-3 w-3" /></Link></Button>}<Button size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(endpointPath(endpoint))}><Copy className="h-3 w-3" />Copy URL</Button></div>
         </div>)}
-        {!current.isLoading && currentItems.length === 0 && !showCreate && <p className="text-sm text-muted-foreground">Not published yet. Create an Endpoint when external systems need a stable API.</p>}
+        {!current.isLoading && !compatible.isLoading && currentItems.length === 0 && !showCreate && <p className="text-sm text-muted-foreground">Not published yet. Create an API when external systems need a stable address.</p>}
 
         {canEdit && allowDeployToExisting && deployCandidates.length > 0 && <div className="grid gap-2 border-t pt-4">
           <div className="text-sm font-medium">Deploy this revision to an existing Endpoint</div>

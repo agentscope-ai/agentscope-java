@@ -59,3 +59,58 @@ func TestRuntimeHostEnrollmentIssuesGatewaySafeScopedCredential(t *testing.T) {
 		t.Fatalf("cross-host registration status=%d body=%s", response.Code, response.Body.String())
 	}
 }
+
+func TestRuntimeEnrollmentTokenSuppliesScopeDuringExchange(t *testing.T) {
+	st, err := store.Open(context.Background(), store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	server := NewServer(ServerOptions{
+		Store: st, AuthToken: "console-secret", TaskTokenSecret: "0123456789abcdef0123456789abcdef",
+		Features: features.Gates{RuntimeHost: true}, ScopeMode: ScopeModeSingle,
+		DefaultTenant: "acme", DefaultNamespace: "engineering",
+	})
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/runtime-host-enrollment-tokens",
+		bytes.NewBufferString(`{"tenant":"ignored","namespace":"ignored"}`))
+	create.Header.Set("Content-Type", "application/json")
+	create.Header.Set("Authorization", "Bearer console-secret")
+	created := httptest.NewRecorder()
+	server.router.ServeHTTP(created, create)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create token status=%d body=%s", created.Code, created.Body.String())
+	}
+	var bootstrap struct {
+		EnrollmentToken string `json:"enrollmentToken"`
+		Tenant          string `json:"tenant"`
+		Namespace       string `json:"namespace"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &bootstrap); err != nil || bootstrap.EnrollmentToken == "" {
+		t.Fatalf("bootstrap=%+v err=%v", bootstrap, err)
+	}
+	if bootstrap.Tenant != "acme" || bootstrap.Namespace != "engineering" {
+		t.Fatalf("bootstrap scope=%s/%s", bootstrap.Tenant, bootstrap.Namespace)
+	}
+
+	exchange := httptest.NewRequest(http.MethodPost, "/api/v1/runtime-host-enrollments/exchange",
+		bytes.NewBufferString(`{"hostKey":"laptop-1","tenant":"evil","namespace":"evil"}`))
+	exchange.Header.Set("Content-Type", "application/json")
+	exchange.Header.Set("Authorization", "Bearer "+bootstrap.EnrollmentToken)
+	exchanged := httptest.NewRecorder()
+	server.router.ServeHTTP(exchanged, exchange)
+	if exchanged.Code != http.StatusCreated {
+		t.Fatalf("exchange status=%d body=%s", exchanged.Code, exchanged.Body.String())
+	}
+	var credential struct {
+		RuntimeToken string `json:"runtimeToken"`
+		Tenant       string `json:"tenant"`
+		Namespace    string `json:"namespace"`
+	}
+	if err := json.Unmarshal(exchanged.Body.Bytes(), &credential); err != nil || credential.RuntimeToken == "" {
+		t.Fatalf("credential=%+v err=%v", credential, err)
+	}
+	if credential.Tenant != "acme" || credential.Namespace != "engineering" {
+		t.Fatalf("credential scope=%s/%s", credential.Tenant, credential.Namespace)
+	}
+}

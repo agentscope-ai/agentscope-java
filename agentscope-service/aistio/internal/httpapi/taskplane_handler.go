@@ -60,11 +60,15 @@ func (s *Server) createRuntimeHostEnrollment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "hostKey is too long"})
 		return
 	}
-	if request.Tenant == "" {
-		request.Tenant = "default"
-	}
-	if request.Namespace == "" {
-		request.Namespace = defaultNamespace
+	if s.scopeMode == ScopeModeSingle {
+		request.Tenant, request.Namespace = s.defaultTenant, s.defaultNamespace
+	} else {
+		if request.Tenant == "" {
+			request.Tenant = "default"
+		}
+		if request.Namespace == "" {
+			request.Namespace = defaultNamespace
+		}
 	}
 	token, claims, err := s.runtimeTokens.Mint(request.HostKey, request.Tenant, request.Namespace, time.Now().UTC())
 	if err != nil {
@@ -77,6 +81,69 @@ func (s *Server) createRuntimeHostEnrollment(c *gin.Context) {
 		"tenant":       claims.Tenant,
 		"namespace":    claims.Namespace,
 		"expiresAt":    time.Unix(claims.ExpiresAt, 0).UTC(),
+	})
+}
+
+func (s *Server) createRuntimeHostEnrollmentToken(c *gin.Context) {
+	var request struct {
+		Tenant    string `json:"tenant"`
+		Namespace string `json:"namespace"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid enrollment token request"})
+		return
+	}
+	request.Tenant, request.Namespace = strings.TrimSpace(request.Tenant), strings.TrimSpace(request.Namespace)
+	if s.scopeMode == ScopeModeSingle {
+		request.Tenant, request.Namespace = s.defaultTenant, s.defaultNamespace
+	} else if request.Tenant == "" || request.Namespace == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "tenant and namespace are required in multi scope mode"})
+		return
+	}
+	token, claims, err := s.runtimeTokens.MintEnrollment(request.Tenant, request.Namespace, time.Now().UTC())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "generate Runtime Host enrollment token"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"enrollmentToken": token,
+		"tenant":          claims.Tenant,
+		"namespace":       claims.Namespace,
+		"expiresAt":       time.Unix(claims.ExpiresAt, 0).UTC(),
+	})
+}
+
+// exchangeRuntimeHostEnrollment is the narrow public bootstrap boundary used
+// by `agentscope connect`. The enrollment token supplies the scope; callers
+// can supply only the local host identity.
+func (s *Server) exchangeRuntimeHostEnrollment(c *gin.Context) {
+	claims, err := s.runtimeTokens.VerifyEnrollment(requestBearerToken(c), time.Now().UTC())
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid Runtime Host enrollment token"})
+		return
+	}
+	var request struct {
+		HostKey string `json:"hostKey"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil || strings.TrimSpace(request.HostKey) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "hostKey is required"})
+		return
+	}
+	if len(request.HostKey) > 200 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "hostKey is too long"})
+		return
+	}
+	token, runtimeClaims, err := s.runtimeTokens.Mint(request.HostKey, claims.Tenant, claims.Namespace, time.Now().UTC())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "generate Runtime Host credential"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"runtimeToken": token,
+		"hostKey":      runtimeClaims.HostKey,
+		"tenant":       runtimeClaims.Tenant,
+		"namespace":    runtimeClaims.Namespace,
+		"expiresAt":    time.Unix(runtimeClaims.ExpiresAt, 0).UTC(),
 	})
 }
 

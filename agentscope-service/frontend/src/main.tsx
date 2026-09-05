@@ -56,9 +56,8 @@ const ChannelDetailPage = React.lazy(() => import('./pages/ChannelDetailPage'));
 const EnvironmentsHubPage = React.lazy(() => import('./pages/EnvironmentsHubPage'));
 const MemoryStoresPage = React.lazy(() => import('./pages/MemoryStoresPage'));
 const VaultsPage = React.lazy(() => import('./pages/VaultsPage'));
-const DeploymentsPage = React.lazy(() => import('./features/build/deployments/DeploymentsPage'));
 const EndpointDetailPage = React.lazy(() => import('./features/build/deployments/EndpointDetailPage'));
-const PlaygroundPage = React.lazy(() => import('./features/build/playground/PlaygroundPage'));
+const ChatPage = React.lazy(() => import('./features/chat/ChatPage'));
 const AgentLayout = React.lazy(() => import('./components/AgentLayout'));
 const ExecutionsPage = React.lazy(() => import('./features/operate/ExecutionsPage'));
 const OperateSessionsPage = React.lazy(() => import('./features/operate/OperateSessionsPage'));
@@ -92,29 +91,41 @@ function RedirectWithSearch({ to, param }: { to: string; param?: string }) {
   return <Navigate to={`${to}${suffix}${search}`} replace />;
 }
 
+function LegacyEndpointCatalogRedirect() {
+  const [searchParams] = useSearchParams();
+  const targetRef = searchParams.get('targetRef');
+  const next = new URLSearchParams(searchParams);
+  next.delete('targetRef');
+  if (targetRef) next.set('tab', 'entrypoints');
+  const target = targetRef
+    ? `/agent-center/agents/${encodeURIComponent(targetRef)}`
+    : '/agent-center/agents';
+  return <Navigate to={`${target}?${next.toString()}`} replace />;
+}
+
 function LegacyOperationsRedirect() {
   const { pathname, search } = useLocation();
-  let target = '/agent-center/agents';
+  let target = '/work/overview';
   const execution = pathname.match(/^\/operations\/(?:executions|runs)(?:\/(.+))?$/);
   const session = pathname.match(/^\/operations\/sessions(?:\/(.+))?$/);
   const task = pathname.match(/^\/operations\/tasks(?:\/(.+))?$/);
-  if (pathname === '/operations' || pathname === '/operations/' || pathname === '/operations/overview') target = '/agent-center/activity/executions';
-  else if (execution) target = `/agent-center/activity/executions${execution[1] ? `/${execution[1]}` : ''}`;
-  else if (session) target = `/agent-center/activity/sessions${session[1] ? `/${session[1]}` : ''}`;
-  else if (task) target = `/agent-center/activity/tasks${task[1] ? `/${task[1]}` : ''}`;
+  if (pathname === '/operations' || pathname === '/operations/' || pathname === '/operations/overview') target = '/work/executions';
+  else if (execution) target = `/work/executions${execution[1] ? `/${execution[1]}` : ''}`;
+  else if (session) target = `/work/sessions${session[1] ? `/${session[1]}` : ''}`;
+  else if (task) target = `/work/executions/tasks${task[1] ? `/${task[1]}` : ''}`;
   else if (pathname === '/operations/governance') target = '/work/activity';
   return <Navigate to={`${target}${search}`} replace />;
 }
 
-/** Managed Agent Chat → the durable conversation area. */
+/** Legacy Agent-scoped chat entry → the Work Hub conversation area. */
 function AgentChatRedirect() {
   const { id = '' } = useParams();
   const [searchParams] = useSearchParams();
-  const managed = searchParams.get('managed');
-  if (managed) {
-    return <Navigate to={`/managed/sessions/${encodeURIComponent(managed)}`} replace />;
-  }
-  return <Navigate to={`/managed/sessions?agentId=${encodeURIComponent(id)}`} replace />;
+  const next = new URLSearchParams(searchParams);
+  next.delete('managed');
+  next.delete('chat');
+  next.set('agent', id);
+  return <Navigate to={`/work/chat?${next.toString()}`} replace />;
 }
 
 function AgentSessionsRedirect() {
@@ -137,7 +148,7 @@ type WorkspaceArea = 'work' | 'agent-center';
 function defaultWorkspace(): string {
   const roles = getRoles().map((role) => role.toLowerCase());
   if (roles.includes('admin')) return '/work/overview';
-  if (roles.includes('operator')) return '/agent-center/activity/executions';
+  if (roles.includes('operator')) return '/work/overview';
   if (roles.includes('agent_developer')) return '/agent-center/agents';
   return '/work/overview';
 }
@@ -158,7 +169,7 @@ function OperatorAccess() {
   const roles = getRoles().map((role) => role.toLowerCase());
   return roles.includes('admin') || roles.includes('operator')
     ? <Outlet />
-    : <Navigate to="/agent-center/agents" replace />;
+    : <Navigate to="/work/overview" replace />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -181,11 +192,20 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/work" element={<WorkspaceAccess area="work" />}>
               <Route index element={<Navigate to="overview" replace />} />
               <Route path="overview" element={<WorkOverviewPage />} />
+              <Route path="chat" element={<ChatPage />} />
               <Route path="issues" element={<IssuesPage />} />
               <Route path="issues/:issueId" element={<IssueDetailPage />} />
               <Route path="approvals" element={<ApprovalsPage />} />
               <Route path="automations" element={<AutomationsPage />} />
               <Route path="activity" element={<WorkActivityPage />} />
+              <Route element={<OperatorAccess />}>
+                <Route path="executions" element={<ExecutionsPage />} />
+                <Route path="executions/:runId" element={<RunsPage />} />
+                <Route path="executions/tasks" element={<TasksPage />} />
+                <Route path="executions/tasks/:taskId" element={<TaskDetailPage />} />
+                <Route path="sessions" element={<OperateSessionsPage />} />
+                <Route path="sessions/:sessionId" element={<OperateSessionDetailPage />} />
+              </Route>
             </Route>
 
             <Route path="/agent-center" element={<WorkspaceAccess area="agent-center" />}>
@@ -210,9 +230,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="teams/:teamId" element={<TeamDetailPage />} />
               <Route path="workflows" element={<DefinitionsPage />} />
               <Route path="workflows/:definitionId" element={<DefinitionsPage />} />
-              <Route path="endpoints" element={<DeploymentsPage />} />
+              <Route path="endpoints" element={<LegacyEndpointCatalogRedirect />} />
               <Route path="endpoints/:endpointId" element={<EndpointDetailPage />} />
-              <Route path="playground" element={<PlaygroundPage />} />
+              <Route path="playground" element={<RedirectWithSearch to="/work/chat" />} />
               <Route path="entrypoints" element={<ChannelsHubPage />} />
               <Route path="entrypoints/:channelId" element={<ChannelDetailPage />} />
               <Route path="workspaces" element={<WorkspacesHubPage />} />
@@ -220,15 +240,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="environments" element={<EnvironmentsHubPage />} />
               <Route path="memory" element={<MemoryStoresPage />} />
               <Route path="vaults" element={<VaultsPage />} />
-              <Route element={<OperatorAccess />}>
-                <Route path="activity" element={<Navigate to="executions" replace />} />
-                <Route path="activity/executions" element={<ExecutionsPage />} />
-                <Route path="activity/executions/:runId" element={<RunsPage />} />
-                <Route path="activity/sessions" element={<OperateSessionsPage />} />
-                <Route path="activity/sessions/:sessionId" element={<OperateSessionDetailPage />} />
-                <Route path="activity/tasks" element={<TasksPage />} />
-                <Route path="activity/tasks/:taskId" element={<TaskDetailPage />} />
-              </Route>
+              <Route path="activity" element={<RedirectWithSearch to="/work/executions" />} />
+              <Route path="activity/executions" element={<RedirectWithSearch to="/work/executions" />} />
+              <Route path="activity/executions/:runId" element={<RedirectWithSearch to="/work/executions" param="runId" />} />
+              <Route path="activity/sessions" element={<RedirectWithSearch to="/work/sessions" />} />
+              <Route path="activity/sessions/:sessionId" element={<RedirectWithSearch to="/work/sessions" param="sessionId" />} />
+              <Route path="activity/tasks" element={<RedirectWithSearch to="/work/executions/tasks" />} />
+              <Route path="activity/tasks/:taskId" element={<RedirectWithSearch to="/work/executions/tasks" param="taskId" />} />
             </Route>
 
             <Route path="/operations/*" element={<LegacyOperationsRedirect />} />
@@ -238,10 +256,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/control/overview" element={<RedirectWithSearch to="/work/overview" />} />
             <Route path="/control/issues" element={<RedirectWithSearch to="/work/issues" />} />
             <Route path="/control/issues/:issueId" element={<RedirectWithSearch to="/work/issues" param="issueId" />} />
-            <Route path="/control/tasks" element={<RedirectWithSearch to="/agent-center/activity/tasks" />} />
-            <Route path="/control/tasks/:taskId" element={<RedirectWithSearch to="/agent-center/activity/tasks" param="taskId" />} />
-            <Route path="/control/sessions" element={<RedirectWithSearch to="/agent-center/activity/sessions" />} />
-            <Route path="/control/sessions/:sessionId" element={<RedirectWithSearch to="/agent-center/activity/sessions" param="sessionId" />} />
+            <Route path="/control/tasks" element={<RedirectWithSearch to="/work/executions/tasks" />} />
+            <Route path="/control/tasks/:taskId" element={<RedirectWithSearch to="/work/executions/tasks" param="taskId" />} />
+            <Route path="/control/sessions" element={<RedirectWithSearch to="/work/sessions" />} />
+            <Route path="/control/sessions/:sessionId" element={<RedirectWithSearch to="/work/sessions" param="sessionId" />} />
             <Route path="/control/runtime/*" element={<RedirectWithSearch to="/agent-center/agents" />} />
             <Route path="/control/approvals" element={<RedirectWithSearch to="/work/approvals" />} />
             <Route path="/control/automations" element={<RedirectWithSearch to="/work/automations" />} />
@@ -249,8 +267,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/control/teams" element={<RedirectWithSearch to="/agent-center/teams" />} />
             <Route path="/control/orchestration/definitions" element={<RedirectWithSearch to="/agent-center/workflows" />} />
             <Route path="/control/orchestration/definitions/:definitionId" element={<RedirectWithSearch to="/agent-center/workflows" param="definitionId" />} />
-            <Route path="/control/orchestration/runs" element={<RedirectWithSearch to="/agent-center/activity/executions" />} />
-            <Route path="/control/orchestration/runs/:runId" element={<RedirectWithSearch to="/agent-center/activity/executions" param="runId" />} />
+            <Route path="/control/orchestration/runs" element={<RedirectWithSearch to="/work/executions" />} />
+            <Route path="/control/orchestration/runs/:runId" element={<RedirectWithSearch to="/work/executions" param="runId" />} />
 
             {/* Managed Agents product area */}
             <Route path="/managed" element={<RedirectWithSearch to="/agent-center/agents" />} />
@@ -270,7 +288,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/managed/environments" element={<EnvironmentsHubPage />} />
             <Route path="/managed/memory" element={<MemoryStoresPage />} />
             <Route path="/managed/vaults" element={<VaultsPage />} />
-            <Route path="/managed/entrypoints" element={<DeploymentsPage />} />
+            <Route path="/managed/entrypoints" element={<LegacyEndpointCatalogRedirect />} />
             <Route path="/managed/channels" element={<ChannelsHubPage />} />
             <Route path="/managed/channels/:channelId" element={<ChannelDetailPage />} />
 

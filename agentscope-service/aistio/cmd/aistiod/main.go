@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -354,6 +355,9 @@ func main() {
 		taskOrphanTimeout      time.Duration
 		runtimeSweepInterval   time.Duration
 		runtimeOfflineTimeout  time.Duration
+		scopeMode              string
+		defaultTenant          string
+		defaultNamespace       string
 	)
 
 	defaultRetention := store.DefaultRetention()
@@ -403,6 +407,12 @@ func main() {
 		"Root for the local Artifact provider. Production deployments should mount durable shared object storage here.")
 	flag.BoolVar(&seedUsers, "seed-users", envBool("AISTIO_SEED_USERS", true),
 		"Seed default console users when the users table is empty.")
+	flag.StringVar(&scopeMode, "scope-mode", envOr("AISTIO_SCOPE_MODE", httpapi.ScopeModeSingle),
+		"Scope selection mode: single fixes and hides tenant/namespace; multi allows explicit selection.")
+	flag.StringVar(&defaultTenant, "default-tenant", envOr("AISTIO_DEFAULT_TENANT", "default"),
+		"Authoritative tenant in single scope mode.")
+	flag.StringVar(&defaultNamespace, "default-namespace", envOr("AISTIO_DEFAULT_NAMESPACE", "default"),
+		"Authoritative namespace in single scope mode.")
 
 	flag.StringVar(&storageDriver, "storage-driver", store.DriverMemory,
 		"Runtime data storage driver: memory (dev/test, non-durable) or postgres (production).")
@@ -431,6 +441,15 @@ func main() {
 	flag.DurationVar(&runtimeOfflineTimeout, "runtime-offline-timeout", 45*time.Second,
 		"Mark Runtime Hosts and Agent instances offline after this heartbeat gap.")
 	flag.Parse()
+	scopeMode = strings.ToLower(strings.TrimSpace(scopeMode))
+	if scopeMode != httpapi.ScopeModeSingle && scopeMode != httpapi.ScopeModeMulti {
+		fmt.Fprintf(os.Stderr, "invalid --scope-mode %q: expected single or multi\n", scopeMode)
+		os.Exit(2)
+	}
+	if strings.TrimSpace(defaultTenant) == "" || strings.TrimSpace(defaultNamespace) == "" {
+		fmt.Fprintln(os.Stderr, "--default-tenant and --default-namespace must not be empty")
+		os.Exit(2)
+	}
 
 	if showVersion {
 		fmt.Printf("aistiod %s (commit: %s, built: %s)\n", version, gitCommit, buildDate)
@@ -706,6 +725,9 @@ func main() {
 		Features: features.Gates{
 			RuntimeHost: enableRuntimeHost,
 		},
+		ScopeMode:        scopeMode,
+		DefaultTenant:    defaultTenant,
+		DefaultNamespace: defaultNamespace,
 	}
 	if mgr != nil {
 		apiOpts.Client = mgr.GetClient()

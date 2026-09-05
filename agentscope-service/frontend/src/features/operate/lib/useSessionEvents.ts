@@ -25,9 +25,9 @@ function merge(older: SessionEventItem[], newer: SessionEventItem[]): SessionEve
 
 export function useSessionEvents(
   sessionId: string,
-  options: { agentId?: string; enabled: boolean },
+  options: { agentId?: string; chatId?: string; enabled: boolean },
 ) {
-  const { agentId, enabled } = options;
+  const { agentId, chatId, enabled } = options;
   const [events, setEvents] = useState<SessionEventItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
@@ -48,7 +48,7 @@ export function useSessionEvents(
     const generation = generationRef.current;
     setLoading(eventsRef.current.length === 0);
     try {
-      const result = await fetchSessionEvents(sessionId, { limit: PAGE_SIZE, agentId });
+      const result = await fetchSessionEvents(sessionId, { limit: PAGE_SIZE, agentId, chatId });
       if (generation !== generationRef.current) return;
       const incoming = result.events || [];
       cursorRef.current = Math.max(cursorRef.current, ...incoming.map((event) => event.seq ?? 0));
@@ -67,7 +67,7 @@ export function useSessionEvents(
         setStreamReady(true);
       }
     }
-  }, [agentId, enabled, sessionId]);
+  }, [agentId, chatId, enabled, sessionId]);
 
   const loadEarlier = useCallback(async () => {
     const oldest = eventsRef.current[0];
@@ -76,7 +76,7 @@ export function useSessionEvents(
     const generation = generationRef.current;
     setLoadingEarlier(true);
     try {
-      const result = await fetchSessionEvents(sessionId, { limit: PAGE_SIZE, before, agentId });
+      const result = await fetchSessionEvents(sessionId, { limit: PAGE_SIZE, before, agentId, chatId });
       if (generation !== generationRef.current) return;
       loadedEarlierRef.current = true;
       setEvents((current) => merge(result.events || [], current));
@@ -89,7 +89,7 @@ export function useSessionEvents(
     } finally {
       if (generation === generationRef.current) setLoadingEarlier(false);
     }
-  }, [agentId, loadingEarlier, sessionId]);
+  }, [agentId, chatId, loadingEarlier, sessionId]);
 
   const repairGap = useCallback(function repairGap() {
     if (repairingRef.current) return repairingRef.current;
@@ -105,6 +105,7 @@ export function useSessionEvents(
             limit: 500,
             after,
             agentId,
+            chatId,
           });
           if (generation !== generationRef.current) return;
           const incoming = result.events || [];
@@ -144,7 +145,7 @@ export function useSessionEvents(
     })();
     repairingRef.current = repair;
     return repair;
-  }, [agentId, sessionId]);
+  }, [agentId, chatId, sessionId]);
 
   useEffect(() => {
     const generation = generationRef.current + 1;
@@ -165,7 +166,7 @@ export function useSessionEvents(
       if (repairTimerRef.current != null) window.clearTimeout(repairTimerRef.current);
       repairTimerRef.current = null;
     };
-  }, [agentId, enabled, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps -- identity reset
+  }, [agentId, chatId, enabled, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps -- identity reset
 
   useEffect(() => {
     if (!enabled || !sessionId || !streamReady) return;
@@ -191,10 +192,10 @@ export function useSessionEvents(
         setError(null);
       },
       (cause) => setError(cause.message),
-      { agentId, getAfter: () => cursorRef.current, onOpen: () => setError(null) },
+      { agentId, chatId, getAfter: () => cursorRef.current, onOpen: () => setError(null) },
     );
     return handle.close;
-  }, [agentId, enabled, repairGap, sessionId, streamReady]);
+  }, [agentId, chatId, enabled, repairGap, sessionId, streamReady]);
 
   return { events, loading, loadingEarlier, hasEarlier, error, loadEarlier, refresh };
 }

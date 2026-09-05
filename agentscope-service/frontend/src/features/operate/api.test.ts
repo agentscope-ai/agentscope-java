@@ -8,9 +8,9 @@ describe('sessionDetailPath', () => {
     );
   });
 
-  it('opens the canonical Agent Center detail page for a stored session', () => {
+  it('opens the canonical Work Hub detail page for a stored session', () => {
     expect(sessionDetailPath({ id: 'store/id', sessionId: 'runtime-session' })).toBe(
-      '/agent-center/activity/sessions/store%2Fid',
+      '/work/sessions/store%2Fid',
     );
   });
 
@@ -22,7 +22,7 @@ describe('sessionDetailPath', () => {
         namespace: 'default',
       }),
     ).toBe(
-      '/agent-center/activity/sessions/runtime%2Fid?agent=paw+agent&namespace=default',
+      '/work/sessions/runtime%2Fid?agent=paw+agent&namespace=default',
     );
   });
 });

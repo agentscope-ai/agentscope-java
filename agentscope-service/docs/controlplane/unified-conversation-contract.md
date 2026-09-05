@@ -10,7 +10,7 @@ permission 和 compaction 的定义并不等价，强行合并会丢失恢复和
 
 1. **Native event log** 是事实源。原始事件和 framework metadata 必须无损保留；
 2. **AgentScope conversation projection** 是读模型。它把事实源投影成统一的 Messages 和 Events，
-   供 Session detail、Managed Chat、Agent Playground 和 Endpoint Playground 使用。
+   供 Session detail、Managed Chat、Chat 和 Endpoint Test API 使用。
 
 前后端交互采用 DeepSeek Harness 相同的基线模型：打开会话时读取一次 Event history tail，随后保持
 一条可续传的 SSE subscription；客户端以最后一个 `seq` 恢复连接并增量折叠 projection，不轮询
@@ -18,7 +18,7 @@ Messages 或 Events。`message-query` 仅保留为旧客户端/运行时兼容�
 SSE 服务端通过事件仓库通知唤醒（PostgreSQL `LISTEN/NOTIFY`，内存仓库 channel），心跳只负责保持
 连接，不通过周期性查询发现新事件。
 
-公开 Endpoint Playground 的 conversation SSE 使用 Session `seq`，job SSE 使用 Run
+公开 Endpoint Test API 的 conversation SSE 使用 Session `seq`，job SSE 使用 Run
 `sequence`；两者都接受 `after` 和 `Last-Event-ID`，并通过对应持久仓库的通知机制唤醒。它们共享恢复
 语义，但 Run event 仍是编排事实，不会伪装成 Agent Session message。
 
@@ -89,7 +89,7 @@ Runtime Host adapter 的原生事件仍可按 provider 独立扩展，控制台�
 ### Hosted Agent 会话语义
 
 Conversation 能力与部署模式解耦。Hosted Agent 的一个逻辑 Session 可以包含多个 turn；每个 turn
-在控制面内部物化为独立、不可见于默认 Work Hub 的 `conversation_turn` Issue，以及对应的 Run、
+在控制面内部物化为独立、不可见于默认 Issues 列表的 `conversation_turn` Issue，以及对应的 Run、
 AgentTask 和 ExecutionAttempt。ExecutionAttempt 保存稳定 `sessionId`、本轮 `turnId` 和 provider 返回的
 不透明 `providerSessionId`。下一轮仅在 Runtime Host 的 provider descriptor 声明 `resume=true` 时把该 ID
 交给 Codex、Claude Code、Qoder 或 QwenPaw adapter 执行原生 resume；OpenClaw 等未声明 resume 的
@@ -106,15 +106,21 @@ attempt 完成投影。
 
 ## 统一交互
 
-所有会话入口共享 `ConversationSurface`：
+所有会话入口共享 `ConversationSurface`。面向最终用户的直接会话入口是 `Chat`；统一导航中的
+Sessions 提供全局运维视图，Agent Detail 仍保留该 Agent 范围内的只读 Session 投影；
+Endpoint Detail 中保留经过真实 Gateway 的 `Test API`：
 
 - 默认显示 Conversation，可切换到完整 Events；
 - assistant Markdown、user bubble、tool input/output card 使用同一套样式；
 - 原始 event payload 可逐条展开；
-- live chat 与 Playground 共用底部 composer；只读 Session 不渲染 composer；
+- Chat 与 Endpoint Test API 共用底部 composer；只读 Session 不渲染 composer；
 - Conversation 与 Events 来自同一份 event history，加载更早内容推进同一个事件游标；
 - 首次加载 history tail，之后通过 `/api/v1/sessions/{id}/events/stream` 实时增量更新；
-- Playground 返回稳定的 control-plane `sessionRef`，后续事件订阅和 Session 链接不再依赖可能歧义的 provider session id。
+- Chat 引用稳定的 control-plane `sessionRef`，后续事件订阅不再依赖可能歧义的 provider session id；
+- Chat 是独立的用户级聚合，保存 creator、title、pinned、archived 等产品状态；Runtime Session
+  继续只表达绑定、实例、provider session、phase 和事件等运行状态；
+- 每个 Chat turn 可以在当前调度实现中使用隐藏的 `conversation_turn` Issue 作为执行载体，
+  但该记录不会进入 Issues 的普通或“全部来源”列表。
 
 当前默认不清理 `session_events`（`--retention-session-events=0`）。后续引入归档或分层存储时，必须
 保持相同的 seq 游标和 history + live 合并契约。

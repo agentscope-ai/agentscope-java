@@ -170,6 +170,11 @@ func (r *collaborationRepo) ListIssues(_ context.Context, filter store.IssueFilt
 		if filter.Kind != "" && issue.Kind != filter.Kind || filter.Visibility != "" && issue.Visibility != filter.Visibility {
 			continue
 		}
+		// Conversation turns are an internal execution carrier for Chat, not
+		// user-facing Issues. They are only available through an explicit kind query.
+		if filter.Kind == "" && issue.Kind == controlmodel.IssueKindConversationTurn {
+			continue
+		}
 		if filter.ParentID != nil && (issue.ParentIssueID == nil || *issue.ParentIssueID != *filter.ParentID) {
 			continue
 		}
@@ -376,7 +381,7 @@ func (r *collaborationRepo) CreateComment(_ context.Context, req store.CreateCom
 				Actor: comment.Author, Title: title, Body: comment.Content,
 				DedupeKey: itemType + ":" + comment.ID.String() + ":" + target.TargetRef, CreatedAt: now}
 			r.s.inboxItems[item.ID] = item
-		} else if target.AgentRef == comment.Author.Ref && comment.Author.Type == controlmodel.ActorAgent && r.sameCommentSourceRoleLocked(comment, target) {
+		} else if target.AgentRef == comment.Author.Ref && comment.Author.Type == controlmodel.ActorAgent {
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
 		} else {
 			task, coalesced := r.routeTaskLocked(issue, comment, target)
@@ -443,14 +448,6 @@ func (r *collaborationRepo) attentionRecipientLocked(issue *controlmodel.Issue, 
 		return issue.Creator.Ref
 	}
 	return ""
-}
-
-func (r *collaborationRepo) sameCommentSourceRoleLocked(comment *controlmodel.Comment, target store.CommentTarget) bool {
-	if comment.SourceTaskID == nil {
-		return true
-	}
-	source := r.s.agentTasks[*comment.SourceTaskID]
-	return source == nil || sameTaskRole(source, target)
 }
 
 func (r *collaborationRepo) GetComment(_ context.Context, id uuid.UUID) (*controlmodel.Comment, error) {
@@ -1056,7 +1053,7 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 				Actor: created.Author, Title: title, Body: created.Content,
 				DedupeKey: itemType + ":" + created.ID.String() + ":" + target.TargetRef, CreatedAt: now}
 			r.s.inboxItems[item.ID] = item
-		} else if target.AgentRef == task.AgentRef && sameTaskRole(task, target) {
+		} else if target.AgentRef == task.AgentRef {
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
 		} else {
 			routedTask, coalesced := r.routeTaskLocked(issue, created, target)
@@ -1123,7 +1120,7 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 		if !controlmodel.CanTransitionRunNode(node.State, next) {
 			return store.ErrConflict
 		}
-		node.State, node.Output, node.Version, node.UpdatedAt = next, cloneJSON(output), node.Version+1, now
+		node.State, node.Output, node.WaitReason, node.Version, node.UpdatedAt = next, cloneJSON(output), "", node.Version+1, now
 		if next == controlmodel.RunNodeSucceeded {
 			node.CompletedAt = &now
 		}
@@ -1158,8 +1155,8 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 		}
 	}
 	if run.State == controlmodel.RunRunning || run.State == controlmodel.RunWaiting {
-		run.State, run.Output, run.Version, run.UpdatedAt, run.CompletedAt = controlmodel.RunSucceeded,
-			cloneJSON(output), run.Version+1, now, &now
+		run.State, run.Output, run.WaitReason, run.Version, run.UpdatedAt, run.CompletedAt = controlmodel.RunSucceeded,
+			cloneJSON(output), "", run.Version+1, now, &now
 		appendEvent(&controlmodel.RunEvent{Type: "run.succeeded",
 			IdempotencyKey: "run-succeeded:" + run.ID.String(), CausationID: task.CausationID,
 			CorrelationID: task.CorrelationID})
@@ -1183,13 +1180,6 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 		}
 	}
 	return nil
-}
-
-func sameTaskRole(task *controlmodel.AgentTask, target store.CommentTarget) bool {
-	if task.TeamID == nil && target.TeamID == nil {
-		return task.TeamRole == target.TeamRole
-	}
-	return task.TeamID != nil && target.TeamID != nil && *task.TeamID == *target.TeamID && task.TeamRole == target.TeamRole
 }
 
 func (r *collaborationRepo) FailAgentTask(_ context.Context, id uuid.UUID, expectedVersion int64, code, message string) (*controlmodel.AgentTask, error) {
@@ -1917,7 +1907,8 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 	if source != nil {
 		if run := r.s.runs[source.OrchestrationRunID]; run != nil && !controlmodel.IsOrchestrationRunTerminal(run.State) {
 			task.OrchestrationRunID = source.OrchestrationRunID
-			if retryOf != nil || source.IssueID == issue.ID && source.AgentRef == agentRef && source.TeamRole == teamRole {
+			if retryOf != nil || source.AgentRef == agentRef && source.TeamRole == teamRole &&
+				(source.IssueID == issue.ID || source.LeaderTask && leader) {
 				task.RunNodeID = source.RunNodeID
 			}
 		} else if source.OrchestrationRunID != uuid.Nil {

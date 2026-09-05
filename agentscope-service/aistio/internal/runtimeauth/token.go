@@ -13,10 +13,19 @@ import (
 	"time"
 )
 
-const Prefix = "asrh_"
+const (
+	Prefix           = "asrh_"
+	EnrollmentPrefix = "asre_"
+)
 
 type Claims struct {
 	HostKey   string `json:"hostKey"`
+	Tenant    string `json:"tenant"`
+	Namespace string `json:"namespace"`
+	ExpiresAt int64  `json:"expiresAt"`
+}
+
+type EnrollmentClaims struct {
 	Tenant    string `json:"tenant"`
 	Namespace string `json:"namespace"`
 	ExpiresAt int64  `json:"expiresAt"`
@@ -48,24 +57,57 @@ func (m Manager) Mint(hostKey, tenant, namespace string, now time.Time) (string,
 	return Prefix + encoded + "." + base64.RawURLEncoding.EncodeToString(signature), claims, nil
 }
 
+// MintEnrollment creates a short-lived bootstrap credential whose only
+// authority is enrolling Runtime Hosts into the embedded tenant/namespace.
+func (m Manager) MintEnrollment(tenant, namespace string, now time.Time) (string, EnrollmentClaims, error) {
+	if len(m.Secret) < 32 {
+		return "", EnrollmentClaims{}, fmt.Errorf("runtime credential secret must contain at least 32 bytes")
+	}
+	if strings.TrimSpace(tenant) == "" || strings.TrimSpace(namespace) == "" {
+		return "", EnrollmentClaims{}, fmt.Errorf("tenant and namespace are required")
+	}
+	claims := EnrollmentClaims{Tenant: tenant, Namespace: namespace, ExpiresAt: now.Add(15 * time.Minute).Unix()}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", EnrollmentClaims{}, err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	signature := m.signEnrollment(encoded)
+	return EnrollmentPrefix + encoded + "." + base64.RawURLEncoding.EncodeToString(signature), claims, nil
+}
+
+func (m Manager) VerifyEnrollment(token string, now time.Time) (EnrollmentClaims, error) {
+	if len(m.Secret) < 32 || !strings.HasPrefix(token, EnrollmentPrefix) {
+		return EnrollmentClaims{}, fmt.Errorf("invalid runtime enrollment token")
+	}
+	parts := strings.Split(strings.TrimPrefix(token, EnrollmentPrefix), ".")
+	if len(parts) != 2 {
+		return EnrollmentClaims{}, fmt.Errorf("invalid runtime enrollment token")
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || !hmac.Equal(signature, m.signEnrollment(parts[0])) {
+		return EnrollmentClaims{}, fmt.Errorf("invalid runtime enrollment token")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return EnrollmentClaims{}, fmt.Errorf("invalid runtime enrollment token")
+	}
+	var claims EnrollmentClaims
+	if json.Unmarshal(payload, &claims) != nil || claims.Tenant == "" || claims.Namespace == "" {
+		return EnrollmentClaims{}, fmt.Errorf("invalid runtime enrollment token")
+	}
+	if claims.ExpiresAt <= now.Unix() {
+		return EnrollmentClaims{}, fmt.Errorf("runtime enrollment token expired")
+	}
+	return claims, nil
+}
+
 func (m Manager) Verify(token string, now time.Time) (Claims, error) {
 	if len(m.Secret) < 32 || !strings.HasPrefix(token, Prefix) {
 		return Claims{}, fmt.Errorf("invalid runtime credential")
 	}
-	parts := strings.Split(strings.TrimPrefix(token, Prefix), ".")
-	if len(parts) != 2 {
-		return Claims{}, fmt.Errorf("invalid runtime credential")
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil || !hmac.Equal(signature, m.sign(parts[0])) {
-		return Claims{}, fmt.Errorf("invalid runtime credential")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return Claims{}, fmt.Errorf("invalid runtime credential")
-	}
-	var claims Claims
-	if json.Unmarshal(payload, &claims) != nil || claims.HostKey == "" || claims.Tenant == "" || claims.Namespace == "" {
+	claims, encoded, signature, err := parse(token)
+	if err != nil || !hmac.Equal(signature, m.sign(encoded)) {
 		return Claims{}, fmt.Errorf("invalid runtime credential")
 	}
 	if claims.ExpiresAt <= now.Unix() {
@@ -74,8 +116,43 @@ func (m Manager) Verify(token string, now time.Time) (Claims, error) {
 	return claims, nil
 }
 
+// ParseUnverified returns the routing scope embedded in a Runtime Host
+// credential. It is intended only for local client configuration; the control
+// plane must still call Verify before trusting these claims.
+func ParseUnverified(token string) (Claims, error) {
+	claims, _, _, err := parse(token)
+	return claims, err
+}
+
+func parse(token string) (Claims, string, []byte, error) {
+	if !strings.HasPrefix(token, Prefix) {
+		return Claims{}, "", nil, fmt.Errorf("invalid runtime credential")
+	}
+	parts := strings.Split(strings.TrimPrefix(token, Prefix), ".")
+	if len(parts) != 2 {
+		return Claims{}, "", nil, fmt.Errorf("invalid runtime credential")
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return Claims{}, "", nil, fmt.Errorf("invalid runtime credential")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return Claims{}, "", nil, fmt.Errorf("invalid runtime credential")
+	}
+	var claims Claims
+	if json.Unmarshal(payload, &claims) != nil || claims.HostKey == "" || claims.Tenant == "" || claims.Namespace == "" {
+		return Claims{}, "", nil, fmt.Errorf("invalid runtime credential")
+	}
+	return claims, parts[0], signature, nil
+}
+
 func (m Manager) sign(payload string) []byte {
 	mac := hmac.New(sha256.New, m.Secret)
 	_, _ = mac.Write([]byte(payload))
 	return mac.Sum(nil)
+}
+
+func (m Manager) signEnrollment(payload string) []byte {
+	return m.sign("runtime-enrollment:" + payload)
 }

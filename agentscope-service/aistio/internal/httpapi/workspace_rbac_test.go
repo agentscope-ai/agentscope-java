@@ -19,8 +19,10 @@ import (
 func TestNavigationAccessDoesNotExposeOperationsWorkspace(t *testing.T) {
 	t.Parallel()
 
-	for _, role := range []string{"operator", "agent_developer"} {
-		role := role
+	for role, expectedDefault := range map[string]string{
+		"operator": workspaceWorkHub, "agent_developer": workspaceAgentCenter,
+	} {
+		role, expectedDefault := role, expectedDefault
 		t.Run(role, func(t *testing.T) {
 			t.Parallel()
 			recorder := httptest.NewRecorder()
@@ -36,8 +38,8 @@ func TestNavigationAccessDoesNotExposeOperationsWorkspace(t *testing.T) {
 			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 				t.Fatalf("decode navigation response: %v", err)
 			}
-			if response.DefaultArea != workspaceAgentCenter {
-				t.Fatalf("default area = %q, want %q", response.DefaultArea, workspaceAgentCenter)
+			if response.DefaultArea != expectedDefault {
+				t.Fatalf("default area = %q, want %q", response.DefaultArea, expectedDefault)
 			}
 			for _, area := range response.Areas {
 				if area == workspaceOperations {

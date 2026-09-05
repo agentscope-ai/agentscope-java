@@ -76,8 +76,8 @@ export default function IssuesPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [urlParams, setUrlParams] = useSearchParams();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [title, setTitle] = useState(() => urlParams.get("title") ?? "");
+  const [description, setDescription] = useState(() => urlParams.get("description") ?? "");
   const [priority, setPriority] = useState("normal");
   const [assigneeRef, setAssigneeRef] = useState("");
   const [assigneeType, setAssigneeType] = useState("agent");
@@ -111,6 +111,9 @@ export default function IssuesPage() {
       priority,
       assigneeType: assigneeRef ? assigneeType : undefined,
       assigneeRef: assigneeRef || undefined,
+      sourceType: urlParams.get("fromChat") ? "chat" : undefined,
+      sourceRef: urlParams.get("fromChat") || undefined,
+      contextRefs: urlParams.get("fromChat") ? { chatId: urlParams.get("fromChat") } : undefined,
     }),
     onSuccess: (data) => {
       setTitle("");
@@ -141,6 +144,14 @@ export default function IssuesPage() {
     setUrlParams(next, { replace: true });
   }
 
+  function closeCreate() {
+    const next = new URLSearchParams(urlParams);
+    ["new", "fromChat", "title", "description"].forEach((name) => next.delete(name));
+    setUrlParams(next, { replace: true });
+    setTitle("");
+    setDescription("");
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault();
     if (title.trim()) create.mutate();
@@ -149,7 +160,7 @@ export default function IssuesPage() {
   const emptyDescription = source === "endpoint_jobs"
     ? "No Endpoint Job has created an operational issue in this scope."
     : source === "playground_jobs"
-      ? "No direct Playground Job has created an operational issue in this scope."
+      ? "No legacy direct test job has created an operational issue in this scope."
       : search
         ? "Try another search or clear the active filters."
         : view === "archived"
@@ -204,7 +215,7 @@ export default function IssuesPage() {
           >
             <option value="work">Work Hub</option>
             <option value="endpoint_jobs">Endpoint jobs</option>
-            <option value="playground_jobs">Playground jobs</option>
+            <option value="playground_jobs">Legacy test jobs</option>
             <option value="all">All sources</option>
           </select>
         </div>
@@ -251,7 +262,7 @@ export default function IssuesPage() {
                         <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-slate-400">
                           <span>{issue.identifier || issue.id.slice(0, 8)}</span>
                           {issue.kind === "endpoint_job" && <Badge>Endpoint job</Badge>}
-                          {issue.kind === "playground_job" && <Badge>Playground job</Badge>}
+                          {issue.kind === "playground_job" && <Badge>Legacy test job</Badge>}
                         </div>
                       </td>
                       <td className="px-4 py-4"><Badge tone={priorityTone(issue.priority)} className="capitalize">{issue.priority}</Badge></td>
@@ -283,7 +294,7 @@ export default function IssuesPage() {
         )}
       </WorkPanel>
 
-      <Dialog open={dialogOpen} onOpenChange={(nextOpen) => setParam("new", nextOpen ? "1" : undefined)}>
+      <Dialog open={dialogOpen} onOpenChange={(nextOpen) => nextOpen ? setParam("new", "1") : closeCreate()}>
         <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>Create issue</DialogTitle>
@@ -328,7 +339,7 @@ export default function IssuesPage() {
               </label>
               {create.isError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">Unable to create this issue. Please verify the fields and try again.</p>}
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-                <Button type="button" variant="ghost" onClick={() => setParam("new")}>Cancel</Button>
+                <Button type="button" variant="ghost" onClick={closeCreate}>Cancel</Button>
                 <Button type="submit" disabled={create.isPending || !title.trim()}>
                   {create.isPending ? "Creating…" : "Create issue"}
                 </Button>

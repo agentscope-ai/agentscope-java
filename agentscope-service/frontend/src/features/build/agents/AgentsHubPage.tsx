@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
 import { cn } from '@/lib/utils';
 import { useControlPlaneScope } from '@/app/ScopeContext';
+import { agentDetailPath } from './agentNavigation';
 
 type Filter = 'all' | 'managed' | 'external-application' | 'hosted-runtime' | 'disabled';
 
@@ -60,11 +61,7 @@ export default function AgentsHubPage() {
   }, [agents, filter, query]);
 
   function openAgent(agent: AgentDefinition) {
-    if (agent.runtimeKind === 'managed') {
-      navigate(scope.scopedPath(`/managed/agents/${encodeURIComponent(agent.id)}/settings`));
-      return;
-    }
-    navigate(scope.scopedPath(`/agent-center/agents/${encodeURIComponent(agent.id)}`));
+    navigate(scope.scopedPath(agentDetailPath(agent)));
   }
 
   return (

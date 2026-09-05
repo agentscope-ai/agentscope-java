@@ -19,11 +19,28 @@ func runtimeCmd() *cobra.Command {
 		localRuntimeStatusCmd(),
 		localRuntimeLogsCmd(),
 		localRuntimeProbeCmd(),
+		runtimeEnrollmentTokenCmd(),
 		runtimeDiagnoseCmd(),
 		runtimeHostCmd(),
 		runtimeProfileCmd(),
 		runtimePoolCmd(),
 	)
+	return cmd
+}
+
+func runtimeEnrollmentTokenCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "enrollment-token", Short: "Create scoped Runtime Host enrollment tokens"}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "create",
+		Short: "Create a short-lived enrollment token for `agentscope connect`",
+		RunE: func(*cobra.Command, []string) error {
+			body, err := json.Marshal(map[string]string{"tenant": tenant, "namespace": namespace})
+			if err != nil {
+				return err
+			}
+			return printResponse(doAPI(http.MethodPost, "/api/v1/runtime-host-enrollment-tokens", body))
+		},
+	})
 	return cmd
 }
 

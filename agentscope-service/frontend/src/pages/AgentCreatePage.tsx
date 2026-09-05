@@ -260,7 +260,7 @@ export default function AgentCreatePage() {
           <summary style={S.summary}>Advanced settings</summary>
           <div style={{ ...S.row, paddingLeft: 0, paddingRight: 0 }}>
             <label htmlFor="agent-key" style={S.label}>Agent key</label>
-            <div><input id="agent-key" style={S.input} value={agentKey} onChange={e => { setAgentKeyCustomized(true); setAgentKey(e.target.value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')); }} placeholder="repository-reviewer" /><div style={S.hint}>Stable identity inside the current tenant and namespace.</div></div>
+            <div><input id="agent-key" style={S.input} value={agentKey} onChange={e => { setAgentKeyCustomized(true); setAgentKey(e.target.value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')); }} placeholder="repository-reviewer" /><div style={S.hint}>{scope.selectorVisible ? 'Stable identity inside the current tenant and namespace.' : 'Stable identity for this agent.'}</div></div>
           </div>
           {runtimeKind === 'managed' && <div style={{ ...S.row, paddingLeft: 0, paddingRight: 0 }}>
             <label htmlFor="agent-environment" style={S.label}><FolderKanban size={16} /> Environment</label>

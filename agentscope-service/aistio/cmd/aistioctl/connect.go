@@ -18,12 +18,13 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spring-ai-alibaba/aistio/internal/runtimeauth"
 	"github.com/spring-ai-alibaba/aistio/internal/runtimehost"
 	"golang.org/x/term"
 )
 
 func connectCmd() *cobra.Command {
-	var server, credential, providers, runtimeHostBinary, pool, workspaceRoot, stateRoot, username string
+	var server, credential, enrollmentToken, providers, runtimeHostBinary, pool, workspaceRoot, stateRoot, username string
 	var capacity int
 	var noStart, foreground bool
 	cmd := &cobra.Command{
@@ -52,10 +53,12 @@ func connectCmd() *cobra.Command {
 				return err
 			}
 			config.Version = localRuntimeConfigVersion
-			if cmd.Root().PersistentFlags().Changed("tenant") || config.Tenant == "" {
+			tenantExplicit := cmd.Root().PersistentFlags().Changed("tenant")
+			namespaceExplicit := cmd.Root().PersistentFlags().Changed("namespace")
+			if tenantExplicit {
 				config.Tenant = tenant
 			}
-			if cmd.Root().PersistentFlags().Changed("namespace") || config.Namespace == "" {
+			if namespaceExplicit {
 				config.Namespace = namespace
 			}
 			if pool != "" {
@@ -86,19 +89,66 @@ func connectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			hostKey, identityErr := runtimehost.ResolveHostKey("", config.StateRoot)
+			if identityErr != nil {
+				return identityErr
+			}
 			config.Credential = firstNonBlank(credential, os.Getenv("AGENTSCOPE_RUNTIME_TOKEN"),
 				os.Getenv("AISTIO_INTERNAL_TOKEN"), os.Getenv("BUILDER_INTERNAL_TOKEN"))
+			enrollmentCredential := firstNonBlank(enrollmentToken, os.Getenv("AGENTSCOPE_ENROLLMENT_TOKEN"))
+			if strings.HasPrefix(config.Credential, runtimeauth.EnrollmentPrefix) && enrollmentCredential == "" {
+				enrollmentCredential, config.Credential = config.Credential, ""
+			}
+			if config.Credential != "" && enrollmentCredential != "" {
+				return fmt.Errorf("provide an enrollment token or a Runtime Host credential, not both")
+			}
+			if strings.HasPrefix(config.Credential, runtimeauth.Prefix) {
+				claims, parseErr := runtimeauth.ParseUnverified(config.Credential)
+				if parseErr != nil {
+					return parseErr
+				}
+				if claims.HostKey != hostKey {
+					return fmt.Errorf("Runtime Host credential belongs to %q, but this machine is %q", claims.HostKey, hostKey)
+				}
+				if (tenantExplicit && tenant != claims.Tenant) || (namespaceExplicit && namespace != claims.Namespace) {
+					return fmt.Errorf("requested tenant/namespace does not match the Runtime Host credential scope %s/%s", claims.Tenant, claims.Namespace)
+				}
+				config.Tenant, config.Namespace = claims.Tenant, claims.Namespace
+			}
+			if enrollmentCredential != "" {
+				enrollment, exchangeErr := exchangeRuntimeHostEnrollmentToken(cmd.Context(), config.ControlPlane,
+					enrollmentCredential, hostKey)
+				if exchangeErr != nil {
+					return exchangeErr
+				}
+				if (tenantExplicit && enrollment.Tenant != tenant) || (namespaceExplicit && enrollment.Namespace != namespace) {
+					return fmt.Errorf("control plane assigned scope %s/%s, which does not match the requested scope", enrollment.Tenant, enrollment.Namespace)
+				}
+				config.Credential = enrollment.RuntimeToken
+				config.Tenant, config.Namespace = enrollment.Tenant, enrollment.Namespace
+			}
 			platformToken := apiToken
 			if config.Credential == "" && platformToken == "" {
 				platformToken, err = promptPlatformLogin(cmd.Context(), config.ControlPlane, username)
 			}
 			if config.Credential == "" && platformToken != "" {
-				hostKey, identityErr := runtimehost.ResolveHostKey("", config.StateRoot)
-				if identityErr != nil {
-					return identityErr
+				requestedTenant, requestedNamespace := "", ""
+				if tenantExplicit {
+					requestedTenant = tenant
 				}
-				config.Credential, err = enrollRuntimeHostCredential(cmd.Context(), config.ControlPlane,
-					platformToken, hostKey, config.Tenant, config.Namespace)
+				if namespaceExplicit {
+					requestedNamespace = namespace
+				}
+				enrollment, enrollErr := enrollRuntimeHostCredential(cmd.Context(), config.ControlPlane,
+					platformToken, hostKey, requestedTenant, requestedNamespace)
+				if enrollErr != nil {
+					return enrollErr
+				}
+				if (tenantExplicit && enrollment.Tenant != tenant) || (namespaceExplicit && enrollment.Namespace != namespace) {
+					return fmt.Errorf("control plane assigned scope %s/%s, which does not match the requested scope", enrollment.Tenant, enrollment.Namespace)
+				}
+				config.Credential = enrollment.RuntimeToken
+				config.Tenant, config.Namespace = enrollment.Tenant, enrollment.Namespace
 			}
 			if err != nil {
 				return err
@@ -127,7 +177,8 @@ func connectCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&server, "server", "", "AgentScope control-plane URL (auto-detected locally when omitted)")
-	cmd.Flags().StringVar(&credential, "token", "", "Runtime enrollment credential (prefer AGENTSCOPE_RUNTIME_TOKEN)")
+	cmd.Flags().StringVar(&enrollmentToken, "enrollment-token", "", "Short-lived scoped enrollment token (prefer AGENTSCOPE_ENROLLMENT_TOKEN)")
+	cmd.Flags().StringVar(&credential, "token", "", "Existing Runtime Host credential (prefer AGENTSCOPE_RUNTIME_TOKEN)")
 	cmd.Flags().StringVar(&username, "username", os.Getenv("AGENTSCOPE_USERNAME"), "AgentScope username for interactive connection")
 	cmd.Flags().StringVar(&providers, "providers", "auto", "Providers to expose: auto or codex,claude-code,qoder,qwenpaw,openclaw")
 	cmd.Flags().StringVar(&runtimeHostBinary, "runtime-host-binary", "", "Path to aistio-runtime-host")
@@ -233,39 +284,75 @@ func loginPlatformUser(ctx context.Context, server, username, password string) (
 	return body.Token, nil
 }
 
-func enrollRuntimeHostCredential(ctx context.Context, server, platformToken, hostKey, tenant, namespace string) (string, error) {
+type runtimeHostEnrollment struct {
+	RuntimeToken string `json:"runtimeToken"`
+	HostKey      string `json:"hostKey"`
+	Tenant       string `json:"tenant"`
+	Namespace    string `json:"namespace"`
+}
+
+func exchangeRuntimeHostEnrollmentToken(ctx context.Context, server, enrollmentToken, hostKey string) (runtimeHostEnrollment, error) {
+	payload, err := json.Marshal(map[string]string{"hostKey": hostKey})
+	if err != nil {
+		return runtimeHostEnrollment{}, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(server, "/")+"/api/v1/runtime-host-enrollments/exchange", bytes.NewReader(payload))
+	if err != nil {
+		return runtimeHostEnrollment{}, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+enrollmentToken)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return runtimeHostEnrollment{}, fmt.Errorf("exchange Runtime Host enrollment token: %w", err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return runtimeHostEnrollment{}, err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return runtimeHostEnrollment{}, fmt.Errorf("exchange Runtime Host enrollment token: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(data)))
+	}
+	var body runtimeHostEnrollment
+	if json.Unmarshal(data, &body) != nil || body.RuntimeToken == "" || body.Tenant == "" || body.Namespace == "" {
+		return runtimeHostEnrollment{}, fmt.Errorf("exchange Runtime Host enrollment token: response did not contain a runtime token and scope")
+	}
+	return body, nil
+}
+
+func enrollRuntimeHostCredential(ctx context.Context, server, platformToken, hostKey, tenant, namespace string) (runtimeHostEnrollment, error) {
 	payload, err := json.Marshal(map[string]string{
 		"hostKey": hostKey, "tenant": tenant, "namespace": namespace,
 	})
 	if err != nil {
-		return "", err
+		return runtimeHostEnrollment{}, err
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		strings.TrimRight(server, "/")+"/api/v1/runtime-host-enrollments", bytes.NewReader(payload))
 	if err != nil {
-		return "", err
+		return runtimeHostEnrollment{}, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+platformToken)
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return "", fmt.Errorf("create Runtime Host enrollment: %w", err)
+		return runtimeHostEnrollment{}, fmt.Errorf("create Runtime Host enrollment: %w", err)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return "", err
+		return runtimeHostEnrollment{}, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("create Runtime Host enrollment: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(data)))
+		return runtimeHostEnrollment{}, fmt.Errorf("create Runtime Host enrollment: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(data)))
 	}
-	var body struct {
-		RuntimeToken string `json:"runtimeToken"`
+	var body runtimeHostEnrollment
+	if json.Unmarshal(data, &body) != nil || body.RuntimeToken == "" || body.Tenant == "" || body.Namespace == "" {
+		return runtimeHostEnrollment{}, fmt.Errorf("create Runtime Host enrollment: response did not contain a runtime token and scope")
 	}
-	if json.Unmarshal(data, &body) != nil || body.RuntimeToken == "" {
-		return "", fmt.Errorf("create Runtime Host enrollment: response did not contain a runtime token")
-	}
-	return body.RuntimeToken, nil
+	return body, nil
 }
 
 func firstNonBlank(values ...string) string {

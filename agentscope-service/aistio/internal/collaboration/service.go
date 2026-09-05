@@ -134,6 +134,10 @@ func (s *Service) ValidateIssueTransition(ctx context.Context, id uuid.UUID, exp
 }
 
 func (s *Service) validateAcceptance(ctx context.Context, issue *controlmodel.Issue, actor controlmodel.Actor) error {
+	return s.validateAcceptanceIgnoringTask(ctx, issue, actor, nil)
+}
+
+func (s *Service) validateAcceptanceIgnoringTask(ctx context.Context, issue *controlmodel.Issue, actor controlmodel.Actor, ignoredTaskID *uuid.UUID) error {
 	if team := s.teamForIssueOrTask(ctx, issue, nil); team != nil && team.Policy.RequireReview && actor.Type != controlmodel.ActorHuman {
 		return fmt.Errorf("acceptance blocked: Team policy requires human review")
 	}
@@ -163,6 +167,9 @@ func (s *Service) validateAcceptance(ctx context.Context, issue *controlmodel.Is
 		return err
 	}
 	for _, task := range tasks {
+		if ignoredTaskID != nil && task.ID == *ignoredTaskID {
+			continue
+		}
 		if !controlmodel.IsAgentTaskTerminal(task.Status) {
 			return fmt.Errorf("acceptance blocked: agent task %s is %s", task.ID, task.Status)
 		}
@@ -203,6 +210,52 @@ func (s *Service) validateAcceptance(ctx context.Context, issue *controlmodel.Is
 		return fmt.Errorf("acceptance blocked: orchestration run %s is %s", runs[0].ID, runs[0].State)
 	}
 	return nil
+}
+
+// AcceptIssueFromTask lets a Team leader follow-up accept the delegated child
+// Issue represented by that task. The current task is intentionally ignored by
+// the acceptance guard because accepting the work is part of completing it.
+func (s *Service) AcceptIssueFromTask(ctx context.Context, taskID uuid.UUID, reason string) (*controlmodel.Issue, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
+		return nil, fmt.Errorf("only an active Team leader task can accept a delegated Issue")
+	}
+	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
+	if err != nil {
+		return nil, err
+	}
+	if issue.ParentIssueID == nil {
+		return nil, fmt.Errorf("only a delegated child Issue can be accepted from a task")
+	}
+	team, err := s.TeamForTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	if team.Policy.RequireReview {
+		return nil, fmt.Errorf("acceptance blocked: Team policy requires human review")
+	}
+	if issue.Status == controlmodel.IssueDone {
+		return issue, nil
+	}
+	if issue.Status != controlmodel.IssueInProgress && issue.Status != controlmodel.IssueInReview {
+		issue, err = s.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+			controlmodel.IssueInProgress, actor, "leader reviewing delegated result")
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err = s.validateAcceptanceIgnoringTask(ctx, issue, actor, &task.ID); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "accepted by Team leader"
+	}
+	return s.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+		controlmodel.IssueDone, actor, reason)
 }
 
 // acceptanceCriteria is intentionally small and portable across runtimes.
@@ -520,6 +573,10 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 	if err := ValidateContentPolicy(policy, req.Content); err != nil {
 		return nil, err
 	}
+	commentType := req.Type
+	if commentType == "" {
+		commentType = controlmodel.CommentGeneral
+	}
 	mentions := make([]controlmodel.Mention, 0, len(req.Mentions))
 	targets := make([]store.CommentTarget, 0, len(req.Mentions)+1)
 	for _, target := range req.Mentions {
@@ -604,6 +661,16 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 	if policy.MaxFanout > 0 && len(targets) > int(policy.MaxFanout) {
 		return nil, fmt.Errorf("Team mention fanout budget exceeded")
 	}
+	if len(targets) == 0 && commentType == controlmodel.CommentResult && req.SourceTaskID != nil {
+		source, loadErr := s.Store.Collaboration().GetAgentTask(ctx, *req.SourceTaskID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		targets, err = s.completionTargets(ctx, source, req.ParentID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if len(targets) == 0 {
 		if req.ParentID != nil {
 			parent, loadErr := s.Store.Collaboration().GetComment(ctx, *req.ParentID)
@@ -628,10 +695,6 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 				targets = append(targets, s.guardTarget(ctx, issue, req.SourceTaskID, resolved))
 			}
 		}
-	}
-	commentType := req.Type
-	if commentType == "" {
-		commentType = controlmodel.CommentGeneral
 	}
 	result, err := s.Store.Collaboration().CreateComment(ctx, store.CreateCommentRequest{
 		Comment: &controlmodel.Comment{IssueID: issue.ID, ParentID: req.ParentID,
@@ -777,7 +840,7 @@ func (s *Service) guardTarget(ctx context.Context, issue *controlmodel.Issue, so
 				target.Blocked, target.ReasonCode = true, "max_hops_exceeded"
 				return target
 			}
-			if source.AgentRef == target.AgentRef && sameCollaborationRole(source, target) {
+			if source.AgentRef == target.AgentRef {
 				target.Blocked, target.ReasonCode = true, "self_trigger"
 				return target
 			}
@@ -798,13 +861,6 @@ func (s *Service) guardTarget(ctx context.Context, issue *controlmodel.Issue, so
 		}
 	}
 	return target
-}
-
-func sameCollaborationRole(task *controlmodel.AgentTask, target store.CommentTarget) bool {
-	if task.TeamID == nil && target.TeamID == nil {
-		return task.TeamRole == target.TeamRole
-	}
-	return task.TeamID != nil && target.TeamID != nil && *task.TeamID == *target.TeamID && task.TeamRole == target.TeamRole
 }
 
 func (s *Service) PreviewCommentRoutes(ctx context.Context, issueID uuid.UUID, parentID *uuid.UUID, author controlmodel.Actor, mentions []MentionTarget) ([]store.CommentTarget, error) {
@@ -913,7 +969,7 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 		}
 		envelope.AvailableActions = append(envelope.AvailableActions, "team.get")
 		if task.LeaderTask {
-			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "run.node.complete", "run.node.fail", "run.replan")
+			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "issue.accept", "run.node.complete", "run.node.fail", "run.replan")
 		}
 	}
 	envelope.Artifacts, err = s.Store.Collaboration().ListArtifacts(ctx, task.Tenant, task.Namespace, "issue", task.IssueID.String())
@@ -944,6 +1000,23 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 		}
 	}
 	var output *controlmodel.Comment
+	if completion.ResponseCommentID == nil {
+		comments, listErr := s.listAllComments(ctx, task.IssueID)
+		if listErr != nil {
+			return nil, nil, listErr
+		}
+		for _, comment := range comments {
+			if comment.DeletedAt == nil && comment.Type == controlmodel.CommentResult &&
+				comment.SourceTaskID != nil && *comment.SourceTaskID == task.ID &&
+				(output == nil || comment.CreatedAt.After(output.CreatedAt)) {
+				output = comment
+			}
+		}
+		if output != nil {
+			id := output.ID
+			completion.ResponseCommentID = &id
+		}
+	}
 	if completion.ResponseCommentID == nil {
 		content := strings.TrimSpace(completion.Summary)
 		if content == "" && len(completion.Result) > 0 {
@@ -1090,10 +1163,14 @@ func (s *Service) completionTargets(ctx context.Context, task *controlmodel.Agen
 	if task.ParentTaskID != nil {
 		parent, err := s.Store.Collaboration().GetAgentTask(ctx, *task.ParentTaskID)
 		if err == nil {
+			routeType := controlmodel.RouteFollowUp
+			if parent.LeaderTask {
+				routeType = controlmodel.RouteTeamLeader
+			}
 			return []store.CommentTarget{{TargetType: controlmodel.AssigneeAgent, TargetRef: parent.AgentRef,
 				AgentRef: parent.AgentRef, TeamID: parent.TeamID, TeamRole: parent.TeamRole,
 				ParentTaskID: task.ParentTaskID,
-				RouteType:    controlmodel.RouteFollowUp}}, nil
+				RouteType:    routeType}}, nil
 		}
 	}
 	if task.TeamID != nil && !task.LeaderTask {

@@ -1609,6 +1609,9 @@ func (s *Server) uploadArtifact(c *gin.Context) {
 	}
 	defer file.Close()
 	tenant, namespace := c.PostForm("tenant"), c.PostForm("namespace")
+	if s.scopeMode == ScopeModeSingle {
+		tenant, namespace = s.defaultTenant, s.defaultNamespace
+	}
 	uploader := humanActor(c, s)
 	var sourceTaskID *uuid.UUID
 	var artifactPolicy controlmodel.TeamPolicy

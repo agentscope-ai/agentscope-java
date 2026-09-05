@@ -143,7 +143,7 @@ func (r *collaborationRepo) CreateComment(ctx context.Context, req store.CreateC
 				created.Content, itemType+":"+created.ID.String()+":"+target.TargetRef); err != nil {
 				return nil, err
 			}
-		case target.AgentRef == created.Author.Ref && created.Author.Type == controlmodel.ActorAgent && (sourceTask == nil || sameAgentTaskRole(sourceTask, target)):
+		case target.AgentRef == created.Author.Ref && created.Author.Type == controlmodel.ActorAgent:
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
 		default:
 			task, _, coalesced, err := routeAgentTaskInputTx(ctx, tx, issue, created, target)

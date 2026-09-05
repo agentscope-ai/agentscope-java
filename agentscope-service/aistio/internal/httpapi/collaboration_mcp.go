@@ -81,12 +81,13 @@ func collaborationMCPTools() []mcpTool {
 		{Name: "issue.comment.list", Description: "Read Issue discussion roots, a thread, or its tail.", InputSchema: object(map[string]any{"issueId": stringProp, "rootsOnly": map[string]any{"type": "boolean"}, "threadId": stringProp, "tail": map[string]any{"type": "integer", "minimum": 1, "maximum": 500}})},
 		{Name: "issue.comment.add", Description: "Add an attributable Comment and route structured mentions.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "type": stringProp, "mentions": mentions}, "content")},
 		{Name: "issue.child.create", Description: "Create child work from an active Team leader task.", InputSchema: object(map[string]any{"title": stringProp, "description": stringProp, "priority": stringProp, "assigneeType": stringProp, "assigneeRef": stringProp, "acceptanceCriteria": map[string]any{"type": "object"}}, "title")},
+		{Name: "issue.accept", Description: "Accept this delegated child Issue from an active Team leader follow-up after its worker result has converged.", InputSchema: object(map[string]any{"reason": stringProp})},
 		{Name: "artifact.upload", Description: "Upload base64 bytes into shared artifact storage and link them to this task or Issue.", InputSchema: object(map[string]any{"filename": stringProp, "contentBase64": stringProp, "contentType": stringProp, "targetType": stringProp, "targetRef": stringProp}, "filename", "contentBase64")},
 		{Name: "artifact.download", Description: "Download a task-visible Artifact as base64 bytes.", InputSchema: object(map[string]any{"artifactId": stringProp}, "artifactId")},
 		{Name: "task.get", Description: "Read this AgentTask and its input states.", InputSchema: object(map[string]any{"taskId": stringProp})},
 		{Name: "task.progress", Description: "Write a progress Comment for this AgentTask.", InputSchema: object(map[string]any{"content": stringProp, "mentions": mentions}, "content")},
-		{Name: "task.respond", Description: "Write a result Comment attributed to this AgentTask.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
-		{Name: "task.complete", Description: "Complete this AgentTask and reconcile every input.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids})},
+		{Name: "task.respond", Description: "Write the result Comment for this AgentTask. A later task.complete call reuses it instead of publishing a duplicate.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
+		{Name: "task.complete", Description: "Complete this AgentTask, reconcile every input, and reuse any result previously written by task.respond.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids})},
 		{Name: "task.fail", Description: "Fail this AgentTask with a durable error code and message.", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
 		{Name: "team.get", Description: "Read the Team roster, roles, instructions, and policy for this task.", InputSchema: object(map[string]any{})},
 		{Name: "approval.request", Description: "Request human approval for this Issue, task, or its ExecutionAttempt.", InputSchema: object(map[string]any{"targetType": stringProp, "targetRef": stringProp, "approverRef": stringProp, "reason": stringProp}, "targetType", "targetRef", "approverRef")},
@@ -198,6 +199,9 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 			Title: stringArg(args, "title"), Description: stringArg(args, "description"), Priority: stringArg(args, "priority"),
 			AssigneeType: controlmodel.AssigneeType(stringArg(args, "assigneeType")), AssigneeRef: stringArg(args, "assigneeRef"), AcceptanceCriteria: criteria})
 		return map[string]any{"issue": issue, "agentTask": childTask}, err
+	case "issue.accept":
+		issue, err := svc.AcceptIssueFromTask(ctx, task.ID, stringArg(args, "reason"))
+		return map[string]any{"issue": issue}, err
 	case "artifact.upload":
 		return s.uploadMCPArtifact(ctx, task, args)
 	case "artifact.download":

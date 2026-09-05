@@ -28,13 +28,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { safeEndpointOwnerPath } from './endpointNavigation';
 
 type Tab = 'overview' | 'contract' | 'security' | 'playground' | 'invocations' | 'releases' | 'target';
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'contract', label: 'Contract' },
   { id: 'security', label: 'Security' },
-  { id: 'playground', label: 'Playground' },
+  { id: 'playground', label: 'Test API' },
   { id: 'invocations', label: 'Invocations' },
   { id: 'releases', label: 'Releases' },
   { id: 'target', label: 'Target' },
@@ -55,6 +56,7 @@ export default function EndpointDetailPage() {
   const tab = tabs.some(item => item.id === requestedTab) ? requestedTab! : 'overview';
   const endpointQuery = useQuery({ queryKey: ['endpoint', endpointId], queryFn: () => getEndpoint(endpointId), enabled: !!endpointId });
   const endpoint = endpointQuery.data?.endpoint;
+  const ownerPath = safeEndpointOwnerPath(params.get('returnTo'), endpoint);
   const readiness = useQuery({
     queryKey: ['endpoint-readiness', endpointId],
     queryFn: () => getEndpointReadiness(endpointId),
@@ -78,6 +80,9 @@ export default function EndpointDetailPage() {
   const [maxPayloadText, setMaxPayloadText] = useState('1048576');
   const [rateRequestsText, setRateRequestsText] = useState('60');
   const [rateWindowText, setRateWindowText] = useState('60');
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [nameText, setNameText] = useState('');
+  const [descriptionText, setDescriptionText] = useState('');
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['endpoint', endpointId] });
@@ -94,7 +99,7 @@ export default function EndpointDetailPage() {
       return archiveEndpoint(endpoint);
     },
     onSuccess: (_, action) => {
-      if (action === 'archive') navigate(scope.scopedPath('/agent-center/endpoints'));
+      if (action === 'archive') navigate(scope.scopedPath(ownerPath));
       else refresh();
     },
     onError: cause => setError(cause instanceof Error ? cause.message : 'Endpoint lifecycle update failed'),
@@ -142,23 +147,31 @@ export default function EndpointDetailPage() {
     onSuccess: refresh,
     onError: cause => setError(cause instanceof Error ? cause.message : 'Rollback failed'),
   });
+  const updateDetails = useMutation({
+    mutationFn: () => {
+      if (!endpoint) throw new Error('Endpoint is unavailable');
+      if (!nameText.trim()) throw new Error('API name is required');
+      return patchEndpoint(endpoint, { name: nameText.trim(), description: descriptionText.trim() });
+    },
+    onSuccess: () => { setEditingDetails(false); setError(''); refresh(); },
+    onError: cause => setError(cause instanceof Error ? cause.message : 'API details update failed'),
+  });
 
   if (endpointQuery.isLoading) return <Page><p className="text-sm text-muted-foreground">Loading Endpoint…</p></Page>;
   if (!endpoint) return <Page><PageHeader title="Endpoint unavailable" /><p className="text-sm text-red-600">{endpointQuery.error instanceof Error ? endpointQuery.error.message : 'Endpoint was not found.'}</p></Page>;
   const invokePath = `/invoke/v1/endpoints/${endpoint.slug}/${endpoint.invocationMode === 'job' ? 'jobs' : 'conversations'}`;
-  const targetPath = endpoint.targetType === 'agent'
-    ? `/agent-center/agents/${endpoint.targetRef}`
-    : endpoint.targetType === 'team' ? '/agent-center/teams' : '/agent-center/workflows';
+  const ownerLabel = endpoint.targetType === 'agent' ? 'Agent' : endpoint.targetType === 'team' ? 'Team' : 'Workflow';
 
   return (
     <Page>
-      <Link className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground" to={scope.scopedPath('/agent-center/endpoints')}><ArrowLeft className="h-4 w-4" />All endpoints</Link>
+      <Link className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground" to={scope.scopedPath(ownerPath)}><ArrowLeft className="h-4 w-4" />Back to {ownerLabel}</Link>
       <PageHeader
         title={endpoint.name}
         description={endpoint.description || 'A stable public API contract governed by AgentScope Service.'}
-        actions={<div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4" />Refresh</Button>{canEdit && endpoint.status !== 'published' && <Button size="sm" disabled={lifecycle.isPending || !readiness.data?.readiness.compatible} onClick={() => lifecycle.mutate('publish')}>Publish</Button>}{canEdit && endpoint.status === 'published' && <Button size="sm" variant="outline" disabled={lifecycle.isPending} onClick={() => lifecycle.mutate('disable')}>Disable new calls</Button>}{canEdit && endpoint.status !== 'archived' && <Button size="sm" variant="destructive" disabled={lifecycle.isPending} onClick={() => { if (window.confirm('Archive this Endpoint? New and existing public access will stop.')) lifecycle.mutate('archive'); }}>Archive</Button>}</div>}
+        actions={<div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4" />Refresh</Button>{canEdit && <Button variant="outline" size="sm" onClick={() => { setEditingDetails(value => !value); setNameText(endpoint.name); setDescriptionText(endpoint.description ?? ''); }}>{editingDetails ? 'Cancel edit' : 'Edit details'}</Button>}{canEdit && endpoint.status !== 'published' && <Button size="sm" disabled={lifecycle.isPending || !readiness.data?.readiness.compatible} onClick={() => lifecycle.mutate('publish')}>Publish</Button>}{canEdit && endpoint.status === 'published' && <Button size="sm" variant="outline" disabled={lifecycle.isPending} onClick={() => lifecycle.mutate('disable')}>Disable new calls</Button>}{canEdit && endpoint.status !== 'archived' && <Button size="sm" variant="destructive" disabled={lifecycle.isPending} onClick={() => { if (window.confirm('Archive this Endpoint? New and existing public access will stop.')) lifecycle.mutate('archive'); }}>Archive</Button>}</div>}
       />
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {editingDetails && <Card><CardHeader><CardTitle>Edit API details</CardTitle><CardDescription>The public slug remains stable; name and description can change without creating a release.</CardDescription></CardHeader><CardContent><form className="grid gap-3" onSubmit={event => { event.preventDefault(); updateDetails.mutate(); }}><label className="grid gap-1 text-sm">Name<Input value={nameText} onChange={event => setNameText(event.target.value)} required /></label><label className="grid gap-1 text-sm">Description<textarea className="min-h-24 rounded-md border bg-background p-3" value={descriptionText} onChange={event => setDescriptionText(event.target.value)} /></label><div><Button disabled={updateDetails.isPending || !nameText.trim()}>{updateDetails.isPending ? 'Saving…' : 'Save details'}</Button></div></form></CardContent></Card>}
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-white p-4">
         <Badge tone={lifecycleTone(endpoint.status)}>{endpoint.status}</Badge>
@@ -191,11 +204,11 @@ export default function EndpointDetailPage() {
 
       {tab === 'playground' && <InvocationPlayground endpoint={endpoint} lockTarget onInvoked={() => void queryClient.invalidateQueries({ queryKey: ['endpoint-invocations', endpointId] })} />}
 
-      {tab === 'invocations' && <Card><CardHeader><CardTitle>Invocations</CardTitle><CardDescription>Public identities are distinct from internal Issues, Runs, Tasks, Attempts, and Sessions.</CardDescription></CardHeader><CardContent className="space-y-3">{(invocations.data?.items ?? []).map(invocation => <div key={invocation.id} className="grid gap-2 rounded-lg border p-3 text-sm md:grid-cols-[1fr_auto_auto]"><div><div className="font-mono text-xs">{invocation.id}</div><div className="mt-1 text-xs text-muted-foreground">{new Date(invocation.createdAt).toLocaleString()} · correlation {invocation.correlationId}</div>{invocation.errorMessage && <div className="mt-1 text-xs text-red-600">{invocation.errorMessage}</div>}</div><Badge tone={invocation.status === 'completed' ? 'success' : invocation.status === 'failed' || invocation.status === 'timed_out' ? 'danger' : invocation.status === 'cancelled' ? 'warning' : 'info'}>{invocation.status}</Badge><div className="flex gap-2">{invocation.issueId && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/issues/${invocation.issueId}`)}>Issue<ExternalLink className="h-3 w-3" /></Link></Button>}{invocation.runId && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/agent-center/activity/executions/${invocation.runId}`)}>Execution<ExternalLink className="h-3 w-3" /></Link></Button>}{invocation.sessionId && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/agent-center/activity/sessions/${invocation.sessionId}`)}>Session<ExternalLink className="h-3 w-3" /></Link></Button>}</div></div>)}{!invocations.isLoading && !(invocations.data?.items.length) && <p className="text-sm text-muted-foreground">No invocations yet. Use the Playground or call the public API.</p>}</CardContent></Card>}
+      {tab === 'invocations' && <Card><CardHeader><CardTitle>Invocations</CardTitle><CardDescription>Public identities are distinct from internal Issues, Runs, Tasks, Attempts, and Sessions.</CardDescription></CardHeader><CardContent className="space-y-3">{(invocations.data?.items ?? []).map(invocation => <div key={invocation.id} className="grid gap-2 rounded-lg border p-3 text-sm md:grid-cols-[1fr_auto_auto]"><div><div className="font-mono text-xs">{invocation.id}</div><div className="mt-1 text-xs text-muted-foreground">{new Date(invocation.createdAt).toLocaleString()} · correlation {invocation.correlationId}</div>{invocation.errorMessage && <div className="mt-1 text-xs text-red-600">{invocation.errorMessage}</div>}</div><Badge tone={invocation.status === 'completed' ? 'success' : invocation.status === 'failed' || invocation.status === 'timed_out' ? 'danger' : invocation.status === 'cancelled' ? 'warning' : 'info'}>{invocation.status}</Badge><div className="flex gap-2">{invocation.issueId && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/issues/${invocation.issueId}`)}>Issue<ExternalLink className="h-3 w-3" /></Link></Button>}{invocation.runId && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/executions/${invocation.runId}`)}>Execution<ExternalLink className="h-3 w-3" /></Link></Button>}{invocation.sessionId && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/sessions/${invocation.sessionId}`)}>Session<ExternalLink className="h-3 w-3" /></Link></Button>}</div></div>)}{!invocations.isLoading && !(invocations.data?.items.length) && <p className="text-sm text-muted-foreground">No invocations yet. Use Test API or call the public API.</p>}</CardContent></Card>}
 
       {tab === 'releases' && <Card><CardHeader><CardTitle className="flex items-center gap-2"><History className="h-4 w-4" />Release history</CardTitle><CardDescription>Every deployment and rollback appends an immutable release while the public URL and credentials stay stable.</CardDescription></CardHeader><CardContent className="space-y-3">{(releases.data?.items ?? []).map(release => <div key={release.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm"><div className="min-w-48 flex-1"><div className="flex items-center gap-2"><strong>Release {release.number}</strong>{endpoint.activeReleaseId === release.id && <Badge tone="success">active</Badge>}</div><div className="mt-1 text-xs"><EntityIdentityText identities={identities} type={release.targetType} entityRef={release.targetRef} secondary /></div><div className="mt-1 text-xs text-muted-foreground">{release.reason || 'deployment'} · {new Date(release.activatedAt).toLocaleString()}</div></div>{canEdit && endpoint.activeReleaseId !== release.id && <Button size="sm" variant="outline" disabled={rollback.isPending} onClick={() => { if (window.confirm(`Roll back by creating a new release from release ${release.number}?`)) rollback.mutate(release.id); }}>Roll back to this</Button>}</div>)}{!releases.isLoading && !(releases.data?.items.length) && <p className="text-sm text-muted-foreground">No release yet. Publishing this Endpoint creates release 1.</p>}</CardContent></Card>}
 
-      {tab === 'target' && <Card><CardHeader><CardTitle>Active target</CardTitle><CardDescription>Target type and invocation mode are part of the stable contract. Workflow revision changes are explicit Endpoint releases.</CardDescription></CardHeader><CardContent className="space-y-3 text-sm"><div><span className="text-muted-foreground">Type</span><p>{endpoint.targetType}</p></div><div><span className="text-muted-foreground">Active target</span><p><EntityIdentityText identities={identities} type={endpoint.targetType} entityRef={endpoint.targetRef} secondary /></p></div><div><span className="text-muted-foreground">Release</span><p>{endpoint.activeRelease ? `r${endpoint.activeRelease}` : 'not deployed'}</p></div><Button asChild variant="outline"><Link to={scope.scopedPath(targetPath)}>Open target<ExternalLink className="h-4 w-4" /></Link></Button></CardContent></Card>}
+      {tab === 'target' && <Card><CardHeader><CardTitle>Active target</CardTitle><CardDescription>Target type and invocation mode are part of the stable contract. Workflow revision changes are explicit Endpoint releases.</CardDescription></CardHeader><CardContent className="space-y-3 text-sm"><div><span className="text-muted-foreground">Type</span><p>{endpoint.targetType}</p></div><div><span className="text-muted-foreground">Active target</span><p><EntityIdentityText identities={identities} type={endpoint.targetType} entityRef={endpoint.targetRef} secondary /></p></div><div><span className="text-muted-foreground">Release</span><p>{endpoint.activeRelease ? `r${endpoint.activeRelease}` : 'not deployed'}</p></div><Button asChild variant="outline"><Link to={scope.scopedPath(ownerPath)}>Open {ownerLabel}<ExternalLink className="h-4 w-4" /></Link></Button></CardContent></Card>}
     </Page>
   );
 }

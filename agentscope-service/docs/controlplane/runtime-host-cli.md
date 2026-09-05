@@ -24,7 +24,20 @@ owner-only configuration, and starts the daemon. For a remote service, pass its 
 agentscope connect https://agentscope.example.com
 ```
 
-Non-interactive environments can provide `AGENTSCOPE_API_TOKEN`. A pre-issued Host credential can be
+Non-interactive environments can provide `AGENTSCOPE_API_TOKEN`. The preferred bootstrap flow uses a
+short-lived, scope-bound enrollment token:
+
+```bash
+# Run by an operator. In single-scope mode the server ignores local scope flags.
+agentscope runtime enrollment-token create
+
+# Run on the machine being connected.
+AGENTSCOPE_ENROLLMENT_TOKEN=asre_... agentscope connect https://agentscope.example.com
+```
+
+`agentscope connect` exchanges the `asre_` token for an `asrh_` credential bound to both the local
+Host key and the token's tenant/namespace. It persists the scope returned by the server; it never
+requires `--tenant` or `--namespace` in single-scope mode. A pre-issued Host credential can still be
 provided with `AGENTSCOPE_RUNTIME_TOKEN`. Secrets are passed to the daemon through its environment,
 not process arguments.
 
@@ -50,6 +63,19 @@ Configuration and state default to `~/.agentscope/runtime-host/`:
 
 Advanced flags remain available on `agentscope connect --help`, but normal startup never requires the
 control-plane URL, internal token, provider paths, pool, or workspace directories to be repeated.
+`--tenant` and `--namespace` are multi-scope/debug compatibility flags. A mismatch with token claims
+fails instead of overriding the server-assigned scope.
+
+## Control-plane scope mode
+
+`aistiod` defaults to `--scope-mode single`. The authoritative scope is configured with
+`--default-tenant` and `--default-namespace` (or `AISTIO_DEFAULT_TENANT` and
+`AISTIO_DEFAULT_NAMESPACE`). In this mode the console removes scope selectors and scope query
+parameters, while the API canonicalizes query and top-level JSON scope values before authorization.
+
+Use `--scope-mode multi` only for deployments that intentionally expose multiple scopes. The
+storage and runtime protocols keep the same tenant/namespace fields in both modes. Namespace is not
+renamed to Workspace because Workspace is already a distinct product resource.
 
 ## Task-scoped Agent CLI
 

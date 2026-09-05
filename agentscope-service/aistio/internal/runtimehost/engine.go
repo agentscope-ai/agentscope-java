@@ -419,7 +419,7 @@ func appendRuntimeContext(prompt string, task *controlmodel.AgentTask, descripto
 		}
 		prompt += "."
 		if task.LeaderTask {
-			prompt += " Delegate or inspect Team work through MCP or the task-scoped CLI. Call the run.node.complete/run.node.fail MCP tool or the task run node-complete/node-fail CLI command only after the Team outcome has converged."
+			prompt += " Delegate or inspect Team work through MCP or the task-scoped CLI. On a follow-up for delegated work, call issue.accept after validating the worker result. Once all delegated Issues are accepted and work has converged, call run.node.complete; then call task.complete. Use run.node.fail for an unrecoverable coordinator outcome."
 		}
 	}
 	return prompt, nil

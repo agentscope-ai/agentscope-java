@@ -32,6 +32,13 @@ Managed creation is a recoverable workflow: create a provisioning Catalog Agent 
 
 Hosted Agents are created explicitly and bind to a RuntimeProfile and RuntimePool. Runtime Host registration remains independent.
 
+Tenant and namespace remain the storage, authorization, scheduling, and runtime routing boundary. A
+single-machine or single-enterprise deployment runs in `single` scope mode: the console hides both
+fields and the server canonicalizes requests to its configured scope. Multi-scope deployments may
+expose a selector. `namespace` deliberately keeps its name because Workspace is a separate product
+resource. Runtime Host enrollment tokens carry the authoritative tenant/namespace; `agentscope
+connect` persists that returned scope and does not ask normal users to enter it.
+
 ## Work and execution state ownership
 
 Issue-first applies to durable work collaboration. A normal online conversation can create or resume a Session without creating an Issue.
@@ -52,7 +59,7 @@ Endpoint reuses the existing Gateway and is a governed API façade rather than a
 
 ## Authorization and product areas
 
-Work Hub and Agent Center are the user-facing product areas. Cross-Agent activity and runtime-infrastructure APIs retain an internal `operations` authorization capability for `operator` and `admin`; it is not exposed as a third product area. The fixed roles are `user`, `agent_developer`, `operator`, and `admin`. Direct API calls and console routes enforce the same matrix.
+The console exposes one role-aware navigation rather than separate Work Hub and Agent Center menu spaces. Work, Design, and Resources are the primary navigation groups. Sessions, Executions, and Activity remain separate domain projections and stable deep-link routes, but are entered from the relevant Agent, Team, Workflow, Issue, Endpoint, or Chat detail instead of a top-level Observe menu. Channels are external ingress resources under Design; they bind stable logical targets, never `AgentInstance` processes. Cross-Agent activity and runtime-infrastructure APIs retain an internal `operations` authorization capability for `operator` and `admin`; URL namespaces do not define product areas. The fixed roles are `user`, `agent_developer`, `operator`, and `admin`. Direct API calls and console routes enforce the same matrix.
 
 ## Consequences
 

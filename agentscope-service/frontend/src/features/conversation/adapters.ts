@@ -126,13 +126,9 @@ export function runtimeEventsToConversation(events: SessionEventItem[]): Convers
     durationMs: event.durationMs,
     tokensIn: event.tokensIn,
     tokensOut: event.tokensOut,
-    payload: {
-      content: event.content,
-      toolName: event.toolName,
-      toolInput: event.toolInput,
-      toolOutput: event.toolOutput,
-      frameworkMeta: event.frameworkMeta,
-    },
+    // Keep the complete durable event available to the diagnostics view. The
+    // normalized fields above are presentation indexes, not a lossy replacement.
+    payload: event,
   }));
 }
 

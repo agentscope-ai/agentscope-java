@@ -75,7 +75,7 @@ export default function TasksPage() {
               <thead className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400"><tr><th className="px-5 py-3">Task</th><th className="px-4 py-3">Issue</th><th className="px-4 py-3">Agent / role</th><th className="px-4 py-3">Inputs</th><th className="px-4 py-3">Status</th><th className="w-12 px-4 py-3"><span className="sr-only">Open</span></th></tr></thead>
               <tbody className="divide-y divide-slate-100">{items.map((task) => (
                 <tr key={task.id} className="group hover:bg-slate-50/70">
-                  <td className="px-5 py-4"><Link className="font-mono text-sm font-medium text-slate-900 group-hover:text-indigo-700" to={scope.scopedPath(`/agent-center/activity/tasks/${task.id}`)}>{task.id.slice(0, 10)}</Link><div className="mt-1 text-xs text-slate-400">{formatRelative(task.createdAt)}</div></td>
+                  <td className="px-5 py-4"><Link className="font-mono text-sm font-medium text-slate-900 group-hover:text-indigo-700" to={scope.scopedPath(`/work/executions/tasks/${task.id}`)}>{task.id.slice(0, 10)}</Link><div className="mt-1 text-xs text-slate-400">{formatRelative(task.createdAt)}</div></td>
                   <td className="px-4 py-4"><Link className="text-xs text-slate-600 hover:text-indigo-700" to={scope.scopedPath(`/work/issues/${task.issueId}`)}><EntityIdentityText identities={identities} type="issue" entityRef={task.issueId} secondary /></Link></td>
                   <td className="px-4 py-4"><EntityIdentityText identities={identities} type="agent" entityRef={task.agentId} /><div className="mt-1 text-xs text-slate-400">{task.teamRole || task.triggerType}</div></td>
                   <td className="px-4 py-4 text-slate-600">{task.inputs?.length || 0}</td>
@@ -86,7 +86,7 @@ export default function TasksPage() {
             </table>
           </div>
           <div className="divide-y divide-slate-100 md:hidden">{items.map((task) => (
-            <Link key={task.id} to={scope.scopedPath(`/agent-center/activity/tasks/${task.id}`)} className="flex gap-3 px-4 py-4 hover:bg-slate-50">
+            <Link key={task.id} to={scope.scopedPath(`/work/executions/tasks/${task.id}`)} className="flex gap-3 px-4 py-4 hover:bg-slate-50">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500"><Bot className="h-4 w-4" /></span>
               <div className="min-w-0 flex-1"><div className="truncate font-mono text-sm font-medium text-slate-900">{task.id.slice(0, 10)}</div><div className="mt-1 truncate text-xs text-slate-500"><EntityIdentityText identities={identities} type="agent" entityRef={task.agentId} /> · {formatRelative(task.createdAt)}</div><Badge className="mt-2" tone={tone(task.status)}>{task.status.replace(/_/g, ' ')}</Badge></div>
               <ChevronRight className="mt-2 h-4 w-4 text-slate-300" />

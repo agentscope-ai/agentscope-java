@@ -17,7 +17,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
-  Bot,
   CircleDotDashed,
   Inbox,
   Plus,
@@ -25,7 +24,8 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { listInbox, listIssues, listTasks, listTeams } from "@/api/collaboration";
+import { listInbox, listIssues, listTeams } from "@/api/collaboration";
+import { getRoles } from "@/api/auth";
 import { useControlPlaneScope } from "@/app/ScopeContext";
 import { Button } from "@/components/ui/button";
 import { EntityIdentityText, useEntityIdentities } from "@/components/EntityIdentity";
@@ -43,19 +43,17 @@ import {
 
 export default function WorkOverviewPage() {
   const scope = useControlPlaneScope();
+  const roles = getRoles().map((role) => role.toLowerCase());
+  const canUseAgentCenter = roles.includes("admin") || roles.includes("operator") || roles.includes("agent_developer");
   const issues = useQuery({
     queryKey: ["issues", scope.tenant, scope.namespace, "work-overview"],
     queryFn: () => listIssues(scope.tenant, scope.namespace),
     refetchInterval: 7500,
   });
-  const tasks = useQuery({
-    queryKey: ["agent-tasks", scope.tenant, scope.namespace, "work-overview"],
-    queryFn: () => listTasks(scope.tenant, scope.namespace),
-    refetchInterval: 7500,
-  });
   const teams = useQuery({
     queryKey: ["teams", scope.tenant, scope.namespace, "work-overview"],
     queryFn: () => listTeams(scope.tenant, scope.namespace),
+    enabled: canUseAgentCenter,
   });
   const inbox = useQuery({
     queryKey: ["inbox", scope.tenant, scope.namespace, "work-overview"],
@@ -63,7 +61,6 @@ export default function WorkOverviewPage() {
     refetchInterval: 7500,
   });
   const issueItems = issues.data?.items || [];
-  const taskItems = tasks.data?.items || [];
   const unreadItems = (inbox.data?.items || []).filter((item) => !item.read);
   const identities = useEntityIdentities([
     ...issueItems.map((issue) => ({ type: issue.assigneeType, ref: issue.assigneeRef })),
@@ -77,20 +74,13 @@ export default function WorkOverviewPage() {
       to: "/work/issues",
       icon: CircleDotDashed,
     },
-    {
-      label: "Active tasks",
-      value: taskItems.filter((task) => !["completed", "failed", "cancelled"].includes(task.status)).length,
-      loading: tasks.isLoading,
-      to: "/agent-center/activity/executions",
-      icon: Bot,
-    },
-    {
+    ...(canUseAgentCenter ? [{
       label: "Teams",
       value: teams.data?.items.length || 0,
       loading: teams.isLoading,
       to: "/agent-center/teams",
       icon: Users,
-    },
+    }] : []),
     {
       label: "Needs attention",
       value: unreadItems.length,
@@ -114,7 +104,7 @@ export default function WorkOverviewPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
@@ -141,7 +131,7 @@ export default function WorkOverviewPage() {
         <WorkPanel>
           <WorkPanelHeader
             title="Recent issues"
-            description="The latest work in this namespace"
+            description={scope.selectorVisible ? "The latest work in this namespace" : "The latest work"}
             action={
               <Button variant="ghost" size="sm" asChild>
                 <Link to={scope.scopedPath("/work/issues")}>

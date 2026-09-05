@@ -384,7 +384,11 @@ func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID,
 			return nil, fmt.Errorf("coordinator has active node %s", candidate.NodeKey)
 		}
 	}
-	children, err := s.Store.Collaboration().ListIssues(ctx, store.IssueFilter{Tenant: task.Tenant, Namespace: task.Namespace, ParentID: &task.IssueID, Limit: 500})
+	coordinatorIssueID := task.IssueID
+	if node.IssueID != nil {
+		coordinatorIssueID = *node.IssueID
+	}
+	children, err := s.Store.Collaboration().ListIssues(ctx, store.IssueFilter{Tenant: task.Tenant, Namespace: task.Namespace, ParentID: &coordinatorIssueID, Limit: 500})
 	if err != nil {
 		return nil, err
 	}

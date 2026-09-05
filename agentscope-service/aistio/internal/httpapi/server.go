@@ -119,6 +119,12 @@ type ServerOptions struct {
 	ArtifactProvider    artifact.Provider
 	CollaborationEvents *realtime.Hub
 	GitHubTransport     worksource.GitHubTransport
+	// ScopeMode controls whether tenant/namespace are selectable by callers or
+	// fixed by this deployment. Empty preserves the multi-scope library default;
+	// the aistiod binary explicitly defaults product deployments to single.
+	ScopeMode        string
+	DefaultTenant    string
+	DefaultNamespace string
 }
 
 // Server is the REST API server for the control plane.
@@ -151,6 +157,9 @@ type Server struct {
 	artifactProvider      artifact.Provider
 	collaborationEvents   *realtime.Hub
 	workSources           *worksource.Service
+	scopeMode             string
+	defaultTenant         string
+	defaultNamespace      string
 }
 
 // NewServer creates a new API server.
@@ -160,6 +169,18 @@ func NewServer(opts ServerOptions) *Server {
 	router.Use(gin.Recovery())
 	router.Use(gin.Logger())
 
+	scopeMode := strings.ToLower(strings.TrimSpace(opts.ScopeMode))
+	if scopeMode != ScopeModeSingle {
+		scopeMode = ScopeModeMulti
+	}
+	configuredTenant := strings.TrimSpace(opts.DefaultTenant)
+	if configuredTenant == "" {
+		configuredTenant = "default"
+	}
+	configuredNamespace := strings.TrimSpace(opts.DefaultNamespace)
+	if configuredNamespace == "" {
+		configuredNamespace = defaultNamespace
+	}
 	s := &Server{
 		client:              opts.Client,
 		store:               opts.Store,
@@ -181,6 +202,9 @@ func NewServer(opts ServerOptions) *Server {
 		transcriptMessages:  opts.TranscriptMessages,
 		artifactProvider:    opts.ArtifactProvider,
 		collaborationEvents: opts.CollaborationEvents,
+		scopeMode:           scopeMode,
+		defaultTenant:       configuredTenant,
+		defaultNamespace:    configuredNamespace,
 		httpServer: &http.Server{
 			Addr:         opts.Addr,
 			Handler:      router,
@@ -280,6 +304,9 @@ func (s *Server) registerRoutes() {
 	// registration or an Agent registration credential for later instances.
 	if s.store != nil {
 		s.router.POST("/api/v1/agent-registrations", s.registerExternalAgent)
+		if s.features.RuntimeHost {
+			s.router.POST("/api/v1/runtime-host-enrollments/exchange", s.exchangeRuntimeHostEnrollment)
+		}
 		s.router.POST("/api/v1/work-sources/:workSourceId/webhooks/github", s.githubWorkSourceWebhook)
 		s.router.POST("/invoke/v1/endpoints/:slug/conversations", s.invokeEndpointConversation)
 		s.router.POST("/invoke/v1/conversations/:conversationId/turns", s.continueEndpointConversation)
@@ -298,19 +325,29 @@ func (s *Server) registerRoutes() {
 	if s.product != nil {
 		pg := s.router.Group("")
 		pg.Use(s.product.Middlewares()...)
+		pg.Use(s.scopeMiddleware())
 		s.product.Register(pg)
 	}
 
 	v1 := s.router.Group("/api/v1")
 	v1.Use(s.authMiddleware())
+	v1.Use(s.scopeMiddleware())
 	v1.Use(s.workspaceRBACMiddleware())
 	v1.Use(s.authzMiddleware())
 	{
 		v1.GET("/me/navigation", s.navigationAccess)
+		v1.GET("/me/scope", s.getCurrentScope)
 		// Fleet overview + token metrics (store-backed).
 		if s.store != nil {
 			v1.POST("/entity-identities:resolve", s.resolveEntityIdentities)
 			v1.POST("/runtime-host-enrollments", s.createRuntimeHostEnrollment)
+			v1.POST("/runtime-host-enrollment-tokens", s.createRuntimeHostEnrollmentToken)
+			v1.GET("/chats", s.listChats)
+			v1.POST("/chats", s.createChat)
+			v1.GET("/chat-agents", s.listChatAgents)
+			v1.GET("/chats/:chatId", s.getChat)
+			v1.PATCH("/chats/:chatId", s.patchChat)
+			v1.POST("/chats/:chatId/turns", s.sendChatTurn)
 			v1.POST("/playground/invocations", s.invokePlayground)
 			v1.POST("/playground/sessions/:sessionId/turns", s.continuePlaygroundConversation)
 			v1.POST("/issues/:issueId/team-proposals", s.createTeamProposal)
