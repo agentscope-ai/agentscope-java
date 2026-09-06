@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -257,6 +258,12 @@ func TestManagedIdleFailsTaskThatReturnedWithoutTerminalAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	metadata, _ := json.Marshal(map[string]any{"attemptId": attempt.ID.String()})
+	if err = st.Events().Append(ctx, &store.SessionEvent{SessionFK: session.ID, Seq: 1,
+		EventType: "agent.message", Role: "assistant", Content: "please provide the missing credential",
+		FrameworkMeta: metadata, OccurredAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
 	err = srv.applyManagedSessionStatus(ctx, session, &managedSessionEventReport{
 		Type: "session.status_idle", AgentTaskID: leader.ID.String(), AttemptID: attempt.ID.String(),
 		DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID,
@@ -267,7 +274,8 @@ func TestManagedIdleFailsTaskThatReturnedWithoutTerminalAction(t *testing.T) {
 	failedLeader, _ := st.Collaboration().GetAgentTask(ctx, leader.ID)
 	failedAttempt, _ := st.ExecutionAttempts().Get(ctx, attempt.ID)
 	if failedLeader.Status != controlmodel.AgentTaskFailed || failedAttempt.State != controlmodel.ExecutionFailed ||
-		failedLeader.ErrorCode != "managed_turn_incomplete" {
+		failedLeader.ErrorCode != "managed_turn_incomplete" ||
+		!strings.Contains(failedLeader.ErrorMessage, "please provide the missing credential") {
 		t.Fatalf("text-only managed return did not fail immediately: task=%+v attempt=%+v", failedLeader, failedAttempt)
 	}
 }

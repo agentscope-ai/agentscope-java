@@ -622,10 +622,8 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 				changed = true
 				continue
 			}
-			if run.Mode == controlmodel.RunModeAdaptive && node.Type == controlmodel.RunNodeAgent {
-				if _, _, err = (&collaboration.Service{Store: e.Store}).ConvergeFailedWorker(ctx, latest.ID); err != nil {
-					return changed, err
-				}
+			if _, _, err = (&collaboration.Service{Store: e.Store}).ConvergeFailedTask(ctx, latest.ID); err != nil {
+				return changed, err
 			}
 			if _, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeFailed, nil,
 				latest.ErrorCode, latest.ErrorMessage); err != nil {

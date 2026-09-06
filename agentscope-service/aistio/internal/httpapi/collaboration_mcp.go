@@ -90,7 +90,7 @@ func collaborationMCPTools() []mcpTool {
 	return []mcpTool{
 		{Name: "issue.get", Description: "Read the authoritative Issue for this AgentTask.", InputSchema: object(map[string]any{"issueId": stringProp})},
 		{Name: "issue.comment.list", Description: "Read Issue discussion roots, a thread, or its tail.", InputSchema: object(map[string]any{"issueId": stringProp, "rootsOnly": map[string]any{"type": "boolean"}, "threadId": stringProp, "tail": map[string]any{"type": "integer", "minimum": 1, "maximum": 500}})},
-		{Name: "issue.comment.add", Description: "Add an attributable Comment and route structured mentions.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "type": stringProp, "mentions": mentions}, "content")},
+		{Name: "issue.comment.add", Description: "Add an attributable Comment and route structured mentions. Status and progress types are informational and only dispatch explicit mentions.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "type": stringProp, "mentions": mentions}, "content")},
 		{Name: "issue.child.create", Description: "Create child work from an active Team leader task. For assigneeType=agent, assigneeRef must be the roster member's agentId from team.get, never the membership id field. acceptanceCriteria is optional and must be an object, never a top-level array.", InputSchema: object(map[string]any{"title": stringProp, "description": stringProp, "priority": stringProp, "assigneeType": stringProp, "assigneeRef": stringProp, "acceptanceCriteria": acceptanceCriteria}, "title")},
 		{Name: "issue.accept", Description: "Accept this delegated child Issue from an active Team leader follow-up after its worker result has converged.", InputSchema: object(map[string]any{"reason": stringProp})},
 		{Name: "issue.cancel", Description: "Explicitly skip the current blocked delegated child Issue after the Team leader decides a degraded or partial result is acceptable.", InputSchema: object(map[string]any{"reason": stringProp})},
@@ -423,7 +423,41 @@ func (s *Server) validateMCPTeamLeaderCompletion(ctx context.Context, task *cont
 	// It may finish after accepting/rejecting one result while sibling work is
 	// still active; a later worker outcome will enqueue the next follow-up.
 	if task.ParentTaskID != nil {
-		return nil
+		issue, loadErr := s.store.Collaboration().GetIssue(ctx, task.IssueID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if issue.Status != controlmodel.IssueBlocked {
+			return nil
+		}
+		tasks, listErr := s.store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+			Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 1000,
+		})
+		if listErr != nil {
+			return listErr
+		}
+		for _, candidate := range tasks {
+			if candidate.ID != task.ID && candidate.Status != controlmodel.AgentTaskQueued &&
+				!controlmodel.IsAgentTaskTerminal(candidate.Status) {
+				return nil
+			}
+		}
+		comments, listErr := s.store.Collaboration().ListComments(ctx, task.IssueID,
+			store.CommentListOptions{Limit: 500, Tail: 500})
+		if listErr != nil {
+			return listErr
+		}
+		for _, comment := range comments {
+			if comment.SourceTaskID == nil || *comment.SourceTaskID != task.ID {
+				continue
+			}
+			for _, route := range comment.Routes {
+				if route.TargetType == controlmodel.AssigneeHuman && route.Outcome == controlmodel.RouteQueued {
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("blocked delegated Issue requires retry, reassign, accept, cancel, explicit human notification, or coordinator failure before completing the leader follow-up")
 	}
 	tasks, err := s.store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
 		Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 1000,

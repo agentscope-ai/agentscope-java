@@ -477,10 +477,18 @@ func TestTeamProgressDoesNotDispatchAndImplicitAssigneeFollowUpKeepsLineage(t *t
 	progress, err := svc.AddComment(ctx, AddCommentRequest{
 		IssueID: child.ID, Author: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"},
 		Content: "waiting for a feasible fallback", Type: controlmodel.CommentProgress,
-		SourceTaskID: &leader.ID, SuppressImplicitRouting: true,
+		SourceTaskID: &leader.ID,
 	})
 	if err != nil || len(progress.Routes) != 0 || len(progress.Tasks) != 0 {
 		t.Fatalf("progress comment dispatched work: result=%+v err=%v", progress, err)
+	}
+	status, err := svc.AddComment(ctx, AddCommentRequest{
+		IssueID: child.ID, Author: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"},
+		Content: "waiting for a credential", Type: controlmodel.CommentStatus,
+		SourceTaskID: &leader.ID,
+	})
+	if err != nil || len(status.Routes) != 0 || len(status.Tasks) != 0 {
+		t.Fatalf("status comment dispatched work: result=%+v err=%v", status, err)
 	}
 	followUp, err := svc.AddComment(ctx, AddCommentRequest{
 		IssueID: child.ID, Author: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"},
@@ -607,6 +615,93 @@ func TestQuiescentBlockedTeamWorkBlocksAndHumanFollowUpReopensRoot(t *testing.T)
 	root, _ = st.Collaboration().GetIssue(ctx, root.ID)
 	if root.Status != controlmodel.IssueBlocked {
 		t.Fatalf("waiting human follow-up did not restore blocked root: %+v", root)
+	}
+}
+
+func TestHumanFollowUpOnBlockedWorkerIssueKeepsActiveTeamLineage(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "child-resume", LeaderAgentRef: "leader",
+		Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "worker", Role: "researcher",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, leader, err := svc.CreateIssue(ctx, CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "coordinate",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: leader.ID, ExpectedVersion: leader.Version})
+	if err == nil {
+		leader, err = st.Collaboration().StartAgentTask(ctx, leader.ID, leader.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, worker, err := svc.CreateChildFromTask(ctx, leader.ID, CreateIssueRequest{
+		Title: "research", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.CompleteTask(ctx, leader.ID, store.TaskCompletion{ExpectedVersion: leader.Version,
+		Summary: "delegated"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	worker, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: worker.ID, ExpectedVersion: worker.Version})
+	if err == nil {
+		worker, err = st.Collaboration().StartAgentTask(ctx, worker.ID, worker.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err = svc.FailTask(ctx, worker.ID, worker.Version, "credential_missing", "missing key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.ConvergeFailedWorker(ctx, worker.ID); err != nil {
+		t.Fatal(err)
+	}
+	leaderFollowUps, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		IssueID: child.ID, AgentRef: "leader", Status: controlmodel.AgentTaskQueued, Limit: 10,
+	})
+	if err != nil || len(leaderFollowUps) != 1 {
+		t.Fatalf("leader follow-up missing: tasks=%+v err=%v", leaderFollowUps, err)
+	}
+	followUp, err := st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: leaderFollowUps[0].ID, ExpectedVersion: leaderFollowUps[0].Version,
+	})
+	if err == nil {
+		followUp, err = st.Collaboration().StartAgentTask(ctx, followUp.ID, followUp.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.CompleteTask(ctx, followUp.ID, store.TaskCompletion{ExpectedVersion: followUp.Version,
+		Summary: "waiting"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	humanInput, err := svc.AddComment(ctx, AddCommentRequest{IssueID: child.ID,
+		Author: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}, Content: "continue"})
+	if err != nil || len(humanInput.Tasks) != 1 {
+		t.Fatalf("child follow-up was not queued: result=%+v err=%v", humanInput, err)
+	}
+	resumed := humanInput.Tasks[0]
+	if resumed.OrchestrationRunID != leader.OrchestrationRunID || resumed.TeamID == nil ||
+		*resumed.TeamID != team.ID || resumed.TeamRole != "researcher" || resumed.ParentTaskID == nil ||
+		*resumed.ParentTaskID != followUp.ID {
+		t.Fatalf("child follow-up lost active Team lineage: %+v", resumed)
 	}
 }
 
@@ -854,6 +949,42 @@ func TestTaskRespondThenCompleteReusesSingleResultComment(t *testing.T) {
 	run, err := st.Orchestration().GetRun(ctx, task.OrchestrationRunID)
 	if err != nil || run.State != controlmodel.RunSucceeded || run.WaitReason != "" {
 		t.Fatalf("completion with an existing response did not reconcile the run: %+v err=%v", run, err)
+	}
+}
+
+func TestFailedDirectTaskPublishesOneVisibleStatus(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	issue, task, err := svc.CreateIssue(ctx, CreateIssueRequest{Tenant: "tenant", Namespace: "default",
+		Title: "direct failure", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: task.ID, ExpectedVersion: task.Version})
+	if err == nil {
+		task, err = st.Collaboration().StartAgentTask(ctx, task.ID, task.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = svc.FailTask(ctx, task.ID, task.Version, "managed_turn_incomplete", "last response: need a key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked, status, err := svc.ConvergeFailedTask(ctx, task.ID)
+	if err != nil || blocked.Status != controlmodel.IssueBlocked || status == nil ||
+		!strings.Contains(status.Content, "last response: need a key") || len(status.Routes) != 0 {
+		t.Fatalf("direct failure was not projected: issue=%+v status=%+v err=%v", blocked, status, err)
+	}
+	_, same, err := svc.ConvergeFailedTask(ctx, task.ID)
+	if err != nil || same == nil || same.ID != status.ID {
+		t.Fatalf("direct failure projection was not idempotent: first=%+v second=%+v err=%v", status, same, err)
+	}
+	comments, err := st.Collaboration().ListComments(ctx, issue.ID, store.CommentListOptions{Limit: 10})
+	if err != nil || len(comments) != 1 {
+		t.Fatalf("direct failure comments=%+v err=%v", comments, err)
 	}
 }
 

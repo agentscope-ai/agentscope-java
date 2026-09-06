@@ -303,7 +303,11 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 		"inputs and comments and validate the outcome. Call issue.accept only for satisfactory completed " +
 		"work. For blocked or failed work, retry or reassign only when the new attempt changes the available " +
 		"agent, capability, credential, input, or tool; otherwise choose a degraded result, request human " +
-		"action, cancel the blocked child, or fail the coordinator. Do not use issue.child.create to bypass " +
+		"action, cancel the blocked child, or fail the coordinator. To wait for human action, call " +
+		"issue.comment.add with an explicit human mention before completing this follow-up. Status and progress " +
+		"comments do not schedule Agent work. Do not publish the same conclusion with issue.comment.add, " +
+		"task.progress, and task.complete; use task.respond once for a final visible response and then call " +
+		"task.complete, which reuses it. Do not use issue.child.create to bypass " +
 		"an unresolved blocked Issue; use the explicit decision actions. Call run.node.complete only when the whole " +
 		"coordinator has converged. If sibling work is still active, do not retry run.node.complete in a loop; " +
 		"call task.complete with a waiting/decision summary so this follow-up ends and the next worker outcome " +

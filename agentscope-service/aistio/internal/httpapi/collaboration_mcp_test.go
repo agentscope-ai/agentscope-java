@@ -58,6 +58,133 @@ func TestCollaborationMCPToolCatalogFollowsTaskRole(t *testing.T) {
 	}
 }
 
+func TestBlockedLeaderFollowUpRequiresDurableDecisionOrHumanNotification(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "decision", LeaderAgentRef: "leader",
+		Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "worker", Role: "researcher",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &collaboration.Service{Store: st}
+	_, leader, err := svc.CreateIssue(ctx, collaboration.CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "coordinate",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: leader.ID, ExpectedVersion: leader.Version})
+	if err == nil {
+		leader, err = st.Collaboration().StartAgentTask(ctx, leader.ID, leader.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, worker, err := svc.CreateChildFromTask(ctx, leader.ID, collaboration.CreateIssueRequest{
+		Title: "research", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.CompleteTask(ctx, leader.ID, store.TaskCompletion{ExpectedVersion: leader.Version,
+		Summary: "delegated"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	worker, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: worker.ID, ExpectedVersion: worker.Version})
+	if err == nil {
+		worker, err = st.Collaboration().StartAgentTask(ctx, worker.ID, worker.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err = svc.FailTask(ctx, worker.ID, worker.Version, "missing_key", "credential unavailable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.ConvergeFailedWorker(ctx, worker.ID); err != nil {
+		t.Fatal(err)
+	}
+	followUps, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		IssueID: child.ID, AgentRef: "leader", Status: controlmodel.AgentTaskQueued, Limit: 10,
+	})
+	if err != nil || len(followUps) != 1 {
+		t.Fatalf("leader follow-up missing: tasks=%+v err=%v", followUps, err)
+	}
+	followUp, err := st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: followUps[0].ID, ExpectedVersion: followUps[0].Version,
+	})
+	if err == nil {
+		followUp, err = st.Collaboration().StartAgentTask(ctx, followUp.ID, followUp.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(ServerOptions{Store: st})
+	if err = srv.validateMCPTeamLeaderCompletion(ctx, followUp); err == nil ||
+		!strings.Contains(err.Error(), "requires retry") {
+		t.Fatalf("blocked follow-up completed without a durable decision: %v", err)
+	}
+	notification, err := svc.AddComment(ctx, collaboration.AddCommentRequest{IssueID: child.ID,
+		Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"},
+		Content: "please provide the credential", Type: controlmodel.CommentStatus,
+		Mentions:     []collaboration.MentionTarget{{Type: controlmodel.AssigneeHuman, Ref: "owner"}},
+		SourceTaskID: &followUp.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress, err := svc.AddComment(ctx, collaboration.AddCommentRequest{IssueID: child.ID,
+		Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"},
+		Content: "still waiting for the credential", Type: controlmodel.CommentProgress,
+		SourceTaskID: &followUp.ID})
+	if err != nil || progress.Comment.ID != notification.Comment.ID {
+		t.Fatalf("leader decision status was duplicated: first=%+v progress=%+v err=%v", notification, progress, err)
+	}
+	response, err := svc.AddComment(ctx, collaboration.AddCommentRequest{IssueID: child.ID,
+		Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"},
+		Content: "waiting for the human response", Type: controlmodel.CommentResult,
+		Mentions:     []collaboration.MentionTarget{{Type: controlmodel.AssigneeHuman, Ref: "owner"}},
+		SourceTaskID: &followUp.ID})
+	if err != nil || response.Comment.ID != notification.Comment.ID {
+		t.Fatalf("leader human-wait result was duplicated: first=%+v response=%+v err=%v", notification, response, err)
+	}
+	if err = srv.validateMCPTeamLeaderCompletion(ctx, followUp); err != nil {
+		t.Fatalf("explicit human notification did not satisfy waiting decision: %v", err)
+	}
+	completed, reused, err := svc.CompleteTask(ctx, followUp.ID, store.TaskCompletion{
+		ExpectedVersion: followUp.Version, Summary: "waiting for human"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"})
+	if err != nil || completed.Status != controlmodel.AgentTaskCompleted || reused == nil ||
+		reused.ID != notification.Comment.ID {
+		t.Fatalf("human notification was not reused on completion: task=%+v comment=%+v err=%v", completed, reused, err)
+	}
+	comments, err := st.Collaboration().ListComments(ctx, child.ID, store.CommentListOptions{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decisionComments := 0
+	for _, comment := range comments {
+		if comment.SourceTaskID != nil && *comment.SourceTaskID == followUp.ID {
+			decisionComments++
+		}
+	}
+	if decisionComments != 1 {
+		t.Fatalf("leader decision comments=%d, want 1: %+v", decisionComments, comments)
+	}
+}
+
 func TestChildCreateToolDescribesAcceptanceCriteriaObject(t *testing.T) {
 	var childTool *mcpTool
 	tools := collaborationMCPTools()

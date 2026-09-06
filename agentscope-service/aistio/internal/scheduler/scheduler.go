@@ -233,6 +233,22 @@ func (s *Scheduler) dispatchTask(ctx context.Context, taskID uuid.UUID, override
 }
 
 func (s *Scheduler) admitConcurrency(ctx context.Context, task *controlmodel.AgentTask) error {
+	if task.TeamID != nil && task.LeaderTask {
+		leaderTasks, err := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+			Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID,
+			NodeID: task.RunNodeID, TeamID: *task.TeamID, Limit: 500,
+		})
+		if err != nil {
+			return err
+		}
+		for _, candidate := range leaderTasks {
+			if candidate.ID == task.ID || !candidate.LeaderTask || candidate.AgentRef != task.AgentRef ||
+				candidate.Status == controlmodel.AgentTaskQueued || controlmodel.IsAgentTaskTerminal(candidate.Status) {
+				continue
+			}
+			return fmt.Errorf("Team leader follow-up already active")
+		}
+	}
 	attempts, err := s.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{Tenant: task.Tenant, Limit: 10000})
 	if err != nil {
 		return err

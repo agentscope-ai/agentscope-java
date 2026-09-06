@@ -657,6 +657,38 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 	if commentType == "" {
 		commentType = controlmodel.CommentGeneral
 	}
+	suppressImplicitRouting := req.SuppressImplicitRouting ||
+		commentType == controlmodel.CommentProgress || commentType == controlmodel.CommentStatus
+	if req.SourceTaskID != nil {
+		source, loadErr := s.Store.Collaboration().GetAgentTask(ctx, *req.SourceTaskID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if source.TeamID != nil && source.LeaderTask && source.ParentTaskID != nil {
+			comments, listErr := s.listAllComments(ctx, issue.ID)
+			if listErr != nil {
+				return nil, listErr
+			}
+			for index := len(comments) - 1; index >= 0; index-- {
+				comment := comments[index]
+				if comment.SourceTaskID == nil || *comment.SourceTaskID != source.ID ||
+					(comment.Type != controlmodel.CommentProgress && comment.Type != controlmodel.CommentStatus) {
+					continue
+				}
+				if len(req.Mentions) == 0 &&
+					(commentType == controlmodel.CommentProgress || commentType == controlmodel.CommentStatus) {
+					return &store.CreateCommentResult{Comment: comment, Routes: comment.Routes}, nil
+				}
+				if commentType == controlmodel.CommentResult {
+					for _, route := range comment.Routes {
+						if route.TargetType == controlmodel.AssigneeHuman && route.Outcome == controlmodel.RouteQueued {
+							return &store.CreateCommentResult{Comment: comment, Routes: comment.Routes}, nil
+						}
+					}
+				}
+			}
+		}
+	}
 	mentions := make([]controlmodel.Mention, 0, len(req.Mentions))
 	targets := make([]store.CommentTarget, 0, len(req.Mentions)+1)
 	for _, target := range req.Mentions {
@@ -741,7 +773,7 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 	if policy.MaxFanout > 0 && len(targets) > int(policy.MaxFanout) {
 		return nil, fmt.Errorf("Team mention fanout budget exceeded")
 	}
-	if !req.SuppressImplicitRouting && len(targets) == 0 && commentType == controlmodel.CommentResult && req.SourceTaskID != nil {
+	if !suppressImplicitRouting && len(targets) == 0 && commentType == controlmodel.CommentResult && req.SourceTaskID != nil {
 		source, loadErr := s.Store.Collaboration().GetAgentTask(ctx, *req.SourceTaskID)
 		if loadErr != nil {
 			return nil, loadErr
@@ -751,7 +783,7 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 			return nil, err
 		}
 	}
-	if !req.SuppressImplicitRouting && len(targets) == 0 {
+	if !suppressImplicitRouting && len(targets) == 0 {
 		if req.ParentID != nil {
 			parent, loadErr := s.Store.Collaboration().GetComment(ctx, *req.ParentID)
 			if loadErr != nil {
@@ -772,12 +804,22 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 		if len(targets) == 0 && issue.AssigneeType != "" && issue.AssigneeRef != "" {
 			resolved, resolveErr := s.resolveTarget(ctx, issue, MentionTarget{Type: issue.AssigneeType, Ref: issue.AssigneeRef}, controlmodel.RouteAssignee)
 			if resolveErr == nil {
-				if req.SourceTaskID == nil && req.Author.Type == controlmodel.ActorHuman && resolved.TeamID != nil {
-					parentTaskID, parentErr := s.activeTeamRunParent(ctx, issue, *resolved.TeamID)
-					if parentErr != nil {
-						return nil, parentErr
+				if req.SourceTaskID == nil && req.Author.Type == controlmodel.ActorHuman &&
+					resolved.TargetType == controlmodel.AssigneeAgent && resolved.TeamID == nil {
+					teamID, role, parentTaskID, contextErr := s.activeTeamAssigneeContext(ctx, issue, resolved.AgentRef)
+					if contextErr != nil {
+						return nil, contextErr
 					}
-					resolved.ParentTaskID = parentTaskID
+					resolved.TeamID, resolved.TeamRole, resolved.ParentTaskID = teamID, role, parentTaskID
+				}
+				if req.SourceTaskID == nil && req.Author.Type == controlmodel.ActorHuman && resolved.TeamID != nil {
+					if resolved.ParentTaskID == nil {
+						parentTaskID, parentErr := s.activeTeamRunParent(ctx, issue, *resolved.TeamID)
+						if parentErr != nil {
+							return nil, parentErr
+						}
+						resolved.ParentTaskID = parentTaskID
+					}
 				}
 				// An implicit assignee route created by a Team task is still Team
 				// work. Preserve the snapshot lineage so retries and exhausted
@@ -813,6 +855,56 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 		metrics.RecordCommentRoute(route.Namespace, string(route.TargetType), string(route.Outcome))
 	}
 	return result, nil
+}
+
+// activeTeamAssigneeContext recovers the immutable Team lineage for a human
+// follow-up posted directly on a child Issue assigned to a Team worker. The
+// mutable Issue assignee only identifies the Agent, so without this lookup the
+// reply would incorrectly start an unrelated direct Run.
+func (s *Service) activeTeamAssigneeContext(ctx context.Context, issue *controlmodel.Issue,
+	agentRef string) (*uuid.UUID, string, *uuid.UUID, error) {
+	runs, err := s.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: issue.ID, ActiveOnly: true, Limit: 3,
+	})
+	if err != nil || len(runs) == 0 {
+		return nil, "", nil, err
+	}
+	if len(runs) > 1 {
+		return nil, "", nil, fmt.Errorf("Issue %s has multiple active orchestration Runs", issue.ID)
+	}
+	tasks, err := s.listAllTasks(ctx, store.AgentTaskFilter{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, RunID: runs[0].ID,
+	})
+	if err != nil {
+		return nil, "", nil, err
+	}
+	var worker, leader *controlmodel.AgentTask
+	for _, task := range tasks {
+		if task.TeamID == nil {
+			continue
+		}
+		if task.IssueID == issue.ID && task.AgentRef == agentRef && !task.LeaderTask &&
+			(worker == nil || task.CreatedAt.After(worker.CreatedAt)) {
+			worker = task
+		}
+	}
+	if worker == nil {
+		return nil, "", nil, nil
+	}
+	for _, task := range tasks {
+		if task.TeamID == nil || *task.TeamID != *worker.TeamID || !task.LeaderTask ||
+			leader != nil && !task.CreatedAt.After(leader.CreatedAt) {
+			continue
+		}
+		leader = task
+	}
+	var parentTaskID *uuid.UUID
+	if leader != nil {
+		id := leader.ID
+		parentTaskID = &id
+	}
+	teamID := *worker.TeamID
+	return &teamID, worker.TeamRole, parentTaskID, nil
 }
 
 // activeTeamRunParent lets human input resume a quiescent waiting coordinator.
@@ -1150,6 +1242,40 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 			completion.ProcessedInputIDs = append(completion.ProcessedInputIDs, input.ID)
 		}
 	}
+	if completion.ResponseCommentID == nil && task.TeamID != nil && task.LeaderTask && task.ParentTaskID != nil {
+		issue, loadErr := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
+		if loadErr != nil {
+			return nil, nil, loadErr
+		}
+		if issue.Status == controlmodel.IssueBlocked {
+			comments, listErr := s.listAllComments(ctx, task.IssueID)
+			if listErr != nil {
+				return nil, nil, listErr
+			}
+			var notification *controlmodel.Comment
+			for _, comment := range comments {
+				if comment.SourceTaskID == nil || *comment.SourceTaskID != task.ID {
+					continue
+				}
+				for _, route := range comment.Routes {
+					if route.TargetType == controlmodel.AssigneeHuman && route.Outcome == controlmodel.RouteQueued &&
+						(notification == nil || comment.CreatedAt.After(notification.CreatedAt)) {
+						notification = comment
+					}
+				}
+			}
+			if notification != nil {
+				completed, completeErr := s.Store.Collaboration().CompleteAgentTask(ctx, taskID, completion)
+				if completeErr != nil {
+					return nil, notification, completeErr
+				}
+				if convergeErr := s.convergeQuiescentBlockedTeamRoot(ctx, completed); convergeErr != nil {
+					return completed, notification, convergeErr
+				}
+				return completed, notification, nil
+			}
+		}
+	}
 	var output *controlmodel.Comment
 	if completion.ResponseCommentID == nil {
 		comments, listErr := s.listAllComments(ctx, task.IssueID)
@@ -1296,6 +1422,73 @@ func (s *Service) FailTask(ctx context.Context, taskID uuid.UUID, expectedVersio
 		ExpectedVersion: expectedVersion, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
 		Code: code, Message: message})
 	return failed, err
+}
+
+// ConvergeFailedTask projects every failed conversational task into a visible,
+// idempotent Issue outcome and delegates Team worker handling to its richer
+// coordinator-aware path. Declared workflows retain their own failure policy.
+func (s *Service) ConvergeFailedTask(ctx context.Context, taskID uuid.UUID) (*controlmodel.Issue, *controlmodel.Comment, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if task.Status != controlmodel.AgentTaskFailed {
+		return nil, nil, nil
+	}
+	if task.TeamID != nil && !task.LeaderTask {
+		return s.ConvergeFailedWorker(ctx, taskID)
+	}
+	run, err := s.Store.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Declared workflows own their root Issue lifecycle through their failure
+	// policy. This projection is for direct/adaptive conversational work.
+	if run.DefinitionRevisionID != nil {
+		return nil, nil, nil
+	}
+	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if issue.Status == controlmodel.IssueDone || issue.Status == controlmodel.IssueCancelled {
+		return issue, nil, nil
+	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	if issue.Status != controlmodel.IssueBlocked {
+		issue, err = s.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+			controlmodel.IssueBlocked, actor, "AgentTask failed: "+task.ErrorCode)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	comments, err := s.listAllComments(ctx, issue.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, comment := range comments {
+		if comment.Type == controlmodel.CommentStatus && comment.SourceTaskID != nil && *comment.SourceTaskID == task.ID {
+			return issue, comment, nil
+		}
+	}
+	code := strings.TrimSpace(task.ErrorCode)
+	if code == "" {
+		code = "agent_task_failed"
+	}
+	message := strings.TrimSpace(task.ErrorMessage)
+	if message == "" {
+		message = "The Agent could not complete the task."
+	}
+	result, err := s.Store.Collaboration().CreateComment(ctx, store.CreateCommentRequest{
+		Comment: &controlmodel.Comment{IssueID: issue.ID, Author: actor,
+			Content: "Agent could not complete this Issue.\nFailure code: " + code +
+				"\nFailure: " + message + "\nIssue status: blocked.",
+			Type: controlmodel.CommentStatus, SourceTaskID: &task.ID, SourceAttemptID: task.CurrentAttemptID},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return issue, result.Comment, nil
 }
 
 // ConvergeFailedWorker turns an exhausted Team worker failure into a durable

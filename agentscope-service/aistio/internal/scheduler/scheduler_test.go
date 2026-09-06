@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
@@ -25,6 +26,52 @@ func TestEffectivePriorityAgesEveryTenMinutesAndCaps(t *testing.T) {
 	}
 	if got := EffectivePriority(10, now.Add(-24*time.Hour), now); got != 60 {
 		t.Fatalf("capped priority=%d", got)
+	}
+}
+
+func TestAdmissionSerializesTeamLeaderFollowUps(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "serial-lead", LeaderAgentRef: "leader",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &collaboration.Service{Store: st}
+	issue, active, err := svc.CreateIssue(ctx, collaboration.CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "coordinate",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: active.ID, ExpectedVersion: active.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routed, err := st.Collaboration().CreateComment(ctx, store.CreateCommentRequest{
+		Comment: &controlmodel.Comment{IssueID: issue.ID,
+			Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"},
+			Content: "another worker outcome", Type: controlmodel.CommentStatus, SourceTaskID: &active.ID},
+		Targets: []store.CommentTarget{{TargetType: controlmodel.AssigneeTeam, TargetRef: team.ID.String(),
+			AgentRef: "leader", TeamID: &team.ID, TeamRole: "leader", ParentTaskID: &active.ID,
+			RouteType: controlmodel.RouteTeamLeader}},
+	})
+	if err != nil || len(routed.Tasks) != 1 {
+		t.Fatalf("queued follow-up: result=%+v err=%v", routed, err)
+	}
+	s := &Scheduler{Store: st}
+	if err = s.admitConcurrency(ctx, &routed.Tasks[0]); err == nil ||
+		!strings.Contains(err.Error(), "leader follow-up already active") {
+		t.Fatalf("concurrent leader follow-up was admitted: %v", err)
 	}
 }
 

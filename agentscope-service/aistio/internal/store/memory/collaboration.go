@@ -2093,7 +2093,7 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 	if originator.Type == controlmodel.ActorHuman {
 		task.AccountableHumanRef = originator.Ref
 	}
-	if issue.SourceType == "agent-task" {
+	if source == nil && issue.SourceType == "agent-task" {
 		if sourceID, err := uuid.Parse(issue.SourceRef); err == nil {
 			if sourceTask := r.s.agentTasks[sourceID]; sourceTask != nil && sourceTask.Tenant == issue.Tenant && sourceTask.Namespace == issue.Namespace {
 				source = sourceTask

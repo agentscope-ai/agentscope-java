@@ -265,7 +265,7 @@ func (s *Server) applyManagedSessionStatus(ctx context.Context, session *store.S
 		// semantic protocol: it must explicitly complete or fail. Convert a
 		// text-only return into an immediate durable outcome instead of leaving
 		// the task running until its heartbeat lease expires.
-		code, message = "managed_turn_incomplete", "managed Agent turn ended without task.complete or task.fail"
+		code, message = "managed_turn_incomplete", s.managedIncompleteTurnMessage(ctx, session, report)
 	case "session.error":
 		code, message = managedTurnError(report.Payload)
 	case "session.status_terminated":
@@ -279,6 +279,36 @@ func (s *Server) applyManagedSessionStatus(ctx context.Context, session *store.S
 		return err
 	}
 	return (&orchestration.Engine{Store: s.store}).ReconcileRun(context.WithoutCancel(ctx), failed.OrchestrationRunID)
+}
+
+func (s *Server) managedIncompleteTurnMessage(ctx context.Context, session *store.Session,
+	report *managedSessionEventReport) string {
+	const base = "managed Agent turn ended without task.complete or task.fail"
+	if session == nil {
+		return base
+	}
+	events, err := s.store.Events().List(ctx, session.ID)
+	if err != nil {
+		return base
+	}
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.EventType != "agent.message" || strings.TrimSpace(event.Content) == "" {
+			continue
+		}
+		var metadata map[string]any
+		if json.Unmarshal(event.FrameworkMeta, &metadata) == nil && strings.TrimSpace(report.AttemptID) != "" {
+			if attemptID, _ := metadata["attemptId"].(string); attemptID != report.AttemptID {
+				continue
+			}
+		}
+		text := []rune(strings.TrimSpace(event.Content))
+		if len(text) > 2000 {
+			text = append(text[:2000], []rune("…")...)
+		}
+		return base + "\nLast response: " + string(text)
+	}
+	return base
 }
 
 func (s *Server) managedReportMatchesAttempt(ctx context.Context, task *controlmodel.AgentTask, report *managedSessionEventReport) (bool, error) {
