@@ -99,6 +99,7 @@ import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.ArtifactDeliveryTool;
+import io.agentscope.harness.agent.tool.EscalatingShellExecuteTool;
 import io.agentscope.harness.agent.tool.FilesystemTool;
 import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySaveTool;
@@ -1278,6 +1279,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         SandboxFilesystemSpec sandboxFilesystemSpec;
         RemoteFilesystemSpec remoteFilesystemSpec;
         LocalFilesystemSpec localFilesystemSpec;
+        boolean permissionEscalation = false;
         final Map<String, AbstractFilesystem> filesystemRoutes = new LinkedHashMap<>();
 
         // AgentStateStore — mirrored only to pass through to inner; the user-set AgentStateStore
@@ -1702,9 +1704,36 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Replaces the permission context wholesale. When combining with {@link
+         * #permissionEscalation(boolean)}, prefer setting the flag via the dedicated builder
+         * method (it also registers the escalation-aware shell tool); setting {@code
+         * escalationEnabled(true)} directly on the supplied context enables the engine-side
+         * handling only, without the schema advertising the arguments.
+         */
         public Builder permissionContext(PermissionContextState permissionContext) {
             this.permissionContextOverride = permissionContext;
             inner.permissionContext(permissionContext);
+            return this;
+        }
+
+        /**
+         * Enables model-requested permission escalation. When {@code true}: (a) the shell tool's
+         * schema additionally advertises optional {@code sandbox_permissions} + {@code
+         * justification} arguments, and (b) the effective permission context carries the
+         * escalation flag so the permission engine resolves those requests — a valid
+         * strictly-wider request routes through the user-confirmation flow before anything
+         * executes; every rejection (malformed pairing, unknown or non-wider target, deny rules)
+         * fails closed.
+         *
+         * <p>Enabling this flag does NOT change how any other tool call is evaluated: calls
+         * without escalation arguments stay on exactly their previous permission path (an
+         * otherwise default-configured agent keeps auto-executing them). Only calls that
+         * actually carry the escalation arguments engage the permission engine. Default {@code
+         * false}: no schema, state, or evaluation change at all.
+         */
+        public Builder permissionEscalation(boolean permissionEscalation) {
+            this.permissionEscalation = permissionEscalation;
             return this;
         }
 
@@ -2327,6 +2356,27 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // user-registered tools never bleed across builds.
             Toolkit agentToolkit = this.toolkit.copy();
 
+            // The escalation flag travels on the permission context so the engine and any
+            // user-supplied rules observe one coherent context. Recomputed on EVERY build from
+            // the user's own context so builder reuse cannot leak an earlier build's merged
+            // state (true -> build -> false -> build must yield escalation OFF, not a hidden
+            // engine-on/schema-off split), and the call order of permissionContext(...) and
+            // permissionEscalation(...) stays irrelevant.
+            if (permissionEscalation) {
+                PermissionContextState base =
+                        permissionContextOverride != null
+                                ? permissionContextOverride
+                                : PermissionContextState.builder().build();
+                inner.permissionContext(base.withEscalationEnabled(true));
+            } else {
+                // Undo any escalation flag a PREVIOUS build of this same builder merged into
+                // inner (reusing a builder must never leak the earlier build's state), and
+                // preserve the user's own context verbatim — including a context that carries
+                // escalationEnabled=true set directly (engine-side handling without the
+                // schema-advertised tool variant).
+                inner.permissionContext(permissionContextOverride);
+            }
+
             // ---- Validation ----
             int specCount = 0;
             if (sandboxFilesystemSpec != null) specCount++;
@@ -2688,7 +2738,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 filesystem, pathNormalizer, artifactDeliveryTarget));
             }
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
-                agentToolkit.registerTool(new ShellExecuteTool(sandbox));
+                // The escalation-aware variant advertises the same tool name with two additional
+                // optional arguments; registered only when the feature is explicitly enabled.
+                agentToolkit.registerTool(
+                        permissionEscalation
+                                ? new EscalatingShellExecuteTool(sandbox)
+                                : new ShellExecuteTool(sandbox));
             }
             if (!disableWebTools) {
                 agentToolkit.registerTool(new WebTools.WebFetchTool());
