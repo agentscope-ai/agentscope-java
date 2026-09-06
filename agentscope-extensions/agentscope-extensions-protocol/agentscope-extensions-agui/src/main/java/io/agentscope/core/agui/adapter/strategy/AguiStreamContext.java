@@ -53,6 +53,8 @@ public class AguiStreamContext {
 
     private final Set<String> startedTextMessages = new LinkedHashSet<>();
     private final Set<String> endedTextMessages = new LinkedHashSet<>();
+    private final Map<TextBlockKey, String> textMessageIds = new LinkedHashMap<>();
+    private final Map<String, String> firstTextBlockByReply = new LinkedHashMap<>();
     private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
     private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
     private final Set<String> startedToolCalls = new LinkedHashSet<>();
@@ -146,6 +148,26 @@ public class AguiStreamContext {
             startTextMessage(messageId);
             emit(new AguiEvent.TextMessageContent(threadId, runId, messageId, delta));
         }
+    }
+
+    public String textMessageId(String replyId, String blockId) {
+        String normalizedBlockId = isBlank(blockId) ? "text" : blockId;
+        TextBlockKey key = new TextBlockKey(replyId, normalizedBlockId);
+        return textMessageIds.computeIfAbsent(
+                key,
+                ignored -> {
+                    String firstBlockId =
+                            firstTextBlockByReply.putIfAbsent(replyId, normalizedBlockId);
+                    if (firstBlockId == null || Objects.equals(firstBlockId, normalizedBlockId)) {
+                        return replyId;
+                    }
+                    return replyId + "-" + normalizedBlockId;
+                });
+    }
+
+    public String existingTextMessageId(String replyId, String blockId) {
+        String normalizedBlockId = isBlank(blockId) ? "text" : blockId;
+        return textMessageIds.get(new TextBlockKey(replyId, normalizedBlockId));
     }
 
     public void closeActiveTextMessage() {
@@ -356,6 +378,8 @@ public class AguiStreamContext {
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
+
+    private record TextBlockKey(String replyId, String blockId) {}
 
     private void warnMissingToolCallId(String eventName) {
         if (!warnedMissingToolCallIdOperations.add(eventName)) {

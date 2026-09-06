@@ -330,6 +330,60 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testTextSegmentsSeparatedByToolCallUseDistinctMessageIds() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new TextBlockStartEvent("reply-mixed", "text"),
+                            new TextBlockDeltaEvent("reply-mixed", "text", "before"),
+                            new TextBlockEndEvent("reply-mixed", "text"),
+                            new ToolCallStartEvent("reply-mixed", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-mixed", "tool-1", "lookup"),
+                            new TextBlockStartEvent("reply-mixed", "text-2"),
+                            new TextBlockDeltaEvent("reply-mixed", "text-2", "after"),
+                            new TextBlockEndEvent("reply-mixed", "text-2"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.TEXT_MESSAGE_START,
+                            AguiEventType.TEXT_MESSAGE_CONTENT,
+                            AguiEventType.TEXT_MESSAGE_END,
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_END,
+                            AguiEventType.TEXT_MESSAGE_START,
+                            AguiEventType.TEXT_MESSAGE_CONTENT,
+                            AguiEventType.TEXT_MESSAGE_END),
+                    types(events));
+
+            List<String> messageIds =
+                    events.stream()
+                            .filter(
+                                    event ->
+                                            event instanceof AguiEvent.TextMessageStart
+                                                    || event instanceof AguiEvent.TextMessageContent
+                                                    || event instanceof AguiEvent.TextMessageEnd)
+                            .map(
+                                    event -> {
+                                        if (event instanceof AguiEvent.TextMessageStart start) {
+                                            return start.messageId();
+                                        }
+                                        if (event instanceof AguiEvent.TextMessageContent content) {
+                                            return content.messageId();
+                                        }
+                                        return ((AguiEvent.TextMessageEnd) event).messageId();
+                                    })
+                            .toList();
+            assertEquals(
+                    List.of(
+                            "reply-mixed",
+                            "reply-mixed",
+                            "reply-mixed",
+                            "reply-mixed-text-2",
+                            "reply-mixed-text-2",
+                            "reply-mixed-text-2"),
+                    messageIds);
+        }
+
+        @Test
         void testThinkingEventsAreIgnoredWhenReasoningDisabled() {
             List<AguiEvent> events =
                     runReActEvents(
