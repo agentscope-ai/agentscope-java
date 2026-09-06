@@ -95,8 +95,10 @@ public final class ToolValidator {
                 return null; // Validation passed
             }
 
-            // Format error messages
-            return errors.stream().map(Error::getMessage).collect(Collectors.joining("; "));
+            // Format error messages, prefixing each with its field path so failures are actionable
+            return errors.stream()
+                    .map(e -> e.getInstanceLocation() + ": " + e.getMessage())
+                    .collect(Collectors.joining("\n"));
 
         } catch (Exception e) {
             return "Schema validation error: " + e.getMessage();

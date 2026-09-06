@@ -431,7 +431,7 @@ for (var tc : externalEvent.getToolCalls()) {
 }
 ```
 
-**3. Resume the agent** — feed the results back as the next `call`'s input message. The results are injected into the agent context and reasoning continues from where it paused. See `agentscope-examples/documentation/.../hitl/InterruptionExample.java` for a complete walkthrough.
+**3. Resume the agent** — feed the results back as the next `call`'s input message. After the results are validated, they are injected into the agent context and the agent emits `ExternalExecutionResultEvent`; its `getReplyId()` matches the earlier `RequireExternalExecutionEvent#getReplyId()`. Reasoning then continues from where it paused.
 
 :::{tip}
 Use `streamEvents` when building interactive UIs — it lets you detect pauses in real time and prompt the user immediately. Use `call` for programmatic flows that handle events automatically. Complete runnable examples: `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`.

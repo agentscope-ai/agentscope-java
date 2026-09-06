@@ -37,7 +37,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
 import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -56,20 +55,23 @@ class AgentProtocolTaskStoreHitlTest {
     @TempDir Path tempDir;
 
     private HarnessAgent agent;
-    private WorkspaceManager workspaceManager;
+    private ProtocolTaskRepository taskRepository;
     private AgentProtocolTaskStore store;
     private final AtomicInteger streamCalls = new AtomicInteger();
 
     @BeforeEach
     void setUp() {
         agent = mock(HarnessAgent.class);
-        workspaceManager = new WorkspaceManager(tempDir);
+        taskRepository = new WorkspaceProtocolTaskRepository(tempDir);
         AgentProtocolProperties props = new AgentProtocolProperties();
         props.setHitlEnabled(true);
         props.setStreamingEnabled(true);
         store =
                 new AgentProtocolTaskStore(
-                        () -> agent, workspaceManager, new AgentProtocolTaskEventBus(), props);
+                        AgentFactory.fixed(agent),
+                        taskRepository,
+                        new AgentProtocolTaskEventBus(),
+                        props);
 
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
                 .thenAnswer(

@@ -48,12 +48,67 @@ Msg otherUser = chat.send(SendOptions.userId("user-2"), "Hi there").block();
 | `SendOptions.userId("user-1")` | One session per user (most common) |
 | `SendOptions.of("user-1", "session-a")` | Explicit session — multiple conversations per user |
 | `SendOptions.userId("user-1").withAgentId("support")` | Route to a specific agent in multi-agent setups |
+| `SendOptions.userId("user-1").withAttribute("tenant", "acme")` | Attach string/typed attributes to the agent turn |
+| `SendOptions.userId("user-1").withRuntimeContext(rtc)` | Carry a full `RuntimeContext` (e.g. force-sync flags) |
 
 ```java
 // Same user, two independent conversations
 chat.send(SendOptions.of("user-1", "session-a"), "Topic A").block();
 chat.send(SendOptions.of("user-1", "session-b"), "Topic B").block();
+
+// Pass application context into the agent turn
+chat.send(
+        SendOptions.userId("user-1")
+                .withAttribute("tenant", "acme")
+                .withRuntimeContext(
+                        RuntimeContext.builder()
+                                .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                                .build()),
+        "Investigate the ticket")
+        .block();
 ```
+
+### Multimodal / structured messages
+
+Plain-text `send(String)` is a convenience. For images, audio, or multi-part turns, pass a pre-built `Msg` (or `List<Msg>`) — every String overload has matching `Msg` / `List<Msg>` variants (including `SendOptions` and `sendStream`):
+
+```java
+Msg multimodal = Msg.builder()
+        .role(MsgRole.USER)
+        .content(
+                TextBlock.builder().text("What is in this image?").build(),
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/photo.png").build())
+                        .build())
+        .build();
+
+chat.send(SendOptions.userId("user-1"), multimodal).block();
+chat.send(SendOptions.userId("user-1"), List.of(multimodal)).block();
+chat.send(multimodal).block(); // single-session mode
+```
+
+### RuntimeContext merge
+
+Channel turns always build a `RuntimeContext` inside the Gateway. Callers can contribute a **caller base** via `SendOptions` / `InboundMessage.runtimeContext()` / a `ChannelRuntimeContextResolver`. Merge order:
+
+1. Start from the caller context (may be empty)
+2. If a `ChannelRuntimeContextResolver` is configured and returns non-null, that value **replaces** the caller base
+3. Gateway overlays identity fields — `sessionId` (`gw-…`), `userId`, `msgContext`, `gateKey`, `outboundAddress` — which always win on conflict
+
+Wire a resolver through `GatewayBootstrap`:
+
+```java
+GatewayBootstrap gw = GatewayBootstrap.builder()
+        .agent("main", b -> b.name("assistant").model(model))
+        .runtimeContextResolver(req ->
+                RuntimeContext.builder(req.callerContext())
+                        .put("tenant", resolveTenant(req))
+                        .build())
+        .build();
+ChatUiChannel chat = gw.chatUiChannel();
+```
+
+Or call `gateway.setRuntimeContextResolver(...)` after obtaining the gateway. Do **not** put business attributes in `MsgContext.extra` — that map participates in the session key.
 
 ## Streaming events + SSE
 

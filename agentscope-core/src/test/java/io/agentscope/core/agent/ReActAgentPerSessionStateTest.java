@@ -166,6 +166,52 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearStateCache releases all local session state and permission engines")
+    void clearStateCacheReleasesAllLocalCaches() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState sessA = agent.getAgentState("u1", "sessA");
+        AgentState sessB = agent.getAgentState("u1", "sessB");
+        var defaultPermissionEngine = agent.getPermissionEngine();
+
+        agent.clearStateCache();
+
+        assertNotSame(sessA, agent.getAgentState("u1", "sessA"));
+        assertNotSame(sessB, agent.getAgentState("u1", "sessB"));
+        assertNotSame(defaultPermissionEngine, agent.getPermissionEngine());
+    }
+
+    @Test
+    @DisplayName("clearStateCache removes only the targeted session")
+    void clearStateCacheRemovesOnlyTargetedSession() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState target = agent.getAgentState("u1", "sessA");
+        AgentState other = agent.getAgentState("u1", "sessB");
+
+        agent.clearStateCache(RuntimeContext.builder().userId("u1").sessionId("sessA").build());
+
+        assertNotSame(target, agent.getAgentState("u1", "sessA"));
+        assertSame(other, agent.getAgentState("u1", "sessB"));
+    }
+
+    @Test
+    @DisplayName("clearStateCache preserves persisted session state")
+    void clearStateCachePreservesPersistedState(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent agent = agent(store);
+        AgentState state = agent.getAgentState("u1", "sessA");
+        state.setSummary("remembered");
+        agent.saveAgentState("u1", "sessA");
+
+        agent.clearStateCache("u1", "sessA");
+
+        AgentState reloaded = agent.getAgentState("u1", "sessA");
+        assertNotSame(state, reloaded);
+        assertEquals("remembered", reloaded.getSummary());
+    }
+
+    @Test
     @DisplayName("saveAgentState(uid,sid) round-trips through the store into a fresh engine")
     void savePersistsPerSlot() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
@@ -387,6 +433,48 @@ class ReActAgentPerSessionStateTest {
                         .findFirst()
                         .orElseThrow();
         assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
+    }
+
+    @Test
+    @DisplayName("shutdown retry clears and uses the current non-default session state")
+    void shutdownRetryUsesCurrentSessionState() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState defaultState = agent.getAgentState();
+        AgentState sessionState = agent.getAgentState("u1", "sessA");
+        sessionState.setShutdownInterrupted(true);
+
+        Msg response =
+                agent.call(
+                                List.of(userMsg("duplicate prompt")),
+                                RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                        .block(Duration.ofSeconds(5));
+
+        assertEquals("ok", response.getTextContent());
+        assertFalse(sessionState.isShutdownInterrupted());
+        assertFalse(defaultState.isShutdownInterrupted());
+        assertTrue(
+                sessionState.getContext().stream()
+                        .noneMatch(msg -> "duplicate prompt".equals(msg.getTextContent())),
+                "the retry input must be discarded for the interrupted session");
+
+        ReActAgent otherAgent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState otherDefaultState = otherAgent.getAgentState();
+        AgentState otherSessionState = otherAgent.getAgentState("u1", "sessA");
+        otherDefaultState.setShutdownInterrupted(true);
+
+        otherAgent
+                .call(
+                        List.of(userMsg("new prompt")),
+                        RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                .block(Duration.ofSeconds(5));
+
+        assertTrue(otherDefaultState.isShutdownInterrupted());
+        assertTrue(
+                otherSessionState.getContext().stream()
+                        .anyMatch(msg -> "new prompt".equals(msg.getTextContent())),
+                "a default-session flag must not discard another session's input");
     }
 
     private static final class DelayedFirstChunkModel extends ChatModelBase {

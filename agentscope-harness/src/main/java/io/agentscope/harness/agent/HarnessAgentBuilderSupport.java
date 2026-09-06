@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
@@ -127,8 +128,17 @@ final class HarnessAgentBuilderSupport {
         return base.isEmpty() ? SUBAGENT_CONTEXT_SECTION : base + "\n\n" + SUBAGENT_CONTEXT_SECTION;
     }
 
-    /** Custom-supplied subagent factory entry: name + factory function from name to Agent. */
-    record SubagentFactoryEntry(String name, Function<String, Agent> factory) {}
+    /**
+     * Custom-supplied subagent factory entry: name + optional description + factory function from
+     * name to Agent.
+     */
+    record SubagentFactoryEntry(String name, String description, Function<String, Agent> factory) {
+
+        /** Description shown to the orchestrator, falling back to the name when unset. */
+        String displayDescription() {
+            return description != null && !description.isBlank() ? description : name;
+        }
+    }
 
     // -----------------------------------------------------------------
     //  Filesystem
@@ -219,7 +229,7 @@ final class HarnessAgentBuilderSupport {
             entries.add(
                     new SubagentEntry(
                             custom.name(),
-                            custom.name(),
+                            custom.displayDescription(),
                             // custom factory uses Function<String, Agent> — pre-B-0 signature
                             // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
                             // that need parent-aware isolation should register a programmatic
@@ -262,7 +272,7 @@ final class HarnessAgentBuilderSupport {
             entries.add(
                     new SubagentEntry(
                             custom.name(),
-                            custom.name(),
+                            custom.displayDescription(),
                             // custom factory uses Function<String, Agent> — pre-B-0 signature
                             // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
                             // that need parent-aware isolation should register a programmatic
@@ -289,6 +299,7 @@ final class HarnessAgentBuilderSupport {
         final ExecutionConfig capturedToolExec = b.toolExecutionConfig;
         final GenerateOptions capturedGenOpts = b.generateOptions;
         final String capturedEnvMemory = b.environmentMemory;
+        final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         final List<Hook> capturedHooks = List.copyOf(b.hooks);
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
@@ -332,6 +343,7 @@ final class HarnessAgentBuilderSupport {
                             .asLeafSubagent()
                             .maxIters(capturedMaxIters)
                             .environmentMemory(capturedEnvMemory)
+                            .memory(capturedMemoryConfig)
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
                             .maxContextTokens(capturedMaxContextTokens);
@@ -389,6 +401,7 @@ final class HarnessAgentBuilderSupport {
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
+        final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
@@ -450,6 +463,7 @@ final class HarnessAgentBuilderSupport {
                             .defaultSessionId(childSessionId)
                             .maxIters(decl.getSteps())
                             .asLeafSubagent()
+                            .memory(capturedMemoryConfig)
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
 

@@ -47,6 +47,7 @@ class AguiAdapterConfigTest {
         assertTrue(config.isEmitToolCallArgs());
         assertFalse(config.isEmitTokenUsage());
         assertFalse(config.isEnableReasoning()); // Default should be false
+        assertFalse(config.isEmitRunFinishedAfterError()); // Default should be false
         assertEquals(Duration.ofMinutes(10), config.getRunTimeout());
         assertNull(config.getDefaultAgentId());
         assertFalse(config.isBaseEventPropertiesEnricherEnabled());
@@ -160,6 +161,7 @@ class AguiAdapterConfigTest {
                         .emitToolCallArgs(false)
                         .emitTokenUsage(true)
                         .enableReasoning(true)
+                        .emitRunFinishedAfterError(true)
                         .runTimeout(Duration.ofHours(1))
                         .defaultAgentId("my-agent")
                         .baseEventPropertiesEnricherEnabled(false)
@@ -170,6 +172,7 @@ class AguiAdapterConfigTest {
         assertFalse(config.isEmitToolCallArgs());
         assertTrue(config.isEmitTokenUsage());
         assertTrue(config.isEnableReasoning());
+        assertTrue(config.isEmitRunFinishedAfterError());
         assertEquals(Duration.ofHours(1), config.getRunTimeout());
         assertEquals("my-agent", config.getDefaultAgentId());
         assertFalse(config.isBaseEventPropertiesEnricherEnabled());

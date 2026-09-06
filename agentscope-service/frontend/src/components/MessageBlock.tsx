@@ -15,19 +15,22 @@
  */
 
 import React, { useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import ToolCallBlock from './ToolCallBlock';
 
-export interface MessageBlockTool {
+/** Ordered content inside one assistant turn bubble (text and tool calls interleaved). */
+export interface ContentBlock {
+  kind: 'text' | 'tool';
   id: string;
-  name: string;
-  input?: string;
+  /** Text content, or the tool-call input when kind === 'tool'. */
+  text?: string;
+  toolName?: string;
   result?: string;
 }
 
 export interface MessageBlockProps {
   role: 'user' | 'assistant' | 'system' | 'error';
-  text: string;
-  tools: MessageBlockTool[];
+  blocks: ContentBlock[];
   pending?: boolean;
   /** Soft auto-expand while actively streaming once the user opens it — not forced. */
   defaultOpen?: boolean;
@@ -156,18 +159,20 @@ const s: Record<string, React.CSSProperties> = {
 
 export default function MessageBlock({
   role,
-  text,
-  tools,
+  blocks,
   pending,
   defaultOpen = false,
 }: MessageBlockProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const text = useMemo(
+    () => blocks.filter(b => b.kind === 'text').map(b => b.text ?? '').join(''),
+    [blocks],
+  );
+  const toolCount = useMemo(() => blocks.filter(b => b.kind === 'tool').length, [blocks]);
   const preview = useMemo(() => messagePreviewLine(text, pending), [text, pending]);
-  const toolHint = tools.length > 0
-    ? `${tools.length} tool${tools.length === 1 ? '' : 's'}`
-    : '';
+  const toolHint = toolCount > 0 ? `${toolCount} tool${toolCount === 1 ? '' : 's'}` : '';
 
-  const empty = !text && tools.length === 0;
+  const empty = blocks.length === 0;
 
   return (
     <div style={{ ...s.root, ...roleStyles[role] }}>
@@ -193,25 +198,34 @@ export default function MessageBlock({
 
       {open && (
         <div style={s.body}>
-          {tools.length > 0 && (
-            <div>
-              {tools.map((t) => (
+          {blocks.map(b => (
+            b.kind === 'text'
+              ? (
+                role === 'assistant'
+                  ? (
+                    <div key={b.id} className="md-text" style={{ wordBreak: 'break-word' }}>
+                      <ReactMarkdown>{b.text}</ReactMarkdown>
+                    </div>
+                  )
+                  : (
+                    <div key={b.id} style={s.text}>{b.text}</div>
+                  )
+              )
+              : (
                 <ToolCallBlock
-                  key={t.id}
-                  toolName={t.name}
-                  toolCallId={t.id}
-                  result={t.result}
+                  key={b.id}
+                  toolName={b.toolName ?? 'tool'}
+                  toolCallId={b.id}
+                  input={b.text}
+                  result={b.result}
                 />
-              ))}
-            </div>
-          )}
-          {text ? (
-            <div style={s.text}>{text}</div>
-          ) : pending ? (
+              )
+          ))}
+          {empty && pending && <div style={{ ...s.text, ...s.pending }}>…</div>}
+          {empty && !pending && <div style={{ ...s.text, ...s.pending }}>—</div>}
+          {!empty && pending && text.trim() === '' && toolCount === 0 && (
             <div style={{ ...s.text, ...s.pending }}>…</div>
-          ) : empty ? (
-            <div style={{ ...s.text, ...s.pending }}>—</div>
-          ) : null}
+          )}
         </div>
       )}
     </div>

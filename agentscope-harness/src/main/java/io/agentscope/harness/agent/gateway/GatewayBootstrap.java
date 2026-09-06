@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.ChannelRuntimeContextResolver;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import java.util.ArrayList;
@@ -179,6 +180,7 @@ public final class GatewayBootstrap {
         private final List<Channel> channels = new ArrayList<>();
         private Consumer<HarnessAgent.Builder> agentCustomizer;
         private DistributedStore distributedStore;
+        private ChannelRuntimeContextResolver runtimeContextResolver;
 
         private Builder() {}
 
@@ -245,6 +247,16 @@ public final class GatewayBootstrap {
         }
 
         /**
+         * Sets a {@link ChannelRuntimeContextResolver} that supplies / replaces caller {@code
+         * RuntimeContext} on each Gateway turn before identity fields are applied. Useful for
+         * attaching tenant / auth / tool dependencies from the surrounding request.
+         */
+        public Builder runtimeContextResolver(ChannelRuntimeContextResolver resolver) {
+            this.runtimeContextResolver = resolver;
+            return this;
+        }
+
+        /**
          * Builds the gateway bootstrap. At least one agent must be registered.
          *
          * @throws IllegalStateException if no agents are registered
@@ -270,6 +282,9 @@ public final class GatewayBootstrap {
             }
 
             HarnessGateway gw = HarnessGateway.create(cm);
+            if (runtimeContextResolver != null) {
+                gw.setRuntimeContextResolver(runtimeContextResolver);
+            }
 
             // Register all agents, bind the main one
             HarnessAgent mainHa = agents.get(resolvedMainId);

@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.agentprotocol;
 
+import java.nio.file.Path;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** Configuration for the AgentScope task HTTP protocol endpoints. */
@@ -35,6 +36,13 @@ public class AgentProtocolProperties {
 
     /** Client idle timeout hint for SSE (ms); not enforced server-side by default. */
     private long sseTimeoutMs = 10_800_000L;
+
+    /**
+     * Dedicated control-plane directory for protocol task-record persistence. Independent of any
+     * execution agent's workspace. When null/blank, defaults to {@code
+     * ${user.dir}/.agentscope/agent-protocol}.
+     */
+    private String taskStorePath;
 
     public boolean isEnabled() {
         return enabled;
@@ -74,5 +82,21 @@ public class AgentProtocolProperties {
 
     public void setSseTimeoutMs(long sseTimeoutMs) {
         this.sseTimeoutMs = sseTimeoutMs;
+    }
+
+    /**
+     * Resolved control-plane path. Never blank after this getter — falls back to {@code
+     * ${user.dir}/.agentscope/agent-protocol}.
+     */
+    public String getTaskStorePath() {
+        if (taskStorePath == null || taskStorePath.isBlank()) {
+            return Path.of(System.getProperty("user.dir"), ".agentscope", "agent-protocol")
+                    .toString();
+        }
+        return taskStorePath;
+    }
+
+    public void setTaskStorePath(String taskStorePath) {
+        this.taskStorePath = taskStorePath;
     }
 }

@@ -441,7 +441,7 @@ RAGFlowConfig config = RAGFlowConfig.builder()
     // === 高级检索功能（可选）===
     .useKg(false)                               // 知识图谱多跳查询，默认 false
     .tocEnhance(false)                          // 目录增强检索，默认 false
-    .rerankId(1)                                // 重排序模型 ID
+    .rerankId("BAAI/bge-reranker-v2-m3@BAAI")   // 重排序模型 ID（模型名或 hex UUID）
     .keyword(false)                             // 关键词匹配，默认 false
     .highlight(false)                           // 高亮匹配结果，默认 false
     .addCrossLanguage("en")                     // 添加目标语言

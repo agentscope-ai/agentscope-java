@@ -149,7 +149,13 @@ public final class ChatUiChannel implements Channel {
     public Mono<Msg> dispatch(InboundMessage message) {
         Objects.requireNonNull(message, "message");
         RouteResult route = router.resolveRoute(config, message);
-        return resolveGateway().run(route.context(), message.messages(), route.outboundAddress());
+        return resolveGateway()
+                .run(
+                        route.context(),
+                        message.messages(),
+                        route.outboundAddress(),
+                        message.runtimeContext(),
+                        message);
     }
 
     /**
@@ -195,11 +201,52 @@ public final class ChatUiChannel implements Channel {
         return send(ChatUiRequest.of(Objects.requireNonNull(text, "text")));
     }
 
+    /**
+     * Sends a pre-built {@link Msg} (text or multimodal) in single-session mode.
+     *
+     * <pre>{@code
+     * Msg multimodal = Msg.builder()
+     *         .role(MsgRole.USER)
+     *         .content(
+     *                 TextBlock.builder().text("Describe this").build(),
+     *                 ImageBlock.builder()
+     *                         .source(URLSource.builder().url(imageUrl).build())
+     *                         .build())
+     *         .build();
+     * chat.send(multimodal).block();
+     * }</pre>
+     */
+    public Mono<Msg> send(Msg message) {
+        Objects.requireNonNull(message, "message");
+        return send(ChatUiRequest.of(List.of(message)));
+    }
+
+    /**
+     * Sends one or more pre-built {@link Msg}s in single-session mode. Use this for multimodal
+     * content or multi-part user turns.
+     */
+    public Mono<Msg> send(List<Msg> messages) {
+        return send(ChatUiRequest.of(requireMessages(messages)));
+    }
+
     /** Sends a plain-text message from a specific peer. */
     public Mono<Msg> send(String peerId, String text) {
         Objects.requireNonNull(peerId, "peerId");
         Objects.requireNonNull(text, "text");
         return send(ChatUiRequest.withPeer(peerId, text));
+    }
+
+    /** Sends a pre-built {@link Msg} from a specific peer. */
+    public Mono<Msg> send(String peerId, Msg message) {
+        Objects.requireNonNull(peerId, "peerId");
+        Objects.requireNonNull(message, "message");
+        return send(ChatUiRequest.withPeer(peerId, List.of(message)));
+    }
+
+    /** Sends one or more pre-built {@link Msg}s from a specific peer. */
+    public Mono<Msg> send(String peerId, List<Msg> messages) {
+        Objects.requireNonNull(peerId, "peerId");
+        return send(ChatUiRequest.withPeer(peerId, requireMessages(messages)));
     }
 
     /**
@@ -216,12 +263,45 @@ public final class ChatUiChannel implements Channel {
         return dispatchWithOptions(options, List.of(msg));
     }
 
+    /**
+     * Sends a pre-built {@link Msg} with explicit routing identity. Prefer this overload for
+     * multimodal content (images, audio, …) while still using {@link SendOptions} for session
+     * routing.
+     */
+    public Mono<Msg> send(SendOptions options, Msg message) {
+        Objects.requireNonNull(options, "options");
+        Objects.requireNonNull(message, "message");
+        return dispatchWithOptions(options, List.of(message));
+    }
+
+    /**
+     * Sends one or more pre-built {@link Msg}s with explicit routing identity. Useful for
+     * multimodal or multi-part user turns.
+     */
+    public Mono<Msg> send(SendOptions options, List<Msg> messages) {
+        Objects.requireNonNull(options, "options");
+        return dispatchWithOptions(options, requireMessages(messages));
+    }
+
     /** Sends a message directly to an exposed subagent, bypassing normal routing. */
     public Mono<Msg> sendToSubagent(String subagentId, String text) {
         Objects.requireNonNull(subagentId, "subagentId");
         Objects.requireNonNull(text, "text");
         Msg msg = Msg.builder().role(MsgRole.USER).textContent(text).build();
         return resolveGateway().runSubagent(subagentId, List.of(msg));
+    }
+
+    /** Sends a pre-built {@link Msg} directly to an exposed subagent. */
+    public Mono<Msg> sendToSubagent(String subagentId, Msg message) {
+        Objects.requireNonNull(subagentId, "subagentId");
+        Objects.requireNonNull(message, "message");
+        return resolveGateway().runSubagent(subagentId, List.of(message));
+    }
+
+    /** Sends one or more pre-built {@link Msg}s directly to an exposed subagent. */
+    public Mono<Msg> sendToSubagent(String subagentId, List<Msg> messages) {
+        Objects.requireNonNull(subagentId, "subagentId");
+        return resolveGateway().runSubagent(subagentId, requireMessages(messages));
     }
 
     /** Sends a structured {@link ChatUiRequest} and returns the agent reply reactively. */
@@ -242,7 +322,12 @@ public final class ChatUiChannel implements Channel {
         Objects.requireNonNull(message, "message");
         RouteResult route = router.resolveRoute(config, message);
         return resolveGateway()
-                .runStream(route.context(), message.messages(), route.outboundAddress());
+                .runStream(
+                        route.context(),
+                        message.messages(),
+                        route.outboundAddress(),
+                        message.runtimeContext(),
+                        message);
     }
 
     /** Streaming variant of {@link #send(String)}. Returns fine-grained {@link AgentEvent}s. */
@@ -250,11 +335,35 @@ public final class ChatUiChannel implements Channel {
         return sendStream(ChatUiRequest.of(Objects.requireNonNull(text, "text")));
     }
 
+    /** Streaming variant of {@link #send(Msg)}. */
+    public Flux<AgentEvent> sendStream(Msg message) {
+        Objects.requireNonNull(message, "message");
+        return sendStream(ChatUiRequest.of(List.of(message)));
+    }
+
+    /** Streaming variant of {@link #send(List)}. */
+    public Flux<AgentEvent> sendStream(List<Msg> messages) {
+        return sendStream(ChatUiRequest.of(requireMessages(messages)));
+    }
+
     /** Streaming variant of {@link #send(String, String)}. */
     public Flux<AgentEvent> sendStream(String peerId, String text) {
         Objects.requireNonNull(peerId, "peerId");
         Objects.requireNonNull(text, "text");
         return sendStream(ChatUiRequest.withPeer(peerId, text));
+    }
+
+    /** Streaming variant of {@link #send(String, Msg)}. */
+    public Flux<AgentEvent> sendStream(String peerId, Msg message) {
+        Objects.requireNonNull(peerId, "peerId");
+        Objects.requireNonNull(message, "message");
+        return sendStream(ChatUiRequest.withPeer(peerId, List.of(message)));
+    }
+
+    /** Streaming variant of {@link #send(String, List)}. */
+    public Flux<AgentEvent> sendStream(String peerId, List<Msg> messages) {
+        Objects.requireNonNull(peerId, "peerId");
+        return sendStream(ChatUiRequest.withPeer(peerId, requireMessages(messages)));
     }
 
     /** Streaming variant of {@link #send(SendOptions, String)}. */
@@ -265,12 +374,38 @@ public final class ChatUiChannel implements Channel {
         return dispatchStreamWithOptions(options, List.of(msg));
     }
 
+    /** Streaming variant of {@link #send(SendOptions, Msg)}. */
+    public Flux<AgentEvent> sendStream(SendOptions options, Msg message) {
+        Objects.requireNonNull(options, "options");
+        Objects.requireNonNull(message, "message");
+        return dispatchStreamWithOptions(options, List.of(message));
+    }
+
+    /** Streaming variant of {@link #send(SendOptions, List)}. */
+    public Flux<AgentEvent> sendStream(SendOptions options, List<Msg> messages) {
+        Objects.requireNonNull(options, "options");
+        return dispatchStreamWithOptions(options, requireMessages(messages));
+    }
+
     /** Streaming variant of {@link #sendToSubagent(String, String)}. */
     public Flux<AgentEvent> sendToSubagentStream(String subagentId, String text) {
         Objects.requireNonNull(subagentId, "subagentId");
         Objects.requireNonNull(text, "text");
         Msg msg = Msg.builder().role(MsgRole.USER).textContent(text).build();
         return resolveGateway().runSubagentStream(subagentId, List.of(msg));
+    }
+
+    /** Streaming variant of {@link #sendToSubagent(String, Msg)}. */
+    public Flux<AgentEvent> sendToSubagentStream(String subagentId, Msg message) {
+        Objects.requireNonNull(subagentId, "subagentId");
+        Objects.requireNonNull(message, "message");
+        return resolveGateway().runSubagentStream(subagentId, List.of(message));
+    }
+
+    /** Streaming variant of {@link #sendToSubagent(String, List)}. */
+    public Flux<AgentEvent> sendToSubagentStream(String subagentId, List<Msg> messages) {
+        Objects.requireNonNull(subagentId, "subagentId");
+        return resolveGateway().runSubagentStream(subagentId, requireMessages(messages));
     }
 
     /** Streaming variant of {@link #send(ChatUiRequest)}. */
@@ -286,16 +421,24 @@ public final class ChatUiChannel implements Channel {
     //  Internal
     // -----------------------------------------------------------------
 
+    private static List<Msg> requireMessages(List<Msg> messages) {
+        Objects.requireNonNull(messages, "messages");
+        if (messages.isEmpty()) {
+            throw new IllegalArgumentException("messages must not be empty");
+        }
+        return messages;
+    }
+
     private Mono<Msg> dispatchWithOptions(SendOptions options, List<Msg> messages) {
         MsgContext ctx = buildContextFromOptions(options);
         OutboundAddress outbound = buildOutboundFromOptions(options);
-        return resolveGateway().run(ctx, messages, outbound);
+        return resolveGateway().run(ctx, messages, outbound, options.runtimeContext());
     }
 
     private Flux<AgentEvent> dispatchStreamWithOptions(SendOptions options, List<Msg> messages) {
         MsgContext ctx = buildContextFromOptions(options);
         OutboundAddress outbound = buildOutboundFromOptions(options);
-        return resolveGateway().runStream(ctx, messages, outbound);
+        return resolveGateway().runStream(ctx, messages, outbound, options.runtimeContext());
     }
 
     private MsgContext buildContextFromOptions(SendOptions options) {

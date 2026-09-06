@@ -49,7 +49,9 @@ import org.slf4j.LoggerFactory;
  * <p>Storage layout: {@code agents/<parentAgentId>/tasks/<sessionId>.json} — a JSON map of
  * {@code taskId → TaskRecord}, consistent with how sessions are stored. In distributed deployments
  * using {@code RemoteFilesystemSpec}, this path is automatically routed to shared storage, making
- * task state visible to any node.
+ * task state visible to any node. In sandbox mode the injected filesystem is a per-call proxy with
+ * no live sandbox between calls, so task records are persisted on the host workspace instead of
+ * inside the sandbox — see the task-record routing in {@code WorkspaceManager}.
  *
  * <p>The in-memory {@code localTasks} map is keyed by {@code "<sessionId>:<taskId>"} to preserve
  * session isolation when multiple sessions coexist in the same process.
@@ -754,6 +756,16 @@ public class WorkspaceTaskRepository implements TaskRepository {
      *     {@link WorkspaceManager#listAllTaskRecords})
      */
     void sweepOrphanedTasks(Duration orphanTimeout, Duration recentWindow) {
+        sweepOrphanedTasks(orphanTimeout, recentWindow, Instant.now());
+    }
+
+    /**
+     * Sweeps orphaned tasks using the supplied sweep time.
+     *
+     * <p>Package-private so tests can verify the timeout boundary without depending on the
+     * platform clock resolution.
+     */
+    void sweepOrphanedTasks(Duration orphanTimeout, Duration recentWindow, Instant sweepTime) {
         // Sweep runs without per-user RC. Tasks persisted under user-scoped namespaces are
         // visible to the sweep only via the captured per-task RC of any still-local entry; this
         // empty-RC path covers AGENT/GLOBAL-scoped persistence and the per-task local maps.
@@ -761,7 +773,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         try {
             Collection<TaskRecord> all =
                     workspaceManager.listAllTaskRecords(sweepRc, parentAgentId, recentWindow);
-            Instant threshold = Instant.now().minus(orphanTimeout);
+            Instant threshold = sweepTime.minus(orphanTimeout);
             for (TaskRecord record : all) {
                 if (record.getStatus() == null || record.getStatus().isTerminal()) {
                     continue;
@@ -771,7 +783,10 @@ public class WorkspaceTaskRepository implements TaskRepository {
                     continue;
                 }
                 Instant lastUpdated = record.getLastUpdatedAt();
-                if (lastUpdated == null || !lastUpdated.isBefore(threshold)) {
+                // A task is stale as soon as it reaches the timeout boundary. Besides matching
+                // the timeout contract, this avoids leaving a zero-timeout task RUNNING when the
+                // system clock returns the same instant for its last update and this sweep.
+                if (lastUpdated == null || lastUpdated.isAfter(threshold)) {
                     continue;
                 }
                 String sid = record.getParentSessionId();
