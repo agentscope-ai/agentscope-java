@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,11 @@ class OpenSandboxClientOptionsTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> OpenSandboxEndpoint.parse("http://localhost:8080#fragment"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenSandboxEndpoint.parse("http:///missing-host"));
+        assertThrows(
+                IllegalArgumentException.class, () -> OpenSandboxEndpoint.parse("https://:8443"));
     }
 
     @Test
@@ -82,6 +88,7 @@ class OpenSandboxClientOptionsTest {
         assertThrows(IllegalArgumentException.class, () -> options.setReadyTimeoutSeconds(0));
         assertThrows(IllegalArgumentException.class, () -> options.setRequestTimeoutSeconds(-1));
         assertThrows(IllegalArgumentException.class, () -> options.setSandboxTimeoutSeconds(0));
+        assertThrows(IllegalArgumentException.class, () -> options.setImage(null));
         assertThrows(IllegalArgumentException.class, () -> options.setImage(" "));
         assertThrows(IllegalArgumentException.class, () -> options.setEntrypoint(null));
         assertThrows(IllegalArgumentException.class, () -> options.setEntrypoint(List.of()));
@@ -93,6 +100,12 @@ class OpenSandboxClientOptionsTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> options.setResourceLimits(Map.of("cpu", " ")));
+        Map<String, String> nullKey = new LinkedHashMap<>();
+        nullKey.put(null, "1");
+        assertThrows(IllegalArgumentException.class, () -> options.setResourceLimits(nullKey));
+        Map<String, String> nullValue = new LinkedHashMap<>();
+        nullValue.put("cpu", null);
+        assertThrows(IllegalArgumentException.class, () -> options.setResourceLimits(nullValue));
     }
 
     @Test

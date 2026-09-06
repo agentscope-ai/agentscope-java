@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -79,6 +80,17 @@ class OpenSandboxTest {
     }
 
     @Test
+    void blankSandboxIdCreatesInsteadOfConnecting() throws Exception {
+        Fixture fixture = fixture();
+        fixture.state.setSandboxId(" ");
+
+        fixture.sandbox.start();
+
+        assertEquals(1, fixture.sdk.createCalls);
+        assertEquals(0, fixture.sdk.connectCalls);
+    }
+
+    @Test
     void startDoesNotRecreateAfterConnectionFailure() {
         Fixture fixture = fixture();
         fixture.state.setSandboxId("temporarily-unreachable");
@@ -112,6 +124,40 @@ class OpenSandboxTest {
 
         assertTrue(fixture.sdk.killedIds.isEmpty());
         assertEquals(1, fixture.sdk.handle.closeCalls);
+    }
+
+    @Test
+    void repeatedShutdownKillsOwnedSandboxOnlyOnce() throws Exception {
+        Fixture fixture = fixture();
+        fixture.sandbox.start();
+
+        fixture.sandbox.shutdown();
+        fixture.sandbox.shutdown();
+
+        assertEquals(List.of("created-id"), fixture.sdk.killedIds);
+    }
+
+    @Test
+    void shutdownWithoutSandboxIdDoesNothing() throws Exception {
+        Fixture fixture = fixture();
+
+        fixture.sandbox.shutdown();
+
+        assertTrue(fixture.sdk.killedIds.isEmpty());
+        assertEquals(0, fixture.sdk.handle.closeCalls);
+    }
+
+    @Test
+    void shutdownPropagatesKillFailureWhenHandleAlreadyClosed() throws Exception {
+        Fixture fixture = fixture();
+        fixture.sandbox.start();
+        fixture.sandbox.stop();
+        fixture.sdk.killFailure = new IOException("kill failed");
+
+        Exception failure = assertThrows(Exception.class, fixture.sandbox::shutdown);
+
+        assertEquals("kill failed", failure.getMessage());
+        assertEquals(0, failure.getSuppressed().length);
     }
 
     @Test
@@ -188,6 +234,38 @@ class OpenSandboxTest {
     }
 
     @Test
+    void persistExcludesBindMountContent() throws Exception {
+        Fixture fixture = fixture();
+        fixture.sandbox.start();
+        fixture.state.getWorkspaceSpec().getEntries().put("cache", new BindMountEntry());
+
+        try (InputStream ignored = fixture.sandbox.persistWorkspace()) {
+            // Archive contents are irrelevant; the tar command is the contract under test.
+        }
+
+        assertTrue(
+                fixture.sdk.handle.commands.stream()
+                        .anyMatch(command -> command.contains("--exclude=./cache")));
+    }
+
+    @Test
+    void persistHandlesUnknownSessionAndConcurrentStopDuringReadClose() throws Exception {
+        Fixture fixture = fixture();
+        fixture.state.setSessionId(null);
+        fixture.sandbox.start();
+        fixture.sdk.handle.readCloseAction = fixture.sandbox::stop;
+
+        try (InputStream ignored = fixture.sandbox.persistWorkspace()) {
+            // Reading materializes the remote stream before the handle is concurrently closed.
+        }
+
+        assertEquals(1, fixture.sdk.handle.closeCalls);
+        assertTrue(
+                fixture.sdk.handle.commands.stream()
+                        .anyMatch(command -> command.contains("agentscope-persist-")));
+    }
+
+    @Test
     void cleanupFailureDoesNotMaskSuccessfulHydration() throws Exception {
         Fixture fixture = fixture();
         fixture.sandbox.start();
@@ -217,6 +295,7 @@ class OpenSandboxTest {
                 () -> fixture.sandbox.downloadFile("/workspace/file"));
 
         fixture.sandbox.start();
+        fixture.sandbox.uploadFile("/root-file", new byte[] {2});
         fixture.sandbox.uploadFile("/workspace/o'hara/file", new byte[] {1});
 
         assertTrue(
@@ -298,6 +377,7 @@ class OpenSandboxTest {
         private ExecResult nextResult = new ExecResult(0, "", "", false);
         private String failCommandContains;
         private Exception closeFailure;
+        private ThrowingRunnable readCloseAction;
         private int closeCalls;
 
         @Override
@@ -320,7 +400,19 @@ class OpenSandboxTest {
 
         @Override
         public InputStream read(String absolutePath) {
-            return new ByteArrayInputStream(files.getOrDefault(absolutePath, new byte[0]));
+            return new ByteArrayInputStream(files.getOrDefault(absolutePath, new byte[0])) {
+                @Override
+                public void close() throws IOException {
+                    super.close();
+                    if (readCloseAction != null) {
+                        try {
+                            readCloseAction.run();
+                        } catch (Exception e) {
+                            throw new IOException(e);
+                        }
+                    }
+                }
+            };
         }
 
         @Override
@@ -344,5 +436,10 @@ class OpenSandboxTest {
         private void destroyWorkspace() throws Exception {
             doDestroyWorkspace();
         }
+    }
+
+    @FunctionalInterface
+    private interface ThrowingRunnable {
+        void run() throws Exception;
     }
 }

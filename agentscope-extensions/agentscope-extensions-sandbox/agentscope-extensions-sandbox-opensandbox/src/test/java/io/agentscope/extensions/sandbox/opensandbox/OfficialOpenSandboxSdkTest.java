@@ -139,11 +139,16 @@ class OfficialOpenSandboxSdkTest {
         ExecutionLogs logs = new ExecutionLogs();
         logs.addStdout(new OutputMessage("one", 1, false));
         logs.addStdout(new OutputMessage("two", 2, false));
+        logs.getStdout().add(null);
+        logs.addStdout(mock(OutputMessage.class));
         logs.addStderr(new OutputMessage("bad", 3, true));
         Execution execution = new Execution("exec-1", 1L, List.of(), null, null, 7, logs);
-        Execution emptyExecution = new Execution();
+        Execution emptyExecution = mock(Execution.class);
+        when(emptyExecution.getExitCode()).thenReturn(null);
+        Execution emptyLogs =
+                new Execution("exec-empty", 2L, List.of(), null, null, 0, new ExecutionLogs());
         when(commands.run(any(RunCommandRequest.class)))
-                .thenReturn(execution, emptyExecution, null);
+                .thenReturn(execution, emptyExecution, null, emptyLogs);
         byte[] remoteBytes = new byte[] {0, 1, (byte) 255};
         InputStream remote = new ByteArrayInputStream(remoteBytes);
         when(files.readStream("/tmp/data.bin")).thenReturn(remote);
@@ -152,6 +157,7 @@ class OfficialOpenSandboxSdkTest {
         ExecResult result = handle.exec("printf test", "/workspace", 0);
         ExecResult empty = handle.exec("true", "/workspace", 3);
         ExecResult missing = handle.exec("missing", "/workspace", 3);
+        ExecResult noOutput = handle.exec("no-output", "/workspace", 3);
         byte[] localBytes;
         try (InputStream input = handle.read("/tmp/data.bin")) {
             localBytes = input.readAllBytes();
@@ -166,6 +172,8 @@ class OfficialOpenSandboxSdkTest {
         assertEquals(-1, empty.exitCode());
         assertEquals("", empty.stdout());
         assertEquals(-1, missing.exitCode());
+        assertEquals("", noOutput.stdout());
+        assertEquals("", noOutput.stderr());
         assertArrayEquals(remoteBytes, localBytes);
         verify(commands)
                 .run(

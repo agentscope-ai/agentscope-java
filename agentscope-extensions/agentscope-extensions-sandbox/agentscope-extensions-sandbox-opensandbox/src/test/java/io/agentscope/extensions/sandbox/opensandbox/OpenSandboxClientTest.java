@@ -117,6 +117,16 @@ class OpenSandboxClientTest {
     }
 
     @Test
+    void nullSdkAllowsLazyOfficialClientConstruction() {
+        OpenSandboxClient client = new OpenSandboxClient(null, null, null);
+
+        OpenSandbox sandbox = (OpenSandbox) client.create(null, null, null);
+        OpenSandboxState state = (OpenSandboxState) sandbox.getState();
+
+        assertEquals("ubuntu:22.04", state.getImage());
+    }
+
+    @Test
     void resumeRetainsProvidedState() {
         RecordingSdk sdk = new RecordingSdk();
         OpenSandboxClient client = new OpenSandboxClient(new OpenSandboxClientOptions(), null, sdk);
