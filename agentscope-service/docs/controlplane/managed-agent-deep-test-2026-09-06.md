@@ -11,7 +11,7 @@
 - 失败路径：`task.fail` 能一致地终止 Task、Attempt、Node 和 Run，并保留错误码/消息。
 - 安全性：task/attempt token 不再出现在 wake 文本、公开 Session taskContext 或公开事件中。
 
-测试共确认并修复 16 类实现问题。最终没有遗留本轮已确认的 managed 产品缺陷；一次模型 provider 超时和机器时钟跳变属于外部测试条件，但它帮助暴露并修复了旧 turn 污染新 Attempt 的 fencing 问题。
+测试共确认并修复 19 类实现问题。最终没有遗留本轮已确认的 managed 产品缺陷；一次模型 provider 超时和机器时钟跳变属于外部测试条件，但它帮助暴露并修复了旧 turn 污染新 Attempt 的 fencing 问题。
 
 ## 隔离环境
 
@@ -90,12 +90,17 @@
 | MGD-008 | P0 | `task.respond` 后复用 Comment 的 `task.complete` 只推进 Task，Attempt/Node/Run 可能永久 waiting。 | memory/PostgreSQL 完成事务统一校验 fencing、推进 Attempt、合并 usage、reconcile Node/Run、写 activity/outbox；直接 Issue 与 Workflow 实测通过。 |
 | MGD-009 | P1 | Team leader Task 完成会被当成 coordinator 已收敛，可能凭一段文字绕过子 Issue/节点检查。 | 取消 leader auto-complete；必须显式调用 `run.node.complete`/`run.node.fail`。负向和正向 Team 测试均通过。 |
 | MGD-010 | P1 | leader Task 完成后 token 立即失效，无法执行协议要求的最后 coordinator transition；若放宽全部权限又会越权。 | 允许 terminal coordinator token 仅访问最终 node complete/fail，其他 MCP action 明确拒绝。 |
-| MGD-011 | P0 | 长模型 turn 没有续租 ExecutionAttempt，超过 lease TTL 会被 scheduler 错误重试。 | Data plane 每 10 秒向内部 heartbeat 续 45 秒 lease；terminal 的同一 Attempt heartbeat 幂等返回 204。 |
-| MGD-012 | P1 | `session.error`、未完成即 idle、提前 terminated 没有同步失败 Task/Attempt/Node/Run。 | managed event 状态机把 running 映射为 task start，把异常终态映射为带稳定 code/message 的统一 FailTask。真实 `task.fail` 和事件单测覆盖。 |
+| MGD-011 | P0 | 长模型 turn 没有续租 ExecutionAttempt，超过 lease TTL 会被 scheduler 错误重试。 | Data plane 每 10 秒向内部 heartbeat 续 45 秒 lease；每个带 attempt/generation/turn fence 的有效 session event 也作为第二通道续租；terminal 的同一 Attempt heartbeat 幂等返回 204。 |
+| MGD-012 | P1 | Session 遥测与 Task 语义终态混淆：`session.error`/terminated 没有同步失败，而 idle 曾被用于推断 leader 完成。 | running 映射 task start，error/terminated 走统一 FailTask；idle 只更新 Session，不完成或失败 Task。Task 必须由显式语义命令终结，遗漏命令时由 Attempt lease/retry 收敛。 |
 | MGD-013 | P0 | turn lease owner 使用进程固定 ID；上一轮尾事件尚未结束时，下一轮会被误判为同 owner 续租，造成两个 turn 重叠和 JPA optimistic-lock。 | 每个物理 turn 使用 UUID-fenced lease owner，旧 turn teardown 不能释放新 turn lease；紧邻 Chat turn 实测通过。 |
 | MGD-014 | P1 | Managed task wake 恰逢旧 turn 最终事件/lease 清理时收到 409，会把可执行任务错误 requeue。 | 对 1 秒以内的窄竞争窗口执行 20×50 ms 有界重试，长运行仍返回 busy 交由编排层排队。 |
 | MGD-015 | P1 | heartbeat 在 Reactor parallel scheduler 中调用 WebClient `block()`，运行时抛出 illegal blocking，实际没有续租。 | heartbeat 调度迁移到 bounded-elastic；真实长 Team turn 收到 204，日志不再出现 illegal-blocking。 |
 | MGD-016 | P0 | retry 创建新 Attempt 后，旧物理 turn 的迟到 terminal event 会按“当前 Attempt”处理，导致新 Attempt 被错误失败。 | admission 时冻结 attempt/generation/turn scope；后续 resolve 不得覆盖；所有 event/heartbeat 带 frozen fence，旧事件被忽略；增加 Java 和 Go 双侧回归测试。 |
+| MGD-017 | P0 | Managed AgentTask 注入协作 ALLOW 规则后使 Core permission context 由 trivial 变为 DEFAULT non-trivial；未列出的只读 `web_search` 被错误置为 `PERMISSION_ASKING`，但没有生成 Service HITL ticket，最终表现为 idle、heartbeat timeout 和失败重试。 | AgentTask 的 Core permission fallback 改为 BYPASS（bypass-immune safety check 仍保留），由 `ToolConfirmationMiddleware` 统一执行 AgentSpec 的 `always_ask`/deny 并创建可恢复 ticket；防御性识别残留 Core ASK 并立即报告明确错误，不再写 idle。Execution `68bf2905-08f3-4cd2-bea1-652e0493e14f` 为回归样本。 |
+| MGD-018 | P0 | 两个 worker 并行完成时会各自创建同一 coordinator node 的 leader follow-up；完成屏障把另一个 leader continuation 误判成 active worker，两个 lead 互相阻塞并最终耗尽 Attempt。 | 同节点 leader continuation 不再作为 worker barrier；一个 continuation 收敛前会取消其余冗余 continuation。失败样本 `ee87044a-44ea-4922-b126-4fd2d8a065f9`，真实成功回归 `c21f0570-49c7-4634-9f0a-1ef6b95e9965`。 |
+| MGD-019 | P1 | fail-fast 只把 sibling node 标为 cancelled，没有取消节点上的 active AgentTask/ExecutionAttempt，Run failed 后仍残留 running lead。 | fail-fast 转换节点前先取消该节点的所有非终态 Task/Attempt；`TestFailFastCancelsActiveTasksOnSiblingNodes` 覆盖状态收敛。 |
+
+补充真实回归：`2cf5fa0f-5d5d-458f-b24f-d7221559ecff` 因测试环境未配置 `TAVILY_API_KEY`，worker 返回说明文本但没有执行 `task.complete`/`task.fail`，其三次 Attempt 按 lease 策略耗尽。该样本未进入双 leader 收敛阶段，不作为 MGD-018 修复结果；随后使用不依赖外部搜索的相同双 worker 场景完成了上述成功验证。
 
 ## 安全与一致性检查
 
