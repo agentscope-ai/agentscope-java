@@ -1,5 +1,7 @@
 # Supervisor
 
+> **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
+
 In the **supervisor** pattern, a central **supervisor** (main agent) coordinates specialized agents by calling them as **tools**. The supervisor receives user requests, decides which specialist(s) to call (e.g. calendar, email), and synthesizes their results into one reply. Specialized agents are **stateless** from the user’s perspective; the supervisor keeps the conversation and delegates one-off tasks. This pattern is implemented in AgentScope via **Agent as Tool** ([agent-as-tool.md](../task/agent-as-tool.md)): `Toolkit.registration().subAgent()`.
 
 ## Overview
@@ -37,16 +39,8 @@ In the example, calendar and email “APIs” are **stubbed** (`CalendarStubTool
 
 ## Example Project
 
-- **Location**: `agentscope-examples/multiagent-patterns/supervisor/`
 - **Key classes**: `SupervisorConfig` (model, calendarAgent, emailAgent, supervisorAgent), `CalendarStubTools`, `EmailStubTools`, `SupervisorRunner` (optional demo).
 - **Demo**: Set `supervisor.run-examples=true` to run two scenarios on startup: (1) single-domain: “Schedule a team standup for tomorrow at 9am”; (2) multi-domain: “Schedule a meeting with the design team next Tuesday at 2pm for 1 hour, and send them an email reminder about reviewing the new mockups.”
-
-**Build and run** (from repo root):
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/supervisor -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/supervisor spring-boot:run
-```
 
 **Use in your code**: Inject the supervisor ReActAgent (e.g. `@Qualifier("supervisorAgent")`) and call it with a user `Msg`; get text from the response with `getTextContent()`.
 

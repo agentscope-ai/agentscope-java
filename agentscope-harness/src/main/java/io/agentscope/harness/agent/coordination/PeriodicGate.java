@@ -28,7 +28,8 @@ public interface PeriodicGate {
     /**
      * Attempts to claim the named periodic slot.
      *
-     * @param name logical slot identifier (e.g. {@code "USER:alice"} or {@code "skill-curator"})
+     * @param name logical slot identifier (e.g. {@code "memory-flush:USER:alice"} or
+     *     {@code "skill-curator"})
      * @param minGap minimum elapsed time since the last successful claim
      * @return {@code true} if the caller won the claim and may proceed, {@code false} otherwise
      */

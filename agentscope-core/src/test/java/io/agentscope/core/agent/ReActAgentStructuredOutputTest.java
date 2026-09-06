@@ -436,6 +436,12 @@ class ReActAgentStructuredOutputTest {
         assertEquals(100, usage.getInputTokens(), "Input tokens should be preserved");
         assertEquals(50, usage.getOutputTokens(), "Output tokens should be preserved");
         assertEquals(1.5, usage.getTime(), 0.01, "Time should be preserved");
+
+        ChatUsage canonicalUsage = responseMsg.getUsage();
+        assertNotNull(canonicalUsage, "Canonical usage field should be preserved");
+        assertEquals(100, canonicalUsage.getInputTokens());
+        assertEquals(50, canonicalUsage.getOutputTokens());
+        assertEquals(1.5, canonicalUsage.getTime(), 0.01);
     }
 
     @Test
