@@ -488,6 +488,18 @@ class HarnessAgentSubagentStreamEventsTest {
                         .collect(Collectors.toList());
         assertFalse(childEnds.isEmpty(), "expected child AGENT_END with source");
         assertTrue(childEnds.get(0).getSource().contains(childId));
+
+        List<AgentEvent> childResults =
+                events.stream()
+                        .filter(
+                                e ->
+                                        e.getType() == AgentEventType.AGENT_RESULT
+                                                && e.getSource() != null)
+                        .collect(Collectors.toList());
+        assertEquals(1, childResults.size(), "expected one authoritative child AGENT_RESULT");
+        assertTrue(
+                events.indexOf(childResults.get(0)) < events.indexOf(childEnds.get(0)),
+                "child AGENT_RESULT must be emitted before child AGENT_END");
     }
 
     // -----------------------------------------------------------------

@@ -44,7 +44,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,8 +56,6 @@ public class AguiStreamContext {
                     GenerateReason.MODEL_STOP,
                     GenerateReason.STRUCTURED_OUTPUT,
                     GenerateReason.MAX_ITERATIONS);
-    private static final Pattern TEXT_SEGMENT_ID = Pattern.compile("^.+:text:\\d+$");
-
     private final String threadId;
     private final String runId;
     private final AguiAdapterConfig config;
@@ -256,7 +253,7 @@ public class AguiStreamContext {
                 authoritativeMessages != null && !authoritativeMessages.isEmpty();
         if (hasAuthoritativeMessages) {
             for (Msg message : authoritativeMessages) {
-                if (message != null && !isTextSegmentId(message.getId())) {
+                if (message != null && !isGeneratedTextSegmentId(message.getId())) {
                     messagesById.put(message.getId(), messageConverter.toAguiMessage(message));
                 }
             }
@@ -264,7 +261,7 @@ public class AguiStreamContext {
         if (runInput != null) {
             for (AguiMessage message : runInput.getMessages()) {
                 if (message != null
-                        && !isTextSegmentId(message.getId())
+                        && !isGeneratedTextSegmentId(message.getId())
                         && (!hasAuthoritativeMessages
                                 || messagesById.containsKey(message.getId()))) {
                     messagesById.put(message.getId(), message);
@@ -494,8 +491,8 @@ public class AguiStreamContext {
                         Collections.unmodifiableMap(value)));
     }
 
-    private static boolean isTextSegmentId(String messageId) {
-        return messageId != null && TEXT_SEGMENT_ID.matcher(messageId).matches();
+    private boolean isGeneratedTextSegmentId(String messageId) {
+        return messageId != null && startedTextMessages.contains(messageId);
     }
 
     private static String normalizeToolCallName(String toolCallName) {

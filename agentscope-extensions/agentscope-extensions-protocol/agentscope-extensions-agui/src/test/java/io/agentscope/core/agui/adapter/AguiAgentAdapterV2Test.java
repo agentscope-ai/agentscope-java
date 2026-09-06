@@ -703,21 +703,21 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testFinalSnapshotExcludesOnlyReservedTextSegmentIds() {
+        void testFinalSnapshotExcludesOnlySegmentsCreatedByCurrentRun() {
             Msg user = Msg.builder().id("session-user").role(MsgRole.USER).textContent("q").build();
-            Msg liveSegment =
+            Msg generatedSegment =
                     AssistantMessage.builder()
-                            .id("reply-preview:text:7")
+                            .id("reply-final:text:0")
                             .content(TextBlock.builder().text("preview").build())
                             .build();
-            Msg ordinaryColonId =
+            Msg legitimatePatternId =
                     AssistantMessage.builder()
-                            .id("reply-preview:text:final")
+                            .id("order:text:0")
                             .content(TextBlock.builder().text("kept").build())
                             .build();
             AgentState state =
                     AgentState.builder()
-                            .context(List.of(user, liveSegment, ordinaryColonId))
+                            .context(List.of(user, generatedSegment, legitimatePatternId))
                             .build();
             RuntimeContext callerContext = RuntimeContext.builder().agentState(state).build();
 
@@ -725,7 +725,7 @@ class AguiAgentAdapterV2Test {
                     runTerminalDisposition(GenerateReason.MODEL_STOP, callerContext);
 
             assertEquals(
-                    List.of("session-user", "reply-preview:text:final", "reply-final"),
+                    List.of("session-user", "order:text:0", "reply-final"),
                     messageIds(snapshot(events)));
         }
 

@@ -25,6 +25,7 @@ import io.agentscope.core.agent.SubagentEventBus;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
@@ -820,7 +821,16 @@ public class AgentSpawnTool {
                                 // Emit before success or error reaches the parent, which may
                                 // otherwise complete its event sink before doFinally runs.
                                 .doOnSuccess(
-                                        ignored -> emitEnd.accept(AgentEndEvent.OUTCOME_SUCCESS))
+                                        result -> {
+                                            if (result != null) {
+                                                parentEmitter.emit(
+                                                        tagForwardedEvent(
+                                                                new AgentResultEvent(result),
+                                                                sourcePath,
+                                                                taskId));
+                                            }
+                                            emitEnd.accept(AgentEndEvent.OUTCOME_SUCCESS);
+                                        })
                                 .doOnError(ignored -> emitEnd.accept(AgentEndEvent.OUTCOME_ERROR))
                                 // Preserve best-effort cancellation signaling without emitting a
                                 // duplicate if cancellation races with normal termination.
