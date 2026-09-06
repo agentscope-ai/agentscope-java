@@ -765,10 +765,6 @@ func (s *Server) postSessionUserMessage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	dp, ok := s.requireHealthyInstance(c, sess)
-	if !ok {
-		return
-	}
 	var body struct {
 		Content string `json:"content"`
 	}
@@ -776,7 +772,25 @@ func (s *Server) postSessionUserMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "content is required"})
 		return
 	}
-	if err := s.prober.SendUserMessage(c.Request.Context(), dp.BaseURL, sess.SessionID, body.Content); err != nil {
+	content := strings.TrimSpace(body.Content)
+	// Sessions created by the unified Agent catalog are routed by their immutable
+	// RuntimeBinding. Managed and Hosted sessions intentionally have no legacy
+	// instanceRef, while External sessions use the durable AgentInstance registry
+	// and ASDP transport. Only pre-catalog BYO sessions use the legacy HTTP prober.
+	if sess.BindingID != uuid.Nil {
+		if err := s.sendAgentConversationTurn(
+			c.Request.Context(), sess, content, "session_console", sess.ID.String()); err != nil {
+			writeConversationTurnError(c, err)
+			return
+		}
+		c.JSON(http.StatusAccepted, gin.H{"accepted": true, "phase": sess.Phase})
+		return
+	}
+	dp, ok := s.requireHealthyInstance(c, sess)
+	if !ok {
+		return
+	}
+	if err := s.prober.SendUserMessage(c.Request.Context(), dp.BaseURL, sess.SessionID, content); err != nil {
 		if err == prober.ErrNotFoundOnDataPlane {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: "session not found on data plane", Code: sessionops.CodeNotFound})
 			return
