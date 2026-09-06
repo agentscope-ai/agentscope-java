@@ -371,7 +371,8 @@ func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID,
 		return nil, err
 	}
 	for _, candidate := range tasks {
-		if candidate.ID != task.ID && !controlmodel.IsAgentTaskTerminal(candidate.Status) {
+		if candidate.ID != task.ID && !controlmodel.IsAgentTaskTerminal(candidate.Status) &&
+			(!candidate.LeaderTask || candidate.RunNodeID != node.ID) {
 			return nil, fmt.Errorf("coordinator has active worker task %s", candidate.ID)
 		}
 	}
@@ -395,6 +396,23 @@ func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID,
 	for _, child := range children {
 		if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
 			return nil, fmt.Errorf("coordinator has active child issue %s", child.ID)
+		}
+	}
+	// Parallel worker results can produce multiple leader continuations for the
+	// same Team node. Those continuations are redundant coordinator turns, not
+	// worker barriers. Retire the siblings before the node becomes successful so
+	// the Run cannot finish with live tasks or Attempts left behind.
+	taskPlane := s.TaskPlane
+	if taskPlane == nil {
+		taskPlane = &taskplane.Service{Store: s.Store}
+	}
+	for _, candidate := range tasks {
+		if candidate.ID == task.ID || candidate.RunNodeID != node.ID || !candidate.LeaderTask ||
+			controlmodel.IsAgentTaskTerminal(candidate.Status) {
+			continue
+		}
+		if _, cancelErr := taskPlane.CancelTask(ctx, candidate.ID, candidate.Version); cancelErr != nil && cancelErr != store.ErrConflict {
+			return nil, cancelErr
 		}
 	}
 	completed, err := s.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, output, "", "")
