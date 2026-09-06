@@ -384,6 +384,68 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testReasoningSegmentsSeparatedByToolCallUseDistinctMessageIds() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().enableReasoning(true).build(),
+                            new ThinkingBlockStartEvent("reply-mixed", "thinking"),
+                            new ThinkingBlockDeltaEvent("reply-mixed", "thinking", "before"),
+                            new ThinkingBlockEndEvent("reply-mixed", "thinking"),
+                            new ToolCallStartEvent("reply-mixed", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-mixed", "tool-1", "lookup"),
+                            new ThinkingBlockStartEvent("reply-mixed", "thinking-2"),
+                            new ThinkingBlockDeltaEvent("reply-mixed", "thinking-2", "after"),
+                            new ThinkingBlockEndEvent("reply-mixed", "thinking-2"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.REASONING_MESSAGE_START,
+                            AguiEventType.REASONING_MESSAGE_CONTENT,
+                            AguiEventType.REASONING_MESSAGE_END,
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_END,
+                            AguiEventType.REASONING_MESSAGE_START,
+                            AguiEventType.REASONING_MESSAGE_CONTENT,
+                            AguiEventType.REASONING_MESSAGE_END),
+                    types(events));
+
+            List<String> messageIds =
+                    events.stream()
+                            .filter(
+                                    event ->
+                                            event instanceof AguiEvent.ReasoningMessageStart
+                                                    || event
+                                                            instanceof
+                                                            AguiEvent.ReasoningMessageContent
+                                                    || event
+                                                            instanceof
+                                                            AguiEvent.ReasoningMessageEnd)
+                            .map(
+                                    event -> {
+                                        if (event
+                                                instanceof AguiEvent.ReasoningMessageStart start) {
+                                            return start.messageId();
+                                        }
+                                        if (event
+                                                instanceof
+                                                AguiEvent.ReasoningMessageContent content) {
+                                            return content.messageId();
+                                        }
+                                        return ((AguiEvent.ReasoningMessageEnd) event).messageId();
+                                    })
+                            .toList();
+            assertEquals(
+                    List.of(
+                            "reply-mixed-reasoning",
+                            "reply-mixed-reasoning",
+                            "reply-mixed-reasoning",
+                            "reply-mixed-thinking-2-reasoning",
+                            "reply-mixed-thinking-2-reasoning",
+                            "reply-mixed-thinking-2-reasoning"),
+                    messageIds);
+        }
+
+        @Test
         void testThinkingEventsAreIgnoredWhenReasoningDisabled() {
             List<AguiEvent> events =
                     runReActEvents(

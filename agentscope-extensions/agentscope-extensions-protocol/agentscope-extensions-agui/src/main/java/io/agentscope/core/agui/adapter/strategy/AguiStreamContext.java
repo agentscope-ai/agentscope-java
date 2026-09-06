@@ -57,6 +57,8 @@ public class AguiStreamContext {
     private final Map<String, String> firstTextBlockByReply = new LinkedHashMap<>();
     private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
     private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
+    private final Map<ThinkingBlockKey, String> reasoningMessageIds = new LinkedHashMap<>();
+    private final Map<String, String> firstThinkingBlockByReply = new LinkedHashMap<>();
     private final Set<String> startedToolCalls = new LinkedHashSet<>();
     private final Set<String> endedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
@@ -191,7 +193,7 @@ public class AguiStreamContext {
     }
 
     public void startReasoningMessage(String messageId) {
-        String reasoningMessageId = reasoningMessageId(messageId);
+        String reasoningMessageId = withReasoningSuffix(messageId);
         if (startedReasoningMessages.add(reasoningMessageId)) {
             emit(
                     new AguiEvent.ReasoningMessageStart(
@@ -205,8 +207,34 @@ public class AguiStreamContext {
             startReasoningMessage(messageId);
             emit(
                     new AguiEvent.ReasoningMessageContent(
-                            threadId, runId, reasoningMessageId(messageId), delta));
+                            threadId, runId, withReasoningSuffix(messageId), delta));
         }
+    }
+
+    public String reasoningMessageId(String replyId, String blockId) {
+        String normalizedBlockId = isBlank(blockId) ? "thinking" : blockId;
+        ThinkingBlockKey key = new ThinkingBlockKey(replyId, normalizedBlockId);
+        String messageId =
+                reasoningMessageIds.computeIfAbsent(
+                        key,
+                        ignored -> {
+                            String firstBlockId =
+                                    firstThinkingBlockByReply.putIfAbsent(
+                                            replyId, normalizedBlockId);
+                            if (firstBlockId == null
+                                    || Objects.equals(firstBlockId, normalizedBlockId)) {
+                                return replyId;
+                            }
+                            return replyId + "-" + normalizedBlockId;
+                        });
+        return withReasoningSuffix(messageId);
+    }
+
+    public String existingReasoningMessageId(String replyId, String blockId) {
+        String normalizedBlockId = isBlank(blockId) ? "thinking" : blockId;
+        String messageId =
+                reasoningMessageIds.get(new ThinkingBlockKey(replyId, normalizedBlockId));
+        return messageId == null ? null : withReasoningSuffix(messageId);
     }
 
     public void closeActiveReasoningMessage() {
@@ -217,7 +245,7 @@ public class AguiStreamContext {
     }
 
     public void closeReasoningMessage(String messageId) {
-        String reasoningMessageId = reasoningMessageId(messageId);
+        String reasoningMessageId = withReasoningSuffix(messageId);
         if (reasoningMessageId == null
                 || !startedReasoningMessages.contains(reasoningMessageId)
                 || endedReasoningMessages.contains(reasoningMessageId)) {
@@ -357,7 +385,10 @@ public class AguiStreamContext {
         return toolCallName != null && !toolCallName.isBlank() ? toolCallName : "unknown";
     }
 
-    private static String reasoningMessageId(String messageId) {
+    private static String withReasoningSuffix(String messageId) {
+        if (messageId == null) {
+            return null;
+        }
         if (messageId.endsWith(REASONING_MESSAGE_ID_SUFFIX)) {
             return messageId;
         }
@@ -380,6 +411,8 @@ public class AguiStreamContext {
     }
 
     private record TextBlockKey(String replyId, String blockId) {}
+
+    private record ThinkingBlockKey(String replyId, String blockId) {}
 
     private void warnMissingToolCallId(String eventName) {
         if (!warnedMissingToolCallIdOperations.add(eventName)) {

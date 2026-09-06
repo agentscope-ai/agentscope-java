@@ -32,6 +32,7 @@ import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
@@ -572,6 +573,66 @@ class ReActAgentNewLoopReplyTest {
         assertEquals(
                 List.of("text", "text-2"),
                 ends.stream().map(TextBlockEndEvent::getBlockId).toList());
+    }
+
+    @Test
+    void thinkingSeparatedByToolCallUsesDistinctBlockIds() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("before")
+                                                                .build()),
+                                                chatResponse(
+                                                        ToolUseBlock.builder()
+                                                                .id("tc1")
+                                                                .name("echo")
+                                                                .input(Map.of("query", "ping"))
+                                                                .build()),
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("after")
+                                                                .build())),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int firstModelEnd = indexOf(events, ModelCallEndEvent.class);
+        List<ThinkingBlockStartEvent> starts =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockStartEvent.class::isInstance)
+                        .map(ThinkingBlockStartEvent.class::cast)
+                        .toList();
+        List<ThinkingBlockEndEvent> ends =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockEndEvent.class::isInstance)
+                        .map(ThinkingBlockEndEvent.class::cast)
+                        .toList();
+        List<ThinkingBlockDeltaEvent> deltas =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockDeltaEvent.class::isInstance)
+                        .map(ThinkingBlockDeltaEvent.class::cast)
+                        .toList();
+
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                starts.stream().map(ThinkingBlockStartEvent::getBlockId).toList());
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                deltas.stream().map(ThinkingBlockDeltaEvent::getBlockId).toList());
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                ends.stream().map(ThinkingBlockEndEvent::getBlockId).toList());
     }
 
     @Test
