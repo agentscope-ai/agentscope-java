@@ -90,9 +90,17 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		}
 		if !controlmodel.IsOrchestrationRunTerminal(runState) {
 			task.OrchestrationRunID = source.OrchestrationRunID
-			if retryOfTaskID != nil || source.AgentRef == agentRef && deref(sourceRole) == teamRole &&
-				(source.IssueID == issue.ID || source.LeaderTask && leader) {
-				task.RunNodeID = source.RunNodeID
+			reuseSourceNode := retryOfTaskID != nil || source.AgentRef == agentRef && deref(sourceRole) == teamRole &&
+				(source.IssueID == issue.ID || source.LeaderTask && leader)
+			if reuseSourceNode {
+				var nodeState controlmodel.RunNodeState
+				if err := tx.QueryRow(ctx, `SELECT state FROM orchestration_run_nodes WHERE id=$1`, source.RunNodeID).
+					Scan(&nodeState); err != nil {
+					return nil, err
+				}
+				if !controlmodel.IsRunNodeTerminal(nodeState) {
+					task.RunNodeID = source.RunNodeID
+				}
 			}
 		} else if err := createTaskRunNodeTx(ctx, tx, issue, task, &source.OrchestrationRunID); err != nil {
 			return nil, err
@@ -700,6 +708,9 @@ func startIssueForAgentTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 	issue, err := scanIssue(tx.QueryRow(ctx, `SELECT `+issueColumns+` FROM issues WHERE id=$1 FOR UPDATE`, task.IssueID))
 	if err != nil {
 		return err
+	}
+	if !store.AgentTaskMayAdvanceIssueLifecycle(issue, task) {
+		return nil
 	}
 	if issue.Status != controlmodel.IssueBacklog && issue.Status != controlmodel.IssueTodo &&
 		(issue.Status != controlmodel.IssueBlocked || task.LeaderTask && issue.ParentIssueID != nil) {

@@ -300,19 +300,26 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 			IdempotencyKey: "run-succeeded:" + task.OrchestrationRunID.String()}); err != nil {
 			return err
 		}
-		return requestIssueReviewForCompletedRunTx(ctx, tx, task.OrchestrationRunID, actor)
+		return requestIssueReviewForCompletedRunTx(ctx, tx, task, actor)
 	}
 	return nil
 }
 
-func requestIssueReviewForCompletedRunTx(ctx context.Context, tx pgx.Tx, runID uuid.UUID, actor controlmodel.Actor) error {
+func requestIssueReviewForCompletedRunTx(ctx context.Context, tx pgx.Tx, task *controlmodel.AgentTask, actor controlmodel.Actor) error {
 	var rootIssueID uuid.UUID
 	var parentRunID *uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT root_issue_id,parent_run_id FROM orchestration_runs WHERE id=$1`, runID).
+	if err := tx.QueryRow(ctx, `SELECT root_issue_id,parent_run_id FROM orchestration_runs WHERE id=$1`, task.OrchestrationRunID).
 		Scan(&rootIssueID, &parentRunID); err != nil {
 		return err
 	}
 	if parentRunID != nil {
+		return nil
+	}
+	current, err := scanIssue(tx.QueryRow(ctx, `SELECT `+issueColumns+` FROM issues WHERE id=$1`, rootIssueID))
+	if err != nil {
+		return err
+	}
+	if !store.AgentTaskMayAdvanceIssueLifecycle(current, task) {
 		return nil
 	}
 	issue, err := scanIssue(tx.QueryRow(ctx, `UPDATE issues SET

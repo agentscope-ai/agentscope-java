@@ -434,9 +434,36 @@ func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.O
 		(run.State != controlmodel.RunSucceeded && run.State != controlmodel.RunPartialSucceeded) {
 		return nil
 	}
+	issue, err := e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
+	if err != nil {
+		return err
+	}
+	if run.Mode == controlmodel.RunModeDirect && run.TriggerType == "comment" {
+		ownsLifecycle := false
+		for offset := 0; ; offset += 500 {
+			tasks, listErr := e.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+				Tenant: run.Tenant, Namespace: run.Namespace, RunID: run.ID, Limit: 500, Offset: offset,
+			})
+			if listErr != nil {
+				return listErr
+			}
+			for _, task := range tasks {
+				if store.AgentTaskOwnsIssueLifecycle(issue, task) {
+					ownsLifecycle = true
+					break
+				}
+			}
+			if ownsLifecycle || len(tasks) < 500 {
+				break
+			}
+		}
+		if !ownsLifecycle {
+			return nil
+		}
+	}
 	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-run:" + run.ID.String()}
 	for attempt := 0; attempt < 3; attempt++ {
-		issue, err := e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
+		issue, err = e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
 		if err != nil {
 			return err
 		}

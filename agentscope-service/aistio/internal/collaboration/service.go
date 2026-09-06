@@ -799,6 +799,9 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 					}
 				}
 				targets = append(targets, s.guardTarget(ctx, issue, req.SourceTaskID, target))
+			} else if parent.Author.Type == controlmodel.ActorHuman && req.Author.Type == controlmodel.ActorAgent {
+				targets = append(targets, store.CommentTarget{TargetType: controlmodel.AssigneeHuman,
+					TargetRef: parent.Author.Ref, RouteType: controlmodel.RouteThreadParent})
 			}
 		}
 		if len(targets) == 0 && issue.AssigneeType != "" && issue.AssigneeRef != "" {
@@ -1119,6 +1122,9 @@ func (s *Service) PreviewCommentRoutes(ctx context.Context, issueID uuid.UUID, p
 			targets = append(targets, store.CommentTarget{TargetType: controlmodel.AssigneeAgent,
 				TargetRef: parent.Author.Ref, AgentRef: parent.Author.Ref,
 				RouteType: controlmodel.RouteThreadParent})
+		} else if parent.Author.Type == controlmodel.ActorHuman && author.Type == controlmodel.ActorAgent {
+			targets = append(targets, store.CommentTarget{TargetType: controlmodel.AssigneeHuman,
+				TargetRef: parent.Author.Ref, RouteType: controlmodel.RouteThreadParent})
 		}
 	}
 	if len(targets) == 0 && issue.AssigneeType != "" {
@@ -1733,6 +1739,36 @@ func (s *Service) validateCompletionBudget(ctx context.Context, task *controlmod
 }
 
 func (s *Service) completionTargets(ctx context.Context, task *controlmodel.AgentTask, parentID *uuid.UUID) ([]store.CommentTarget, error) {
+	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
+	if err != nil {
+		return nil, err
+	}
+	if task.TeamID == nil && task.TriggerCommentID != nil {
+		trigger, loadErr := s.Store.Collaboration().GetComment(ctx, *task.TriggerCommentID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		for _, route := range trigger.Routes {
+			if route.TaskID == nil || *route.TaskID != task.ID {
+				continue
+			}
+			// A human explicitly mentioned this Agent to obtain a direct answer.
+			// Its result is already visible in that thread and must not implicitly
+			// wake the Issue assignee. If another Agent needs to act, the responder
+			// must address it with an explicit mention.
+			if trigger.Author.Type == controlmodel.ActorHuman && route.RouteType == controlmodel.RouteExplicit {
+				return []store.CommentTarget{{TargetType: controlmodel.AssigneeHuman,
+					TargetRef: trigger.Author.Ref, RouteType: controlmodel.RouteThreadParent}}, nil
+			}
+			// An assignee consuming another Agent's result is the terminal side of
+			// that hand-off. Returning its completion to ParentTaskID would create
+			// an automatic responder -> assignee -> responder ping-pong.
+			if route.RouteType == controlmodel.RouteAssignee && issue.AssigneeType == controlmodel.AssigneeAgent &&
+				issue.AssigneeRef == task.AgentRef {
+				return nil, nil
+			}
+		}
+	}
 	if task.ParentTaskID != nil {
 		parent, err := s.Store.Collaboration().GetAgentTask(ctx, *task.ParentTaskID)
 		if err == nil {
@@ -1754,10 +1790,6 @@ func (s *Service) completionTargets(ctx context.Context, task *controlmodel.Agen
 		return []store.CommentTarget{{TargetType: controlmodel.AssigneeTeam, TargetRef: team.ID.String(),
 			AgentRef: team.LeaderAgentRef, TeamID: &team.ID, TeamRole: "leader",
 			RouteType: controlmodel.RouteTeamLeader}}, nil
-	}
-	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
-	if err != nil {
-		return nil, err
 	}
 	if issue.ParentIssueID != nil {
 		parents, listErr := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: *issue.ParentIssueID, Limit: 100})

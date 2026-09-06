@@ -63,6 +63,11 @@ type externalRecorder struct {
 }
 
 func TestManagedWakeInstructionsDescribeTeamRoleLifecycle(t *testing.T) {
+	standalone := managedWakeInstructions(&controlmodel.AgentTask{})
+	if !strings.Contains(standalone, "usable result") || !strings.Contains(standalone, "task.fail") ||
+		!strings.Contains(standalone, "human explicit mention") || !strings.Contains(standalone, "one authoritative visible reply") {
+		t.Fatalf("standalone instructions: %q", standalone)
+	}
 	teamID := uuid.New()
 	initial := managedWakeInstructions(&controlmodel.AgentTask{TeamID: &teamID, LeaderTask: true})
 	if !strings.Contains(initial, "initial Team leader") || !strings.Contains(initial, "task.complete immediately") {

@@ -285,7 +285,13 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 		"context, perform work, report progress, and finish. Do not merely describe intended actions; " +
 		"only report an action after tool success."
 	if task == nil || task.TeamID == nil {
-		return base + " Call task.complete when the work is done, or task.fail when it cannot be completed."
+		return base + " You are handling standalone or explicitly mentioned work. Call task.complete only " +
+			"when you have a usable result. If a required capability, credential, input, or tool is unavailable, " +
+			"or a required tool call fails without a real fallback, call task.fail with a durable code and " +
+			"explanation; do not complete with a description of the failure. task.complete publishes the one " +
+			"authoritative visible reply, so do not repeat the same conclusion with issue.comment.add or " +
+			"task.progress. A human explicit mention is a direct request: answer it and finish without notifying " +
+			"the Issue assignee unless that Agent genuinely needs new work, in which case use an explicit mention."
 	}
 	if !task.LeaderTask {
 		return base + " You are a Team worker. Complete only the assigned child work and call task.complete " +

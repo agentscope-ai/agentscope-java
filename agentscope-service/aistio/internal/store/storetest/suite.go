@@ -217,6 +217,154 @@ func testCollaborationReliability(t *testing.T, ctx context.Context, s store.Sto
 		t.Fatalf("comment source lineage was lost: task=%+v err=%v", derivedTask, err)
 	}
 
+	// A follow-up created after its source node completed must get a fresh node.
+	// Reusing the terminal node lets the Run become succeeded while the new Task
+	// is still queued and executing.
+	threadIssue, err := repo.CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, Title: "terminal node follow-up", Creator: creator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootInput, err := repo.CreateComment(ctx, store.CreateCommentRequest{
+		Comment: &controlmodel.Comment{IssueID: threadIssue.ID, Author: creator,
+			Content: "ask responder", Type: controlmodel.CommentGeneral},
+		Targets: []store.CommentTarget{{TargetType: controlmodel.AssigneeAgent, TargetRef: "responder",
+			AgentRef: "responder", RouteType: controlmodel.RouteExplicit}},
+	})
+	if err != nil || len(rootInput.Tasks) != 1 {
+		t.Fatalf("create responder: result=%+v err=%v", rootInput, err)
+	}
+	responder, err := repo.ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: rootInput.Tasks[0].ID, ExpectedVersion: rootInput.Tasks[0].Version,
+	})
+	if err == nil {
+		responder, err = repo.StartAgentTask(ctx, responder.ID, responder.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	responder, err = repo.GetAgentTask(ctx, responder.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegation, err := repo.CreateComment(ctx, store.CreateCommentRequest{
+		Comment: &controlmodel.Comment{IssueID: threadIssue.ID,
+			Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: responder.AgentRef},
+			Content: "ask specialist", Type: controlmodel.CommentGeneral, SourceTaskID: &responder.ID},
+		Targets: []store.CommentTarget{{TargetType: controlmodel.AssigneeAgent, TargetRef: "specialist",
+			AgentRef: "specialist", RouteType: controlmodel.RouteExplicit}},
+	})
+	if err != nil || len(delegation.Tasks) != 1 {
+		t.Fatalf("create specialist: result=%+v err=%v", delegation, err)
+	}
+	responderInputIDs := make([]uuid.UUID, 0, len(responder.Inputs))
+	for _, input := range responder.Inputs {
+		responderInputIDs = append(responderInputIDs, input.ID)
+	}
+	responder, err = repo.CompleteAgentTask(ctx, responder.ID, store.TaskCompletion{
+		ExpectedVersion: responder.Version, ProcessedInputIDs: responderInputIDs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	specialist, err := repo.ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: delegation.Tasks[0].ID, ExpectedVersion: delegation.Tasks[0].Version,
+	})
+	if err == nil {
+		specialist, err = repo.StartAgentTask(ctx, specialist.ID, specialist.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	specialist, err = repo.GetAgentTask(ctx, specialist.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	specialistInputIDs := make([]uuid.UUID, 0, len(specialist.Inputs))
+	for _, input := range specialist.Inputs {
+		specialistInputIDs = append(specialistInputIDs, input.ID)
+	}
+	_, returned, err := repo.CompleteAgentTaskWithComment(ctx, specialist.ID, store.TaskCompletion{
+		ExpectedVersion: specialist.Version, ProcessedInputIDs: specialistInputIDs,
+	}, &controlmodel.Comment{IssueID: threadIssue.ID,
+		Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: specialist.AgentRef},
+		Content: "specialist result", Type: controlmodel.CommentResult}, []store.CommentTarget{{
+		TargetType: controlmodel.AssigneeAgent, TargetRef: responder.AgentRef, AgentRef: responder.AgentRef,
+		ParentTaskID: &responder.ID, RouteType: controlmodel.RouteFollowUp,
+	}})
+	if err != nil || returned == nil || len(returned.Routes) != 1 || returned.Routes[0].TaskID == nil {
+		t.Fatalf("return specialist result: comment=%+v err=%v", returned, err)
+	}
+	resumed, err := repo.GetAgentTask(ctx, *returned.Routes[0].TaskID)
+	if err != nil || resumed.OrchestrationRunID != responder.OrchestrationRunID ||
+		resumed.RunNodeID == responder.RunNodeID {
+		t.Fatalf("follow-up reused terminal node: responder=%+v resumed=%+v err=%v", responder, resumed, err)
+	}
+	run, err := s.Orchestration().GetRun(ctx, responder.OrchestrationRunID)
+	if err != nil || controlmodel.IsOrchestrationRunTerminal(run.State) {
+		t.Fatalf("run terminated with queued follow-up: run=%+v err=%v", run, err)
+	}
+
+	// A directly mentioned consultant participates in the conversation without
+	// taking lifecycle ownership from the assigned Agent.
+	ownedIssue, err := repo.CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, Title: "consult without takeover", Creator: creator,
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "issue-owner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerTasks, err := repo.ListAgentTasks(ctx, store.AgentTaskFilter{
+		IssueID: ownedIssue.ID, AgentRef: "issue-owner", Limit: 2,
+	})
+	if err != nil || len(ownerTasks) != 1 {
+		t.Fatalf("assigned task: tasks=%+v err=%v", ownerTasks, err)
+	}
+	ownerTask, err := repo.ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: ownerTasks[0].ID, ExpectedVersion: ownerTasks[0].Version,
+	})
+	if err == nil {
+		ownerTask, err = repo.StartAgentTask(ctx, ownerTask.ID, ownerTask.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	consultRequest, err := repo.CreateComment(ctx, store.CreateCommentRequest{
+		Comment: &controlmodel.Comment{IssueID: ownedIssue.ID, Author: creator,
+			Content: "ask consultant", Type: controlmodel.CommentGeneral},
+		Targets: []store.CommentTarget{{TargetType: controlmodel.AssigneeAgent, TargetRef: "consultant",
+			AgentRef: "consultant", RouteType: controlmodel.RouteExplicit}},
+	})
+	if err != nil || len(consultRequest.Tasks) != 1 {
+		t.Fatalf("consultant task: result=%+v err=%v", consultRequest, err)
+	}
+	consultant, err := repo.ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: consultRequest.Tasks[0].ID, ExpectedVersion: consultRequest.Tasks[0].Version,
+	})
+	if err == nil {
+		consultant, err = repo.StartAgentTask(ctx, consultant.ID, consultant.Version)
+	}
+	if err == nil {
+		consultant, err = repo.GetAgentTask(ctx, consultant.ID)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	consultInputIDs := make([]uuid.UUID, 0, len(consultant.Inputs))
+	for _, input := range consultant.Inputs {
+		consultInputIDs = append(consultInputIDs, input.ID)
+	}
+	if _, err = repo.CompleteAgentTask(ctx, consultant.ID, store.TaskCompletion{
+		ExpectedVersion: consultant.Version, ProcessedInputIDs: consultInputIDs,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ownedIssue, err = repo.GetIssue(ctx, ownedIssue.ID)
+	if err != nil || ownedIssue.Status != controlmodel.IssueInProgress {
+		t.Fatalf("consultant advanced assigned Issue lifecycle: issue=%+v err=%v", ownedIssue, err)
+	}
+
 	// Duplicate delivery failure reports are monotonic. Max attempts produces a
 	// real dead-letter state, and explicit replay creates new lineage without
 	// overwriting the original input record.

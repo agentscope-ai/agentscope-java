@@ -952,7 +952,7 @@ func (r *collaborationRepo) StartAgentTask(_ context.Context, id uuid.UUID, expe
 		run.State, run.WaitReason, run.Version, run.UpdatedAt = controlmodel.RunRunning, "", run.Version+1, now
 	}
 	task.Status, task.Version, task.StartedAt = controlmodel.AgentTaskRunning, task.Version+1, &now
-	if issue := r.s.issues[task.IssueID]; issue != nil &&
+	if issue := r.s.issues[task.IssueID]; issue != nil && store.AgentTaskMayAdvanceIssueLifecycle(issue, task) &&
 		(issue.Status == controlmodel.IssueBacklog || issue.Status == controlmodel.IssueTodo ||
 			issue.Status == controlmodel.IssueBlocked && (!task.LeaderTask || issue.ParentIssueID == nil)) {
 		previousStatus := issue.Status
@@ -1227,7 +1227,8 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 			IdempotencyKey: "run-succeeded:" + run.ID.String(), CausationID: task.CausationID,
 			CorrelationID: task.CorrelationID})
 		if run.ParentRunID == nil {
-			if issue := r.s.issues[run.RootIssueID]; issue != nil && issue.Status == controlmodel.IssueInProgress {
+			if issue := r.s.issues[run.RootIssueID]; issue != nil && issue.Status == controlmodel.IssueInProgress &&
+				store.AgentTaskMayAdvanceIssueLifecycle(issue, task) {
 				target, reason := controlmodel.IssueInReview, "execution completed; awaiting acceptance"
 				if issue.CompletionPolicy == controlmodel.IssueCompletionAutomatic {
 					target, reason = controlmodel.IssueDone, "automatic Endpoint Job execution completed"
@@ -2127,8 +2128,10 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 	if source != nil {
 		if run := r.s.runs[source.OrchestrationRunID]; run != nil && !controlmodel.IsOrchestrationRunTerminal(run.State) {
 			task.OrchestrationRunID = source.OrchestrationRunID
-			if retryOf != nil || source.AgentRef == agentRef && source.TeamRole == teamRole &&
-				(source.IssueID == issue.ID || source.LeaderTask && leader) {
+			reuseSourceNode := retryOf != nil || source.AgentRef == agentRef && source.TeamRole == teamRole &&
+				(source.IssueID == issue.ID || source.LeaderTask && leader)
+			sourceNode := r.s.runNodes[source.RunNodeID]
+			if reuseSourceNode && sourceNode != nil && !controlmodel.IsRunNodeTerminal(sourceNode.State) {
 				task.RunNodeID = source.RunNodeID
 			}
 		} else if source.OrchestrationRunID != uuid.Nil {

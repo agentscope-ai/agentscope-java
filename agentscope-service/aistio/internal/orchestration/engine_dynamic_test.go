@@ -381,3 +381,60 @@ func TestSuccessfulTopLevelRunMovesInProgressIssueToReview(t *testing.T) {
 		t.Fatalf("terminal reconciliation was not idempotent: %v", err)
 	}
 }
+
+func TestSuccessfulMentionConsultationDoesNotAdvanceAssignedIssue(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	svc := &collaboration.Service{Store: st}
+	issue, ownerTask, err := svc.CreateIssue(ctx, collaboration.CreateIssueRequest{
+		Tenant: "tenant-a", Namespace: "ns-a", Title: "consult another agent",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "assigned-agent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerTask, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: ownerTask.ID, ExpectedVersion: ownerTask.Version,
+	})
+	if err == nil {
+		ownerTask, err = st.Collaboration().StartAgentTask(ctx, ownerTask.ID, ownerTask.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := svc.AddComment(ctx, collaboration.AddCommentRequest{
+		IssueID: issue.ID, Author: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		Content: "Please give me a second opinion.", Mentions: []collaboration.MentionTarget{{
+			Type: controlmodel.AssigneeAgent, Ref: "consultant",
+		}},
+	})
+	if err != nil || len(request.Tasks) != 1 {
+		t.Fatalf("mention consultant: result=%+v err=%v", request, err)
+	}
+	consultant, err := st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: request.Tasks[0].ID, ExpectedVersion: request.Tasks[0].Version,
+	})
+	if err == nil {
+		consultant, err = st.Collaboration().StartAgentTask(ctx, consultant.ID, consultant.Version)
+	}
+	if err == nil {
+		consultant, _, err = svc.CompleteTask(ctx, consultant.ID, store.TaskCompletion{
+			ExpectedVersion: consultant.Version, Summary: "second opinion",
+		}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "consultant"})
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = (&Engine{Store: st}).ReconcileRun(ctx, consultant.OrchestrationRunID); err != nil {
+		t.Fatal(err)
+	}
+	current, err := st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || current.Status != controlmodel.IssueInProgress {
+		t.Fatalf("consultation Run advanced assigned Issue: issue=%+v err=%v", current, err)
+	}
+}

@@ -504,6 +504,165 @@ func TestTeamProgressDoesNotDispatchAndImplicitAssigneeFollowUpKeepsLineage(t *t
 	}
 }
 
+func TestHumanExplicitMentionCompletesWithoutAssigneePingPong(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	issue, assigneeTask, err := svc.CreateIssue(ctx, CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "ask another agent",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "assignee",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigneeTask, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: assigneeTask.ID, ExpectedVersion: assigneeTask.Version,
+	})
+	if err == nil {
+		assigneeTask, err = st.Collaboration().StartAgentTask(ctx, assigneeTask.ID, assigneeTask.Version)
+	}
+	if err == nil {
+		assigneeTask, err = svc.FailTask(ctx, assigneeTask.ID, assigneeTask.Version,
+			"missing_capability", "required search tool unavailable")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.ConvergeFailedTask(ctx, assigneeTask.ID); err != nil {
+		t.Fatal(err)
+	}
+	request, err := svc.AddComment(ctx, AddCommentRequest{
+		IssueID: issue.ID, Author: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		Content: "Can you solve it?", Mentions: []MentionTarget{{
+			Type: controlmodel.AssigneeAgent, Ref: "consultant",
+		}},
+	})
+	if err != nil || len(request.Tasks) != 1 {
+		t.Fatalf("explicit mention: result=%+v err=%v", request, err)
+	}
+	consultant := &request.Tasks[0]
+	consultant, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: consultant.ID, ExpectedVersion: consultant.Version,
+	})
+	if err == nil {
+		consultant, err = st.Collaboration().StartAgentTask(ctx, consultant.ID, consultant.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentIssue, err := st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || currentIssue.Status != controlmodel.IssueBlocked {
+		t.Fatalf("mentioned consultant took ownership while starting: issue=%+v err=%v", currentIssue, err)
+	}
+	_, answer, err := svc.CompleteTask(ctx, consultant.ID, store.TaskCompletion{
+		ExpectedVersion: consultant.Version, Summary: "A usable direct answer",
+	}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "consultant"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer == nil || answer.ParentID == nil || *answer.ParentID != request.Comment.ID ||
+		len(answer.Routes) != 1 || answer.Routes[0].TargetType != controlmodel.AssigneeHuman ||
+		answer.Routes[0].TargetRef != "owner" {
+		t.Fatalf("explicit mention result was implicitly rerouted: %+v", answer)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: issue.ID, Limit: 20,
+	})
+	if err != nil || len(tasks) != 2 {
+		t.Fatalf("mention created an assignee ping-pong task: tasks=%+v err=%v", tasks, err)
+	}
+	currentIssue, err = st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || currentIssue.Status != controlmodel.IssueBlocked {
+		t.Fatalf("consultation completion advanced assigned Issue: issue=%+v err=%v", currentIssue, err)
+	}
+}
+
+func TestAssigneeCompletionTerminatesOneWayAgentHandoff(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	issue, initial, err := svc.CreateIssue(ctx, CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "consume consultation",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "assignee",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: initial.ID, ExpectedVersion: initial.Version,
+	})
+	if err == nil {
+		initial, err = st.Collaboration().StartAgentTask(ctx, initial.ID, initial.Version)
+	}
+	if err == nil {
+		initial, err = svc.FailTask(ctx, initial.ID, initial.Version, "unavailable", "needs consultation")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := svc.AddComment(ctx, AddCommentRequest{
+		IssueID: issue.ID, Author: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		Content: "consult", Mentions: []MentionTarget{{Type: controlmodel.AssigneeAgent, Ref: "consultant"}},
+	})
+	if err != nil || len(request.Tasks) != 1 {
+		t.Fatalf("create consultant: result=%+v err=%v", request, err)
+	}
+	consultant, err := st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: request.Tasks[0].ID, ExpectedVersion: request.Tasks[0].Version,
+	})
+	if err == nil {
+		consultant, err = st.Collaboration().StartAgentTask(ctx, consultant.ID, consultant.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	consultant, err = st.Collaboration().GetAgentTask(ctx, consultant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputIDs := make([]uuid.UUID, 0, len(consultant.Inputs))
+	for _, input := range consultant.Inputs {
+		inputIDs = append(inputIDs, input.ID)
+	}
+	_, consultation, err := st.Collaboration().CompleteAgentTaskWithComment(ctx, consultant.ID,
+		store.TaskCompletion{ExpectedVersion: consultant.Version, ProcessedInputIDs: inputIDs},
+		&controlmodel.Comment{IssueID: issue.ID, ParentID: &request.Comment.ID,
+			Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "consultant"},
+			Content: "consultation result", Type: controlmodel.CommentResult}, []store.CommentTarget{{
+			TargetType: controlmodel.AssigneeAgent, TargetRef: "assignee", AgentRef: "assignee",
+			RouteType: controlmodel.RouteAssignee,
+		}})
+	if err != nil || consultation == nil || len(consultation.Routes) != 1 || consultation.Routes[0].TaskID == nil {
+		t.Fatalf("route consultation to assignee: comment=%+v err=%v", consultation, err)
+	}
+	consumer, err := st.Collaboration().GetAgentTask(ctx, *consultation.Routes[0].TaskID)
+	if err == nil {
+		consumer, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+			TaskID: consumer.ID, ExpectedVersion: consumer.Version,
+		})
+	}
+	if err == nil {
+		consumer, err = st.Collaboration().StartAgentTask(ctx, consumer.ID, consumer.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, final, err := svc.CompleteTask(ctx, consumer.ID, store.TaskCompletion{
+		ExpectedVersion: consumer.Version, Summary: "final synthesis",
+	}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "assignee"})
+	if err != nil || final == nil || len(final.Routes) != 0 {
+		t.Fatalf("assignee completion bounced to consultant: comment=%+v err=%v", final, err)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: issue.ID, AgentRef: "consultant", Limit: 20,
+	})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("assignee result created consultant follow-up: tasks=%+v err=%v", tasks, err)
+	}
+}
+
 func TestQuiescentBlockedTeamWorkBlocksAndHumanFollowUpReopensRoot(t *testing.T) {
 	ctx := context.Background()
 	st := openTestStore(t)

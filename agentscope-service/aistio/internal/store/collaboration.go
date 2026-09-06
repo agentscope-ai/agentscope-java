@@ -73,6 +73,36 @@ type CreateCommentRequest struct {
 	Activity *controlmodel.Activity
 }
 
+// AgentTaskOwnsIssueLifecycle reports whether a Task is allowed to advance the
+// Issue's workflow status. Explicitly mentioned consultants can contribute to
+// the discussion, but only the assigned Agent or Team leader owns the Issue.
+func AgentTaskOwnsIssueLifecycle(issue *controlmodel.Issue, task *controlmodel.AgentTask) bool {
+	if issue == nil || task == nil {
+		return false
+	}
+	switch issue.AssigneeType {
+	case "":
+		return true
+	case controlmodel.AssigneeAgent:
+		return issue.AssigneeRef == task.AgentRef
+	case controlmodel.AssigneeTeam:
+		return task.LeaderTask && task.TeamID != nil && issue.AssigneeRef == task.TeamID.String()
+	default:
+		return false
+	}
+}
+
+// AgentTaskMayAdvanceIssueLifecycle limits ownership checks to direct comment
+// consultations. Workflow/endpoint tasks and Team tasks keep their existing
+// lifecycle semantics, while an explicitly mentioned standalone consultant
+// cannot move an Issue assigned to somebody else.
+func AgentTaskMayAdvanceIssueLifecycle(issue *controlmodel.Issue, task *controlmodel.AgentTask) bool {
+	if task == nil {
+		return false
+	}
+	return task.TriggerType != "comment" || task.TeamID != nil || AgentTaskOwnsIssueLifecycle(issue, task)
+}
+
 type CreateCommentResult struct {
 	Comment *controlmodel.Comment
 	Routes  []controlmodel.CommentRoute
