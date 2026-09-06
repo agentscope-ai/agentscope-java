@@ -339,6 +339,14 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 			}
 			for _, candidate := range latest {
 				if candidate.ID != failedNode.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
+					tasks, _ := e.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+						Tenant: run.Tenant, Namespace: run.Namespace, NodeID: candidate.ID, Limit: 500,
+					})
+					for _, task := range tasks {
+						if !controlmodel.IsAgentTaskTerminal(task.Status) {
+							_, _ = (&taskplane.Service{Store: e.Store}).CancelTask(ctx, task.ID, task.Version)
+						}
+					}
 					_, _ = e.Store.Orchestration().TransitionNode(ctx, candidate.ID, candidate.Version, controlmodel.RunNodeCancelled, nil, "fail_fast", "cancelled after node failure")
 				}
 			}
