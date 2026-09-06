@@ -201,6 +201,21 @@ func testCollaborationReliability(t *testing.T, ctx context.Context, s store.Sto
 	if err != nil || lineageTask.ParentTaskID == nil || *lineageTask.ParentTaskID != claimed.ID {
 		t.Fatalf("parent lineage was lost: task=%+v err=%v", lineageTask, err)
 	}
+	derived, err := repo.CreateComment(ctx, store.CreateCommentRequest{
+		Comment: &controlmodel.Comment{IssueID: delegated.ID,
+			Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: claimed.AgentRef},
+			Content: "explicit worker continuation", Type: controlmodel.CommentStatus, SourceTaskID: &claimed.ID},
+		Targets: []store.CommentTarget{{TargetType: controlmodel.AssigneeAgent, TargetRef: "review-worker",
+			AgentRef: "review-worker", RouteType: controlmodel.RouteExplicit}},
+	})
+	if err != nil || len(derived.Tasks) != 1 {
+		t.Fatalf("derived parent route: %+v %v", derived, err)
+	}
+	derivedTask, err := repo.GetAgentTask(ctx, derived.Tasks[0].ID)
+	if err != nil || derivedTask.ParentTaskID == nil || *derivedTask.ParentTaskID != claimed.ID ||
+		derivedTask.DelegatedFromTaskID == nil || *derivedTask.DelegatedFromTaskID != claimed.ID {
+		t.Fatalf("comment source lineage was lost: task=%+v err=%v", derivedTask, err)
+	}
 
 	// Duplicate delivery failure reports are monotonic. Max attempts produces a
 	// real dead-letter state, and explicit replay creates new lineage without

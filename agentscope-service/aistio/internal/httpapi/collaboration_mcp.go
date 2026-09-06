@@ -90,7 +90,7 @@ func collaborationMCPTools() []mcpTool {
 	return []mcpTool{
 		{Name: "issue.get", Description: "Read the authoritative Issue for this AgentTask.", InputSchema: object(map[string]any{"issueId": stringProp})},
 		{Name: "issue.comment.list", Description: "Read Issue discussion roots, a thread, or its tail.", InputSchema: object(map[string]any{"issueId": stringProp, "rootsOnly": map[string]any{"type": "boolean"}, "threadId": stringProp, "tail": map[string]any{"type": "integer", "minimum": 1, "maximum": 500}})},
-		{Name: "issue.comment.add", Description: "Add an attributable Comment and route structured mentions. Status and progress types are informational and only dispatch explicit mentions.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "type": stringProp, "mentions": mentions}, "content")},
+		{Name: "issue.comment.add", Description: "Add an attributable Comment to this task's current Issue and route structured mentions. It cannot modify a sibling Issue. Status and progress types are informational and only dispatch explicit mentions.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "type": stringProp, "mentions": mentions}, "content")},
 		{Name: "issue.child.create", Description: "Create child work from an active Team leader task. For assigneeType=agent, assigneeRef must be the roster member's agentId from team.get, never the membership id field. acceptanceCriteria is optional and must be an object, never a top-level array.", InputSchema: object(map[string]any{"title": stringProp, "description": stringProp, "priority": stringProp, "assigneeType": stringProp, "assigneeRef": stringProp, "acceptanceCriteria": acceptanceCriteria}, "title")},
 		{Name: "issue.accept", Description: "Accept this delegated child Issue from an active Team leader follow-up after its worker result has converged.", InputSchema: object(map[string]any{"reason": stringProp})},
 		{Name: "issue.cancel", Description: "Explicitly skip the current blocked delegated child Issue after the Team leader decides a degraded or partial result is acceptable.", InputSchema: object(map[string]any{"reason": stringProp})},
@@ -122,6 +122,13 @@ func collaborationMCPToolsForTask(task *controlmodel.AgentTask) []mcpTool {
 	filtered := make([]mcpTool, 0, len(tools))
 	for _, tool := range tools {
 		switch tool.Name {
+		case "task.respond":
+			// A Team worker result is a synchronization signal to its leader. It
+			// must be published atomically by task.complete, otherwise an interim
+			// acknowledgement can wake the coordinator before the real result.
+			if task.TeamID != nil && !task.LeaderTask {
+				continue
+			}
 		case "team.get":
 			if task.TeamID == nil {
 				continue
@@ -267,6 +274,9 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		comments, err := s.store.Collaboration().ListComments(ctx, task.IssueID, opts)
 		return map[string]any{"items": comments}, err
 	case "issue.comment.add", "task.progress", "task.respond":
+		if name == "task.respond" && task.TeamID != nil && !task.LeaderTask {
+			return nil, fmt.Errorf("Team workers must publish their final result with task.complete")
+		}
 		parentID, err := optionalUUIDArg(args, "parentId")
 		if err != nil {
 			return nil, err

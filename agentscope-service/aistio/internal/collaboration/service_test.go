@@ -973,6 +973,39 @@ func TestLeaderFollowUpContextIncludesEverySiblingResult(t *testing.T) {
 	if err != nil || len(tasks) != 1 {
 		t.Fatalf("second follow-up: tasks=%+v err=%v", tasks, err)
 	}
+	activeEnvelope, err := svc.BuildContext(ctx, tasks[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeResults := map[string]bool{}
+	for _, child := range activeEnvelope.CoordinatorChildren {
+		for _, result := range child.Results {
+			activeResults[result.Content] = true
+		}
+	}
+	if activeResults[results[0]] || !activeResults[results[1]] {
+		t.Fatalf("active sibling result leaked into current follow-up: results=%+v context=%+v",
+			activeResults, activeEnvelope.CoordinatorChildren)
+	}
+	firstFollowUps, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		IssueID: children[0].ID, AgentRef: "leader", Limit: 10,
+	})
+	if err != nil || len(firstFollowUps) != 1 {
+		t.Fatalf("first follow-up: tasks=%+v err=%v", firstFollowUps, err)
+	}
+	firstFollowUp, err := st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: firstFollowUps[0].ID, ExpectedVersion: firstFollowUps[0].Version,
+	})
+	if err == nil {
+		firstFollowUp, err = st.Collaboration().StartAgentTask(ctx, firstFollowUp.ID, firstFollowUp.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstChild, err := svc.AcceptIssueFromTask(ctx, firstFollowUp.ID, "accepted")
+	if err != nil || firstChild.Status != controlmodel.IssueDone {
+		t.Fatalf("accept first sibling: issue=%+v err=%v", firstChild, err)
+	}
 	envelope, err := svc.BuildContext(ctx, tasks[0].ID)
 	if err != nil {
 		t.Fatal(err)

@@ -1251,14 +1251,21 @@ func (s *Service) addCoordinatorContext(ctx context.Context, envelope *ContextEn
 		return err
 	}
 	for _, child := range children {
-		comments, listErr := s.listAllComments(ctx, child.ID)
-		if listErr != nil {
-			return listErr
-		}
 		childContext := CoordinatorChildContext{Issue: child}
-		for _, comment := range comments {
-			if comment.Type == controlmodel.CommentResult && comment.DeletedAt == nil {
-				childContext.Results = append(childContext.Results, comment)
+		// The current child result is needed for its decision. Sibling result
+		// bodies become synthesis context only after that sibling has reached a
+		// terminal Issue state; exposing active/blocked sibling bodies here caused
+		// leaders to act on them through tools scoped to the current child.
+		if child.ID == envelope.Task.IssueID || child.Status == controlmodel.IssueDone ||
+			child.Status == controlmodel.IssueCancelled {
+			comments, listErr := s.listAllComments(ctx, child.ID)
+			if listErr != nil {
+				return listErr
+			}
+			for _, comment := range comments {
+				if comment.Type == controlmodel.CommentResult && comment.DeletedAt == nil {
+					childContext.Results = append(childContext.Results, comment)
+				}
 			}
 		}
 		envelope.CoordinatorChildren = append(envelope.CoordinatorChildren, childContext)

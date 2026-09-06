@@ -291,7 +291,7 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 		return base + " You are a Team worker. Complete only the assigned child work and call task.complete " +
 			"with the result. If required capabilities, credentials, inputs, or tools are unavailable, call " +
 			"task.fail with a durable code and explanation; do not merely return explanatory text. Do not " +
-			"coordinate or create child Issues."
+			"call task.respond, coordinate, or create child Issues."
 	}
 	if task.ParentTaskID == nil {
 		return base + " You are the initial Team leader. Delegate suitable child work once, using the " +
@@ -300,8 +300,10 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 			"wait inside this turn. A fresh leader follow-up will arrive with each worker result."
 	}
 	return base + " You are a Team leader follow-up caused by a worker outcome. Read the supplied task " +
-		"inputs and comments and validate the outcome. task.get also returns coordinatorChildren with every " +
-		"delegated Issue and result; use that complete set when producing the final coordinator output. " +
+		"inputs and comments and validate the outcome. This follow-up owns only its current Issue: issue.accept, " +
+		"issue.cancel, and issue.comment.add act on that Issue, so never use them to decide or message a sibling. " +
+		"Each sibling outcome gets its own follow-up. task.get also returns coordinatorChildren as read-only " +
+		"synthesis context; use terminal sibling results when producing the final coordinator output. " +
 		"Call issue.accept only for satisfactory completed " +
 		"work. For blocked or failed work, retry or reassign only when the new attempt changes the available " +
 		"agent, capability, credential, input, or tool; otherwise choose a degraded result, request human " +

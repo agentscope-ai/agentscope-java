@@ -32,10 +32,11 @@ func TestCollaborationMCPToolCatalogFollowsTaskRole(t *testing.T) {
 		task          *controlmodel.AgentTask
 		wantTeam      bool
 		wantLeaderOps bool
+		wantRespond   bool
 	}{
-		{name: "standalone", task: &controlmodel.AgentTask{}},
+		{name: "standalone", task: &controlmodel.AgentTask{}, wantRespond: true},
 		{name: "team worker", task: &controlmodel.AgentTask{TeamID: &teamID}, wantTeam: true},
-		{name: "team leader", task: &controlmodel.AgentTask{TeamID: &teamID, LeaderTask: true}, wantTeam: true, wantLeaderOps: true},
+		{name: "team leader", task: &controlmodel.AgentTask{TeamID: &teamID, LeaderTask: true}, wantTeam: true, wantLeaderOps: true, wantRespond: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,7 +55,22 @@ func TestCollaborationMCPToolCatalogFollowsTaskRole(t *testing.T) {
 			if !names["issue.get"] || !names["task.complete"] {
 				t.Fatalf("base tools missing: %+v", names)
 			}
+			if names["task.respond"] != tt.wantRespond {
+				t.Fatalf("task.respond visibility=%v, want %v", names["task.respond"], tt.wantRespond)
+			}
 		})
+	}
+}
+
+func TestCollaborationMCPRejectsTeamWorkerRespondFromStaleClient(t *testing.T) {
+	teamID := uuid.New()
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPost, "/mcp/collaboration", nil)
+	_, err := (&Server{}).callCollaborationMCPTool(context, &controlmodel.AgentTask{
+		TeamID: &teamID,
+	}, "task.respond", map[string]any{"content": "interim acknowledgement"})
+	if err == nil || !strings.Contains(err.Error(), "task.complete") {
+		t.Fatalf("expected Team worker task.respond rejection, got %v", err)
 	}
 }
 

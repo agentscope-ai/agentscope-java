@@ -52,6 +52,8 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		// task selected by the router so its follow-up remains in the same Run.
 		if sourceTaskID == nil && commentSourceTaskID != nil {
 			sourceTaskID = commentSourceTaskID
+			task.ParentTaskID = commentSourceTaskID
+			task.DelegatedFromTaskID = commentSourceTaskID
 		}
 	} else {
 		if parentTaskID != nil {
