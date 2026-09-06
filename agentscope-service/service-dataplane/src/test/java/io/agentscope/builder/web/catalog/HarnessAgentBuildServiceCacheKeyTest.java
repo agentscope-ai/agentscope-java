@@ -21,6 +21,11 @@ import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.SessionAgentBuildSpec;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionEngine;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.tool.WebTools;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.util.List;
@@ -105,7 +110,12 @@ class HarnessAgentBuildServiceCacheKeyTest {
                         "base instructions", executionContext);
 
         assertThat(prompt)
-                .contains("base instructions", "Managed AgentTask protocol", "Fix managed task")
+                .contains(
+                        "base instructions",
+                        "Managed AgentTask protocol",
+                        "Fix managed task",
+                        "immediately calls task.complete and stops",
+                        "must not wait for workers inside that turn")
                 .doesNotContain("super-secret-token", "taskToken");
     }
 
@@ -150,11 +160,31 @@ class HarnessAgentBuildServiceCacheKeyTest {
                 HarnessAgentBuildService.managedTaskPermissionContext(executionContext);
 
         assertThat(permissions).isNotNull();
+        assertThat(permissions.getMode()).isEqualTo(PermissionMode.BYPASS);
         assertThat(permissions.getAllowRules())
                 .containsOnlyKeys("task.start", "task.respond", "task.complete");
         assertThat(permissions.getAllowRules().get("task.complete"))
                 .allMatch(rule -> rule.behavior() == PermissionBehavior.ALLOW);
         assertThat(permissions.getDenyRules()).isEmpty();
         assertThat(permissions.getAskRules()).isEmpty();
+    }
+
+    @Test
+    void managedTaskDoesNotCreateUnresumableCorePromptForReadOnlyBuiltin() {
+        PermissionContextState permissions =
+                HarnessAgentBuildService.managedTaskPermissionContext(
+                        Map.of(
+                                "taskContext",
+                                Map.of("availableActions", List.of("task.complete"))));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new WebTools.WebSearchTool());
+        ToolBase webSearch = (ToolBase) toolkit.getTool("web_search");
+
+        assertThat(
+                        new PermissionEngine(permissions)
+                                .checkPermission(webSearch, Map.of("query", "phone industry"))
+                                .block()
+                                .getBehavior())
+                .isEqualTo(PermissionBehavior.ALLOW);
     }
 }

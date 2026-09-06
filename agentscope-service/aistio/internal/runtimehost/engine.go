@@ -271,7 +271,7 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 	defer cancel()
 	leaseFailures := make(chan error, 1)
 	go e.renewLoop(runCtx, cancel, hostID, execution, leaseFailures)
-	result, runErr := adapter.Run(runCtx, provider.Request{
+	providerRequest := provider.Request{
 		Prompt: prompt, Workspace: path, RuntimeStateRoot: e.Config.StateRoot,
 		ProviderSessionID: execution.ProviderSessionID,
 		Configuration:     work.Profile.Configuration, Definition: work.Definition,
@@ -281,7 +281,15 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 		TaskID: work.Context.Task.ID.String(), IssueID: work.Context.Task.IssueID.String(),
 		AgentID: work.Context.Task.AgentRef, RunID: work.Context.Task.OrchestrationRunID.String(),
 		TeamID: taskTeamID(work.Context.Task),
-	}, func(event provider.Event) error {
+	}
+	if approver, ok := e.Client.(interface {
+		AwaitToolApproval(context.Context, string, string, provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error)
+	}); ok {
+		providerRequest.ApproveTool = func(ctx context.Context, request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+			return approver.AwaitToolApproval(ctx, work.Context.Task.ID.String(), work.TaskToken, request)
+		}
+	}
+	result, runErr := adapter.Run(runCtx, providerRequest, func(event provider.Event) error {
 		record.Events = append(record.Events, event)
 		ordinal := int64(len(record.Events))
 		if err := journal.Save(record); err != nil {
@@ -377,6 +385,16 @@ func hostedWorkspaceContext(execution *controlmodel.ExecutionAttempt,
 }
 
 func shouldPublishProviderEvent(event provider.Event) bool {
+	var appServerEnvelope struct {
+		Method string `json:"method"`
+		Params struct {
+			Message string `json:"message"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(event.Raw, &appServerEnvelope) == nil && appServerEnvelope.Method == "warning" &&
+		strings.Contains(appServerEnvelope.Params.Message, "clamping SessionEnd hook timeout") {
+		return false
+	}
 	var codexEnvelope struct {
 		Type string `json:"type"`
 		Item struct {
@@ -435,7 +453,7 @@ func appendRuntimeContext(prompt string, task *controlmodel.AgentTask, descripto
 		}
 		prompt += "."
 		if task.LeaderTask {
-			prompt += " Delegate or inspect Team work through MCP or the task-scoped CLI. On a follow-up for delegated work, call issue.accept after validating the worker result. Once all delegated Issues are accepted and work has converged, call run.node.complete; then call task.complete. Use run.node.fail for an unrecoverable coordinator outcome."
+			prompt += " Delegate or inspect Team work through MCP or the task-scoped CLI. A blocked worker Issue is a valid outcome that requires your decision: use run.replan to retry or reassign it, issue.cancel only when a degraded/partial result is acceptable, request human action when external configuration is required, or use run.node.fail when the overall objective is unrecoverable. On a successful follow-up, call issue.accept after validating the worker result. Once all delegated Issues are accepted or explicitly skipped and work has converged, call run.node.complete and stop; that call also completes this leader Task."
 		}
 	}
 	return prompt, nil

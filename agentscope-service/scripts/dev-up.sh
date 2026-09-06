@@ -255,6 +255,7 @@ start control "$PID_DIR/control.pid" \
         BUILDER_JWT_SECRET="$BUILDER_JWT_SECRET" \
         BUILDER_INTERNAL_TOKEN="$BUILDER_INTERNAL_TOKEN" \
         BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
+        BUILDER_ALLOW_LOCAL_ENVIRONMENT=true \
         AISTIO_WORKSPACE_ROOT="$RUN_DIR/workspaces" \
         AISTIO_ARTIFACT_ROOT="$RUN_DIR/artifacts" \
         AISTIO_STATIC_DIR="$ROOT/aistio/ui" \

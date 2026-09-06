@@ -37,7 +37,7 @@ function configObject(value: unknown): Record<string, unknown> {
 }
 
 function commandHeader(provider: string) {
-  if (provider === 'codex') return 'codex exec';
+  if (provider === 'codex') return 'codex app-server';
   if (provider === 'claude-code') return 'claude -p';
   if (provider === 'qoder') return 'qodercli -p';
   if (provider === 'qwenpaw') return 'qwenpaw acp';
@@ -111,7 +111,7 @@ function PermissionModeSetting({ provider, value, disabled, onChange }: {
       {options.map(([mode, label]) => <option key={mode || 'inherit'} value={mode}>{label}</option>)}
     </select>
     <span className="text-xs text-muted-foreground">Dangerous permission bypass modes are intentionally not offered as Agent-level presets.</span>
-    {provider === 'qoder' && <span className="text-xs text-muted-foreground">Qoder auto mode also requires the Runtime Host workspace to be trusted by Qoder; explicit allow rules work in default headless mode.</span>}
+    {provider === 'qoder' && <span className="text-xs text-muted-foreground">In default mode, sensitive tool requests are forwarded to AgentScope Approvals. Auto mode may decide without a human review.</span>}
   </label>;
 }
 
@@ -236,7 +236,7 @@ export function HostedAgentSettings({ agent, canEdit }: { agent: AgentDefinition
         {provider === 'codex' && <>
           <label className="grid gap-1.5 text-sm"><span className="font-medium">Codex profile</span><Input value={String(providerConfiguration.profile ?? '')} disabled={!canEdit} onChange={event => setProviderValue('profile', event.target.value)} placeholder="Follow ~/.codex/config.toml" /><span className="text-xs text-muted-foreground">Optional named Codex profile. Leave blank to inherit the local CLI configuration.</span></label>
           <label className="grid gap-1.5 text-sm"><span className="font-medium">Sandbox</span><select className="h-10 rounded-md border bg-background px-3" value={String(providerConfiguration.sandbox ?? '')} disabled={!canEdit} onChange={event => setProviderValue('sandbox', event.target.value)}><option value="">Runtime Profile default</option><option value="read-only">read-only</option><option value="workspace-write">workspace-write</option></select><span className="text-xs text-muted-foreground">An Agent may make the Profile sandbox stricter, but cannot relax it.</span></label>
-          <BooleanSetting label="Allow non-Git workspace" value={providerConfiguration.skipGitRepoCheck} disabled={!canEdit} onChange={value => setProviderValue('skipGitRepoCheck', value)} description="Recommended for AgentScope-created task workspaces; maps to --skip-git-repo-check." />
+          <span className="text-xs text-muted-foreground">Codex app-server natively supports AgentScope-created non-Git workspaces and routes sensitive-action approvals through the control plane.</span>
         </>}
         {provider === 'claude-code' && <>
           <PermissionModeSetting provider="claude-code" value={providerConfiguration.permissionMode} disabled={!canEdit} onChange={value => setProviderValue('permissionMode', value)} />

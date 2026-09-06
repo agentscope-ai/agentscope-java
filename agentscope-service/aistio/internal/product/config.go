@@ -18,13 +18,14 @@ package product
 // The module does not own an HTTP listener; aistiod mounts it onto the
 // shared REST server.
 type Config struct {
-	DSN            string
-	JWTSecret      string
-	InternalToken  string
-	WorkspaceRoot  string
-	SeedUsers      bool
-	DataURL        string // BUILDER_DATA_URL
-	VaultMasterKey string // BUILDER_VAULT_MASTER_KEY (optional)
+	DSN                   string
+	JWTSecret             string
+	InternalToken         string
+	WorkspaceRoot         string
+	SeedUsers             bool
+	AllowLocalEnvironment bool   // BUILDER_ALLOW_LOCAL_ENVIRONMENT
+	DataURL               string // BUILDER_DATA_URL
+	VaultMasterKey        string // BUILDER_VAULT_MASTER_KEY (optional)
 }
 
 // DefaultConfig returns development defaults.
@@ -35,5 +36,9 @@ func DefaultConfig() Config {
 		InternalToken: "builder-internal-dev-token",
 		WorkspaceRoot: "./data/workspaces",
 		SeedUsers:     true,
+		// Local environments execute shell commands in the data-plane process.
+		// This development default is deliberately overridden to false by aistiod;
+		// supported local launchers opt in explicitly.
+		AllowLocalEnvironment: true,
 	}
 }

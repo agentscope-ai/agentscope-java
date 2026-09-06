@@ -44,6 +44,7 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(ctx context.Context, id uui
 		!controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskFailed) {
 		return nil, nil, store.ErrConflict
 	}
+	abortManaged := store.ManagedAttemptNeedsAbort(task, attempt, failure.Code)
 	attempt, err = scanExecutionAttempt(tx.QueryRow(ctx, `UPDATE execution_attempts SET state=$2,
 		checkpoint=COALESCE($3,checkpoint),usage=COALESCE($4,usage),failure_code=$5,failure_message=$6,
 		lease_expires_at=NULL,version=version+1,updated_at=now(),completed_at=now()
@@ -73,6 +74,12 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(ctx context.Context, id uui
 	if err = enqueueCollaborationEventTx(ctx, tx, task.Tenant, "agent-task", task.ID,
 		"agent-task.failed.v1", task, fmt.Sprintf("agent-task-failed:%s:%d", task.ID, task.Version)); err != nil {
 		return nil, nil, err
+	}
+	if abortManaged {
+		if err = enqueueCollaborationEventTx(ctx, tx, task.Tenant, "execution-attempt", attempt.ID,
+			"execution-attempt.abort-managed.v1", attempt, "abort-managed-attempt:"+attempt.ID.String()); err != nil {
+			return nil, nil, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, nil, err
@@ -113,6 +120,7 @@ func (r *collaborationRepo) RequeueAgentTaskAfterAttemptFailure(ctx context.Cont
 		!controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskQueued) {
 		return nil, nil, store.ErrConflict
 	}
+	abortManaged := store.ManagedAttemptNeedsAbort(task, attempt, failure.Code)
 	attempt, err = scanExecutionAttempt(tx.QueryRow(ctx, `UPDATE execution_attempts SET state=$2,
 		checkpoint=COALESCE($3,checkpoint),usage=COALESCE($4,usage),failure_code=$5,failure_message=$6,
 		lease_expires_at=NULL,version=version+1,updated_at=now(),completed_at=now()
@@ -142,6 +150,12 @@ func (r *collaborationRepo) RequeueAgentTaskAfterAttemptFailure(ctx context.Cont
 	if err = enqueueCollaborationEventTx(ctx, tx, task.Tenant, "agent-task", task.ID,
 		"agent-task.queued.v1", task, "agent-task-retry-queued:"+attempt.ID.String()); err != nil {
 		return nil, nil, err
+	}
+	if abortManaged {
+		if err = enqueueCollaborationEventTx(ctx, tx, task.Tenant, "execution-attempt", attempt.ID,
+			"execution-attempt.abort-managed.v1", attempt, "abort-managed-attempt:"+attempt.ID.String()); err != nil {
+			return nil, nil, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, nil, err

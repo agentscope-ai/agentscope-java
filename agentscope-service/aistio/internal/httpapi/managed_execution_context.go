@@ -6,10 +6,14 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/product"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -54,4 +58,79 @@ func (s *Server) managedExecutionContextForSession(ctx context.Context, sessionI
 		return nil
 	}
 	return raw
+}
+
+// validateManagedSessionRuntimeFence protects the product Session status read
+// model from delayed finally/status callbacks. The runtime Store is the
+// authority for whether this is a personal Session or a physical AgentTask
+// Attempt; the product schema persists a second monotonic marker to close A/B
+// update ordering races across the two stores.
+func (s *Server) validateManagedSessionRuntimeFence(ctx context.Context, sessionID string,
+	fence product.ManagedRuntimeFence) (bool, error) {
+	if s == nil || s.store == nil || sessionID == "" {
+		return false, product.ErrManagedRuntimeFenceConflict
+	}
+	sessions, err := s.store.Sessions().List(ctx, store.SessionFilter{SessionID: sessionID, Limit: 2})
+	if err != nil {
+		return false, err
+	}
+	if len(sessions) == 0 {
+		if fence.Empty() {
+			return false, nil
+		}
+		return false, product.ErrManagedRuntimeFenceGone
+	}
+	if len(sessions) != 1 {
+		return false, product.ErrManagedRuntimeFenceConflict
+	}
+	session := sessions[0]
+	if session.AgentTaskID == nil {
+		if fence.Empty() {
+			return false, nil
+		}
+		return false, product.ErrManagedRuntimeFenceConflict
+	}
+	if !fence.Complete() {
+		return true, product.ErrManagedRuntimeFenceConflict
+	}
+	taskID, taskParseErr := uuid.Parse(fence.AgentTaskID)
+	attemptID, attemptParseErr := uuid.Parse(fence.AttemptID)
+	if taskParseErr != nil || attemptParseErr != nil || taskID != *session.AgentTaskID {
+		return true, product.ErrManagedRuntimeFenceConflict
+	}
+	task, err := s.store.Collaboration().GetAgentTask(ctx, taskID)
+	if errors.Is(err, store.ErrNotFound) {
+		return true, product.ErrManagedRuntimeFenceGone
+	}
+	if err != nil {
+		return true, err
+	}
+	if task.CurrentAttemptID == nil || *task.CurrentAttemptID != attemptID {
+		return true, product.ErrManagedRuntimeFenceGone
+	}
+	attempt, err := s.store.ExecutionAttempts().Get(ctx, attemptID)
+	if errors.Is(err, store.ErrNotFound) {
+		return true, product.ErrManagedRuntimeFenceGone
+	}
+	if err != nil {
+		return true, err
+	}
+	if attempt.AgentTaskID != task.ID || attempt.BackendKind != controlmodel.DataPlaneManaged ||
+		attempt.SessionID != sessionID || attempt.DispatchGeneration != fence.DispatchGeneration ||
+		attempt.TurnID != fence.TurnID {
+		return true, product.ErrManagedRuntimeFenceConflict
+	}
+	if task.Status == controlmodel.AgentTaskCompleted && attempt.State == controlmodel.ExecutionSucceeded {
+		return true, nil
+	}
+	if task.Status == controlmodel.AgentTaskFailed || task.Status == controlmodel.AgentTaskCancelled ||
+		task.Status == controlmodel.AgentTaskQueued ||
+		controlmodel.IsExecutionAttemptTerminal(attempt.State) || attempt.State == controlmodel.ExecutionCancelRequested {
+		return true, product.ErrManagedRuntimeFenceGone
+	}
+	if task.Status != controlmodel.AgentTaskDispatched && task.Status != controlmodel.AgentTaskRunning &&
+		task.Status != controlmodel.AgentTaskWaiting {
+		return true, product.ErrManagedRuntimeFenceConflict
+	}
+	return true, nil
 }

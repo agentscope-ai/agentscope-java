@@ -129,12 +129,15 @@ export default function SessionDetailPage() {
   return (
     <div className="console-page-legacy" style={S.root}>
       <div style={S.bar}>
-        <Link
-          to={`/managed/sessions?agentId=${encodeURIComponent(session.agentId)}`}
-          style={S.back}
+        <button
+          type="button"
+          aria-label="Back to previous page"
+          title="Back to previous page"
+          onClick={() => navigate(-1)}
+          style={{ ...S.back, border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }}
         >
-          ← Sessions
-        </Link>
+          ← Back
+        </button>
         <h1 style={S.title}>Session</h1>
         <span style={S.meta} title={session.id}>{session.id}</span>
         {fromTask && (

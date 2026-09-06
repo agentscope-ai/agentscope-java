@@ -213,7 +213,16 @@ func (r *orchestrationRepo) ListRuns(_ context.Context, f store.OrchestrationRun
 	defer r.s.mu.RUnlock()
 	out := []*controlmodel.OrchestrationRun{}
 	for _, v := range r.s.runs {
-		if (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.RootIssueID == uuid.Nil || v.RootIssueID == f.RootIssueID) && (f.State == "" || v.State == f.State) && (!f.ActiveOnly || !controlmodel.IsOrchestrationRunTerminal(v.State)) {
+		matchesIssue := f.IssueID == uuid.Nil || v.RootIssueID == f.IssueID
+		if !matchesIssue {
+			for _, task := range r.s.agentTasks {
+				if task.OrchestrationRunID == v.ID && task.IssueID == f.IssueID {
+					matchesIssue = true
+					break
+				}
+			}
+		}
+		if (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.RootIssueID == uuid.Nil || v.RootIssueID == f.RootIssueID) && matchesIssue && (f.State == "" || v.State == f.State) && (!f.ActiveOnly || !controlmodel.IsOrchestrationRunTerminal(v.State)) {
 			out = append(out, cloneRun(v))
 		}
 	}

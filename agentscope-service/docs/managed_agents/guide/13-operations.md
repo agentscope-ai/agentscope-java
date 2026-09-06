@@ -235,6 +235,7 @@ Managed Environment `type=sandbox` **不**使用本机 Docker，也不读已废�
 | `BUILDER_GATEWAY_PORT` / `CONTROL_PORT` / `DATA_PORT` / `SCHEDULER_PORT` | 18080/8081/8082/8083 | 各平面端口 |
 | `BUILDER_CHANNEL_REPLY_TIMEOUT_MS` | `120000` | scheduler 等 turn 回包 |
 | `BUILDER_E2B_API_KEY` | 空 | Managed `type=sandbox` 的 E2B key |
+| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | `false`（本地启动脚本显式开启） | 是否允许创建或新增绑定 `local` Environment；生产环境保持关闭 |
 | `BUILDER_E2B_TEMPLATE_ID` | `base` | 默认 E2B 模板 |
 | `BUILDER_TURN_LEASE_TTL_SECONDS` | `90` | turn 租约 |
 

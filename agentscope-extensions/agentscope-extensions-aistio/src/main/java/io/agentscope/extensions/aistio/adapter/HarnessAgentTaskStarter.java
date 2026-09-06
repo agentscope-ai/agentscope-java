@@ -6,8 +6,11 @@ package io.agentscope.extensions.aistio.adapter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.transport.CollaborationClient;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -76,8 +79,9 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             String prompt =
                     "AgentTask "
                             + assignment.agentTaskId()
-                            + " is ready. The JSON below is the authoritative Issue, discussion"
-                            + " inputs, Team role, and artifacts. Complete the requested work and"
+                            + " is ready. The JSON below contains the authoritative Run input,"
+                            + " Issue, discussion inputs, Team role, and artifacts. Complete the"
+                            + " requested work and"
                             + " return a concise result; use CollaborationClient for fresh reads,"
                             + " progress comments, artifacts, or child Issues. The available"
                             + " CollaborationClient actions are registered as tools with the exact"
@@ -103,6 +107,44 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                                             assignment.agentTaskId(), assignment.taskToken()))
                             .build();
             Msg response = runtimeAgent.call(kickoff, context).block();
+            int approvalRounds = 0;
+            while (response != null
+                    && response.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+                if (++approvalRounds > 32) {
+                    throw new IllegalStateException("runtime approval round limit exceeded");
+                }
+                List<ToolUseBlock> pending = response.getContentBlocks(ToolUseBlock.class);
+                if (pending.isEmpty()) {
+                    throw new IllegalStateException(
+                            "PERMISSION_ASKING response contains no tool calls");
+                }
+                List<ConfirmResult> confirmations = new ArrayList<>(pending.size());
+                for (ToolUseBlock toolCall : pending) {
+                    CollaborationClient.RuntimeApprovalDecision decision =
+                            collaboration.awaitRuntimeToolApproval(
+                                    assignment.agentTaskId(),
+                                    assignment.taskToken(),
+                                    toolCall.getId(),
+                                    toolCall.getName(),
+                                    toolCall.getInput());
+                    confirmations.add(new ConfirmResult(decision.allow(), toolCall));
+                }
+                Msg resume =
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .textContent("Human tool approval decisions received")
+                                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmations))
+                                .build();
+                response = runtimeAgent.call(resume, context).block();
+            }
+            if (approvalRounds > 0) {
+                version =
+                        collaboration
+                                .taskContext(assignment.agentTaskId(), assignment.taskToken())
+                                .path("task")
+                                .path("version")
+                                .asLong(version);
+            }
             String summary = AgentScopeAdapter.textOf(response);
             if (summary == null || summary.isBlank()) {
                 summary = "AgentTask completed";
@@ -182,8 +224,9 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
         return " You are a Team leader follow-up with new worker inputs. Validate the supplied"
                 + " result, call issue.accept and wait for its result, then make a separate"
                 + " run.node.complete call only when every child Issue and worker node has"
-                + " converged. Never send those mutations in parallel. Returning text alone never"
-                + " completes a Team coordinator.";
+                + " converged. Never send those mutations in parallel. run.node.complete also"
+                + " completes this leader AgentTask; do not call task.complete afterwards."
+                + " Returning text alone never completes a Team coordinator.";
     }
 
     private static Set<String> availableActions(JsonNode envelope) {

@@ -1,4 +1,4 @@
-import { api } from '@/lib/apiClient';
+import { api, getToken } from '@/lib/apiClient';
 import { readApiError } from '@/api/http';
 
 export type EndpointTargetType = 'agent' | 'team' | 'orchestration_revision';
@@ -165,12 +165,16 @@ export const revokeEndpointCredential = (endpointId: string, credentialId: strin
 export const listEndpointInvocations = (endpointId: string, limit = 50) =>
   api.get<{ items: EndpointInvocation[] }>(`/api/v1/endpoints/${encodeURIComponent(endpointId)}/invocations?limit=${limit}`);
 
-async function publicRequest(path: string, credential: string, body?: unknown, idempotencyKey?: string) {
+async function publicRequest(endpoint: Endpoint, path: string, credential: string, body?: unknown, idempotencyKey?: string) {
+  const usesPlatformCredential = endpoint.authPolicy?.type === 'platform';
+  const platformCredential = usesPlatformCredential ? getToken() : null;
   const response = await fetch(path, {
     method: body === undefined ? 'GET' : 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': credential,
+      ...(usesPlatformCredential
+        ? (platformCredential ? { Authorization: `Bearer ${platformCredential}` } : {})
+        : { 'X-API-Key': credential }),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -180,10 +184,10 @@ async function publicRequest(path: string, credential: string, body?: unknown, i
 }
 
 export const invokeEndpointJob = (endpoint: Endpoint, credential: string, body: { title?: string; description?: string; input?: unknown }, idempotencyKey = crypto.randomUUID()) =>
-  publicRequest(`/invoke/v1/endpoints/${encodeURIComponent(endpoint.slug)}/jobs`, credential, body, idempotencyKey);
+  publicRequest(endpoint, `/invoke/v1/endpoints/${encodeURIComponent(endpoint.slug)}/jobs`, credential, body, idempotencyKey);
 
 export const startEndpointConversation = (endpoint: Endpoint, credential: string, message: string, idempotencyKey = crypto.randomUUID()) =>
-  publicRequest(`/invoke/v1/endpoints/${encodeURIComponent(endpoint.slug)}/conversations`, credential, { message }, idempotencyKey);
+  publicRequest(endpoint, `/invoke/v1/endpoints/${encodeURIComponent(endpoint.slug)}/conversations`, credential, { message }, idempotencyKey);
 
-export const continueEndpointConversation = (conversationId: string, credential: string, message: string, idempotencyKey = crypto.randomUUID()) =>
-  publicRequest(`/invoke/v1/conversations/${encodeURIComponent(conversationId)}/turns`, credential, { message }, idempotencyKey);
+export const continueEndpointConversation = (endpoint: Endpoint, conversationId: string, credential: string, message: string, idempotencyKey = crypto.randomUUID()) =>
+  publicRequest(endpoint, `/invoke/v1/conversations/${encodeURIComponent(conversationId)}/turns`, credential, { message }, idempotencyKey);

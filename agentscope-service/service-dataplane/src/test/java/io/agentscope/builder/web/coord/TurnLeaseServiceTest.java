@@ -25,6 +25,8 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -81,5 +83,42 @@ class TurnLeaseServiceTest {
                 service.acquireOrConflict("session-a", "owner-a", () -> {});
         assertThat(held.get().instanceId()).startsWith("brain-a/").isNotEqualTo(firstOwner);
         second.close();
+    }
+
+    @Test
+    void heartbeatErrorsAreToleratedOnlyUntilTheLocalLeaseDeadline() throws Exception {
+        CoordinationStore store = mock(CoordinationStore.class);
+        when(store.tryAcquireTurnLease(anyString(), anyString(), anyString(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            long acquiredAt = System.currentTimeMillis();
+                            return Optional.of(
+                                    new CoordinationStore.LeaseHandle(
+                                            "session-a",
+                                            "owner-a",
+                                            invocation.getArgument(2),
+                                            acquiredAt,
+                                            acquiredAt + 150L));
+                        });
+        when(store.heartbeatTurnLease(anyString(), anyString(), any()))
+                .thenThrow(new IllegalStateException("coordination database unavailable"));
+        CountDownLatch leaseLost = new CountDownLatch(1);
+        TurnLeaseService service =
+                new TurnLeaseService(
+                        store, new BuilderInstanceId("brain-a", "ignored"), Duration.ofMillis(150));
+
+        TurnLeaseService.TurnLease lease =
+                service.acquireOrConflictFenced(
+                        "session-a",
+                        "owner-a",
+                        request -> {
+                            if ("turn_lease_lost".equals(request.reason())) {
+                                leaseLost.countDown();
+                            }
+                        });
+
+        assertThat(leaseLost.await(70, TimeUnit.MILLISECONDS)).isFalse();
+        assertThat(leaseLost.await(500, TimeUnit.MILLISECONDS)).isTrue();
+        lease.close();
     }
 }

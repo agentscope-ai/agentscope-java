@@ -3,7 +3,6 @@ import type { AgentDefinition } from '@/api/agents';
 export type AgentDetailTabId =
   | 'overview'
   | 'sessions'
-  | 'runtime'
   | 'entrypoints'
   | 'related-work'
   | 'settings';
@@ -17,7 +16,6 @@ export function agentDetailTabs(runtimeKind?: string): AgentDetailTab[] {
   const tabs: AgentDetailTab[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'sessions', label: 'Sessions' },
-    { id: 'runtime', label: runtimeKind === 'external-application' ? 'Integration' : 'Runtime' },
     { id: 'entrypoints', label: 'Published APIs' },
     { id: 'related-work', label: 'Activity' },
   ];
@@ -29,7 +27,7 @@ export function resolveAgentDetailTab(
   requestedTab: string | null,
   runtimeKind?: string,
 ): AgentDetailTabId {
-  if (requestedTab === 'settings' && runtimeKind !== 'managed') return 'runtime';
+  if (requestedTab === 'settings' && runtimeKind !== 'managed') return 'overview';
   return agentDetailTabs(runtimeKind).some(tab => tab.id === requestedTab)
     ? requestedTab as AgentDetailTabId
     : 'overview';
@@ -42,6 +40,6 @@ export function agentDetailPath(agent: Pick<AgentDefinition, 'id' | 'runtimeKind
     : `/agent-center/agents/${id}`;
 }
 
-export function agentRuntimePath(agentId: string): string {
-  return `/agent-center/agents/${encodeURIComponent(agentId)}?tab=runtime`;
+export function agentServicePath(agentId: string): string {
+  return `/agent-center/agents/${encodeURIComponent(agentId)}`;
 }

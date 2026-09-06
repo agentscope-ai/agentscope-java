@@ -71,16 +71,18 @@ function pretty(value: unknown): string {
 function ToolBlock({ block }: { block: ConversationContentBlock }) {
   const [open, setOpen] = useState(false);
   const hasBody = !!block.text || !!block.result || block.data != null;
+  const failed = ['error', 'denied', 'interrupted'].includes(block.toolState || '');
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
+    <div className={cn('overflow-hidden rounded-xl border bg-muted/20', failed ? 'border-red-300' : 'border-border')}>
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm hover:bg-muted/50"
         onClick={() => hasBody && setOpen((value) => !value)}
       >
         {hasBody ? open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : null}
-        <span className="h-2 w-2 rounded-full bg-amber-500" />
+        <span className={cn('h-2 w-2 rounded-full', failed ? 'bg-red-500' : 'bg-amber-500')} />
         <span className="font-medium">{block.toolName || 'Tool call'}</span>
+        {block.toolState && <Badge tone={failed ? 'danger' : block.toolState === 'success' ? 'success' : 'warning'}>{block.toolState}</Badge>}
         {block.callId && <code className="ml-auto max-w-48 truncate text-[11px] text-muted-foreground">{block.callId}</code>}
       </button>
       {open && (

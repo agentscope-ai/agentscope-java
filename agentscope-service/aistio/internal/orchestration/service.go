@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/taskplane"
@@ -351,38 +352,42 @@ func (s *Service) Signal(ctx context.Context, id uuid.UUID, name, key string, pa
 	return (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, id)
 }
 
-func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID, output json.RawMessage, actor controlmodel.Actor) (*controlmodel.RunNode, error) {
+// ValidateCoordinatorNodeCompletion evaluates the Team barrier without changing
+// state. The currently executing leader task is intentionally ignored; callers
+// use this check before completing that task and then commit the node transition.
+func (s *Service) ValidateCoordinatorNodeCompletion(ctx context.Context, taskID uuid.UUID) (*controlmodel.AgentTask, *controlmodel.RunNode, error) {
 	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !task.LeaderTask {
-		return nil, fmt.Errorf("only a Team leader task can complete a coordinator node")
+		return nil, nil, fmt.Errorf("only a Team leader task can complete a coordinator node")
 	}
 	node, err := s.Store.Orchestration().GetNode(ctx, task.RunNodeID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if node.Type != controlmodel.RunNodeTeam || node.State != controlmodel.RunNodeWaiting {
-		return nil, store.ErrConflict
+	if node.Type != controlmodel.RunNodeTeam ||
+		(node.State != controlmodel.RunNodeRunning && node.State != controlmodel.RunNodeWaiting) {
+		return nil, nil, store.ErrConflict
 	}
 	tasks, err := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 500})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, candidate := range tasks {
 		if candidate.ID != task.ID && !controlmodel.IsAgentTaskTerminal(candidate.Status) &&
 			(!candidate.LeaderTask || candidate.RunNodeID != node.ID) {
-			return nil, fmt.Errorf("coordinator has active worker task %s", candidate.ID)
+			return nil, nil, fmt.Errorf("coordinator has active worker task %s", candidate.ID)
 		}
 	}
 	nodes, err := s.Store.Orchestration().ListNodes(ctx, task.OrchestrationRunID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, candidate := range nodes {
 		if candidate.ID != node.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
-			return nil, fmt.Errorf("coordinator has active node %s", candidate.NodeKey)
+			return nil, nil, fmt.Errorf("coordinator has active node %s", candidate.NodeKey)
 		}
 	}
 	coordinatorIssueID := task.IssueID
@@ -391,17 +396,38 @@ func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID,
 	}
 	children, err := s.Store.Collaboration().ListIssues(ctx, store.IssueFilter{Tenant: task.Tenant, Namespace: task.Namespace, ParentID: &coordinatorIssueID, Limit: 500})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, child := range children {
 		if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
-			return nil, fmt.Errorf("coordinator has active child issue %s", child.ID)
+			return nil, nil, fmt.Errorf("coordinator has active child issue %s", child.ID)
 		}
 	}
-	// Parallel worker results can produce multiple leader continuations for the
-	// same Team node. Those continuations are redundant coordinator turns, not
-	// worker barriers. Retire the siblings before the node becomes successful so
-	// the Run cannot finish with live tasks or Attempts left behind.
+	return task, node, nil
+}
+
+func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID, output json.RawMessage, actor controlmodel.Actor) (*controlmodel.RunNode, error) {
+	task, node, err := s.ValidateCoordinatorNodeCompletion(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	// A Run must never become successful while the leader obligation that made
+	// the decision is still active. Public adapters complete the task first and
+	// invoke this transition in the same request; a failure between the two
+	// leaves a recoverable waiting coordinator instead of a false-success Run.
+	if task.Status != controlmodel.AgentTaskCompleted || node.State != controlmodel.RunNodeWaiting {
+		return nil, fmt.Errorf("coordinator leader task must be completed before its node")
+	}
+	// Parallel worker results may create more than one leader follow-up for the
+	// same coordinator. They are redundant continuations, not worker barriers.
+	// Retire them before exposing the successful node so the Run cannot finish
+	// with a live leader task or Attempt left behind.
+	tasks, err := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 500,
+	})
+	if err != nil {
+		return nil, err
+	}
 	taskPlane := s.TaskPlane
 	if taskPlane == nil {
 		taskPlane = &taskplane.Service{Store: s.Store}
@@ -436,6 +462,9 @@ func (s *Service) FailCoordinatorNode(ctx context.Context, taskID uuid.UUID, cod
 	}
 	if !task.LeaderTask {
 		return nil, fmt.Errorf("only a Team leader task can fail a coordinator node")
+	}
+	if task.Status != controlmodel.AgentTaskFailed {
+		return nil, fmt.Errorf("coordinator leader task must be failed before its node")
 	}
 	node, err := s.Store.Orchestration().GetNode(ctx, task.RunNodeID)
 	if err != nil {
@@ -479,6 +508,10 @@ func (s *Service) Replan(ctx context.Context, taskID uuid.UUID, definition Defin
 	}
 	if definition.Key == "" {
 		definition.Key = "dynamic-" + uuid.NewString()
+	}
+	if _, err = (&collaboration.Service{Store: s.Store}).ReopenBlockedIssueFromTask(ctx, task.ID,
+		"Team leader replanned blocked delegated work"); err != nil {
+		return nil, err
 	}
 	config, _ := json.Marshal(definition)
 	node, err := s.Store.Orchestration().CreateNode(ctx, &controlmodel.RunNode{RunID: task.OrchestrationRunID,

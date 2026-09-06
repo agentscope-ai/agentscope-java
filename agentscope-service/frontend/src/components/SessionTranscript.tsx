@@ -220,7 +220,7 @@ export default function SessionTranscript({
     <div style={S.root}>
       {!embedded && (
         <div style={S.bar}>
-          <Link to={`/managed/sessions?agentId=${encodeURIComponent(agentId)}`} style={S.back}>← Back</Link>
+          <button type="button" aria-label="Back to previous page" title="Back to previous page" onClick={() => navigate(-1)} style={S.back}>← Back</button>
           <h2 style={S.title}>Details</h2>
           <span style={{ flex: 1 }} />
           {!archived && (

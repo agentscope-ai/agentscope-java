@@ -248,6 +248,36 @@ func testCollaboration(t *testing.T, ctx context.Context, s store.Store) {
 		t.Fatalf("stale issue version must conflict, got %v", err)
 	}
 
+	// Endpoint/API-created work has no accountable human. Delegating a child
+	// from its task must preserve that nullable lineage instead of failing while
+	// reading the source task from PostgreSQL.
+	system := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "endpoint:contract"}
+	systemIssue, err := repo.CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: "contract", Namespace: "default", Title: "API-created parent", Creator: system,
+	})
+	if err != nil {
+		t.Fatalf("create system issue: %v", err)
+	}
+	_, systemTask, err := repo.AssignIssue(ctx, systemIssue.ID, systemIssue.Version,
+		controlmodel.AssigneeAgent, "system-leader", system)
+	if err != nil || systemTask == nil || systemTask.AccountableHumanRef != "" {
+		t.Fatalf("assign system issue: task=%+v err=%v", systemTask, err)
+	}
+	child, err := repo.CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: systemIssue.Tenant, Namespace: systemIssue.Namespace, Title: "delegated API child",
+		ParentIssueID: &systemIssue.ID, Creator: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "system-leader"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "system-worker",
+		SourceType: "agent-task", SourceRef: systemTask.ID.String(),
+	})
+	if err != nil {
+		t.Fatalf("create child from source task without accountable human: %v", err)
+	}
+	childTasks, err := repo.ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: child.ID, Limit: 2})
+	if err != nil || len(childTasks) != 1 || childTasks[0].ParentTaskID == nil ||
+		*childTasks[0].ParentTaskID != systemTask.ID || childTasks[0].AccountableHumanRef != "" {
+		t.Fatalf("system child task lineage: tasks=%+v err=%v", childTasks, err)
+	}
+
 	commentID := uuid.New()
 	result, err := repo.CreateComment(ctx, store.CreateCommentRequest{
 		Comment: &controlmodel.Comment{
@@ -297,6 +327,31 @@ func testCollaboration(t *testing.T, ctx context.Context, s store.Store) {
 	team, err := repo.CreateTeam(ctx, &controlmodel.CollaborationTeam{Tenant: "contract", Namespace: "default", Name: "delivery", LeaderAgentRef: "lead"})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
+	}
+	teamWithRoster, err := repo.CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "contract", Namespace: "default", Name: "delivery-with-roster", LeaderAgentRef: "lead-roster",
+		Members: []controlmodel.CollaborationTeamMember{{AgentRef: "worker-roster", Role: "researcher"}},
+	})
+	if err != nil || teamWithRoster.Version != 1 || len(teamWithRoster.Members) != 1 || teamWithRoster.Members[0].TeamID != teamWithRoster.ID {
+		t.Fatalf("create team with initial roster: team=%+v err=%v", teamWithRoster, err)
+	}
+	loadedRoster, err := repo.GetTeam(ctx, teamWithRoster.ID)
+	if err != nil || len(loadedRoster.Members) != 1 || loadedRoster.Members[0].AgentRef != "worker-roster" {
+		t.Fatalf("load team with initial roster: team=%+v err=%v", loadedRoster, err)
+	}
+	invalidTeamID := uuid.New()
+	_, err = repo.CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		ID: invalidTeamID, Tenant: "contract", Namespace: "default", Name: "invalid-roster", LeaderAgentRef: "lead-invalid",
+		Members: []controlmodel.CollaborationTeamMember{
+			{AgentRef: "worker-a", Role: "duplicate"},
+			{AgentRef: "worker-b", Role: "duplicate"},
+		},
+	})
+	if err == nil {
+		t.Fatal("create team should reject duplicate initial roles")
+	}
+	if _, loadErr := repo.GetTeam(ctx, invalidTeamID); !errors.Is(loadErr, store.ErrNotFound) {
+		t.Fatalf("invalid initial roster must be atomic: err=%v", loadErr)
 	}
 	member, err := repo.AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{TeamID: team.ID, Role: "worker", AgentRef: "worker"})
 	if err != nil || member.ID == uuid.Nil {
@@ -390,6 +445,50 @@ func testRuntime(t *testing.T, ctx context.Context, s store.Store) {
 	completed, err := s.ExecutionAttempts().Complete(ctx, running.ID, "lease", running.FencingToken, json.RawMessage(`{"ok":true}`), nil)
 	if err != nil || completed.State != controlmodel.ExecutionSucceeded {
 		t.Fatalf("complete execution: execution=%+v err=%v", completed, err)
+	}
+
+	managedIssue, err := s.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: "runtime", Namespace: "default", Title: "managed run",
+		Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, managedTask, err := s.Collaboration().AssignIssue(ctx, managedIssue.ID, managedIssue.Version,
+		controlmodel.AssigneeAgent, "managed-coder", managedIssue.Creator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	managedTask, managedAttempt, err := s.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: managedTask.ID, ExpectedVersion: managedTask.Version, RuntimeBinding: json.RawMessage(`{}`)},
+		&controlmodel.ExecutionAttempt{
+			BackendKind: controlmodel.DataPlaneManaged, State: controlmodel.ExecutionAssigned,
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Collaboration().StartAgentTask(ctx, managedTask.ID, managedTask.Version); err != nil {
+		t.Fatalf("start managed task: %v", err)
+	}
+	renewedManaged, err := s.ExecutionAttempts().RenewLease(ctx, managedAttempt.ID, "", 0, time.Minute)
+	if err != nil || renewedManaged.State != controlmodel.ExecutionRunning || renewedManaged.LeaseExpiresAt == nil || renewedManaged.HeartbeatAt == nil {
+		t.Fatalf("renew unleased managed execution: execution=%+v err=%v", renewedManaged, err)
+	}
+	queuedManaged, _, err := s.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, managedTask.ID,
+		store.TaskFailure{ExpectedVersion: managedTask.Version + 1, AttemptID: managedAttempt.ID,
+			DispatchGeneration: managedAttempt.DispatchGeneration, Code: "heartbeat_timeout", Message: "retry"})
+	if err != nil {
+		t.Fatalf("requeue managed attempt: %v", err)
+	}
+	_, retriedManaged, err := s.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: queuedManaged.ID, ExpectedVersion: queuedManaged.Version, RuntimeBinding: json.RawMessage(`{}`)},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged, State: controlmodel.ExecutionAssigned})
+	if err != nil {
+		t.Fatalf("claim managed retry: %v", err)
+	}
+	if retriedManaged.Attempt != managedAttempt.Attempt+1 ||
+		retriedManaged.DispatchGeneration != managedAttempt.DispatchGeneration+1 {
+		t.Fatalf("managed retry fence did not advance: first=%+v retry=%+v", managedAttempt, retriedManaged)
 	}
 
 	secureIssue, err := s.Collaboration().CreateIssue(ctx, &controlmodel.Issue{

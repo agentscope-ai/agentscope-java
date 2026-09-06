@@ -288,6 +288,14 @@ CREATE INDEX IF NOT EXISTS idx_marketplaces_owner ON marketplaces (owner_id);
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_environment_id TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_vault_ids_json TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_memory_store_ids_json TEXT;
+
+-- Last accepted physical Managed AgentTask scope for monotonic runtime status
+-- projection. This lives with the product Session because the runtime Store may
+-- use a different PostgreSQL database or the in-memory development driver.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_agent_task_id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_attempt_id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_dispatch_generation BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_turn_id TEXT;
 `
 
 func migrate(ctx context.Context, db *DB) error {

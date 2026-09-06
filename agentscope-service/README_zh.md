@@ -169,8 +169,8 @@ task-scoped `agentscope` CLI。Agent 可以用 `agentscope task context` 读取�
 
 1. 打开 http://localhost:18080 并登录（`admin` / `admin`）。
 2. 在 **Managed Agents** 中创建 Agent。
-3. 创建一个 `local` Environment。
-4. 打开 **Sessions**，创建绑定 Agent 与 Environment 的 Session，并发送第一条消息。
+3. 本地开发栈会自动为新建的 Managed Agent 绑定共享的 `default-local` Environment；之后可在 Agent 设置中切换。
+4. 打开 **Sessions**，创建 Session 并发送第一条消息。
 5. 在 **Dashboard** 查看在线状态、事件与运行时信息。
 6. 如需协作，创建持久 **Team**、分配 Issue，并观察 discussion route 与 AgentTask。
 
@@ -241,6 +241,7 @@ Java Service 使用 `builder.*` 属性与 `BUILDER_*` 环境变量。各平面�
 | `BUILDER_DB_URL`、`BUILDER_DB_USER`、`BUILDER_DB_PASSWORD` | Java Dataplane 数据库 |
 | `BUILDER_CONTROL_URL`、`BUILDER_DATA_URL`、`BUILDER_SCHEDULER_URL` | 内部服务地址 |
 | `BUILDER_E2B_API_KEY` | `sandbox` Environment 的 E2B 凭据 |
+| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | 是否允许新的 `local` Environment 绑定。`aistiod` 默认 `false`，`scripts/dev-up.sh` 和开发用 Compose 显式开启；生产环境应保持关闭。 |
 | `AISTIO_PRODUCT_DSN` | `aistiod` 使用的产品数据库 |
 | `AISTIO_ENABLE_KUBERNETES` | 是否启用 Aistio CRD Reconciler 与 Kubernetes 集成 |
 | `BUILDER_REBUILD=1` | 重建 Monorepo/aistiod，并默认重建可丢弃的本地 `cp`/`rt`/`dp` schema |

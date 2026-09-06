@@ -258,6 +258,64 @@ func (s *Service) AcceptIssueFromTask(ctx context.Context, taskID uuid.UUID, rea
 		controlmodel.IssueDone, actor, reason)
 }
 
+// CancelBlockedIssueFromTask lets a Team leader explicitly abandon a blocked
+// delegated obligation after deciding that a degraded/partial result is still
+// useful. A worker failure alone never implies cancellation.
+func (s *Service) CancelBlockedIssueFromTask(ctx context.Context, taskID uuid.UUID, reason string) (*controlmodel.Issue, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
+		return nil, fmt.Errorf("only an active Team leader task can cancel a blocked delegated Issue")
+	}
+	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
+	if err != nil {
+		return nil, err
+	}
+	if issue.ParentIssueID == nil || issue.Status != controlmodel.IssueBlocked {
+		return nil, fmt.Errorf("only a blocked delegated child Issue can be cancelled from a task")
+	}
+	tasks, err := s.listAllTasks(ctx, store.AgentTaskFilter{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: issue.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range tasks {
+		if candidate.ID != task.ID && !candidate.LeaderTask && !controlmodel.IsAgentTaskTerminal(candidate.Status) {
+			return nil, fmt.Errorf("delegated Issue still has active worker task %s", candidate.ID)
+		}
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "Team leader accepted a degraded result and skipped blocked work"
+	}
+	return s.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+		controlmodel.IssueCancelled, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}, reason)
+}
+
+// ReopenBlockedIssueFromTask prepares the current delegated Issue for a
+// leader-directed retry or replan. It deliberately does not choose an Agent;
+// the orchestration command remains the authoritative scheduling decision.
+func (s *Service) ReopenBlockedIssueFromTask(ctx context.Context, taskID uuid.UUID, reason string) (*controlmodel.Issue, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
+		return nil, fmt.Errorf("only an active Team leader task can reopen a blocked delegated Issue")
+	}
+	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
+	if err != nil || issue.Status != controlmodel.IssueBlocked {
+		return issue, err
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "Team leader scheduled another attempt"
+	}
+	return s.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+		controlmodel.IssueInProgress, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}, reason)
+}
+
 // acceptanceCriteria is intentionally small and portable across runtimes.
 // Unknown JSON fields are preserved by Issue storage but do not acquire magic
 // execution semantics. A checklist entry is required unless required=false.
@@ -400,23 +458,25 @@ func (s *Service) listAllComments(ctx context.Context, issueID uuid.UUID) ([]*co
 }
 
 type CreateIssueRequest struct {
-	Tenant             string
-	Namespace          string
-	Title              string
-	Description        string
-	Priority           string
-	Kind               controlmodel.IssueKind
-	Visibility         controlmodel.IssueVisibility
-	CompletionPolicy   controlmodel.IssueCompletionPolicy
-	Creator            controlmodel.Actor
-	AssigneeType       controlmodel.AssigneeType
-	AssigneeRef        string
-	ParentIssueID      *uuid.UUID
-	AcceptanceCriteria json.RawMessage
-	ContextRefs        json.RawMessage
-	SourceType         string
-	SourceRef          string
-	DueAt              *time.Time
+	Tenant              string
+	Namespace           string
+	Title               string
+	Description         string
+	Priority            string
+	Kind                controlmodel.IssueKind
+	Visibility          controlmodel.IssueVisibility
+	CompletionPolicy    controlmodel.IssueCompletionPolicy
+	Creator             controlmodel.Actor
+	AssigneeType        controlmodel.AssigneeType
+	AssigneeRef         string
+	ExecutionTargetType string
+	ExecutionTargetRef  string
+	ParentIssueID       *uuid.UUID
+	AcceptanceCriteria  json.RawMessage
+	ContextRefs         json.RawMessage
+	SourceType          string
+	SourceRef           string
+	DueAt               *time.Time
 }
 
 func (s *Service) CreateIssue(ctx context.Context, req CreateIssueRequest) (*controlmodel.Issue, *controlmodel.AgentTask, error) {
@@ -458,6 +518,7 @@ func (s *Service) CreateIssue(ctx context.Context, req CreateIssueRequest) (*con
 		Priority: req.Priority, Kind: req.Kind, Visibility: req.Visibility,
 		CompletionPolicy: req.CompletionPolicy, Creator: req.Creator, ParentIssueID: req.ParentIssueID,
 		AssigneeType: req.AssigneeType, AssigneeRef: req.AssigneeRef,
+		ExecutionTargetType: req.ExecutionTargetType, ExecutionTargetRef: req.ExecutionTargetRef,
 		AcceptanceCriteria: req.AcceptanceCriteria, ContextRefs: req.ContextRefs,
 		SourceType: req.SourceType, SourceRef: req.SourceRef, DueAt: req.DueAt,
 	})
@@ -490,6 +551,22 @@ func (s *Service) CreateChildFromTask(ctx context.Context, taskID uuid.UUID, req
 	parent, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
 	if err != nil {
 		return nil, nil, err
+	}
+	if task.ParentTaskID != nil {
+		if parent.Status == controlmodel.IssueBlocked {
+			return nil, nil, fmt.Errorf("blocked Issue must be explicitly replanned, cancelled, or escalated before creating more child work")
+		}
+		children, listErr := s.listAllIssues(ctx, store.IssueFilter{
+			Tenant: parent.Tenant, Namespace: parent.Namespace, ParentID: &parent.ID,
+		})
+		if listErr != nil {
+			return nil, nil, listErr
+		}
+		for _, child := range children {
+			if child.Status == controlmodel.IssueBlocked {
+				return nil, nil, fmt.Errorf("blocked child Issue %s must be explicitly replanned, cancelled, or escalated before creating more child work", child.ID)
+			}
+		}
 	}
 	team, err := s.TeamForTask(ctx, task)
 	if err != nil {
@@ -556,6 +633,9 @@ type AddCommentRequest struct {
 	Mentions        []MentionTarget
 	SourceTaskID    *uuid.UUID
 	SourceAttemptID *uuid.UUID
+	// SuppressImplicitRouting records the comment without treating it as new
+	// work for the Issue assignee. Explicit mentions still route normally.
+	SuppressImplicitRouting bool
 }
 
 func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store.CreateCommentResult, error) {
@@ -661,7 +741,7 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 	if policy.MaxFanout > 0 && len(targets) > int(policy.MaxFanout) {
 		return nil, fmt.Errorf("Team mention fanout budget exceeded")
 	}
-	if len(targets) == 0 && commentType == controlmodel.CommentResult && req.SourceTaskID != nil {
+	if !req.SuppressImplicitRouting && len(targets) == 0 && commentType == controlmodel.CommentResult && req.SourceTaskID != nil {
 		source, loadErr := s.Store.Collaboration().GetAgentTask(ctx, *req.SourceTaskID)
 		if loadErr != nil {
 			return nil, loadErr
@@ -671,7 +751,7 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 			return nil, err
 		}
 	}
-	if len(targets) == 0 {
+	if !req.SuppressImplicitRouting && len(targets) == 0 {
 		if req.ParentID != nil {
 			parent, loadErr := s.Store.Collaboration().GetComment(ctx, *req.ParentID)
 			if loadErr != nil {
@@ -692,6 +772,30 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 		if len(targets) == 0 && issue.AssigneeType != "" && issue.AssigneeRef != "" {
 			resolved, resolveErr := s.resolveTarget(ctx, issue, MentionTarget{Type: issue.AssigneeType, Ref: issue.AssigneeRef}, controlmodel.RouteAssignee)
 			if resolveErr == nil {
+				if req.SourceTaskID == nil && req.Author.Type == controlmodel.ActorHuman && resolved.TeamID != nil {
+					parentTaskID, parentErr := s.activeTeamRunParent(ctx, issue, *resolved.TeamID)
+					if parentErr != nil {
+						return nil, parentErr
+					}
+					resolved.ParentTaskID = parentTaskID
+				}
+				// An implicit assignee route created by a Team task is still Team
+				// work. Preserve the snapshot lineage so retries and exhausted
+				// failures return to the coordinator instead of becoming a
+				// fail-fast standalone node.
+				if resolved.TargetType == controlmodel.AssigneeAgent && req.SourceTaskID != nil {
+					if source, taskErr := s.Store.Collaboration().GetAgentTask(ctx, *req.SourceTaskID); taskErr == nil && source.TeamID != nil {
+						if team, teamErr := s.TeamForTask(ctx, source); teamErr == nil {
+							role, member := teamAgentRole(team, resolved.TargetRef)
+							if member || team.Policy.AllowExternalDelegation {
+								if !member {
+									role = "external"
+								}
+								resolved.TeamID, resolved.TeamRole = source.TeamID, role
+							}
+						}
+					}
+				}
 				targets = append(targets, s.guardTarget(ctx, issue, req.SourceTaskID, resolved))
 			}
 		}
@@ -709,6 +813,40 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 		metrics.RecordCommentRoute(route.Namespace, string(route.TargetType), string(route.Outcome))
 	}
 	return result, nil
+}
+
+// activeTeamRunParent lets human input resume a quiescent waiting coordinator.
+// Looking only for a currently running AgentTask incorrectly starts a second
+// adaptive Run once every worker and leader follow-up has reached a terminal
+// task state.
+func (s *Service) activeTeamRunParent(ctx context.Context, issue *controlmodel.Issue, teamID uuid.UUID) (*uuid.UUID, error) {
+	runs, err := s.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: issue.ID, ActiveOnly: true, Limit: 3,
+	})
+	if err != nil || len(runs) == 0 {
+		return nil, err
+	}
+	if len(runs) > 1 {
+		return nil, fmt.Errorf("Issue %s has multiple active orchestration Runs", issue.ID)
+	}
+	tasks, err := s.listAllTasks(ctx, store.AgentTaskFilter{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, RunID: runs[0].ID, TeamID: teamID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var latest *controlmodel.AgentTask
+	for _, task := range tasks {
+		if !task.LeaderTask || latest != nil && !task.CreatedAt.After(latest.CreatedAt) {
+			continue
+		}
+		latest = task
+	}
+	if latest == nil {
+		return nil, nil
+	}
+	id := latest.ID
+	return &id, nil
 }
 
 func teamAgentRole(team *controlmodel.CollaborationTeam, agentRef string) (string, bool) {
@@ -935,6 +1073,7 @@ type ContextInput struct {
 type ContextEnvelope struct {
 	Task             *controlmodel.AgentTask         `json:"task"`
 	Issue            *controlmodel.Issue             `json:"issue"`
+	Run              *controlmodel.OrchestrationRun  `json:"run"`
 	Inputs           []ContextInput                  `json:"inputs"`
 	Team             *controlmodel.CollaborationTeam `json:"team,omitempty"`
 	Artifacts        []*controlmodel.Artifact        `json:"artifacts,omitempty"`
@@ -951,7 +1090,11 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 	if err != nil {
 		return nil, err
 	}
-	envelope := &ContextEnvelope{Task: task, Issue: issue,
+	run, err := s.Store.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil {
+		return nil, err
+	}
+	envelope := &ContextEnvelope{Task: task, Issue: issue, Run: run,
 		AvailableActions: []string{"issue.get", "issue.comment.list", "issue.comment.add", "artifact.upload", "artifact.download",
 			"task.get", "task.start", "task.progress", "task.respond", "task.complete", "task.fail", "approval.request",
 			"run.get", "run.graph", "run.signal", "run.artifacts"}}
@@ -969,7 +1112,7 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 		}
 		envelope.AvailableActions = append(envelope.AvailableActions, "team.get")
 		if task.LeaderTask {
-			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "issue.accept", "run.node.complete", "run.node.fail", "run.replan")
+			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "issue.accept", "issue.cancel", "run.node.complete", "run.node.fail", "run.replan")
 		}
 	}
 	envelope.Artifacts, err = s.Store.Collaboration().ListArtifacts(ctx, task.Tenant, task.Namespace, "issue", task.IssueID.String())
@@ -1053,13 +1196,85 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 		if completeErr != nil {
 			return nil, nil, completeErr
 		}
+		if convergeErr := s.convergeQuiescentBlockedTeamRoot(ctx, completed); convergeErr != nil {
+			return completed, resultComment, convergeErr
+		}
 		return completed, resultComment, nil
 	}
 	completed, err := s.Store.Collaboration().CompleteAgentTask(ctx, taskID, completion)
 	if err != nil {
 		return nil, output, err
 	}
+	if convergeErr := s.convergeQuiescentBlockedTeamRoot(ctx, completed); convergeErr != nil {
+		return completed, output, convergeErr
+	}
 	return completed, output, nil
+}
+
+// convergeQuiescentBlockedTeamRoot propagates an exhausted child dependency to
+// the root only after the leader has finished its decision turn and no other
+// task can still make progress. The adaptive Run remains waiting and the root
+// can be reopened when new human input or capabilities arrive.
+func (s *Service) convergeQuiescentBlockedTeamRoot(ctx context.Context, completed *controlmodel.AgentTask) error {
+	if completed == nil || completed.TeamID == nil || !completed.LeaderTask || completed.ParentTaskID == nil {
+		return nil
+	}
+	run, err := s.Store.Orchestration().GetRun(ctx, completed.OrchestrationRunID)
+	if err != nil || controlmodel.IsOrchestrationRunTerminal(run.State) {
+		return err
+	}
+	tasks, err := s.listAllTasks(ctx, store.AgentTaskFilter{
+		Tenant: completed.Tenant, Namespace: completed.Namespace, RunID: completed.OrchestrationRunID,
+	})
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		if !controlmodel.IsAgentTaskTerminal(task.Status) {
+			return nil
+		}
+	}
+	children, err := s.listAllIssues(ctx, store.IssueFilter{
+		Tenant: completed.Tenant, Namespace: completed.Namespace, ParentID: &run.RootIssueID,
+	})
+	if err != nil {
+		return err
+	}
+	hasBlocked := false
+	for _, child := range children {
+		switch child.Status {
+		case controlmodel.IssueDone, controlmodel.IssueCancelled:
+		case controlmodel.IssueBlocked:
+			hasBlocked = true
+		default:
+			return nil
+		}
+	}
+	if !hasBlocked {
+		return nil
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		root, loadErr := s.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if root.Status == controlmodel.IssueBlocked {
+			return nil
+		}
+		if root.Status != controlmodel.IssueInProgress && root.Status != controlmodel.IssueInReview && root.Status != controlmodel.IssueTodo {
+			return nil
+		}
+		_, transitionErr := s.Store.Collaboration().TransitionIssue(ctx, root.ID, root.Version,
+			controlmodel.IssueBlocked, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: completed.AgentRef},
+			"Team is waiting on blocked delegated work")
+		if transitionErr == nil {
+			return nil
+		}
+		if transitionErr != store.ErrConflict {
+			return transitionErr
+		}
+	}
+	return store.ErrConflict
 }
 
 // FailTask is the only logical failure entry point. When a physical Attempt
@@ -1081,6 +1296,104 @@ func (s *Service) FailTask(ctx context.Context, taskID uuid.UUID, expectedVersio
 		ExpectedVersion: expectedVersion, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
 		Code: code, Message: message})
 	return failed, err
+}
+
+// ConvergeFailedWorker turns an exhausted Team worker failure into a durable
+// collaboration outcome. The physical Attempt and logical AgentTask remain
+// failed for observability, while the child Issue becomes blocked and the
+// coordinator leader receives a normal follow-up input on which it can reason.
+// Reconciliation may call this repeatedly; the source Task identifies the
+// unique status Comment.
+func (s *Service) ConvergeFailedWorker(ctx context.Context, taskID uuid.UUID) (*controlmodel.Issue, *controlmodel.Comment, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if task.Status != controlmodel.AgentTaskFailed || task.TeamID == nil || task.LeaderTask {
+		return nil, nil, nil
+	}
+	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if issue.ParentIssueID == nil || issue.Status == controlmodel.IssueDone || issue.Status == controlmodel.IssueCancelled {
+		return issue, nil, nil
+	}
+
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	if issue.Status == controlmodel.IssueBacklog {
+		issue, err = s.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+			controlmodel.IssueTodo, actor, "worker could not start delegated work")
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if issue.Status != controlmodel.IssueBlocked {
+		issue, err = s.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+			controlmodel.IssueBlocked, actor, "worker reported an unresolved failure: "+task.ErrorCode)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	comments, err := s.listAllComments(ctx, issue.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, comment := range comments {
+		if comment.Type == controlmodel.CommentStatus && comment.SourceTaskID != nil && *comment.SourceTaskID == task.ID {
+			return issue, comment, nil
+		}
+	}
+
+	code := strings.TrimSpace(task.ErrorCode)
+	if code == "" {
+		code = "agent_reported_failure"
+	}
+	message := strings.TrimSpace(task.ErrorMessage)
+	if message == "" {
+		message = "The delegated worker could not complete the task."
+	}
+	nodeTasks, err := s.listAllTasks(ctx, store.AgentTaskFilter{
+		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: task.RunNodeID,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	attemptCount := 0
+	for _, nodeTask := range nodeTasks {
+		attempts, listErr := s.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{
+			Tenant: task.Tenant, Namespace: task.Namespace, AgentTaskID: nodeTask.ID, Limit: collaborationPageSize,
+		})
+		if listErr != nil {
+			return nil, nil, listErr
+		}
+		attemptCount += len(attempts)
+	}
+	if attemptCount == 0 {
+		attemptCount = len(nodeTasks)
+	}
+	content := "Delegated worker could not complete this Issue.\n" +
+		"Failure code: " + code + "\n" +
+		"Failure: " + message + "\n" +
+		fmt.Sprintf("Attempts consumed: %d\n", attemptCount) +
+		"Issue status: blocked. The Team leader must decide whether to retry or reassign, continue with a degraded result, request human action, or fail the coordinator."
+	if err = ValidateContentPolicy(s.policyForIssueOrTask(ctx, issue, &task.ID), content); err != nil {
+		return nil, nil, err
+	}
+	targets, err := s.completionTargets(ctx, task, task.TriggerCommentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	result, err := s.Store.Collaboration().CreateComment(ctx, store.CreateCommentRequest{
+		Comment: &controlmodel.Comment{IssueID: issue.ID, Author: actor, Content: content,
+			Type: controlmodel.CommentStatus, SourceTaskID: &task.ID, SourceAttemptID: task.CurrentAttemptID},
+		Targets: targets,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return issue, result.Comment, nil
 }
 
 // CancelTask requests cancellation of every active Attempt before closing the

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/internal/asdp"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
-	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -31,28 +29,6 @@ type agentInvocationCapabilities struct {
 	Job          invocationModeCapability            `json:"job"`
 	Conversation invocationModeCapability            `json:"conversation"`
 	Features     map[string]invocationModeCapability `json:"features"`
-}
-
-func (s *Server) getAgentInvocationCapabilities(c *gin.Context) {
-	agentID, ok := parseUUIDParam(c, "agentId")
-	if !ok {
-		return
-	}
-	agent, err := s.store.AgentCatalog().GetAgent(c, agentID)
-	if err != nil {
-		s.writeControlPlaneError(c, err)
-		return
-	}
-	if !requestMatchesAgentScope(c, agent) {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Agent not found in scope"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"capabilities": s.inspectInvocationCapabilities(c, agent)})
-}
-
-func requestMatchesAgentScope(c *gin.Context, agent *controlmodel.Agent) bool {
-	tenant, namespace := strings.TrimSpace(c.Query("tenant")), strings.TrimSpace(c.Query("namespace"))
-	return (tenant == "" || tenant == agent.Tenant) && (namespace == "" || namespace == agent.Namespace)
 }
 
 func (s *Server) inspectInvocationCapabilities(c *gin.Context, agent *controlmodel.Agent) agentInvocationCapabilities {
@@ -80,6 +56,7 @@ func (s *Server) inspectInvocationCapabilities(c *gin.Context, agent *controlmod
 		return result
 	}
 	hasConversationKind := false
+	managedUnavailableReason := ""
 	for _, candidate := range policy.Candidates {
 		binding, bindingErr := s.store.AgentCatalog().GetBinding(c, candidate.Binding.BindingID)
 		if bindingErr != nil || binding.AgentID != agent.ID || !binding.Enabled || binding.ArchivedAt != nil {
@@ -92,11 +69,14 @@ func (s *Server) inspectInvocationCapabilities(c *gin.Context, agent *controlmod
 			configurationValid := json.Unmarshal(binding.Configuration, &cfg) == nil &&
 				cfg.OwnerRef != "" && cfg.ManagedDefinitionRef != ""
 			if s.product != nil && configurationValid &&
-				controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints) &&
-				s.product.ValidateManagedRuntime(c, cfg.OwnerRef, cfg.ManagedDefinitionRef) == nil {
-				result.Conversation = invocationModeCapability{State: "available", Reason: "Managed runtime supports interactive sessions"}
-				result.Features["resume"] = invocationModeCapability{State: "available", Reason: "Managed sessions can accept additional turns"}
-				return result
+				controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints) {
+				if validationErr := s.product.ValidateManagedRuntime(c, cfg.OwnerRef, cfg.ManagedDefinitionRef); validationErr == nil {
+					result.Conversation = invocationModeCapability{State: "available", Reason: "Managed runtime supports interactive sessions"}
+					result.Features["resume"] = invocationModeCapability{State: "available", Reason: "Managed sessions can accept additional turns"}
+					return result
+				} else if managedUnavailableReason == "" {
+					managedUnavailableReason = validationErr.Error()
+				}
 			}
 		case controlmodel.DataPlaneExternalApplication:
 			hasConversationKind = true
@@ -117,7 +97,11 @@ func (s *Server) inspectInvocationCapabilities(c *gin.Context, agent *controlmod
 		}
 	}
 	if hasConversationKind {
-		result.Conversation = invocationModeCapability{State: "unavailable", Reason: "Conversation-capable bindings currently have no eligible runtime"}
+		reason := "Conversation-capable bindings currently have no eligible runtime"
+		if managedUnavailableReason != "" {
+			reason = managedUnavailableReason
+		}
+		result.Conversation = invocationModeCapability{State: "unavailable", Reason: reason}
 	} else {
 		result.Conversation = invocationModeCapability{State: "not_supported", Reason: "No configured runtime supports conversation turns"}
 	}
@@ -258,212 +242,10 @@ func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.S
 	}
 }
 
-func (s *Server) sendPlaygroundConversationTurn(ctx context.Context, session *store.Session, message string) error {
-	return s.sendAgentConversationTurn(ctx, session, message, "playground_conversation", session.OriginRef)
-}
-
 func writeConversationTurnError(c *gin.Context, err error) {
 	if errors.Is(err, store.ErrConflict) {
 		c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error(), Code: "conversation_turn_conflict"})
 		return
 	}
 	c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: err.Error(), Code: "conversation_unavailable"})
-}
-
-type playgroundInvocationRequest struct {
-	Tenant     string          `json:"tenant"`
-	Namespace  string          `json:"namespace"`
-	TargetType string          `json:"targetType"`
-	TargetRef  uuid.UUID       `json:"targetRef"`
-	Mode       string          `json:"mode"`
-	Message    string          `json:"message"`
-	Title      string          `json:"title"`
-	Input      json.RawMessage `json:"input"`
-	SessionID  string          `json:"sessionId"`
-}
-
-func (s *Server) invokePlayground(c *gin.Context) {
-	var req playgroundInvocationRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.TargetRef == uuid.Nil || req.Tenant == "" || req.Namespace == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "tenant, namespace, targetType, targetRef and mode are required"})
-		return
-	}
-	if req.Mode == "conversation" {
-		if req.TargetType != "agent" || strings.TrimSpace(req.Message) == "" {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "conversation requires an Agent target and message"})
-			return
-		}
-		agent, err := s.activeAgentInScope(c.Request.Context(), req.Tenant, req.Namespace, req.TargetRef.String())
-		if err != nil {
-			s.writeControlPlaneError(c, err)
-			return
-		}
-		invocationID := uuid.NewString()
-		session, err := s.resolveAgentConversation(c, agent, req.SessionID, "playground", invocationID)
-		if err == nil {
-			err = s.sendPlaygroundConversationTurn(c, session, strings.TrimSpace(req.Message))
-		}
-		if err != nil {
-			writeConversationTurnError(c, err)
-			return
-		}
-		c.JSON(http.StatusAccepted, gin.H{"invocationId": invocationID, "mode": "conversation", "status": "running",
-			"sessionId": session.SessionID, "sessionRef": session.ID, "bindingId": session.BindingID,
-			"eventsUrl":      "/api/v1/sessions/" + session.ID.String() + "/events",
-			"eventStreamUrl": "/api/v1/sessions/" + session.ID.String() + "/events/stream"})
-		return
-	}
-	if req.Mode != "job" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "mode must be conversation or job"})
-		return
-	}
-	s.invokePlaygroundJob(c, req)
-}
-
-func (s *Server) continuePlaygroundConversation(c *gin.Context) {
-	var req struct {
-		Tenant    string    `json:"tenant"`
-		Namespace string    `json:"namespace"`
-		Message   string    `json:"message"`
-		AgentID   uuid.UUID `json:"agentId"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.AgentID == uuid.Nil || strings.TrimSpace(req.Message) == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "agentId and message are required"})
-		return
-	}
-	sessions, err := s.store.Sessions().List(c, store.SessionFilter{Tenant: req.Tenant, Namespace: req.Namespace,
-		AgentID: req.AgentID, SessionID: c.Param("sessionId"), Limit: 1})
-	if err != nil || len(sessions) == 0 || !isPlaygroundSession(sessions[0]) {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Playground session not found"})
-		return
-	}
-	if err = s.sendPlaygroundConversationTurn(c, sessions[0], strings.TrimSpace(req.Message)); err != nil {
-		writeConversationTurnError(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, gin.H{"invocationId": uuid.New(), "mode": "conversation", "status": "running",
-		"sessionId": sessions[0].SessionID, "sessionRef": sessions[0].ID, "bindingId": sessions[0].BindingID,
-		"eventsUrl":      "/api/v1/sessions/" + sessions[0].ID.String() + "/events",
-		"eventStreamUrl": "/api/v1/sessions/" + sessions[0].ID.String() + "/events/stream"})
-}
-
-// isPlaygroundSession also recognizes sessions written before runtime inventory
-// stopped overwriting origin_type. task_context is the durable control-plane
-// provenance and lets existing conversations continue without a data migration.
-func isPlaygroundSession(session *store.Session) bool {
-	if session == nil {
-		return false
-	}
-	if session.OriginType == "playground" {
-		return true
-	}
-	var provenance struct {
-		OriginType string `json:"originType"`
-	}
-	return json.Unmarshal(session.TaskContext, &provenance) == nil && provenance.OriginType == "playground"
-}
-
-func (s *Server) invokePlaygroundJob(c *gin.Context, req playgroundInvocationRequest) {
-	actor := humanActor(c, s)
-	invocationID := uuid.New()
-	if req.Title == "" {
-		req.Title = "Playground job"
-	}
-	if len(req.Input) == 0 {
-		req.Input, _ = json.Marshal(gin.H{"prompt": req.Message})
-	}
-	issueID := uuid.NewSHA1(invocationID, []byte("issue"))
-	issue := &controlmodel.Issue{ID: issueID, Tenant: req.Tenant, Namespace: req.Namespace, Title: req.Title,
-		Description: req.Message, Status: controlmodel.IssueInProgress, Priority: "normal",
-		Kind: controlmodel.IssueKindPlaygroundJob, Visibility: controlmodel.IssueVisibilityOperational,
-		CompletionPolicy: controlmodel.IssueCompletionAutomatic, Creator: actor, SourceType: "playground",
-		SourceRef: invocationID.String(), ExecutionTargetType: req.TargetType, ExecutionTargetRef: req.TargetRef.String()}
-	var endpointTarget controlmodel.EndpointTargetType
-	switch req.TargetType {
-	case "agent":
-		agent, err := s.activeAgentInScope(c, req.Tenant, req.Namespace, req.TargetRef.String())
-		if err != nil {
-			s.writeControlPlaneError(c, err)
-			return
-		}
-		if capability := s.inspectInvocationCapabilities(c, agent).Job; capability.State != "available" {
-			c.JSON(http.StatusConflict, ErrorResponse{Error: capability.Reason})
-			return
-		}
-		endpointTarget, issue.AssigneeType, issue.AssigneeRef = controlmodel.EndpointTargetAgent, controlmodel.AssigneeAgent, req.TargetRef.String()
-	case "team":
-		team, err := s.store.Collaboration().GetTeam(c, req.TargetRef)
-		if err != nil || team.Tenant != req.Tenant || team.Namespace != req.Namespace || team.Status != controlmodel.TeamActive {
-			c.JSON(http.StatusConflict, ErrorResponse{Error: "Team target is not active in scope"})
-			return
-		}
-		endpointTarget, issue.AssigneeType, issue.AssigneeRef = controlmodel.EndpointTargetTeam, controlmodel.AssigneeTeam, req.TargetRef.String()
-		readiness := s.inspectEndpointReadiness(c, &controlmodel.Endpoint{Tenant: req.Tenant, Namespace: req.Namespace,
-			TargetType: endpointTarget, TargetRef: req.TargetRef, InvocationMode: controlmodel.EndpointJobMode})
-		if !readiness.Compatible || readiness.State == "unavailable" || readiness.State == "inactive" {
-			c.JSON(http.StatusConflict, ErrorResponse{Error: readiness.Reason})
-			return
-		}
-	case "workflow":
-		definition, err := s.store.Orchestration().GetDefinition(c, req.TargetRef)
-		if err != nil || definition.Tenant != req.Tenant || definition.Namespace != req.Namespace {
-			c.JSON(http.StatusNotFound, ErrorResponse{Error: "Workflow target was not found in scope"})
-			return
-		}
-		revisions, revisionErr := s.store.Orchestration().ListRevisions(c, req.TargetRef)
-		if revisionErr != nil || len(revisions) == 0 {
-			c.JSON(http.StatusConflict, ErrorResponse{Error: "Workflow must have a published revision before it can run"})
-			return
-		}
-	default:
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "targetType must be agent, team or workflow"})
-		return
-	}
-	// Assignment is persisted after creation so stores never synthesize a second task outside the Run.
-	assigneeType, assigneeRef := issue.AssigneeType, issue.AssigneeRef
-	issue.AssigneeType, issue.AssigneeRef = "", ""
-	created, err := s.store.Collaboration().CreateIssue(c, issue)
-	if err != nil {
-		s.writeControlPlaneError(c, err)
-		return
-	}
-	if assigneeType != "" {
-		created.AssigneeType, created.AssigneeRef = assigneeType, assigneeRef
-		created, err = s.store.Collaboration().UpdateIssue(c, created, created.Version, actor)
-		if err != nil {
-			s.writeControlPlaneError(c, err)
-			return
-		}
-	}
-	var run *controlmodel.OrchestrationRun
-	if req.TargetType == "workflow" {
-		run, err = s.orchestrationService().Start(c, req.TargetRef, orchestration.StartRequest{IssueID: &issueID,
-			IdempotencyKey: "playground:" + invocationID.String(), Input: req.Input, TriggerType: "playground",
-			TriggerRef: invocationID.String(), Actor: actor})
-	} else {
-		mode := controlmodel.RunModeDirect
-		if req.TargetType == "team" {
-			mode = controlmodel.RunModeAdaptive
-		}
-		run, err = s.store.Orchestration().CreateRun(c, &controlmodel.OrchestrationRun{Tenant: req.Tenant,
-			Namespace: req.Namespace, RootIssueID: issueID, Mode: mode, TriggerType: "playground",
-			TriggerRef: invocationID.String(), IdempotencyKey: "playground:" + invocationID.String(), Input: req.Input,
-			State: controlmodel.RunRunning, CreatedBy: actor})
-		if err == nil {
-			endpoint := &controlmodel.Endpoint{TargetType: endpointTarget, TargetRef: req.TargetRef}
-			err = s.materializeEndpointTarget(c, endpoint, run, issueID, actor)
-		}
-	}
-	if err != nil {
-		s.writeControlPlaneError(c, err)
-		return
-	}
-	tasks, _ := s.store.Collaboration().ListAgentTasks(c, store.AgentTaskFilter{RunID: run.ID, Limit: 100})
-	for _, task := range tasks {
-		if task.Status == controlmodel.AgentTaskQueued {
-			_ = s.DispatchAgentTask(c, task.ID)
-		}
-	}
-	c.JSON(http.StatusAccepted, gin.H{"invocationId": invocationID, "mode": "job", "status": "running",
-		"issueId": issueID, "runId": run.ID, "statusUrl": "/api/v1/orchestration-runs/" + run.ID.String()})
 }

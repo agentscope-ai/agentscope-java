@@ -47,6 +47,7 @@ func (a *Adapter) Descriptor() provider.Descriptor {
 		MCP:          provider.Capability{Supported: true, Mode: "acp-session"},
 		Model:        provider.Capability{Supported: true, Mode: "acp-session", Target: "session/set_model"},
 		CustomArgs:   provider.Capability{Supported: true, Mode: "argv", Target: "qwenpaw acp"},
+		Approval:     provider.Capability{Supported: true, Mode: "control-plane", Target: "session/request_permission"},
 		Resume:       true,
 	}
 }
@@ -121,6 +122,8 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 		return nil, fmt.Errorf("start QwenPaw ACP server: %w", err)
 	}
 	client := newACPClient(stdin, stdout, sink)
+	client.context = ctx
+	client.approver = request.ApproveTool
 	result, runErr := runSession(client, request, cfg)
 	_ = stdin.Close()
 	waitErr := cmd.Wait()
@@ -205,11 +208,13 @@ func runSession(client *acpClient, request provider.Request, cfg configuration) 
 }
 
 type acpClient struct {
-	writer  io.Writer
-	scanner *bufio.Scanner
-	sink    provider.EventSink
-	nextID  int64
-	result  *provider.Result
+	writer   io.Writer
+	scanner  *bufio.Scanner
+	sink     provider.EventSink
+	nextID   int64
+	result   *provider.Result
+	context  context.Context
+	approver provider.ToolApprover
 }
 
 func newACPClient(writer io.Writer, reader io.Reader, sink provider.EventSink) *acpClient {
@@ -293,12 +298,86 @@ func (c *acpClient) handleInbound(raw, id json.RawMessage, method string, params
 		return nil
 	}
 	if method == "session/request_permission" && len(id) > 0 {
+		if c.approver != nil {
+			var request struct {
+				ToolUseID string `json:"toolUseId"`
+				ToolCall  struct {
+					ID         string `json:"id"`
+					ToolCallID string `json:"toolCallId"`
+					Name       string `json:"name"`
+					Title      string `json:"title"`
+					Input      any    `json:"input"`
+					RawInput   any    `json:"rawInput"`
+				} `json:"toolCall"`
+				Options []struct {
+					OptionID string `json:"optionId"`
+					Kind     string `json:"kind"`
+					Name     string `json:"name"`
+				} `json:"options"`
+			}
+			_ = json.Unmarshal(params, &request)
+			toolUseID := request.ToolUseID
+			if toolUseID == "" {
+				toolUseID = request.ToolCall.ToolCallID
+			}
+			if toolUseID == "" {
+				toolUseID = request.ToolCall.ID
+			}
+			if toolUseID == "" {
+				toolUseID = "acp:" + strings.TrimSpace(string(id))
+			}
+			toolName := request.ToolCall.Name
+			if toolName == "" {
+				toolName = request.ToolCall.Title
+			}
+			if toolName == "" {
+				toolName = "provider_tool"
+			}
+			approvalContext := c.context
+			if approvalContext == nil {
+				approvalContext = context.Background()
+			}
+			input := request.ToolCall.Input
+			if input == nil {
+				input = request.ToolCall.RawInput
+			}
+			decision, err := c.approver(approvalContext, provider.ToolApprovalRequest{
+				ToolUseID: toolUseID, ToolName: toolName, Input: input,
+			})
+			if err != nil {
+				return fmt.Errorf("request tool approval: %w", err)
+			}
+			if decision.Allow {
+				optionID := allowedPermissionOption(request.Options)
+				if optionID != "" {
+					return c.write(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(id),
+						"result": map[string]any{"outcome": map[string]string{"outcome": "selected", "optionId": optionID}}})
+				}
+			}
+		}
 		return c.write(map[string]any{
 			"jsonrpc": "2.0", "id": json.RawMessage(id),
 			"result": map[string]any{"outcome": map[string]string{"outcome": "cancelled"}},
 		})
 	}
 	return nil
+}
+
+func allowedPermissionOption(options []struct {
+	OptionID string `json:"optionId"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+}) string {
+	for _, option := range options {
+		candidate := strings.ToLower(option.Kind + " " + option.Name)
+		if strings.Contains(candidate, "allow") || strings.Contains(candidate, "approve") {
+			return option.OptionID
+		}
+	}
+	if len(options) > 0 {
+		return options[0].OptionID
+	}
+	return ""
 }
 
 func (c *acpClient) write(message any) error {

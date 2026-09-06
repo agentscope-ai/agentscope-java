@@ -1,19 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, Play, RotateCcw } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listEndpoints, type Endpoint, continueEndpointConversation, invokeEndpointJob, startEndpointConversation } from '@/api/agentEndpoints';
-import { listAgents } from '@/api/agents';
-import { getRoles } from '@/api/auth';
-import { listTeams } from '@/api/collaboration';
-import { getRunGraph, listDefinitions, listRunEvents, type RunEvent, type RunGraph } from '@/api/orchestration';
 import {
-  continuePlaygroundConversation,
-  getAgentInvocationCapabilities,
-  invokePlayground,
-  type PlaygroundMode,
-  type PlaygroundTargetType,
-} from '@/api/playground';
+  continueEndpointConversation,
+  invokeEndpointJob,
+  listEndpointCredentials,
+  revealEndpointCredential,
+  startEndpointConversation,
+  type Endpoint,
+} from '@/api/agentEndpoints';
+import { getRoles } from '@/api/auth';
+import { getRunGraph, listRunEvents, type RunEvent, type RunGraph } from '@/api/orchestration';
 import { useControlPlaneScope } from '@/app/ScopeContext';
 import { ConversationSurface } from '@/features/conversation/ConversationSurface';
 import {
@@ -28,27 +26,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-
-type TargetKind = PlaygroundTargetType | 'endpoint';
+import { selectEndpointTestCredential } from '@/components/endpointTestCredential';
 
 export interface InvocationPlaygroundProps {
-  initialTargetType?: PlaygroundTargetType;
-  initialTargetRef?: string;
-  initialTargetLabel?: string;
-  lockTarget?: boolean;
-  endpoint?: Endpoint;
+  endpoint: Endpoint;
   onInvoked?: () => void;
-}
-
-function stateTone(state?: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (state === 'available' || state === 'ready') return 'success';
-  if (state === 'partial') return 'warning';
-  if (state === 'unavailable' || state === 'not_supported') return 'danger';
-  return 'default';
-}
-
-function hasSessionTranscript(mode: PlaygroundMode, sessionRef: string, agentId: string): boolean {
-  return mode === 'conversation' && !!sessionRef && !!agentId;
 }
 
 const terminalRunStates = new Set(['cancelled', 'succeeded', 'partial_succeeded', 'failed']);
@@ -86,21 +68,17 @@ function runEventsToConversation(events: RunEvent[]): ConversationEvent[] {
 }
 
 export function InvocationPlayground({
-  initialTargetType = 'agent',
-  initialTargetRef = '',
-  initialTargetLabel,
-  lockTarget = false,
-  endpoint: fixedEndpoint,
+  endpoint,
   onInvoked,
 }: InvocationPlaygroundProps) {
   const scope = useControlPlaneScope();
   const roles = getRoles().map(role => role.toLowerCase());
   const canInvoke = roles.includes('admin') || roles.includes('agent_developer');
-  const [targetType, setTargetType] = useState<TargetKind>(fixedEndpoint ? 'endpoint' : initialTargetType);
-  const [targetRef, setTargetRef] = useState(fixedEndpoint?.id ?? initialTargetRef);
-  const [mode, setMode] = useState<PlaygroundMode>(fixedEndpoint?.invocationMode ?? 'conversation');
   const [message, setMessage] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [credentialLoading, setCredentialLoading] = useState(false);
+  const [credentialName, setCredentialName] = useState('');
+  const [credentialError, setCredentialError] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [sessionRef, setSessionRef] = useState('');
   const [endpointConversationId, setEndpointConversationId] = useState('');
@@ -110,25 +88,13 @@ export function InvocationPlayground({
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 	const [resolvedJobRunId, setResolvedJobRunId] = useState('');
-
-  const agents = useQuery({ queryKey: ['playground-agents', scope.tenant, scope.namespace], queryFn: () => listAgents(scope.tenant, scope.namespace), enabled: !lockTarget && !fixedEndpoint });
-  const teams = useQuery({ queryKey: ['playground-teams', scope.tenant, scope.namespace], queryFn: () => listTeams(scope.tenant, scope.namespace), enabled: !lockTarget && !fixedEndpoint });
-  const workflows = useQuery({ queryKey: ['playground-workflows', scope.tenant, scope.namespace], queryFn: () => listDefinitions(scope.tenant, scope.namespace), enabled: !lockTarget && !fixedEndpoint });
-  const endpoints = useQuery({ queryKey: ['playground-endpoints', scope.tenant, scope.namespace], queryFn: () => listEndpoints(scope.tenant, scope.namespace), enabled: !lockTarget && !fixedEndpoint });
-  const selectedEndpoint = fixedEndpoint ?? endpoints.data?.items.find(item => item.id === targetRef);
-  const sessionAgentId = targetType === 'agent'
-    ? targetRef
-    : targetType === 'endpoint' && selectedEndpoint?.targetType === 'agent'
-      ? selectedEndpoint.targetRef
-      : '';
-  const capabilities = useQuery({
-    queryKey: ['agent-invocation-capabilities', targetRef, scope.tenant, scope.namespace],
-    queryFn: () => getAgentInvocationCapabilities(targetRef),
-    enabled: targetType === 'agent' && !!targetRef,
-  });
+  const mode = endpoint.invocationMode;
+  const endpointId = endpoint.id;
+  const endpointAuthType = endpoint.authPolicy?.type ?? 'api_key';
+  const sessionAgentId = endpoint.targetType === 'agent' ? endpoint.targetRef : '';
   const timeline = useSessionEvents(sessionRef, {
     agentId: sessionAgentId,
-    enabled: hasSessionTranscript(mode, sessionRef, sessionAgentId),
+    enabled: mode === 'conversation' && !!sessionRef && !!sessionAgentId,
   });
 	const jobRunId = mode === 'job' && typeof result?.runId === 'string' ? result.runId : '';
 	const jobGraph = useQuery({
@@ -145,33 +111,37 @@ export function InvocationPlayground({
 		refetchInterval: () => isTerminalRun(jobGraph.data) ? false : 1500,
 		refetchIntervalInBackground: false,
 	});
-
-  const options = useMemo(() => {
-    if (targetType === 'agent') return (agents.data ?? []).map(item => ({ id: item.id, label: item.name }));
-    if (targetType === 'team') return (teams.data?.items ?? []).map(item => ({ id: item.id, label: item.name }));
-    if (targetType === 'workflow') return (workflows.data?.definitions ?? []).map(item => ({ id: item.id, label: item.name }));
-    return (endpoints.data?.items ?? []).map(item => ({ id: item.id, label: item.name }));
-  }, [agents.data, endpoints.data, targetType, teams.data, workflows.data]);
-
   useEffect(() => {
-    if (fixedEndpoint) {
-      setMode(fixedEndpoint.invocationMode);
-      return;
-    }
-    if (targetType !== 'agent') setMode('job');
-    setSessionId('');
-    setSessionRef('');
-    setEndpointConversationId('');
-    setResult(null);
-    setLocalMessages([]);
-    setInvocationEvents([]);
-  }, [fixedEndpoint, targetType, targetRef]);
+    setApiKey('');
+    setCredentialName('');
+    setCredentialError('');
+    setCredentialLoading(false);
+    if (!canInvoke || endpoint.status !== 'published' || endpointAuthType === 'platform') return;
 
-  useEffect(() => {
-    if (targetType === 'endpoint' && selectedEndpoint) {
-      setMode(selectedEndpoint.invocationMode);
-    }
-  }, [selectedEndpoint, targetType]);
+    let cancelled = false;
+    setCredentialLoading(true);
+    listEndpointCredentials(endpointId)
+      .then(({ items }) => {
+        const credential = selectEndpointTestCredential(items);
+        if (!credential) {
+          throw new Error('No active recoverable API credential is available. Create or rotate one in Security, or enter a key below.');
+        }
+        return revealEndpointCredential(endpointId, credential.id)
+          .then(({ secret }) => ({ secret, name: credential.name }));
+      })
+      .then(({ secret, name }) => {
+        if (cancelled) return;
+        setApiKey(secret);
+        setCredentialName(name);
+      })
+      .catch((cause) => {
+        if (!cancelled) setCredentialError(cause instanceof Error ? cause.message : 'Unable to load an Endpoint credential automatically.');
+      })
+      .finally(() => {
+        if (!cancelled) setCredentialLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [canInvoke, endpoint.status, endpointAuthType, endpointId]);
 
 	useEffect(() => {
 		const graph = jobGraph.data;
@@ -195,12 +165,8 @@ export function InvocationPlayground({
 		setResolvedJobRunId(jobRunId);
 	}, [jobGraph.data, jobRunId, resolvedJobRunId]);
 
-  const direct = targetType !== 'endpoint';
-  const modeCapability = targetType === 'agent' ? capabilities.data?.capabilities[mode] : undefined;
-  const unavailable = !!modeCapability && modeCapability.state !== 'available';
-
   async function submit(content: string) {
-    if (!targetRef || !content.trim()) return;
+    if (!content.trim()) return;
     setSubmitting(true);
     setError('');
     const submittedAt = new Date().toISOString();
@@ -212,26 +178,12 @@ export function InvocationPlayground({
       state: 'complete',
     }]);
     try {
-      let next: Record<string, unknown>;
-      if (!direct) {
-        if (!selectedEndpoint) throw new Error('Choose an Endpoint');
-        next = selectedEndpoint.invocationMode === 'job'
-          ? await invokeEndpointJob(selectedEndpoint, apiKey, { title: `${selectedEndpoint.name} invocation`, input: { prompt: content.trim() } })
+      const next = endpoint.invocationMode === 'job'
+          ? await invokeEndpointJob(endpoint, apiKey, { title: `${endpoint.name} invocation`, input: { prompt: content.trim() } })
           : endpointConversationId
-            ? await continueEndpointConversation(endpointConversationId, apiKey, content.trim())
-            : await startEndpointConversation(selectedEndpoint, apiKey, content.trim());
-        if (typeof next.conversationId === 'string') setEndpointConversationId(next.conversationId);
-      } else if (mode === 'conversation' && sessionId) {
-        next = await continuePlaygroundConversation(sessionId, {
-          tenant: scope.tenant, namespace: scope.namespace, agentId: targetRef, message: content.trim(),
-        });
-      } else {
-        next = await invokePlayground({
-          tenant: scope.tenant, namespace: scope.namespace,
-          targetType: targetType as PlaygroundTargetType, targetRef, mode,
-          message: content.trim(), title: 'Playground job', input: { prompt: content.trim() },
-        });
-      }
+            ? await continueEndpointConversation(endpoint, endpointConversationId, apiKey, content.trim())
+            : await startEndpointConversation(endpoint, apiKey, content.trim());
+      if (typeof next.conversationId === 'string') setEndpointConversationId(next.conversationId);
       if (typeof next.sessionId === 'string') setSessionId(next.sessionId);
       if (typeof next.sessionRef === 'string') setSessionRef(next.sessionRef);
       const output = resultText(next);
@@ -289,25 +241,36 @@ export function InvocationPlayground({
   return <Card>
     <CardHeader>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><CardTitle className="flex items-center gap-2"><Play className="h-4 w-4" />{direct ? 'Direct test' : 'Test published API'}</CardTitle><CardDescription>{direct ? 'Test the target with Console authorization. Runtime policy and Binding selection are still enforced.' : 'Exercise the published API through its real Gateway authentication, schema, rate limit, and release.'}</CardDescription></div>
-        <Badge tone={direct ? 'info' : 'default'}>{direct ? 'control-plane route' : 'public route'}</Badge>
+        <div><CardTitle className="flex items-center gap-2"><Play className="h-4 w-4" />Test published API</CardTitle><CardDescription>Exercise the published API through its real Gateway authentication, schema, rate limit, and release.</CardDescription></div>
+        <Badge>public route</Badge>
       </div>
     </CardHeader>
     <CardContent className="grid gap-4">
-        {!lockTarget && !fixedEndpoint && <div className="grid gap-3 md:grid-cols-2">
-          <label className="grid gap-1 text-sm">Target type<select className="h-10 rounded-md border bg-background px-3" value={targetType} onChange={event => { setTargetType(event.target.value as TargetKind); setTargetRef(''); resetConversation(); }}><option value="agent">Agent</option><option value="team">Team</option><option value="workflow">Workflow</option><option value="endpoint">Endpoint</option></select></label>
-          <label className="grid gap-1 text-sm">Target<select className="h-10 rounded-md border bg-background px-3" value={targetRef} onChange={event => setTargetRef(event.target.value)}><option value="">Choose…</option>{options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm"><span className="text-muted-foreground">Target</span><strong>{endpoint.name}</strong><Badge>endpoint</Badge></div>
+        {endpointAuthType === 'api_key' && <label className="grid gap-1 text-sm">
+          API credential
+          <Input
+            type="password"
+            value={apiKey}
+            onChange={event => { setApiKey(event.target.value); setCredentialName(''); }}
+            placeholder={credentialLoading ? 'Loading credential…' : 'Endpoint API key'}
+          />
+          <span className={`text-xs ${credentialError ? 'text-amber-700' : 'text-muted-foreground'}`}>
+            {credentialLoading
+              ? 'Loading the latest active credential from Endpoint Security…'
+              : credentialName
+                ? `Using “${credentialName}” from Endpoint Security automatically.`
+                : credentialError || 'Enter an Endpoint API key.'}
+          </span>
+        </label>}
+        {endpointAuthType === 'platform' && <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+          <div className="font-medium">Console credential</div>
+          <p className="mt-1 text-xs text-muted-foreground">The current signed-in credential is used automatically for this Platform-authenticated Endpoint.</p>
         </div>}
-        {(lockTarget || fixedEndpoint) && <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm"><span className="text-muted-foreground">Target</span><strong>{fixedEndpoint?.name ?? initialTargetLabel ?? targetRef}</strong><Badge>{fixedEndpoint ? 'endpoint' : initialTargetType}</Badge></div>}
-        {direct && <div className="grid gap-3 md:grid-cols-2">
-          <label className="grid gap-1 text-sm">Mode<select className="h-10 rounded-md border bg-background px-3" value={mode} disabled={targetType !== 'agent'} onChange={event => { setMode(event.target.value as PlaygroundMode); resetConversation(); }}><option value="conversation">Conversation</option><option value="job">Job</option></select></label>
-          <div className="rounded-lg border p-3 text-sm"><div className="flex items-center gap-2"><span className="text-muted-foreground">Capability</span><Badge tone={stateTone(modeCapability?.state)}>{modeCapability?.state ?? (targetType === 'agent' ? 'checking' : 'available')}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{modeCapability?.reason ?? (targetType === 'agent' ? 'Inspecting runtime candidates…' : 'Team and Workflow tests use job execution.')}</p></div>
-        </div>}
-        {!direct && <Input type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder="Endpoint API key" />}
         {(sessionId || endpointConversationId) && mode === 'conversation' && <div className="flex flex-wrap items-center gap-2 rounded-lg bg-sky-50 p-3 text-xs text-sky-900">Continuing session <code>{sessionId || endpointConversationId}</code><Button type="button" size="sm" variant="ghost" onClick={resetConversation}><RotateCcw className="h-3 w-3" />Start new</Button></div>}
         {error && <p className="text-sm text-red-600">{error}</p>}
         {!canInvoke && <p className="text-sm text-amber-700">Your Agent Center access is read-only. Agent developer or administrator permission is required to invoke tests.</p>}
-        {!direct && selectedEndpoint?.status !== 'published' && <span className="text-xs text-amber-700">Publish the Endpoint before invoking it.</span>}
+        {endpoint.status !== 'published' && <span className="text-xs text-amber-700">Publish the Endpoint before invoking it.</span>}
 		{jobRunId && <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
 			<span className="text-muted-foreground">Hosted job</span>
 			<Badge tone={jobGraph.data?.run.state === 'failed' ? 'danger' : isTerminalRun(jobGraph.data) ? 'success' : 'info'}>{jobGraph.data?.run.state ?? 'submitted'}</Badge>
@@ -322,14 +285,14 @@ export function InvocationPlayground({
           source={sessionRef ? 'event stream' : 'API test'}
 		  loading={timeline.loading || (!!jobRunId && jobGraph.isLoading)}
 		  error={timeline.error || (jobGraph.error instanceof Error ? jobGraph.error.message : '')}
-          emptyMessage={targetRef ? 'Send a message to start a test conversation.' : 'Choose a target to begin.'}
+          emptyMessage="Send a message to start a test conversation."
           headerActions={result && <div className="flex flex-wrap gap-2">{typeof result.issueId === 'string' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/issues/${result.issueId}`)}>Issue<ExternalLink className="h-3 w-3" /></Link></Button>}{typeof result.runId === 'string' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/executions/${result.runId}`)}>Execution<ExternalLink className="h-3 w-3" /></Link></Button>}{(typeof result.sessionRef === 'string' || typeof result.sessionId === 'string') && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/sessions/${String(result.sessionRef || result.sessionId)}`)}>Session<ExternalLink className="h-3 w-3" /></Link></Button>}</div>}
           composer={{
             value: message,
             onChange: setMessage,
             onSubmit: submit,
 			busy: submitting || jobActive,
-			disabled: jobActive || !canInvoke || !targetRef || unavailable || (!direct && (!apiKey || selectedEndpoint?.status !== 'published')),
+			disabled: jobActive || credentialLoading || !canInvoke || endpoint.status !== 'published' || (endpointAuthType === 'api_key' && !apiKey),
             placeholder: mode === 'job' ? 'Describe the job to run…' : 'Send a message…',
           }}
           hasEarlierMessages={timeline.hasEarlier}

@@ -15,7 +15,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AgentDefinition, listAgents } from '../api/agents';
 import NewManagedSessionForm from '../components/NewManagedSessionForm';
 import { AgentPicker } from '../components/AgentPicker';
@@ -74,9 +74,9 @@ export default function SessionCreatePage() {
 
   return (
     <div className="console-page-legacy" style={S.root}>
-      <Link to={agentId ? `/managed/sessions?agentId=${encodeURIComponent(agentId)}` : '/managed/sessions'} style={S.back}>
-        ← Sessions
-      </Link>
+      <button type="button" aria-label="Back to previous page" title="Back to previous page" onClick={() => navigate(-1)} style={S.back}>
+        ← Back
+      </button>
       <h1 style={S.title}>New session</h1>
       <p style={S.hint}>
         Creates a session resource bound to an agent and mounts. No turn starts until you send a

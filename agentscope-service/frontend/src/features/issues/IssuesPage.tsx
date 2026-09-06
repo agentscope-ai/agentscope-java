@@ -19,10 +19,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, CircleDotDashed, Plus, Search } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-import { createIssue, listIssues, type Issue } from "@/api/collaboration";
+import { createIssue, listIssues, listTeams, type Issue } from "@/api/collaboration";
+import { listDefinitions } from "@/api/orchestration";
 import { useControlPlaneScope } from "@/app/ScopeContext";
 import { AgentPicker } from "@/components/AgentPicker";
 import { EntityIdentityText, type EntityIdentityMap, useEntityIdentities } from "@/components/EntityIdentity";
+import { NamedResourcePicker } from "@/components/NamedResourcePicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +44,7 @@ import {
   WorkPanel,
   WorkStatusBadge,
 } from "@/features/work/WorkSurface";
+import { filtersForIssueSource, issueSourceFromParam } from "@/features/issues/issueSource";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -85,23 +88,32 @@ export default function IssuesPage() {
   const requestedView = urlParams.get("status");
   const view: IssueView = issueViews.some((item) => item.value === requestedView) ? requestedView as IssueView : "all";
   const dialogOpen = urlParams.get("new") === "1";
-  const requestedSource = urlParams.get("source");
-  const source = requestedSource === "endpoint_jobs" || requestedSource === "playground_jobs" || requestedSource === "all"
-    ? requestedSource
-    : "work";
-  const sourceFilters = source === "endpoint_jobs"
-    ? { kind: "endpoint_job", includeOperational: true }
-    : source === "playground_jobs"
-      ? { kind: "playground_job", includeOperational: true }
-      : source === "all"
-        ? { includeOperational: true }
-        : {};
+  const source = issueSourceFromParam(urlParams.get("source"));
+  const sourceFilters = filtersForIssueSource(source);
   const archived = view === "archived";
   const issues = useQuery({
     queryKey: ["issues", scope.tenant, scope.namespace, search, archived, source],
     queryFn: () => listIssues(scope.tenant, scope.namespace, "", search, archived, sourceFilters),
     refetchInterval: 7500,
   });
+  const teams = useQuery({
+    queryKey: ["issue-owner-teams", scope.tenant, scope.namespace],
+    queryFn: () => listTeams(scope.tenant, scope.namespace),
+    enabled: dialogOpen && assigneeType === "team",
+    staleTime: 10_000,
+  });
+  const workflows = useQuery({
+    queryKey: ["issue-owner-workflows", scope.tenant, scope.namespace],
+    queryFn: () => listDefinitions(scope.tenant, scope.namespace),
+    enabled: dialogOpen && assigneeType === "workflow",
+    staleTime: 10_000,
+  });
+  const teamOptions = useMemo(() => (teams.data?.items ?? [])
+    .filter(team => team.status === "active")
+    .map(team => ({ id: team.id, label: team.name, secondary: "Team" })), [teams.data?.items]);
+  const workflowOptions = useMemo(() => (workflows.data?.definitions ?? [])
+    .filter(workflow => !workflow.archivedAt)
+    .map(workflow => ({ id: workflow.id, label: workflow.name, secondary: "Workflow" })), [workflows.data?.definitions]);
   const create = useMutation({
     mutationFn: () => createIssue({
       tenant: scope.tenant,
@@ -109,8 +121,10 @@ export default function IssuesPage() {
       title: title.trim(),
       description: description.trim(),
       priority,
-      assigneeType: assigneeRef ? assigneeType : undefined,
-      assigneeRef: assigneeRef || undefined,
+      assigneeType: assigneeRef && assigneeType !== "workflow" ? assigneeType : undefined,
+      assigneeRef: assigneeRef && assigneeType !== "workflow" ? assigneeRef : undefined,
+      executionTargetType: assigneeRef && assigneeType === "workflow" ? "workflow" : undefined,
+      executionTargetRef: assigneeRef && assigneeType === "workflow" ? assigneeRef : undefined,
       sourceType: urlParams.get("fromChat") ? "chat" : undefined,
       sourceRef: urlParams.get("fromChat") || undefined,
       contextRefs: urlParams.get("fromChat") ? { chatId: urlParams.get("fromChat") } : undefined,
@@ -159,13 +173,11 @@ export default function IssuesPage() {
 
   const emptyDescription = source === "endpoint_jobs"
     ? "No Endpoint Job has created an operational issue in this scope."
-    : source === "playground_jobs"
-      ? "No legacy direct test job has created an operational issue in this scope."
-      : search
-        ? "Try another search or clear the active filters."
-        : view === "archived"
-          ? "Archived issues will be kept here for reference."
-          : "Create the first durable work item in this scope.";
+    : search
+      ? "Try another search or clear the active filters."
+      : view === "archived"
+        ? "Archived issues will be kept here for reference."
+        : "Create the first durable work item in this scope.";
 
   return (
     <WorkPage>
@@ -211,12 +223,11 @@ export default function IssuesPage() {
             className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-ring"
             aria-label="Issue source"
             value={source}
-            onChange={(event) => setParam("source", event.target.value === "work" ? undefined : event.target.value)}
+            onChange={(event) => setParam("source", event.target.value === "all" ? undefined : event.target.value)}
           >
+            <option value="all">All sources</option>
             <option value="work">Work Hub</option>
             <option value="endpoint_jobs">Endpoint jobs</option>
-            <option value="playground_jobs">Legacy test jobs</option>
-            <option value="all">All sources</option>
           </select>
         </div>
       </div>
@@ -234,7 +245,7 @@ export default function IssuesPage() {
           <WorkEmpty
             title={search ? "No matching issues" : "No issues here"}
             description={emptyDescription}
-            action={!search && source === "work" && view !== "archived" ? (
+            action={!search && source !== "endpoint_jobs" && view !== "archived" ? (
               <Button size="sm" onClick={() => setParam("new", "1")}>Create issue</Button>
             ) : undefined}
           />
@@ -262,7 +273,6 @@ export default function IssuesPage() {
                         <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-slate-400">
                           <span>{issue.identifier || issue.id.slice(0, 8)}</span>
                           {issue.kind === "endpoint_job" && <Badge>Endpoint job</Badge>}
-                          {issue.kind === "playground_job" && <Badge>Legacy test job</Badge>}
                         </div>
                       </td>
                       <td className="px-4 py-4"><Badge tone={priorityTone(issue.priority)} className="capitalize">{issue.priority}</Badge></td>
@@ -298,7 +308,7 @@ export default function IssuesPage() {
         <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>Create issue</DialogTitle>
-            <DialogDescription>Capture the outcome, context, and the first owner of this work.</DialogDescription>
+            <DialogDescription>Capture the outcome, context, and the first owner or execution Workflow for this work.</DialogDescription>
           </DialogHeader>
           <DialogBody>
             <form onSubmit={submit} className="space-y-5">
@@ -321,23 +331,51 @@ export default function IssuesPage() {
                   </select>
                 </label>
                 <label className="block space-y-2 text-sm font-medium text-slate-700">
-                  Owner type
+                  Owner or execution type
                   <select className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm" value={assigneeType} onChange={(event) => { setAssigneeType(event.target.value); setAssigneeRef(""); }}>
                     <option value="agent">Agent</option>
                     <option value="team">Team</option>
+                    <option value="workflow">Workflow</option>
                     <option value="human">Human</option>
                   </select>
                 </label>
               </div>
               <label className="block space-y-2 text-sm font-medium text-slate-700">
-                Owner <span className="font-normal text-slate-400">(optional)</span>
+                {assigneeType === "workflow" ? "Execution Workflow" : "Owner"} <span className="font-normal text-slate-400">(optional)</span>
                 {assigneeType === "agent" ? (
                   <AgentPicker value={assigneeRef} onChange={setAssigneeRef} emptyLabel="Select an Agent" aria-label="Issue assignee Agent" />
+                ) : assigneeType === "team" ? (
+                  <NamedResourcePicker
+                    value={assigneeRef}
+                    onChange={setAssigneeRef}
+                    options={teamOptions}
+                    resourceLabel="Team"
+                    loading={teams.isLoading}
+                    error={teams.isError}
+                    emptyLabel="Select a Team"
+                    aria-label="Issue assignee Team"
+                  />
+                ) : assigneeType === "workflow" ? (
+                  <NamedResourcePicker
+                    value={assigneeRef}
+                    onChange={setAssigneeRef}
+                    options={workflowOptions}
+                    resourceLabel="Workflow"
+                    loading={workflows.isLoading}
+                    error={workflows.isError}
+                    emptyLabel="Select a Workflow"
+                    aria-label="Issue execution Workflow"
+                  />
                 ) : (
                   <Input value={assigneeRef} onChange={(event) => setAssigneeRef(event.target.value)} placeholder={`${assigneeType} reference`} />
                 )}
+                {assigneeType === "workflow" && (
+                  <span className="block text-xs font-normal text-slate-500">
+                    Starts the latest published revision and records it as this Issue&apos;s execution target.
+                  </span>
+                )}
               </label>
-              {create.isError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">Unable to create this issue. Please verify the fields and try again.</p>}
+              {create.isError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{create.error instanceof Error ? create.error.message : "Unable to create this issue. Please verify the fields and try again."}</p>}
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
                 <Button type="button" variant="ghost" onClick={closeCreate}>Cancel</Button>
                 <Button type="submit" disabled={create.isPending || !title.trim()}>

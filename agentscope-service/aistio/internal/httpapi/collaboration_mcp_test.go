@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/artifact"
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/features"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
@@ -53,6 +55,36 @@ func TestCollaborationMCPToolCatalogFollowsTaskRole(t *testing.T) {
 				t.Fatalf("base tools missing: %+v", names)
 			}
 		})
+	}
+}
+
+func TestChildCreateToolDescribesAcceptanceCriteriaObject(t *testing.T) {
+	var childTool *mcpTool
+	tools := collaborationMCPTools()
+	for i := range tools {
+		if tools[i].Name == "issue.child.create" {
+			childTool = &tools[i]
+			break
+		}
+	}
+	if childTool == nil {
+		t.Fatal("issue.child.create tool is missing")
+	}
+	properties, ok := childTool.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("child input properties=%T", childTool.InputSchema["properties"])
+	}
+	criteria, ok := properties["acceptanceCriteria"].(map[string]any)
+	if !ok || criteria["type"] != "object" || !strings.Contains(childTool.Description, "never a top-level array") {
+		t.Fatalf("acceptanceCriteria schema is ambiguous: tool=%+v", childTool)
+	}
+	criteriaProperties, ok := criteria["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("acceptanceCriteria properties=%T", criteria["properties"])
+	}
+	checklist, ok := criteriaProperties["checklist"].(map[string]any)
+	if !ok || checklist["type"] != "array" {
+		t.Fatalf("acceptanceCriteria checklist schema=%+v", checklist)
 	}
 }
 
@@ -127,6 +159,11 @@ func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 	if read.Error != nil {
 		t.Fatalf("issue.get RPC error: %+v", read.Error)
 	}
+	currentTask := call("tools/call", map[string]any{"name": "task.get", "arguments": map[string]any{"taskId": "current"}})
+	currentTaskJSON, _ := json.Marshal(currentTask.Result)
+	if bytes.Contains(currentTaskJSON, []byte(`"isError":true`)) || !bytes.Contains(currentTaskJSON, []byte(tasks[0].ID.String())) {
+		t.Fatalf("task.get current did not resolve the token-scoped task: %s", currentTaskJSON)
+	}
 	blocked := call("tools/call", map[string]any{"name": "issue.get", "arguments": map[string]any{"issueId": other.ID.String()}})
 	blockedJSON, _ := json.Marshal(blocked.Result)
 	if !bytes.Contains(blockedJSON, []byte(`"isError":true`)) {
@@ -197,7 +234,9 @@ func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 	}
 	expiredAt := time.Now().UTC().Add(-time.Minute)
 	expiredID := createArtifact("", &expiredAt)
-	expired := call("tools/call", map[string]any{"name": "artifact.download", "arguments": map[string]any{"artifactId": expiredID.String()}})
+	expired := call("tools/call", map[string]any{"name": "artifact.download", "arguments": map[string]any{
+		"artifactId": expiredID.String(), "_toolCallId": "call-expired-artifact",
+	}})
 	expiredJSON, _ := json.Marshal(expired.Result)
 	if !bytes.Contains(expiredJSON, []byte(`"isError":true`)) || !bytes.Contains(expiredJSON, []byte(`expired`)) {
 		t.Fatalf("expired artifact read was not blocked: %s", expiredJSON)
@@ -208,6 +247,20 @@ func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 	corruptJSON, _ := json.Marshal(corrupt.Result)
 	if !bytes.Contains(corruptJSON, []byte(`"isError":true`)) || !bytes.Contains(corruptJSON, []byte(`integrity`)) {
 		t.Fatalf("artifact checksum mismatch was not blocked: %s", corruptJSON)
+	}
+	runEvents, err := st.Orchestration().ListRunEvents(ctx, tasks[0].OrchestrationRunID, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundToolFailure := false
+	for _, event := range runEvents {
+		if event.Type == "agent_tool.failed" && event.CausationID == "call-expired-artifact" &&
+			bytes.Contains(event.Payload, []byte(`"source":"collaboration_mcp"`)) {
+			foundToolFailure = true
+		}
+	}
+	if !foundToolFailure {
+		t.Fatalf("MCP tool failure was not projected into Run events: %+v", runEvents)
 	}
 }
 
@@ -222,6 +275,11 @@ func TestCollaborationMCPCompletedLeaderTokenOnlyFinalizesCoordinator(t *testing
 		Tenant: "tenant-a", Namespace: "default", Name: "finalizers", LeaderAgentRef: "leader",
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "worker", Role: "implementer",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
@@ -249,9 +307,64 @@ func TestCollaborationMCPCompletedLeaderTokenOnlyFinalizesCoordinator(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = (&collaboration.Service{Store: st}).CompleteTask(ctx, running.ID,
+	svc := &collaboration.Service{Store: st}
+	childIssue, childTask, err := svc.CreateChildFromTask(ctx, running.ID, collaboration.CreateIssueRequest{
+		Title: "delegated work", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.CompleteTask(ctx, running.ID,
 		store.TaskCompletion{ExpectedVersion: running.Version, Summary: "leader result"},
 		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	childTask, err = st.Collaboration().ClaimAgentTask(ctx,
+		store.TaskClaim{TaskID: childTask.ID, ExpectedVersion: childTask.Version})
+	if err == nil {
+		childTask, err = st.Collaboration().StartAgentTask(ctx, childTask.ID, childTask.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, childResult, err := svc.CompleteTask(ctx, childTask.ID,
+		store.TaskCompletion{ExpectedVersion: childTask.Version, Summary: "worker result"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	followUps, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		IssueID: childIssue.ID, AgentRef: "leader", Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var followUp *controlmodel.AgentTask
+	for _, candidate := range followUps {
+		if candidate.TriggerCommentID != nil && *candidate.TriggerCommentID == childResult.ID {
+			followUp = candidate
+			break
+		}
+	}
+	if followUp == nil {
+		t.Fatal("worker result did not create a leader follow-up task")
+	}
+	followUp, followAttempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: followUp.ID, ExpectedVersion: followUp.Version},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+			State: controlmodel.ExecutionAssigned})
+	if err == nil {
+		followUp, err = st.Collaboration().StartAgentTask(ctx, followUp.ID, followUp.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err = srv.taskTokens.MintScoped(followUp.ID, followAttempt.ID,
+		followAttempt.DispatchGeneration, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.AcceptIssueFromTask(ctx, followUp.ID, "worker result verified"); err != nil {
 		t.Fatal(err)
 	}
 	call := func(name string) mcpResponse {
@@ -272,17 +385,37 @@ func TestCollaborationMCPCompletedLeaderTokenOnlyFinalizesCoordinator(t *testing
 		}
 		return value
 	}
-	blocked, _ := json.Marshal(call("issue.get").Result)
-	if !bytes.Contains(blocked, []byte(`"isError":true`)) || !bytes.Contains(blocked, []byte(`restricted`)) {
-		t.Fatalf("completed token accessed non-final tool: %s", blocked)
-	}
 	completed, _ := json.Marshal(call("run.node.complete").Result)
 	if bytes.Contains(completed, []byte(`"isError":true`)) {
-		t.Fatalf("completed leader could not finalize coordinator: %s", completed)
+		t.Fatalf("active leader could not atomically conclude coordinator: %s", completed)
 	}
 	node, _ := st.Orchestration().GetNode(ctx, running.RunNodeID)
 	if node.State != controlmodel.RunNodeSucceeded {
 		t.Fatalf("coordinator state=%s", node.State)
+	}
+	completedTask, _ := st.Collaboration().GetAgentTask(ctx, followUp.ID)
+	completedAttempt, _ := st.ExecutionAttempts().Get(ctx, followAttempt.ID)
+	if completedTask.Status != controlmodel.AgentTaskCompleted ||
+		completedAttempt.State != controlmodel.ExecutionSucceeded {
+		t.Fatalf("coordinator conclusion left physical work active: task=%+v attempt=%+v",
+			completedTask, completedAttempt)
+	}
+	rootComments, err := st.Collaboration().ListComments(ctx, issue.ID, store.CommentListOptions{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundRootResult := false
+	for _, comment := range rootComments {
+		if comment.SourceTaskID != nil && *comment.SourceTaskID == followUp.ID && comment.Type == controlmodel.CommentResult {
+			foundRootResult = true
+		}
+	}
+	if !foundRootResult {
+		t.Fatalf("follow-up coordinator result was not projected to root Issue: comments=%+v", rootComments)
+	}
+	blocked, _ := json.Marshal(call("issue.get").Result)
+	if !bytes.Contains(blocked, []byte(`"isError":true`)) || !bytes.Contains(blocked, []byte(`restricted`)) {
+		t.Fatalf("completed token accessed non-final tool: %s", blocked)
 	}
 }
 
@@ -302,6 +435,77 @@ func TestCollaborationMCPRejectsNonTaskCredentials(t *testing.T) {
 	srv.router.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestRunNodeFailTerminatesLeaderTaskAndAttemptBeforeRun(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant-a", Namespace: "default", Name: "failing-team", LeaderAgentRef: "leader",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: team.Tenant, Namespace: team.Namespace, Title: "fail coordinator",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
+	running, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+			State: controlmodel.ExecutionAssigned})
+	if err == nil {
+		running, err = st.Collaboration().StartAgentTask(ctx, running.ID, running.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(ServerOptions{Store: st, TaskTokenSecret: "0123456789abcdef0123456789abcdef"})
+	token, err := srv.taskTokens.MintScoped(running.ID, attempt.ID,
+		attempt.DispatchGeneration, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "run.node.fail", "arguments": map[string]any{
+			"code": "unrecoverable", "message": "cannot converge"}}})
+	req := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-Task-Token", token)
+	response := httptest.NewRecorder()
+	srv.router.ServeHTTP(response, req)
+	if response.Code != http.StatusOK || bytes.Contains(response.Body.Bytes(), []byte(`"isError":true`)) {
+		t.Fatalf("run.node.fail: status=%d body=%s", response.Code, response.Body.String())
+	}
+	failedTask, _ := st.Collaboration().GetAgentTask(ctx, running.ID)
+	failedAttempt, _ := st.ExecutionAttempts().Get(ctx, attempt.ID)
+	failedNode, _ := st.Orchestration().GetNode(ctx, running.RunNodeID)
+	failedRun, _ := st.Orchestration().GetRun(ctx, running.OrchestrationRunID)
+	if failedTask.Status != controlmodel.AgentTaskFailed ||
+		failedAttempt.State != controlmodel.ExecutionFailed ||
+		failedNode.State != controlmodel.RunNodeFailed ||
+		failedRun.State != controlmodel.RunFailed {
+		t.Fatalf("coordinator failure left non-terminal work: task=%+v attempt=%+v node=%+v run=%+v",
+			failedTask, failedAttempt, failedNode, failedRun)
+	}
+	issue, err = st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || issue.Status != controlmodel.IssueBlocked {
+		t.Fatalf("failed coordinator did not block root Issue: issue=%+v err=%v", issue, err)
+	}
+	comments, err := st.Collaboration().ListComments(ctx, issue.ID, store.CommentListOptions{Limit: 20})
+	if err != nil || len(comments) != 1 || comments[0].Type != controlmodel.CommentStatus ||
+		comments[0].SourceTaskID == nil || *comments[0].SourceTaskID != running.ID {
+		t.Fatalf("failed coordinator did not leave a root Issue response: comments=%+v err=%v", comments, err)
 	}
 }
 
@@ -347,5 +551,194 @@ func TestMCPArtifactUploadEnforcesTeamSizeAndMediaPolicy(t *testing.T) {
 	}
 	if err := upload("ok", "text/plain; charset=utf-8"); err != nil {
 		t.Fatalf("expected matching text wildcard to pass, got %v", err)
+	}
+}
+
+func TestCollaborationMCPCompleteProjectsHostedConversationTerminal(t *testing.T) {
+	st, server, session, running, token := startHostedMCPConversation(t, "test completion")
+
+	responded := callMCPTool(t, server, token, "task.respond", map[string]any{
+		"content": "Qoder returned the final answer.",
+	})
+	respondedJSON, _ := json.Marshal(responded.Result)
+	if bytes.Contains(respondedJSON, []byte(`"isError":true`)) {
+		t.Fatalf("task.respond failed: %s", respondedJSON)
+	}
+	completed := callMCPTool(t, server, token, "task.complete", map[string]any{
+		"taskId":  "current",
+		"summary": "short machine summary",
+		"result":  map[string]any{"status": "ok", "message": "machine result"},
+	})
+	completedJSON, _ := json.Marshal(completed.Result)
+	if bytes.Contains(completedJSON, []byte(`"isError":true`)) {
+		t.Fatalf("task.complete failed: %s", completedJSON)
+	}
+
+	assertHostedTerminalEvents(t, st, session, "assistant.message", "Qoder returned the final answer.")
+	currentSession, err := st.Sessions().GetByID(context.Background(), session.ID)
+	if err != nil || currentSession.Phase != store.SessionPhaseIdle {
+		t.Fatalf("hosted session was not released after MCP completion: session=%+v err=%v", currentSession, err)
+	}
+	attempt, err := st.ExecutionAttempts().Get(context.Background(), running.ID)
+	if err != nil || attempt.State != controlmodel.ExecutionSucceeded {
+		t.Fatalf("attempt did not complete: attempt=%+v err=%v", attempt, err)
+	}
+	if err = server.projectHostedAttemptTerminalWithOutput(context.Background(), attempt,
+		"Qoder returned the final answer."); err != nil {
+		t.Fatal(err)
+	}
+	assertHostedTerminalEvents(t, st, session, "assistant.message", "Qoder returned the final answer.")
+}
+
+func TestCollaborationMCPFailProjectsHostedConversationTerminal(t *testing.T) {
+	st, server, session, running, token := startHostedMCPConversation(t, "test failure")
+
+	failed := callMCPTool(t, server, token, "task.fail", map[string]any{
+		"code": "provider_error", "message": "Qoder failed cleanly",
+	})
+	failedJSON, _ := json.Marshal(failed.Result)
+	if bytes.Contains(failedJSON, []byte(`"isError":true`)) {
+		t.Fatalf("task.fail failed: %s", failedJSON)
+	}
+
+	assertHostedTerminalEvents(t, st, session, "turn.failed", "Qoder failed cleanly")
+	currentSession, err := st.Sessions().GetByID(context.Background(), session.ID)
+	if err != nil || currentSession.Phase != store.SessionPhaseIdle {
+		t.Fatalf("hosted session was not released after MCP failure: session=%+v err=%v", currentSession, err)
+	}
+	attempt, err := st.ExecutionAttempts().Get(context.Background(), running.ID)
+	if err != nil || attempt.State != controlmodel.ExecutionFailed {
+		t.Fatalf("attempt did not fail: attempt=%+v err=%v", attempt, err)
+	}
+}
+
+func startHostedMCPConversation(t *testing.T, message string) (store.Store, *Server, *store.Session,
+	*controlmodel.ExecutionAttempt, string) {
+	t.Helper()
+	st, agent, _, host := setupHostedConversationAgent(t)
+	server := NewServer(ServerOptions{Store: st, AuthToken: "console",
+		TaskTokenSecret: "0123456789abcdef0123456789abcdef", Features: features.Gates{RuntimeHost: true}})
+	createBody, _ := json.Marshal(map[string]any{"tenant": "t", "namespace": "n", "name": "MCP hosted chat",
+		"slug": "mcp-hosted-chat", "targetType": "agent", "targetRef": agent.ID.String(), "invocationMode": "conversation"})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/endpoints", bytes.NewReader(createBody))
+	createReq.Header.Set("Authorization", "Bearer console")
+	createReq.Header.Set("Content-Type", "application/json")
+	createOut := httptest.NewRecorder()
+	server.router.ServeHTTP(createOut, createReq)
+	var endpointResource struct {
+		Credential string `json:"credential"`
+		Endpoint   struct {
+			ID      uuid.UUID `json:"id"`
+			Version int64     `json:"version"`
+		} `json:"endpoint"`
+	}
+	if createOut.Code != http.StatusCreated || json.Unmarshal(createOut.Body.Bytes(), &endpointResource) != nil {
+		t.Fatalf("create hosted Endpoint: %d %s", createOut.Code, createOut.Body)
+	}
+	publishBody, _ := json.Marshal(map[string]any{"version": endpointResource.Endpoint.Version})
+	publishReq := httptest.NewRequest(http.MethodPost,
+		"/api/v1/endpoints/"+endpointResource.Endpoint.ID.String()+"/publish", bytes.NewReader(publishBody))
+	publishReq.Header.Set("Authorization", "Bearer console")
+	publishReq.Header.Set("Content-Type", "application/json")
+	publishOut := httptest.NewRecorder()
+	server.router.ServeHTTP(publishOut, publishReq)
+	if publishOut.Code != http.StatusOK {
+		t.Fatalf("publish hosted Endpoint: %d %s", publishOut.Code, publishOut.Body)
+	}
+	invokeBody, _ := json.Marshal(map[string]any{"message": message})
+	invokeReq := httptest.NewRequest(http.MethodPost, "/invoke/v1/endpoints/mcp-hosted-chat/conversations",
+		bytes.NewReader(invokeBody))
+	invokeReq.Header.Set("X-API-Key", endpointResource.Credential)
+	invokeReq.Header.Set("Idempotency-Key", "mcp-hosted-"+uuid.NewString())
+	invokeReq.Header.Set("Content-Type", "application/json")
+	invokeOut := httptest.NewRecorder()
+	server.router.ServeHTTP(invokeOut, invokeReq)
+	if invokeOut.Code != http.StatusAccepted {
+		t.Fatalf("invoke hosted Endpoint conversation: %d %s", invokeOut.Code, invokeOut.Body)
+	}
+	var invocation struct {
+		SessionID  string    `json:"sessionId"`
+		SessionRef uuid.UUID `json:"sessionRef"`
+	}
+	if err := json.Unmarshal(invokeOut.Body.Bytes(), &invocation); err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := st.ExecutionAttempts().List(context.Background(), store.ExecutionAttemptFilter{
+		Tenant: "t", Namespace: "n", AgentID: agent.ID, SessionID: invocation.SessionID,
+	})
+	if err != nil || len(attempts) != 1 {
+		t.Fatalf("hosted attempt setup: attempts=%+v err=%v", attempts, err)
+	}
+	claimed, err := server.taskPlane.Claim(context.Background(), store.ExecutionClaim{Tenant: "t", Namespace: "n",
+		RuntimePoolName: attempts[0].RuntimePoolName, HostID: host.ID, HostGeneration: host.LeaseGeneration,
+		LeaseOwner: "host/mcp", LeaseToken: "mcp-lease", LeaseTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparing, err := server.taskPlane.MarkPreparing(context.Background(), claimed.ID,
+		claimed.LeaseToken, claimed.FencingToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err := server.taskPlane.MarkRunning(context.Background(), preparing.ID,
+		preparing.LeaseToken, preparing.FencingToken, "qoder-session", "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := server.taskTokens.MintScoped(running.AgentTaskID, running.ID,
+		running.DispatchGeneration, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.Sessions().GetByID(context.Background(), invocation.SessionRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st, server, session, running, token
+}
+
+func callMCPTool(t *testing.T, server *Server, token, name string, arguments map[string]any) mcpResponse {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": name, "arguments": arguments}})
+	req := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-Task-Token", token)
+	out := httptest.NewRecorder()
+	server.router.ServeHTTP(out, req)
+	if out.Code != http.StatusOK {
+		t.Fatalf("%s: HTTP %d: %s", name, out.Code, out.Body)
+	}
+	var response mcpResponse
+	if err := json.Unmarshal(out.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
+func assertHostedTerminalEvents(t *testing.T, st store.Store, session *store.Session,
+	eventType, content string) {
+	t.Helper()
+	events, err := st.Events().List(context.Background(), session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminalCount, completedCount := 0, 0
+	for _, event := range events {
+		if event.EventType == eventType {
+			terminalCount++
+			if event.Content != content {
+				t.Fatalf("%s content=%q, want %q", eventType, event.Content, content)
+			}
+		}
+		if event.EventType == "turn.completed" {
+			completedCount++
+		}
+	}
+	if terminalCount != 1 {
+		t.Fatalf("%s count=%d, events=%+v", eventType, terminalCount, events)
+	}
+	if eventType == "assistant.message" && completedCount != 1 {
+		t.Fatalf("turn.completed count=%d, events=%+v", completedCount, events)
 	}
 }

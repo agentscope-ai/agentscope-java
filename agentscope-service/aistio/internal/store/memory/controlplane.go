@@ -695,6 +695,7 @@ func (r *executionRepo) RenewLease(_ context.Context, id uuid.UUID, leaseToken s
 	now := time.Now().UTC()
 	expires := now.Add(ttl)
 	execution.LeaseExpiresAt = &expires
+	execution.HeartbeatAt = &now
 	execution.Version++
 	execution.UpdatedAt = now
 	return cloneExecution(execution), nil

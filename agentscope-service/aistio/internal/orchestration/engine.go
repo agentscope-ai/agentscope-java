@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/taskplane"
@@ -333,6 +335,12 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 			policy := cfg.FailurePolicy
 			if policy == "" {
 				policy = "fail_fast"
+				// A delegated worker failure is a valid adaptive-Team outcome.
+				// Keep the coordinator alive so its leader can reason about the
+				// durable blocked result instead of cancelling the whole Run.
+				if e.isAdaptiveTeamWorkerNode(ctx, run, failedNode) {
+					policy = "continue"
+				}
 			}
 			if policy != "fail_fast" {
 				continue
@@ -351,11 +359,16 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 				}
 			}
 			run, _ = e.Store.Orchestration().GetRun(ctx, runID)
-			_, err = e.Store.Orchestration().TransitionRun(ctx, runID, run.Version, controlmodel.RunFailed, nil, failedNode.FailureCode, failedNode.FailureMessage)
-			return err
+			failedRun, transitionErr := e.Store.Orchestration().TransitionRun(ctx, runID, run.Version,
+				controlmodel.RunFailed, nil, failedNode.FailureCode, failedNode.FailureMessage)
+			if transitionErr != nil {
+				return transitionErr
+			}
+			return e.convergeFailedIssueTree(ctx, failedRun)
 		}
 		active, waiting, runnable, success, failed := 0, 0, 0, 0, 0
 		partialAllowed := false
+		coordinatorFailed := false
 		for _, n := range latest {
 			if !controlmodel.IsRunNodeTerminal(n.State) {
 				active++
@@ -371,8 +384,12 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 			}
 			if n.State == controlmodel.RunNodeFailed {
 				failed++
+				if n.Type == controlmodel.RunNodeTeam {
+					coordinatorFailed = true
+				}
 				var cfg DefinitionNode
-				if json.Unmarshal(n.Config, &cfg) == nil && cfg.FailurePolicy == "partial_success" {
+				_ = json.Unmarshal(n.Config, &cfg)
+				if cfg.FailurePolicy == "partial_success" || e.isAdaptiveTeamWorkerNode(ctx, run, n) {
 					partialAllowed = true
 				}
 			}
@@ -380,7 +397,7 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 		if active == 0 {
 			run, _ = e.Store.Orchestration().GetRun(ctx, runID)
 			target := controlmodel.RunSucceeded
-			if failed > 0 && success > 0 && partialAllowed {
+			if failed > 0 && success > 0 && partialAllowed && !coordinatorFailed {
 				target = controlmodel.RunPartialSucceeded
 			} else if failed > 0 {
 				target = controlmodel.RunFailed
@@ -388,6 +405,9 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 			run, err = e.Store.Orchestration().TransitionRun(ctx, runID, run.Version, target, nil, "", "")
 			if err != nil {
 				return err
+			}
+			if target == controlmodel.RunFailed {
+				return e.convergeFailedIssueTree(ctx, run)
 			}
 			return e.convergeCompletedIssue(ctx, run)
 		}
@@ -432,6 +452,76 @@ func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.O
 			return nil
 		} else if err != store.ErrConflict {
 			return err
+		}
+	}
+	return store.ErrConflict
+}
+
+// convergeFailedIssueTree prevents a terminal Run from leaving human-facing
+// work permanently in_progress. A failed execution is blocked (recoverable),
+// not silently cancelled or accepted; a human or a later leader can still
+// reopen the Issue after fixing the missing capability or configuration.
+func (e *Engine) convergeFailedIssueTree(ctx context.Context, run *controlmodel.OrchestrationRun) error {
+	if run == nil || run.ParentRunID != nil || run.State != controlmodel.RunFailed {
+		return nil
+	}
+	root, err := e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
+	if err != nil {
+		return err
+	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-run:" + run.ID.String()}
+	queue := []*controlmodel.Issue{root}
+	for len(queue) > 0 {
+		issue := queue[0]
+		queue = queue[1:]
+		for offset := 0; ; offset += 500 {
+			children, listErr := e.Store.Collaboration().ListIssues(ctx, store.IssueFilter{
+				Tenant: issue.Tenant, Namespace: issue.Namespace, ParentID: &issue.ID, Limit: 500, Offset: offset,
+			})
+			if listErr != nil {
+				return listErr
+			}
+			queue = append(queue, children...)
+			if len(children) < 500 {
+				break
+			}
+		}
+		if err = e.blockIssueAfterRunFailure(ctx, issue.ID, actor, run.FailureCode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Engine) blockIssueAfterRunFailure(ctx context.Context, issueID uuid.UUID,
+	actor controlmodel.Actor, failureCode string) error {
+	for attempt := 0; attempt < 4; attempt++ {
+		issue, err := e.Store.Collaboration().GetIssue(ctx, issueID)
+		if err != nil {
+			return err
+		}
+		switch issue.Status {
+		case controlmodel.IssueBlocked, controlmodel.IssueDone, controlmodel.IssueCancelled:
+			return nil
+		case controlmodel.IssueBacklog:
+			if _, err = e.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+				controlmodel.IssueTodo, actor, "execution failed before work started"); err != nil && err != store.ErrConflict {
+				return err
+			}
+			continue
+		case controlmodel.IssueTodo, controlmodel.IssueInProgress, controlmodel.IssueInReview:
+			reason := "orchestration run failed"
+			if strings.TrimSpace(failureCode) != "" {
+				reason += ": " + failureCode
+			}
+			if _, err = e.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+				controlmodel.IssueBlocked, actor, reason); err == nil {
+				return nil
+			} else if err != store.ErrConflict {
+				return err
+			}
+		default:
+			return nil
 		}
 	}
 	return store.ErrConflict
@@ -510,10 +600,15 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 				continue
 			}
 			maxAttempts := cfg.Retry.MaxAttempts
+			if maxAttempts <= 0 && run.Mode == controlmodel.RunModeAdaptive && latest.TeamID != nil && !latest.LeaderTask {
+				if team, teamErr := (&collaboration.Service{Store: e.Store}).TeamForTask(ctx, latest); teamErr == nil {
+					maxAttempts = team.Policy.MaxTaskRetries + 1
+				}
+			}
 			if maxAttempts <= 0 {
 				maxAttempts = 1
 			}
-			if int32(len(tasks)) < maxAttempts {
+			if int32(len(tasks)) < maxAttempts && retryableTaskFailure(latest.ErrorCode) {
 				if latest.CompletedAt != nil && now.Before(latest.CompletedAt.Add(time.Duration(cfg.Retry.BackoffSeconds)*time.Second)) {
 					continue
 				}
@@ -526,6 +621,11 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 				}
 				changed = true
 				continue
+			}
+			if run.Mode == controlmodel.RunModeAdaptive && node.Type == controlmodel.RunNodeAgent {
+				if _, _, err = (&collaboration.Service{Store: e.Store}).ConvergeFailedWorker(ctx, latest.ID); err != nil {
+					return changed, err
+				}
 			}
 			if _, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeFailed, nil,
 				latest.ErrorCode, latest.ErrorMessage); err != nil {
@@ -590,6 +690,41 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 		}
 	}
 	return changed, nil
+}
+
+func retryableTaskFailure(code string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(code))
+	if normalized == "" {
+		return true
+	}
+	for _, terminal := range []string{
+		"api_key_missing", "credential_missing", "configuration_missing", "invalid_configuration",
+		"permission_denied", "unauthorized", "forbidden", "unsupported_capability", "invalid_input",
+	} {
+		if normalized == terminal {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *Engine) isAdaptiveTeamWorkerNode(ctx context.Context, run *controlmodel.OrchestrationRun,
+	node *controlmodel.RunNode) bool {
+	if run == nil || node == nil || run.Mode != controlmodel.RunModeAdaptive || node.Type != controlmodel.RunNodeAgent {
+		return false
+	}
+	tasks, err := e.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		Tenant: run.Tenant, Namespace: run.Namespace, NodeID: node.ID, Limit: 10,
+	})
+	if err != nil {
+		return false
+	}
+	for _, task := range tasks {
+		if task.TeamID != nil && !task.LeaderTask {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) createSubrun(ctx context.Context, parent *controlmodel.OrchestrationRun, node *controlmodel.RunNode, revision *controlmodel.OrchestrationRevision, input json.RawMessage) (*controlmodel.OrchestrationRun, error) {

@@ -65,6 +65,9 @@ services:
       BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:-builder-compose-dev-secret-change-in-production-32chars}
       BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-compose-local-internal-token-at-least-32chars}
       BUILDER_DATA_URL: http://data:8082
+      # Compose is a development profile. Local means the data container's
+      # filesystem/shell, not the developer host.
+      BUILDER_ALLOW_LOCAL_ENVIRONMENT: "true"
     ports:
       - "8081:8081"
     healthcheck:

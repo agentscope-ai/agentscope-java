@@ -58,6 +58,19 @@ describe('conversation adapters', () => {
     expect(messages[2].blocks[0]).toMatchObject({ kind: 'text', text: 'done' });
   });
 
+  it('preserves failed tool state and highlights it in the event timeline', () => {
+    const events = [
+      { seq: 1, eventType: 'tool_call', role: 'assistant', toolName: 'issue.child.create', frameworkMeta: { toolCallId: 'call-err', state: 'running' } },
+      { seq: 2, eventType: 'tool_result', role: 'tool', toolName: 'issue.child.create', toolOutput: 'cannot scan NULL into *string', frameworkMeta: { toolCallId: 'call-err', state: 'error' } },
+    ];
+    const messages = runtimeEventsToMessages(events);
+    const timeline = runtimeEventsToConversation(events);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].blocks[0]).toMatchObject({ callId: 'call-err', toolState: 'error', result: 'cannot scan NULL into *string' });
+    expect(timeline[1].category).toBe('error');
+  });
+
   it('normalizes managed events while preserving their payload', () => {
     const [event] = managedEventsToConversation([{
       id: 'event-1',

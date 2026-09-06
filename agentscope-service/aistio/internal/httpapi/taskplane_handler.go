@@ -194,7 +194,7 @@ func automaticRuntimeProfileName(provider string) string {
 func automaticRuntimeProfileConfiguration(provider string) json.RawMessage {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "codex":
-		return json.RawMessage(`{"sandbox":"workspace-write","skipGitRepoCheck":true}`)
+		return json.RawMessage(`{"sandbox":"workspace-write"}`)
 	case "claude-code":
 		return json.RawMessage(`{"permissionMode":"default","allowedTools":["mcp__agentscope-collaboration__*"]}`)
 	case "qoder":

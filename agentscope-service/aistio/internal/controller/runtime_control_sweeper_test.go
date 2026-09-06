@@ -119,3 +119,87 @@ func TestRuntimeControlSweeperProjectsTerminalRunToEndpointJob(t *testing.T) {
 		t.Fatalf("terminal Endpoint Job issue was not closed: issue=%+v err=%v", issue, err)
 	}
 }
+
+func TestRuntimeControlSweeperSystemCancelsExpiredManagedToolApproval(t *testing.T) {
+	ctx := context.Background()
+	st, err := memory.Open(ctx, store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	agentID := uuid.New()
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{Tenant: "t", Namespace: "n",
+		Title: "approval timeout", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: agentID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
+	task, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx, store.TaskClaim{
+		TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version, SessionID: "managed-timeout"},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+			State: controlmodel.ExecutionAssigned, SessionID: "managed-timeout", TurnID: "turn-timeout"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvalID := store.ManagedToolApprovalID(task.Tenant, "managed-timeout", attempt.ID.String(),
+		attempt.DispatchGeneration, attempt.TurnID, "call-timeout")
+	task, err = st.Collaboration().StartAgentTask(ctx, task.ID, task.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.Sessions().Upsert(ctx, &store.Session{Tenant: task.Tenant, Namespace: task.Namespace,
+		SessionID: "managed-timeout", AgentID: agentID, AgentName: "managed", Phase: store.SessionPhaseActive,
+		Framework: string(controlmodel.DataPlaneManaged), AgentTaskID: &task.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence := store.ManagedToolApprovalFence{SessionID: session.SessionID, TaskID: task.ID,
+		AttemptID: attempt.ID, ApprovalID: approvalID, DispatchGeneration: attempt.DispatchGeneration,
+		TurnID: attempt.TurnID, ToolUseID: "call-timeout", ToolName: "dangerous_tool"}
+	expiresAt := time.Now().UTC().Add(-time.Minute)
+	request, _ := json.Marshal(managedToolApprovalRequest{Kind: controlmodel.ApprovalRequestKindManagedToolConfirmation,
+		SchemaVersion: 1, Tenant: task.Tenant, Namespace: task.Namespace, SessionID: session.SessionID,
+		SessionRef: &session.ID, ApprovalID: approvalID,
+		AgentTaskID: task.ID, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
+		TurnID: attempt.TurnID, ToolUseID: fence.ToolUseID, ToolName: fence.ToolName, ExpiresAt: expiresAt})
+	approval, _, _, err := st.Collaboration().CreateManagedToolApproval(ctx, store.ManagedToolApprovalRequest{
+		Fence: fence, Approval: &controlmodel.Approval{ID: approvalID, Tenant: task.Tenant,
+			Namespace: task.Namespace, TargetType: controlmodel.ApprovalTargetExecutionAttempt,
+			TargetRef: attempt.ID.String(), IssueID: &task.IssueID, RunID: &task.OrchestrationRunID,
+			RunNodeID: &task.RunNodeID, RequestedBy: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef},
+			ApproverRef: "owner", Status: controlmodel.ApprovalPending, Request: request}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep a newer, non-managed pending Approval at the head of the newest-first
+	// listing. Batch=1 must still reach the older expired managed Approval.
+	time.Sleep(time.Millisecond)
+	newer, err := st.Collaboration().CreateApproval(ctx, &controlmodel.Approval{ID: uuid.New(),
+		Tenant: task.Tenant, Namespace: task.Namespace, TargetType: controlmodel.ApprovalTargetExecutionAttempt,
+		TargetRef: uuid.New().String(), RequestedBy: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		ApproverRef: "owner", Status: controlmodel.ApprovalPending, Request: json.RawMessage(`{"kind":"ordinary"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	(&RuntimeControlSweeper{Store: st, HeartbeatTimeout: time.Hour, RuntimeTimeout: time.Hour, Batch: 1}).Sweep(ctx, time.Now().UTC())
+	approval, err = st.Collaboration().GetApproval(ctx, approval.ID)
+	if err != nil || approval.Status != controlmodel.ApprovalCancelled || approval.DecidedBy == nil ||
+		approval.DecidedBy.Type != controlmodel.ActorSystem {
+		t.Fatalf("expired approval=%+v err=%v", approval, err)
+	}
+	newer, err = st.Collaboration().GetApproval(ctx, newer.ID)
+	if err != nil || newer.Status != controlmodel.ApprovalPending {
+		t.Fatalf("unrelated Approval was mutated: approval=%+v err=%v", newer, err)
+	}
+	inbox, err := st.Collaboration().ListInbox(ctx, store.InboxFilter{Tenant: "t", Namespace: "n",
+		RecipientRef: "owner", Archived: false, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range inbox {
+		if item.ApprovalID != nil && *item.ApprovalID == approval.ID {
+			t.Fatalf("expired approval inbox remained actionable: %+v", item)
+		}
+	}
+}

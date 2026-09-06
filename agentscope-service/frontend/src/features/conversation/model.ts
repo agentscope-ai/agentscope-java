@@ -30,6 +30,8 @@ export interface ConversationContentBlock {
   toolName?: string;
   /** Stable provider call id used to pair tool calls and results. */
   callId?: string;
+  /** Framework-reported terminal state such as success, error, denied, or interrupted. */
+  toolState?: string;
   result?: string;
   data?: unknown;
 }

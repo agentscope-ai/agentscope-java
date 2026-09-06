@@ -66,15 +66,17 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 	if sourceTaskID != nil {
 		var source controlmodel.AgentTask
 		var correlation *string
+		var accountableHumanRef *string
 		var sourceTeamID *uuid.UUID
 		var sourceRole *string
 		if err := tx.QueryRow(ctx, `SELECT issue_id,correlation_id,hop_count,team_depth,accountable_human_ref,team_id,
 			orchestration_run_id,run_node_id,agent_id,team_role,is_leader_task FROM agent_tasks WHERE id=$1`, *sourceTaskID).
-			Scan(&source.IssueID, &correlation, &source.HopCount, &source.TeamDepth, &source.AccountableHumanRef,
+			Scan(&source.IssueID, &correlation, &source.HopCount, &source.TeamDepth, &accountableHumanRef,
 				&sourceTeamID, &source.OrchestrationRunID, &source.RunNodeID, &source.AgentRef, &sourceRole,
 				&source.LeaderTask); err != nil {
 			return nil, err
 		}
+		source.AccountableHumanRef = deref(accountableHumanRef)
 		task.CorrelationID, task.HopCount, task.TeamDepth = deref(correlation), source.HopCount+1, source.TeamDepth
 		task.AccountableHumanRef = source.AccountableHumanRef
 		if task.TeamID != nil && (sourceTeamID == nil || *task.TeamID != *sourceTeamID) {
@@ -198,7 +200,10 @@ func createTaskRunNodeTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Iss
 func createTaskNodeTx(ctx context.Context, tx pgx.Tx, task *controlmodel.AgentTask) error {
 	task.RunNodeID = uuid.New()
 	nodeType := controlmodel.RunNodeAgent
-	if task.TeamID != nil || task.LeaderTask {
+	// TeamID records the roster/policy context for both coordinators and workers.
+	// Only a leader task owns a Team coordinator barrier; delegated members are
+	// ordinary agent nodes inside the same adaptive Run.
+	if task.LeaderTask {
 		nodeType = controlmodel.RunNodeTeam
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO orchestration_run_nodes
@@ -694,7 +699,8 @@ func startIssueForAgentTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 	if err != nil {
 		return err
 	}
-	if issue.Status != controlmodel.IssueBacklog && issue.Status != controlmodel.IssueTodo {
+	if issue.Status != controlmodel.IssueBacklog && issue.Status != controlmodel.IssueTodo &&
+		(issue.Status != controlmodel.IssueBlocked || task.LeaderTask && issue.ParentIssueID != nil) {
 		return nil
 	}
 	previousStatus := issue.Status

@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bot,
@@ -27,6 +28,8 @@ import { Button } from '@/components/ui/button';
 import { useControlPlaneScope } from './ScopeContext';
 import { CommandPalette, useCommandPaletteShortcut } from './CommandPalette';
 import { useCollaborationEvents } from './useCollaborationEvents';
+import { listApprovals, listInbox } from '@/api/collaboration';
+import { approvalAttentionSummary, formatAttentionCount, type ApprovalAttentionSummary } from './approvalAttention';
 
 type NavItem = {
   to: string;
@@ -98,7 +101,7 @@ function matches(pathname: string, to: string, end?: boolean): boolean {
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 
-function SidebarLink({ item }: { item: NavItem }) {
+function SidebarLink({ item, attention }: { item: NavItem; attention?: ApprovalAttentionSummary }) {
   const { scopedPath } = useControlPlaneScope();
   const location = useLocation();
   const Icon = item.icon;
@@ -114,7 +117,16 @@ function SidebarLink({ item }: { item: NavItem }) {
       )}
     >
       <Icon className="h-[18px] w-[18px] shrink-0 text-slate-500 group-hover:text-current" />
-      <span className="truncate">{item.label}</span>
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {!!attention?.total && (
+        <span
+          className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-amber-800"
+          aria-label={`${attention.total} items need attention`}
+          title={`${attention.pending} pending confirmation${attention.pending === 1 ? '' : 's'} · ${attention.unread} unread notification${attention.unread === 1 ? '' : 's'}`}
+        >
+          {formatAttentionCount(attention.total)}
+        </span>
+      )}
     </NavLink>
   );
 }
@@ -165,6 +177,20 @@ export default function AppShell() {
   const roles = getRoles().map((role) => role.toLowerCase());
   const scope = useControlPlaneScope();
 	useCollaborationEvents(scope.tenant, scope.namespace);
+  const pendingApprovals = useQuery({
+    queryKey: ['approvals', scope.tenant, scope.namespace],
+    queryFn: () => listApprovals(scope.tenant, scope.namespace),
+    refetchInterval: 5_000,
+  });
+  const inbox = useQuery({
+    queryKey: ['inbox', scope.tenant, scope.namespace],
+    queryFn: () => listInbox(scope.tenant, scope.namespace),
+    refetchInterval: 5_000,
+  });
+  const approvalAttention = approvalAttentionSummary(
+    inbox.data?.items ?? [],
+    pendingApprovals.data?.items ?? [],
+  );
   const canAgentCenter = admin || roles.includes('agent_developer') || roles.includes('operator');
   const visibleNavigation = navigation.map((group) => ({
     ...group,
@@ -203,7 +229,7 @@ export default function AppShell() {
         <nav aria-label="Primary navigation" className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
           {visibleNavigation.map((group, index) => <div key={group.label || `primary-${index}`} className="space-y-1">
             {group.label && <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group.label}</div>}
-            {group.items.map((item) => <SidebarLink key={item.to} item={item} />)}
+            {group.items.map((item) => <SidebarLink key={item.to} item={item} attention={item.to === '/work/approvals' ? approvalAttention : undefined} />)}
           </div>)}
         </nav>
 

@@ -60,6 +60,45 @@ func TestListEndpointsUsesEmptyArray(t *testing.T) {
 	}
 }
 
+func TestCreateEndpointReportsIdentityConflicts(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	agent, err := st.AgentCatalog().CreateAgent(ctx, &controlmodel.Agent{
+		Tenant: "t", Namespace: "n", AgentKey: "endpoint-owner", DisplayName: "Endpoint owner",
+		Status: controlmodel.AgentActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerOptions{Store: st, AuthToken: "console"})
+	create := func(name, slug string) *httptest.ResponseRecorder {
+		body := fmt.Sprintf(`{"tenant":"t","namespace":"n","name":%q,"slug":%q,"targetType":"agent","targetRef":"%s","invocationMode":"job"}`,
+			name, slug, agent.ID)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/endpoints", bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer console")
+		req.Header.Set("Content-Type", "application/json")
+		out := httptest.NewRecorder()
+		server.router.ServeHTTP(out, req)
+		return out
+	}
+	if first := create("Owner API", "owner-api"); first.Code != http.StatusCreated {
+		t.Fatalf("first Endpoint: %d %s", first.Code, first.Body)
+	}
+	assertConflict := func(out *httptest.ResponseRecorder, code string) {
+		t.Helper()
+		var payload ErrorResponse
+		if out.Code != http.StatusConflict || json.Unmarshal(out.Body.Bytes(), &payload) != nil || payload.Code != code {
+			t.Fatalf("conflict code=%q: HTTP %d %s", code, out.Code, out.Body)
+		}
+	}
+	assertConflict(create("Owner API 2", "owner-api"), "endpoint_slug_conflict")
+	assertConflict(create("Owner API", "owner-api-2"), "endpoint_name_conflict")
+}
+
 func TestEndpointJobIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
@@ -155,6 +194,10 @@ func TestEndpointJobIsIdempotent(t *testing.T) {
 	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: a.IssueID})
 	if err != nil || len(tasks) != 1 || tasks[0].AgentRef != agent.ID.String() {
 		t.Fatalf("expected one stable Agent task: %+v err=%v", tasks, err)
+	}
+	taskContext, err := (&collaboration.Service{Store: st}).BuildContext(ctx, tasks[0].ID)
+	if err != nil || taskContext.Run == nil || string(taskContext.Run.Input) != `{"x":1}` {
+		t.Fatalf("Endpoint input was not propagated to AgentTask context: context=%+v err=%v", taskContext, err)
 	}
 	claimed, _, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
 		store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version},

@@ -63,6 +63,19 @@ type ConversationTurnSender interface {
 	SendConversationTurn(tenant, namespace, instanceID string, command *asdp.ConversationTurnCommand) error
 }
 
+// ManagedToolConfirmationSender delivers one durable control-plane Approval
+// decision to the managed data plane that owns the corresponding HITL ticket.
+type ManagedToolConfirmationSender interface {
+	PostManagedToolConfirmation(ctx context.Context, sessionID, ownerID, toolUseID string, decision product.ManagedToolConfirmationDecision) error
+}
+
+// ManagedAttemptAbortSender delivers a fully fenced old-turn interrupt. It is
+// separate from the decision sender so tests and alternative data planes can
+// implement either capability explicitly.
+type ManagedAttemptAbortSender interface {
+	PostManagedAttemptAbort(ctx context.Context, sessionID, ownerID string, abort product.ManagedAttemptAbort) error
+}
+
 // InventoryProvider exposes the latest per-instance inventory reports held
 // by the ASDP connection registry. Implemented by asdp.Server.
 type InventoryProvider interface {
@@ -114,11 +127,13 @@ type ServerOptions struct {
 	// control-plane transcript store (NAS / object storage). When it returns
 	// ok=true, getSessionMessages skips the live DP fallback and does not
 	// require the message-query capability.
-	TranscriptMessages  TranscriptMessagesFunc
-	Features            features.Gates
-	ArtifactProvider    artifact.Provider
-	CollaborationEvents *realtime.Hub
-	GitHubTransport     worksource.GitHubTransport
+	TranscriptMessages   TranscriptMessagesFunc
+	Features             features.Gates
+	ArtifactProvider     artifact.Provider
+	CollaborationEvents  *realtime.Hub
+	ManagedConfirmations ManagedToolConfirmationSender
+	ManagedAttemptAborts ManagedAttemptAbortSender
+	GitHubTransport      worksource.GitHubTransport
 	// ScopeMode controls whether tenant/namespace are selectable by callers or
 	// fixed by this deployment. Empty preserves the multi-scope library default;
 	// the aistiod binary explicitly defaults product deployments to single.
@@ -156,6 +171,8 @@ type Server struct {
 	endpointCredentialKey []byte
 	artifactProvider      artifact.Provider
 	collaborationEvents   *realtime.Hub
+	managedConfirmations  ManagedToolConfirmationSender
+	managedAttemptAborts  ManagedAttemptAbortSender
 	workSources           *worksource.Service
 	scopeMode             string
 	defaultTenant         string
@@ -182,35 +199,43 @@ func NewServer(opts ServerOptions) *Server {
 		configuredNamespace = defaultNamespace
 	}
 	s := &Server{
-		client:              opts.Client,
-		store:               opts.Store,
-		prober:              opts.Prober,
-		router:              router,
-		experimental:        opts.Experimental,
-		authToken:           opts.AuthToken,
-		tlsCertFile:         opts.TLSCertFile,
-		tlsKeyFile:          opts.TLSKeyFile,
-		kubeClient:          opts.KubeClient,
-		asdpCommands:        opts.ASDPCommands,
-		asdpInventory:       opts.ASDPInventory,
-		product:             opts.Product,
-		staticDir:           opts.StaticDir,
-		registry:            opts.Registry,
-		internalToken:       opts.InternalToken,
-		hostedStore:         opts.HostedStore,
-		features:            opts.Features,
-		transcriptMessages:  opts.TranscriptMessages,
-		artifactProvider:    opts.ArtifactProvider,
-		collaborationEvents: opts.CollaborationEvents,
-		scopeMode:           scopeMode,
-		defaultTenant:       configuredTenant,
-		defaultNamespace:    configuredNamespace,
+		client:               opts.Client,
+		store:                opts.Store,
+		prober:               opts.Prober,
+		router:               router,
+		experimental:         opts.Experimental,
+		authToken:            opts.AuthToken,
+		tlsCertFile:          opts.TLSCertFile,
+		tlsKeyFile:           opts.TLSKeyFile,
+		kubeClient:           opts.KubeClient,
+		asdpCommands:         opts.ASDPCommands,
+		asdpInventory:        opts.ASDPInventory,
+		product:              opts.Product,
+		staticDir:            opts.StaticDir,
+		registry:             opts.Registry,
+		internalToken:        opts.InternalToken,
+		hostedStore:          opts.HostedStore,
+		features:             opts.Features,
+		transcriptMessages:   opts.TranscriptMessages,
+		artifactProvider:     opts.ArtifactProvider,
+		collaborationEvents:  opts.CollaborationEvents,
+		managedConfirmations: opts.ManagedConfirmations,
+		managedAttemptAborts: opts.ManagedAttemptAborts,
+		scopeMode:            scopeMode,
+		defaultTenant:        configuredTenant,
+		defaultNamespace:     configuredNamespace,
 		httpServer: &http.Server{
 			Addr:         opts.Addr,
 			Handler:      router,
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
 		},
+	}
+	if s.managedConfirmations == nil && opts.Product != nil {
+		s.managedConfirmations = opts.Product
+	}
+	if s.managedAttemptAborts == nil && opts.Product != nil {
+		s.managedAttemptAborts = opts.Product
 	}
 	credentialMaster := strings.TrimSpace(opts.EndpointCredentialSecret)
 	if credentialMaster == "" {
@@ -268,6 +293,7 @@ func NewServer(opts ServerOptions) *Server {
 		s.taskPlane.CancelBackend = s.runtimeBindings.CancelAttempt
 		if s.product != nil {
 			s.product.SetManagedExecutionContextLookup(s.managedExecutionContextForSession)
+			s.product.SetManagedRuntimeFenceValidator(s.validateManagedSessionRuntimeFence)
 		}
 	}
 
@@ -357,8 +383,6 @@ func (s *Server) registerRoutes() {
 			v1.GET("/chats/:chatId", s.getChat)
 			v1.PATCH("/chats/:chatId", s.patchChat)
 			v1.POST("/chats/:chatId/turns", s.sendChatTurn)
-			v1.POST("/playground/invocations", s.invokePlayground)
-			v1.POST("/playground/sessions/:sessionId/turns", s.continuePlaygroundConversation)
 			v1.POST("/issues/:issueId/team-proposals", s.createTeamProposal)
 			v1.POST("/issues/:issueId/team-proposals/:proposalId/confirm", s.confirmTeamProposal)
 			v1.GET("/endpoints", s.listEndpoints)
@@ -425,7 +449,6 @@ func (s *Server) registerRoutes() {
 			agents.GET("/:agentId/instances", s.listCatalogAgentInstances)
 			agents.GET("/:agentId/overview", s.getAgentDetailOverview)
 			agents.GET("/:agentId/runtime-inventory", s.getAgentRuntimeInventory)
-			agents.GET("/:agentId/invocation-capabilities", s.getAgentInvocationCapabilities)
 			v1.POST("/agent-registrations/:agentId/credentials/rotate", s.rotateAgentRegistrationCredential)
 			v1.DELETE("/agent-registrations/:agentId/credentials/:credentialId", s.revokeAgentRegistrationCredential)
 		}
@@ -609,6 +632,9 @@ func (s *Server) registerRoutes() {
 			tasks.POST("/:taskId/inputs/replay", s.replayAgentTaskInputs)
 			tasks.POST("/:taskId/start", s.taskTokenMiddleware(), s.startAgentTask)
 			tasks.POST("/:taskId/progress", s.taskTokenMiddleware(), s.progressAgentTask)
+			tasks.POST("/:taskId/runtime-approvals", s.taskTokenMiddleware(), s.requestRuntimeToolApproval)
+			tasks.GET("/:taskId/runtime-approvals/:approvalId/decision", s.taskTokenMiddleware(), s.getRuntimeToolApprovalDecision)
+			tasks.POST("/:taskId/runtime-approvals/:approvalId/ack", s.taskTokenMiddleware(), s.acknowledgeRuntimeToolApprovalDecision)
 			tasks.POST("/:taskId/respond", s.taskTokenMiddleware(), s.respondAgentTask)
 			tasks.POST("/:taskId/children", s.taskTokenMiddleware(), s.createAgentTaskChildIssue)
 			tasks.POST("/:taskId/complete", s.taskTokenMiddleware(), s.completeAgentTask)
@@ -913,7 +939,8 @@ func (s *Server) verifyTaskToken(ctx context.Context, token string, expectedTask
 		return nil, fmt.Errorf("task token generation is no longer active")
 	}
 	if controlmodel.IsExecutionAttemptTerminal(attempt.State) &&
-		(!allowCompletedCoordinator || !task.LeaderTask || task.Status != controlmodel.AgentTaskCompleted) {
+		(!allowCompletedCoordinator || !task.LeaderTask ||
+			(task.Status != controlmodel.AgentTaskCompleted && task.Status != controlmodel.AgentTaskFailed)) {
 		return nil, fmt.Errorf("task token generation is no longer active")
 	}
 	return task, nil
@@ -945,6 +972,9 @@ func (s *Server) collaborationTaskScopeMiddleware() gin.HandlerFunc {
 			"/api/v1/agent-tasks/:taskId/claim", "/api/v1/agent-tasks/:taskId/ack",
 			"/api/v1/agent-tasks/:taskId/inputs/delivery-failed", "/api/v1/agent-tasks/:taskId/start",
 			"/api/v1/agent-tasks/:taskId/progress", "/api/v1/agent-tasks/:taskId/respond",
+			"/api/v1/agent-tasks/:taskId/runtime-approvals",
+			"/api/v1/agent-tasks/:taskId/runtime-approvals/:approvalId/decision",
+			"/api/v1/agent-tasks/:taskId/runtime-approvals/:approvalId/ack",
 			"/api/v1/agent-tasks/:taskId/children", "/api/v1/agent-tasks/:taskId/complete",
 			"/api/v1/agent-tasks/:taskId/fail", "/api/v1/agent-tasks/:taskId/run",
 			"/api/v1/agent-tasks/:taskId/run/graph", "/api/v1/agent-tasks/:taskId/run/node/complete",

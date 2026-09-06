@@ -6,6 +6,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,10 +17,15 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
 const managedExecutionLeaseTTL = 45 * time.Second
+
+var (
+	errManagedAttemptGone = errors.New("managed execution attempt is no longer active")
+)
 
 type managedSessionEventReport struct {
 	ID          string         `json:"id"`
@@ -29,6 +35,7 @@ type managedSessionEventReport struct {
 	Payload     map[string]any `json:"payload"`
 	ProcessedAt *int64         `json:"processedAt,omitempty"`
 	CreatedAt   int64          `json:"createdAt"`
+	AgentTaskID string         `json:"agentTaskId,omitempty"`
 	AttemptID   string         `json:"attemptId,omitempty"`
 	DispatchGen int64          `json:"dispatchGeneration,omitempty"`
 	TurnID      string         `json:"turnId,omitempty"`
@@ -49,6 +56,7 @@ func (s *Server) reportManagedSessionEvent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "sessionId does not match request path"})
 		return
 	}
+	report.SessionID = sessionID
 	sessions, err := s.store.Sessions().List(c.Request.Context(), store.SessionFilter{SessionID: sessionID, Limit: 2})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -70,13 +78,20 @@ func (s *Server) reportManagedSessionEvent(c *gin.Context) {
 		if err != nil || duplicate {
 			return err
 		}
-		if err = s.applyManagedSessionStatus(lockCtx, session, &report, event.OccurredAt); err != nil {
-			return err
+		if applyErr := s.applyManagedSessionStatus(lockCtx, session, &report, event.OccurredAt); applyErr != nil {
+			return applyErr
 		}
 		return s.appendSessionEventLocked(lockCtx, session.ID, sourceKey, event)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		switch {
+		case errors.Is(err, errManagedAttemptGone):
+			c.JSON(http.StatusGone, ErrorResponse{Error: err.Error()})
+		case errors.Is(err, store.ErrConflict):
+			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		}
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -104,7 +119,7 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 	eventType := strings.TrimSpace(report.Type)
 	event := &store.SessionEvent{EventType: eventType, OccurredAt: managedEventTime(report.CreatedAt)}
 	switch {
-	case eventType == "user.message":
+	case strings.HasPrefix(eventType, "user."):
 		event.Role = "user"
 	case eventType == "agent.tool_result":
 		event.Role = "tool"
@@ -119,8 +134,18 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 	if input, ok := payload["input"]; ok && input != nil {
 		event.ToolInput, _ = json.Marshal(input)
 	}
-	metadata := map[string]any{"managedEventId": report.ID, "managedSeq": report.Seq}
+	metadata := map[string]any{
+		"managedEventId": report.ID, "managedSeq": report.Seq,
+		"agentTaskId": report.AgentTaskID,
+		"attemptId":   report.AttemptID, "dispatchGeneration": report.DispatchGen,
+		"turnId": report.TurnID,
+	}
 	for _, key := range []string{"toolCallId", "toolUseId", "tool_use_id", "callId"} {
+		if value, ok := payload[key]; ok && value != nil {
+			metadata[key] = value
+		}
+	}
+	for _, key := range []string{"approvalId", "decisionVersion", "source", "status"} {
 		if value, ok := payload[key]; ok && value != nil {
 			metadata[key] = value
 		}
@@ -148,6 +173,9 @@ func firstPayloadString(payload map[string]any, keys ...string) string {
 }
 
 func (s *Server) applyManagedSessionStatus(ctx context.Context, session *store.Session, report *managedSessionEventReport, at time.Time) error {
+	if strings.TrimSpace(report.SessionID) == "" && session != nil {
+		report.SessionID = session.SessionID
+	}
 	eventType := report.Type
 	var task *controlmodel.AgentTask
 	if session.AgentTaskID != nil {
@@ -157,8 +185,11 @@ func (s *Server) applyManagedSessionStatus(ctx context.Context, session *store.S
 			return err
 		}
 		matches, matchErr := s.managedReportMatchesAttempt(ctx, task, report)
-		if matchErr != nil || !matches {
-			return matchErr
+		if !matches {
+			if matchErr != nil {
+				return matchErr
+			}
+			return store.ErrConflict
 		}
 	}
 	phase := ""
@@ -192,9 +223,31 @@ func (s *Server) applyManagedSessionStatus(ctx context.Context, session *store.S
 	if task == nil {
 		return nil
 	}
+	if eventType == "session.requires_action" {
+		if controlmodel.IsAgentTaskTerminal(task.Status) {
+			return errManagedAttemptGone
+		}
+		if firstPayloadString(report.Payload, "kind") == "tool_confirmation" {
+			return s.requestManagedToolApproval(ctx, session, task, report, at)
+		}
+		// Other suspension reasons (for example provider TOOL_SUSPENDED) are
+		// observability events, not human confirmation requests. Mirror them
+		// without inventing an Approval or changing the AgentTask lifecycle.
+		return nil
+	}
+	if eventType == "user.tool_confirmation" {
+		return s.resumeManagedTaskFromConfirmationEvent(ctx, session, task, report)
+	}
 	if eventType == "session.status_running" {
 		if task.Status == controlmodel.AgentTaskRunning {
 			return nil
+		}
+		if task.Status == controlmodel.AgentTaskWaiting {
+			if strings.HasPrefix(task.WaitReason, "approval:") {
+				return s.resumeManagedTaskFromSessionStatus(ctx, session, task, report)
+			}
+			_, err := s.store.Collaboration().StartAgentTask(ctx, task.ID, task.Version)
+			return err
 		}
 		if task.Status != controlmodel.AgentTaskDispatched {
 			return fmt.Errorf("managed session started for AgentTask in state %s", task.Status)
@@ -207,35 +260,77 @@ func (s *Server) applyManagedSessionStatus(ctx context.Context, session *store.S
 	}
 	code, message := "", ""
 	switch eventType {
+	case "session.status_idle":
+		// The provider turn completed normally, but an attached AgentTask is a
+		// semantic protocol: it must explicitly complete or fail. Convert a
+		// text-only return into an immediate durable outcome instead of leaving
+		// the task running until its heartbeat lease expires.
+		code, message = "managed_turn_incomplete", "managed Agent turn ended without task.complete or task.fail"
 	case "session.error":
 		code, message = managedTurnError(report.Payload)
-	case "session.status_idle":
-		code, message = "managed_task_incomplete", "managed Agent turn became idle without completing or failing its AgentTask"
 	case "session.status_terminated":
 		code, message = "managed_session_terminated", "managed Agent session terminated before its AgentTask reached a terminal state"
 	}
 	if code == "" {
 		return nil
 	}
-	_, err := (&collaboration.Service{Store: s.store}).FailTask(ctx, task.ID, task.Version, code, message)
-	return err
+	failed, err := (&collaboration.Service{Store: s.store}).FailTask(ctx, task.ID, task.Version, code, message)
+	if err != nil {
+		return err
+	}
+	return (&orchestration.Engine{Store: s.store}).ReconcileRun(context.WithoutCancel(ctx), failed.OrchestrationRunID)
 }
 
 func (s *Server) managedReportMatchesAttempt(ctx context.Context, task *controlmodel.AgentTask, report *managedSessionEventReport) (bool, error) {
-	if strings.TrimSpace(report.AttemptID) == "" {
-		return true, nil
+	if strings.TrimSpace(report.AgentTaskID) == "" || strings.TrimSpace(report.AttemptID) == "" {
+		// Managed task events are physical-turn reports. Accepting an unscoped event
+		// would let a delayed event from an older turn mutate the current retry.
+		return false, store.ErrConflict
+	}
+	reportedTaskID, err := uuid.Parse(report.AgentTaskID)
+	if err != nil || reportedTaskID != task.ID {
+		return false, store.ErrConflict
 	}
 	attemptID, err := uuid.Parse(report.AttemptID)
-	if err != nil || task.CurrentAttemptID == nil || *task.CurrentAttemptID != attemptID {
-		return false, nil
+	if err != nil {
+		return false, store.ErrConflict
+	}
+	if task.CurrentAttemptID == nil || *task.CurrentAttemptID != attemptID ||
+		task.Status == controlmodel.AgentTaskFailed || task.Status == controlmodel.AgentTaskCancelled ||
+		(task.Status != controlmodel.AgentTaskDispatched && task.Status != controlmodel.AgentTaskRunning &&
+			task.Status != controlmodel.AgentTaskWaiting && task.Status != controlmodel.AgentTaskCompleted) {
+		return false, errManagedAttemptGone
 	}
 	attempt, err := s.store.ExecutionAttempts().Get(ctx, attemptID)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return false, errManagedAttemptGone
+		}
 		return false, err
 	}
-	if report.DispatchGen > 0 && attempt.DispatchGeneration != report.DispatchGen ||
-		report.TurnID != "" && attempt.TurnID != report.TurnID {
-		return false, nil
+	if attempt.BackendKind != controlmodel.DataPlaneManaged || attempt.AgentTaskID != task.ID ||
+		attempt.SessionID != report.SessionID || report.DispatchGen <= 0 || strings.TrimSpace(report.TurnID) == "" ||
+		attempt.DispatchGeneration != report.DispatchGen || attempt.TurnID != report.TurnID {
+		return false, store.ErrConflict
+	}
+	if attempt.State == controlmodel.ExecutionSucceeded && task.Status == controlmodel.AgentTaskCompleted {
+		// The collaboration tool can commit semantic completion before the agent
+		// emits its final assistant text. Preserve that tail without renewing the
+		// already-terminal lease.
+		return true, nil
+	}
+	if controlmodel.IsExecutionAttemptTerminal(attempt.State) || attempt.State == controlmodel.ExecutionCancelRequested ||
+		task.Status == controlmodel.AgentTaskCompleted {
+		return false, errManagedAttemptGone
+	}
+	// The event stream is an authenticated, fenced proof that this managed turn
+	// is alive. Renew here as a second liveness channel in addition to the
+	// periodic data-plane heartbeat. This keeps collaboration credentials valid
+	// when a deployment temporarily misses the heartbeat loop, while the
+	// attempt/generation/turn fence still rejects stale physical turns.
+	if _, err = s.store.ExecutionAttempts().RenewLease(ctx, attempt.ID,
+		attempt.LeaseToken, attempt.FencingToken, managedExecutionLeaseTTL); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -265,8 +360,9 @@ type managedSessionHeartbeat struct {
 func (s *Server) heartbeatManagedSession(c *gin.Context) {
 	sessionID := strings.TrimSpace(c.Param("sessionId"))
 	var heartbeat managedSessionHeartbeat
-	if err := c.ShouldBindJSON(&heartbeat); err != nil || sessionID == "" || heartbeat.AttemptID == uuid.Nil || heartbeat.DispatchGen <= 0 {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "sessionId, attemptId, and dispatchGeneration are required"})
+	if err := c.ShouldBindJSON(&heartbeat); err != nil || sessionID == "" || heartbeat.AttemptID == uuid.Nil ||
+		heartbeat.DispatchGen <= 0 || strings.TrimSpace(heartbeat.TurnID) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "sessionId, attemptId, dispatchGeneration, and turnId are required"})
 		return
 	}
 	sessions, err := s.store.Sessions().List(c, store.SessionFilter{SessionID: sessionID, Limit: 2})
@@ -275,21 +371,58 @@ func (s *Server) heartbeatManagedSession(c *gin.Context) {
 		return
 	}
 	task, err := s.store.Collaboration().GetAgentTask(c, *sessions[0].AgentTaskID)
-	if err != nil || task.CurrentAttemptID == nil || *task.CurrentAttemptID != heartbeat.AttemptID {
-		c.JSON(http.StatusConflict, ErrorResponse{Error: "managed execution attempt is no longer current"})
+	if errors.Is(err, store.ErrNotFound) || err == nil &&
+		(task.CurrentAttemptID == nil || *task.CurrentAttemptID != heartbeat.AttemptID ||
+			task.Status == controlmodel.AgentTaskFailed || task.Status == controlmodel.AgentTaskCancelled ||
+			(task.Status != controlmodel.AgentTaskDispatched && task.Status != controlmodel.AgentTaskRunning &&
+				task.Status != controlmodel.AgentTaskWaiting && task.Status != controlmodel.AgentTaskCompleted)) {
+		c.JSON(http.StatusGone, ErrorResponse{Error: errManagedAttemptGone.Error()})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 	attempt, err := s.store.ExecutionAttempts().Get(c, heartbeat.AttemptID)
-	if err != nil || attempt.BackendKind != controlmodel.DataPlaneManaged ||
+	if errors.Is(err, store.ErrNotFound) {
+		c.JSON(http.StatusGone, ErrorResponse{Error: errManagedAttemptGone.Error()})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if attempt.BackendKind != controlmodel.DataPlaneManaged || attempt.AgentTaskID != task.ID ||
+		attempt.SessionID != sessionID ||
 		attempt.DispatchGeneration != heartbeat.DispatchGen || heartbeat.TurnID != "" && attempt.TurnID != heartbeat.TurnID {
 		c.JSON(http.StatusConflict, ErrorResponse{Error: "managed execution attempt scope does not match"})
 		return
 	}
-	if controlmodel.IsExecutionAttemptTerminal(attempt.State) {
+	if attempt.State == controlmodel.ExecutionSucceeded && task.Status == controlmodel.AgentTaskCompleted {
+		// A final heartbeat can race the assistant's tail after semantic success.
+		// Acknowledge it without renewing a terminal Attempt so the stream can end
+		// naturally; failed/cancelled/replaced scopes below are actively stopped.
 		c.Status(http.StatusNoContent)
 		return
 	}
+	if controlmodel.IsExecutionAttemptTerminal(attempt.State) || attempt.State == controlmodel.ExecutionCancelRequested ||
+		task.Status == controlmodel.AgentTaskCompleted {
+		c.JSON(http.StatusGone, ErrorResponse{Error: errManagedAttemptGone.Error()})
+		return
+	}
 	if _, err = s.store.ExecutionAttempts().RenewLease(c, attempt.ID, attempt.LeaseToken, attempt.FencingToken, managedExecutionLeaseTTL); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			currentTask, taskErr := s.store.Collaboration().GetAgentTask(c, task.ID)
+			currentAttempt, attemptErr := s.store.ExecutionAttempts().Get(c, attempt.ID)
+			if taskErr == nil && attemptErr == nil &&
+				(controlmodel.IsAgentTaskTerminal(currentTask.Status) ||
+					currentTask.CurrentAttemptID == nil || *currentTask.CurrentAttemptID != attempt.ID ||
+					controlmodel.IsExecutionAttemptTerminal(currentAttempt.State) ||
+					currentAttempt.State == controlmodel.ExecutionCancelRequested) {
+				c.JSON(http.StatusGone, ErrorResponse{Error: errManagedAttemptGone.Error()})
+				return
+			}
+		}
 		s.writeControlPlaneError(c, err)
 		return
 	}

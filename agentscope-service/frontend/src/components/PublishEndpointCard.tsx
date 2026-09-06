@@ -12,6 +12,12 @@ import {
 } from '@/api/agentEndpoints';
 import { getRoles } from '@/api/auth';
 import { useControlPlaneScope } from '@/app/ScopeContext';
+import {
+  endpointErrorMessage,
+  endpointSlug,
+  nextEndpointName,
+  nextEndpointSlug,
+} from '@/components/endpointNaming';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,11 +35,6 @@ interface PublishEndpointCardProps {
 const endpointPath = (endpoint: Endpoint) =>
   `/invoke/v1/endpoints/${endpoint.slug}/${endpoint.invocationMode === 'job' ? 'jobs' : 'conversations'}`;
 
-const slugify = (value: string) => value.toLowerCase().trim()
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '')
-  .slice(0, 48);
-
 export function PublishEndpointCard({
   targetType,
   targetRef,
@@ -46,9 +47,11 @@ export function PublishEndpointCard({
   const queryClient = useQueryClient();
   const roles = getRoles().map(role => role.toLowerCase());
   const canEdit = roles.includes('admin') || roles.includes('agent_developer');
+  const defaultName = `${targetName} API`;
+  const defaultSlug = `${endpointSlug(targetName) || 'endpoint'}-${targetRef.slice(0, 6)}`;
   const [showCreate, setShowCreate] = useState(false);
-  const [name, setName] = useState(`${targetName} API`);
-  const [slug, setSlug] = useState(`${slugify(targetName) || 'endpoint'}-${targetRef.slice(0, 6)}`);
+  const [name, setName] = useState(defaultName);
+  const [slug, setSlug] = useState(defaultSlug);
   const [description, setDescription] = useState('');
   const [mode, setMode] = useState<Endpoint['invocationMode']>(targetType === 'agent' ? 'conversation' : 'job');
   const [deployEndpointId, setDeployEndpointId] = useState('');
@@ -56,26 +59,21 @@ export function PublishEndpointCard({
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setName(`${targetName} API`);
-    setSlug(`${slugify(targetName) || 'endpoint'}-${targetRef.slice(0, 6)}`);
+    setName(defaultName);
+    setSlug(defaultSlug);
     setMode(targetType === 'agent' ? 'conversation' : 'job');
-  }, [targetName, targetRef, targetType]);
+  }, [defaultName, defaultSlug, targetType]);
 
-  const current = useQuery({
-    queryKey: ['endpoints', scope.tenant, scope.namespace, targetType, targetRef],
-    queryFn: () => listEndpoints(scope.tenant, scope.namespace, { targetType, targetRef }),
+  const endpoints = useQuery({
+    queryKey: ['endpoints', scope.tenant, scope.namespace, 'all'],
+    queryFn: () => listEndpoints(scope.tenant, scope.namespace),
     enabled: !!targetRef,
   });
-  const compatible = useQuery({
-    queryKey: ['endpoints', scope.tenant, scope.namespace, targetType, 'all'],
-    queryFn: () => listEndpoints(scope.tenant, scope.namespace, { targetType }),
-    enabled: allowDeployToExisting || !!relatedTargetRefs?.length,
-  });
+  const endpointItems = useMemo(() => endpoints.data?.items ?? [], [endpoints.data?.items]);
   const relatedRefs = useMemo(() => new Set(relatedTargetRefs ?? [targetRef]), [relatedTargetRefs, targetRef]);
   const currentItems = useMemo(() => {
-    const source = relatedTargetRefs?.length ? compatible.data?.items : current.data?.items;
-    return (source ?? []).filter(item => item.status !== 'archived' && relatedRefs.has(item.targetRef));
-  }, [compatible.data?.items, current.data?.items, relatedRefs, relatedTargetRefs?.length]);
+    return endpointItems.filter(item => item.status !== 'archived' && item.targetType === targetType && relatedRefs.has(item.targetRef));
+  }, [endpointItems, relatedRefs, targetType]);
   const deployCandidates = useMemo(() => currentItems.filter(item =>
     (item.status === 'published' || item.status === 'disabled') && !!item.activeReleaseId && item.targetRef !== targetRef,
   ), [currentItems, targetRef]);
@@ -89,6 +87,18 @@ export function PublishEndpointCard({
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['endpoints'] });
   };
+  const nameTaken = endpointItems.some(item => item.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const slugTaken = endpointItems.some(item => item.slug.toLowerCase() === slug.trim().toLowerCase());
+
+  function openCreate() {
+    setName(nextEndpointName(defaultName, endpointItems.map(item => item.name)));
+    setSlug(nextEndpointSlug(defaultSlug, endpointItems.map(item => item.slug)));
+    setDescription('');
+    setSecret('');
+    setError('');
+    setShowCreate(true);
+  }
+
   const create = useMutation({
     mutationFn: async () => {
       const result = await createEndpoint({
@@ -104,11 +114,19 @@ export function PublishEndpointCard({
         rateLimit: { requests: 60, windowSeconds: 60 },
       });
       if (result.credential) setSecret(result.credential);
-      return publishEndpoint(result.endpoint);
+      try {
+        return await publishEndpoint(result.endpoint);
+      } catch (cause) {
+        const publicationError = new Error(
+          `Endpoint was created as a draft, but publication failed: ${endpointErrorMessage(cause, 'Publication failed')}`,
+        );
+        Object.assign(publicationError, { cause });
+        throw publicationError;
+      }
     },
     onSuccess: () => { setShowCreate(false); setError(''); refresh(); },
     onError: cause => {
-      setError(`${cause instanceof Error ? cause.message : 'Publication failed'}. If a draft was created, open Manage API below to resolve readiness and publish it.`);
+      setError(endpointErrorMessage(cause, 'Endpoint creation failed'));
       refresh();
     },
   });
@@ -125,6 +143,7 @@ export function PublishEndpointCard({
   function submit(event: FormEvent) {
     event.preventDefault();
     setError('');
+    if (nameTaken || slugTaken) return;
     create.mutate();
   }
 
@@ -136,7 +155,7 @@ export function PublishEndpointCard({
             <CardTitle className="flex items-center gap-2"><Rocket className="h-4 w-4" />Publish as API</CardTitle>
             <CardDescription>Expose this {targetType === 'agent' ? 'Agent' : targetType === 'team' ? 'Team' : 'immutable Workflow revision'} through a governed API owned from this page.</CardDescription>
           </div>
-          {canEdit && !showCreate && <Button size="sm" onClick={() => setShowCreate(true)}>New Endpoint</Button>}
+          {canEdit && !showCreate && <Button size="sm" disabled={endpoints.isLoading} onClick={openCreate}>New Endpoint</Button>}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -144,11 +163,11 @@ export function PublishEndpointCard({
         {secret && <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm"><strong>API key ready.</strong> You can copy it again later from Endpoint Security.<div className="mt-2 flex gap-2"><code className="min-w-0 flex-1 break-all rounded bg-white p-2 text-xs">{secret}</code><Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(secret)}><Copy className="h-4 w-4" />Copy</Button></div></div>}
 
         {showCreate && <form className="grid gap-3 md:grid-cols-2" onSubmit={submit}>
-          <label className="grid gap-1 text-sm">Name<Input value={name} onChange={event => setName(event.target.value)} required /></label>
-          <label className="grid gap-1 text-sm">Slug<Input value={slug} onChange={event => setSlug(slugify(event.target.value))} required /></label>
+          <label className="grid gap-1 text-sm">Name<Input value={name} onChange={event => setName(event.target.value)} required />{nameTaken && <span className="text-xs text-red-600">This Endpoint name is already in use.</span>}</label>
+          <label className="grid gap-1 text-sm">Slug<Input value={slug} onChange={event => setSlug(endpointSlug(event.target.value))} required />{slugTaken && <span className="text-xs text-red-600">This public URL slug is already in use.</span>}</label>
           {targetType === 'agent' && <label className="grid gap-1 text-sm">Mode<select className="h-10 rounded-md border bg-background px-3" value={mode} onChange={event => setMode(event.target.value as Endpoint['invocationMode'])}><option value="conversation">Conversation</option><option value="job">Job</option></select></label>}
           <label className="grid gap-1 text-sm md:col-span-2">Description<Input value={description} onChange={event => setDescription(event.target.value)} /></label>
-          <div className="flex gap-2 md:col-span-2"><Button disabled={create.isPending || !name.trim() || !slug.trim()}>{create.isPending ? 'Publishing…' : 'Create & publish'}</Button><Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button></div>
+          <div className="flex gap-2 md:col-span-2"><Button disabled={create.isPending || !name.trim() || !slug.trim() || nameTaken || slugTaken}>{create.isPending ? 'Publishing…' : 'Create & publish'}</Button><Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button></div>
         </form>}
 
         {currentItems.map(endpoint => <div key={endpoint.id} className="rounded-lg border p-3">
@@ -156,7 +175,7 @@ export function PublishEndpointCard({
           <code className="mt-2 block break-all text-xs text-muted-foreground">{endpointPath(endpoint)}</code>
           <div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(endpointDetailPath(endpoint))}>Manage API<ExternalLink className="h-3 w-3" /></Link></Button>{endpoint.status === 'published' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(endpointDetailPath(endpoint, 'playground'))}>Test API<ExternalLink className="h-3 w-3" /></Link></Button>}<Button size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(endpointPath(endpoint))}><Copy className="h-3 w-3" />Copy URL</Button></div>
         </div>)}
-        {!current.isLoading && !compatible.isLoading && currentItems.length === 0 && !showCreate && <p className="text-sm text-muted-foreground">Not published yet. Create an API when external systems need a stable address.</p>}
+        {!endpoints.isLoading && currentItems.length === 0 && !showCreate && <p className="text-sm text-muted-foreground">Not published yet. Create an API when external systems need a stable address.</p>}
 
         {canEdit && allowDeployToExisting && deployCandidates.length > 0 && <div className="grid gap-2 border-t pt-4">
           <div className="text-sm font-medium">Deploy this revision to an existing Endpoint</div>

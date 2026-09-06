@@ -232,7 +232,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="workflows/:definitionId" element={<DefinitionsPage />} />
               <Route path="endpoints" element={<LegacyEndpointCatalogRedirect />} />
               <Route path="endpoints/:endpointId" element={<EndpointDetailPage />} />
-              <Route path="playground" element={<RedirectWithSearch to="/work/chat" />} />
               <Route path="entrypoints" element={<ChannelsHubPage />} />
               <Route path="entrypoints/:channelId" element={<ChannelDetailPage />} />
               <Route path="workspaces" element={<WorkspacesHubPage />} />

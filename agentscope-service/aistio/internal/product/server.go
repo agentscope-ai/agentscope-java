@@ -17,6 +17,7 @@ package product
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -39,17 +40,53 @@ type TeamContextLookup func(ctx context.Context, sessionID string) json.RawMessa
 // managed session. It is exposed only through the internal resolve endpoint.
 type ManagedExecutionContextLookup func(ctx context.Context, sessionID string) json.RawMessage
 
+var (
+	// ErrManagedRuntimeFenceConflict means a runtime status patch is malformed or
+	// does not match the immutable fields of the named current Attempt.
+	ErrManagedRuntimeFenceConflict = errors.New("managed runtime fence mismatch")
+	// ErrManagedRuntimeFenceGone means the physical Attempt was failed,
+	// cancelled, requeued, or replaced and its data-plane turn must stop.
+	ErrManagedRuntimeFenceGone = errors.New("managed runtime Attempt is gone")
+)
+
+// ManagedRuntimeFence is captured when one physical managed turn is admitted.
+// Every status patch from that turn carries this exact tuple; callers must not
+// look up and adopt a newer session scope in a finally block.
+type ManagedRuntimeFence struct {
+	AgentTaskID        string `json:"agentTaskId,omitempty"`
+	AttemptID          string `json:"attemptId,omitempty"`
+	DispatchGeneration int64  `json:"dispatchGeneration,omitempty"`
+	TurnID             string `json:"turnId,omitempty"`
+}
+
+func (f ManagedRuntimeFence) Complete() bool {
+	return strings.TrimSpace(f.AgentTaskID) != "" && strings.TrimSpace(f.AttemptID) != "" &&
+		f.DispatchGeneration > 0 && strings.TrimSpace(f.TurnID) != ""
+}
+
+func (f ManagedRuntimeFence) Empty() bool {
+	return strings.TrimSpace(f.AgentTaskID) == "" && strings.TrimSpace(f.AttemptID) == "" &&
+		f.DispatchGeneration == 0 && strings.TrimSpace(f.TurnID) == ""
+}
+
+// ManagedRuntimeFenceValidator reports whether the product session is bound
+// to an AgentTask and verifies its current runtime-store fence. Personal chat
+// sessions return managed=false and continue to accept an empty fence.
+type ManagedRuntimeFenceValidator func(ctx context.Context, sessionID string,
+	fence ManagedRuntimeFence) (managed bool, err error)
+
 // TeamMemberActivityHook is invoked after a product session runtime status
 // patch succeeds. Used to mirror idle/running onto store-backed team members.
 type TeamMemberActivityHook func(ctx context.Context, sessionID, status string)
 
 type Server struct {
-	cfg                    Config
-	db                     *DB
-	vaultKey               []byte
-	teamContextLookup      TeamContextLookup
-	executionContextLookup ManagedExecutionContextLookup
-	teamMemberActivityHook TeamMemberActivityHook
+	cfg                     Config
+	db                      *DB
+	vaultKey                []byte
+	teamContextLookup       TeamContextLookup
+	executionContextLookup  ManagedExecutionContextLookup
+	managedRuntimeValidator ManagedRuntimeFenceValidator
+	teamMemberActivityHook  TeamMemberActivityHook
 }
 
 // SetTeamContextLookup injects the runtime-store TeamContext lookup used by resolve.
@@ -64,6 +101,14 @@ func (s *Server) SetTeamContextLookup(fn TeamContextLookup) {
 func (s *Server) SetManagedExecutionContextLookup(fn ManagedExecutionContextLookup) {
 	if s != nil {
 		s.executionContextLookup = fn
+	}
+}
+
+// SetManagedRuntimeFenceValidator injects the runtime-store authority used to
+// fence product-session status projection from delayed physical turns.
+func (s *Server) SetManagedRuntimeFenceValidator(fn ManagedRuntimeFenceValidator) {
+	if s != nil {
+		s.managedRuntimeValidator = fn
 	}
 }
 

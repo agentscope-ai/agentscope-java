@@ -151,7 +151,7 @@ func (r *executionAttemptRepo) Create(ctx context.Context, execution *controlmod
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE agent_tasks SET current_attempt_id=$2,updated_at=now(),version=version+1 WHERE id=$1`, execution.AgentTaskID, created.ID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE agent_tasks SET current_attempt_id=$2,version=version+1 WHERE id=$1`, execution.AgentTaskID, created.ID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -270,11 +270,13 @@ func (r *executionAttemptRepo) RenewLease(ctx context.Context, id uuid.UUID, lea
 		return current, nil
 	}
 	execution, err := scanExecutionAttempt(r.pool.QueryRow(ctx, `UPDATE execution_attempts SET
-		lease_expires_at=now()+$4::interval,version=version+1,updated_at=now()
-		WHERE id=$1 AND lease_token=$2 AND fencing_token=$3 AND lease_expires_at>now()
-		AND state IN ($5,$6,$7) RETURNING `+executionAttemptColumns,
+		lease_expires_at=now()+$4::interval,heartbeat_at=now(),version=version+1,updated_at=now()
+		WHERE id=$1 AND ((lease_token=$2 AND fencing_token=$3 AND lease_expires_at>now()) OR
+			(backend_kind=$8 AND COALESCE(lease_token,'')='' AND fencing_token=0))
+		AND state IN ($5,$6,$7,$9) RETURNING `+executionAttemptColumns,
 		id, leaseToken, fencingToken, intervalSeconds(ttl), controlmodel.ExecutionAssigned,
-		controlmodel.ExecutionPreparing, controlmodel.ExecutionRunning))
+		controlmodel.ExecutionPreparing, controlmodel.ExecutionRunning, controlmodel.DataPlaneManaged,
+		controlmodel.ExecutionWaiting))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, store.ErrConflict
 	}

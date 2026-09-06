@@ -320,6 +320,8 @@ func CanTransitionExecutionAttempt(from, to ExecutionAttemptState) bool {
 }
 
 // ExecutionAttempt is one immutable attempt identity plus mutable lease/state.
+// SessionRef is a read-time control-plane Session primary key for API/UI
+// diagnostics; unlike SessionID, it is not persisted with the attempt.
 type ExecutionAttempt struct {
 	ID                   uuid.UUID             `json:"id"`
 	AgentTaskID          uuid.UUID             `json:"agentTaskId"`
@@ -341,6 +343,7 @@ type ExecutionAttempt struct {
 	ManagedOwnerRef      string                `json:"managedOwnerRef,omitempty"`
 	ManagedAgentRef      string                `json:"managedAgentRef,omitempty"`
 	SessionID            string                `json:"sessionId,omitempty"`
+	SessionRef           *uuid.UUID            `json:"sessionRef,omitempty"`
 	TurnID               string                `json:"turnId,omitempty"`
 	ProviderSessionID    string                `json:"providerSessionId,omitempty"`
 	WorkspaceKey         string                `json:"workspaceKey,omitempty"`

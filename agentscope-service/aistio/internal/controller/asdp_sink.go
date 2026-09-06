@@ -217,7 +217,8 @@ func (s *SessionEventSink) ApplyExecutionAttemptReport(ctx context.Context, tena
 			commentType = controlmodel.CommentProgress
 		}
 		_, err = service.AddComment(ctx, collaboration.AddCommentRequest{IssueID: task.IssueID,
-			Author: actor, Content: content, Type: commentType, SourceTaskID: &task.ID, SourceAttemptID: &attempt.ID})
+			Author: actor, Content: content, Type: commentType, SourceTaskID: &task.ID, SourceAttemptID: &attempt.ID,
+			SuppressImplicitRouting: action == "progress"})
 	case "complete":
 		_, _, err = service.CompleteTask(ctx, task.ID, store.TaskCompletion{
 			ExpectedVersion: task.Version, AttemptID: attempt.ID, DispatchGeneration: generation,
@@ -531,6 +532,15 @@ func (s *SessionEventSink) ApplyEventReport(ctx context.Context, identity Runtim
 		}
 		for _, event := range sessionEvents {
 			if event.Seq <= latest {
+				// Re-run the idempotent diagnostic projection on replay. This heals
+				// the case where the session event was committed but its RunEvent
+				// projection briefly failed.
+				if toolFailure, ok := observedToolFailure(event); ok {
+					if projectionErr := s.projectToolFailure(ctx, fk, event, toolFailure); projectionErr != nil {
+						logger.Error(projectionErr, "failed to repair tool failure projection", "sessionID", sessionID,
+							"seq", event.Seq, "tool", event.ToolName)
+					}
+				}
 				committed[sessionID] = latest // replay of an already committed prefix
 				continue
 			}
@@ -554,6 +564,14 @@ func (s *SessionEventSink) ApplyEventReport(ctx context.Context, identity Runtim
 				failed[sessionID] = true
 				break
 			}
+			if toolFailure, ok := observedToolFailure(event); ok {
+				if projectionErr := s.projectToolFailure(ctx, fk, event, toolFailure); projectionErr != nil {
+					// Session durability is authoritative and must not be retried just
+					// because an operator-facing diagnostic projection failed.
+					logger.Error(projectionErr, "failed to project tool failure", "sessionID", sessionID,
+						"seq", event.Seq, "tool", event.ToolName)
+				}
+			}
 			latest = event.Seq
 			for {
 				if _, ok := storedSeqs[latest+1]; !ok {
@@ -571,6 +589,67 @@ func (s *SessionEventSink) ApplyEventReport(ctx context.Context, identity Runtim
 		return committed, fmt.Errorf("one or more session event streams were not committed")
 	}
 	return committed, nil
+}
+
+type observedToolFailureDetails struct {
+	State      string
+	ToolCallID string
+}
+
+func observedToolFailure(event ObservedEvent) (observedToolFailureDetails, bool) {
+	if event.EventType != "tool_result" {
+		return observedToolFailureDetails{}, false
+	}
+	var metadata struct {
+		State      string `json:"state"`
+		ToolCallID string `json:"toolCallId"`
+	}
+	_ = json.Unmarshal(event.FrameworkMeta, &metadata)
+	metadata.State = strings.ToLower(strings.TrimSpace(metadata.State))
+	failed := metadata.State == "error" || metadata.State == "denied" || metadata.State == "interrupted"
+	return observedToolFailureDetails{State: metadata.State, ToolCallID: metadata.ToolCallID}, failed
+}
+
+func (s *SessionEventSink) projectToolFailure(ctx context.Context, sessionRef uuid.UUID,
+	event ObservedEvent, failure observedToolFailureDetails) error {
+	session, err := s.Store.Sessions().GetByID(ctx, sessionRef)
+	if err != nil {
+		return err
+	}
+	if session.AgentTaskID == nil {
+		return fmt.Errorf("session %s is not linked to an AgentTask", session.ID)
+	}
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, *session.AgentTaskID)
+	if err != nil {
+		return err
+	}
+	var attemptID *uuid.UUID
+	if task.CurrentAttemptID != nil {
+		if attempt, attemptErr := s.Store.ExecutionAttempts().Get(ctx, *task.CurrentAttemptID); attemptErr == nil &&
+			attempt.SessionID == session.SessionID {
+			attemptID = &attempt.ID
+		}
+	}
+	payload, err := json.Marshal(map[string]any{
+		"toolName": event.ToolName, "toolCallId": failure.ToolCallID, "state": failure.State,
+		"message": event.ToolOutput, "sessionId": session.SessionID, "sessionRef": session.ID,
+		"sessionEventSeq": event.Seq,
+	})
+	if err != nil {
+		return err
+	}
+	idempotencyKey := fmt.Sprintf("agent-tool-failed:%s:%d", session.ID, event.Seq)
+	if failure.ToolCallID != "" {
+		idempotencyKey = fmt.Sprintf("agent-tool-failed:%s:%s", task.ID, failure.ToolCallID)
+	}
+	_, err = s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{
+		RunID: task.OrchestrationRunID, Tenant: task.Tenant, Namespace: task.Namespace,
+		NodeID: &task.RunNodeID, AgentTaskID: &task.ID, AttemptID: attemptID, Type: "agent_tool.failed",
+		Actor: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}, Payload: payload,
+		CausationID: failure.ToolCallID, CorrelationID: task.CorrelationID,
+		IdempotencyKey: idempotencyKey,
+	})
+	return err
 }
 
 // ApplyContextReport writes a Level-4 effective-context snapshot to the Store.

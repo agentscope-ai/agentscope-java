@@ -48,12 +48,44 @@ func (r *collaborationRepo) CreateTeam(ctx context.Context, team *controlmodel.C
 	if err != nil {
 		return nil, err
 	}
-	created, err := scanCollaborationTeam(r.pool.QueryRow(ctx, `INSERT INTO teams
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, teamResourceError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	created, err := scanCollaborationTeam(tx.QueryRow(ctx, `INSERT INTO teams
 		(id,tenant,namespace,name,description,instructions,status,leader_agent_id,policy,version)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1) RETURNING `+collaborationTeamColumns,
 		team.ID, team.Tenant, team.Namespace, team.Name, nullStr(team.Description),
 		nullStr(team.Instructions), team.Status, team.LeaderAgentRef, policy))
-	return created, teamResourceError(err)
+	if err != nil {
+		return nil, teamResourceError(err)
+	}
+	created.Members = make([]controlmodel.CollaborationTeamMember, 0, len(team.Members))
+	for index := range team.Members {
+		member := team.Members[index]
+		if member.AgentRef == "" || strings.TrimSpace(member.Role) == "" || member.AgentRef == team.LeaderAgentRef {
+			return nil, store.ErrConflict
+		}
+		member.ID = nonNilUUIDPG(member.ID)
+		member.TeamID = created.ID
+		member.Tenant, member.Namespace = created.Tenant, created.Namespace
+		stored, memberErr := scanCollaborationMember(tx.QueryRow(ctx, `INSERT INTO team_members
+			(id,tenant,namespace,team_id,agent_id,role,instructions,
+			 capability_requirements,runtime_binding_policy)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING `+collaborationMemberColumns,
+			member.ID, member.Tenant, member.Namespace, member.TeamID, member.AgentRef,
+			member.Role, nullStr(member.Instructions), nullJSON(member.CapabilityRequirements),
+			nullJSON(member.RuntimeBindingPolicy)))
+		if memberErr != nil {
+			return nil, teamResourceError(memberErr)
+		}
+		created.Members = append(created.Members, *stored)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, teamResourceError(err)
+	}
+	return created, nil
 }
 
 func (r *collaborationRepo) GetTeam(ctx context.Context, id uuid.UUID) (*controlmodel.CollaborationTeam, error) {
@@ -549,6 +581,187 @@ func (r *collaborationRepo) CreateApproval(ctx context.Context, approval *contro
 	return created, nil
 }
 
+func (r *collaborationRepo) CreateManagedToolApproval(ctx context.Context, req store.ManagedToolApprovalRequest) (*controlmodel.Approval, *controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
+	if req.Approval == nil {
+		return nil, nil, nil, store.ErrConflict
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	task, err := scanAgentTask(tx.QueryRow(ctx, `SELECT `+agentTaskColumns+` FROM agent_tasks WHERE id=$1 FOR UPDATE`, req.Fence.TaskID))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	attempt, err := scanExecutionAttempt(tx.QueryRow(ctx, `SELECT `+executionAttemptColumns+` FROM execution_attempts WHERE id=$1 FOR UPDATE`, req.Fence.AttemptID))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err = store.ValidateManagedToolApprovalFence(task, attempt, req.Fence); err != nil {
+		return nil, nil, nil, err
+	}
+	if err = store.ValidateManagedToolApproval(req.Approval, task, req.Fence); err != nil {
+		return nil, nil, nil, err
+	}
+	sameToolUse, sameToolUseErr := scanApproval(tx.QueryRow(ctx, `SELECT `+approvalColumns+` FROM approvals
+		WHERE tenant=$1 AND namespace=$2 AND target_type=$3 AND target_ref=$4
+		  AND request->>'kind'=$5 AND request->>'sessionId'=$6
+		  AND request->>'agentTaskId'=$7 AND request->>'attemptId'=$8
+		  AND request->>'dispatchGeneration'=$9 AND request->>'turnId'=$10
+		  AND request->>'toolUseId'=$11 LIMIT 1 FOR UPDATE`,
+		req.Approval.Tenant, req.Approval.Namespace, controlmodel.ApprovalTargetExecutionAttempt,
+		req.Fence.AttemptID.String(), store.RuntimeToolApprovalRequestKind(req.Fence.RuntimeKind()),
+		req.Fence.SessionID, req.Fence.TaskID.String(), req.Fence.AttemptID.String(),
+		fmt.Sprint(req.Fence.DispatchGeneration), req.Fence.TurnID, req.Fence.ToolUseID))
+	if sameToolUseErr == nil {
+		if sameToolUse.ID != req.Approval.ID {
+			return nil, nil, nil, store.ErrConflict
+		}
+		if err = store.ValidateManagedToolApproval(sameToolUse, task, req.Fence); err != nil {
+			return nil, nil, nil, err
+		}
+		return sameToolUse, task, attempt, nil
+	}
+	if !errors.Is(sameToolUseErr, store.ErrNotFound) {
+		return nil, nil, nil, sameToolUseErr
+	}
+	current, loadErr := scanApproval(tx.QueryRow(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE id=$1 FOR UPDATE`, req.Approval.ID))
+	if loadErr == nil {
+		if current.TargetType != req.Approval.TargetType || current.TargetRef != req.Approval.TargetRef ||
+			current.Tenant != req.Approval.Tenant || current.Namespace != req.Approval.Namespace {
+			return nil, nil, nil, store.ErrConflict
+		}
+		if err = store.ValidateManagedToolApproval(current, task, req.Fence); err != nil {
+			return nil, nil, nil, err
+		}
+		return current, task, attempt, nil
+	}
+	if !errors.Is(loadErr, store.ErrNotFound) {
+		return nil, nil, nil, loadErr
+	}
+	if task.Status != controlmodel.AgentTaskRunning || attempt.State != controlmodel.ExecutionRunning {
+		return nil, nil, nil, store.ErrConflict
+	}
+	approval := req.Approval
+	approval.Status = controlmodel.ApprovalPending
+	created, err := scanApproval(tx.QueryRow(ctx, `INSERT INTO approvals
+		(id,tenant,namespace,target_type,target_ref,issue_id,run_id,run_node_id,requested_by_type,
+		 requested_by_ref,approver_ref,status,reason,request,version)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1) RETURNING `+approvalColumns,
+		approval.ID, approval.Tenant, approval.Namespace, approval.TargetType,
+		approval.TargetRef, approval.IssueID, approval.RunID, approval.RunNodeID, approval.RequestedBy.Type,
+		nullStr(approval.RequestedBy.Ref), approval.ApproverRef, approval.Status,
+		nullStr(approval.Reason), nullJSON(approval.Request)))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO inbox_items
+		(id,tenant,namespace,recipient_type,recipient_ref,type,severity,issue_id,
+		 approval_id,actor_type,actor_ref,title,body,details,dedupe_key)
+		VALUES ($1,$2,$3,$4,$5,'approval','attention',$6,$7,$8,$9,'Tool approval requested',$10,$11,$12)`,
+		uuid.New(), created.Tenant, created.Namespace, controlmodel.AssigneeHuman,
+		created.ApproverRef, created.IssueID, created.ID, created.RequestedBy.Type,
+		nullStr(created.RequestedBy.Ref), nullStr(created.Reason), nullJSON(created.Request), "approval:"+created.ID.String()); err != nil {
+		return nil, nil, nil, err
+	}
+	task, err = scanAgentTask(tx.QueryRow(ctx, `UPDATE agent_tasks SET status=$2,wait_reason=$3,
+		version=version+1 WHERE id=$1 AND status=$4 RETURNING `+agentTaskColumns,
+		task.ID, controlmodel.AgentTaskWaiting, "approval:"+created.ID.String(), controlmodel.AgentTaskRunning))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	attempt, err = scanExecutionAttempt(tx.QueryRow(ctx, `UPDATE execution_attempts SET state=$2,
+		version=version+1,updated_at=now() WHERE id=$1 AND state=$3
+		RETURNING `+executionAttemptColumns, attempt.ID, controlmodel.ExecutionWaiting, controlmodel.ExecutionRunning))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	payload, _ := json.Marshal(map[string]any{"approvalId": created.ID, "toolUseId": req.Fence.ToolUseID})
+	if err = appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
+		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &task.RunNodeID,
+		AgentTaskID: &task.ID, AttemptID: &attempt.ID, Type: "attempt.waiting_for_approval",
+		Actor: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}, Payload: payload,
+		IdempotencyKey: "attempt-waiting-approval:" + created.ID.String()}); err != nil {
+		return nil, nil, nil, err
+	}
+	if err = enqueueCollaborationEventTx(ctx, tx, created.Tenant, "approval", created.ID,
+		"approval.requested.v1", created, "approval-requested:"+created.ID.String()); err != nil {
+		return nil, nil, nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, nil, nil, err
+	}
+	return created, task, attempt, nil
+}
+
+func (r *collaborationRepo) ResumeManagedToolApproval(ctx context.Context, approvalID uuid.UUID, fence store.ManagedToolApprovalFence, leaseTTL time.Duration) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
+	if leaseTTL <= 0 {
+		return nil, nil, store.ErrConflict
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Match CreateManagedToolApproval's lock order (Task -> Attempt -> Approval)
+	// so a replay racing with decision delivery cannot deadlock the two transactions.
+	task, err := scanAgentTask(tx.QueryRow(ctx, `SELECT `+agentTaskColumns+` FROM agent_tasks WHERE id=$1 FOR UPDATE`, fence.TaskID))
+	if err != nil {
+		return nil, nil, err
+	}
+	attempt, err := scanExecutionAttempt(tx.QueryRow(ctx, `SELECT `+executionAttemptColumns+` FROM execution_attempts WHERE id=$1 FOR UPDATE`, fence.AttemptID))
+	if err != nil {
+		return nil, nil, err
+	}
+	approval, err := scanApproval(tx.QueryRow(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE id=$1 FOR UPDATE`, approvalID))
+	if err != nil {
+		return nil, nil, err
+	}
+	if approval.Status == controlmodel.ApprovalPending {
+		return nil, nil, store.ErrConflict
+	}
+	if err = store.ValidateManagedToolApprovalFence(task, attempt, fence); err != nil {
+		return nil, nil, err
+	}
+	if err = store.ValidateManagedToolApproval(approval, task, fence); err != nil {
+		return nil, nil, err
+	}
+	if task.Status == controlmodel.AgentTaskRunning && attempt.State == controlmodel.ExecutionRunning {
+		if err = tx.Commit(ctx); err != nil {
+			return nil, nil, err
+		}
+		return task, attempt, nil
+	}
+	if task.Status != controlmodel.AgentTaskWaiting || attempt.State != controlmodel.ExecutionWaiting ||
+		task.WaitReason != "approval:"+approval.ID.String() {
+		return nil, nil, store.ErrConflict
+	}
+	task, err = scanAgentTask(tx.QueryRow(ctx, `UPDATE agent_tasks SET status=$2,wait_reason=NULL,
+		version=version+1 WHERE id=$1 RETURNING `+agentTaskColumns, task.ID, controlmodel.AgentTaskRunning))
+	if err != nil {
+		return nil, nil, err
+	}
+	attempt, err = scanExecutionAttempt(tx.QueryRow(ctx, `UPDATE execution_attempts SET state=$2,
+		lease_expires_at=now()+$3::interval,heartbeat_at=now(),version=version+1,updated_at=now()
+		WHERE id=$1 RETURNING `+executionAttemptColumns, attempt.ID, controlmodel.ExecutionRunning, intervalSeconds(leaseTTL)))
+	if err != nil {
+		return nil, nil, err
+	}
+	payload, _ := json.Marshal(map[string]any{"approvalId": approval.ID, "status": approval.Status})
+	if err = appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
+		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &task.RunNodeID,
+		AgentTaskID: &task.ID, AttemptID: &attempt.ID, Type: "attempt.resumed_after_approval",
+		Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "approval-dispatcher"}, Payload: payload,
+		IdempotencyKey: "attempt-resumed-approval:" + approval.ID.String()}); err != nil {
+		return nil, nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, nil, err
+	}
+	return task, attempt, nil
+}
+
 func (r *collaborationRepo) GetApproval(ctx context.Context, id uuid.UUID) (*controlmodel.Approval, error) {
 	return scanApproval(r.pool.QueryRow(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE id=$1`, id))
 }
@@ -591,7 +804,9 @@ func (r *collaborationRepo) DecideApproval(ctx context.Context, id uuid.UUID, ex
 	if err != nil {
 		return nil, err
 	}
-	if current.Status != controlmodel.ApprovalPending || expectedVersion > 0 && current.Version != expectedVersion || actor.Type != controlmodel.ActorHuman || actor.Ref != current.ApproverRef {
+	actorAllowed := actor.Type == controlmodel.ActorHuman && actor.Ref == current.ApproverRef ||
+		status == controlmodel.ApprovalCancelled && actor.Type == controlmodel.ActorSystem
+	if current.Status != controlmodel.ApprovalPending || expectedVersion > 0 && current.Version != expectedVersion || !actorAllowed {
 		return nil, store.ErrConflict
 	}
 	updated, err := scanApproval(tx.QueryRow(ctx, `UPDATE approvals SET status=$2,decision=$3,

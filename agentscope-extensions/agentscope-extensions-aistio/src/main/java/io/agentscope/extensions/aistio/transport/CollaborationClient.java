@@ -77,6 +77,62 @@ public final class CollaborationClient {
                 "approval.request");
     }
 
+    /** Requests a fenced runtime tool decision and blocks without holding control-plane threads. */
+    public RuntimeApprovalDecision awaitRuntimeToolApproval(
+            String taskId, String token, String toolUseId, String toolName, Object inputPreview) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("kind", "tool_confirmation");
+        request.put("toolUseId", toolUseId);
+        request.put("toolName", toolName);
+        request.put("inputPreview", inputPreview == null ? Map.of() : inputPreview);
+        JsonNode created =
+                taskSend(
+                        "POST",
+                        taskId,
+                        "runtime-approvals",
+                        token,
+                        request,
+                        "runtime-approval.request");
+        String approvalId = created.path("approval").path("id").asText();
+        if (approvalId.isBlank()) {
+            throw new IllegalStateException("runtime-approval.request returned no approval id");
+        }
+        for (; ; ) {
+            JsonNode decision =
+                    taskSend(
+                            "GET",
+                            taskId,
+                            "runtime-approvals/" + path(approvalId) + "/decision",
+                            token,
+                            null,
+                            "runtime-approval.poll");
+            long decisionVersion = decision.path("decisionVersion").asLong();
+            if (decisionVersion > 0) {
+                taskSend(
+                        "POST",
+                        taskId,
+                        "runtime-approvals/" + path(approvalId) + "/ack",
+                        token,
+                        Map.of("decisionVersion", decisionVersion),
+                        "runtime-approval.ack");
+                return new RuntimeApprovalDecision(
+                        approvalId,
+                        decisionVersion,
+                        decision.path("allow").asBoolean(false),
+                        decision.path("denyMessage").asText(""));
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("runtime-approval.poll interrupted", e);
+            }
+        }
+    }
+
+    public record RuntimeApprovalDecision(
+            String approvalId, long decisionVersion, boolean allow, String denyMessage) {}
+
     public JsonNode taskContext(String taskId, String token) {
         return taskSend("GET", taskId, "context", token, null, "task.context");
     }
@@ -89,9 +145,22 @@ public final class CollaborationClient {
     /** Invokes one canonical task-scoped collaboration tool through the control-plane MCP. */
     public JsonNode callTool(
             String taskId, String token, String toolName, Map<String, Object> arguments) {
+        return callTool(taskId, token, toolName, arguments, null);
+    }
+
+    /** Invokes a tool while preserving the framework call identity for diagnostics. */
+    public JsonNode callTool(
+            String taskId,
+            String token,
+            String toolName,
+            Map<String, Object> arguments,
+            String toolCallId) {
         Map<String, Object> scoped =
                 arguments == null ? new LinkedHashMap<>() : new LinkedHashMap<>(arguments);
         scoped.put("taskId", taskId);
+        if (toolCallId != null && !toolCallId.isBlank()) {
+            scoped.put("_toolCallId", toolCallId);
+        }
         return mcp(token, "tools/call", Map.of("name", toolName, "arguments", scoped));
     }
 

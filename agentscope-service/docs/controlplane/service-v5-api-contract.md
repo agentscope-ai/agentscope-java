@@ -96,16 +96,13 @@ namespace. Tenant and namespace remain persistence and routing fields even when 
 
 ## Chat and API testing
 
-- `GET /api/v1/agents/{agentId}/invocation-capabilities`
 - `GET|POST /api/v1/chats`
 - `GET|PATCH /api/v1/chats/{chatId}`
 - `POST /api/v1/chats/{chatId}/turns`
-- `POST /api/v1/playground/invocations`
-- `POST /api/v1/playground/sessions/{sessionId}/turns`
 
 Chat is the user-facing direct conversation surface. A Chat is private to its creator, targets one conversation-capable Agent, and owns title, pin, and archive state independently of its runtime Session. Each turn uses the same runtime policy, Binding validation, instance generation, capacity checks, durable Session event log, and hosted resume behavior as other conversation callers. Chat does not become collaborative Work automatically; users create an Issue explicitly when ownership, status, priority, review, or team visibility is required.
 
-The legacy direct Playground routes remain API-compatible during migration, but the global Playground is removed from navigation. Agent Detail links to Chat. Team and Workflow actions remain Job-oriented. Endpoint Detail retains a context-specific `Test API` surface because Endpoint tests must use the public path and therefore require the real credential, publication state, schema, rate limit, and release.
+Agent Detail links to Chat. Team and Workflow actions remain Job-oriented. Endpoint Detail retains a context-specific `Test API` surface because Endpoint tests use the public path and therefore exercise the real credential, publication state, schema, rate limit, and release.
 
 ## Schema policy
 

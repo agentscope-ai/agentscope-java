@@ -5,6 +5,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -21,6 +22,11 @@ type ControlEventHandler interface {
 }
 
 var ErrControlEventDeferred = errors.New("control event delivery deferred")
+
+type permanentDispatchFailure interface {
+	error
+	DispatchFailureCode() string
+}
 
 // ControlOutboxDispatcher provides durable at-least-once delivery. All
 // replicas may run it because Claim uses SKIP LOCKED and a worker lease.
@@ -116,10 +122,12 @@ type CollaborationEventSink interface {
 // optional websocket/cache-invalidation sink. Durable Activity remains the
 // audit truth even when no realtime sink is configured.
 type CollaborationOutboxHandler struct {
-	Store             store.Store
-	Sink              CollaborationEventSink
-	DispatchAgentTask func(context.Context, uuid.UUID) error
-	ReconcileRun      func(context.Context, uuid.UUID) error
+	Store                    store.Store
+	Sink                     CollaborationEventSink
+	DispatchAgentTask        func(context.Context, uuid.UUID) error
+	DispatchApprovalDecision func(context.Context, uuid.UUID) error
+	DispatchManagedAbort     func(context.Context, uuid.UUID) error
+	ReconcileRun             func(context.Context, uuid.UUID) error
 }
 
 func (h *CollaborationOutboxHandler) HandleControlEvent(ctx context.Context, event *controlmodel.OutboxEvent) error {
@@ -144,10 +152,56 @@ func (h *CollaborationOutboxHandler) HandleControlEvent(ctx context.Context, eve
 			if err := h.DispatchAgentTask(ctx, taskID); err != nil {
 				current, loadErr := h.Store.Collaboration().GetAgentTask(ctx, taskID)
 				if loadErr == nil && current.Status == controlmodel.AgentTaskQueued {
+					var permanent permanentDispatchFailure
+					if errors.As(err, &permanent) {
+						code := permanent.DispatchFailureCode()
+						if code == "" {
+							code = "runtime_dispatch_exhausted"
+						}
+						_, failErr := h.Store.Collaboration().FailAgentTask(
+							ctx, current.ID, current.Version, code, err.Error())
+						if failErr == nil || errors.Is(failErr, store.ErrConflict) {
+							return nil
+						}
+						return failErr
+					}
+					h.recordDispatchDeferred(ctx, current, err)
 					return fmt.Errorf("%w: %v", ErrControlEventDeferred, err)
 				}
 				return err
 			}
+			if event.LastError != "" {
+				h.recordDispatchRecovered(ctx, task, event)
+			}
+		} else if event.LastError != "" && task.Status != controlmodel.AgentTaskFailed &&
+			task.Status != controlmodel.AgentTaskCancelled {
+			// A process may have stopped after dispatch committed but before the
+			// diagnostic was appended or the outbox event was acknowledged.
+			h.recordDispatchRecovered(ctx, task, event)
+		}
+	}
+	if event.EventType == "approval.decided.v1" {
+		if h.DispatchApprovalDecision == nil {
+			return errors.New("Approval decision dispatcher is unavailable")
+		}
+		approvalID, err := uuid.Parse(event.AggregateID)
+		if err != nil {
+			return fmt.Errorf("invalid Approval aggregate ID %q: %w", event.AggregateID, err)
+		}
+		if err = h.DispatchApprovalDecision(ctx, approvalID); err != nil {
+			return err
+		}
+	}
+	if event.EventType == "execution-attempt.abort-managed.v1" {
+		if h.DispatchManagedAbort == nil {
+			return errors.New("managed Attempt abort dispatcher is unavailable")
+		}
+		attemptID, err := uuid.Parse(event.AggregateID)
+		if err != nil {
+			return fmt.Errorf("invalid execution Attempt aggregate ID %q: %w", event.AggregateID, err)
+		}
+		if err = h.DispatchManagedAbort(ctx, attemptID); err != nil {
+			return err
 		}
 	}
 	if h.ReconcileRun != nil && h.Store != nil {
@@ -176,4 +230,48 @@ func (h *CollaborationOutboxHandler) HandleControlEvent(ctx context.Context, eve
 		return h.Sink.PublishCollaborationEvent(ctx, event)
 	}
 	return nil
+}
+
+func (h *CollaborationOutboxHandler) recordDispatchDeferred(ctx context.Context,
+	task *controlmodel.AgentTask, cause error) {
+	if h == nil || h.Store == nil || task == nil || cause == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"message": cause.Error(), "retryable": true, "source": "control_outbox",
+	})
+	if err != nil {
+		return
+	}
+	if _, err = h.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{
+		RunID: task.OrchestrationRunID, Tenant: task.Tenant, Namespace: task.Namespace,
+		NodeID: &task.RunNodeID, AgentTaskID: &task.ID, Type: "agent-task.dispatch_deferred",
+		Actor:   controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "runtime-scheduler"},
+		Payload: payload, CausationID: task.CausationID, CorrelationID: task.CorrelationID,
+		IdempotencyKey: "agent-task-dispatch-deferred:" + task.ID.String(),
+	}); err != nil {
+		log.FromContext(ctx).Error(err, "recording AgentTask dispatch diagnostic", "task", task.ID)
+	}
+}
+
+func (h *CollaborationOutboxHandler) recordDispatchRecovered(ctx context.Context,
+	task *controlmodel.AgentTask, event *controlmodel.OutboxEvent) {
+	if h == nil || h.Store == nil || task == nil || event == nil || event.LastError == "" {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"attempts": event.Attempts, "previousError": event.LastError, "source": "control_outbox",
+	})
+	if err != nil {
+		return
+	}
+	if _, err = h.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{
+		RunID: task.OrchestrationRunID, Tenant: task.Tenant, Namespace: task.Namespace,
+		NodeID: &task.RunNodeID, AgentTaskID: &task.ID, Type: "agent-task.dispatch_recovered",
+		Actor:   controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "runtime-scheduler"},
+		Payload: payload, CausationID: task.CausationID, CorrelationID: task.CorrelationID,
+		IdempotencyKey: "agent-task-dispatch-recovered:" + task.ID.String(),
+	}); err != nil {
+		log.FromContext(ctx).Error(err, "recording AgentTask dispatch recovery", "task", task.ID)
+	}
 }

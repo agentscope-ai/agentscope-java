@@ -1,20 +1,11 @@
 // Copyright 2024-2026 the original author or authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Licensed under the Apache License, Version 2.0.
 
 package codex
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -22,77 +13,44 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider"
 )
 
-func TestDescriptorUsesCodexNativeSkillsDirectory(t *testing.T) {
+func TestDescriptorAdvertisesBidirectionalApproval(t *testing.T) {
 	descriptor := (&Adapter{}).Descriptor()
 	if !descriptor.Skills.Supported || descriptor.Skills.Mode != "native-directory" ||
 		descriptor.Skills.Target != ".agents/skills" {
 		t.Fatalf("skills capability = %+v", descriptor.Skills)
 	}
+	if !descriptor.Approval.Supported || descriptor.Approval.Mode != "control-plane" ||
+		descriptor.CustomArgs.Target != "codex app-server" {
+		t.Fatalf("descriptor=%+v", descriptor)
+	}
 }
 
-func TestBuildArgsNewSession(t *testing.T) {
+func TestBuildArgsStartsAppServer(t *testing.T) {
 	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{Model: "gpt-test"})
-	got := strings.Join(args, " ")
-	want := "exec --json --model gpt-test --skip-git-repo-check --sandbox workspace-write --cd /tmp/work -"
-	if got != want {
+	if got, want := strings.Join(args, " "), "app-server --listen stdio://"; got != want {
 		t.Fatalf("args=%q, want %q", got, want)
 	}
 }
 
-func TestBuildArgsCanRequireGitRepositoryExplicitly(t *testing.T) {
-	requireGit := false
-	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{SkipGitRepoCheck: &requireGit})
-	if got := strings.Join(args, " "); strings.Contains(got, "--skip-git-repo-check") {
-		t.Fatalf("explicit Git repository policy was ignored: %q", got)
-	}
-}
-
-func TestBuildArgsUsesPortableDefinitionModel(t *testing.T) {
-	args := buildArgs(provider.Request{
-		Workspace: "/tmp/work", Definition: &provider.AgentDefinition{Model: "agent-model"},
-	}, configuration{Model: "profile-model"})
-	if got := strings.Join(args, " "); !strings.Contains(got, "--model agent-model") || strings.Contains(got, "profile-model") {
-		t.Fatalf("args=%q", got)
-	}
-}
-
-func TestBuildArgsAppliesExecutionOverridesAndSafeCustomArgs(t *testing.T) {
-	args := buildArgs(provider.Request{Workspace: "/tmp/work", CustomArgs: []string{"--profile", "work"}},
-		configuration{ReasoningEffort: "high", ServiceTier: "priority"})
+func TestBuildArgsAppliesProcessConfig(t *testing.T) {
+	args := buildArgs(provider.Request{Workspace: "/tmp/work", CollaborationMCP: "https://control.example/mcp/collaboration",
+		TaskToken: "secret", CustomArgs: []string{"--profile", "legacy-work", "--verbose"}}, configuration{Profile: "work"})
 	got := strings.Join(args, " ")
-	for _, expected := range []string{`model_reasoning_effort="high"`, `service_tier="priority"`, "--profile work"} {
+	if !strings.HasPrefix(got, "--profile legacy-work app-server --listen stdio://") {
+		t.Fatalf("profile must precede app-server: %q", got)
+	}
+	for _, expected := range []string{
+		`mcp_servers.agentscope_collaboration.url="https://control.example/mcp/collaboration"`,
+		`mcp_servers.agentscope_collaboration.bearer_token_env_var="AGENTSCOPE_TASK_TOKEN"`,
+		`mcp_servers.agentscope_collaboration.default_tools_approval_mode="approve"`,
+		"sandbox_workspace_write.network_access=true", "--verbose",
+	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("args=%q missing %q", got, expected)
 		}
 	}
-}
-
-func TestBuildArgsResume(t *testing.T) {
-	args := buildArgs(provider.Request{Workspace: "/tmp/work", ProviderSessionID: "thread-1"}, configuration{})
-	got := strings.Join(args, " ")
-	if got != "exec resume --json --skip-git-repo-check thread-1 -" {
-		t.Fatalf("args=%q", got)
-	}
-}
-
-func TestBuildArgsInjectsTaskScopedCollaborationMCP(t *testing.T) {
-	args := buildArgs(provider.Request{Workspace: "/tmp/work", CollaborationMCP: "https://control.example/mcp/collaboration", TaskToken: "secret"}, configuration{})
-	got := strings.Join(args, " ")
-	if !strings.Contains(got, `mcp_servers.agentscope_collaboration.url="https://control.example/mcp/collaboration"`) ||
-		!strings.Contains(got, `mcp_servers.agentscope_collaboration.bearer_token_env_var="AGENTSCOPE_TASK_TOKEN"`) ||
-		!strings.Contains(got, `mcp_servers.agentscope_collaboration.default_tools_approval_mode="approve"`) ||
-		strings.Contains(got, "secret") {
-		t.Fatalf("task MCP configuration is unsafe or incomplete: %q", got)
-	}
-}
-
-func TestBuildArgsAllowsHostedAgentToReachTaskScopedCollaboration(t *testing.T) {
-	args := buildArgs(provider.Request{Workspace: "/tmp/work", CollaborationMCP: "http://127.0.0.1:18080/mcp/collaboration",
-		TaskToken: "secret"}, configuration{})
-	got := strings.Join(args, " ")
-	if !strings.Contains(got, "sandbox_workspace_write.network_access=true") ||
-		!strings.Contains(got, "--sandbox workspace-write") || strings.Contains(got, "danger-full-access") {
-		t.Fatalf("hosted collaboration should retain workspace isolation with network access: %q", got)
+	if strings.Contains(got, "secret") || strings.Contains(got, "danger-full-access") {
+		t.Fatalf("task MCP configuration is unsafe: %q", got)
 	}
 }
 
@@ -104,46 +62,114 @@ func TestBuildArgsDoesNotRelaxExplicitReadOnlySandbox(t *testing.T) {
 	}
 }
 
-func TestConsumeJSONL(t *testing.T) {
-	input := strings.Join([]string{
-		`{"type":"thread.started","thread_id":"thread-1"}`,
-		`{"type":"item.completed","item":{"type":"agent_message","text":"done"}}`,
+func TestRunAppServerSessionBridgesCommandApprovalAndCapturesFinalMessage(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"codex","version":"test"}}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}`,
+		`{"jsonrpc":"2.0","id":9001,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1","command":"date","cwd":"/tmp/work","reason":"run command","startedAtMs":1}}`,
+		`{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-1","status":"inProgress","items":[]}}}`,
+		`{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-1","item":{"type":"agentMessage","id":"message-1","text":"done"}}}`,
+		`{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","status":"completed","items":[]}}}`,
 	}, "\n")
-	result := &provider.Result{}
-	var eventTypes []string
-	if err := consumeJSONL(strings.NewReader(input), result, func(event provider.Event) error {
-		eventTypes = append(eventTypes, event.Type)
+	var requests bytes.Buffer
+	var events []string
+	client := newAppServerClient(context.Background(), &requests, strings.NewReader(responses), func(event provider.Event) error {
+		events = append(events, event.Type)
 		return nil
-	}); err != nil {
+	}, func(_ context.Context, request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+		if request.ToolUseID != "item-1" || request.ToolName != "shell" || request.InputSHA256 == "" {
+			t.Fatalf("approval request=%+v", request)
+		}
+		return provider.ToolApprovalDecision{Allow: true}, nil
+	})
+	result, err := runAppServerSession(client, provider.Request{Workspace: "/tmp/work", Prompt: "do it",
+		Definition: &provider.AgentDefinition{System: "Be precise.", Model: "gpt-test"}},
+		configuration{ReasoningEffort: "high", ServiceTier: "priority"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ProviderSessionID != "thread-1" || result.Output != "done" || len(eventTypes) != 2 {
-		t.Fatalf("result=%+v events=%v", result, eventTypes)
+	if result.ProviderSessionID != "thread-1" || result.Output != "done" {
+		t.Fatalf("result=%+v", result)
+	}
+	got := requests.String()
+	for _, expected := range []string{`"method":"initialize"`, `"method":"initialized"`,
+		`"method":"thread/start"`, `"approvalPolicy":"on-request"`, `"approvalsReviewer":"user"`, `"developerInstructions":"Be precise."`,
+		`"model":"gpt-test"`, `"method":"turn/start"`, `"effort":"high"`, `"decision":"accept"`} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("requests=%s missing %s", got, expected)
+		}
+	}
+	if len(events) != 3 || events[0] != "item/commandExecution/requestApproval" {
+		t.Fatalf("events=%v", events)
 	}
 }
 
-func TestConsumeJSONLReturnsPermissionFailureForBlockedOutcome(t *testing.T) {
-	input := strings.Join([]string{
-		`{"type":"thread.started","thread_id":"thread-1"}`,
-		`{"type":"item.completed","item":{"type":"mcp_tool_call","status":"failed","error":{"message":"MCP tool call requires approval, but approval policy is never"}}}`,
-		`{"type":"item.completed","item":{"type":"agent_message","text":"无法执行任务，因为控制面权限被拒绝。"}}`,
+func TestRunAppServerSessionResumesThreadAndDeclinesWithoutApprover(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}`,
+		`{"jsonrpc":"2.0","id":77,"method":"item/fileChange/requestApproval","params":{"threadId":"thread-1","turnId":"turn-2","itemId":"patch-1","reason":"write","startedAtMs":1}}`,
+		`{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-2","status":"inProgress","items":[]}}}`,
+		`{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-2","status":"completed","items":[{"type":"agentMessage","id":"m","text":"continued"}]}}}`,
 	}, "\n")
-	result := &provider.Result{}
-	err := consumeJSONL(strings.NewReader(input), result, nil)
-	var executionError *provider.ExecutionError
-	if !errors.As(err, &executionError) || executionError.Code != "provider_permission_denied" {
-		t.Fatalf("error=%v, want provider_permission_denied", err)
+	var requests bytes.Buffer
+	client := newAppServerClient(context.Background(), &requests, strings.NewReader(responses), nil, nil)
+	result, err := runAppServerSession(client, provider.Request{Workspace: "/tmp/work", Prompt: "continue",
+		ProviderSessionID: "thread-1"}, configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := requests.String()
+	if !strings.Contains(got, `"method":"thread/resume"`) || !strings.Contains(got, `"excludeTurns":true`) ||
+		!strings.Contains(got, `"decision":"decline"`) ||
+		result.Output != "continued" {
+		t.Fatalf("requests=%s result=%+v", got, result)
 	}
 }
 
-func TestConsumeJSONLAllowsSuccessfulFallbackAfterPermissionFailure(t *testing.T) {
-	input := strings.Join([]string{
-		`{"type":"item.completed","item":{"type":"mcp_tool_call","status":"failed","error":{"message":"MCP tool call requires approval"}}}`,
-		`{"type":"item.completed","item":{"type":"agent_message","text":"任务已通过受限 CLI 成功完成。"}}`,
+func TestAppServerPermissionsApprovalReturnsRequestedSubset(t *testing.T) {
+	var responses bytes.Buffer
+	client := newAppServerClient(context.Background(), &responses, strings.NewReader(""), nil,
+		func(context.Context, provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+			return provider.ToolApprovalDecision{Allow: true}, nil
+		})
+	message, err := decodeRPCMessage([]byte(`{"jsonrpc":"2.0","id":"approval-1","method":"item/permissions/requestApproval","params":{"itemId":"permission-1","permissions":{"network":{"enabled":true}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = client.handleServerRequest(message); err != nil {
+		t.Fatal(err)
+	}
+	got := responses.String()
+	if !strings.Contains(got, `"id":"approval-1"`) || !strings.Contains(got, `"network":{"enabled":true}`) ||
+		!strings.Contains(got, `"scope":"turn"`) {
+		t.Fatalf("permission response=%s", got)
+	}
+}
+
+func TestAppServerUnknownRequestGetsProtocolErrorInsteadOfHanging(t *testing.T) {
+	var responses bytes.Buffer
+	client := newAppServerClient(context.Background(), &responses, strings.NewReader(""), nil, nil)
+	message, _ := decodeRPCMessage([]byte(`{"jsonrpc":"2.0","id":42,"method":"item/tool/requestUserInput","params":{}}`))
+	if err := client.handleServerRequest(message); err != nil {
+		t.Fatal(err)
+	}
+	if got := responses.String(); !strings.Contains(got, `"code":-32601`) || !strings.Contains(got, `"id":42`) {
+		t.Fatalf("response=%s", got)
+	}
+}
+
+func TestRunAppServerSessionReturnsFailedTurn(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}`,
+		`{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-1","status":"inProgress","items":[]}}}`,
+		`{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","status":"failed","error":{"message":"model unavailable"},"items":[]}}}`,
 	}, "\n")
-	result := &provider.Result{}
-	if err := consumeJSONL(strings.NewReader(input), result, nil); err != nil {
-		t.Fatalf("successful fallback should remain successful: %v", err)
+	client := newAppServerClient(context.Background(), &bytes.Buffer{}, strings.NewReader(responses), nil, nil)
+	_, err := runAppServerSession(client, provider.Request{Workspace: "/tmp/work", Prompt: "task"}, configuration{})
+	if err == nil || !strings.Contains(err.Error(), "model unavailable") {
+		t.Fatalf("error=%v", err)
 	}
 }
 

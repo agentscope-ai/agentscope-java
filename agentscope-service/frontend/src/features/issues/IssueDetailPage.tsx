@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import {
@@ -59,7 +59,7 @@ import {
   type Comment,
   type IssueActivity,
 } from "@/api/collaboration";
-import { listRuns } from "@/api/orchestration";
+import { listRunEvents, listRuns, type RunEvent } from "@/api/orchestration";
 import { useControlPlaneScope } from "@/app/ScopeContext";
 import { AgentPicker } from "@/components/AgentPicker";
 import {
@@ -230,6 +230,28 @@ function CommentBody({ entry, identities }: { entry: Comment; identities: Entity
   );
 }
 
+function toolFailures(events: RunEvent[] | undefined) {
+  return (events || []).filter((event) => event.type === "agent_tool.failed");
+}
+
+function dispatchDeferrals(events: RunEvent[] | undefined) {
+  return (events || []).filter((event) => event.type === "agent-task.dispatch_deferred");
+}
+
+function toolFailureMessage(event: RunEvent | undefined): string {
+  if (!event?.payload || typeof event.payload !== "object") return "Tool call failed";
+  const payload = event.payload as Record<string, unknown>;
+  const tool = String(payload.toolName || "tool");
+  const message = String(payload.message || "Tool call failed");
+  return `${tool}: ${message}`;
+}
+
+function dispatchDeferredMessage(event: RunEvent | undefined): string {
+  if (!event?.payload || typeof event.payload !== "object") return "Agent task dispatch was deferred";
+  const payload = event.payload as Record<string, unknown>;
+  return String(payload.message || "Agent task dispatch was deferred");
+}
+
 export default function IssueDetailPage() {
   const { issueId = "" } = useParams();
   const scope = useControlPlaneScope();
@@ -261,10 +283,15 @@ export default function IssueDetailPage() {
   const activities = useQuery({ queryKey: ["issue-activity", issueId], queryFn: () => listIssueActivity(issueId), enabled: !!issueId, refetchInterval: 5000 });
   const subscribers = useQuery({ queryKey: ["issue-subscribers", issueId], queryFn: () => listIssueSubscribers(issueId), enabled: !!issueId });
   const artifacts = useQuery({ queryKey: ["issue-artifacts", issueId], queryFn: () => listIssueArtifacts(issueId), enabled: !!issueId });
-  const tasks = useQuery({ queryKey: ["tasks", scope.tenant, scope.namespace], queryFn: () => listTasks(scope.tenant, scope.namespace), enabled: !!issueId });
+  const tasks = useQuery({ queryKey: ["tasks", scope.tenant, scope.namespace], queryFn: () => listTasks(scope.tenant, scope.namespace), enabled: !!issueId, refetchInterval: 3000 });
   const summary = useQuery({ queryKey: ["issue-summary", issueId], queryFn: () => getIssueSummary(issueId), enabled: !!issueId });
   const children = useQuery({ queryKey: ["issue-children", issueId], queryFn: () => listChildIssues(scope.tenant, scope.namespace, issueId), enabled: !!issueId });
   const runs = useQuery({ queryKey: ["issue-runs", issueId], queryFn: () => listRuns(scope.tenant, scope.namespace, issueId), enabled: !!issueId, refetchInterval: 3000 });
+  const runEvents = useQueries({ queries: (runs.data?.runs || []).map((run) => ({
+    queryKey: ["run-events", run.id],
+    queryFn: () => listRunEvents(run.id),
+    refetchInterval: ["succeeded", "partial_succeeded", "failed", "cancelled"].includes(run.state) ? false : 3000,
+  })) });
 
   const item = issue.data?.issue;
   useEffect(() => {
@@ -372,10 +399,15 @@ export default function IssueDetailPage() {
     },
   });
 
-  const issueTasks = (tasks.data?.items || []).filter((task) => task.issueId === issueId);
-  const issueExecutions = (runs.data?.runs || []).map((run) => ({
+  const allTasks = tasks.data?.items || [];
+  const issueTasks = allTasks.filter((task) => task.issueId === issueId);
+  const issueExecutions = (runs.data?.runs || []).map((run, index) => ({
     run,
     tasks: issueTasks.filter((task) => task.orchestrationRunId === run.id),
+    toolFailures: toolFailures(runEvents[index]?.data?.events),
+    dispatchDeferrals: dispatchDeferrals(runEvents[index]?.data?.events).filter((event) =>
+      allTasks.some((task) => task.id === event.agentTaskId && task.status === "queued"),
+    ),
   }));
   const identities = useEntityIdentities([
     { type: item?.assigneeType, ref: item?.assigneeRef },
@@ -454,8 +486,8 @@ export default function IssueDetailPage() {
     <div className="min-h-full bg-white">
       <div className="sticky top-0 z-20 flex min-h-12 items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-6">
         <div className="flex min-w-0 items-center gap-2 text-sm">
-          <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0" title="Back to issues">
-            <Link to={scope.scopedPath("/work/issues")}><ArrowLeft className="h-4 w-4" /></Link>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" title="Back to previous page" aria-label="Back to previous page" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <span className="hidden text-muted-foreground sm:inline">Issues</span><span className="hidden text-slate-300 sm:inline">/</span>
           <span className="truncate font-medium">{item.identifier || item.id.slice(0, 8)}</span>
@@ -550,7 +582,7 @@ export default function IssueDetailPage() {
 
               <section className="border-t border-slate-200 pt-5"><h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900"><GitPullRequest className="h-4 w-4" /> Source</h2>{item.sourceRef ? <div className="rounded-lg bg-white p-3 text-sm"><div className="text-xs font-medium capitalize text-muted-foreground">{item.sourceType?.replace(/_/g, " ") || "External work"}</div><EntityIdentityText identities={identities} type={item.sourceType} entityRef={item.sourceRef} secondary className="mt-1 flex" /></div> : <p className="text-xs leading-5 text-muted-foreground">No linked external issue or pull request.</p>}</section>
 
-              <details className="group border-t border-slate-200 pt-5" open><summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-slate-900"><span className="flex items-center gap-2"><Clock3 className="h-4 w-4" /> Executions</span><span className="text-xs font-normal text-muted-foreground">{issueExecutions.length} execution{issueExecutions.length === 1 ? "" : "s"}</span></summary><div className="mt-3 space-y-2">{issueExecutions.map(({ run, tasks: runTasks }, index) => <Link key={run.id} to={scope.scopedPath(`/work/executions/${run.id}`)} className="block rounded-lg bg-white p-3 text-xs hover:ring-1 hover:ring-slate-200"><span className="flex items-center justify-between gap-2"><span className="min-w-0"><span className="block truncate font-medium">Execution #{issueExecutions.length - index}</span><span className="text-muted-foreground">{run.mode} · {runTasks.length} agent step{runTasks.length === 1 ? "" : "s"} · {formatRelative(run.createdAt)}</span></span><Badge tone={run.state === "succeeded" || run.state === "partial_succeeded" ? "success" : run.state === "failed" || run.state === "cancelled" ? "danger" : "info"}>{run.state.replace(/_/g, " ")}</Badge></span>{!!runTasks.length && <span className="mt-2 flex flex-wrap gap-1.5">{runTasks.slice(0, 3).map((task) => <span key={task.id} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600"><EntityIdentityText identities={identities} type="agent" entityRef={task.agentId} /> · {task.status}</span>)}{runTasks.length > 3 && <span className="px-1 py-1 text-[11px] text-muted-foreground">+{runTasks.length - 3} more</span>}</span>}</Link>)}{!issueExecutions.length && <p className="text-xs text-muted-foreground">No execution has started yet.</p>}</div></details>
+              <details className="group border-t border-slate-200 pt-5" open><summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-slate-900"><span className="flex items-center gap-2"><Clock3 className="h-4 w-4" /> Executions</span><span className="text-xs font-normal text-muted-foreground">{issueExecutions.length} execution{issueExecutions.length === 1 ? "" : "s"}</span></summary><div className="mt-3 space-y-2">{issueExecutions.map(({ run, tasks: runTasks, toolFailures: failures, dispatchDeferrals: deferrals }, index) => <Link key={run.id} to={scope.scopedPath(`/work/executions/${run.id}`)} className={cn("block rounded-lg bg-white p-3 text-xs hover:ring-1", failures.length ? "ring-1 ring-red-200 hover:ring-red-300" : deferrals.length ? "ring-1 ring-amber-200 hover:ring-amber-300" : "hover:ring-slate-200")}><span className="flex items-center justify-between gap-2"><span className="min-w-0"><span className="block truncate font-medium">Execution #{issueExecutions.length - index}</span><span className="text-muted-foreground">{run.mode} · {runTasks.length} agent step{runTasks.length === 1 ? "" : "s"} · {formatRelative(run.createdAt)}</span></span><span className="flex shrink-0 flex-col items-end gap-1">{failures.length > 0 && <Badge tone="danger">{failures.length} tool failure{failures.length === 1 ? "" : "s"}</Badge>}{deferrals.length > 0 && <Badge tone="warning">dispatch deferred</Badge>}<Badge tone={run.state === "succeeded" || run.state === "partial_succeeded" ? "success" : run.state === "failed" || run.state === "cancelled" ? "danger" : "info"}>{run.state.replace(/_/g, " ")}</Badge></span></span>{failures.length > 0 && <span className="mt-2 block truncate text-red-700" title={toolFailureMessage(failures[0])}>First failure: {toolFailureMessage(failures[0])}</span>}{deferrals.length > 0 && <span className="mt-2 block truncate text-amber-700" title={dispatchDeferredMessage(deferrals[0])}>Dispatch delayed: {dispatchDeferredMessage(deferrals[0])}</span>}{!!runTasks.length && <span className="mt-2 flex flex-wrap gap-1.5">{runTasks.slice(0, 3).map((task) => <span key={task.id} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600"><EntityIdentityText identities={identities} type="agent" entityRef={task.agentId} /> · {task.status}</span>)}{runTasks.length > 3 && <span className="px-1 py-1 text-[11px] text-muted-foreground">+{runTasks.length - 3} more</span>}</span>}</Link>)}{!issueExecutions.length && <p className="text-xs text-muted-foreground">No execution has started yet.</p>}</div></details>
 
               <details className="group border-t border-slate-200 pt-5" open><summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-slate-900"><span className="flex items-center gap-2"><Paperclip className="h-4 w-4" /> Artifacts</span><span className="text-xs font-normal text-muted-foreground">{artifacts.data?.items.length || 0}</span></summary><div className="mt-3 space-y-2">{(artifacts.data?.items || []).map((entry) => <div key={entry.id} className="flex items-center gap-2 rounded-lg bg-white p-2.5 text-xs"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-100"><File className="h-4 w-4 text-slate-500" /></span><span className="min-w-0 flex-1"><span className="block truncate font-medium" title={entry.filename}>{entry.filename}</span><span className="text-muted-foreground">{formatBytes(entry.sizeBytes)} · {formatRelative(entry.createdAt)}</span></span></div>)}{!artifacts.data?.items.length && <p className="text-xs text-muted-foreground">No files attached.</p>}</div></details>
 

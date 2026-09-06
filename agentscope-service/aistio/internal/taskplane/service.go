@@ -82,6 +82,15 @@ func (s *Service) dispatchHostedCandidate(ctx context.Context, taskID uuid.UUID,
 	if binding.Kind != controlmodel.DataPlaneHostedRuntime {
 		return nil, nil, fmt.Errorf("hosted dispatch requires a hosted-runtime binding")
 	}
+	// Generic AgentTasks still need a physical session/turn identity. It is not a
+	// product chat session; it is the immutable continuation fence used by HITL,
+	// retries, and diagnostics.
+	if conversation.SessionID == "" {
+		conversation.SessionID = uuid.NewString()
+	}
+	if conversation.TurnID == "" {
+		conversation.TurnID = uuid.NewString()
+	}
 	if err := binding.Validate(); err != nil {
 		return nil, nil, err
 	}

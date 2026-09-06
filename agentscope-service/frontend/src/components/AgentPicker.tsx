@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, X } from 'lucide-react';
 import { listAgents, listCatalogBindings, type AgentDefinition } from '@/api/agents';
 import { useControlPlaneScope } from '@/app/ScopeContext';
 import { Input } from '@/components/ui/input';
@@ -206,6 +206,147 @@ export function AgentPicker({
                 </span>
               </span>
               {agent.id === value && <Check className="h-4 w-4 shrink-0 text-primary" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type AgentMultiPickerProps = {
+  value: string[];
+  onChange: (agentIds: string[]) => void;
+  disabled?: boolean;
+  excludeIds?: string[];
+  className?: string;
+  searchPlaceholder?: string;
+  'aria-label'?: string;
+};
+
+/**
+ * Selects several registered Agents in one compact combobox. Selected Agents
+ * stay visible as removable chips, while the search only offers the remaining
+ * active Agents.
+ */
+export function AgentMultiPicker({
+  value,
+  onChange,
+  disabled,
+  excludeIds = [],
+  className,
+  searchPlaceholder = 'Search and add Agents…',
+  'aria-label': ariaLabel = 'Agents',
+}: AgentMultiPickerProps) {
+  const agents = useCatalogAgents();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = useId();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [highlighted, setHighlighted] = useState(0);
+  const excluded = useMemo(() => new Set([...excludeIds, ...value]), [excludeIds, value]);
+  const selected = value.map(agentId => ({
+    id: agentId,
+    label: agentDisplayName(agents.data?.find(agent => agent.id === agentId), agentId),
+  }));
+  const options = useMemo(
+    () => filterAgentOptions(agents.data ?? [], query, false, '', excluded),
+    [agents.data, excluded, query],
+  );
+
+  const choose = (agent: AgentDefinition) => {
+    onChange([...value, agent.id]);
+    setQuery('');
+    setHighlighted(0);
+    setOpen(true);
+    inputRef.current?.focus();
+  };
+  const remove = (agentId: string) => onChange(value.filter(item => item !== agentId));
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setOpen(true);
+      setHighlighted(current => Math.min(current + 1, Math.max(0, options.length - 1)));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setHighlighted(current => Math.max(0, current - 1));
+    } else if (event.key === 'Enter' && open && options[highlighted]) {
+      event.preventDefault();
+      choose(options[highlighted]);
+    } else if (event.key === 'Backspace' && !query && value.length) {
+      remove(value[value.length - 1]);
+    } else if (event.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div
+      className={cn('relative min-w-0', className)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <div
+        className={cn(
+          'flex min-h-11 flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm shadow-sm focus-within:ring-2 focus-within:ring-ring',
+          disabled && 'cursor-not-allowed opacity-50',
+        )}
+        onClick={() => inputRef.current?.focus()}
+      >
+        {selected.map(agent => (
+          <span key={agent.id} className="inline-flex max-w-full items-center gap-1 rounded-full border bg-muted px-2.5 py-1 text-xs font-medium">
+            <span className="truncate">{agent.label}</span>
+            <button
+              type="button"
+              className="rounded-full text-muted-foreground hover:text-foreground"
+              onClick={(event) => { event.stopPropagation(); remove(agent.id); }}
+              disabled={disabled}
+              aria-label={`Remove ${agent.label}`}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          role="combobox"
+          value={query}
+          onFocus={() => setOpen(true)}
+          onChange={(event) => { setQuery(event.target.value); setOpen(true); setHighlighted(0); }}
+          onKeyDown={onKeyDown}
+          placeholder={value.length ? 'Add another Agent…' : agents.isLoading ? 'Loading Agents…' : searchPlaceholder}
+          disabled={disabled || agents.isLoading}
+          aria-label={ariaLabel}
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-autocomplete="list"
+          className="min-w-44 flex-1 border-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground"
+        />
+        <ChevronDown className={cn('ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </div>
+      {open && (
+        <div id={listboxId} role="listbox" aria-multiselectable="true" className="absolute z-50 mt-1 max-h-64 w-full min-w-64 overflow-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg">
+          {agents.isError && <div className="px-3 py-2 text-sm text-destructive">Failed to load registered Agents.</div>}
+          {!agents.isLoading && !agents.isError && options.length === 0 && (
+            <div className="px-3 py-2 text-sm text-muted-foreground">{query ? 'No matching active Agent.' : 'All available Agents are selected.'}</div>
+          )}
+          {options.map((agent, index) => (
+            <button
+              key={agent.id}
+              type="button"
+              role="option"
+              aria-selected="false"
+              className={cn('flex w-full items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-accent', index === highlighted && 'bg-accent')}
+              onMouseEnter={() => setHighlighted(index)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => choose(agent)}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{agentDisplayName(agent)}</span>
+                <span className="block truncate text-xs text-muted-foreground">{agent.agentKey || agent.id.slice(0, 8)}{agent.runtimeKind ? ` · ${agent.runtimeKind}` : ''}</span>
+              </span>
             </button>
           ))}
         </div>

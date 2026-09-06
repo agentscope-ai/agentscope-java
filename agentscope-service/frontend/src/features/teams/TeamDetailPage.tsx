@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { getRoles } from '@/api/auth';
 import {
   addTeamMember,
@@ -26,7 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input, Textarea } from '@/components/ui/input';
 import { formatRelative } from '@/lib/format';
 
-const tabs = ['overview', 'members', 'coordination', 'runtime', 'endpoints', 'activity'] as const;
+const tabs = ['overview', 'members', 'coordination', 'endpoints', 'activity'] as const;
 type Tab = typeof tabs[number];
 
 function tone(state: string): 'success' | 'warning' | 'danger' | 'default' {
@@ -95,6 +95,7 @@ function CoordinationEditor({ team, canEdit, onSaved }: { team: Team; canEdit: b
 
 export default function TeamDetailPage() {
   const { teamId = '' } = useParams();
+  const navigate = useNavigate();
   const scope = useControlPlaneScope();
   const [params, setParams] = useSearchParams();
   const requested = params.get('tab');
@@ -102,7 +103,7 @@ export default function TeamDetailPage() {
   const roles = getRoles().map(role => role.toLowerCase());
   const canEdit = roles.includes('admin') || roles.includes('agent_developer');
   const queryClient = useQueryClient();
-  const detail = useQuery({ queryKey: ['team-overview', teamId], queryFn: () => getTeamOverview(teamId), enabled: !!teamId, refetchInterval: tab === 'overview' || tab === 'runtime' ? 10_000 : false });
+  const detail = useQuery({ queryKey: ['team-overview', teamId], queryFn: () => getTeamOverview(teamId), enabled: !!teamId, refetchInterval: tab === 'overview' ? 10_000 : false });
   const tasks = useQuery({ queryKey: ['team-tasks', scope.tenant, scope.namespace, teamId], queryFn: () => listTeamTasks(scope.tenant, scope.namespace, teamId), enabled: !!teamId && tab === 'activity' });
   const toggleStatus = useMutation({ mutationFn: () => { const team = detail.data?.team; if (!team) throw new Error('Team is unavailable'); return updateTeam(team.id, { name: team.name, description: team.description ?? '', instructions: team.instructions ?? '', leaderAgentId: team.leaderAgentId, policy: team.policy ?? {}, status: team.status === 'active' ? 'disabled' : 'active', expectedVersion: team.version }); }, onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['team-overview', teamId] }) });
   if (detail.isLoading) return <Page><p className="text-sm text-muted-foreground">Loading Team…</p></Page>;
@@ -111,17 +112,15 @@ export default function TeamDetailPage() {
   const policy = (team.policy ?? {}) as Record<string, unknown>;
   const selectTab = (next: Tab) => { const updated = new URLSearchParams(params); updated.set('tab', next); setParams(updated, { replace: true }); };
   return <Page className="max-w-[1320px]">
-    <Link className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground" to={scope.scopedPath('/agent-center/teams')}><ArrowLeft className="mr-2 h-4 w-4" />Teams</Link>
+    <button type="button" className="inline-flex cursor-pointer items-center self-start border-0 bg-transparent p-0 text-sm text-muted-foreground hover:text-foreground" aria-label="Back to previous page" title="Back to previous page" onClick={() => navigate(-1)}><ArrowLeft className="mr-2 h-4 w-4" />Back</button>
     <PageHeader title={<span className="flex flex-wrap items-center gap-3">{team.name}<Badge>{team.status}</Badge><Badge tone={tone(overview.readiness)}>{overview.readiness}</Badge></span>} description={team.description || 'Persistent leader-first multi-Agent service.'} actions={<>{canEdit && <Button variant="outline" disabled={toggleStatus.isPending} onClick={() => toggleStatus.mutate()}>{team.status === 'active' ? 'Disable' : 'Enable'}</Button>}<span className="font-mono text-xs text-muted-foreground">{team.id}</span></>} />
     <nav className="flex gap-1 overflow-x-auto border-b">{tabs.map(item => <button key={item} className={`border-b-2 px-4 py-3 text-sm capitalize ${tab === item ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground'}`} onClick={() => selectTab(item)}>{item === 'endpoints' ? 'Published APIs' : item}</button>)}</nav>
 
-    {tab === 'overview' && <div className="space-y-6"><div className="grid gap-4 md:grid-cols-4"><Metric label="Readiness" value={overview.readiness} help={overview.reason} /><Metric label="Roster" value={overview.members.length} help="Leader and worker Agents" /><Metric label="Active tasks" value={overview.runs.activeTasks} help={`${overview.runs.total} Team runs recorded`} /><Metric label="Published APIs" value={overview.endpoints.published} help={`${overview.endpoints.total} configured`} /></div><Card><CardHeader><CardTitle>Leader</CardTitle><CardDescription>All new Team work starts here. The leader decides whether and how to delegate.</CardDescription></CardHeader><CardContent><div className="flex items-center justify-between gap-4"><AgentIdentity agentId={team.leaderAgentId} /><Badge tone={tone(overview.members[0]?.readiness.state || 'unavailable')}>{overview.members[0]?.readiness.state || 'unavailable'}</Badge></div><p className="mt-3 text-sm text-muted-foreground">{overview.members[0]?.readiness.reason}</p></CardContent></Card></div>}
+    {tab === 'overview' && <div className="space-y-6"><div className="grid gap-4 md:grid-cols-4"><Metric label="Readiness" value={overview.readiness} help={overview.reason} /><Metric label="Roster" value={overview.members.length} help="Leader and worker Agents" /><Metric label="Active tasks" value={overview.runs.activeTasks} help={`${overview.runs.total} Team runs recorded`} /><Metric label="Published APIs" value={overview.endpoints.published} help={`${overview.endpoints.total} configured`} /></div><div className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]"><Card><CardHeader><CardTitle>Leader</CardTitle><CardDescription>All new Team work starts here. The leader decides whether and how to delegate.</CardDescription></CardHeader><CardContent><div className="flex items-center justify-between gap-4"><AgentIdentity agentId={team.leaderAgentId} /><Badge tone={tone(overview.members[0]?.readiness.state || 'unavailable')}>{overview.members[0]?.readiness.state || 'unavailable'}</Badge></div><p className="mt-3 text-sm text-muted-foreground">{overview.members[0]?.readiness.reason}</p></CardContent></Card><Card><CardHeader><CardTitle>Roster & runtime readiness</CardTitle><CardDescription>Each member resolves work through its own Managed, External, or Hosted runtime binding.</CardDescription></CardHeader><CardContent className="divide-y">{overview.members.map(member => <div key={`${member.agentId}:${member.role}`} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"><div><div className="font-medium">{member.role}{member.leader ? ' · leader' : ''}</div><div className="mt-1 text-sm"><AgentIdentity agentId={member.agentId} /></div><p className="mt-1 text-xs text-muted-foreground">{member.readiness.reason}</p></div><div className="flex gap-2"><Badge>{member.lifecycle || 'unknown'}</Badge><Badge tone={tone(member.readiness.state)}>{member.readiness.state}</Badge></div></div>)}</CardContent></Card></div></div>}
 
     {tab === 'members' && <MembersEditor teamId={team.id} teamVersion={team.version} leaderAgentId={team.leaderAgentId} members={team.members ?? []} canEdit={canEdit} />}
 
     {tab === 'coordination' && <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]"><CoordinationEditor key={team.version} team={team} canEdit={canEdit} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['team-overview', teamId] })} /><Card><CardHeader><CardTitle>Leader-first protocol</CardTitle><CardDescription>Workers are not automatically fanned out.</CardDescription></CardHeader><CardContent className="space-y-3 text-sm"><p>The leader delegates through structured mentions or child work, receives worker results, and explicitly concludes the coordinator.</p><div>External delegation: <strong>{policy.allowExternalDelegation ? 'Allowed' : 'Blocked'}</strong></div><div>Mention all: <strong>{policy.allowMentionAll ? 'Allowed' : 'Blocked'}</strong></div><div>Human review: <strong>{policy.requireReview ? 'Required' : 'Policy dependent'}</strong></div><p className="text-xs text-muted-foreground">All policy and roster values are frozen when a Run begins.</p></CardContent></Card></div>}
-
-    {tab === 'runtime' && <Card><CardHeader><CardTitle>Member runtime readiness</CardTitle><CardDescription>Team has no Runtime of its own. Each AgentTask resolves through the selected member Agent's Managed, External, or Hosted bindings.</CardDescription></CardHeader><CardContent className="divide-y">{overview.members.map(member => <div key={`${member.agentId}:${member.role}`} className="flex items-start justify-between gap-4 py-4"><div><div className="font-medium">{member.role}{member.leader ? ' · leader' : ''}</div><div className="mt-1"><AgentIdentity agentId={member.agentId} /></div><p className="mt-1 text-xs text-muted-foreground">{member.readiness.reason}</p></div><div className="flex gap-2"><Badge>{member.lifecycle || 'unknown'}</Badge><Badge tone={tone(member.readiness.state)}>{member.readiness.state}</Badge></div></div>)}</CardContent></Card>}
 
     {tab === 'endpoints' && <PublishEndpointCard
       targetType="team"

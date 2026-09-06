@@ -76,6 +76,16 @@ function eventCallId(event: SessionEventItem): string | undefined {
   return value == null || value === '' ? undefined : String(value);
 }
 
+function eventToolState(event: SessionEventItem): string | undefined {
+  if (!event.frameworkMeta || typeof event.frameworkMeta !== 'object') return undefined;
+  const value = (event.frameworkMeta as Record<string, unknown>).state;
+  return value == null || value === '' ? undefined : String(value).toLowerCase();
+}
+
+function isToolFailure(event: SessionEventItem): boolean {
+  return ['error', 'denied', 'interrupted'].includes(eventToolState(event) || '');
+}
+
 export function runtimeMessagesToConversation(
   messages: SessionMessageItem[],
   turns: SessionTurn[] = [],
@@ -118,7 +128,7 @@ export function runtimeEventsToConversation(events: SessionEventItem[]): Convers
     id: `runtime-event-${event.id ?? event.seq ?? index}`,
     seq: event.seq,
     type: event.eventType || 'event',
-    category: eventCategory(event.eventType || '', event.role),
+    category: isToolFailure(event) ? 'error' : eventCategory(event.eventType || '', event.role),
     occurredAt: event.occurredAt,
     role: event.role ? roleOf(event.role) : undefined,
     summary: event.content || event.toolOutput || event.toolName || undefined,
@@ -151,6 +161,7 @@ export function runtimeEventsToMessages(events: SessionEventItem[]): Conversatio
       const isResult = type.toLowerCase().includes('result');
       if (existing && isResult) {
         existing.result = event.toolOutput || event.content || '';
+        existing.toolState = eventToolState(event);
         continue;
       }
       const block: ConversationContentBlock = {
@@ -158,6 +169,7 @@ export function runtimeEventsToMessages(events: SessionEventItem[]): Conversatio
         id: `${id}-tool`,
         callId,
         toolName: event.toolName || 'tool',
+        toolState: eventToolState(event),
         text: event.toolInput == null ? undefined : stringify(event.toolInput),
         result: event.toolOutput || (isResult ? event.content : undefined),
       };

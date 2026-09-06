@@ -20,9 +20,9 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider"
 )
 
-// Adapter uses Qoder's non-interactive stream-json contract. Permission
-// escalation is never enabled implicitly; operators must select a permission
-// mode explicitly in the immutable RuntimeProfile configuration.
+// Adapter uses Qoder's bidirectional stream-json host contract. Tool approval
+// requests stay on stdin/stdout and are bridged to the AgentScope control
+// plane instead of being rejected merely because Qoder has no terminal UI.
 type Adapter struct {
 	Binary string
 }
@@ -55,6 +55,7 @@ func (a *Adapter) Descriptor() provider.Descriptor {
 		MCP:          provider.Capability{Supported: true, Mode: "cli-config", Target: "--mcp-config"},
 		Model:        provider.Capability{Supported: true, Mode: "cli-argument", Target: "--model"},
 		CustomArgs:   provider.Capability{Supported: true, Mode: "argv", Target: "qodercli"},
+		Approval:     provider.Capability{Supported: true, Mode: "control-plane", Target: "control_request/can_use_tool"},
 		Resume:       true,
 	}
 }
@@ -105,8 +106,11 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 	}
 	cmd := exec.CommandContext(ctx, a.binary(), buildArgs(request, cfg, mcpConfig, configDir)...)
 	cmd.Dir = request.Workspace
-	cmd.Stdin = strings.NewReader(provider.PrependInstructions(request.Prompt, provider.DefinitionInstructions(request)))
 	provider.ApplyTaskEnvironment(cmd, request)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -116,8 +120,21 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 	if err = cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start Qoder: %w", err)
 	}
+	prompt := provider.PrependInstructions(request.Prompt, provider.DefinitionInstructions(request))
+	if err = writeStreamMessage(stdin, map[string]any{
+		"type": "user",
+		"message": map[string]any{
+			"role":    "user",
+			"content": []map[string]string{{"type": "text", "text": prompt}},
+		},
+	}); err != nil {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("send Qoder prompt: %w", err)
+	}
 	result := &provider.Result{ProviderSessionID: request.ProviderSessionID}
-	readErr := consumeJSONL(stdout, result, sink)
+	readErr := consumeStreamJSON(ctx, stdout, stdin, result, sink, request.ApproveTool)
+	_ = stdin.Close()
 	waitErr := cmd.Wait()
 	if readErr != nil {
 		return nil, readErr
@@ -150,7 +167,7 @@ func qoderExitError(waitErr error, stderr string) error {
 }
 
 func buildArgs(request provider.Request, cfg configuration, mcpConfig, configDir string) []string {
-	args := []string{"-p", "--output-format", "stream-json", "--cwd", request.Workspace}
+	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--cwd", request.Workspace}
 	if configDir != "" {
 		args = append(args, "--config-dir", configDir, "--setting-sources", "project")
 	}
@@ -160,7 +177,10 @@ func buildArgs(request provider.Request, cfg configuration, mcpConfig, configDir
 	})
 	allowedTools := provider.MergeUnique(cfg.AllowedTools, definitionAllowed)
 	disallowedTools := provider.MergeUnique(cfg.DisallowedTools, definitionDenied)
-	explicitAllowlist := len(cfg.AllowedTools) > 0 || len(definitionAllowed) > 0
+	// RuntimeProfile allowedTools are permission grants, not an exposure list.
+	// Only an explicit portable Agent tool definition narrows --tools; otherwise
+	// the automatic collaboration grant must not accidentally hide Bash/Edit.
+	explicitAllowlist := len(definitionAllowed) > 0
 	if mcpConfig != "" {
 		// Hosted executions must be reproducible and must not inherit arbitrary
 		// user/project MCP entries. Besides leaking ambient capabilities, a
@@ -294,6 +314,11 @@ func lastNonEmptyLine(output string) string {
 }
 
 func consumeJSONL(reader io.Reader, result *provider.Result, sink provider.EventSink) error {
+	return consumeStreamJSON(context.Background(), reader, io.Discard, result, sink, nil)
+}
+
+func consumeStreamJSON(ctx context.Context, reader io.Reader, writer io.Writer, result *provider.Result,
+	sink provider.EventSink, approver provider.ToolApprover) error {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 	permissionFailure := ""
@@ -313,6 +338,14 @@ func consumeJSONL(reader io.Reader, result *provider.Result, sink provider.Event
 					IsError bool   `json:"is_error"`
 				} `json:"content"`
 			} `json:"message"`
+			RequestID string `json:"request_id"`
+			Request   struct {
+				Subtype     string `json:"subtype"`
+				ToolName    string `json:"tool_name"`
+				ToolUseID   string `json:"tool_use_id"`
+				DisplayName string `json:"display_name"`
+				Input       any    `json:"input"`
+			} `json:"request"`
 		}
 		if err := json.Unmarshal(raw, &envelope); err != nil {
 			return fmt.Errorf("decode Qoder JSONL event: %w", err)
@@ -346,8 +379,24 @@ func consumeJSONL(reader io.Reader, result *provider.Result, sink provider.Event
 				return err
 			}
 		}
-		if envelope.Type == "result" && envelope.IsError {
-			return fmt.Errorf("Qoder result %s: %s", envelope.Subtype, envelope.Result)
+		if envelope.Type == "control_request" && envelope.Request.Subtype == "can_use_tool" {
+			if err := handleToolApproval(ctx, writer, envelope.RequestID, envelope.Request.ToolUseID,
+				envelope.Request.ToolName, envelope.Request.DisplayName, envelope.Request.Input, approver); err != nil {
+				return err
+			}
+		}
+		if envelope.Type == "result" {
+			if envelope.IsError {
+				return fmt.Errorf("Qoder result %s: %s", envelope.Subtype, envelope.Result)
+			}
+			if permissionFailure != "" && (result.Output == "" || describesBlockedOutcome(result.Output)) {
+				return provider.NewExecutionError("provider_permission_denied",
+					"Qoder refused a required tool call after host permission handling: "+permissionFailure)
+			}
+			// In stream-json input mode Qoder may wait for another user frame.
+			// A Runtime Host execution is one turn, so return now; Run closes stdin
+			// before waiting for the child process.
+			return nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -355,9 +404,57 @@ func consumeJSONL(reader io.Reader, result *provider.Result, sink provider.Event
 	}
 	if permissionFailure != "" && (result.Output == "" || describesBlockedOutcome(result.Output)) {
 		return provider.NewExecutionError("provider_permission_denied",
-			"Qoder refused a required tool call in non-interactive mode: "+permissionFailure)
+			"Qoder refused a required tool call after host permission handling: "+permissionFailure)
 	}
 	return nil
+}
+
+func handleToolApproval(ctx context.Context, writer io.Writer, requestID, toolUseID, toolName, displayName string,
+	input any, approver provider.ToolApprover) error {
+	if toolUseID == "" {
+		toolUseID = requestID
+	}
+	if toolName == "" {
+		toolName = displayName
+	}
+	if toolName == "" {
+		toolName = "provider_tool"
+	}
+	decision := provider.ToolApprovalDecision{DenyMessage: "Tool use was not approved by the AgentScope host."}
+	if approver != nil {
+		inputJSON, _ := json.Marshal(input)
+		hash := sha256.Sum256(inputJSON)
+		var err error
+		decision, err = approver(ctx, provider.ToolApprovalRequest{
+			ToolUseID: toolUseID, ToolName: toolName, Input: input, InputSHA256: fmt.Sprintf("%x", hash[:]),
+		})
+		if err != nil {
+			_ = writeQoderApproval(writer, requestID, toolUseID, false, "AgentScope approval failed: "+err.Error(), input)
+			return fmt.Errorf("request Qoder tool approval: %w", err)
+		}
+	}
+	return writeQoderApproval(writer, requestID, toolUseID, decision.Allow, decision.DenyMessage, input)
+}
+
+func writeQoderApproval(writer io.Writer, requestID, toolUseID string, allow bool, denyMessage string, input any) error {
+	response := map[string]any{"behavior": "deny", "message": denyMessage, "toolUseID": toolUseID}
+	if allow {
+		response = map[string]any{"behavior": "allow", "updatedInput": input, "toolUseID": toolUseID}
+	}
+	return writeStreamMessage(writer, map[string]any{
+		"type":     "control_response",
+		"response": map[string]any{"subtype": "success", "request_id": requestID, "response": response},
+	})
+}
+
+func writeStreamMessage(writer io.Writer, message any) error {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	_, err = writer.Write(data)
+	return err
 }
 
 func isPermissionFailure(message string) bool {

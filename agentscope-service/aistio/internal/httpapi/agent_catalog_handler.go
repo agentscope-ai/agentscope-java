@@ -450,6 +450,12 @@ func (s *Server) createCatalogAgent(c *gin.Context) {
 	}
 	fail := func(err error) {
 		s.markAgentProvisioningFailed(c.Request.Context(), prepared, err)
+		if errors.Is(err, product.ErrLocalEnvironmentDisabled) ||
+			errors.Is(err, product.ErrEnvironmentNotAvailable) ||
+			errors.Is(err, product.ErrNoRunnableEnvironment) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
 		s.writeControlPlaneError(c, err)
 	}
 
@@ -467,6 +473,7 @@ func (s *Server) createCatalogAgent(c *gin.Context) {
 		if req.Definition.Name == "" {
 			req.Definition.Name = prepared.DisplayName
 		}
+		req.Definition.ProvisionDefaultEnvironment = true
 		definition, err = s.product.EnsureManagedDefinition(c.Request.Context(), prepared.OwnerRef, prepared.ID.String(), *req.Definition)
 		if err != nil {
 			fail(err)
@@ -634,6 +641,10 @@ func (s *Server) patchManagedAgentDefinition(c *gin.Context) {
 			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
 		} else if errors.Is(err, product.ErrManagedDefinitionNotFound) {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
+		} else if errors.Is(err, product.ErrLocalEnvironmentDisabled) ||
+			errors.Is(err, product.ErrEnvironmentNotAvailable) ||
+			errors.Is(err, product.ErrNoRunnableEnvironment) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		} else {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		}

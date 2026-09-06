@@ -754,16 +754,23 @@ func (r *collaborationRepo) ClaimAgentTaskWithAttempt(_ context.Context, claim s
 	if json.Unmarshal(claim.RuntimeBinding, &dispatch) == nil {
 		created.AgentID, created.BindingID = dispatch.Binding.AgentID, dispatch.Binding.BindingID
 	}
-	if created.DispatchGeneration <= 0 {
-		created.DispatchGeneration = 1
-	}
+	nextAttempt, nextDispatchGeneration := int32(1), int64(1)
 	for _, candidate := range r.s.executions {
-		if candidate.AgentTaskID == task.ID && candidate.Attempt >= created.Attempt {
-			created.Attempt = candidate.Attempt + 1
+		if candidate.AgentTaskID != task.ID {
+			continue
+		}
+		if candidate.Attempt >= nextAttempt {
+			nextAttempt = candidate.Attempt + 1
+		}
+		if candidate.DispatchGeneration >= nextDispatchGeneration {
+			nextDispatchGeneration = candidate.DispatchGeneration + 1
 		}
 	}
 	if created.Attempt <= 0 {
-		created.Attempt = 1
+		created.Attempt = nextAttempt
+	}
+	if created.DispatchGeneration <= 0 {
+		created.DispatchGeneration = nextDispatchGeneration
 	}
 	if created.State == "" {
 		created.State = controlmodel.ExecutionQueued
@@ -946,7 +953,8 @@ func (r *collaborationRepo) StartAgentTask(_ context.Context, id uuid.UUID, expe
 	}
 	task.Status, task.Version, task.StartedAt = controlmodel.AgentTaskRunning, task.Version+1, &now
 	if issue := r.s.issues[task.IssueID]; issue != nil &&
-		(issue.Status == controlmodel.IssueBacklog || issue.Status == controlmodel.IssueTodo) {
+		(issue.Status == controlmodel.IssueBacklog || issue.Status == controlmodel.IssueTodo ||
+			issue.Status == controlmodel.IssueBlocked && (!task.LeaderTask || issue.ParentIssueID == nil)) {
 		previousStatus := issue.Status
 		issue.Status, issue.Version, issue.UpdatedAt = controlmodel.IssueInProgress, issue.Version+1, now
 		actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
@@ -1265,6 +1273,7 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(_ context.Context, id uuid.
 		!controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskFailed) {
 		return nil, nil, store.ErrConflict
 	}
+	abortManaged := store.ManagedAttemptNeedsAbort(task, attempt, failure.Code)
 	now := time.Now().UTC()
 	attempt.State, attempt.FailureCode, attempt.FailureMessage = controlmodel.ExecutionFailed, failure.Code, failure.Message
 	attempt.Checkpoint, attempt.Usage = cloneJSON(failure.Checkpoint), cloneJSON(failure.Usage)
@@ -1275,14 +1284,20 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(_ context.Context, id uuid.
 	attempt.Version, attempt.UpdatedAt = attempt.Version+1, now
 	task.Status, task.ErrorCode, task.ErrorMessage = controlmodel.AgentTaskFailed, failure.Code, failure.Message
 	task.Version, task.CompletedAt = task.Version+1, &now
+	failurePayload, _ := json.Marshal(map[string]any{"code": failure.Code, "message": failure.Message})
 	event := &controlmodel.RunEvent{ID: uuid.New(), RunID: task.OrchestrationRunID, Tenant: task.Tenant,
 		Namespace: task.Namespace, Sequence: int64(len(r.s.runEvents[task.OrchestrationRunID]) + 1),
 		NodeID: &task.RunNodeID, AgentTaskID: &task.ID, AttemptID: &attempt.ID,
 		Type: "attempt.failed", Actor: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef},
+		Payload:     failurePayload,
 		CausationID: task.CausationID, CorrelationID: task.CorrelationID,
 		IdempotencyKey: "attempt-failed:" + attempt.ID.String(), OccurredAt: now}
 	r.s.runEvents[task.OrchestrationRunID] = append(r.s.runEvents[task.OrchestrationRunID], event)
 	r.enqueueEventLocked(task.Tenant, "agent-task", task.ID, "agent-task.failed.v1", task, fmt.Sprintf("agent-task-failed:%s:%d", task.ID, task.Version))
+	if abortManaged {
+		r.enqueueEventLocked(task.Tenant, "execution-attempt", attempt.ID,
+			"execution-attempt.abort-managed.v1", attempt, "abort-managed-attempt:"+attempt.ID.String())
+	}
 	return cloneAgentTask(task), cloneExecution(attempt), nil
 }
 
@@ -1310,6 +1325,7 @@ func (r *collaborationRepo) RequeueAgentTaskAfterAttemptFailure(_ context.Contex
 		!controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskQueued) {
 		return nil, nil, store.ErrConflict
 	}
+	abortManaged := store.ManagedAttemptNeedsAbort(task, attempt, failure.Code)
 	now := time.Now().UTC()
 	attempt.State, attempt.FailureCode, attempt.FailureMessage = controlmodel.ExecutionFailed, failure.Code, failure.Message
 	attempt.Checkpoint, attempt.Usage = cloneJSON(failure.Checkpoint), cloneJSON(failure.Usage)
@@ -1320,14 +1336,20 @@ func (r *collaborationRepo) RequeueAgentTaskAfterAttemptFailure(_ context.Contex
 	attempt.Version, attempt.UpdatedAt = attempt.Version+1, now
 	task.Status, task.ErrorCode, task.ErrorMessage = controlmodel.AgentTaskQueued, failure.Code, failure.Message
 	task.Version, task.CompletedAt = task.Version+1, nil
+	failurePayload, _ := json.Marshal(map[string]any{"code": failure.Code, "message": failure.Message})
 	event := &controlmodel.RunEvent{ID: uuid.New(), RunID: task.OrchestrationRunID, Tenant: task.Tenant,
 		Namespace: task.Namespace, Sequence: int64(len(r.s.runEvents[task.OrchestrationRunID]) + 1),
 		NodeID: &task.RunNodeID, AgentTaskID: &task.ID, AttemptID: &attempt.ID,
 		Type: "attempt.retry_queued", Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "runtime-scheduler"},
+		Payload:     failurePayload,
 		CausationID: task.CausationID, CorrelationID: task.CorrelationID,
 		IdempotencyKey: "attempt-retry-queued:" + attempt.ID.String(), OccurredAt: now}
 	r.s.runEvents[task.OrchestrationRunID] = append(r.s.runEvents[task.OrchestrationRunID], event)
 	r.enqueueEventLocked(task.Tenant, "agent-task", task.ID, "agent-task.queued.v1", task, "agent-task-retry-queued:"+attempt.ID.String())
+	if abortManaged {
+		r.enqueueEventLocked(task.Tenant, "execution-attempt", attempt.ID,
+			"execution-attempt.abort-managed.v1", attempt, "abort-managed-attempt:"+attempt.ID.String())
+	}
 	return cloneAgentTask(task), cloneExecution(attempt), nil
 }
 
@@ -1361,6 +1383,22 @@ func (r *collaborationRepo) CreateTeam(_ context.Context, team *controlmodel.Col
 	if team == nil || team.Name == "" || team.LeaderAgentRef == "" {
 		return nil, store.ErrConflict
 	}
+	memberAgents := make(map[string]struct{}, len(team.Members))
+	memberRoles := make(map[string]struct{}, len(team.Members))
+	for _, member := range team.Members {
+		role := strings.TrimSpace(member.Role)
+		if member.AgentRef == "" || role == "" || member.AgentRef == team.LeaderAgentRef {
+			return nil, store.ErrConflict
+		}
+		if _, exists := memberAgents[member.AgentRef]; exists {
+			return nil, store.ErrConflict
+		}
+		if _, exists := memberRoles[role]; exists {
+			return nil, store.ErrConflict
+		}
+		memberAgents[member.AgentRef] = struct{}{}
+		memberRoles[role] = struct{}{}
+	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	copy := cloneTeam(team)
@@ -1375,8 +1413,19 @@ func (r *collaborationRepo) CreateTeam(_ context.Context, team *controlmodel.Col
 	}
 	now := time.Now().UTC()
 	copy.Version, copy.CreatedAt, copy.UpdatedAt = 1, now, now
+	members := make([]controlmodel.CollaborationTeamMember, 0, len(copy.Members))
+	for _, member := range copy.Members {
+		member.ID = nonNilUUID(member.ID)
+		member.TeamID = copy.ID
+		member.Tenant, member.Namespace, member.CreatedAt = copy.Tenant, copy.Namespace, now
+		members = append(members, member)
+	}
+	copy.Members = nil
 	r.s.collabTeams[copy.ID] = copy
-	return cloneTeam(copy), nil
+	r.s.collabMembers[copy.ID] = members
+	out := cloneTeam(copy)
+	out.Members = cloneTeamMembers(members)
+	return out, nil
 }
 
 func (r *collaborationRepo) GetTeam(_ context.Context, id uuid.UUID) (*controlmodel.CollaborationTeam, error) {
@@ -1677,6 +1726,117 @@ func (r *collaborationRepo) CreateApproval(_ context.Context, approval *controlm
 	return cloneApproval(copy), nil
 }
 
+func (r *collaborationRepo) CreateManagedToolApproval(_ context.Context, req store.ManagedToolApprovalRequest) (*controlmodel.Approval, *controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
+	if req.Approval == nil {
+		return nil, nil, nil, store.ErrConflict
+	}
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	task := r.s.agentTasks[req.Fence.TaskID]
+	attempt := r.s.executions[req.Fence.AttemptID]
+	if task == nil || attempt == nil {
+		return nil, nil, nil, store.ErrNotFound
+	}
+	if err := store.ValidateManagedToolApprovalFence(task, attempt, req.Fence); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := store.ValidateManagedToolApproval(req.Approval, task, req.Fence); err != nil {
+		return nil, nil, nil, err
+	}
+	for _, existing := range r.s.approvals {
+		if store.ManagedToolApprovalMatchesFence(existing, req.Fence) {
+			if existing.ID != req.Approval.ID {
+				return nil, nil, nil, store.ErrConflict
+			}
+			if err := store.ValidateManagedToolApproval(existing, task, req.Fence); err != nil {
+				return nil, nil, nil, err
+			}
+			return cloneApproval(existing), cloneAgentTask(task), cloneExecution(attempt), nil
+		}
+	}
+	if current := r.s.approvals[req.Approval.ID]; current != nil {
+		if current.TargetType != req.Approval.TargetType || current.TargetRef != req.Approval.TargetRef ||
+			current.Tenant != req.Approval.Tenant || current.Namespace != req.Approval.Namespace {
+			return nil, nil, nil, store.ErrConflict
+		}
+		if err := store.ValidateManagedToolApproval(current, task, req.Fence); err != nil {
+			return nil, nil, nil, err
+		}
+		return cloneApproval(current), cloneAgentTask(task), cloneExecution(attempt), nil
+	}
+	if task.Status != controlmodel.AgentTaskRunning || attempt.State != controlmodel.ExecutionRunning {
+		return nil, nil, nil, store.ErrConflict
+	}
+	now := time.Now().UTC()
+	approval := cloneApproval(req.Approval)
+	approval.Status, approval.Version = controlmodel.ApprovalPending, 1
+	approval.CreatedAt, approval.UpdatedAt = now, now
+	r.s.approvals[approval.ID] = approval
+	item := &controlmodel.InboxItem{ID: uuid.New(), Tenant: approval.Tenant, Namespace: approval.Namespace,
+		RecipientType: controlmodel.AssigneeHuman, RecipientRef: approval.ApproverRef,
+		Type: "approval", Severity: "attention", IssueID: approval.IssueID, ApprovalID: &approval.ID,
+		Actor: approval.RequestedBy, Title: "Tool approval requested", Body: approval.Reason,
+		Details: cloneJSON(approval.Request), DedupeKey: "approval:" + approval.ID.String(), CreatedAt: now}
+	r.s.inboxItems[item.ID] = item
+	task.Status, task.WaitReason, task.Version = controlmodel.AgentTaskWaiting, "approval:"+approval.ID.String(), task.Version+1
+	attempt.State, attempt.Version = controlmodel.ExecutionWaiting, attempt.Version+1
+	attempt.UpdatedAt = now
+	payload, _ := json.Marshal(map[string]any{"approvalId": approval.ID, "toolUseId": req.Fence.ToolUseID})
+	event := &controlmodel.RunEvent{ID: uuid.New(), RunID: task.OrchestrationRunID,
+		Tenant: task.Tenant, Namespace: task.Namespace,
+		Sequence: int64(len(r.s.runEvents[task.OrchestrationRunID]) + 1), NodeID: &task.RunNodeID,
+		AgentTaskID: &task.ID, AttemptID: &attempt.ID, Type: "attempt.waiting_for_approval",
+		Actor: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}, Payload: payload,
+		IdempotencyKey: "attempt-waiting-approval:" + approval.ID.String(), OccurredAt: now}
+	r.s.runEvents[task.OrchestrationRunID] = append(r.s.runEvents[task.OrchestrationRunID], event)
+	r.enqueueEventLocked(approval.Tenant, "approval", approval.ID, "approval.requested.v1", approval,
+		"approval-requested:"+approval.ID.String())
+	return cloneApproval(approval), cloneAgentTask(task), cloneExecution(attempt), nil
+}
+
+func (r *collaborationRepo) ResumeManagedToolApproval(_ context.Context, approvalID uuid.UUID, fence store.ManagedToolApprovalFence, leaseTTL time.Duration) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
+	if leaseTTL <= 0 {
+		return nil, nil, store.ErrConflict
+	}
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	approval := r.s.approvals[approvalID]
+	task := r.s.agentTasks[fence.TaskID]
+	attempt := r.s.executions[fence.AttemptID]
+	if approval == nil || task == nil || attempt == nil {
+		return nil, nil, store.ErrNotFound
+	}
+	if approval.Status == controlmodel.ApprovalPending {
+		return nil, nil, store.ErrConflict
+	}
+	if err := store.ValidateManagedToolApprovalFence(task, attempt, fence); err != nil {
+		return nil, nil, err
+	}
+	if err := store.ValidateManagedToolApproval(approval, task, fence); err != nil {
+		return nil, nil, err
+	}
+	if task.Status == controlmodel.AgentTaskRunning && attempt.State == controlmodel.ExecutionRunning {
+		return cloneAgentTask(task), cloneExecution(attempt), nil
+	}
+	if task.Status != controlmodel.AgentTaskWaiting || attempt.State != controlmodel.ExecutionWaiting ||
+		task.WaitReason != "approval:"+approval.ID.String() {
+		return nil, nil, store.ErrConflict
+	}
+	now, expires := time.Now().UTC(), time.Now().UTC().Add(leaseTTL)
+	task.Status, task.WaitReason, task.Version = controlmodel.AgentTaskRunning, "", task.Version+1
+	attempt.State, attempt.Version, attempt.UpdatedAt = controlmodel.ExecutionRunning, attempt.Version+1, now
+	attempt.HeartbeatAt, attempt.LeaseExpiresAt = &now, &expires
+	payload, _ := json.Marshal(map[string]any{"approvalId": approval.ID, "status": approval.Status})
+	event := &controlmodel.RunEvent{ID: uuid.New(), RunID: task.OrchestrationRunID,
+		Tenant: task.Tenant, Namespace: task.Namespace,
+		Sequence: int64(len(r.s.runEvents[task.OrchestrationRunID]) + 1), NodeID: &task.RunNodeID,
+		AgentTaskID: &task.ID, AttemptID: &attempt.ID, Type: "attempt.resumed_after_approval",
+		Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "approval-dispatcher"}, Payload: payload,
+		IdempotencyKey: "attempt-resumed-approval:" + approval.ID.String(), OccurredAt: now}
+	r.s.runEvents[task.OrchestrationRunID] = append(r.s.runEvents[task.OrchestrationRunID], event)
+	return cloneAgentTask(task), cloneExecution(attempt), nil
+}
+
 func (r *collaborationRepo) GetApproval(_ context.Context, id uuid.UUID) (*controlmodel.Approval, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
@@ -1711,7 +1871,9 @@ func (r *collaborationRepo) DecideApproval(_ context.Context, id uuid.UUID, expe
 	if approval == nil {
 		return nil, store.ErrNotFound
 	}
-	if approval.Status != controlmodel.ApprovalPending || expectedVersion > 0 && approval.Version != expectedVersion || actor.Type != controlmodel.ActorHuman || actor.Ref != approval.ApproverRef {
+	actorAllowed := actor.Type == controlmodel.ActorHuman && actor.Ref == approval.ApproverRef ||
+		status == controlmodel.ApprovalCancelled && actor.Type == controlmodel.ActorSystem
+	if approval.Status != controlmodel.ApprovalPending || expectedVersion > 0 && approval.Version != expectedVersion || !actorAllowed {
 		return nil, store.ErrConflict
 	}
 	now := time.Now().UTC()
@@ -1989,7 +2151,7 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 	if task.RunNodeID == uuid.Nil {
 		task.RunNodeID = uuid.New()
 		nodeType := controlmodel.RunNodeAgent
-		if teamID != nil || leader {
+		if leader {
 			nodeType = controlmodel.RunNodeTeam
 		}
 		r.s.runNodes[task.RunNodeID] = &controlmodel.RunNode{ID: task.RunNodeID,

@@ -104,12 +104,27 @@ public class SessionEventLog {
         return append(sessionId, type, payload, null);
     }
 
+    /** Appends locally without invoking generic mirrors; caller supplies an immutable scope. */
+    public SessionEventDto appendLocal(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
+        return appendInternal(sessionId, type, payload, eventId, false);
+    }
+
     /**
      * Appends an event, optionally reusing a pre-allocated {@code eventId} so stream previews can
      * reconcile with the persisted row.
      */
     public SessionEventDto append(
             String sessionId, String type, Map<String, Object> payload, String eventId) {
+        return appendInternal(sessionId, type, payload, eventId, true);
+    }
+
+    private SessionEventDto appendInternal(
+            String sessionId,
+            String type,
+            Map<String, Object> payload,
+            String eventId,
+            boolean mirror) {
         if (deletedSessions.isDeleted(sessionId)) {
             log.debug("Dropping {} event for deleted session {}", type, sessionId);
             return droppedEvent(sessionId, type, payload, eventId);
@@ -121,7 +136,9 @@ public class SessionEventLog {
                         transactionTemplate.execute(
                                 status -> appendOnce(sessionId, type, payload, eventId));
                 notifier.publish(sessionId);
-                mirrorBestEffort(appended);
+                if (mirror) {
+                    mirrorBestEffort(appended);
+                }
                 return appended;
             } catch (RuntimeException ex) {
                 if (!isSeqConflict(ex)) {
@@ -142,6 +159,47 @@ public class SessionEventLog {
                         + " seq retries: "
                         + sessionId,
                 lastConflict);
+    }
+
+    /**
+     * Appends an event once using a caller-owned stable id. Replays return and re-mirror the
+     * existing event, which is useful for reliable cross-plane delivery without duplicating the
+     * local transcript.
+     */
+    public SessionEventDto appendIdempotent(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
+        return appendIdempotent(sessionId, type, payload, eventId, true);
+    }
+
+    /** Appends/replays locally without an unscoped generic mirror. */
+    public SessionEventDto appendIdempotentLocal(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
+        return appendIdempotent(sessionId, type, payload, eventId, false);
+    }
+
+    private SessionEventDto appendIdempotent(
+            String sessionId,
+            String type,
+            Map<String, Object> payload,
+            String eventId,
+            boolean mirror) {
+        if (eventId == null || eventId.isBlank()) {
+            throw new IllegalArgumentException("eventId is required for idempotent append");
+        }
+        var existing = repository.findByEventId(eventId);
+        if (existing.isEmpty()) {
+            return appendInternal(sessionId, type, payload, eventId, mirror);
+        }
+        if (!sessionId.equals(existing.get().getSessionId())
+                || !type.equals(existing.get().getEventType())) {
+            throw new IllegalStateException(
+                    "eventId already belongs to another session/event type: " + eventId);
+        }
+        SessionEventDto replay = toDto(existing.get());
+        if (mirror) {
+            mirrorBestEffort(replay);
+        }
+        return replay;
     }
 
     private void mirrorBestEffort(SessionEventDto event) {

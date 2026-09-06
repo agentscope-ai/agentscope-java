@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -38,6 +39,10 @@ type ManagedDefinitionInput struct {
 	DefaultEnvironmentID  string   `json:"defaultEnvironmentId,omitempty"`
 	DefaultVaultIDs       []string `json:"defaultVaultIds,omitempty"`
 	DefaultMemoryStoreIDs []string `json:"defaultMemoryStoreIds,omitempty"`
+	// ProvisionDefaultEnvironment is set by the Managed binding workflow. A
+	// Hosted Agent may share this portable definition but does not execute via
+	// a Managed data-plane Environment.
+	ProvisionDefaultEnvironment bool `json:"-"`
 }
 
 // EnsureManagedDefinition implements the idempotent cp step of the v5
@@ -54,6 +59,18 @@ func (s *Server) EnsureManagedDefinition(ctx context.Context, ownerID, agentID s
 		return map[string]any(existing.toJSON()), nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
+	}
+	defaultEnvironmentID := strings.TrimSpace(in.DefaultEnvironmentID)
+	if in.ProvisionDefaultEnvironment {
+		var err error
+		defaultEnvironmentID, err = s.defaultEnvironmentForAgentCreate(ctx, ownerID, defaultEnvironmentID)
+		if err != nil {
+			return nil, err
+		}
+	} else if defaultEnvironmentID != "" {
+		if _, err := s.validateEnvironmentBinding(ctx, ownerID, defaultEnvironmentID); err != nil {
+			return nil, err
+		}
 	}
 
 	maxIters := in.MaxIters
@@ -96,7 +113,7 @@ func (s *Server) EnsureManagedDefinition(ctx context.Context, ownerID, agentID s
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,1,$17,$17)
 		ON CONFLICT(owner_id,agent_id) DO NOTHING`, ownerID, agentID, workspacePath, nullStr(in.WorkspaceID),
 		in.Name, nullStr(in.Description), nullStr(system), nullStr(in.Model), maxIters, mustJSON(tools),
-		mustJSON(mcpServers), mustJSON(skills), mustJSON(in.Multiagent), nullStr(in.DefaultEnvironmentID),
+		mustJSON(mcpServers), mustJSON(skills), mustJSON(in.Multiagent), nullStr(defaultEnvironmentID),
 		mustJSON(in.DefaultVaultIDs), mustJSON(in.DefaultMemoryStoreIDs), now)
 	if err != nil {
 		return nil, err
@@ -104,7 +121,7 @@ func (s *Server) EnsureManagedDefinition(ctx context.Context, ownerID, agentID s
 	if tag.RowsAffected() > 0 {
 		snapshot := s.agentSnapshot(ownerID, agentID, in.Name, in.Description, system, in.Model, maxIters,
 			tools, mcpServers, skills, in.Multiagent, workspacePath, in.WorkspaceID,
-			in.DefaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, 1, now, now)
+			defaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, 1, now, now)
 		if _, err = s.db.Pool.Exec(ctx, `INSERT INTO agent_versions(owner_id,agent_id,version,snapshot_json,created_at)
 			VALUES($1,$2,1,$3,$4) ON CONFLICT(owner_id,agent_id,version) DO NOTHING`, ownerID, agentID,
 			mustJSON(snapshot), now); err != nil {
@@ -211,6 +228,12 @@ func (s *Server) UpdateManagedDefinition(ctx context.Context, ownerID, agentID s
 	}
 	if in.Name == "" {
 		return nil, fmt.Errorf("definition name is required")
+	}
+	if id := strings.TrimSpace(in.DefaultEnvironmentID); id != "" {
+		if _, err = s.validateEnvironmentBinding(ctx, ownerID, id); err != nil {
+			return nil, err
+		}
+		in.DefaultEnvironmentID = id
 	}
 	maxIters := in.MaxIters
 	if maxIters <= 0 {

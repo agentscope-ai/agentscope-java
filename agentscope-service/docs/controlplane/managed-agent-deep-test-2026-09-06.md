@@ -8,10 +8,10 @@
 - 直接 Issue：Managed worker 能读取任务上下文、开始任务、写 result 并完成 Task/Attempt/Node/Run。
 - Team：Managed Agent 分别作为 lead 和 worker，完成子 Issue 派发、认领、结果回传、leader follow-up 和显式 coordinator 收敛。
 - Workflow：Managed worker 与 lead 按 DAG 顺序执行，均能处理同一 Issue 并使 Run 成功。
-- 失败路径：`task.fail` 能一致地终止 Task、Attempt、Node 和 Run，并保留错误码/消息。
+- 失败路径：独立 Agent 的 `task.fail` 能一致地终止 Task、Attempt、Node 和 Run；Team worker 的失败则作为可决策结果回流 lead，不再直接终止整个 Run。
 - 安全性：task/attempt token 不再出现在 wake 文本、公开 Session taskContext 或公开事件中。
 
-测试共确认并修复 19 类实现问题。最终没有遗留本轮已确认的 managed 产品缺陷；一次模型 provider 超时和机器时钟跳变属于外部测试条件，但它帮助暴露并修复了旧 turn 污染新 Attempt 的 fencing 问题。
+测试共确认并修复 20 类实现问题。最终没有遗留本轮已确认的 managed 产品缺陷；一次模型 provider 超时和机器时钟跳变属于外部测试条件，但它帮助暴露并修复了旧 turn 污染新 Attempt 的 fencing 问题。
 
 ## 隔离环境
 
@@ -99,6 +99,7 @@
 | MGD-017 | P0 | Managed AgentTask 注入协作 ALLOW 规则后使 Core permission context 由 trivial 变为 DEFAULT non-trivial；未列出的只读 `web_search` 被错误置为 `PERMISSION_ASKING`，但没有生成 Service HITL ticket，最终表现为 idle、heartbeat timeout 和失败重试。 | AgentTask 的 Core permission fallback 改为 BYPASS（bypass-immune safety check 仍保留），由 `ToolConfirmationMiddleware` 统一执行 AgentSpec 的 `always_ask`/deny 并创建可恢复 ticket；防御性识别残留 Core ASK 并立即报告明确错误，不再写 idle。Execution `68bf2905-08f3-4cd2-bea1-652e0493e14f` 为回归样本。 |
 | MGD-018 | P0 | 两个 worker 并行完成时会各自创建同一 coordinator node 的 leader follow-up；完成屏障把另一个 leader continuation 误判成 active worker，两个 lead 互相阻塞并最终耗尽 Attempt。 | 同节点 leader continuation 不再作为 worker barrier；一个 continuation 收敛前会取消其余冗余 continuation。失败样本 `ee87044a-44ea-4922-b126-4fd2d8a065f9`，真实成功回归 `c21f0570-49c7-4634-9f0a-1ef6b95e9965`。 |
 | MGD-019 | P1 | fail-fast 只把 sibling node 标为 cancelled，没有取消节点上的 active AgentTask/ExecutionAttempt，Run failed 后仍残留 running lead。 | fail-fast 转换节点前先取消该节点的所有非终态 Task/Attempt；`TestFailFastCancelsActiveTasksOnSiblingNodes` 覆盖状态收敛。 |
+| MGD-020 | P0 | adaptive Team 中一个 worker 因工具/凭证配置明确返回失败后，child Issue 和根 Issue 都停在 `in_progress`，默认 `fail_fast` 又取消 coordinator 与其他 worker，lead 没有任何后续决策机会。 | 将 exhausted/non-retryable worker failure 定义为有效协作结果：Task/Attempt/Node 保留 failed，child Issue 转 `blocked`，写入结构化 status Comment 并唤醒 lead；adaptive worker 默认 continue，TeamPolicy 控制 transient retry；lead 可 replan、显式 skip、请求人类处理或 fail coordinator。失败样本 `80c3679a-721a-43e5-8c66-74b40ff3ea01`。 |
 
 补充真实回归：`2cf5fa0f-5d5d-458f-b24f-d7221559ecff` 因测试环境未配置 `TAVILY_API_KEY`，worker 返回说明文本但没有执行 `task.complete`/`task.fail`，其三次 Attempt 按 lease 策略耗尽。该样本未进入双 leader 收敛阶段，不作为 MGD-018 修复结果；随后使用不依赖外部搜索的相同双 worker 场景完成了上述成功验证。
 

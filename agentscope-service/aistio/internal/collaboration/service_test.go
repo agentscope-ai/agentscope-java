@@ -444,6 +444,172 @@ func TestChildDelegationUsesFrozenTeamRoster(t *testing.T) {
 	}
 }
 
+func TestTeamProgressDoesNotDispatchAndImplicitAssigneeFollowUpKeepsLineage(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "routing", LeaderAgentRef: "leader",
+		Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "worker", Role: "researcher",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, leader, err := svc.CreateIssue(ctx, CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "coordinate",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, _, err := svc.CreateChildFromTask(ctx, leader.ID, CreateIssueRequest{
+		Title: "research", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress, err := svc.AddComment(ctx, AddCommentRequest{
+		IssueID: child.ID, Author: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"},
+		Content: "waiting for a feasible fallback", Type: controlmodel.CommentProgress,
+		SourceTaskID: &leader.ID, SuppressImplicitRouting: true,
+	})
+	if err != nil || len(progress.Routes) != 0 || len(progress.Tasks) != 0 {
+		t.Fatalf("progress comment dispatched work: result=%+v err=%v", progress, err)
+	}
+	followUp, err := svc.AddComment(ctx, AddCommentRequest{
+		IssueID: child.ID, Author: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"},
+		Content: "retry using the supplied local material", SourceTaskID: &leader.ID,
+	})
+	if err != nil || len(followUp.Tasks) != 1 {
+		t.Fatalf("implicit assignee follow-up was not dispatched: result=%+v err=%v", followUp, err)
+	}
+	task := followUp.Tasks[0]
+	if task.TeamID == nil || *task.TeamID != team.ID || task.TeamRole != "researcher" ||
+		task.ParentTaskID == nil || *task.ParentTaskID != leader.ID {
+		t.Fatalf("implicit assignee follow-up lost Team lineage: %+v", task)
+	}
+}
+
+func TestQuiescentBlockedTeamWorkBlocksAndHumanFollowUpReopensRoot(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "blocked-root", LeaderAgentRef: "leader",
+		Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "worker", Role: "researcher",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	root, leader, err := svc.CreateIssue(ctx, CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "needs credential",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: leader.ID, ExpectedVersion: leader.Version})
+	if err == nil {
+		leader, err = st.Collaboration().StartAgentTask(ctx, leader.ID, leader.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, worker, err := svc.CreateChildFromTask(ctx, leader.ID, CreateIssueRequest{
+		Title: "web research", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.CompleteTask(ctx, leader.ID, store.TaskCompletion{ExpectedVersion: leader.Version,
+		Summary: "delegated"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	worker, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: worker.ID, ExpectedVersion: worker.Version})
+	if err == nil {
+		worker, err = st.Collaboration().StartAgentTask(ctx, worker.ID, worker.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err = svc.FailTask(ctx, worker.ID, worker.Version, "credential_missing", "TAVILY_API_KEY missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.ConvergeFailedWorker(ctx, worker.ID); err != nil {
+		t.Fatal(err)
+	}
+	followUps, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		IssueID: child.ID, AgentRef: "leader", Status: controlmodel.AgentTaskQueued, Limit: 10,
+	})
+	if err != nil || len(followUps) != 1 {
+		t.Fatalf("leader follow-up missing: tasks=%+v err=%v", followUps, err)
+	}
+	followUp, err := st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: followUps[0].ID, ExpectedVersion: followUps[0].Version,
+	})
+	if err == nil {
+		followUp, err = st.Collaboration().StartAgentTask(ctx, followUp.ID, followUp.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = svc.CompleteTask(ctx, followUp.ID, store.TaskCompletion{ExpectedVersion: followUp.Version,
+		Summary: "waiting for a credential"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	root, _ = st.Collaboration().GetIssue(ctx, root.ID)
+	if root.Status != controlmodel.IssueBlocked {
+		t.Fatalf("quiescent blocked children did not block root: %+v", root)
+	}
+	humanInput, err := svc.AddComment(ctx, AddCommentRequest{IssueID: root.ID,
+		Author: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}, Content: "credential is now available"})
+	if err != nil || len(humanInput.Tasks) != 1 {
+		t.Fatalf("human follow-up was not queued: result=%+v err=%v", humanInput, err)
+	}
+	if humanInput.Tasks[0].OrchestrationRunID != leader.OrchestrationRunID {
+		t.Fatalf("human follow-up started a duplicate adaptive Run: task=%+v", humanInput.Tasks[0])
+	}
+	resumed, err := st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{
+		TaskID: humanInput.Tasks[0].ID, ExpectedVersion: humanInput.Tasks[0].Version,
+	})
+	if err == nil {
+		resumed, err = st.Collaboration().StartAgentTask(ctx, resumed.ID, resumed.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _ = st.Collaboration().GetIssue(ctx, root.ID)
+	if root.Status != controlmodel.IssueInProgress {
+		t.Fatalf("new human input did not reopen blocked root: %+v", root)
+	}
+	if _, _, err = svc.CreateChildFromTask(ctx, resumed.ID, CreateIssueRequest{
+		Title: "blind duplicate", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker",
+	}); err == nil || !strings.Contains(err.Error(), "blocked child Issue") {
+		t.Fatalf("leader bypassed blocked work with a new child: %v", err)
+	}
+	if _, _, err = svc.CompleteTask(ctx, resumed.ID, store.TaskCompletion{ExpectedVersion: resumed.Version,
+		Summary: "still waiting for a credential"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	root, _ = st.Collaboration().GetIssue(ctx, root.ID)
+	if root.Status != controlmodel.IssueBlocked {
+		t.Fatalf("waiting human follow-up did not restore blocked root: %+v", root)
+	}
+}
+
 func TestCrossTeamChildIssueResultWakesParentLeaderAndCanBeAccepted(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})

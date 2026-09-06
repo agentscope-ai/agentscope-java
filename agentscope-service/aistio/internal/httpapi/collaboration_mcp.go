@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
@@ -76,26 +77,37 @@ func collaborationMCPTools() []mcpTool {
 		"properties": map[string]any{"type": map[string]any{"type": "string", "enum": []string{"human", "agent", "team"}}, "ref": stringProp},
 		"required":   []string{"type", "ref"}}}
 	ids := map[string]any{"type": "array", "items": stringProp}
+	acceptanceCriteria := object(map[string]any{
+		"requiredResult":   map[string]any{"type": "boolean"},
+		"minimumArtifacts": map[string]any{"type": "integer", "minimum": 0},
+		"minimumApprovals": map[string]any{"type": "integer", "minimum": 0},
+		"checklist": map[string]any{"type": "array", "items": object(map[string]any{
+			"id": stringProp, "text": stringProp, "required": map[string]any{"type": "boolean"},
+			"satisfied": map[string]any{"type": "boolean"},
+		})},
+	})
+	acceptanceCriteria["description"] = "Optional acceptance criteria object. Omit it when no criteria are needed; never pass a top-level array."
 	return []mcpTool{
 		{Name: "issue.get", Description: "Read the authoritative Issue for this AgentTask.", InputSchema: object(map[string]any{"issueId": stringProp})},
 		{Name: "issue.comment.list", Description: "Read Issue discussion roots, a thread, or its tail.", InputSchema: object(map[string]any{"issueId": stringProp, "rootsOnly": map[string]any{"type": "boolean"}, "threadId": stringProp, "tail": map[string]any{"type": "integer", "minimum": 1, "maximum": 500}})},
 		{Name: "issue.comment.add", Description: "Add an attributable Comment and route structured mentions.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "type": stringProp, "mentions": mentions}, "content")},
-		{Name: "issue.child.create", Description: "Create child work from an active Team leader task.", InputSchema: object(map[string]any{"title": stringProp, "description": stringProp, "priority": stringProp, "assigneeType": stringProp, "assigneeRef": stringProp, "acceptanceCriteria": map[string]any{"type": "object"}}, "title")},
+		{Name: "issue.child.create", Description: "Create child work from an active Team leader task. For assigneeType=agent, assigneeRef must be the roster member's agentId from team.get, never the membership id field. acceptanceCriteria is optional and must be an object, never a top-level array.", InputSchema: object(map[string]any{"title": stringProp, "description": stringProp, "priority": stringProp, "assigneeType": stringProp, "assigneeRef": stringProp, "acceptanceCriteria": acceptanceCriteria}, "title")},
 		{Name: "issue.accept", Description: "Accept this delegated child Issue from an active Team leader follow-up after its worker result has converged.", InputSchema: object(map[string]any{"reason": stringProp})},
+		{Name: "issue.cancel", Description: "Explicitly skip the current blocked delegated child Issue after the Team leader decides a degraded or partial result is acceptable.", InputSchema: object(map[string]any{"reason": stringProp})},
 		{Name: "artifact.upload", Description: "Upload base64 bytes into shared artifact storage and link them to this task or Issue.", InputSchema: object(map[string]any{"filename": stringProp, "contentBase64": stringProp, "contentType": stringProp, "targetType": stringProp, "targetRef": stringProp}, "filename", "contentBase64")},
 		{Name: "artifact.download", Description: "Download a task-visible Artifact as base64 bytes.", InputSchema: object(map[string]any{"artifactId": stringProp}, "artifactId")},
-		{Name: "task.get", Description: "Read this AgentTask and its input states.", InputSchema: object(map[string]any{"taskId": stringProp})},
+		{Name: "task.get", Description: "Read this AgentTask and its input states. Omit taskId or use \"current\" for the token-scoped task.", InputSchema: object(map[string]any{"taskId": stringProp})},
 		{Name: "task.start", Description: "Acknowledge that execution of this dispatched AgentTask has started.", InputSchema: object(map[string]any{})},
 		{Name: "task.progress", Description: "Write a progress Comment for this AgentTask.", InputSchema: object(map[string]any{"content": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.respond", Description: "Write the result Comment for this AgentTask. A later task.complete call reuses it instead of publishing a duplicate.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.complete", Description: "Complete this AgentTask, reconcile every input, and reuse any result previously written by task.respond.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids})},
 		{Name: "task.fail", Description: "Fail this AgentTask with a durable error code and message.", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
-		{Name: "team.get", Description: "Read the Team roster, roles, instructions, and policy for this task.", InputSchema: object(map[string]any{})},
+		{Name: "team.get", Description: "Read the Team roster, roles, instructions, and policy for this task. Delegate to members[].agentId; members[].id is only the membership record id.", InputSchema: object(map[string]any{})},
 		{Name: "approval.request", Description: "Request human approval for this Issue, task, or its ExecutionAttempt.", InputSchema: object(map[string]any{"targetType": stringProp, "targetRef": stringProp, "approverRef": stringProp, "reason": stringProp}, "targetType", "targetRef", "approverRef")},
 		{Name: "run.get", Description: "Read the OrchestrationRun containing this task.", InputSchema: object(map[string]any{})},
 		{Name: "run.graph", Description: "Read the materialized nodes, edges, tasks, and attempts in this run.", InputSchema: object(map[string]any{})},
-		{Name: "run.node.complete", Description: "Explicitly complete this Team coordinator node after all delegated work converges.", InputSchema: object(map[string]any{"output": map[string]any{}})},
-		{Name: "run.node.fail", Description: "Explicitly fail this Team coordinator node.", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
+		{Name: "run.node.complete", Description: "Conclude this Team leader turn after all delegated work converges. This completes the current leader AgentTask and then the coordinator node; do not call task.complete afterwards.", InputSchema: object(map[string]any{"output": map[string]any{}})},
+		{Name: "run.node.fail", Description: "Fail this Team leader turn and its coordinator node as one convergent operation.", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
 		{Name: "run.replan", Description: "Add a dynamic agent or team node to this adaptive run.", InputSchema: object(map[string]any{"key": stringProp, "type": stringProp, "agentId": stringProp, "teamRef": stringProp, "role": stringProp}, "type")},
 		{Name: "run.signal", Description: "Deliver an idempotent named signal to this run.", InputSchema: object(map[string]any{"name": stringProp, "idempotencyKey": stringProp, "payload": map[string]any{}}, "name", "idempotencyKey")},
 		{Name: "run.artifacts", Description: "List Issue artifacts shared by all runtimes in this run.", InputSchema: object(map[string]any{})},
@@ -114,7 +126,7 @@ func collaborationMCPToolsForTask(task *controlmodel.AgentTask) []mcpTool {
 			if task.TeamID == nil {
 				continue
 			}
-		case "issue.child.create", "issue.accept", "run.node.complete", "run.node.fail", "run.replan":
+		case "issue.child.create", "issue.accept", "issue.cancel", "run.node.complete", "run.node.fail", "run.replan":
 			if task.TeamID == nil || !task.LeaderTask {
 				continue
 			}
@@ -157,17 +169,64 @@ func (s *Server) collaborationMCP(c *gin.Context) {
 		}
 		if completedCoordinator, _ := c.Get(ctxCompletedCoordinatorAuth); completedCoordinator == true &&
 			params.Name != "run.node.complete" && params.Name != "run.node.fail" {
-			respond(mcpResult(map[string]any{"error": "completed coordinator token is restricted to the final node transition"}, true), nil)
+			restrictionErr := fmt.Errorf("completed coordinator token is restricted to the final node transition")
+			s.recordMCPToolFailure(c.Request.Context(), task, params.Name,
+				stringArg(params.Arguments, "_toolCallId"), restrictionErr)
+			respond(mcpResult(map[string]any{"error": restrictionErr.Error()}, true), nil)
 			return
 		}
 		value, err := s.callCollaborationMCPTool(c, task, params.Name, params.Arguments)
 		if err != nil {
+			s.recordMCPToolFailure(c.Request.Context(), task, params.Name,
+				stringArg(params.Arguments, "_toolCallId"), err)
 			respond(mcpResult(map[string]any{"error": err.Error()}, true), nil)
 			return
 		}
 		respond(mcpResult(value, false), nil)
 	default:
 		respond(nil, &mcpError{Code: -32601, Message: "method not found"})
+	}
+}
+
+func (s *Server) recordMCPToolFailure(ctx context.Context, task *controlmodel.AgentTask,
+	toolName, toolCallID string, cause error) {
+	if task == nil || cause == nil {
+		return
+	}
+	logger := log.FromContext(ctx).WithName("collaboration-mcp").WithValues(
+		"runId", task.OrchestrationRunID, "taskId", task.ID, "attemptId", task.CurrentAttemptID,
+		"tool", toolName, "toolCallId", toolCallID)
+	logger.Error(cause, "Agent collaboration tool failed")
+	payloadValues := map[string]any{"toolName": toolName, "toolCallId": toolCallID,
+		"state": "error", "message": cause.Error(), "source": "collaboration_mcp"}
+	if task.CurrentAttemptID != nil {
+		if attempt, attemptErr := s.store.ExecutionAttempts().Get(ctx, *task.CurrentAttemptID); attemptErr == nil {
+			payloadValues["sessionId"] = attempt.SessionID
+			sessions, sessionErr := s.store.Sessions().List(ctx, store.SessionFilter{
+				Tenant: task.Tenant, Namespace: task.Namespace, AgentID: attempt.AgentID,
+				SessionID: attempt.SessionID, AgentTaskID: task.ID, Limit: 1,
+			})
+			if sessionErr == nil && len(sessions) > 0 {
+				payloadValues["sessionRef"] = sessions[0].ID
+			}
+		}
+	}
+	payload, err := json.Marshal(payloadValues)
+	if err != nil {
+		return
+	}
+	idempotencyKey := ""
+	if toolCallID != "" {
+		idempotencyKey = fmt.Sprintf("agent-tool-failed:%s:%s", task.ID, toolCallID)
+	}
+	if _, err = s.store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{
+		RunID: task.OrchestrationRunID, Tenant: task.Tenant, Namespace: task.Namespace,
+		NodeID: &task.RunNodeID, AgentTaskID: &task.ID, AttemptID: task.CurrentAttemptID,
+		Type: "agent_tool.failed", Actor: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef},
+		Payload: payload, CausationID: toolCallID, CorrelationID: task.CorrelationID,
+		IdempotencyKey: idempotencyKey,
+	}); err != nil {
+		logger.Error(err, "failed to persist Agent tool diagnostic")
 	}
 }
 
@@ -178,7 +237,7 @@ func mcpResult(value any, isError bool) mcpToolResult {
 
 func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.AgentTask, name string, args map[string]any) (any, error) {
 	ctx := c.Request.Context()
-	if requested := stringArg(args, "taskId"); requested != "" && requested != task.ID.String() {
+	if requested := stringArg(args, "taskId"); requested != "" && requested != "current" && requested != task.ID.String() {
 		return nil, store.ErrNotFound
 	}
 	if requested := stringArg(args, "issueId"); requested != "" && requested != task.IssueID.String() {
@@ -219,16 +278,27 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 			commentType = controlmodel.CommentResult
 		}
 		result, err := svc.AddComment(ctx, collaboration.AddCommentRequest{IssueID: task.IssueID, ParentID: parentID,
-			Author: actor, Content: stringArg(args, "content"), Type: commentType, Mentions: mentionArgs(args), SourceTaskID: &task.ID})
+			Author: actor, Content: stringArg(args, "content"), Type: commentType, Mentions: mentionArgs(args), SourceTaskID: &task.ID,
+			SuppressImplicitRouting: name == "task.progress"})
 		return result, err
 	case "issue.child.create":
-		criteria, _ := json.Marshal(args["acceptanceCriteria"])
+		var criteria json.RawMessage
+		if rawCriteria, ok := args["acceptanceCriteria"]; ok && rawCriteria != nil {
+			encoded, marshalErr := json.Marshal(rawCriteria)
+			if marshalErr != nil {
+				return nil, fmt.Errorf("invalid acceptanceCriteria: %w", marshalErr)
+			}
+			criteria = encoded
+		}
 		issue, childTask, err := svc.CreateChildFromTask(ctx, task.ID, collaboration.CreateIssueRequest{
 			Title: stringArg(args, "title"), Description: stringArg(args, "description"), Priority: stringArg(args, "priority"),
 			AssigneeType: controlmodel.AssigneeType(stringArg(args, "assigneeType")), AssigneeRef: stringArg(args, "assigneeRef"), AcceptanceCriteria: criteria})
 		return map[string]any{"issue": issue, "agentTask": childTask}, err
 	case "issue.accept":
 		issue, err := svc.AcceptIssueFromTask(ctx, task.ID, stringArg(args, "reason"))
+		return map[string]any{"issue": issue}, err
+	case "issue.cancel":
+		issue, err := svc.CancelBlockedIssueFromTask(ctx, task.ID, stringArg(args, "reason"))
 		return map[string]any{"issue": issue}, err
 	case "artifact.upload":
 		return s.uploadMCPArtifact(ctx, task, args)
@@ -252,20 +322,40 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		if err != nil {
 			return nil, err
 		}
+		if err = s.validateMCPTeamLeaderCompletion(ctx, current); err != nil {
+			return nil, err
+		}
 		result, _ := json.Marshal(args["result"])
 		usage, _ := json.Marshal(args["usage"])
 		completion := store.TaskCompletion{ExpectedVersion: current.Version, Summary: stringArg(args, "summary"), Result: result,
 			Usage:             usage,
 			ProcessedInputIDs: uuidListArg(args, "processedInputIds"), DeferredInputIDs: uuidListArg(args, "deferredInputIds")}
 		completed, comment, err := svc.CompleteTask(ctx, task.ID, completion, actor)
-		return map[string]any{"task": completed, "comment": comment}, err
+		projectionErr := s.projectMCPTaskTerminal(ctx, completed, comment)
+		if err != nil {
+			return map[string]any{"task": completed, "comment": comment}, err
+		}
+		if projectionErr != nil {
+			return map[string]any{"task": completed, "comment": comment}, projectionErr
+		}
+		return map[string]any{"task": completed, "comment": comment}, nil
 	case "task.fail":
 		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
 		if err != nil {
 			return nil, err
 		}
 		failed, err := svc.FailTask(ctx, task.ID, current.Version, stringArg(args, "code"), stringArg(args, "message"))
-		return map[string]any{"task": failed}, err
+		if err == nil {
+			err = (&orchestration.Engine{Store: s.store}).ReconcileRun(context.WithoutCancel(ctx), failed.OrchestrationRunID)
+		}
+		projectionErr := s.projectMCPTaskTerminal(ctx, failed, nil)
+		if err != nil {
+			return map[string]any{"task": failed}, err
+		}
+		if projectionErr != nil {
+			return map[string]any{"task": failed}, projectionErr
+		}
+		return map[string]any{"task": failed}, nil
 	case "team.get":
 		if task.TeamID == nil {
 			return nil, fmt.Errorf("AgentTask has no Team context")
@@ -292,12 +382,12 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		return graph, err
 	case "run.node.complete":
 		output, _ := json.Marshal(args["output"])
-		node, err := s.orchestrationService().CompleteCoordinatorNode(ctx, task.ID, output, actor)
-		return map[string]any{"node": node}, err
+		completed, node, err := s.concludeCoordinator(ctx, task, output, actor)
+		return map[string]any{"task": completed, "node": node}, err
 	case "run.node.fail":
-		node, err := s.orchestrationService().FailCoordinatorNode(ctx, task.ID,
+		failed, node, err := s.failCoordinator(ctx, task,
 			stringArg(args, "code"), stringArg(args, "message"), actor)
-		return map[string]any{"node": node}, err
+		return map[string]any{"task": failed, "node": node}, err
 	case "run.replan":
 		node, err := s.orchestrationService().Replan(ctx, task.ID, orchestration.DefinitionNode{
 			Key: stringArg(args, "key"), Type: controlmodel.RunNodeType(stringArg(args, "type")),
@@ -316,6 +406,60 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 	default:
 		return nil, fmt.Errorf("unknown collaboration tool %q", name)
 	}
+}
+
+func (s *Server) validateMCPTeamLeaderCompletion(ctx context.Context, task *controlmodel.AgentTask) error {
+	if task == nil || !task.LeaderTask || task.TeamID == nil {
+		return nil
+	}
+	node, err := s.store.Orchestration().GetNode(ctx, task.RunNodeID)
+	if err != nil {
+		return err
+	}
+	if controlmodel.IsRunNodeTerminal(node.State) {
+		return nil
+	}
+	// A follow-up is one coordinator decision turn, not the coordinator itself.
+	// It may finish after accepting/rejecting one result while sibling work is
+	// still active; a later worker outcome will enqueue the next follow-up.
+	if task.ParentTaskID != nil {
+		return nil
+	}
+	tasks, err := s.store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 1000,
+	})
+	if err != nil {
+		return err
+	}
+	for _, candidate := range tasks {
+		if candidate.ParentTaskID != nil && *candidate.ParentTaskID == task.ID {
+			return nil
+		}
+	}
+	return fmt.Errorf("Team leader must create delegated work or complete its coordinator node before completing the AgentTask")
+}
+
+func (s *Server) projectMCPTaskTerminal(ctx context.Context, task *controlmodel.AgentTask,
+	comment *controlmodel.Comment) error {
+	if task == nil || task.CurrentAttemptID == nil {
+		return nil
+	}
+	// The Runtime Host may cancel the provider as soon as it observes the
+	// terminal Attempt. Keep the post-commit projection alive if that closes the
+	// MCP request while the response is still being persisted.
+	projectionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	attempt, err := s.store.ExecutionAttempts().Get(projectionCtx, *task.CurrentAttemptID)
+	if err != nil {
+		return err
+	}
+	output := ""
+	if comment != nil {
+		output = comment.Content
+	}
+	// MCP completion terminalizes the Attempt before the provider can flush its
+	// final event. Project the durable task response into Chat synchronously.
+	return s.projectHostedAttemptTerminalWithOutput(projectionCtx, attempt, output)
 }
 
 func (s *Server) uploadMCPArtifact(ctx context.Context, task *controlmodel.AgentTask, args map[string]any) (any, error) {

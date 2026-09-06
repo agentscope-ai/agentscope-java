@@ -6,6 +6,7 @@ package runtimebinding
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/product"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 	"github.com/spring-ai-alibaba/aistio/internal/taskauth"
@@ -20,8 +22,14 @@ import (
 )
 
 type managedRecorder struct {
-	sessionID string
-	wakes     []string
+	sessionID    string
+	wakes        []string
+	claims       []product.ManagedRuntimeFence
+	aborts       []product.ManagedAttemptAbort
+	abortSession string
+	abortOwner   string
+	order        []string
+	claimErr     error
 }
 
 func (m *managedRecorder) FindOrCreateSessionID(context.Context, string, string, string, string) (string, error) {
@@ -29,15 +37,68 @@ func (m *managedRecorder) FindOrCreateSessionID(context.Context, string, string,
 }
 
 func (m *managedRecorder) PostSessionWakeEvent(_ context.Context, _ string, _ string, text string) error {
+	m.order = append(m.order, "wake")
 	m.wakes = append(m.wakes, text)
 	return nil
 }
 
-func (m *managedRecorder) AbortManagedSession(context.Context, string, string) error { return nil }
+func (m *managedRecorder) ClaimManagedRuntimeFence(_ context.Context, _ string,
+	agentTaskID, attemptID uuid.UUID, dispatchGeneration int64, turnID string) error {
+	m.order = append(m.order, "claim")
+	m.claims = append(m.claims, product.ManagedRuntimeFence{AgentTaskID: agentTaskID.String(),
+		AttemptID: attemptID.String(), DispatchGeneration: dispatchGeneration, TurnID: turnID})
+	return m.claimErr
+}
+
+func (m *managedRecorder) PostManagedAttemptAbort(_ context.Context, sessionID, ownerID string,
+	abort product.ManagedAttemptAbort) error {
+	m.abortSession, m.abortOwner = sessionID, ownerID
+	m.aborts = append(m.aborts, abort)
+	return nil
+}
 
 type externalRecorder struct {
 	tenant, namespace, agent, instance, session, command string
 	payload                                              []byte
+}
+
+func TestManagedWakeInstructionsDescribeTeamRoleLifecycle(t *testing.T) {
+	teamID := uuid.New()
+	initial := managedWakeInstructions(&controlmodel.AgentTask{TeamID: &teamID, LeaderTask: true})
+	if !strings.Contains(initial, "initial Team leader") || !strings.Contains(initial, "task.complete immediately") {
+		t.Fatalf("initial leader instructions: %q", initial)
+	}
+	parentID := uuid.New()
+	followUp := managedWakeInstructions(&controlmodel.AgentTask{
+		TeamID: &teamID, LeaderTask: true, ParentTaskID: &parentID,
+	})
+	if !strings.Contains(followUp, "leader follow-up") || !strings.Contains(followUp, "issue.accept") ||
+		strings.Contains(followUp, "Delegate suitable child work once") {
+		t.Fatalf("leader follow-up instructions: %q", followUp)
+	}
+	worker := managedWakeInstructions(&controlmodel.AgentTask{TeamID: &teamID})
+	if !strings.Contains(worker, "Team worker") || !strings.Contains(worker, "task.complete") {
+		t.Fatalf("worker instructions: %q", worker)
+	}
+}
+
+func TestCancelManagedAttemptUsesCompleteOldTurnFence(t *testing.T) {
+	taskID, attemptID := uuid.New(), uuid.New()
+	managed := &managedRecorder{}
+	attempt := &controlmodel.ExecutionAttempt{ID: attemptID, AgentTaskID: taskID,
+		BackendKind: controlmodel.DataPlaneManaged, SessionID: "session-a", ManagedOwnerRef: "owner-a",
+		DispatchGeneration: 4, TurnID: "turn-a"}
+	if err := (&Resolver{Managed: managed}).CancelAttempt(t.Context(), attempt); err != nil {
+		t.Fatal(err)
+	}
+	if managed.abortSession != attempt.SessionID || managed.abortOwner != attempt.ManagedOwnerRef || len(managed.aborts) != 1 {
+		t.Fatalf("managed abort target=%s/%s payload=%+v", managed.abortSession, managed.abortOwner, managed.aborts)
+	}
+	abort := managed.aborts[0]
+	if abort.AgentTaskID != taskID || abort.AttemptID != attemptID || abort.DispatchGeneration != 4 ||
+		abort.TurnID != "turn-a" || abort.Reason != "task_cancel_requested" {
+		t.Fatalf("managed abort lost physical fence: %+v", abort)
+	}
 }
 
 func (e *externalRecorder) SendExecutionAttemptCommand(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error {
@@ -90,8 +151,15 @@ func TestResolverDispatchesSameAgentTaskContractToEveryBackend(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result.Task.Status != controlmodel.AgentTaskDispatched || result.SessionID != managed.sessionID || result.TaskToken == "" || len(managed.wakes) != 1 {
+		if result.Task.Status != controlmodel.AgentTaskDispatched || result.SessionID != managed.sessionID ||
+			result.TaskToken == "" || len(managed.wakes) != 1 || len(managed.claims) != 1 ||
+			len(managed.order) != 2 || managed.order[0] != "claim" || managed.order[1] != "wake" {
 			t.Fatalf("managed dispatch: result=%+v wakes=%+v", result, managed.wakes)
+		}
+		if managed.claims[0].AgentTaskID != task.ID.String() || managed.claims[0].AttemptID != result.Execution.ID.String() ||
+			managed.claims[0].DispatchGeneration != result.Execution.DispatchGeneration ||
+			managed.claims[0].TurnID != result.Execution.TurnID {
+			t.Fatalf("managed dispatch claimed wrong runtime fence: %+v execution=%+v", managed.claims[0], result.Execution)
 		}
 		if strings.Contains(managed.wakes[0], result.TaskToken) ||
 			strings.Contains(strings.ToLower(managed.wakes[0]), "token") ||
@@ -106,6 +174,21 @@ func TestResolverDispatchesSameAgentTaskContractToEveryBackend(t *testing.T) {
 		var persistedContext map[string]any
 		if json.Unmarshal(session.TaskContext, &persistedContext) != nil || persistedContext["taskToken"] != nil {
 			t.Fatalf("public session context persisted task credentials: %s", session.TaskContext)
+		}
+
+		failingTask := newTask(agent.ID.String())
+		claimFailure := errors.New("product runtime fence unavailable")
+		failedManaged := &managedRecorder{sessionID: "managed-session-fence-failure", claimErr: claimFailure}
+		failedResolver := &Resolver{Store: st, Managed: failedManaged, Tokens: tokens}
+		if result, dispatchErr := failedResolver.Dispatch(ctx, failingTask.ID, &runtimeBinding); !errors.Is(dispatchErr, claimFailure) || result != nil {
+			t.Fatalf("fence claim failure result=%+v err=%v", result, dispatchErr)
+		}
+		if len(failedManaged.wakes) != 0 || len(failedManaged.order) != 1 || failedManaged.order[0] != "claim" {
+			t.Fatalf("fence claim failure woke data plane: %+v", failedManaged)
+		}
+		requeued, getErr := st.Collaboration().GetAgentTask(ctx, failingTask.ID)
+		if getErr != nil || requeued.Status != controlmodel.AgentTaskQueued {
+			t.Fatalf("fence claim failure did not requeue task: task=%+v err=%v", requeued, getErr)
 		}
 	})
 

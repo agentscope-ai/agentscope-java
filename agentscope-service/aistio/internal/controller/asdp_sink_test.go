@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,6 +108,62 @@ func TestApplyExecutionAttemptReportRequiresSelectedTenantInstance(t *testing.T)
 	}
 	if started.ID == uuid.Nil {
 		t.Fatal("task ID is nil")
+	}
+
+	diagnosticSession, err := st.Sessions().Upsert(ctx, &store.Session{
+		Tenant: "tenant-a", Namespace: "ns-a", AgentID: agent.ID, BindingID: catalogBinding.ID,
+		AgentInstanceID: selected.ID, InstanceGeneration: selected.Generation, AgentName: agent.AgentKey,
+		SessionID: "diagnostic-session", Phase: store.SessionPhaseActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportIdentity := RuntimeReportIdentity{Tenant: "tenant-a", Namespace: "ns-a",
+		AgentID: agent.ID.String(), BindingID: catalogBinding.ID.String(), AgentKey: agent.AgentKey,
+		InstanceKey: "instance-a", InstanceGeneration: selected.Generation}
+	toolEvents := []ObservedEvent{
+		{SessionID: diagnosticSession.SessionID, Seq: 1, EventType: "tool_call", ToolName: "issue.child.create",
+			FrameworkMeta: json.RawMessage(`{"toolCallId":"call-1","state":"running"}`)},
+		{SessionID: diagnosticSession.SessionID, Seq: 2, EventType: "tool_result", ToolName: "issue.child.create",
+			ToolOutput:    "cannot scan NULL into *string",
+			FrameworkMeta: json.RawMessage(`{"toolCallId":"call-1","state":"error"}`)},
+	}
+	if _, err = sink.ApplyEventReport(ctx, reportIdentity, toolEvents); err != nil {
+		t.Fatalf("tool diagnostic report: %v", err)
+	}
+	// The Session event is authoritative even if task association briefly lags.
+	// Linking the Session and replaying the same batch must repair the RunEvent.
+	diagnosticSession, err = st.Sessions().Upsert(ctx, &store.Session{
+		Tenant: "tenant-a", Namespace: "ns-a", AgentID: agent.ID, BindingID: catalogBinding.ID,
+		AgentInstanceID: selected.ID, InstanceGeneration: selected.Generation, AgentName: agent.AgentKey,
+		SessionID: "diagnostic-session", Phase: store.SessionPhaseActive, AgentTaskID: &task.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = sink.ApplyEventReport(ctx, reportIdentity, toolEvents); err != nil {
+		t.Fatalf("tool diagnostic replay: %v", err)
+	}
+	if _, err = sink.ApplyEventReport(ctx, reportIdentity, toolEvents); err != nil {
+		t.Fatalf("tool diagnostic second replay: %v", err)
+	}
+	runEvents, err := st.Orchestration().ListRunEvents(ctx, task.OrchestrationRunID, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolFailures := 0
+	for _, event := range runEvents {
+		if event.Type == "agent_tool.failed" {
+			toolFailures++
+			if event.AgentTaskID == nil || *event.AgentTaskID != task.ID ||
+				!strings.Contains(string(event.Payload), "cannot scan NULL") ||
+				!strings.Contains(string(event.Payload), diagnosticSession.ID.String()) {
+				t.Fatalf("incomplete tool failure projection: %+v", event)
+			}
+		}
+	}
+	if toolFailures != 1 {
+		t.Fatalf("tool failure projection count=%d events=%+v", toolFailures, runEvents)
 	}
 }
 

@@ -268,3 +268,57 @@ func (c *Client) Fail(ctx context.Context, hostID uuid.UUID, execution *controlm
 func (c *Client) Cancelled(ctx context.Context, hostID uuid.UUID, execution *controlmodel.ExecutionAttempt) error {
 	return c.executionAction(ctx, hostID, execution.ID, "cancelled", leasePayload(execution), execution)
 }
+
+func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string,
+	request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+	var created struct {
+		Approval *controlmodel.Approval `json:"approval"`
+	}
+	path := "/api/v1/agent-tasks/" + taskID + "/runtime-approvals"
+	_, err := c.requestWithHeaders(ctx, http.MethodPost, path, map[string]any{
+		"kind": "tool_confirmation", "toolUseId": request.ToolUseID,
+		"toolName": request.ToolName, "inputPreview": request.Input,
+		"inputSha256": request.InputSHA256, "expiresAt": request.ExpiresAt,
+	}, &created, map[string]string{"X-Agent-Task-Token": taskToken})
+	if err != nil || created.Approval == nil {
+		if err == nil {
+			err = fmt.Errorf("runtime approval response is missing approval")
+		}
+		return provider.ToolApprovalDecision{}, err
+	}
+	decisionPath := path + "/" + created.Approval.ID.String() + "/decision"
+	for {
+		var result struct {
+			ApprovalID      string `json:"approvalId"`
+			DecisionVersion int64  `json:"decisionVersion"`
+			Status          string `json:"status"`
+			Allow           bool   `json:"allow"`
+			DenyMessage     string `json:"denyMessage"`
+		}
+		status, pollErr := c.requestWithHeaders(ctx, http.MethodGet, decisionPath, nil, &result,
+			map[string]string{"X-Agent-Task-Token": taskToken})
+		if pollErr != nil {
+			return provider.ToolApprovalDecision{}, pollErr
+		}
+		if status == http.StatusAccepted {
+			select {
+			case <-ctx.Done():
+				return provider.ToolApprovalDecision{}, ctx.Err()
+			case <-time.After(time.Second):
+			}
+			continue
+		}
+		if result.DecisionVersion <= 0 {
+			return provider.ToolApprovalDecision{}, fmt.Errorf("runtime approval decision is missing a version")
+		}
+		ackPath := path + "/" + created.Approval.ID.String() + "/ack"
+		if _, ackErr := c.requestWithHeaders(ctx, http.MethodPost, ackPath,
+			map[string]any{"decisionVersion": result.DecisionVersion}, nil,
+			map[string]string{"X-Agent-Task-Token": taskToken}); ackErr != nil {
+			return provider.ToolApprovalDecision{}, ackErr
+		}
+		return provider.ToolApprovalDecision{ApprovalID: result.ApprovalID,
+			DecisionVersion: result.DecisionVersion, Allow: result.Allow,
+			DenyMessage: result.DenyMessage}, nil
+	}
+}

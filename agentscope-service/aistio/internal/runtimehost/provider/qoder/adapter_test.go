@@ -4,11 +4,16 @@
 package qoder
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider"
 )
@@ -18,13 +23,74 @@ func TestBuildArgsDoesNotBypassPermissionsImplicitly(t *testing.T) {
 		Model: "qoder-auto", PermissionMode: "accept_edits", AllowedTools: []string{"Read", "Write"},
 	}, "", "")
 	got := strings.Join(args, " ")
-	want := "-p --output-format stream-json --cwd /tmp/work --resume session-1 --model qoder-auto --permission-mode accept_edits --tools Read Write --allowed-tools Read --allowed-tools Write"
+	want := "-p --input-format stream-json --output-format stream-json --cwd /tmp/work --resume session-1 --model qoder-auto --permission-mode accept_edits --allowed-tools Read --allowed-tools Write"
 	if got != want {
 		t.Fatalf("args=%q, want %q", got, want)
 	}
 	if strings.Contains(got, "dangerously-skip-permissions") || strings.Contains(got, "--yolo") {
 		t.Fatalf("unsafe permission bypass was injected: %q", got)
 	}
+}
+
+func TestConsumeStreamJSONBridgesToolApproval(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"session-1"}`,
+		`{"type":"control_request","request_id":"request-1","request":{"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"tool-1","input":{"command":"date"}}}`,
+		`{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"session-1"}`,
+	}, "\n")
+	var responses bytes.Buffer
+	result := &provider.Result{}
+	err := consumeStreamJSON(context.Background(), strings.NewReader(input), &responses, result, nil,
+		func(_ context.Context, request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+			if request.ToolUseID != "tool-1" || request.ToolName != "Bash" || request.InputSHA256 == "" {
+				t.Fatalf("approval request=%+v", request)
+			}
+			return provider.ToolApprovalDecision{Allow: true}, nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := responses.String(); !strings.Contains(got, `"type":"control_response"`) ||
+		!strings.Contains(got, `"request_id":"request-1"`) || !strings.Contains(got, `"behavior":"allow"`) ||
+		!strings.Contains(got, `"updatedInput":{"command":"date"}`) {
+		t.Fatalf("approval response=%s", got)
+	}
+	if result.Output != "done" || result.ProviderSessionID != "session-1" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestConsumeStreamJSONDeniesToolApprovalWithoutHostApprover(t *testing.T) {
+	input := `{"type":"control_request","request_id":"request-2","request":{"subtype":"can_use_tool","tool_name":"Write","tool_use_id":"tool-2","input":{"path":"/tmp/a"}}}`
+	var responses bytes.Buffer
+	if err := consumeStreamJSON(context.Background(), strings.NewReader(input), &responses, &provider.Result{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := responses.String(); !strings.Contains(got, `"behavior":"deny"`) ||
+		!strings.Contains(got, `"toolUseID":"tool-2"`) {
+		t.Fatalf("approval response=%s", got)
+	}
+}
+
+func TestConsumeStreamJSONReturnsAtResultWithoutWaitingForInputEOF(t *testing.T) {
+	reader, writer := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		done <- consumeStreamJSON(context.Background(), reader, io.Discard, &provider.Result{}, nil, nil)
+	}()
+	if _, err := writer.Write([]byte(`{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"session-1"}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Qoder result waited for stdin/stdout EOF")
+	}
+	_ = writer.Close()
+	_ = reader.Close()
 }
 
 func TestConsumeJSONLReportsNonInteractivePermissionDenial(t *testing.T) {
@@ -43,7 +109,7 @@ func TestConsumeJSONLReportsNonInteractivePermissionDenial(t *testing.T) {
 	}
 }
 
-func TestBuildArgsAppliesHeadlessAutomationControls(t *testing.T) {
+func TestBuildArgsPreauthorizesCollaborationWithoutHidingDevelopmentTools(t *testing.T) {
 	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{
 		ContextWindow: 120000, MaxTurns: 24, MaxOutputTokens: 8000, StrictMCPConfig: true,
 		AllowedTools: []string{"mcp__agentscope-collaboration__*"},
@@ -52,7 +118,6 @@ func TestBuildArgsAppliesHeadlessAutomationControls(t *testing.T) {
 	for _, want := range []string{
 		"--mcp-config /tmp/mcp.json --strict-mcp-config",
 		"--context-window 120000",
-		"--tools  --allowed-mcp-server-names agentscope-collaboration",
 		"--allowed-tools mcp__agentscope-collaboration__*",
 		"--max-turns 24",
 		"--max-output-tokens 8000",
@@ -61,12 +126,16 @@ func TestBuildArgsAppliesHeadlessAutomationControls(t *testing.T) {
 			t.Fatalf("args=%q does not contain %q", got, want)
 		}
 	}
+	if strings.Contains(got, "--tools") || strings.Contains(got, "--allowed-mcp-server-names") {
+		t.Fatalf("permission grant unexpectedly narrowed tool exposure: %q", got)
+	}
 }
 
 func TestBuildArgsDisablesUnlistedAmbientToolsAndMCPServers(t *testing.T) {
-	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{
-		AllowedTools: []string{"Read"},
-	}, "/tmp/mcp.json", "")
+	enabled := true
+	tools, _ := json.Marshal([]map[string]any{{"configs": []map[string]any{{"name": "read", "enabled": enabled}}}})
+	args := buildArgs(provider.Request{Workspace: "/tmp/work", Definition: &provider.AgentDefinition{Tools: tools}},
+		configuration{}, "/tmp/mcp.json", "")
 	want := []string{"--tools", "Read", "--allowed-mcp-server-names", "__agentscope_none__"}
 	for i := 0; i <= len(args)-len(want); i++ {
 		if strings.Join(args[i:i+len(want)], "\x00") == strings.Join(want, "\x00") {

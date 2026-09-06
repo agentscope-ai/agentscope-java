@@ -69,7 +69,7 @@ echo "$AGENT_ID"
 
 ## 3. 创建 Environment
 
-Session **必须**带 `environmentId`（API 不自动省略）。本地开发用 `local`：
+本地开发栈允许 `local`，且通过统一 Agent API 新建 Managed Agent 时会自动绑定共享的 `default-local`。下面仍演示显式创建和选择 Environment，便于测试改绑流程：
 
 ```bash
 ENV=$(curl -s -X POST "$BASE/api/environments" \

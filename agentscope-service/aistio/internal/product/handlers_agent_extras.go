@@ -16,6 +16,7 @@ package product
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -451,6 +452,18 @@ func (s *Server) cloneAgent(c *gin.Context) {
 	if src.WorkspaceID != nil {
 		wsID = *src.WorkspaceID
 	}
+	defaultEnvironmentID, resolveErr := s.defaultEnvironmentForAgentCreate(
+		c.Request.Context(), owner, deref(src.DefaultEnvironmentID))
+	if resolveErr != nil {
+		// A production policy change may make a historical local default
+		// ineligible. Forking remains possible, but the new Agent starts unbound.
+		if errors.Is(resolveErr, ErrLocalEnvironmentDisabled) {
+			defaultEnvironmentID = ""
+		} else {
+			writeTextErr(c, environmentBindingHTTPStatus(resolveErr), resolveErr.Error())
+			return
+		}
+	}
 	_, err = s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO agents (owner_id, agent_id, workspace_path, workspace_id, name, description, sys_prompt, model,
 		 max_iters, tools_json, mcp_servers_json, skills_json, multiagent_json,
@@ -460,7 +473,7 @@ func (s *Server) cloneAgent(c *gin.Context) {
 		owner, newID, dstWS, nullStr(wsID), name, src.Description, src.SysPrompt, src.Model,
 		maxIters, deref(src.ToolsJSON), deref(src.McpServersJSON), deref(src.SkillsJSON),
 		deref(src.MultiagentJSON),
-		src.DefaultEnvironmentID, src.DefaultVaultIDsJSON, src.DefaultMemoryStoreIDsJSON,
+		nullStr(defaultEnvironmentID), src.DefaultVaultIDsJSON, src.DefaultMemoryStoreIDsJSON,
 		now)
 	if err != nil {
 		writeTextErr(c, http.StatusInternalServerError, err.Error())
@@ -475,7 +488,7 @@ func (s *Server) cloneAgent(c *gin.Context) {
 		snap = mustJSON(s.agentSnapshot(owner, newID, name, deref(src.Description), deref(src.SysPrompt),
 			deref(src.Model), maxIters, parseJSONRaw(deref(src.ToolsJSON)), parseJSONRaw(deref(src.McpServersJSON)),
 			parseJSONRaw(deref(src.SkillsJSON)), parseJSONRaw(deref(src.MultiagentJSON)), dstWS, wsID,
-			deref(src.DefaultEnvironmentID),
+			defaultEnvironmentID,
 			parseStringSlice(deref(src.DefaultVaultIDsJSON)),
 			parseStringSlice(deref(src.DefaultMemoryStoreIDsJSON)),
 			1, now, now))
@@ -486,6 +499,7 @@ func (s *Server) cloneAgent(c *gin.Context) {
 			m["name"] = name
 			m["workspacePath"] = dstWS
 			m["workspaceId"] = nullStr(wsID)
+			m["defaultEnvironmentId"] = nullStr(defaultEnvironmentID)
 			m["version"] = 1
 			m["createdAt"] = now
 			m["updatedAt"] = now

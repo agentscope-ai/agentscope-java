@@ -24,6 +24,22 @@ const MaxAgingBoost int32 = 50
 const DefaultMaxTenantConcurrency = 1000
 const DefaultMaxRunConcurrency = 100
 
+// PermanentDispatchError tells the durable outbox that retrying the same
+// immutable runtime policy cannot make progress. Capacity and availability
+// errors remain ordinary retryable errors.
+type PermanentDispatchError struct {
+	code    string
+	message string
+}
+
+func (e *PermanentDispatchError) Error() string { return e.message }
+
+func (e *PermanentDispatchError) DispatchFailureCode() string { return e.code }
+
+func exhaustedRuntimeCandidates(message string) error {
+	return &PermanentDispatchError{code: "runtime_candidates_exhausted", message: message}
+}
+
 type Scheduler struct {
 	Store                store.Store
 	Resolver             *runtimebinding.Resolver
@@ -325,13 +341,15 @@ func (s *Scheduler) selectOrderedCandidate(ctx context.Context, task *controlmod
 		}
 		if failures >= infrastructureAttempts(policy.RetryPolicy) {
 			if policy.FallbackMode != "fresh" {
-				return nil, fmt.Errorf("preferred runtime candidate exhausted and fresh fallback is disabled")
+				return nil, exhaustedRuntimeCandidates(
+					"preferred runtime candidate exhausted and fresh fallback is disabled")
 			}
 			start++
 		}
 	}
 	if start >= len(policy.Candidates) {
-		return nil, fmt.Errorf("all %s runtime candidates are exhausted", source)
+		return nil, exhaustedRuntimeCandidates(
+			fmt.Sprintf("all %s runtime candidates are exhausted", source))
 	}
 	candidate := policy.Candidates[start]
 	candidate.SelectionSource = source

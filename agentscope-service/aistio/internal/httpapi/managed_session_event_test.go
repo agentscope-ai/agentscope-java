@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,7 +15,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/product"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
@@ -106,7 +109,8 @@ func TestManagedRunningEventStartsAssignedAttempt(t *testing.T) {
 	srv := NewServer(ServerOptions{Store: st, InternalToken: "internal-secret"})
 	body, _ := json.Marshal(managedSessionEventReport{ID: "evt-running", SessionID: session.SessionID,
 		Seq: 1, Type: "session.status_running", Payload: map[string]any{"status": "running"},
-		CreatedAt: time.Now().UnixMilli()})
+		CreatedAt: time.Now().UnixMilli(), AgentTaskID: claimed.ID.String(), AttemptID: attempt.ID.String(),
+		DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -124,6 +128,9 @@ func TestManagedRunningEventStartsAssignedAttempt(t *testing.T) {
 		t.Fatalf("lifecycle not synchronized: task=%+v attempt=%+v session=%+v",
 			started, startedAttempt, updatedSession)
 	}
+	if startedAttempt.LeaseExpiresAt == nil || !startedAttempt.LeaseExpiresAt.After(time.Now()) {
+		t.Fatalf("fenced managed event did not renew execution lease: %+v", startedAttempt)
+	}
 	heartbeatBody, _ := json.Marshal(managedSessionHeartbeat{AttemptID: attempt.ID,
 		DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
 	heartbeatReq := httptest.NewRequest(http.MethodPost,
@@ -139,11 +146,33 @@ func TestManagedRunningEventStartsAssignedAttempt(t *testing.T) {
 	if renewedAttempt.LeaseExpiresAt == nil || !renewedAttempt.LeaseExpiresAt.After(time.Now()) {
 		t.Fatalf("managed execution lease was not renewed: %+v", renewedAttempt)
 	}
-
+	suspendedBody, _ := json.Marshal(managedSessionEventReport{ID: "evt-tool-suspended", SessionID: session.SessionID,
+		Seq: 2, Type: "session.requires_action", Payload: map[string]any{"reason": "tool_suspended"},
+		CreatedAt: time.Now().UnixMilli(), AgentTaskID: claimed.ID.String(), AttemptID: attempt.ID.String(),
+		DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
+	suspendedReq := httptest.NewRequest(http.MethodPost,
+		"/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(suspendedBody))
+	suspendedReq.Header.Set("Content-Type", "application/json")
+	suspendedReq.Header.Set("X-Builder-Internal-Token", "internal-secret")
+	suspendedResponse := httptest.NewRecorder()
+	srv.router.ServeHTTP(suspendedResponse, suspendedReq)
+	if suspendedResponse.Code != http.StatusNoContent {
+		t.Fatalf("non-HITL requires_action status=%d body=%s", suspendedResponse.Code, suspendedResponse.Body.String())
+	}
+	approvals, err := st.Collaboration().ListApprovals(ctx, store.ApprovalFilter{
+		Tenant: claimed.Tenant, Namespace: claimed.Namespace, Limit: 10})
+	if err != nil || len(approvals) != 0 {
+		t.Fatalf("non-HITL requires_action created Approval: approvals=%+v err=%v", approvals, err)
+	}
+	afterSuspension, _ := st.Collaboration().GetAgentTask(ctx, claimed.ID)
+	if afterSuspension.Status != controlmodel.AgentTaskRunning {
+		t.Fatalf("non-HITL requires_action changed Task state: %+v", afterSuspension)
+	}
 	errorBody, _ := json.Marshal(managedSessionEventReport{ID: "evt-error", SessionID: session.SessionID,
-		Seq: 2, Type: "session.error", Payload: map[string]any{"error": map[string]any{
+		Seq: 3, Type: "session.error", Payload: map[string]any{"error": map[string]any{
 			"code": "model_call_failed", "message": "provider unavailable"}}, CreatedAt: time.Now().UnixMilli(),
-		AttemptID: attempt.ID.String(), DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
+		AgentTaskID: claimed.ID.String(), AttemptID: attempt.ID.String(),
+		DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
 	errorReq := httptest.NewRequest(http.MethodPost,
 		"/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(errorBody))
 	errorReq.Header.Set("Content-Type", "application/json")
@@ -158,6 +187,307 @@ func TestManagedRunningEventStartsAssignedAttempt(t *testing.T) {
 	if failedTask.Status != controlmodel.AgentTaskFailed || failedAttempt.State != controlmodel.ExecutionFailed ||
 		failedTask.ErrorCode != "model_call_failed" {
 		t.Fatalf("turn error did not fail task atomically: task=%+v attempt=%+v", failedTask, failedAttempt)
+	}
+}
+
+func TestManagedIdleFailsTaskThatReturnedWithoutTerminalAction(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	leaderID, workerID := uuid.New(), uuid.New()
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant-a", Namespace: "default", Name: "managed-team",
+		LeaderAgentRef: leaderID.String(), Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: workerID.String(), Role: "worker",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &collaboration.Service{Store: st}
+	_, leader, err := svc.CreateIssue(ctx, collaboration.CreateIssueRequest{
+		Tenant: "tenant-a", Namespace: "default", Title: "coordinate",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: leader.ID, ExpectedVersion: leader.Version, RuntimeBinding: json.RawMessage(`{}`), SessionID: "managed-leader"},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+			State: controlmodel.ExecutionAssigned, SessionID: "managed-leader", TurnID: "leader-turn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, err = st.Collaboration().StartAgentTask(ctx, leader.ID, leader.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(ServerOptions{Store: st})
+	if err = srv.validateMCPTeamLeaderCompletion(ctx, leader); err == nil {
+		t.Fatal("Team leader completion was allowed before delegation or coordinator completion")
+	}
+	followUp := *leader
+	parentTaskID := uuid.New()
+	followUp.ParentTaskID = &parentTaskID
+	if err = srv.validateMCPTeamLeaderCompletion(ctx, &followUp); err != nil {
+		t.Fatalf("leader follow-up could not finish a waiting decision turn: %v", err)
+	}
+	if _, _, err = svc.CreateChildFromTask(ctx, leader.ID, collaboration.CreateIssueRequest{
+		Title: "worker job", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: workerID.String(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = srv.validateMCPTeamLeaderCompletion(ctx, leader); err != nil {
+		t.Fatalf("Team leader completion remained blocked after delegation: %v", err)
+	}
+	busy := true
+	session, err := st.Sessions().Upsert(ctx, &store.Session{
+		Tenant: leader.Tenant, Namespace: leader.Namespace, SessionID: "managed-leader",
+		AgentID: leaderID, AgentName: "leader", Framework: string(controlmodel.DataPlaneManaged),
+		Phase: store.SessionPhaseActive, Busy: &busy, AgentTaskID: &leader.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = srv.applyManagedSessionStatus(ctx, session, &managedSessionEventReport{
+		Type: "session.status_idle", AgentTaskID: leader.ID.String(), AttemptID: attempt.ID.String(),
+		DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedLeader, _ := st.Collaboration().GetAgentTask(ctx, leader.ID)
+	failedAttempt, _ := st.ExecutionAttempts().Get(ctx, attempt.ID)
+	if failedLeader.Status != controlmodel.AgentTaskFailed || failedAttempt.State != controlmodel.ExecutionFailed ||
+		failedLeader.ErrorCode != "managed_turn_incomplete" {
+		t.Fatalf("text-only managed return did not fail immediately: task=%+v attempt=%+v", failedLeader, failedAttempt)
+	}
+}
+
+func TestManagedTaskEventWithoutAttemptFenceCannotConsumeFencedSourceKey(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	agentID := uuid.New()
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: "tenant-a", Namespace: "default", Title: "fenced managed work",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: agentID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
+	claimed, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version, SessionID: "managed-unfenced"},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+			State: controlmodel.ExecutionAssigned, SessionID: "managed-unfenced", TurnID: "current-turn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := false
+	session, err := st.Sessions().Upsert(ctx, &store.Session{
+		Tenant: claimed.Tenant, Namespace: claimed.Namespace, SessionID: "managed-unfenced",
+		AgentID: agentID, AgentName: "managed-worker", Framework: string(controlmodel.DataPlaneManaged),
+		Phase: store.SessionPhaseIdle, Busy: &busy, AgentTaskID: &claimed.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(ServerOptions{Store: st, InternalToken: "internal-secret"})
+	body, _ := json.Marshal(managedSessionEventReport{ID: "evt-unfenced", SessionID: session.SessionID,
+		Seq: 1, Type: "session.status_running", CreatedAt: time.Now().UnixMilli()})
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Builder-Internal-Token", "internal-secret")
+	response := httptest.NewRecorder()
+	srv.router.ServeHTTP(response, req)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("unfenced report: status=%d body=%s", response.Code, response.Body.String())
+	}
+	unchangedTask, _ := st.Collaboration().GetAgentTask(ctx, claimed.ID)
+	unchangedAttempt, _ := st.ExecutionAttempts().Get(ctx, attempt.ID)
+	if unchangedTask.Status != controlmodel.AgentTaskDispatched || unchangedAttempt.State != controlmodel.ExecutionAssigned ||
+		unchangedAttempt.LeaseExpiresAt != nil {
+		t.Fatalf("unfenced event mutated current retry: task=%+v attempt=%+v", unchangedTask, unchangedAttempt)
+	}
+	events, err := st.Events().List(ctx, session.ID)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("unfenced event consumed its source key: events=%+v err=%v", events, err)
+	}
+
+	// A generic event mirror can race the explicit ManagedExecutionScope upload
+	// with the same stable event ID. Rejecting (rather than recording) the first
+	// unscoped copy lets the correctly fenced copy become the unique ACK.
+	fencedBody, _ := json.Marshal(managedSessionEventReport{ID: "evt-unfenced", SessionID: session.SessionID,
+		Seq: 1, Type: "session.status_running", CreatedAt: time.Now().UnixMilli(),
+		AgentTaskID: claimed.ID.String(), AttemptID: attempt.ID.String(),
+		DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
+	fencedReq := httptest.NewRequest(http.MethodPost,
+		"/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(fencedBody))
+	fencedReq.Header.Set("Content-Type", "application/json")
+	fencedReq.Header.Set("X-Builder-Internal-Token", "internal-secret")
+	fencedResponse := httptest.NewRecorder()
+	srv.router.ServeHTTP(fencedResponse, fencedReq)
+	if fencedResponse.Code != http.StatusNoContent {
+		t.Fatalf("fenced retry: status=%d body=%s", fencedResponse.Code, fencedResponse.Body.String())
+	}
+	startedTask, _ := st.Collaboration().GetAgentTask(ctx, claimed.ID)
+	events, _ = st.Events().List(ctx, session.ID)
+	if startedTask.Status != controlmodel.AgentTaskRunning || len(events) != 1 {
+		t.Fatalf("fenced retry was not uniquely applied: task=%+v events=%+v", startedTask, events)
+	}
+}
+
+func TestManagedHeartbeatStopsFailedOrReplacedAttemptButAllowsSuccessfulTail(t *testing.T) {
+	t.Run("failed and replaced Attempt is gone", func(t *testing.T) {
+		ctx := context.Background()
+		st, session, task, attemptA, _ := createManagedApprovalFixture(t, ctx)
+		queued, _, err := st.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID,
+			store.TaskFailure{ExpectedVersion: task.Version, AttemptID: attemptA.ID,
+				DispatchGeneration: attemptA.DispatchGeneration, Code: "heartbeat_timeout", Message: "lost A"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv := NewServer(ServerOptions{Store: st, InternalToken: "internal-secret"})
+		postHeartbeat := func(attempt *controlmodel.ExecutionAttempt) *httptest.ResponseRecorder {
+			t.Helper()
+			body, _ := json.Marshal(managedSessionHeartbeat{AttemptID: attempt.ID,
+				DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
+			req := httptest.NewRequest(http.MethodPost,
+				"/api/internal/runtime-sessions/"+session.SessionID+"/heartbeat", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Builder-Internal-Token", "internal-secret")
+			response := httptest.NewRecorder()
+			srv.router.ServeHTTP(response, req)
+			return response
+		}
+		if response := postHeartbeat(attemptA); response.Code != http.StatusGone {
+			t.Fatalf("failed A heartbeat status=%d body=%s", response.Code, response.Body.String())
+		}
+		_, attemptB, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+			store.TaskClaim{TaskID: queued.ID, ExpectedVersion: queued.Version, SessionID: session.SessionID},
+			&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+				State: controlmodel.ExecutionAssigned, SessionID: session.SessionID, TurnID: "turn-b",
+				ManagedOwnerRef: "owner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response := postHeartbeat(attemptA); response.Code != http.StatusGone {
+			t.Fatalf("replaced A heartbeat status=%d body=%s", response.Code, response.Body.String())
+		}
+		if response := postHeartbeat(attemptB); response.Code != http.StatusNoContent {
+			t.Fatalf("current B heartbeat status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("successful Attempt tail is acknowledged", func(t *testing.T) {
+		ctx := context.Background()
+		st, session, task, attempt, approval := createManagedApprovalFixture(t, ctx)
+		approved, err := st.Collaboration().DecideApproval(ctx, approval.ID, approval.Version,
+			controlmodel.ApprovalApproved, controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resumedTask, _, err := st.Collaboration().ResumeManagedToolApproval(ctx, approved.ID,
+			mustManagedApprovalEnvelope(t, approved).fence(), managedExecutionLeaseTTL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = st.Collaboration().CompleteAgentTask(ctx, task.ID, store.TaskCompletion{
+			ExpectedVersion: resumedTask.Version, AttemptID: attempt.ID,
+			DispatchGeneration: attempt.DispatchGeneration, Summary: "done"}); err != nil {
+			t.Fatal(err)
+		}
+		body, _ := json.Marshal(managedSessionHeartbeat{AttemptID: attempt.ID,
+			DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/internal/runtime-sessions/"+session.SessionID+"/heartbeat", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Builder-Internal-Token", "internal-secret")
+		response := httptest.NewRecorder()
+		NewServer(ServerOptions{Store: st, InternalToken: "internal-secret"}).router.ServeHTTP(response, req)
+		if response.Code != http.StatusNoContent {
+			t.Fatalf("successful tail heartbeat status=%d body=%s", response.Code, response.Body.String())
+		}
+		tailBody, _ := json.Marshal(managedSessionEventReport{ID: "evt-success-tail", SessionID: session.SessionID,
+			Seq: 9, Type: "agent.message", Payload: map[string]any{"text": "final answer after completion"},
+			CreatedAt: time.Now().UnixMilli(), AgentTaskID: task.ID.String(), AttemptID: attempt.ID.String(),
+			DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
+		tailReq := httptest.NewRequest(http.MethodPost,
+			"/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(tailBody))
+		tailReq.Header.Set("Content-Type", "application/json")
+		tailReq.Header.Set("X-Builder-Internal-Token", "internal-secret")
+		tailResponse := httptest.NewRecorder()
+		NewServer(ServerOptions{Store: st, InternalToken: "internal-secret"}).router.ServeHTTP(tailResponse, tailReq)
+		if tailResponse.Code != http.StatusNoContent {
+			t.Fatalf("successful assistant tail status=%d body=%s", tailResponse.Code, tailResponse.Body.String())
+		}
+		events, err := st.Events().List(ctx, session.ID)
+		if err != nil || len(events) != 1 || events[0].Content != "final answer after completion" {
+			t.Fatalf("successful assistant tail was lost: events=%+v err=%v", events, err)
+		}
+	})
+}
+
+func TestManagedRuntimeStatusFenceRejectsOldAttemptAfterRetry(t *testing.T) {
+	ctx := context.Background()
+	st, session, task, attemptA, _ := createManagedApprovalFixture(t, ctx)
+	srv := NewServer(ServerOptions{Store: st})
+	if managed, err := srv.validateManagedSessionRuntimeFence(ctx, session.SessionID, product.ManagedRuntimeFence{}); !managed || !errors.Is(err, product.ErrManagedRuntimeFenceConflict) {
+		t.Fatalf("managed Session accepted missing fence: managed=%v err=%v", managed, err)
+	}
+	personalSessionID := "personal-runtime-fence"
+	if _, err := st.Sessions().Upsert(ctx, &store.Session{Tenant: "tenant-a", Namespace: "default",
+		AgentID: uuid.New(), SessionID: personalSessionID, Phase: store.SessionPhaseActive}); err != nil {
+		t.Fatal(err)
+	}
+	if managed, err := srv.validateManagedSessionRuntimeFence(ctx, personalSessionID, product.ManagedRuntimeFence{}); err != nil || managed {
+		t.Fatalf("personal Session rejected empty fence: managed=%v err=%v", managed, err)
+	}
+	fenceA := product.ManagedRuntimeFence{AgentTaskID: task.ID.String(), AttemptID: attemptA.ID.String(),
+		DispatchGeneration: attemptA.DispatchGeneration, TurnID: attemptA.TurnID}
+	managed, err := srv.validateManagedSessionRuntimeFence(ctx, session.SessionID, fenceA)
+	if err != nil || !managed {
+		t.Fatalf("current A fence managed=%v err=%v", managed, err)
+	}
+	wrongTurn := fenceA
+	wrongTurn.TurnID = "different-turn"
+	if _, err = srv.validateManagedSessionRuntimeFence(ctx, session.SessionID, wrongTurn); !errors.Is(err, product.ErrManagedRuntimeFenceConflict) {
+		t.Fatalf("same Attempt wrong tuple err=%v", err)
+	}
+	queued, _, err := st.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID,
+		store.TaskFailure{ExpectedVersion: task.Version, AttemptID: attemptA.ID,
+			DispatchGeneration: attemptA.DispatchGeneration, Code: "heartbeat_timeout", Message: "retry"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, attemptB, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: queued.ID, ExpectedVersion: queued.Version, SessionID: session.SessionID},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+			State: controlmodel.ExecutionAssigned, SessionID: session.SessionID, TurnID: "turn-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = srv.validateManagedSessionRuntimeFence(ctx, session.SessionID, fenceA); !errors.Is(err, product.ErrManagedRuntimeFenceGone) {
+		t.Fatalf("old A after B err=%v", err)
+	}
+	fenceB := product.ManagedRuntimeFence{AgentTaskID: task.ID.String(), AttemptID: attemptB.ID.String(),
+		DispatchGeneration: attemptB.DispatchGeneration, TurnID: attemptB.TurnID}
+	if managed, err = srv.validateManagedSessionRuntimeFence(ctx, session.SessionID, fenceB); err != nil || !managed {
+		t.Fatalf("current B fence managed=%v err=%v", managed, err)
 	}
 }
 
@@ -276,14 +606,15 @@ func TestStaleManagedTurnCannotFailRetryAttempt(t *testing.T) {
 	body, _ := json.Marshal(managedSessionEventReport{ID: "evt-old-error", SessionID: "managed-retry-1",
 		Seq: 9, Type: "session.error", Payload: map[string]any{"error": map[string]any{
 			"code": "old_turn_failed", "message": "stale physical turn"}}, CreatedAt: time.Now().UnixMilli(),
-		AttemptID: oldAttempt.ID.String(), DispatchGen: oldAttempt.DispatchGeneration, TurnID: oldAttempt.TurnID})
+		AgentTaskID: claimed.ID.String(), AttemptID: oldAttempt.ID.String(),
+		DispatchGen: oldAttempt.DispatchGeneration, TurnID: oldAttempt.TurnID})
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/internal/runtime-sessions/managed-retry-1/events", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Builder-Internal-Token", "internal-secret")
 	response := httptest.NewRecorder()
 	srv.router.ServeHTTP(response, req)
-	if response.Code != http.StatusNoContent {
+	if response.Code != http.StatusGone {
 		t.Fatalf("stale event report: status=%d body=%s", response.Code, response.Body.String())
 	}
 	current, _ := st.Collaboration().GetAgentTask(ctx, claimed.ID)

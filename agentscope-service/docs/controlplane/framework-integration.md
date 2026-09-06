@@ -73,11 +73,11 @@ token 仅为私网兼容路径。CLI 提供 `agentscope runtime start|stop|resta
 当前内置 Codex adapter：
 
 - 通过 `codex --version` 探测能力；
-- 使用 `codex exec --json` 执行新任务；
-- Runtime Host 创建的隔离 workspace 默认传入 `--skip-git-repo-check`，因此没有 repository
-  输入的 Playground/Issue 任务也能执行；高级 Profile 可显式设置 `skipGitRepoCheck: false`；
-- 使用 `codex exec resume <thread-id> -` 延续 provider session；
-- 将 JSONL 事件写入 journal，并把 thread ID/checkpoint 持久化到控制面；完成、失败和取消
+- 使用 `codex app-server --listen stdio://`，通过 `thread/start` 和 `turn/start` 执行新任务；
+- app-server 原生接受 Runtime Host 创建的非 Git 隔离 workspace，因此 Playground/Issue
+  不再依赖 `codex exec` 专用的 `--skip-git-repo-check`；
+- 使用 app-server `thread/resume` 延续 provider session；
+- 将 JSON-RPC 通知写入 journal，并把 thread ID/checkpoint 持久化到控制面；完成、失败和取消
   先写入本地 terminal outbox，控制面回调可按相同 lease/fencing 幂等重放；
 - 在租约续期失败时取消本地进程，旧 fencing token 不能再提交结果。
 
@@ -90,7 +90,7 @@ Runtime Host 默认使用 `--providers auto` 探测本机安装的这些 CLI；�
 对应二进制可以用 `--codex-binary`、`--claude-binary`、`--qoder-binary`、
 `--qwenpaw-binary` 和 `--openclaw-binary` 覆盖。Host 启动时探测版本并将能力注册到内部
 RuntimePool。不要声明本机未安装的 provider，否则 Host 应启动失败，避免领取无法执行的任务。
-Claude Code 与 Qoder 使用非交互 `stream-json`；QwenPaw 使用官方 `qwenpaw acp` stdio
+Claude Code 使用单向非交互 `stream-json`；Qoder 使用双向 `stream-json`；Codex 使用 app-server stdio JSON-RPC；QwenPaw 使用官方 `qwenpaw acp` stdio
 JSON-RPC，支持 session load、model 切换和 session-scoped MCP；OpenClaw 使用官方
 `openclaw agent exec --json` 隔离执行入口。OpenClaw 的该入口是 one-shot，因此 adapter 明确
 上报 `resume=false`，也不会虚构临时 MCP 注入能力。

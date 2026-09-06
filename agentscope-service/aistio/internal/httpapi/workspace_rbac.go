@@ -24,7 +24,7 @@ var workHubResources = map[string]bool{
 
 var agentCenterResources = map[string]bool{
 	"agents": true, "teams": true, "orchestration-definitions": true,
-	"endpoints": true, "entrypoints": true, "channels": true, "playground": true,
+	"endpoints": true, "entrypoints": true, "channels": true,
 }
 
 func requestWorkspace(path string) string {

@@ -42,7 +42,25 @@ type Request struct {
 	AgentID           string
 	TeamID            string
 	RunID             string
+	ApproveTool       ToolApprover
 }
+
+type ToolApprovalRequest struct {
+	ToolUseID   string
+	ToolName    string
+	Input       any
+	InputSHA256 string
+	ExpiresAt   string
+}
+
+type ToolApprovalDecision struct {
+	ApprovalID      string
+	DecisionVersion int64
+	Allow           bool
+	DenyMessage     string
+}
+
+type ToolApprover func(context.Context, ToolApprovalRequest) (ToolApprovalDecision, error)
 
 // AgentDefinition is the provider-neutral part of an Agent that a Runtime
 // Host can materialize. Provider adapters translate these fields into their
@@ -86,14 +104,16 @@ type Descriptor struct {
 	MCP          Capability `json:"mcp"`
 	Model        Capability `json:"model"`
 	CustomArgs   Capability `json:"customArgs"`
+	Approval     Capability `json:"approval"`
 	Resume       bool       `json:"resume"`
 }
 
 var reservedCustomArguments = map[string]bool{
-	"exec": true, "resume": true, "agent": true, "acp": true,
+	"exec": true, "resume": true, "agent": true, "acp": true, "app-server": true,
 	"-p": true, "-C": true, "--cd": true, "--cwd": true,
-	"--json": true, "--output-format": true, "--message-file": true,
+	"--json": true, "--input-format": true, "--output-format": true, "--message-file": true,
 	"--model": true, "--sandbox": true, "--permission-mode": true,
+	"--listen": true,
 	"--resume": true, "--mcp-config": true, "--config": true,
 	"--config-dir": true, "--strict-mcp-config": true, "--setting-sources": true,
 	"--allowed-mcp-server-names": true, "--tools": true, "--plugin-dir": true,

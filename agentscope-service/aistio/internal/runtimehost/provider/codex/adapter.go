@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,9 +33,11 @@ type Adapter struct {
 }
 
 type configuration struct {
-	Model            string `json:"model,omitempty"`
-	Profile          string `json:"profile,omitempty"`
-	Sandbox          string `json:"sandbox,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Profile string `json:"profile,omitempty"`
+	Sandbox string `json:"sandbox,omitempty"`
+	// Retained for decoding older RuntimeProfiles. app-server accepts
+	// AgentScope-created non-Git workspaces without an exec-only CLI flag.
 	SkipGitRepoCheck *bool  `json:"skipGitRepoCheck,omitempty"`
 	ReasoningEffort  string `json:"reasoningEffort,omitempty"`
 	ServiceTier      string `json:"serviceTier,omitempty"`
@@ -46,14 +49,15 @@ func (a *Adapter) Descriptor() provider.Descriptor {
 	return provider.Descriptor{
 		DisplayName:  "Codex",
 		Runtime:      "codex",
-		Instructions: provider.Capability{Supported: true, Mode: "file", Target: "AGENTS.md"},
+		Instructions: provider.Capability{Supported: true, Mode: "app-server", Target: "developerInstructions"},
 		Workspace:    provider.Capability{Supported: true, Mode: "cwd"},
 		Skills:       provider.Capability{Supported: true, Mode: "native-directory", Target: ".agents/skills"},
 		Tools:        provider.Capability{Supported: true, Mode: "native"},
 		Shell:        provider.Capability{Supported: true, Mode: "native", Target: "shell"},
 		MCP:          provider.Capability{Supported: true, Mode: "cli-config"},
-		Model:        provider.Capability{Supported: true, Mode: "cli-argument", Target: "--model"},
-		CustomArgs:   provider.Capability{Supported: true, Mode: "argv", Target: "codex exec"},
+		Model:        provider.Capability{Supported: true, Mode: "app-server", Target: "thread/start"},
+		CustomArgs:   provider.Capability{Supported: true, Mode: "argv", Target: "codex app-server"},
+		Approval:     provider.Capability{Supported: true, Mode: "control-plane", Target: "item/*/requestApproval"},
 		Resume:       true,
 	}
 }
@@ -94,31 +98,33 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 			return nil, fmt.Errorf("decode codex configuration: %w", err)
 		}
 	}
-	args := buildArgs(request, cfg)
-	cmd := exec.CommandContext(ctx, a.binary(), args...)
+	cmd := exec.CommandContext(ctx, a.binary(), buildArgs(request, cfg)...)
 	cmd.Dir = request.Workspace
-	cmd.Stdin = strings.NewReader(provider.PrependInstructions(request.Prompt, provider.DefinitionInstructions(request)))
 	provider.ApplyTaskEnvironment(cmd, request)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start codex: %w", err)
+	if err = cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start Codex app-server: %w", err)
 	}
-	result := &provider.Result{ProviderSessionID: request.ProviderSessionID}
-	readErr := consumeJSONL(stdout, result, sink)
+	client := newAppServerClient(ctx, stdin, stdout, sink, request.ApproveTool)
+	result, runErr := runAppServerSession(client, request, cfg)
+	_ = stdin.Close()
 	waitErr := cmd.Wait()
-	if readErr != nil {
-		return nil, readErr
+	if runErr != nil {
+		return nil, fmt.Errorf("Codex app-server: %w: %s", runErr, strings.TrimSpace(stderr.String()))
 	}
 	if waitErr != nil {
 		return nil, codexExitError(waitErr, stderr.String())
 	}
-	checkpoint, _ := json.Marshal(map[string]string{"providerSessionId": result.ProviderSessionID})
-	result.Checkpoint = checkpoint
+	result.Checkpoint, _ = json.Marshal(map[string]string{"providerSessionId": result.ProviderSessionID})
 	return result, nil
 }
 
@@ -137,115 +143,382 @@ func codexExitError(waitErr error, stderr string) error {
 	}
 	detail := strings.TrimSpace(strings.Join(kept, "\n"))
 	if detail == "" {
-		return fmt.Errorf("codex exited: %w", waitErr)
+		return fmt.Errorf("Codex exited: %w", waitErr)
 	}
-	return fmt.Errorf("codex exited: %w: %s", waitErr, detail)
+	return fmt.Errorf("Codex exited: %w: %s", waitErr, detail)
 }
 
+// buildArgs contains only process-level app-server configuration. Per-thread
+// model, cwd, sandbox and approval settings are sent through JSON-RPC.
 func buildArgs(request provider.Request, cfg configuration) []string {
-	args := []string{"exec"}
-	if request.ProviderSessionID != "" {
-		args = append(args, "resume")
+	profile, customArgs := splitCodexCustomArgs(request.CustomArgs)
+	if profile == "" {
+		profile = cfg.Profile
 	}
-	args = append(args, "--json")
-	sandbox := cfg.Sandbox
-	if sandbox == "" {
-		sandbox = "workspace-write"
+	args := make([]string, 0, 8+len(customArgs))
+	if profile != "" {
+		// --profile is a root Codex option and must precede the subcommand.
+		args = append(args, "--profile", profile)
 	}
+	args = append(args, "app-server", "--listen", "stdio://")
 	if request.CollaborationMCP != "" && request.TaskToken != "" {
 		args = append(args, "--config", fmt.Sprintf("mcp_servers.agentscope_collaboration.url=%q", request.CollaborationMCP),
 			"--config", fmt.Sprintf("mcp_servers.agentscope_collaboration.bearer_token_env_var=%q", provider.TaskTokenEnvironment),
 			"--config", `mcp_servers.agentscope_collaboration.default_tools_approval_mode="approve"`)
-		// Codex disables network access inside workspace-write by default. A Team
-		// member must be able to reach the task-scoped collaboration MCP endpoint;
-		// otherwise it cannot inspect its task, report progress, delegate, or
-		// converge its run node.
-		// Keep filesystem isolation intact and open only the network capability
-		// instead of switching the whole execution to danger-full-access.
-		if sandbox == "workspace-write" {
+		if sandboxMode(cfg) == "workspace-write" {
 			args = append(args, "--config", "sandbox_workspace_write.network_access=true")
 		}
 	}
-	if model := provider.DefinitionModel(request, cfg.Model); model != "" {
-		args = append(args, "--model", model)
-	}
-	if cfg.Profile != "" {
-		args = append(args, "--profile", cfg.Profile)
-	}
-	if cfg.ReasoningEffort != "" {
-		args = append(args, "--config", fmt.Sprintf("model_reasoning_effort=%q", cfg.ReasoningEffort))
-	}
-	if cfg.ServiceTier != "" {
-		args = append(args, "--config", fmt.Sprintf("service_tier=%q", cfg.ServiceTier))
-	}
-	// Runtime Host workspaces are created and isolated by AgentScope. They are
-	// valid Codex workspaces even when an Issue has no repository input, so the
-	// hosted default must not depend on a .git directory being present.
-	if cfg.SkipGitRepoCheck == nil || *cfg.SkipGitRepoCheck {
-		args = append(args, "--skip-git-repo-check")
-	}
-	if request.ProviderSessionID != "" {
-		args = append(args, request.CustomArgs...)
-		args = append(args, request.ProviderSessionID, "-")
-		return args
-	}
-	args = append(args, "--sandbox", sandbox, "--cd", request.Workspace)
-	args = append(args, request.CustomArgs...)
-	args = append(args, "-")
+	args = append(args, customArgs...)
 	return args
 }
 
-func consumeJSONL(reader io.Reader, result *provider.Result, sink provider.EventSink) error {
+// Older RuntimeProfiles may store --profile in custom arguments. Extract it so
+// it can be moved before the app-server subcommand; the last custom value wins
+// over the structured profile just as it did in the previous exec argv.
+func splitCodexCustomArgs(custom []string) (string, []string) {
+	profile := ""
+	remaining := make([]string, 0, len(custom))
+	for index := 0; index < len(custom); index++ {
+		argument := custom[index]
+		if argument == "--profile" && index+1 < len(custom) {
+			index++
+			profile = custom[index]
+			continue
+		}
+		if strings.HasPrefix(argument, "--profile=") {
+			profile = strings.TrimPrefix(argument, "--profile=")
+			continue
+		}
+		remaining = append(remaining, argument)
+	}
+	return profile, remaining
+}
+
+func sandboxMode(cfg configuration) string {
+	if cfg.Sandbox != "" {
+		return cfg.Sandbox
+	}
+	return "workspace-write"
+}
+
+func runAppServerSession(client *appServerClient, request provider.Request, cfg configuration) (*provider.Result, error) {
+	if err := client.call("initialize", map[string]any{
+		"clientInfo":   map[string]string{"name": "agentscope-runtime-host", "version": "1"},
+		"capabilities": map[string]any{},
+	}, nil); err != nil {
+		return nil, err
+	}
+	if err := client.notify("initialized", nil); err != nil {
+		return nil, err
+	}
+	threadParams := map[string]any{
+		"cwd": request.Workspace, "sandbox": sandboxMode(cfg), "approvalPolicy": "on-request",
+		"approvalsReviewer": "user",
+	}
+	if model := provider.DefinitionModel(request, cfg.Model); model != "" {
+		threadParams["model"] = model
+	}
+	if instructions := provider.DefinitionInstructions(request); instructions != "" {
+		threadParams["developerInstructions"] = instructions
+	}
+	if cfg.ServiceTier != "" {
+		threadParams["serviceTier"] = cfg.ServiceTier
+	}
+	method := "thread/start"
+	if request.ProviderSessionID != "" {
+		method = "thread/resume"
+		threadParams["threadId"] = request.ProviderSessionID
+		threadParams["excludeTurns"] = true
+	}
+	var started struct {
+		Thread struct {
+			ID string `json:"id"`
+		} `json:"thread"`
+	}
+	if err := client.call(method, threadParams, &started); err != nil {
+		return nil, err
+	}
+	if started.Thread.ID == "" {
+		return nil, fmt.Errorf("Codex returned an empty thread ID")
+	}
+	client.result.ProviderSessionID = started.Thread.ID
+	turnParams := map[string]any{
+		"threadId":          started.Thread.ID,
+		"input":             []map[string]string{{"type": "text", "text": request.Prompt}},
+		"approvalPolicy":    "on-request",
+		"approvalsReviewer": "user",
+	}
+	if cfg.ReasoningEffort != "" {
+		turnParams["effort"] = cfg.ReasoningEffort
+	}
+	if cfg.ServiceTier != "" {
+		turnParams["serviceTier"] = cfg.ServiceTier
+	}
+	if err := client.call("turn/start", turnParams, nil); err != nil {
+		return nil, err
+	}
+	if err := client.waitForTurn(); err != nil {
+		return nil, err
+	}
+	return client.result, nil
+}
+
+type appServerClient struct {
+	context  context.Context
+	writer   io.Writer
+	scanner  *bufio.Scanner
+	sink     provider.EventSink
+	approver provider.ToolApprover
+	nextID   int64
+	result   *provider.Result
+	terminal bool
+	turnErr  error
+}
+
+func newAppServerClient(ctx context.Context, writer io.Writer, reader io.Reader, sink provider.EventSink,
+	approver provider.ToolApprover) *appServerClient {
 	scanner := bufio.NewScanner(reader)
-	buffer := make([]byte, 64*1024)
-	scanner.Buffer(buffer, 4*1024*1024)
-	blockingFailure := ""
-	for scanner.Scan() {
-		raw := append(json.RawMessage(nil), scanner.Bytes()...)
-		var envelope struct {
-			Type     string `json:"type"`
-			ThreadID string `json:"thread_id"`
-			Item     struct {
-				Type             string          `json:"type"`
-				Text             string          `json:"text"`
-				Status           string          `json:"status"`
-				Message          string          `json:"message"`
-				Error            json.RawMessage `json:"error"`
-				AggregatedOutput string          `json:"aggregated_output"`
-			} `json:"item"`
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	return &appServerClient{context: ctx, writer: writer, scanner: scanner, sink: sink,
+		approver: approver, result: &provider.Result{}}
+}
+
+func (c *appServerClient) call(method string, params any, target any) error {
+	c.nextID++
+	id := c.nextID
+	if err := c.write(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}); err != nil {
+		return err
+	}
+	for c.scanner.Scan() {
+		raw := append(json.RawMessage(nil), c.scanner.Bytes()...)
+		message, err := decodeRPCMessage(raw)
+		if err != nil {
+			return err
 		}
-		if err := json.Unmarshal(raw, &envelope); err != nil {
-			return fmt.Errorf("decode codex JSONL event: %w", err)
-		}
-		if envelope.ThreadID != "" {
-			result.ProviderSessionID = envelope.ThreadID
-		}
-		if envelope.Item.Type == "agent_message" && envelope.Item.Text != "" {
-			result.Output = envelope.Item.Text
-		}
-		if blockingFailure == "" && envelope.Item.Status == "failed" {
-			failure := codexErrorMessage(envelope.Item.Error)
-			if failure == "" {
-				failure = envelope.Item.AggregatedOutput
+		if message.Method != "" {
+			if err = c.handleInbound(raw, message); err != nil {
+				return err
 			}
-			if codexPermissionFailure(failure) {
-				blockingFailure = failure
+			continue
+		}
+		var responseID int64
+		if len(message.ID) == 0 || json.Unmarshal(message.ID, &responseID) != nil || responseID != id {
+			continue
+		}
+		if message.Error != nil {
+			return fmt.Errorf("app-server %s failed (%d): %s", method, message.Error.Code, message.Error.Message)
+		}
+		if target != nil && len(message.Result) > 0 && string(message.Result) != "null" {
+			if err = json.Unmarshal(message.Result, target); err != nil {
+				return fmt.Errorf("decode app-server %s result: %w", method, err)
 			}
 		}
-		if sink != nil {
-			if err := sink(provider.Event{Type: envelope.Type, ProviderSessionID: envelope.ThreadID, Raw: raw}); err != nil {
+		return nil
+	}
+	return c.scanError()
+}
+
+func (c *appServerClient) notify(method string, params any) error {
+	message := map[string]any{"jsonrpc": "2.0", "method": method}
+	if params != nil {
+		message["params"] = params
+	}
+	return c.write(message)
+}
+
+func (c *appServerClient) waitForTurn() error {
+	for !c.terminal && c.scanner.Scan() {
+		raw := append(json.RawMessage(nil), c.scanner.Bytes()...)
+		message, err := decodeRPCMessage(raw)
+		if err != nil {
+			return err
+		}
+		if message.Method != "" {
+			if err = c.handleInbound(raw, message); err != nil {
 				return err
 			}
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return err
+	if c.terminal {
+		return c.turnErr
 	}
-	if blockingFailure != "" && (result.Output == "" || codexDescribesBlockedOutcome(result.Output)) {
-		return provider.NewExecutionError("provider_permission_denied",
-			"Codex could not access the task-scoped collaboration control plane: "+strings.TrimSpace(blockingFailure))
+	return c.scanError()
+}
+
+type rpcMessage struct {
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+	Result json.RawMessage `json:"result"`
+	Error  *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func decodeRPCMessage(raw json.RawMessage) (rpcMessage, error) {
+	var message rpcMessage
+	if err := json.Unmarshal(raw, &message); err != nil {
+		return message, fmt.Errorf("decode Codex app-server message: %w", err)
+	}
+	return message, nil
+}
+
+func (c *appServerClient) handleInbound(raw json.RawMessage, message rpcMessage) error {
+	if c.sink != nil {
+		if err := c.sink(provider.Event{Type: message.Method, ProviderSessionID: c.result.ProviderSessionID, Raw: raw}); err != nil {
+			return err
+		}
+	}
+	if len(message.ID) > 0 {
+		return c.handleServerRequest(message)
+	}
+	var params struct {
+		ThreadID string `json:"threadId"`
+		Thread   struct {
+			ID string `json:"id"`
+		} `json:"thread"`
+		Item codexItem `json:"item"`
+		Turn struct {
+			Status string          `json:"status"`
+			Error  json.RawMessage `json:"error"`
+			Items  []codexItem     `json:"items"`
+		} `json:"turn"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		WillRetry bool `json:"willRetry"`
+	}
+	if json.Unmarshal(message.Params, &params) != nil {
+		return nil
+	}
+	if params.ThreadID != "" {
+		c.result.ProviderSessionID = params.ThreadID
+	} else if params.Thread.ID != "" {
+		c.result.ProviderSessionID = params.Thread.ID
+	}
+	if message.Method == "item/completed" {
+		c.captureItem(params.Item)
+	}
+	if message.Method == "error" && !params.WillRetry && params.Error.Message != "" {
+		c.turnErr = fmt.Errorf("Codex turn failed: %s", params.Error.Message)
+	}
+	if message.Method == "turn/completed" {
+		for _, item := range params.Turn.Items {
+			c.captureItem(item)
+		}
+		c.terminal = true
+		if params.Turn.Status != "completed" {
+			text := codexErrorMessage(params.Turn.Error)
+			if text == "" {
+				text = params.Turn.Status
+			}
+			c.turnErr = fmt.Errorf("Codex turn %s: %s", params.Turn.Status, text)
+		}
 	}
 	return nil
+}
+
+type codexItem struct {
+	Type   string          `json:"type"`
+	Text   string          `json:"text"`
+	Status string          `json:"status"`
+	Error  json.RawMessage `json:"error"`
+}
+
+func (c *appServerClient) captureItem(item codexItem) {
+	if item.Type == "agentMessage" && item.Text != "" {
+		c.result.Output = item.Text
+	}
+}
+
+func (c *appServerClient) handleServerRequest(message rpcMessage) error {
+	switch message.Method {
+	case "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval":
+		return c.handleApproval(message)
+	default:
+		return c.write(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(message.ID),
+			"error": map[string]any{"code": -32601, "message": "AgentScope host does not implement " + message.Method}})
+	}
+}
+
+func (c *appServerClient) handleApproval(message rpcMessage) error {
+	var params map[string]any
+	if err := json.Unmarshal(message.Params, &params); err != nil {
+		return fmt.Errorf("decode Codex approval request: %w", err)
+	}
+	toolUseID := stringValue(params["approvalId"])
+	if toolUseID == "" {
+		toolUseID = stringValue(params["itemId"])
+	}
+	if toolUseID == "" {
+		toolUseID = message.Method + ":" + strings.TrimSpace(string(message.ID))
+	}
+	toolName := "provider_tool"
+	switch message.Method {
+	case "item/commandExecution/requestApproval":
+		toolName = "shell"
+	case "item/fileChange/requestApproval":
+		toolName = "apply_patch"
+	case "item/permissions/requestApproval":
+		toolName = "request_permissions"
+	}
+	decision := provider.ToolApprovalDecision{DenyMessage: "Tool use was not approved by the AgentScope host."}
+	if c.approver != nil {
+		inputJSON, _ := json.Marshal(params)
+		hash := sha256.Sum256(inputJSON)
+		var err error
+		decision, err = c.approver(c.context, provider.ToolApprovalRequest{ToolUseID: toolUseID,
+			ToolName: toolName, Input: params, InputSHA256: fmt.Sprintf("%x", hash[:])})
+		if err != nil {
+			_ = c.writeApprovalResponse(message, false, params)
+			return fmt.Errorf("request Codex tool approval: %w", err)
+		}
+	}
+	return c.writeApprovalResponse(message, decision.Allow, params)
+}
+
+func (c *appServerClient) writeApprovalResponse(message rpcMessage, allow bool, params map[string]any) error {
+	var result any
+	if message.Method == "item/permissions/requestApproval" {
+		permissions := map[string]any{}
+		if allow {
+			if requested, ok := params["permissions"].(map[string]any); ok {
+				permissions = requested
+			}
+		}
+		result = map[string]any{"permissions": permissions, "scope": "turn"}
+	} else {
+		decision := "decline"
+		if allow {
+			decision = "accept"
+		}
+		result = map[string]string{"decision": decision}
+	}
+	return c.write(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(message.ID), "result": result})
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func (c *appServerClient) scanError() error {
+	if err := c.scanner.Err(); err != nil {
+		return err
+	}
+	return io.ErrUnexpectedEOF
+}
+
+func (c *appServerClient) write(message any) error {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	_, err = c.writer.Write(data)
+	return err
 }
 
 func codexErrorMessage(raw json.RawMessage) string {
@@ -263,30 +536,4 @@ func codexErrorMessage(raw json.RawMessage) string {
 		return message
 	}
 	return string(raw)
-}
-
-func codexPermissionFailure(message string) bool {
-	message = strings.ToLower(message)
-	for _, marker := range []string{
-		"operation not permitted", "permission denied", "access denied", "requires approval",
-		"approval policy", "not allowed", "权限", "拒绝", "不允许",
-	} {
-		if strings.Contains(message, marker) {
-			return true
-		}
-	}
-	return false
-}
-
-func codexDescribesBlockedOutcome(output string) bool {
-	output = strings.ToLower(output)
-	for _, marker := range []string{
-		"blocked", "cannot", "can't", "unable", "permission", "denied", "requires approval",
-		"无法", "不能", "权限", "拒绝", "阻塞",
-	} {
-		if strings.Contains(output, marker) {
-			return true
-		}
-	}
-	return false
 }

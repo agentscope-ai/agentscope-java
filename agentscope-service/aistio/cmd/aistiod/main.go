@@ -358,6 +358,7 @@ func main() {
 		scopeMode              string
 		defaultTenant          string
 		defaultNamespace       string
+		allowLocalEnvironment  bool
 	)
 
 	defaultRetention := store.DefaultRetention()
@@ -407,6 +408,8 @@ func main() {
 		"Root for the local Artifact provider. Production deployments should mount durable shared object storage here.")
 	flag.BoolVar(&seedUsers, "seed-users", envBool("AISTIO_SEED_USERS", true),
 		"Seed default console users when the users table is empty.")
+	flag.BoolVar(&allowLocalEnvironment, "allow-local-environment", envBool("BUILDER_ALLOW_LOCAL_ENVIRONMENT", false),
+		"Allow Managed Agents to bind host-local filesystem and shell environments. Disabled by default; enable only for trusted development installations.")
 	flag.StringVar(&scopeMode, "scope-mode", envOr("AISTIO_SCOPE_MODE", httpapi.ScopeModeSingle),
 		"Scope selection mode: single fixes and hides tenant/namespace; multi allows explicit selection.")
 	flag.StringVar(&defaultTenant, "default-tenant", envOr("AISTIO_DEFAULT_TENANT", "default"),
@@ -526,20 +529,22 @@ func main() {
 		logger.Info("Managed Agents control plane not mounted: no --product-dsn configured")
 	default:
 		productSrv, err = product.Open(context.Background(), product.Config{
-			DSN:            productDSN,
-			JWTSecret:      productJWTSecret,
-			InternalToken:  productToken,
-			WorkspaceRoot:  workspaceRoot,
-			SeedUsers:      seedUsers,
-			DataURL:        os.Getenv("BUILDER_DATA_URL"),
-			VaultMasterKey: os.Getenv("BUILDER_VAULT_MASTER_KEY"),
+			DSN:                   productDSN,
+			JWTSecret:             productJWTSecret,
+			InternalToken:         productToken,
+			WorkspaceRoot:         workspaceRoot,
+			SeedUsers:             seedUsers,
+			AllowLocalEnvironment: allowLocalEnvironment,
+			DataURL:               os.Getenv("BUILDER_DATA_URL"),
+			VaultMasterKey:        os.Getenv("BUILDER_VAULT_MASTER_KEY"),
 		})
 		if err != nil {
 			logger.Error(err, "unable to open the Managed Agents control plane")
 			os.Exit(1)
 		}
 		defer productSrv.Close()
-		logger.Info("Managed Agents control plane enabled", "workspaceRoot", workspaceRoot, "staticDir", staticDir)
+		logger.Info("Managed Agents control plane enabled", "workspaceRoot", workspaceRoot, "staticDir", staticDir,
+			"allowLocalEnvironment", allowLocalEnvironment)
 	}
 
 	// Kubernetes is optional: without a reachable cluster aistiod still serves
@@ -750,6 +755,8 @@ func main() {
 	apiServer := httpapi.NewServer(apiOpts)
 	outboxHandler := &controller.CollaborationOutboxHandler{
 		Store: runtimeStore, Sink: collaborationEvents, DispatchAgentTask: apiServer.DispatchAgentTask,
+		DispatchApprovalDecision: apiServer.DispatchApprovalDecision,
+		DispatchManagedAbort:     apiServer.DispatchManagedAttemptAbort,
 		ReconcileRun: func(eventCtx context.Context, runID uuid.UUID) error {
 			return (&orchestration.Engine{Store: runtimeStore}).ReconcileRun(eventCtx, runID)
 		},

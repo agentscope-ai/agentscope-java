@@ -177,7 +177,7 @@ export default function AgentCreatePage() {
     <div className="console-page-legacy" style={S.page}>
       <header style={S.header}>
         <div style={S.headerMain}>
-          <button aria-label="Back" style={S.back} onClick={() => navigate(scope.scopedPath('/agent-center/agents'))}><ArrowLeft size={20} /></button>
+          <button type="button" aria-label="Back to previous page" title="Back to previous page" style={S.back} onClick={() => navigate(-1)}><ArrowLeft size={20} /></button>
           <div><h1 style={S.title}>Create an agent</h1><p style={S.subtitle}>Review and configure</p></div>
         </div>
         <span style={S.headerPill}>{execution?.name ?? 'Detecting runtime…'}</span>

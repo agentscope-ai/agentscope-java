@@ -64,6 +64,7 @@ spec:
             {{- if .Values.product.enabled }}
             - --static-dir={{ .Values.product.staticDir }}
             - --workspace-root={{ .Values.product.workspaceRoot }}
+            - --allow-local-environment={{ .Values.product.allowLocalEnvironment }}
             {{- end }}
           {{- if or .Values.api.authToken (eq .Values.storage.driver "postgres") .Values.product.enabled }}
           env:

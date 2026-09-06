@@ -220,11 +220,19 @@ func (r *agentCatalogRepo) RegisterExternal(ctx context.Context, req store.Exter
 	if req.Tenant == "" || req.Namespace == "" || req.AgentKey == "" || req.InstanceKey == "" {
 		return nil, fmt.Errorf("registration requires tenant, namespace, agentKey, and instanceKey")
 	}
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	// There is no row to lock while the logical Agent is being created. Serialize
+	// registrations for the same identity so concurrent first-time instances do
+	// not race on the unique Agent key and fail spuriously.
+	registrationKey := fmt.Sprintf("%d:%s%d:%s%s", len(req.Tenant), req.Tenant,
+		len(req.Namespace), req.Namespace, req.AgentKey)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, registrationKey); err != nil {
+		return nil, err
+	}
 
 	agent, err := scanAgent(tx.QueryRow(ctx, `SELECT `+agentColumns+` FROM agents
 		WHERE tenant=$1 AND namespace=$2 AND agent_key=$3 AND archived_at IS NULL FOR UPDATE`,

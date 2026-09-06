@@ -6,6 +6,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +84,12 @@ func TestOrderedFallbackRequiresExhaustedAttempt(t *testing.T) {
 	selected, err := s.selectOrderedCandidate(ctx, task, previous, policy, "policy")
 	if err != nil || selected.CandidateIndex != 1 || selected.Binding.Kind != controlmodel.DataPlaneManaged {
 		t.Fatalf("fresh fallback did not select candidate 1: selected=%+v err=%v", selected, err)
+	}
+	policy.FallbackMode = "disabled"
+	_, err = s.selectOrderedCandidate(ctx, task, previous, policy, "policy")
+	var permanent *PermanentDispatchError
+	if !errors.As(err, &permanent) || permanent.DispatchFailureCode() != "runtime_candidates_exhausted" {
+		t.Fatalf("exhausted disabled fallback error=%v, want permanent runtime candidate failure", err)
 	}
 }
 

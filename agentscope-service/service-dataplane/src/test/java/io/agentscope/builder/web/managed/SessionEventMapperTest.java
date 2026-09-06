@@ -28,6 +28,7 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultState;
@@ -77,6 +78,21 @@ class SessionEventMapperTest {
         assertThat(persisted.type()).isEqualTo(SessionEventTypes.AGENT_MESSAGE);
         assertThat(persisted.payload().get("text")).isEqualTo("Hello");
         assertThat(persisted.eventId()).isEqualTo(previewId);
+    }
+
+    @Test
+    void corePermissionPromptIsRecognizedAsUnresumableForManagedTurn() {
+        Msg asking =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("approval required")
+                        .generateReason(GenerateReason.PERMISSION_ASKING)
+                        .build();
+        Msg completed = Msg.builder().role(MsgRole.ASSISTANT).textContent("done").build();
+
+        assertThat(SessionTurnRunner.isCorePermissionAsking(new AgentResultEvent(asking))).isTrue();
+        assertThat(SessionTurnRunner.isCorePermissionAsking(new AgentResultEvent(completed)))
+                .isFalse();
     }
 
     /**

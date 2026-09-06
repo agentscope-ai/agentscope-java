@@ -23,11 +23,14 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 var errManagedSessionBusy = errors.New("managed session is busy")
@@ -220,27 +223,97 @@ type findOrCreateReq struct {
 }
 
 func (s *Server) resolveDefaultEnvironmentID(ctx context.Context, ownerID, agentID string) (string, error) {
-	if a, err := s.loadAgent(ctx, ownerID, agentID); err == nil {
-		if id := strings.TrimSpace(deref(a.DefaultEnvironmentID)); id != "" {
-			return id, nil
+	a, err := s.loadAgent(ctx, ownerID, agentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("agent not found")
+	}
+	if err != nil {
+		return "", err
+	}
+	if id := strings.TrimSpace(deref(a.DefaultEnvironmentID)); id != "" {
+		if _, err = s.validateEnvironmentBinding(ctx, ownerID, id); err != nil {
+			return "", err
 		}
+		return id, nil
 	}
 	var envID string
-	err := s.db.Pool.QueryRow(ctx,
+	err = s.db.Pool.QueryRow(ctx,
 		`SELECT environment_id FROM deployments
 		 WHERE owner_id=$1 AND agent_id=$2 AND archived_at IS NULL
 		 ORDER BY updated_at DESC LIMIT 1`,
 		ownerID, agentID).Scan(&envID)
 	if err == nil && envID != "" {
+		if _, err = s.validateEnvironmentBinding(ctx, ownerID, envID); err != nil {
+			return "", err
+		}
 		return envID, nil
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("resolve deployment environment for owner %s: %w", ownerID, err)
+	}
+	typeClause := ""
+	if !s.cfg.AllowLocalEnvironment {
+		typeClause = ` AND lower(type) <> 'local'`
 	}
 	err = s.db.Pool.QueryRow(ctx,
 		`SELECT environment_id FROM environments
-		 WHERE owner_id=$1 AND archived_at IS NULL
+		 WHERE owner_id=$1 AND archived_at IS NULL`+typeClause+`
 		 ORDER BY created_at ASC LIMIT 1`,
 		ownerID).Scan(&envID)
+	if err == nil {
+		return envID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("resolve environment for owner %s: %w", ownerID, err)
+	}
+	if s.cfg.AllowLocalEnvironment {
+		return s.ensureDefaultLocalEnvironment(ctx, ownerID)
+	}
+	return "", fmt.Errorf("%w; %w", ErrNoRunnableEnvironment, ErrLocalEnvironmentDisabled)
+}
+
+// ensureDefaultLocalEnvironment makes the Managed Agent UI's "Automatic local
+// default" promise true for background AgentTasks as well as interactive Chat.
+// The advisory lock prevents concurrent outbox retries from creating several
+// defaults for the same owner.
+func (s *Server) ensureDefaultLocalEnvironment(ctx context.Context, ownerID string) (string, error) {
+	if !s.cfg.AllowLocalEnvironment {
+		return "", ErrLocalEnvironmentDisabled
+	}
+	tx, err := s.db.Pool.Begin(ctx)
 	if err != nil {
-		return "", fmt.Errorf("no environment available for owner %s (create an environment or set agent.defaultEnvironmentId)", ownerID)
+		return "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtext('aistio-default-environment'), hashtext($1))`, ownerID); err != nil {
+		return "", err
+	}
+	var envID string
+	err = tx.QueryRow(ctx,
+		`SELECT environment_id FROM environments
+		 WHERE owner_id=$1 AND archived_at IS NULL AND lower(type)='local'
+		 ORDER BY created_at ASC LIMIT 1`, ownerID).Scan(&envID)
+	if err == nil {
+		if err = tx.Commit(ctx); err != nil {
+			return "", err
+		}
+		return envID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	envID = shortID("env_")
+	now := nowMillis()
+	keyHash := sha256Hex(shortID("ek_"))
+	if _, err = tx.Exec(ctx,
+		`INSERT INTO environments (environment_id, owner_id, name, type, config_json, api_key_hash, created_at, updated_at)
+		 VALUES ($1,$2,'default-local','local',$3,$4,$5,$5)`,
+		envID, ownerID, mustJSON(map[string]any{}), keyHash, now); err != nil {
+		return "", err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return "", err
 	}
 	return envID, nil
 }
@@ -253,7 +326,7 @@ func (s *Server) internalFindOrCreateSession(c *gin.Context) {
 	}
 	sess, err := s.FindOrCreateSession(c.Request.Context(), req.OwnerID, req.AgentID, req.EnvironmentID, req.ExternalKey)
 	if err != nil {
-		status := http.StatusInternalServerError
+		status := environmentBindingHTTPStatus(err)
 		if strings.Contains(err.Error(), "agent not found") || strings.Contains(err.Error(), "no environment") {
 			status = http.StatusBadRequest
 		}
@@ -278,6 +351,9 @@ func (s *Server) FindOrCreateSession(ctx context.Context, ownerID, agentID, envi
 		}
 		envID = resolved
 	}
+	if _, err = s.validateEnvironmentBinding(ctx, ownerID, envID); err != nil {
+		return sessionRow{}, err
+	}
 	if externalKey != "" {
 		var id string
 		err := s.db.Pool.QueryRow(ctx,
@@ -301,6 +377,31 @@ func (s *Server) FindOrCreateSessionID(ctx context.Context, ownerID, agentID, en
 		return "", err
 	}
 	return sess.SessionID, nil
+}
+
+// ClaimManagedRuntimeFence advances the product Session's persisted physical
+// turn marker before the data plane is woken. This closes the cross-store gap
+// where Attempt B was current in the runtime Store but delayed Attempt A still
+// won a product status PATCH before B's first status callback.
+func (s *Server) ClaimManagedRuntimeFence(ctx context.Context, sessionID string,
+	agentTaskID, attemptID uuid.UUID, dispatchGeneration int64, turnID string) error {
+	fence := ManagedRuntimeFence{AgentTaskID: agentTaskID.String(), AttemptID: attemptID.String(),
+		DispatchGeneration: dispatchGeneration, TurnID: turnID}
+	if strings.TrimSpace(sessionID) == "" || agentTaskID == uuid.Nil || attemptID == uuid.Nil || !fence.Complete() {
+		return ErrManagedRuntimeFenceConflict
+	}
+	var version int
+	err := s.db.Pool.QueryRow(ctx, `UPDATE sessions SET runtime_agent_task_id=$1,runtime_attempt_id=$2,
+		runtime_dispatch_generation=$3,runtime_turn_id=$4,stop_reason_json=NULL,version=version+1,updated_at=$5
+		WHERE session_id=$6 AND (runtime_dispatch_generation IS NULL OR
+			runtime_dispatch_generation<$3 OR (runtime_dispatch_generation=$3 AND
+			runtime_agent_task_id=$1 AND runtime_attempt_id=$2 AND runtime_turn_id=$4))
+		RETURNING version`, fence.AgentTaskID, fence.AttemptID, fence.DispatchGeneration,
+		fence.TurnID, nowMillis(), sessionID).Scan(&version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrManagedRuntimeFenceConflict
+	}
+	return err
 }
 
 // DeleteManagedSession removes a product session row and asks the data plane to
@@ -378,6 +479,125 @@ func (s *Server) PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, t
 	return errManagedSessionBusy
 }
 
+// ManagedToolConfirmationDecision is the immutable, fully fenced callback
+// body accepted by the managed data plane.
+type ManagedToolConfirmationDecision struct {
+	ApprovalID         uuid.UUID `json:"approvalId"`
+	DecisionVersion    int64     `json:"decisionVersion"`
+	Status             string    `json:"status"`
+	Allow              bool      `json:"allow"`
+	DenyMessage        string    `json:"denyMessage,omitempty"`
+	AgentTaskID        uuid.UUID `json:"agentTaskId"`
+	AttemptID          uuid.UUID `json:"attemptId"`
+	DispatchGeneration int64     `json:"dispatchGeneration"`
+	TurnID             string    `json:"turnId"`
+}
+
+// ManagedAttemptAbort is the immutable old-turn fence used when draining a
+// managed continuation after its logical Attempt has been failed or replaced.
+type ManagedAttemptAbort struct {
+	AgentTaskID        uuid.UUID `json:"agentTaskId"`
+	AttemptID          uuid.UUID `json:"attemptId"`
+	DispatchGeneration int64     `json:"dispatchGeneration"`
+	TurnID             string    `json:"turnId"`
+	Reason             string    `json:"reason"`
+}
+
+// ManagedToolConfirmationDeliveryError distinguishes a permanently stale or
+// lost continuation from a retryable transport/server failure.
+type ManagedToolConfirmationDeliveryError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *ManagedToolConfirmationDeliveryError) Error() string {
+	return fmt.Sprintf("tool confirmation returned status %d: %s", e.StatusCode, e.Message)
+}
+
+func (e *ManagedToolConfirmationDeliveryError) Permanent() bool {
+	return e != nil && (e.StatusCode == http.StatusNotFound || e.StatusCode == http.StatusConflict ||
+		e.StatusCode == http.StatusGone)
+}
+
+// PostManagedToolConfirmation delivers a control-plane Approval decision to
+// the durable HITL ticket owned by the managed data plane. Callers retry this
+// method through the control outbox; the data plane resolves the complete
+// physical-turn fence idempotently, so an ambiguous HTTP outcome is safe to
+// redeliver.
+func (s *Server) PostManagedToolConfirmation(ctx context.Context, sessionID, ownerID, toolUseID string, decision ManagedToolConfirmationDecision) error {
+	if s == nil || strings.TrimSpace(s.cfg.DataURL) == "" {
+		return fmt.Errorf("BUILDER_DATA_URL not configured")
+	}
+	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(toolUseID) == "" ||
+		decision.ApprovalID == uuid.Nil || decision.AgentTaskID == uuid.Nil || decision.AttemptID == uuid.Nil ||
+		decision.DecisionVersion <= 0 || decision.DispatchGeneration <= 0 || strings.TrimSpace(decision.TurnID) == "" {
+		return fmt.Errorf("managed tool confirmation requires approval, session, attempt, generation, turn, and toolUseId")
+	}
+	payload, err := json.Marshal(decision)
+	if err != nil {
+		return err
+	}
+	endpoint := strings.TrimRight(s.cfg.DataURL, "/") + "/api/internal/sessions/" + url.PathEscape(sessionID) +
+		"/tool-confirmations/" + url.PathEscape(toolUseID) + "/decision"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Builder-Internal-Token", s.cfg.InternalToken)
+	if ownerID != "" {
+		req.Header.Set("X-Builder-Internal-User", ownerID)
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return &ManagedToolConfirmationDeliveryError{StatusCode: resp.StatusCode, Message: string(message)}
+	}
+	return nil
+}
+
+// PostManagedAttemptAbort asks the data plane to interrupt only the managed
+// turn matching abort's complete physical fence. A delayed outbox delivery for
+// Attempt A must be harmless after the same Session has started Attempt B.
+func (s *Server) PostManagedAttemptAbort(ctx context.Context, sessionID, ownerID string, abort ManagedAttemptAbort) error {
+	if s == nil || strings.TrimSpace(s.cfg.DataURL) == "" {
+		return fmt.Errorf("BUILDER_DATA_URL not configured")
+	}
+	if strings.TrimSpace(sessionID) == "" || abort.AgentTaskID == uuid.Nil || abort.AttemptID == uuid.Nil ||
+		abort.DispatchGeneration <= 0 || strings.TrimSpace(abort.TurnID) == "" {
+		return fmt.Errorf("managed Attempt abort requires session, task, attempt, generation, and turn fence")
+	}
+	payload, err := json.Marshal(abort)
+	if err != nil {
+		return err
+	}
+	endpoint := strings.TrimRight(s.cfg.DataURL, "/") + "/api/internal/sessions/" +
+		url.PathEscape(sessionID) + "/managed-attempts/" + url.PathEscape(abort.AttemptID.String()) + "/abort"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Builder-Internal-Token", s.cfg.InternalToken)
+	if strings.TrimSpace(ownerID) != "" {
+		req.Header.Set("X-Builder-Internal-User", ownerID)
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return &ManagedToolConfirmationDeliveryError{StatusCode: resp.StatusCode, Message: string(message)}
+	}
+	return nil
+}
+
 // AbortManagedSession interrupts the active managed Turn through the same
 // authenticated event ingress used by ordinary user messages.
 func (s *Server) AbortManagedSession(ctx context.Context, sessionID, ownerID string) error {
@@ -404,40 +624,87 @@ func (s *Server) AbortManagedSession(ctx context.Context, sessionID, ownerID str
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("abort managed session %s: %s", resp.Status, string(message))
+		return &ManagedToolConfirmationDeliveryError{StatusCode: resp.StatusCode,
+			Message: "abort managed session: " + string(message)}
 	}
 	return nil
 }
 
 func (s *Server) internalPatchSessionRuntime(c *gin.Context) {
 	var req struct {
-		Status     *string `json:"status"`
-		StopReason any     `json:"stopReason"`
+		Status *string `json:"status"`
+		ManagedRuntimeFence
+		StopReason any `json:"stopReason"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeErr(c, http.StatusBadRequest, "invalid body")
 		return
 	}
-	sess, err := s.loadSession(c.Request.Context(), c.Param("id"))
+	tx, err := s.db.Pool.Begin(c.Request.Context())
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer func() { _ = tx.Rollback(c.Request.Context()) }()
+	sess, err := s.scanSession(tx.QueryRow(c.Request.Context(), sessionSelect+` WHERE session_id=$1 FOR UPDATE`, c.Param("id")))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "session not found")
+		return
+	}
+	fence := req.ManagedRuntimeFence
+	managed := false
+	if s.managedRuntimeValidator != nil {
+		managed, err = s.managedRuntimeValidator(c.Request.Context(), sess.SessionID, fence)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrManagedRuntimeFenceGone):
+				writeErr(c, http.StatusGone, err.Error())
+			case errors.Is(err, ErrManagedRuntimeFenceConflict):
+				writeErr(c, http.StatusConflict, err.Error())
+			default:
+				writeErr(c, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+	}
+	if managed && !fence.Complete() || !managed && !fence.Empty() {
+		writeErr(c, http.StatusConflict, ErrManagedRuntimeFenceConflict.Error())
+		return
+	}
+	if managed && !managedRuntimeFenceCanAdvance(sess, fence) || !managed && sess.RuntimeDispatchGen != nil {
+		writeErr(c, http.StatusConflict, "managed runtime fence is older than the accepted session scope")
 		return
 	}
 	status := sess.Status
 	if req.Status != nil {
 		status = *req.Status
 	}
-	var stop any
-	if req.StopReason != nil {
-		stop = mustJSON(req.StopReason)
-	} else if sess.StopReasonJSON != nil {
-		stop = *sess.StopReasonJSON
-	}
+	stop := sessionRuntimeStopReason(sess, req.Status, req.StopReason)
 	now := nowMillis()
-	_, err = s.db.Pool.Exec(c.Request.Context(),
-		`UPDATE sessions SET status=$1, stop_reason_json=$2, updated_at=$3 WHERE session_id=$4`,
-		status, stop, now, sess.SessionID)
+	var updatedVersion int
+	if managed {
+		err = tx.QueryRow(c.Request.Context(), `UPDATE sessions SET status=$1, stop_reason_json=$2,
+			runtime_agent_task_id=$3,runtime_attempt_id=$4,runtime_dispatch_generation=$5,
+			runtime_turn_id=$6,version=version+1,updated_at=$7
+			WHERE session_id=$8 AND (runtime_dispatch_generation IS NULL OR
+				runtime_dispatch_generation<$5 OR (runtime_dispatch_generation=$5 AND
+				runtime_agent_task_id=$3 AND runtime_attempt_id=$4 AND runtime_turn_id=$6))
+			RETURNING version`, status, stop, fence.AgentTaskID, fence.AttemptID,
+			fence.DispatchGeneration, fence.TurnID, now, sess.SessionID).Scan(&updatedVersion)
+	} else {
+		err = tx.QueryRow(c.Request.Context(), `UPDATE sessions SET status=$1, stop_reason_json=$2,
+			version=version+1,updated_at=$3 WHERE session_id=$4 AND runtime_dispatch_generation IS NULL
+			RETURNING version`, status, stop, now, sess.SessionID).Scan(&updatedVersion)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeErr(c, http.StatusConflict, "managed runtime fence lost its monotonic update race")
+		return
+	}
 	if err != nil {
+		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err = tx.Commit(c.Request.Context()); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -446,6 +713,40 @@ func (s *Server) internalPatchSessionRuntime(c *gin.Context) {
 	}
 	out, _ := s.loadSession(c.Request.Context(), sess.SessionID)
 	c.JSON(http.StatusOK, out.toJSON())
+}
+
+// managedRuntimeFenceCanAdvance mirrors the conditional UPDATE predicate. A
+// newer retry may replace an older marker, the same physical turn may patch
+// repeatedly, and every older or same-generation/different tuple is rejected.
+func managedRuntimeFenceCanAdvance(sess sessionRow, incoming ManagedRuntimeFence) bool {
+	if !incoming.Complete() {
+		return false
+	}
+	if sess.RuntimeDispatchGen == nil {
+		return true
+	}
+	if incoming.DispatchGeneration != *sess.RuntimeDispatchGen {
+		return incoming.DispatchGeneration > *sess.RuntimeDispatchGen
+	}
+	return sess.RuntimeAgentTaskID != nil && *sess.RuntimeAgentTaskID == incoming.AgentTaskID &&
+		sess.RuntimeAttemptID != nil && *sess.RuntimeAttemptID == incoming.AttemptID &&
+		sess.RuntimeTurnID != nil && *sess.RuntimeTurnID == incoming.TurnID
+}
+
+// sessionRuntimeStopReason prevents a newly running physical turn from
+// inheriting an error recorded by the previous Attempt. Other status-only
+// patches retain the existing reason for backwards compatibility.
+func sessionRuntimeStopReason(sess sessionRow, requestedStatus *string, requestedReason any) any {
+	if requestedStatus != nil && strings.EqualFold(strings.TrimSpace(*requestedStatus), "running") {
+		return nil
+	}
+	if requestedReason != nil {
+		return mustJSON(requestedReason)
+	}
+	if sess.StopReasonJSON != nil {
+		return *sess.StopReasonJSON
+	}
+	return nil
 }
 
 func (s *Server) internalPatchSessionOverrides(c *gin.Context) {

@@ -76,11 +76,18 @@ public class ControlPlaneClient {
     }
 
     /** Mirrors one durable managed event into the control-plane session read model. */
-    @SuppressWarnings("unchecked")
     public void appendSessionEvent(SessionEventDto event) {
+        appendSessionEvent(event, managedExecutionScopes.get(event.sessionId()));
+    }
+
+    /** Mirrors one event with an explicit immutable fence, including from a different replica. */
+    @SuppressWarnings("unchecked")
+    public void appendSessionEvent(SessionEventDto event, ManagedExecutionScope scope) {
         Map<String, Object> body = objectMapper.convertValue(event, LinkedHashMap.class);
-        ManagedExecutionScope scope = managedExecutionScopes.get(event.sessionId());
         if (scope != null) {
+            if (scope.agentTaskId() != null && !scope.agentTaskId().isBlank()) {
+                body.put("agentTaskId", scope.agentTaskId());
+            }
             body.put("attemptId", scope.attemptId());
             body.put("dispatchGeneration", scope.dispatchGeneration());
             body.put("turnId", scope.turnId());
@@ -99,6 +106,14 @@ public class ControlPlaneClient {
     /** Renews the current managed AgentTask attempt while its model turn is active. */
     public void heartbeatManagedExecution(String sessionId) {
         ManagedExecutionScope scope = managedExecutionScopes.get(sessionId);
+        if (scope == null) {
+            return;
+        }
+        heartbeatManagedExecution(sessionId, scope);
+    }
+
+    /** Heartbeats one captured turn without accidentally adopting a newer session scope. */
+    public void heartbeatManagedExecution(String sessionId, ManagedExecutionScope scope) {
         if (scope == null) {
             return;
         }
@@ -169,9 +184,15 @@ public class ControlPlaneClient {
      * a retry Attempt, but events from this turn must remain attached to the Attempt that launched
      * it until {@link #endManagedExecution(String)} is called.
      */
-    public void beginManagedExecution(String sessionId) {
+    public ManagedExecutionScope beginManagedExecution(String sessionId) {
         SessionResolveResult result = resolveSession(sessionId);
-        rememberManagedExecutionScope(sessionId, result.executionContext());
+        ManagedExecutionScope scope = executionScope(result.executionContext());
+        if (scope == null) {
+            managedExecutionScopes.remove(sessionId);
+        } else {
+            managedExecutionScopes.put(sessionId, scope);
+        }
+        return scope;
     }
 
     /** Releases the immutable Attempt fence captured for a completed physical turn. */
@@ -179,23 +200,57 @@ public class ControlPlaneClient {
         managedExecutionScopes.remove(sessionId);
     }
 
-    private void rememberManagedExecutionScope(
-            String sessionId, Map<String, Object> executionContext) {
+    /** Releases this turn's scope without deleting a newer turn that reused the same session. */
+    public void endManagedExecution(String sessionId, ManagedExecutionScope expectedScope) {
+        if (expectedScope != null) {
+            managedExecutionScopes.remove(sessionId, expectedScope);
+        }
+    }
+
+    /** Returns the immutable AgentTask execution fence captured for the active physical turn. */
+    public ManagedExecutionScope managedExecutionScope(String sessionId) {
+        return managedExecutionScopes.get(sessionId);
+    }
+
+    private static ManagedExecutionScope executionScope(Map<String, Object> executionContext) {
         if (executionContext == null
                 || !(executionContext.get("attemptId") instanceof String attemptId)
                 || attemptId.isBlank()) {
-            managedExecutionScopes.remove(sessionId);
-            return;
+            return null;
         }
         long generation =
                 executionContext.get("dispatchGeneration") instanceof Number n ? n.longValue() : 0L;
         String turnId = String.valueOf(executionContext.getOrDefault("turnId", ""));
-        managedExecutionScopes.put(
-                sessionId, new ManagedExecutionScope(attemptId, generation, turnId));
+        String agentTaskId = managedAgentTaskId(executionContext);
+        String tenant = managedTaskValue(executionContext, "tenant");
+        return new ManagedExecutionScope(tenant, agentTaskId, attemptId, generation, turnId);
     }
 
-    private record ManagedExecutionScope(
-            String attemptId, long dispatchGeneration, String turnId) {}
+    private static String managedAgentTaskId(Map<String, Object> executionContext) {
+        Object direct = executionContext.get("agentTaskId");
+        if (direct != null && !String.valueOf(direct).isBlank()) {
+            return String.valueOf(direct);
+        }
+        return managedTaskValue(executionContext, "id");
+    }
+
+    private static String managedTaskValue(Map<String, Object> executionContext, String fieldName) {
+        Object taskContext = executionContext.get("taskContext");
+        if (!(taskContext instanceof Map<?, ?> context)
+                || !(context.get("task") instanceof Map<?, ?> task)) {
+            return null;
+        }
+        Object value = task.get(fieldName);
+        return value != null && !String.valueOf(value).isBlank() ? String.valueOf(value) : null;
+    }
+
+    /** Immutable fence attached to all events emitted by one admitted Managed AgentTask turn. */
+    public record ManagedExecutionScope(
+            String tenant,
+            String agentTaskId,
+            String attemptId,
+            long dispatchGeneration,
+            String turnId) {}
 
     /**
      * Lists recent product sessions for data-plane contract probing ({@code GET
@@ -333,18 +388,39 @@ public class ControlPlaneClient {
      */
     public void patchSessionRuntime(
             String sessionId, String status, Map<String, Object> stopReason) {
-        patchSessionRuntime(sessionId, status, stopReason, null);
+        patchSessionRuntime(sessionId, status, stopReason, null, null);
     }
 
     /** Patches session runtime status, optionally attributing the call to {@code actingUserId}. */
     public void patchSessionRuntime(
             String sessionId, String status, Map<String, Object> stopReason, String actingUserId) {
+        patchSessionRuntime(sessionId, status, stopReason, actingUserId, null);
+    }
+
+    /**
+     * Patches runtime status with the immutable fence captured when this physical turn was
+     * admitted. A delayed turn must never adopt a newer Attempt's session-scoped fence.
+     */
+    public void patchSessionRuntime(
+            String sessionId,
+            String status,
+            Map<String, Object> stopReason,
+            String actingUserId,
+            ManagedExecutionScope scope) {
         Map<String, Object> body = new LinkedHashMap<>();
         if (status != null) {
             body.put("status", status);
         }
         if (stopReason != null) {
             body.put("stopReason", stopReason);
+        }
+        if (scope != null) {
+            if (scope.agentTaskId() != null && !scope.agentTaskId().isBlank()) {
+                body.put("agentTaskId", scope.agentTaskId());
+            }
+            body.put("attemptId", scope.attemptId());
+            body.put("dispatchGeneration", scope.dispatchGeneration());
+            body.put("turnId", scope.turnId());
         }
         try {
             webClient

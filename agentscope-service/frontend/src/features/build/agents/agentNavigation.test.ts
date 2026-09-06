@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agentDetailPath,
   agentDetailTabs,
-  agentRuntimePath,
+  agentServicePath,
   resolveAgentDetailTab,
 } from './agentNavigation';
 
@@ -23,17 +23,15 @@ describe('Agent detail navigation', () => {
     expect(agentDetailTabs('hosted-runtime').map(tab => tab.id)).not.toContain('settings');
   });
 
-  it('labels External runtime controls as Integration', () => {
-    expect(agentDetailTabs('external-application').find(tab => tab.id === 'runtime')?.label)
-      .toBe('Integration');
-    expect(agentDetailTabs('managed').find(tab => tab.id === 'runtime')?.label)
-      .toBe('Runtime');
+  it('folds runtime information into Overview', () => {
+    expect(agentDetailTabs('external-application').map(tab => tab.id)).not.toContain('runtime');
+    expect(agentDetailTabs('managed').map(tab => tab.id)).not.toContain('runtime');
   });
 
-  it('falls back from non-Managed Settings to runtime controls', () => {
-    expect(resolveAgentDetailTab('settings', 'external-application')).toBe('runtime');
-    expect(resolveAgentDetailTab('settings', 'hosted-runtime')).toBe('runtime');
+  it('falls back from non-Managed Settings to the consolidated Overview', () => {
+    expect(resolveAgentDetailTab('settings', 'external-application')).toBe('overview');
+    expect(resolveAgentDetailTab('settings', 'hosted-runtime')).toBe('overview');
     expect(resolveAgentDetailTab('settings', 'managed')).toBe('settings');
-    expect(agentRuntimePath('external/agent')).toBe('/agent-center/agents/external%2Fagent?tab=runtime');
+    expect(agentServicePath('external/agent')).toBe('/agent-center/agents/external%2Fagent');
   });
 });

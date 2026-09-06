@@ -19,7 +19,7 @@ import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-
 import { AgentDefinition, getAgent, ShareTier } from '../api/agents';
 import ShareAgentDialog from './ShareAgentDialog';
 import { useControlPlaneScope } from '../app/ScopeContext';
-import { agentRuntimePath } from '../features/build/agents/agentNavigation';
+import { agentServicePath } from '../features/build/agents/agentNavigation';
 
 type TierMin = ShareTier;
 
@@ -60,7 +60,7 @@ export default function AgentLayout() {
 
   useEffect(() => {
     if (!agent || agent.runtimeKind === 'managed') return;
-    navigate(scope.scopedPath(agentRuntimePath(agent.id)), { replace: true });
+    navigate(scope.scopedPath(agentServicePath(agent.id)), { replace: true });
   }, [agent, navigate, scope]);
 
   if (!id) return <div style={{ padding: 32 }}>Missing agent id.</div>;

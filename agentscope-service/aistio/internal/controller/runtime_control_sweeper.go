@@ -198,6 +198,108 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 			}
 		}
 	}
+	// Run Approval convergence after Task policy and Attempt lease convergence.
+	// This closes pending Inbox items in the same sweep that replaced or
+	// cancelled their physical continuation instead of waiting for another tick.
+	if err := w.sweepManagedToolApprovals(ctx, now, batch); err != nil {
+		logger.Error(err, "cancelling expired or stale managed tool approvals")
+	}
+}
+
+type managedToolApprovalRequest struct {
+	Kind               string                     `json:"kind"`
+	BackendKind        controlmodel.DataPlaneKind `json:"backendKind"`
+	SchemaVersion      int32                      `json:"schemaVersion"`
+	Tenant             string                     `json:"tenant"`
+	Namespace          string                     `json:"namespace"`
+	SessionID          string                     `json:"sessionId"`
+	SessionRef         *uuid.UUID                 `json:"sessionRef"`
+	ApprovalID         uuid.UUID                  `json:"approvalId"`
+	AgentTaskID        uuid.UUID                  `json:"agentTaskId"`
+	AttemptID          uuid.UUID                  `json:"attemptId"`
+	DispatchGeneration int64                      `json:"dispatchGeneration"`
+	TurnID             string                     `json:"turnId"`
+	ToolUseID          string                     `json:"toolUseId"`
+	ToolName           string                     `json:"toolName"`
+	InputSHA256        string                     `json:"inputSha256"`
+	ExpiresAt          time.Time                  `json:"expiresAt"`
+}
+
+func (w *RuntimeControlSweeper) sweepManagedToolApprovals(ctx context.Context, now time.Time, limit int) error {
+	if limit <= 0 {
+		limit = 100
+	}
+	// List a stable page set before mutating it. ListApprovals is newest-first;
+	// processing only its first page would permanently starve an old expired
+	// Approval whenever enough newer, non-expired Approvals remain pending.
+	approvals := make([]*controlmodel.Approval, 0, limit)
+	for offset := 0; ; offset += limit {
+		page, err := w.Store.Collaboration().ListApprovals(ctx, store.ApprovalFilter{
+			TargetType: controlmodel.ApprovalTargetExecutionAttempt,
+			Status:     controlmodel.ApprovalPending,
+			Limit:      limit,
+			Offset:     offset,
+		})
+		if err != nil {
+			return err
+		}
+		approvals = append(approvals, page...)
+		if len(page) < limit {
+			break
+		}
+	}
+	for _, approval := range approvals {
+		var request managedToolApprovalRequest
+		if json.Unmarshal(approval.Request, &request) != nil || request.SchemaVersion != 1 {
+			continue
+		}
+		if request.BackendKind == "" && request.Kind == controlmodel.ApprovalRequestKindManagedToolConfirmation {
+			request.BackendKind = controlmodel.DataPlaneManaged
+		}
+		if request.Kind != store.RuntimeToolApprovalRequestKind(request.BackendKind) {
+			continue
+		}
+		stale := request.ApprovalID != approval.ID || approval.TargetRef != request.AttemptID.String()
+		if !stale {
+			task, taskErr := w.Store.Collaboration().GetAgentTask(ctx, request.AgentTaskID)
+			attempt, attemptErr := w.Store.ExecutionAttempts().Get(ctx, request.AttemptID)
+			fence := store.ManagedToolApprovalFence{BackendKind: request.BackendKind, SessionID: request.SessionID,
+				TaskID: request.AgentTaskID, AttemptID: request.AttemptID, ApprovalID: approval.ID,
+				DispatchGeneration: request.DispatchGeneration, TurnID: request.TurnID,
+				ToolUseID: request.ToolUseID, ToolName: request.ToolName, InputSHA256: request.InputSHA256}
+			stale = taskErr != nil || attemptErr != nil ||
+				request.Tenant != approval.Tenant || request.Namespace != approval.Namespace ||
+				task.Status != controlmodel.AgentTaskWaiting ||
+				task.WaitReason != "approval:"+approval.ID.String() ||
+				attempt.State != controlmodel.ExecutionWaiting ||
+				store.ValidateManagedToolApprovalFence(task, attempt, fence) != nil ||
+				store.ValidateManagedToolApproval(approval, task, fence) != nil
+			if !stale && request.BackendKind == controlmodel.DataPlaneManaged {
+				if request.SessionRef == nil {
+					stale = true
+				} else {
+					session, sessionErr := w.Store.Sessions().GetByID(ctx, *request.SessionRef)
+					stale = sessionErr != nil || session.SessionID != request.SessionID ||
+						session.AgentTaskID == nil || *session.AgentTaskID != request.AgentTaskID
+				}
+			}
+		}
+		if !stale && (request.ExpiresAt.IsZero() || now.Before(request.ExpiresAt)) {
+			continue
+		}
+		reason := "approval_timeout"
+		if stale {
+			reason = "stale_execution_fence"
+		}
+		decision, _ := json.Marshal(map[string]any{"reason": reason, "cancelledAt": now})
+		if _, decideErr := w.Store.Collaboration().DecideApproval(ctx, approval.ID, approval.Version,
+			controlmodel.ApprovalCancelled,
+			controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "runtime-control-sweeper"},
+			decision); decideErr != nil && !errors.Is(decideErr, store.ErrConflict) {
+			return decideErr
+		}
+	}
+	return nil
 }
 
 func (w *RuntimeControlSweeper) reconcileEndpointJobInvocations(ctx context.Context, batch int) error {

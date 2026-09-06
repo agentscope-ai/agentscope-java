@@ -37,6 +37,7 @@ import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
@@ -401,7 +402,15 @@ public class HarnessAgentBuildService {
         if (actions.isEmpty()) {
             return null;
         }
-        PermissionContextState.Builder permissions = PermissionContextState.builder();
+        // AgentTask turns are unattended. Use the service's ToolConfirmationMiddleware as the
+        // single HITL authority: it enforces the AgentSpec always_ask/deny policies and creates a
+        // durable, user-visible confirmation ticket. Leaving this context in DEFAULT mode makes
+        // the core PermissionEngine ASK for every tool not listed below (including read-only
+        // built-ins such as web_search), but that Core prompt has no control-plane approval ticket
+        // and therefore cannot be resumed. BYPASS still runs every tool's bypass-immune safety
+        // check before falling back to allow.
+        PermissionContextState.Builder permissions =
+                PermissionContextState.builder().mode(PermissionMode.BYPASS);
         for (String action : actions) {
             permissions.addAllowRule(
                     action,
@@ -451,9 +460,13 @@ public class HarnessAgentBuildService {
                     + " the corresponding tool call succeeded.\n"
                     + "- A worker should publish its result with task.respond and then call"
                     + " task.complete (or task.fail).\n"
-                    + "- A Team leader delegates with issue.child.create, waits for all child work"
-                    + " to converge, completes its task, and explicitly calls run.node.complete;"
-                    + " use run.node.fail on failure.\n"
+                    + "- An initial Team leader turn delegates all suitable work with"
+                    + " issue.child.create, then immediately calls task.complete and stops. It"
+                    + " must not wait for workers inside that turn.\n"
+                    + "- A later Team leader follow-up validates worker results, accepts completed"
+                    + " child Issues, calls run.node.complete only after the whole coordinator has"
+                    + " converged, and stops. run.node.complete also completes that leader Task;"
+                    + " do not call task.complete afterwards. Use run.node.fail on failure.\n"
                     + "Authoritative task context (credentials omitted):\n"
                     + contextJson;
         } catch (Exception ex) {

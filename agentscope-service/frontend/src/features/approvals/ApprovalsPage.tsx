@@ -43,6 +43,11 @@ import {
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import {
+  managedToolApprovalExpiry,
+  managedToolApprovalRequest,
+} from "./managedToolApproval";
+
 export default function ApprovalsPage() {
   const scope = useControlPlaneScope();
   const qc = useQueryClient();
@@ -187,6 +192,9 @@ export default function ApprovalsPage() {
             <div className="divide-y divide-slate-100">
               {approvalItems.map((item) => {
                 const isOpen = expanded === item.id;
+                const managedRequest = managedToolApprovalRequest(item.request);
+                const expiresAt = managedToolApprovalExpiry(managedRequest);
+                const expired = expiresAt != null && expiresAt <= Date.now();
                 return (
                   <article key={item.id} className="px-5 py-5">
                     <div className="flex gap-3">
@@ -196,7 +204,13 @@ export default function ApprovalsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <h3 className="text-sm font-semibold text-slate-900"><EntityIdentityText identities={identities} type={item.targetType} entityRef={item.targetRef} /></h3>
+                            <h3 className="text-sm font-semibold text-slate-900">
+                              {managedRequest ? (
+                                <>Confirm {managedRequest.backendKind ?? "managed"} tool: <span className="font-mono">{managedRequest.toolName}</span></>
+                              ) : (
+                                <EntityIdentityText identities={identities} type={item.targetType} entityRef={item.targetRef} />
+                              )}
+                            </h3>
                             <p className="mt-0.5 text-[11px] capitalize text-slate-400">{item.targetType.replace(/_/g, " ")}</p>
                           </div>
                           <WorkStatusBadge status={item.status} />
@@ -204,7 +218,15 @@ export default function ApprovalsPage() {
                         <p className="mt-3 text-sm leading-6 text-slate-600">{item.reason || "Approval is required before this action can continue."}</p>
                         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400">
                           <span>Requested by {entityDisplayName(identities, item.requestedBy.type, item.requestedBy.ref)} · {formatRelative(item.createdAt)}</span>
+                          {expiresAt != null && (
+                            <span className={expired ? "font-medium text-red-600" : "text-amber-700"}>
+                              {expired ? "Expired" : `Expires ${new Date(expiresAt).toLocaleString()}`}
+                            </span>
+                          )}
                           {item.issueId && <Link className="font-medium text-indigo-600 hover:text-indigo-700" to={scope.scopedPath(`/work/issues/${item.issueId}`)}>View related issue</Link>}
+                          {item.runId && <Link className="font-medium text-indigo-600 hover:text-indigo-700" to={scope.scopedPath(`/work/executions/${item.runId}`)}>View execution</Link>}
+                          {managedRequest && <Link className="font-medium text-indigo-600 hover:text-indigo-700" to={scope.scopedPath(`/work/executions/tasks/${managedRequest.agentTaskId}`)}>View task</Link>}
+                          {managedRequest?.sessionRef && <Link className="font-medium text-indigo-600 hover:text-indigo-700" to={scope.scopedPath(`/work/sessions/${managedRequest.sessionRef}`)}>View session</Link>}
                           {item.request != null && (
                             <button type="button" className="font-medium text-slate-600 hover:text-slate-900" onClick={() => setExpanded(isOpen ? undefined : item.id)}>
                               {isOpen ? "Hide request" : "Review request"}
@@ -213,7 +235,18 @@ export default function ApprovalsPage() {
                         </div>
                         {isOpen && (
                           <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs leading-5 text-slate-600">{JSON.stringify(item.request || {}, null, 2)}</pre>
+                            {managedRequest?.inputPreview != null && (
+                              <div>
+                                <p className="mb-1 text-xs font-medium text-slate-500">Redacted tool input</p>
+                                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-white p-3 text-xs leading-5 text-slate-700">
+                                  {JSON.stringify(managedRequest.inputPreview, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                            <details>
+                              <summary className="cursor-pointer text-xs font-medium text-slate-500">Diagnostic request</summary>
+                              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs leading-5 text-slate-600">{JSON.stringify(item.request || {}, null, 2)}</pre>
+                            </details>
                             <Textarea
                               className="min-h-20 bg-white shadow-none"
                               value={notes[item.id] || ""}
@@ -223,10 +256,10 @@ export default function ApprovalsPage() {
                           </div>
                         )}
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate({ item, status: "approved" })}>
+                          <Button size="sm" disabled={decide.isPending || expired} onClick={() => decide.mutate({ item, status: "approved" })}>
                             <Check className="h-4 w-4" /> Approve
                           </Button>
-                          <Button size="sm" variant="outline" disabled={decide.isPending} onClick={() => decide.mutate({ item, status: "rejected" })}>
+                          <Button size="sm" variant="outline" disabled={decide.isPending || expired} onClick={() => decide.mutate({ item, status: "rejected" })}>
                             <X className="h-4 w-4" /> Reject
                           </Button>
                           {!isOpen && <Button size="sm" variant="ghost" onClick={() => setExpanded(item.id)}>Add note</Button>}

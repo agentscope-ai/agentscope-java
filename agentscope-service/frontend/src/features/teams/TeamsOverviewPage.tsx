@@ -10,10 +10,11 @@ import {
 import { useControlPlaneScope } from '@/app/ScopeContext';
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
-import { AgentIdentity, AgentPicker } from '@/components/AgentPicker';
+import { AgentIdentity, AgentMultiPicker, AgentPicker, useCatalogAgents } from '@/components/AgentPicker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
+import { buildInitialTeamMembers } from './teamCreation';
 
 function TeamCard({ team }: { team: Team }) {
   const scope = useControlPlaneScope();
@@ -32,12 +33,14 @@ export default function TeamsOverviewPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [leader, setLeader] = useState('');
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
   const teams = useQuery({
     queryKey: ['teams', scope.tenant, scope.namespace],
     queryFn: () => listTeams(scope.tenant, scope.namespace),
   });
+  const agents = useCatalogAgents();
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['teams', scope.tenant, scope.namespace] });
   };
@@ -49,12 +52,14 @@ export default function TeamsOverviewPage() {
       description,
       instructions,
       leaderAgentId: leader,
+      members: buildInitialTeamMembers(memberIds, agents.data ?? []),
       policy: { maxActiveTasks: 32, maxFanout: 8, maxHops: 8, maxChildDepth: 8, maxChildIssues: 64 },
     }),
     onSuccess: () => {
       setOpen(false);
       setName('');
       setLeader('');
+      setMemberIds([]);
       setDescription('');
       setInstructions('');
       refresh();
@@ -74,12 +79,16 @@ export default function TeamsOverviewPage() {
         actions={<Button onClick={() => setOpen(!open)}><Plus className="h-4 w-4" />New team</Button>}
       />
       {open && (
-        <form onSubmit={submit} className="grid gap-3 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.035)]">
-          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Team name" required />
-          <AgentPicker value={leader} onChange={setLeader} required aria-label="Team leader Agent" />
-          <Textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />
-          <Textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Leader operating instructions and Team-wide collaboration rules" />
-          <div><Button type="submit" disabled={create.isPending}>Create team</Button></div>
+        <form onSubmit={submit} className="grid gap-5 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.035)]">
+          <div><h2 className="text-lg font-semibold">Create Team</h2><p className="mt-1 text-sm text-muted-foreground">Choose a leader and, optionally, the Agents they can delegate work to.</p></div>
+          <label className="grid gap-1.5 text-sm font-medium"><span>Name</span><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Team name" required /></label>
+          <label className="grid gap-1.5 text-sm font-medium"><span>Description <span className="font-normal text-muted-foreground">(optional)</span></span><Textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What is this Team responsible for?" /></label>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid content-start gap-1.5 text-sm"><div className="font-medium">Leader Agent</div><p className="text-muted-foreground">Receives Team work and coordinates delegation.</p><AgentPicker value={leader} onChange={(value) => { setLeader(value); setMemberIds(current => current.filter(id => id !== value)); }} required aria-label="Team leader Agent" /></div>
+            <div className="grid content-start gap-1.5 text-sm"><div className="font-medium">Additional members <span className="font-normal text-muted-foreground">(optional)</span></div><p className="text-muted-foreground">Select one or more Agents in the same field.</p><AgentMultiPicker value={memberIds} onChange={setMemberIds} excludeIds={leader ? [leader] : []} aria-label="Additional Team members" /></div>
+          </div>
+          <details className="rounded-lg border bg-muted/20 px-4 py-3"><summary className="cursor-pointer text-sm font-medium">Advanced coordination instructions</summary><Textarea className="mt-3" value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Leader operating instructions and Team-wide collaboration rules" /></details>
+          <div className="flex gap-2"><Button type="submit" disabled={create.isPending}>{create.isPending ? 'Creating…' : 'Create team'}</Button><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button></div>
           {create.error && <p className="text-sm text-destructive">{String(create.error)}</p>}
         </form>
       )}

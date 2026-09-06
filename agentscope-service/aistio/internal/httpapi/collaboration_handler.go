@@ -36,6 +36,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/metrics"
+	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/scheduler"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
@@ -112,19 +113,21 @@ func collaborationPagination(c *gin.Context) (int, int) {
 }
 
 type issueRequest struct {
-	Tenant             string                    `json:"tenant"`
-	Namespace          string                    `json:"namespace"`
-	Title              string                    `json:"title"`
-	Description        string                    `json:"description,omitempty"`
-	Priority           string                    `json:"priority,omitempty"`
-	AssigneeType       controlmodel.AssigneeType `json:"assigneeType,omitempty"`
-	AssigneeRef        string                    `json:"assigneeRef,omitempty"`
-	ParentIssueID      *uuid.UUID                `json:"parentIssueId,omitempty"`
-	AcceptanceCriteria json.RawMessage           `json:"acceptanceCriteria,omitempty"`
-	ContextRefs        json.RawMessage           `json:"contextRefs,omitempty"`
-	SourceType         string                    `json:"sourceType,omitempty"`
-	SourceRef          string                    `json:"sourceRef,omitempty"`
-	DueAt              *time.Time                `json:"dueAt,omitempty"`
+	Tenant              string                    `json:"tenant"`
+	Namespace           string                    `json:"namespace"`
+	Title               string                    `json:"title"`
+	Description         string                    `json:"description,omitempty"`
+	Priority            string                    `json:"priority,omitempty"`
+	AssigneeType        controlmodel.AssigneeType `json:"assigneeType,omitempty"`
+	AssigneeRef         string                    `json:"assigneeRef,omitempty"`
+	ExecutionTargetType string                    `json:"executionTargetType,omitempty"`
+	ExecutionTargetRef  string                    `json:"executionTargetRef,omitempty"`
+	ParentIssueID       *uuid.UUID                `json:"parentIssueId,omitempty"`
+	AcceptanceCriteria  json.RawMessage           `json:"acceptanceCriteria,omitempty"`
+	ContextRefs         json.RawMessage           `json:"contextRefs,omitempty"`
+	SourceType          string                    `json:"sourceType,omitempty"`
+	SourceRef           string                    `json:"sourceRef,omitempty"`
+	DueAt               *time.Time                `json:"dueAt,omitempty"`
 }
 
 func (s *Server) createIssue(c *gin.Context) {
@@ -147,15 +150,68 @@ func (s *Server) createIssue(c *gin.Context) {
 			return
 		}
 	}
+	var workflowDefinition *controlmodel.OrchestrationDefinition
+	var workflowRevision *controlmodel.OrchestrationRevision
+	if req.ExecutionTargetType != "" || req.ExecutionTargetRef != "" {
+		if req.ExecutionTargetType != "workflow" || req.ExecutionTargetRef == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "execution target must be a Workflow"})
+			return
+		}
+		if req.AssigneeType != "" || req.AssigneeRef != "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Workflow execution target cannot also be an assignee"})
+			return
+		}
+		definitionID, parseErr := uuid.Parse(req.ExecutionTargetRef)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "executionTargetRef must be a valid workflowId"})
+			return
+		}
+		definition, definitionErr := s.store.Orchestration().GetDefinition(c.Request.Context(), definitionID)
+		workflowDefinition = definition
+		if definitionErr != nil || workflowDefinition.Tenant != req.Tenant || workflowDefinition.Namespace != req.Namespace || workflowDefinition.ArchivedAt != nil {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: "Workflow target was not found in scope"})
+			return
+		}
+		revisions, revisionErr := s.store.Orchestration().ListRevisions(c.Request.Context(), definitionID)
+		if revisionErr != nil {
+			s.writeCollaborationError(c, revisionErr)
+			return
+		}
+		if len(revisions) == 0 {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Workflow must have a published revision before it can be selected for an Issue"})
+			return
+		}
+		workflowRevision = revisions[0]
+		req.ExecutionTargetType = string(controlmodel.EndpointTargetOrchestrationRevision)
+		req.ExecutionTargetRef = workflowRevision.ID.String()
+	}
 	issue, task, err := s.collaborationService().CreateIssue(c.Request.Context(), collaboration.CreateIssueRequest{
 		Tenant: req.Tenant, Namespace: req.Namespace, Title: req.Title,
 		Description: req.Description, Priority: req.Priority, Creator: humanActor(c, s),
 		AssigneeType: req.AssigneeType, AssigneeRef: req.AssigneeRef,
+		ExecutionTargetType: req.ExecutionTargetType, ExecutionTargetRef: req.ExecutionTargetRef,
 		ParentIssueID: req.ParentIssueID, AcceptanceCriteria: req.AcceptanceCriteria,
 		ContextRefs: req.ContextRefs, SourceType: req.SourceType, SourceRef: req.SourceRef, DueAt: req.DueAt,
 	})
 	if err != nil {
 		s.writeCollaborationError(c, err)
+		return
+	}
+	if workflowDefinition != nil && workflowRevision != nil {
+		actor := humanActor(c, s)
+		run, startErr := s.orchestrationService().Start(c.Request.Context(), workflowDefinition.ID, orchestration.StartRequest{
+			RevisionID: &workflowRevision.ID, IdempotencyKey: "issue:" + issue.ID.String(),
+			Input: json.RawMessage(`{}`), IssueID: &issue.ID, TriggerType: "issue",
+			TriggerRef: issue.ID.String(), Actor: actor,
+		})
+		if startErr != nil {
+			s.writeCollaborationError(c, startErr)
+			return
+		}
+		if current, loadErr := s.store.Collaboration().GetIssue(c.Request.Context(), issue.ID); loadErr == nil {
+			issue = current
+		}
+		c.JSON(http.StatusCreated, gin.H{"issue": issue, "orchestrationRun": run})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"issue": issue, "agentTask": task})
@@ -466,10 +522,49 @@ func (s *Server) exportIssue(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	runs, err := s.store.Orchestration().ListRuns(c.Request.Context(), store.OrchestrationRunFilter{
+		Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: issue.ID, Limit: 100,
+	})
+	if err != nil {
+		s.writeCollaborationError(c, err)
+		return
+	}
+	runDiagnostics := make([]gin.H, 0, len(runs))
+	for _, run := range runs {
+		graph, graphErr := s.orchestrationService().Graph(c.Request.Context(), run.ID)
+		if graphErr != nil {
+			s.writeCollaborationError(c, graphErr)
+			return
+		}
+		s.attachAttemptSessionRefs(c.Request.Context(), graph.Attempts)
+		events, eventErr := s.store.Orchestration().ListRunEvents(c.Request.Context(), run.ID, 0, 1000)
+		if eventErr != nil {
+			s.writeCollaborationError(c, eventErr)
+			return
+		}
+		toolFailures := make([]*controlmodel.RunEvent, 0)
+		dispatchDeferrals := make([]*controlmodel.RunEvent, 0)
+		dispatchRecoveries := make([]*controlmodel.RunEvent, 0)
+		for _, event := range events {
+			if event.Type == "agent_tool.failed" {
+				toolFailures = append(toolFailures, event)
+			}
+			if event.Type == "agent-task.dispatch_deferred" {
+				dispatchDeferrals = append(dispatchDeferrals, event)
+			}
+			if event.Type == "agent-task.dispatch_recovered" {
+				dispatchRecoveries = append(dispatchRecoveries, event)
+			}
+		}
+		runDiagnostics = append(runDiagnostics, gin.H{"graph": graph, "events": events,
+			"toolFailures": toolFailures, "dispatchDeferrals": dispatchDeferrals,
+			"dispatchRecoveries": dispatchRecoveries})
+	}
 	c.Header("Content-Disposition", `attachment; filename="issue-`+id.String()+`.json"`)
-	c.JSON(http.StatusOK, gin.H{"schemaVersion": 1, "exportedAt": time.Now().UTC(), "issue": issue,
+	c.JSON(http.StatusOK, gin.H{"schemaVersion": 2, "exportedAt": time.Now().UTC(), "issue": issue,
 		"comments": comments, "tasks": tasks, "children": children, "artifacts": artifacts,
-		"subscribers": subscribers, "activity": activities})
+		"subscribers": subscribers, "activity": activities, "runs": runs,
+		"runDiagnostics": runDiagnostics})
 }
 
 func (s *Server) loadIssueCollections(ctx context.Context, issue *controlmodel.Issue) ([]*controlmodel.Comment, []*controlmodel.AgentTask, []*controlmodel.Issue, error) {
@@ -1174,6 +1269,7 @@ func (s *Server) progressAgentTask(c *gin.Context) {
 		IssueID: task.IssueID, ParentID: req.ParentID,
 		Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef},
 		Content: req.Content, Type: controlmodel.CommentProgress, Mentions: req.Mentions, SourceTaskID: &task.ID,
+		SuppressImplicitRouting: true,
 	})
 	if err != nil {
 		s.writeCollaborationError(c, err)
@@ -1390,6 +1486,43 @@ func (s *Server) createCollaborationTeam(c *gin.Context) {
 	if err := collaboration.ValidateTeamPolicy(team.Policy); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
+	}
+	memberAgents := make(map[string]struct{}, len(team.Members))
+	memberRoles := make(map[string]struct{}, len(team.Members))
+	for index := range team.Members {
+		member := &team.Members[index]
+		member.AgentRef = strings.TrimSpace(member.AgentRef)
+		member.Role = strings.TrimSpace(member.Role)
+		if member.AgentRef == "" || member.Role == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "each Team member requires agentId and role"})
+			return
+		}
+		if member.AgentRef == team.LeaderAgentRef {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "leader Agent cannot also be a Team member"})
+			return
+		}
+		if _, exists := memberAgents[member.AgentRef]; exists {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Team member Agents must be unique"})
+			return
+		}
+		if _, exists := memberRoles[member.Role]; exists {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Team member roles must be unique"})
+			return
+		}
+		if _, err := s.activeAgentInScope(c.Request.Context(), team.Tenant, team.Namespace, member.AgentRef); err != nil {
+			if _, parseErr := uuid.Parse(member.AgentRef); parseErr != nil {
+				c.JSON(http.StatusBadRequest, ErrorResponse{Error: "member agentId must be a valid UUID"})
+			} else {
+				s.writeCollaborationError(c, err)
+			}
+			return
+		}
+		if err := collaboration.ValidateRuntimeBindingPolicy(member.RuntimeBindingPolicy); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		memberAgents[member.AgentRef] = struct{}{}
+		memberRoles[member.Role] = struct{}{}
 	}
 	created, err := s.store.Collaboration().CreateTeam(c.Request.Context(), &team)
 	if err != nil {
@@ -2003,6 +2136,10 @@ func (s *Server) decideApproval(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
+	if req.ExpectedVersion <= 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "positive expectedVersion is required"})
+		return
+	}
 	current, err := s.store.Collaboration().GetApproval(c.Request.Context(), id)
 	if err != nil {
 		s.writeCollaborationError(c, err)
@@ -2011,6 +2148,20 @@ func (s *Server) decideApproval(c *gin.Context) {
 	if current.ApproverRef != s.operatorFromContext(c) {
 		c.JSON(http.StatusForbidden, ErrorResponse{Error: "only the designated approver may decide this approval"})
 		return
+	}
+	if envelope, parseErr := parseManagedToolApproval(current); parseErr == nil {
+		if req.Status != controlmodel.ApprovalApproved && req.Status != controlmodel.ApprovalRejected {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "managed tool approval must be approved or rejected by its human approver"})
+			return
+		}
+		if _, validateErr := s.validateManagedApprovalCurrent(c.Request.Context(), current); validateErr != nil {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "managed tool approval no longer matches the active execution"})
+			return
+		}
+		if !envelope.ExpiresAt.IsZero() && !time.Now().UTC().Before(envelope.ExpiresAt) {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "managed tool approval has expired"})
+			return
+		}
 	}
 	approval, err := s.store.Collaboration().DecideApproval(c.Request.Context(), id, req.ExpectedVersion, req.Status, humanActor(c, s), req.Decision)
 	if err != nil {

@@ -146,14 +146,14 @@ func TestRuntimeHostRegistrationCreatesFlattenedAgentRuntime(t *testing.T) {
 	if err != nil || profile.Runtime != "codex" {
 		t.Fatalf("automatic profile=%+v err=%v", profile, err)
 	}
-	if string(profile.Configuration) != `{"sandbox":"workspace-write","skipGitRepoCheck":true}` {
+	if string(profile.Configuration) != `{"sandbox":"workspace-write"}` {
 		t.Fatalf("automatic Codex configuration=%s", profile.Configuration)
 	}
 }
 
 func TestAutomaticRuntimeProfilesHaveUsableHeadlessDefaults(t *testing.T) {
 	tests := map[string]map[string]any{
-		"codex":       {"sandbox": "workspace-write", "skipGitRepoCheck": true},
+		"codex":       {"sandbox": "workspace-write"},
 		"claude-code": {"permissionMode": "default"},
 		"qoder":       {"permissionMode": "default", "strictMCPConfig": true},
 		"qwenpaw":     {"permissionMode": "default"},

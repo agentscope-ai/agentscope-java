@@ -388,17 +388,37 @@ func providerEventSummary(raw json.RawMessage) string {
 			return text
 		}
 	}
+	if params, ok := value["params"].(map[string]any); ok {
+		for _, key := range []string{"message", "text"} {
+			if text, ok := params[key].(string); ok && strings.TrimSpace(text) != "" {
+				return text
+			}
+		}
+		if item, ok := params["item"].(map[string]any); ok {
+			if text, ok := item["text"].(string); ok {
+				return text
+			}
+		}
+	}
 	return ""
 }
 
 func (s *Server) projectHostedAttemptTerminal(ctx context.Context, attempt *controlmodel.ExecutionAttempt) error {
+	return s.projectHostedAttemptTerminalWithOutput(ctx, attempt, "")
+}
+
+func (s *Server) projectHostedAttemptTerminalWithOutput(ctx context.Context,
+	attempt *controlmodel.ExecutionAttempt, responseOutput string) error {
 	if attempt == nil || attempt.SessionID == "" {
 		return nil
 	}
 	turnID := attempt.TurnID
 	switch attempt.State {
 	case controlmodel.ExecutionSucceeded:
-		output := hostedResultOutput(attempt.Result)
+		output := strings.TrimSpace(responseOutput)
+		if output == "" {
+			output = hostedResultOutput(attempt.Result)
+		}
 		if output != "" {
 			if err := s.appendHostedSessionEvent(ctx, attempt, "assistant:"+attempt.ID.String(),
 				&store.SessionEvent{EventType: "assistant.message", Role: "assistant", Content: output,

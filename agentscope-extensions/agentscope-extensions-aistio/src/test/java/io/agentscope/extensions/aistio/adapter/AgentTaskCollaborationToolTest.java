@@ -15,6 +15,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.transport.CollaborationClient;
@@ -48,6 +49,7 @@ class AgentTaskCollaborationToolTest {
         String followUp = HarnessAgentTaskStarter.roleInstructions(leader, List.of("input-1"));
         assertTrue(followUp.contains("leader follow-up"));
         assertTrue(followUp.contains("Never send those mutations in parallel"));
+        assertTrue(followUp.contains("run.node.complete also completes this leader AgentTask"));
     }
 
     @Test
@@ -153,6 +155,11 @@ class AgentTaskCollaborationToolTest {
             ToolResultBlock result =
                     tool.callAsync(
                                     ToolCallParam.builder()
+                                            .toolUseBlock(
+                                                    new ToolUseBlock(
+                                                            "call-1",
+                                                            "issue.comment.add",
+                                                            Map.of("content", "working")))
                                             .input(Map.of("content", "working"))
                                             .runtimeContext(context)
                                             .build())
@@ -167,7 +174,58 @@ class AgentTaskCollaborationToolTest {
             assertEquals(
                     "working",
                     call.get().path("params").path("arguments").path("content").asText());
+            assertEquals(
+                    "call-1",
+                    call.get().path("params").path("arguments").path("_toolCallId").asText());
             assertTrue(((TextBlock) result.getOutput().get(0)).getText().contains("comment-1"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void externalRuntimeApprovalUsesTaskScopedRequestDecisionAndAck() throws Exception {
+        AtomicInteger requested = new AtomicInteger();
+        AtomicInteger acknowledged = new AtomicInteger();
+        AtomicReference<String> taskToken = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/api/v1/agent-tasks/task-1/runtime-approvals",
+                exchange -> {
+                    taskToken.set(exchange.getRequestHeaders().getFirst("X-Agent-Task-Token"));
+                    String path = exchange.getRequestURI().getPath();
+                    if (path.endsWith("/decision")) {
+                        respond(
+                                exchange,
+                                "{\"approvalId\":\"approval-1\",\"decisionVersion\":2,\"status\":\"approved\",\"allow\":true}");
+                    } else if (path.endsWith("/ack")) {
+                        acknowledged.incrementAndGet();
+                        respond(exchange, "{}");
+                    } else {
+                        requested.incrementAndGet();
+                        JsonNode body = readJson(exchange);
+                        assertEquals("call-1", body.path("toolUseId").asText());
+                        assertEquals("shell", body.path("toolName").asText());
+                        respond(exchange, "{\"approval\":{\"id\":\"approval-1\"}}");
+                    }
+                });
+        server.start();
+        try {
+            CollaborationClient client =
+                    new CollaborationClient(
+                            new ControlPlaneHttpClient(
+                                    "http://127.0.0.1:" + server.getAddress().getPort(),
+                                    "internal-token"));
+
+            CollaborationClient.RuntimeApprovalDecision decision =
+                    client.awaitRuntimeToolApproval(
+                            "task-1", "task-token", "call-1", "shell", Map.of("command", "date"));
+
+            assertTrue(decision.allow());
+            assertEquals(2, decision.decisionVersion());
+            assertEquals(1, requested.get());
+            assertEquals(1, acknowledged.get());
+            assertEquals("task-token", taskToken.get());
         } finally {
             server.stop(0);
         }

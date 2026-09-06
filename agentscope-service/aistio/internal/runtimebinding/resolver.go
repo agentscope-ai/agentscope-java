@@ -16,6 +16,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/metrics"
+	"github.com/spring-ai-alibaba/aistio/internal/product"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/taskauth"
 	"github.com/spring-ai-alibaba/aistio/internal/taskplane"
@@ -25,8 +26,10 @@ const commandAttemptDispatch = "dispatch"
 
 type ManagedSessionAPI interface {
 	FindOrCreateSessionID(ctx context.Context, ownerID, agentID, environmentID, externalKey string) (string, error)
+	ClaimManagedRuntimeFence(ctx context.Context, sessionID string, agentTaskID, attemptID uuid.UUID,
+		dispatchGeneration int64, turnID string) error
 	PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, text string) error
-	AbortManagedSession(ctx context.Context, sessionID, ownerID string) error
+	PostManagedAttemptAbort(ctx context.Context, sessionID, ownerID string, abort product.ManagedAttemptAbort) error
 }
 
 // CancelAttempt sends a backend-specific cancellation after the durable
@@ -42,7 +45,10 @@ func (r *Resolver) CancelAttempt(ctx context.Context, attempt *controlmodel.Exec
 		if r.Managed == nil {
 			return fmt.Errorf("managed runtime adapter is not configured")
 		}
-		return r.Managed.AbortManagedSession(ctx, attempt.SessionID, attempt.ManagedOwnerRef)
+		return r.Managed.PostManagedAttemptAbort(ctx, attempt.SessionID, attempt.ManagedOwnerRef,
+			product.ManagedAttemptAbort{AgentTaskID: attempt.AgentTaskID, AttemptID: attempt.ID,
+				DispatchGeneration: attempt.DispatchGeneration, TurnID: attempt.TurnID,
+				Reason: "task_cancel_requested"})
 	case controlmodel.DataPlaneExternalApplication:
 		if r.External == nil || attempt.AgentInstanceID == nil {
 			return fmt.Errorf("external runtime target is unavailable")
@@ -255,10 +261,15 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 	if err := r.persistSession(ctx, dispatched, sessionID, binding, nil); err != nil {
 		return nil, err
 	}
+	if err := r.Managed.ClaimManagedRuntimeFence(ctx, sessionID, dispatched.ID, attempt.ID,
+		attempt.DispatchGeneration, attempt.TurnID); err != nil {
+		_, _, _ = r.Store.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID, store.TaskFailure{
+			ExpectedVersion: dispatched.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
+			Code: "managed_runtime_fence_claim_failed", Message: err.Error()})
+		return nil, err
+	}
 	if err := r.Managed.PostSessionWakeEvent(ctx, sessionID, binding.ManagedOwnerRef,
-		"A durable AgentTask is ready. Follow the managed task instructions and use the "+
-			"aistio-collaboration tools to read authoritative context, perform work, report progress, "+
-			"and finish. Do not merely describe intended actions; only report an action after tool success."); err != nil {
+		managedWakeInstructions(task)); err != nil {
 		_, _, _ = r.Store.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID, store.TaskFailure{
 			ExpectedVersion: dispatched.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
 			Code: "managed_wake_failed", Message: err.Error()})
@@ -267,6 +278,36 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 	metrics.RecordAgentTaskTransition(dispatched.Namespace, string(binding.Kind), string(dispatched.Status))
 	return &DispatchResult{Task: dispatched, Execution: attempt, SessionID: sessionID,
 		TaskToken: r.taskTokenForAttempt(taskID, attempt), AttemptToken: r.attemptToken(attempt)}, nil
+}
+
+func managedWakeInstructions(task *controlmodel.AgentTask) string {
+	base := "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative " +
+		"context, perform work, report progress, and finish. Do not merely describe intended actions; " +
+		"only report an action after tool success."
+	if task == nil || task.TeamID == nil {
+		return base + " Call task.complete when the work is done, or task.fail when it cannot be completed."
+	}
+	if !task.LeaderTask {
+		return base + " You are a Team worker. Complete only the assigned child work and call task.complete " +
+			"with the result. If required capabilities, credentials, inputs, or tools are unavailable, call " +
+			"task.fail with a durable code and explanation; do not merely return explanatory text. Do not " +
+			"coordinate or create child Issues."
+	}
+	if task.ParentTaskID == nil {
+		return base + " You are the initial Team leader. Delegate suitable child work once, using the " +
+			"member.agentId from team.get as assigneeRef (never the membership id). After every " +
+			"issue.child.create succeeds, call task.complete immediately with a delegation summary; do not " +
+			"wait inside this turn. A fresh leader follow-up will arrive with each worker result."
+	}
+	return base + " You are a Team leader follow-up caused by a worker outcome. Read the supplied task " +
+		"inputs and comments and validate the outcome. Call issue.accept only for satisfactory completed " +
+		"work. For blocked or failed work, retry or reassign only when the new attempt changes the available " +
+		"agent, capability, credential, input, or tool; otherwise choose a degraded result, request human " +
+		"action, cancel the blocked child, or fail the coordinator. Do not use issue.child.create to bypass " +
+		"an unresolved blocked Issue; use the explicit decision actions. Call run.node.complete only when the whole " +
+		"coordinator has converged. If sibling work is still active, do not retry run.node.complete in a loop; " +
+		"call task.complete with a waiting/decision summary so this follow-up ends and the next worker outcome " +
+		"can wake a fresh follow-up. A successful run.node.complete already completes this task."
 }
 
 func (r *Resolver) dispatchExternal(ctx context.Context, taskID uuid.UUID, candidate controlmodel.RuntimeBindingCandidate) (*DispatchResult, error) {
@@ -295,6 +336,7 @@ func (r *Resolver) dispatchExternal(ctx context.Context, taskID uuid.UUID, candi
 	}, &controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneExternalApplication,
 		AgentID: binding.AgentID, BindingID: binding.BindingID,
 		State: controlmodel.ExecutionAssigned, AgentInstanceID: &instanceID, SessionID: sessionID,
+		TurnID:               uuid.NewString(),
 		RequiredCapabilities: candidate.RequiredCapabilities})
 	if err != nil {
 		return nil, err

@@ -39,6 +39,7 @@ class ControlPlaneClientExecutionScopeTest {
         ObjectMapper mapper = new ObjectMapper();
         AtomicInteger resolves = new AtomicInteger();
         List<Map<String, Object>> events = new ArrayList<>();
+        List<Map<String, Object>> runtimePatches = new ArrayList<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext(
                 "/api/internal/sessions/session-a/resolve",
@@ -58,6 +59,17 @@ class ControlPlaneClientExecutionScopeTest {
                     exchange.sendResponseHeaders(204, -1);
                     exchange.close();
                 });
+        server.createContext(
+                "/api/internal/sessions/session-a/runtime",
+                exchange -> {
+                    synchronized (runtimePatches) {
+                        runtimePatches.add(
+                                mapper.readValue(
+                                        exchange.getRequestBody(), new TypeReference<>() {}));
+                    }
+                    exchange.sendResponseHeaders(204, -1);
+                    exchange.close();
+                });
         server.start();
         try {
             ControlPlaneClient client =
@@ -69,12 +81,22 @@ class ControlPlaneClientExecutionScopeTest {
                     new SessionEventDto(
                             "event-a", "session-a", 1, "session.error", Map.of(), null, 1);
 
-            client.beginManagedExecution("session-a");
+            ControlPlaneClient.ManagedExecutionScope oldScope =
+                    client.beginManagedExecution("session-a");
+            assertThat(client.managedExecutionScope("session-a"))
+                    .extracting(
+                            ControlPlaneClient.ManagedExecutionScope::tenant,
+                            ControlPlaneClient.ManagedExecutionScope::agentTaskId)
+                    .containsExactly("tenant-a", "task-a");
             client.resolveSession("session-a");
             client.appendSessionEvent(event);
-            client.endManagedExecution("session-a");
-            client.beginManagedExecution("session-a");
+            client.endManagedExecution("session-a", oldScope);
+            ControlPlaneClient.ManagedExecutionScope newScope =
+                    client.beginManagedExecution("session-a");
+            client.endManagedExecution("session-a", oldScope);
+            assertThat(client.managedExecutionScope("session-a")).isEqualTo(newScope);
             client.appendSessionEvent(event);
+            client.patchSessionRuntime("session-a", "idle", null, "owner-a", oldScope);
 
             assertThat(events).hasSize(2);
             assertThat(events.get(0))
@@ -83,6 +105,16 @@ class ControlPlaneClientExecutionScopeTest {
             assertThat(events.get(1))
                     .containsEntry("attemptId", "attempt-new")
                     .containsEntry("dispatchGeneration", 3);
+            assertThat(runtimePatches)
+                    .singleElement()
+                    .satisfies(
+                            body ->
+                                    assertThat(body)
+                                            .containsEntry("status", "idle")
+                                            .containsEntry("agentTaskId", "task-a")
+                                            .containsEntry("attemptId", "attempt-old")
+                                            .containsEntry("dispatchGeneration", 1)
+                                            .containsEntry("turnId", "turn-1"));
         } finally {
             server.stop(0);
         }
@@ -106,6 +138,8 @@ class ControlPlaneClientExecutionScopeTest {
                 session,
                 "executionContext",
                 Map.of(
+                        "taskContext",
+                        Map.of("task", Map.of("id", "task-a", "tenant", "tenant-a")),
                         "attemptId",
                         attemptId,
                         "dispatchGeneration",

@@ -256,6 +256,12 @@ func (s *Server) createAgent(c *gin.Context) {
 	if req.DefaultEnvironmentID != nil {
 		defEnv = strings.TrimSpace(*req.DefaultEnvironmentID)
 	}
+	resolvedDefaultEnvironmentID, resolveErr := s.defaultEnvironmentForAgentCreate(c.Request.Context(), owner, defEnv)
+	if resolveErr != nil {
+		writeTextErr(c, environmentBindingHTTPStatus(resolveErr), resolveErr.Error())
+		return
+	}
+	defEnv = resolvedDefaultEnvironmentID
 	defVault := []string{}
 	if req.DefaultVaultIDs != nil {
 		defVault = *req.DefaultVaultIDs
@@ -427,6 +433,12 @@ func (s *Server) updateAgent(c *gin.Context) {
 	defEnv := deref(a.DefaultEnvironmentID)
 	if req.DefaultEnvironmentID != nil {
 		defEnv = strings.TrimSpace(*req.DefaultEnvironmentID)
+		if defEnv != "" {
+			if _, err = s.validateEnvironmentBinding(c.Request.Context(), owner, defEnv); err != nil {
+				writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
+				return
+			}
+		}
 	}
 	defVault := parseStringSlice(deref(a.DefaultVaultIDsJSON))
 	if req.DefaultVaultIDs != nil {

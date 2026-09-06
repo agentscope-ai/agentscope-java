@@ -13,7 +13,7 @@ export interface Issue {
   description?: string;
   status: string;
   priority: string;
-  kind: 'user_work' | 'endpoint_job' | 'playground_job' | 'automation_job' | string;
+  kind: 'user_work' | 'endpoint_job' | 'automation_job' | string;
   visibility: 'work_hub' | 'operational' | string;
   completionPolicy: 'review' | 'automatic' | 'external' | string;
   assigneeType?: string;
@@ -217,6 +217,8 @@ export interface Approval {
   targetType: string;
   targetRef: string;
   issueId?: string;
+  runId?: string;
+  runNodeId?: string;
   requestedBy: Actor;
   approverRef: string;
   status: string;

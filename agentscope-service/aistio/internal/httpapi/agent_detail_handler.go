@@ -230,6 +230,7 @@ func inspectAgentReadinessCandidates(ctx *gin.Context, s *Server, agent *control
 	selectedIndex := -1
 	selectedMode := "online"
 	selectedBinding := uuid.Nil
+	unavailableReason := ""
 	for index, candidate := range candidates {
 		binding := enabled[candidate.Binding.BindingID]
 		if binding == nil || binding.Kind != candidate.Binding.Kind {
@@ -241,9 +242,14 @@ func inspectAgentReadinessCandidates(ctx *gin.Context, s *Server, agent *control
 			var cfg controlmodel.ManagedBindingConfiguration
 			configurationValid := json.Unmarshal(binding.Configuration, &cfg) == nil &&
 				cfg.OwnerRef != "" && cfg.ManagedDefinitionRef != ""
-			available = s.product != nil && configurationValid &&
-				controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints) &&
-				s.product.ValidateManagedRuntime(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef) == nil
+			if s.product != nil && configurationValid &&
+				controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints) {
+				validationErr := s.product.ValidateManagedRuntime(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef)
+				available = validationErr == nil
+				if validationErr != nil && unavailableReason == "" {
+					unavailableReason = validationErr.Error()
+				}
+			}
 		case controlmodel.DataPlaneExternalApplication:
 			for _, instance := range instances {
 				if instance.BindingID != binding.ID ||
@@ -288,6 +294,9 @@ func inspectAgentReadinessCandidates(ctx *gin.Context, s *Server, agent *control
 		}
 	}
 	if selectedIndex < 0 {
+		if unavailableReason != "" {
+			return agentReadiness{State: "unavailable", Mode: selectedMode, Reason: unavailableReason}, 0
+		}
 		return agentReadiness{State: "unavailable", Mode: selectedMode, Reason: "No runtime candidate currently has capacity"}, 0
 	}
 	if selectedIndex > 0 {

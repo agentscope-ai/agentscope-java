@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -335,9 +336,23 @@ func (s *Server) createEndpoint(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "authPolicy.type must be api_key or platform"})
 		return
 	}
+	if s.writeEndpointCreateConflict(c, &in) {
+		return
+	}
 	in.Status = controlmodel.EndpointDraft
 	v, err := s.store.Endpoints().Create(c, &in)
 	if err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			if s.writeEndpointCreateConflict(c, &in) {
+				return
+			}
+			c.JSON(http.StatusConflict, ErrorResponse{
+				Error: "Endpoint name or slug is already in use",
+				Code:  "endpoint_identity_conflict",
+				Hint:  "Choose a different Endpoint name and public URL slug.",
+			})
+			return
+		}
 		s.writeControlPlaneError(c, err)
 		return
 	}
@@ -358,6 +373,37 @@ func (s *Server) createEndpoint(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, response)
 }
+
+func (s *Server) writeEndpointCreateConflict(c *gin.Context, in *controlmodel.Endpoint) bool {
+	if _, err := s.store.Endpoints().GetBySlug(c, in.Slug); err == nil {
+		c.JSON(http.StatusConflict, ErrorResponse{
+			Error: fmt.Sprintf("Endpoint slug %q is already in use", in.Slug),
+			Code:  "endpoint_slug_conflict",
+			Hint:  "Choose a different slug for the public Endpoint URL.",
+		})
+		return true
+	} else if !errors.Is(err, store.ErrNotFound) {
+		s.writeControlPlaneError(c, err)
+		return true
+	}
+	items, err := s.store.Endpoints().List(c, in.Tenant, in.Namespace)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return true
+	}
+	for _, item := range items {
+		if item.Name == in.Name {
+			c.JSON(http.StatusConflict, ErrorResponse{
+				Error: fmt.Sprintf("Endpoint name %q is already in use in this scope", in.Name),
+				Code:  "endpoint_name_conflict",
+				Hint:  "Choose a different Endpoint name.",
+			})
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) listEndpoints(c *gin.Context) {
 	tenant, namespace := c.Query("tenant"), c.Query("namespace")
 	if tenant == "" {

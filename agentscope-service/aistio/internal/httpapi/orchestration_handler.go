@@ -191,7 +191,12 @@ func (s *Server) listOrchestrationRuns(c *gin.Context) {
 	}
 	f := store.OrchestrationRunFilter{Tenant: tenant, Namespace: namespace, State: controlmodel.OrchestrationRunState(c.Query("state")), ActiveOnly: c.Query("active") == "true", Limit: queryInt(c, "limit", 100)}
 	if raw := c.Query("issueId"); raw != "" {
-		f.RootIssueID, _ = uuid.Parse(raw)
+		var err error
+		f.IssueID, err = uuid.Parse(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid issueId"})
+			return
+		}
 	}
 	items, err := s.store.Orchestration().ListRuns(c.Request.Context(), f)
 	if err != nil {
@@ -222,6 +227,7 @@ func (s *Server) getOrchestrationGraph(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	s.attachAttemptSessionRefs(c.Request.Context(), graph.Attempts)
 	c.JSON(http.StatusOK, graph)
 }
 func (s *Server) listOrchestrationEvents(c *gin.Context) {
@@ -403,6 +409,7 @@ func (s *Server) listExecutionAttempts(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	s.attachAttemptSessionRefs(c.Request.Context(), items)
 	c.JSON(http.StatusOK, gin.H{"attempts": items})
 }
 func (s *Server) getExecutionAttempt(c *gin.Context) {
@@ -415,7 +422,29 @@ func (s *Server) getExecutionAttempt(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	s.attachAttemptSessionRefs(c.Request.Context(), []*controlmodel.ExecutionAttempt{attempt})
 	c.JSON(http.StatusOK, gin.H{"attempt": attempt})
+}
+
+// attachAttemptSessionRefs connects runtime-reported session IDs to the
+// control-plane Session primary key used by diagnostics routes. Runtime IDs
+// are allowed to look like UUIDs, so linking by SessionID alone is ambiguous.
+func (s *Server) attachAttemptSessionRefs(ctx context.Context, attempts []*controlmodel.ExecutionAttempt) {
+	for _, attempt := range attempts {
+		if attempt == nil || attempt.AgentTaskID == uuid.Nil {
+			continue
+		}
+		sessions, err := s.store.Sessions().List(ctx, store.SessionFilter{
+			Tenant: attempt.Tenant, Namespace: attempt.Namespace, AgentID: attempt.AgentID,
+			SessionID: attempt.SessionID, AgentTaskID: attempt.AgentTaskID, Limit: 2,
+		})
+		if err != nil || len(sessions) == 0 {
+			continue
+		}
+		// AgentTaskID and the selected Agent identity make this deterministic;
+		// SessionID further separates retries that use a fresh runtime session.
+		attempt.SessionRef = &sessions[0].ID
+	}
 }
 
 func (s *Server) getTaskRun(c *gin.Context) {
@@ -457,12 +486,12 @@ func (s *Server) completeTaskRunNode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
-	node, err := s.orchestrationService().CompleteCoordinatorNode(c.Request.Context(), task.ID, req.Output, collaborationActor(c, s))
+	completed, node, err := s.concludeCoordinator(c.Request.Context(), task, req.Output, collaborationActor(c, s))
 	if err != nil {
 		s.writeCollaborationError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"node": node})
+	c.JSON(http.StatusOK, gin.H{"task": completed, "node": node})
 }
 func (s *Server) failTaskRunNode(c *gin.Context) {
 	task, ok := taskPrincipal(c)
@@ -478,12 +507,12 @@ func (s *Server) failTaskRunNode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
-	node, err := s.orchestrationService().FailCoordinatorNode(c.Request.Context(), task.ID, req.Code, req.Message, collaborationActor(c, s))
+	failed, node, err := s.failCoordinator(c.Request.Context(), task, req.Code, req.Message, collaborationActor(c, s))
 	if err != nil {
 		s.writeCollaborationError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"node": node})
+	c.JSON(http.StatusOK, gin.H{"task": failed, "node": node})
 }
 func (s *Server) replanTaskRun(c *gin.Context) {
 	task, ok := taskPrincipal(c)

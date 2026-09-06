@@ -87,7 +87,6 @@ type IssueKind string
 const (
 	IssueKindUserWork         IssueKind = "user_work"
 	IssueKindEndpointJob      IssueKind = "endpoint_job"
-	IssueKindPlaygroundJob    IssueKind = "playground_job"
 	IssueKindAutomationJob    IssueKind = "automation_job"
 	IssueKindConversationTurn IssueKind = "conversation_turn"
 )
@@ -423,6 +422,10 @@ const (
 	ApprovalApproved  ApprovalStatus = "approved"
 	ApprovalRejected  ApprovalStatus = "rejected"
 	ApprovalCancelled ApprovalStatus = "cancelled"
+
+	ApprovalTargetExecutionAttempt             = "execution_attempt"
+	ApprovalRequestKindManagedToolConfirmation = "managed_tool_confirmation"
+	ApprovalRequestKindRuntimeToolConfirmation = "runtime_tool_confirmation"
 )
 
 type Approval struct {

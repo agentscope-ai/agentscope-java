@@ -5,6 +5,7 @@ package qwenpaw
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -53,6 +54,30 @@ func TestACPClientRejectsPermissionByDefault(t *testing.T) {
 	}
 	if !strings.Contains(requests.String(), `"outcome":"cancelled"`) {
 		t.Fatalf("permission response=%s", requests.String())
+	}
+}
+
+func TestACPClientBridgesPermissionToControlPlaneApprover(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"sessionId":"paw-session"}}`,
+		`{"jsonrpc":"2.0","id":9001,"method":"session/request_permission","params":{"sessionId":"paw-session","toolCall":{"id":"call-1","name":"shell","input":{"command":"date"}},"options":[{"optionId":"allow_once","kind":"allow_once","name":"Allow once"},{"optionId":"reject_once","kind":"reject_once","name":"Reject"}]}}`,
+		`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}`,
+	}, "\n")
+	var requests bytes.Buffer
+	client := newACPClient(&requests, strings.NewReader(responses), nil)
+	client.approver = func(_ context.Context, request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+		if request.ToolUseID != "call-1" || request.ToolName != "shell" {
+			t.Fatalf("approval request=%+v", request)
+		}
+		return provider.ToolApprovalDecision{Allow: true, DecisionVersion: 2}, nil
+	}
+	if _, err := runSession(client, provider.Request{Workspace: "/tmp/work", Prompt: "task"}, configuration{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := requests.String(); !strings.Contains(got, `"outcome":"selected"`) ||
+		!strings.Contains(got, `"optionId":"allow_once"`) {
+		t.Fatalf("permission response=%s", got)
 	}
 }
 

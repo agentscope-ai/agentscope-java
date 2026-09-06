@@ -77,9 +77,9 @@ Event 是展示层的统一 envelope，原始 payload 保持不透明：
 | Runtime | 当前事实源 | 投影策略 |
 | --- | --- | --- |
 | Managed Harness | `user.message`、`agent.message`、`agent.tool_use/result`、status/error 与 SSE delta | 增量合成 assistant message；所有持久事件同时进入 Events |
-| Codex | `codex exec --json` JSONL，包含 thread/turn/item 生命周期 | thread id 映射 provider session；agent message、reasoning、command/tool item 投影为 message/tool，完整 JSONL 保留为 payload |
+| Codex | `codex app-server --listen stdio://` 双向 JSON-RPC，包含 thread/turn/item 生命周期及服务端 approval request | thread id 映射 provider session；agent message、reasoning、command/tool item 投影为 message/tool；approval 接入控制面，完整 JSON-RPC envelope 保留为 payload |
 | Claude Code | `stream-json` 的 system/assistant/user/result 记录与 content blocks | text、thinking、tool_use/tool_result 分块；session id 保持 resume 关联；原始 envelope 保留 |
-| Qoder | 与 Claude 风格相近的 stream-json，但字段能力独立演进 | 使用独立 adapter，不因格式相似而共享 provider schema；投影到相同 Message/Event contract |
+| Qoder | `--input-format stream-json --output-format stream-json` 双向宿主协议 | 使用独立 adapter；`control_request/can_use_tool` 接入控制面 approval，消息投影到相同 Message/Event contract |
 | QwenPaw | ACP JSON-RPC，主要由 `session/update` 和 permission request 表达过程 | update kind 映射 message/model/tool/lifecycle；JSON-RPC request/response 保留为原始 payload |
 | OpenClaw | 当前 `agent exec --json` 是 one-shot final envelope | 产生 user message、final assistant message 和 result lifecycle event；未提供的中间 tool/turn 事件不伪造 |
 

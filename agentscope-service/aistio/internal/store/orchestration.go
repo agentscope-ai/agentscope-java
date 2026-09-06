@@ -21,10 +21,12 @@ type OrchestrationDefinitionFilter struct {
 type OrchestrationRunFilter struct {
 	Tenant, Namespace string
 	RootIssueID       uuid.UUID
-	State             controlmodel.OrchestrationRunState
-	ActiveOnly        bool
-	OldestFirst       bool
-	Limit             int
+	// IssueID matches either the root Issue or any AgentTask Issue in the Run.
+	IssueID     uuid.UUID
+	State       controlmodel.OrchestrationRunState
+	ActiveOnly  bool
+	OldestFirst bool
+	Limit       int
 }
 
 // OrchestrationRepository is the durable authority for definitions, immutable

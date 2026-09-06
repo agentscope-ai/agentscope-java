@@ -125,8 +125,8 @@ Default users and development secrets are for local use only.
 
 1. Open http://localhost:18080 and sign in (`admin` / `admin`).
 2. In **Managed Agents**, create an Agent.
-3. Create a `local` Environment.
-4. Open **Sessions**, create a session bound to the Agent and Environment, and send the first message.
+3. In the local development stack, a new Managed Agent is automatically bound to a shared `default-local` Environment. You can select a different Environment in Agent settings.
+4. Open **Sessions**, create a session, and send the first message.
 5. In **Dashboard**, inspect online status, events, and runtime state.
 6. For collaboration, create a persistent **Team**, assign an Issue, and inspect discussion routes and AgentTasks.
 
@@ -197,6 +197,7 @@ Java services use `builder.*` properties and `BUILDER_*` environment variables. 
 | `BUILDER_DB_URL`, `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD` | Java data-plane database |
 | `BUILDER_CONTROL_URL`, `BUILDER_DATA_URL`, `BUILDER_SCHEDULER_URL` | Internal service endpoints |
 | `BUILDER_E2B_API_KEY` | E2B credential for `sandbox` environments |
+| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Allows new `local` Environment bindings. Defaults to `false` in `aistiod`; `scripts/dev-up.sh` and the development Compose stack opt in. Keep disabled in production. |
 | `AISTIO_PRODUCT_DSN` | Product database used by `aistiod` |
 | `AISTIO_ENABLE_KUBERNETES` | Enables Aistio CRD reconcilers and Kubernetes integration |
 | `BUILDER_REBUILD=1` | Rebuilds the monorepo/aistiod and, by default, recreates the disposable local `cp`/`rt`/`dp` schemas |

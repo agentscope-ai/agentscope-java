@@ -77,7 +77,7 @@ func (r *sessionRepo) Upsert(_ context.Context, in *store.Session) (*store.Sessi
 		}
 		// Runtime inventory is an observation of an existing session, not the
 		// authority for how that session entered the control plane. Preserve a
-		// more specific origin assigned by Playground, Endpoint, or AgentTask.
+		// more specific origin assigned by Endpoint or AgentTask.
 		preserveControlPlaneOrigin := in.OriginType == "runtime" &&
 			existing.OriginType != "" && existing.OriginType != "runtime"
 		if in.OriginType != "" && !preserveControlPlaneOrigin {

@@ -87,7 +87,10 @@ final class AgentTaskCollaborationTool implements AgentTool {
                                             taskContext.taskId(),
                                             taskContext.taskToken(),
                                             name,
-                                            param.getInput());
+                                            param.getInput(),
+                                            param.getToolUseBlock() == null
+                                                    ? null
+                                                    : param.getToolUseBlock().getId());
                             return ToolResultBlock.text(result.toString());
                         })
                 .subscribeOn(Schedulers.boundedElastic());

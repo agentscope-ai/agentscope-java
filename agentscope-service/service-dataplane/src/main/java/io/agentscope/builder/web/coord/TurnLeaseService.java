@@ -22,9 +22,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -51,13 +54,19 @@ public class TurnLeaseService {
                         return t;
                     });
 
+    @Autowired
     public TurnLeaseService(
             CoordinationStore coordinationStore,
             BuilderInstanceId instanceId,
             @Value("${builder.coord.turn-lease-ttl-seconds:90}") long ttlSeconds) {
+        this(coordinationStore, instanceId, Duration.ofSeconds(Math.max(15, ttlSeconds)));
+    }
+
+    TurnLeaseService(
+            CoordinationStore coordinationStore, BuilderInstanceId instanceId, Duration ttl) {
         this.coordinationStore = coordinationStore;
         this.instanceId = instanceId;
-        this.ttl = Duration.ofSeconds(Math.max(15, ttlSeconds));
+        this.ttl = ttl;
     }
 
     /**
@@ -69,6 +78,21 @@ public class TurnLeaseService {
      */
     public TurnLease acquireOrConflict(
             String sessionId, String ownerId, Runnable onRemoteInterrupt) {
+        return acquireOrConflictFenced(
+                sessionId,
+                ownerId,
+                ignored -> {
+                    if (onRemoteInterrupt != null) {
+                        onRemoteInterrupt.run();
+                    }
+                });
+    }
+
+    /** Acquires a turn lease whose interrupt callback receives the durable request fence. */
+    public TurnLease acquireOrConflictFenced(
+            String sessionId,
+            String ownerId,
+            Consumer<CoordinationStore.TurnInterruptRequest> onRemoteInterrupt) {
         // A JVM instance can receive the next message while the previous turn is still
         // publishing its final events. A process-wide owner id would make that second
         // turn look like a lease refresh and allow both turns to overlap. Fence every
@@ -87,23 +111,43 @@ public class TurnLeaseService {
                     HttpStatus.CONFLICT, "Session turn already in progress on instance " + owner);
         }
         AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<>();
-        AtomicReference<Runnable> interruptRef =
-                new AtomicReference<>(onRemoteInterrupt != null ? onRemoteInterrupt : () -> {});
+        AtomicReference<Consumer<CoordinationStore.TurnInterruptRequest>> interruptRef =
+                new AtomicReference<>(
+                        onRemoteInterrupt != null ? onRemoteInterrupt : ignored -> {});
+        AtomicLong validUntil = new AtomicLong(acquired.get().expiresAt());
         ScheduledFuture<?> future =
                 heartbeatScheduler.scheduleAtFixedRate(
                         () -> {
                             try {
-                                coordinationStore.heartbeatTurnLease(sessionId, leaseOwnerId, ttl);
-                                Optional<String> reason =
-                                        coordinationStore.consumeTurnInterrupt(sessionId);
-                                if (reason.isPresent()) {
+                                boolean stillOwner =
+                                        coordinationStore.heartbeatTurnLease(
+                                                sessionId, leaseOwnerId, ttl);
+                                if (!stillOwner) {
+                                    // A successful callback closes this TurnLease and cancels the
+                                    // scheduler. If admission bookkeeping is not installed yet,
+                                    // retry on the next tick instead of losing the lease-loss
+                                    // signal.
+                                    Consumer<CoordinationStore.TurnInterruptRequest> cb =
+                                            interruptRef.get();
+                                    if (cb != null) {
+                                        cb.accept(
+                                                new CoordinationStore.TurnInterruptRequest(
+                                                        "turn_lease_lost", null));
+                                    }
+                                    return;
+                                }
+                                validUntil.set(System.currentTimeMillis() + ttl.toMillis());
+                                Optional<CoordinationStore.TurnInterruptRequest> request =
+                                        coordinationStore.consumeTurnInterruptRequest(sessionId);
+                                if (request.isPresent()) {
                                     log.info(
                                             "Consumed remote interrupt for session {}: {}",
                                             sessionId,
-                                            reason.get());
-                                    Runnable cb = interruptRef.get();
+                                            request.get().reason());
+                                    Consumer<CoordinationStore.TurnInterruptRequest> cb =
+                                            interruptRef.get();
                                     if (cb != null) {
-                                        cb.run();
+                                        cb.accept(request.get());
                                     }
                                 }
                             } catch (Exception ex) {
@@ -111,6 +155,15 @@ public class TurnLeaseService {
                                         "Turn lease heartbeat failed for {}: {}",
                                         sessionId,
                                         ex.getMessage());
+                                if (System.currentTimeMillis() >= validUntil.get()) {
+                                    Consumer<CoordinationStore.TurnInterruptRequest> cb =
+                                            interruptRef.get();
+                                    if (cb != null) {
+                                        cb.accept(
+                                                new CoordinationStore.TurnInterruptRequest(
+                                                        "turn_lease_lost", null));
+                                    }
+                                }
                             }
                         },
                         ttl.toMillis() / 3,
@@ -137,13 +190,15 @@ public class TurnLeaseService {
         private final String sessionId;
         private final String leaseOwnerId;
         private final AtomicReference<ScheduledFuture<?>> heartbeat;
-        private final AtomicReference<Runnable> onRemoteInterrupt;
+        private final AtomicReference<Consumer<CoordinationStore.TurnInterruptRequest>>
+                onRemoteInterrupt;
 
         private TurnLease(
                 String sessionId,
                 String leaseOwnerId,
                 AtomicReference<ScheduledFuture<?>> heartbeat,
-                AtomicReference<Runnable> onRemoteInterrupt) {
+                AtomicReference<Consumer<CoordinationStore.TurnInterruptRequest>>
+                        onRemoteInterrupt) {
             this.sessionId = sessionId;
             this.leaseOwnerId = leaseOwnerId;
             this.heartbeat = heartbeat;
@@ -156,6 +211,11 @@ public class TurnLeaseService {
 
         public String instanceId() {
             return TurnLeaseService.this.instanceId.get();
+        }
+
+        /** Unique shared-store owner token for this physical turn. */
+        public String coordinationId() {
+            return leaseOwnerId;
         }
 
         @Override

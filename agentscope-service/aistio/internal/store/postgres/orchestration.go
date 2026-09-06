@@ -181,7 +181,7 @@ func (r *orchestrationRepo) ListRuns(ctx context.Context, f store.OrchestrationR
 	if f.OldestFirst {
 		order = "ASC"
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+runCols+` FROM orchestration_runs WHERE ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3::uuid='00000000-0000-0000-0000-000000000000' OR root_issue_id=$3) AND ($4='' OR state=$4) AND (NOT $5 OR state NOT IN('succeeded','partial_succeeded','failed','cancelled')) ORDER BY created_at `+order+` LIMIT $6`, f.Tenant, f.Namespace, f.RootIssueID, f.State, f.ActiveOnly, limit)
+	rows, err := r.pool.Query(ctx, `SELECT `+runCols+` FROM orchestration_runs r WHERE ($1='' OR r.tenant=$1) AND ($2='' OR r.namespace=$2) AND ($3::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$3) AND ($4='' OR r.state=$4) AND (NOT $5 OR r.state NOT IN('succeeded','partial_succeeded','failed','cancelled')) AND ($6::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$6 OR EXISTS (SELECT 1 FROM agent_tasks t WHERE t.orchestration_run_id=r.id AND t.issue_id=$6)) ORDER BY r.created_at `+order+` LIMIT $7`, f.Tenant, f.Namespace, f.RootIssueID, f.State, f.ActiveOnly, f.IssueID, limit)
 	if err != nil {
 		return nil, err
 	}

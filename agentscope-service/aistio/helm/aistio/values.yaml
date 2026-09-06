@@ -82,6 +82,9 @@ product:
   existingSecret: ""
   staticDir: /ui
   workspaceRoot: /data/workspaces
+  # Local environments expose the data-plane host/container filesystem and
+  # shell. Keep disabled in production; opt in only for trusted development.
+  allowLocalEnvironment: false
 
 metrics:
   enabled: true

@@ -374,9 +374,19 @@ func (r *collaborationRepo) ClaimAgentTaskWithAttempt(ctx context.Context, claim
 		WHERE task_id=$1 AND state=$3`, task.ID, controlmodel.TaskInputDelivered, controlmodel.TaskInputPlanned); err != nil {
 		return nil, nil, err
 	}
-	if execution.Attempt <= 0 {
-		if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(attempt),0)+1 FROM execution_attempts WHERE agent_task_id=$1`, task.ID).Scan(&execution.Attempt); err != nil {
+	if execution.Attempt <= 0 || execution.DispatchGeneration <= 0 {
+		var nextAttempt int32
+		var nextDispatchGeneration int64
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(attempt),0)+1,
+			COALESCE(MAX(dispatch_generation),0)+1 FROM execution_attempts WHERE agent_task_id=$1`, task.ID).
+			Scan(&nextAttempt, &nextDispatchGeneration); err != nil {
 			return nil, nil, err
+		}
+		if execution.Attempt <= 0 {
+			execution.Attempt = nextAttempt
+		}
+		if execution.DispatchGeneration <= 0 {
+			execution.DispatchGeneration = nextDispatchGeneration
 		}
 	}
 	execution.AgentTaskID, execution.Tenant, execution.Namespace = task.ID, task.Tenant, task.Namespace
@@ -385,9 +395,6 @@ func (r *collaborationRepo) ClaimAgentTaskWithAttempt(ctx context.Context, claim
 	var dispatch controlmodel.RuntimeDispatchSnapshot
 	if json.Unmarshal(claim.RuntimeBinding, &dispatch) == nil {
 		execution.AgentID, execution.BindingID = dispatch.Binding.AgentID, dispatch.Binding.BindingID
-	}
-	if execution.DispatchGeneration <= 0 {
-		execution.DispatchGeneration = 1
 	}
 	if execution.State == "" {
 		execution.State = controlmodel.ExecutionQueued

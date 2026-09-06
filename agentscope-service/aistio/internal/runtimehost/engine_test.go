@@ -355,6 +355,10 @@ func TestShouldPublishProviderEventFiltersInternalHookNoise(t *testing.T) {
 		`{"type":"item.completed","item":{"type":"error","message":"clamping SessionEnd hook timeout from 999999ms"}}`)}) {
 		t.Fatal("non-fatal Codex hook timeout warning should remain local")
 	}
+	if shouldPublishProviderEvent(provider.Event{Type: "warning", Raw: json.RawMessage(
+		`{"method":"warning","params":{"message":"clamping SessionEnd hook timeout to 3s"}}`)}) {
+		t.Fatal("app-server hook timeout warning should remain local")
+	}
 }
 
 func TestEngineReplaysDurableTerminalOutbox(t *testing.T) {

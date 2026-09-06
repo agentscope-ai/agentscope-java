@@ -201,13 +201,18 @@ func TestTaskCompletionPreservesExplicitCoordinatorCompletion(t *testing.T) {
 	}
 	result := json.RawMessage(`{"output":"explicit"}`)
 	if _, err = (&Service{Store: st}).CompleteCoordinatorNode(ctx, task.ID, result,
-		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
-		t.Fatal(err)
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err == nil {
+		t.Fatal("active leader task was allowed to expose a successful coordinator")
 	}
-	if _, _, err = (&collaboration.Service{Store: st}).CompleteTask(ctx, task.ID,
+	task, _, err = (&collaboration.Service{Store: st}).CompleteTask(ctx, task.ID,
 		store.TaskCompletion{ExpectedVersion: task.Version, Result: result, Summary: "explicit"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"})
+	if err != nil {
+		t.Fatalf("complete leader task: %v", err)
+	}
+	if _, err = (&Service{Store: st}).CompleteCoordinatorNode(ctx, task.ID, result,
 		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
-		t.Fatalf("physical task completion overwrote explicit coordinator state: %v", err)
+		t.Fatalf("completed leader could not converge coordinator: %v", err)
 	}
 	node, err := st.Orchestration().GetNode(ctx, task.RunNodeID)
 	if err != nil || node.State != controlmodel.RunNodeSucceeded {
@@ -255,6 +260,16 @@ func TestLeaderFollowUpConvergesOriginalCoordinatorAfterDelegation(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	workerNode, err := st.Orchestration().GetNode(ctx, worker.RunNodeID)
+	if err != nil || workerNode.Type != controlmodel.RunNodeAgent {
+		t.Fatalf("delegated Team worker must use an agent node: node=%+v err=%v", workerNode, err)
+	}
+	childRuns, err := st.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{
+		Tenant: "tenant", Namespace: "default", IssueID: child.ID, Limit: 10,
+	})
+	if err != nil || len(childRuns) != 1 || childRuns[0].ID != leader.OrchestrationRunID {
+		t.Fatalf("child Issue did not resolve its shared Run: runs=%+v err=%v", childRuns, err)
+	}
 	leader, _, err = collaborationService.CompleteTask(ctx, leader.ID,
 		store.TaskCompletion{ExpectedVersion: leader.Version, Summary: "delegated"},
 		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"})
@@ -300,12 +315,13 @@ func TestLeaderFollowUpConvergesOriginalCoordinatorAfterDelegation(t *testing.T)
 		t.Fatal(err)
 	}
 	output := json.RawMessage(`{"summary":"converged"}`)
-	if _, err = (&Service{Store: st}).CompleteCoordinatorNode(ctx, followUp.ID, output,
-		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+	followUp, _, err = collaborationService.CompleteTask(ctx, followUp.ID,
+		store.TaskCompletion{ExpectedVersion: followUp.Version, Result: output, Summary: "converged"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = collaborationService.CompleteTask(ctx, followUp.ID,
-		store.TaskCompletion{ExpectedVersion: followUp.Version, Result: output, Summary: "converged"},
+	if _, err = (&Service{Store: st}).CompleteCoordinatorNode(ctx, followUp.ID, output,
 		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
 		t.Fatal(err)
 	}

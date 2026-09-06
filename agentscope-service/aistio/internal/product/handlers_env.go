@@ -116,9 +116,10 @@ func (s *Server) createEnvironment(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "name required")
 		return
 	}
-	typ := req.Type
-	if typ == "" {
-		typ = "local"
+	typ := normalizeEnvironmentType(req.Type)
+	if typ == localEnvironmentType && !s.cfg.AllowLocalEnvironment {
+		writeTextErr(c, http.StatusForbidden, ErrLocalEnvironmentDisabled.Error())
+		return
 	}
 	id := shortID("env_")
 	now := nowMillis()

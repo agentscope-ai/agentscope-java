@@ -66,7 +66,8 @@ func TestValidateCustomArgsRejectsRuntimeOwnedArguments(t *testing.T) {
 	}
 	for _, args := range [][]string{{"--cd", "/tmp/escape"}, {"--model=gpt-test"},
 		{"--config", "mcp_servers.evil.url=x"}, {"--tools", "default"},
-		{"--allowed-mcp-server-names", "ambient"}, {"--config-dir", "/tmp/ambient"}} {
+		{"--allowed-mcp-server-names", "ambient"}, {"--config-dir", "/tmp/ambient"},
+		{"--listen", "tcp://127.0.0.1:1234"}} {
 		if _, err := ValidateCustomArgs(args); err == nil {
 			t.Fatalf("reserved custom args were accepted: %v", args)
 		}
