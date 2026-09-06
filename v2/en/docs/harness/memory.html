@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Filesystem" href="filesystem.html"><link rel="prev" title="Workspace" href="workspace.html">
+    <meta property="article:modified_time" content="2026-09-06T09:38:47+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Filesystem" href="filesystem.html"><link rel="prev" title="Workspace" href="workspace.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/memory.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1123,6 +1123,7 @@
 <section id="customizing-the-memory-pipeline-memoryconfig">
 <h2>Customizing the memory pipeline: <code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code><a class="headerlink" href="#customizing-the-memory-pipeline-memoryconfig" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> is the single place to configure flush / consolidation prompts, throttling, retention, and the per-call flush trigger. Every field has a default; not calling <code class="docutils literal notranslate"><span class="pre">.memory(...)</span></code> reproduces the historical behaviour bit-for-bit.</p>
+<p>Per-call flush and background consolidation have independent throttle windows. In both cases, the first eligible <code class="docutils literal notranslate"><span class="pre">call()</span></code> runs the work immediately; a minimum gap limits only subsequent runs and is not an initial delay.</p>
 <section id="example-1-throttle-per-call-flush-to-save-tokens">
 <h3>Example 1: throttle per-call flush to save tokens<a class="headerlink" href="#example-1-throttle-per-call-flush-to-save-tokens" title="Link to this heading">¶</a></h3>
 <p>A flush LLM call after every agent invocation can add up on long sessions. Throttle it to at most once every 10 minutes:</p>
@@ -1137,6 +1138,7 @@
 <p>Notes:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">THROTTLED</span></code> only affects <strong>path 1</strong> (per-call flush). The flush embedded in compaction (path 2) and the overflow flush (path 3) still fire on their own triggers — compaction is rare, so those two are infrequent by construction.</p></li>
+<li><p>The first eligible call flushes immediately; <code class="docutils literal notranslate"><span class="pre">Duration.ofMinutes(10)</span></code> limits only later per-call flushes.</p></li>
 <li><p><strong>Offload is unaffected</strong>, the session JSONL is still written in full every call. <code class="docutils literal notranslate"><span class="pre">session_search</span></code> and session resumption keep working.</p></li>
 </ul>
 </section>
@@ -1183,7 +1185,7 @@
 <section id="example-5-tune-background-maintenance">
 <h3>Example 5: tune background maintenance<a class="headerlink" href="#example-5-tune-background-maintenance" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">consolidationMinGap</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofHours</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">   </span><span class="c1">// background merge at most every 2h</span>
+<span class="w">    </span><span class="p">.</span><span class="na">consolidationMinGap</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofHours</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">   </span><span class="c1">// first call may run; later runs at least 2h apart</span>
 <span class="w">    </span><span class="p">.</span><span class="na">dailyFileRetentionDays</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span><span class="w">                 </span><span class="c1">// archive daily logs after 30 days</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sessionRetentionDays</span><span class="p">(</span><span class="mi">60</span><span class="p">)</span><span class="w">                   </span><span class="c1">// prune session JSONL after 60 days</span>
 <span class="w">    </span><span class="p">.</span><span class="na">consolidationMaxTokens</span><span class="p">(</span><span class="mi">8_000</span><span class="p">)</span><span class="w">              </span><span class="c1">// raise MEMORY.md cap to 8K tokens</span>
@@ -1236,7 +1238,7 @@
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">consolidationMinGap</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">30</span> <span class="pre">min</span></code></p></td>
-<td><p>Throttle gap for background maintenance</p></td>
+<td><p>Gap between background maintenance runs; the first eligible call runs immediately</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dailyFileRetentionDays</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">90</span></code></p></td>
@@ -1283,12 +1285,13 @@
 </section>
 <section id="background-maintenance">
 <h2>Background maintenance<a class="headerlink" href="#background-maintenance" title="Link to this heading">¶</a></h2>
-<p>When memory is enabled, a throttled background job also runs (triggered at each <code class="docutils literal notranslate"><span class="pre">call()</span></code> end with a minimum gap, default ~30 minutes max):</p>
+<p>When memory is enabled, a throttled background job also runs. The first eligible <code class="docutils literal notranslate"><span class="pre">call()</span></code> runs it immediately; later calls observe the minimum gap (30 minutes by default):</p>
 <ul class="simple">
 <li><p>Archives daily logs older than <code class="docutils literal notranslate"><span class="pre">dailyFileRetentionDays</span></code> (default 90 days) to <code class="docutils literal notranslate"><span class="pre">memory/archive/</span></code></p></li>
 <li><p>Runs one <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> consolidation pass</p></li>
 <li><p>Prunes session logs older than <code class="docutils literal notranslate"><span class="pre">sessionRetentionDays</span></code> (default 180 days)</p></li>
 </ul>
+<p>Entering maintenance does not necessarily call the model: consolidation skips the LLM request when there are no new daily ledger entries since the last successful consolidation. <code class="docutils literal notranslate"><span class="pre">FlushTrigger.never()</span></code> does not disable this maintenance path.</p>
 <p>All thresholds are tunable via <code class="docutils literal notranslate"><span class="pre">.memory(MemoryConfig.builder()...)</span></code>, though most projects don’t need to touch them.</p>
 </section>
 <section id="turn-it-off-entirely">
@@ -1368,7 +1371,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-09-06</div>
           </div>
           <div class="right-details">
             <div class="icons">

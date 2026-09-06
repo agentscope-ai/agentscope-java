@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-05T15:55:25+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="文件系统（Filesystem）" href="filesystem.html"><link rel="prev" title="工作区（Workspace）" href="workspace.html">
+    <meta property="article:modified_time" content="2026-09-06T09:38:47+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="文件系统（Filesystem）" href="filesystem.html"><link rel="prev" title="工作区（Workspace）" href="workspace.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/memory.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1123,6 +1123,7 @@
 <section id="memory-pipeline-memoryconfig">
 <h2>定制 Memory pipeline：<code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code><a class="headerlink" href="#memory-pipeline-memoryconfig" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值，不调 <code class="docutils literal notranslate"><span class="pre">.memory(...)</span></code> 时与历史行为完全一致。</p>
+<p>Per-call flush 与后台 consolidation 使用两套独立的节流窗口。两者第一次符合条件的 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 都会立即放行；最小间隔只限制后续运行，不表示首次运行前需要等待。</p>
 <section id="per-call-flush-token">
 <h3>例 1：节流 per-call flush，省 token<a class="headerlink" href="#per-call-flush-token" title="Link to this heading">¶</a></h3>
 <p>每次 agent 调用结束都做一次 flush LLM 调用，对长会话来说成本不低。把它节流到「最多每 10 分钟一次」：</p>
@@ -1137,6 +1138,7 @@
 <p>注意：</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">THROTTLED</span></code> 只影响<strong>路径 1</strong>（per-call flush）。压缩内嵌的 flush（路径 2）和兜底 flush（路径 3）按各自的触发条件照常跑——压缩很少发生，那两条本来就不频繁。</p></li>
+<li><p>第一次符合条件的 call 会立即 flush；<code class="docutils literal notranslate"><span class="pre">Duration.ofMinutes(10)</span></code> 只限制后续的 per-call flush。</p></li>
 <li><p><strong>Offload 不受影响</strong>，session JSONL 仍然每次写完整。<code class="docutils literal notranslate"><span class="pre">session_search</span></code> 和会话恢复正常工作。</p></li>
 </ul>
 </section>
@@ -1183,7 +1185,7 @@
 <section id="id5">
 <h3>例 5：调整后台维护节奏<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">consolidationMinGap</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofHours</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">   </span><span class="c1">// 后台合并最少 2 小时一次</span>
+<span class="w">    </span><span class="p">.</span><span class="na">consolidationMinGap</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofHours</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">   </span><span class="c1">// 首次可立即运行，之后至少间隔 2 小时</span>
 <span class="w">    </span><span class="p">.</span><span class="na">dailyFileRetentionDays</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span><span class="w">                 </span><span class="c1">// 30 天就归档</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sessionRetentionDays</span><span class="p">(</span><span class="mi">60</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 60 天后删 session JSONL</span>
 <span class="w">    </span><span class="p">.</span><span class="na">consolidationMaxTokens</span><span class="p">(</span><span class="mi">8_000</span><span class="p">)</span><span class="w">              </span><span class="c1">// MEMORY.md 上限放宽到 8K tokens</span>
@@ -1236,7 +1238,7 @@
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">consolidationMinGap</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">30</span> <span class="pre">min</span></code></p></td>
-<td><p>后台维护节流间隔</p></td>
+<td><p>后台维护运行间隔；第一次符合条件的 call 立即放行</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dailyFileRetentionDays</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">90</span></code></p></td>
@@ -1283,12 +1285,13 @@
 </section>
 <section id="id8">
 <h2>后台维护<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
-<p>启用记忆能力时还会跑一个后台节流任务（每个 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 结束时按最小间隔触发，默认 30 分钟一次最多）：</p>
+<p>启用记忆能力时还会跑一个后台节流任务。第一次符合条件的 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 会立即运行，后续调用遵守最小间隔（默认 30 分钟）：</p>
 <ul class="simple">
 <li><p>把超过 <code class="docutils literal notranslate"><span class="pre">dailyFileRetentionDays</span></code>（默认 90 天）的日流水账归档到 <code class="docutils literal notranslate"><span class="pre">memory/archive/</span></code></p></li>
 <li><p>跑一次 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> 合并（consolidation）</p></li>
 <li><p>清理超过 <code class="docutils literal notranslate"><span class="pre">sessionRetentionDays</span></code>（默认 180 天）的会话日志</p></li>
 </ul>
+<p>进入维护流程不一定会调用模型：如果自上次成功合并以来没有新增日流水账内容，consolidation 会跳过 LLM 请求。<code class="docutils literal notranslate"><span class="pre">FlushTrigger.never()</span></code> 不会关闭这条维护路径。</p>
 <p>所有阈值都可以通过 <code class="docutils literal notranslate"><span class="pre">.memory(MemoryConfig.builder()...)</span></code> 调，绝大多数项目不需要碰。</p>
 </section>
 <section id="id9">
@@ -1368,7 +1371,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-05</div>
+              Last updated on 2026-09-06</div>
           </div>
           <div class="right-details">
             <div class="icons">
