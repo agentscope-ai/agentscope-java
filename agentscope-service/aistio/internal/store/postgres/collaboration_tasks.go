@@ -699,6 +699,33 @@ func (r *collaborationRepo) CompleteAgentTask(ctx context.Context, id uuid.UUID,
 	if completion.ExpectedVersion > 0 && task.Version != completion.ExpectedVersion || !controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskCompleted) {
 		return nil, store.ErrConflict
 	}
+	var attempt *controlmodel.ExecutionAttempt
+	if task.CurrentAttemptID != nil {
+		attempt, err = scanExecutionAttempt(tx.QueryRow(ctx, `SELECT `+executionAttemptColumns+`
+			FROM execution_attempts WHERE id=$1 FOR UPDATE`, *task.CurrentAttemptID))
+		if err != nil {
+			return nil, err
+		}
+		if completion.AttemptID != uuid.Nil && completion.AttemptID != attempt.ID ||
+			completion.DispatchGeneration > 0 && completion.DispatchGeneration != attempt.DispatchGeneration ||
+			completion.LeaseToken != "" && (completion.LeaseToken != attempt.LeaseToken || completion.FencingToken != attempt.FencingToken) ||
+			!controlmodel.CanTransitionExecutionAttempt(attempt.State, controlmodel.ExecutionSucceeded) {
+			return nil, store.ErrConflict
+		}
+	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	if completion.ResponseCommentID != nil {
+		comment, loadErr := scanComment(tx.QueryRow(ctx, `SELECT `+commentColumns+`
+			FROM comments WHERE id=$1`, *completion.ResponseCommentID))
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if comment.IssueID != task.IssueID || comment.SourceTaskID == nil ||
+			*comment.SourceTaskID != task.ID || comment.Type != controlmodel.CommentResult {
+			return nil, store.ErrConflict
+		}
+		actor = comment.Author
+	}
 	if len(completion.ProcessedInputIDs) > 0 {
 		if _, err := tx.Exec(ctx, `UPDATE agent_task_inputs SET state=$2,processed_at=now(),
 			response_comment_id=COALESCE($3,response_comment_id)
@@ -723,10 +750,35 @@ func (r *collaborationRepo) CompleteAgentTask(ctx context.Context, id uuid.UUID,
 	if uncovered > 0 {
 		return nil, store.ErrConflict
 	}
+	if attempt != nil {
+		usage := store.AttemptUsage(completion.Usage, completion.Result)
+		attempt, err = scanExecutionAttempt(tx.QueryRow(ctx, `UPDATE execution_attempts SET state=$2,
+			result=$3,checkpoint=COALESCE($4,checkpoint),usage=COALESCE($5,usage),lease_expires_at=NULL,version=version+1,
+			updated_at=now(),completed_at=now() WHERE id=$1 AND version=$6 RETURNING `+executionAttemptColumns,
+			attempt.ID, controlmodel.ExecutionSucceeded, nullJSON(completion.Result),
+			nullJSON(completion.Checkpoint), nullJSON(usage), attempt.Version))
+		if err != nil {
+			return nil, err
+		}
+		if err := mergeRunUsageTx(ctx, tx, task.OrchestrationRunID, usage); err != nil {
+			return nil, err
+		}
+	}
 	task, err = scanAgentTask(tx.QueryRow(ctx, `UPDATE agent_tasks SET status=$2,result=$3,
 		version=version+1,completed_at=now() WHERE id=$1 RETURNING `+agentTaskColumns,
 		id, controlmodel.AgentTaskCompleted, nullJSON(completion.Result)))
 	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE issues SET version=version+1,updated_at=now() WHERE id=$1`, task.IssueID); err != nil {
+		return nil, err
+	}
+	if err := reconcileCompletedTaskTx(ctx, tx, task, attempt, completion.Result, actor); err != nil {
+		return nil, err
+	}
+	if err := insertActivityTx(ctx, tx, &controlmodel.Activity{Tenant: task.Tenant, Namespace: task.Namespace,
+		IssueID: &task.IssueID, Actor: actor, Action: "agent_task.completed", ObjectType: "agent_task",
+		ObjectRef: task.ID.String(), CausationID: task.CausationID, CorrelationID: task.CorrelationID}); err != nil {
 		return nil, err
 	}
 	if err := enqueueCollaborationEventTx(ctx, tx, task.Tenant, "agent-task", task.ID,

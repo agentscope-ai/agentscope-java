@@ -19,9 +19,11 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import io.agentscope.builder.web.managed.EnvironmentDto;
+import io.agentscope.builder.web.managed.SessionEventDto;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,19 +51,73 @@ public class ControlPlaneClient {
     private static final Logger log = LoggerFactory.getLogger(ControlPlaneClient.class);
 
     private final WebClient webClient;
+    private final String controlPlaneUrl;
     private final String internalToken;
     private final ObjectMapper objectMapper;
+    private final Map<String, ManagedExecutionScope> managedExecutionScopes =
+            new ConcurrentHashMap<>();
 
     public ControlPlaneClient(
             @Value("${builder.control-plane-url:http://localhost:8081}") String controlPlaneUrl,
             @Value("${builder.internal-token:${BUILDER_INTERNAL_TOKEN:}}") String internalToken,
             ObjectMapper objectMapper) {
-        this.webClient = WebClient.builder().baseUrl(controlPlaneUrl).build();
+        this.controlPlaneUrl = controlPlaneUrl.replaceAll("/+$", "");
+        this.webClient = WebClient.builder().baseUrl(this.controlPlaneUrl).build();
         this.internalToken = internalToken;
         this.objectMapper =
                 objectMapper
                         .copy()
                         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    }
+
+    /** Absolute URL of the task-scoped collaboration MCP endpoint. */
+    public String collaborationMcpUrl() {
+        return controlPlaneUrl + "/mcp/collaboration";
+    }
+
+    /** Mirrors one durable managed event into the control-plane session read model. */
+    @SuppressWarnings("unchecked")
+    public void appendSessionEvent(SessionEventDto event) {
+        Map<String, Object> body = objectMapper.convertValue(event, LinkedHashMap.class);
+        ManagedExecutionScope scope = managedExecutionScopes.get(event.sessionId());
+        if (scope != null) {
+            body.put("attemptId", scope.attemptId());
+            body.put("dispatchGeneration", scope.dispatchGeneration());
+            body.put("turnId", scope.turnId());
+        }
+        webClient
+                .post()
+                .uri("/api/internal/runtime-sessions/{sessionId}/events", event.sessionId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(internalHeaders(null))
+                .bodyValue(body)
+                .retrieve()
+                .toBodilessEntity()
+                .block();
+    }
+
+    /** Renews the current managed AgentTask attempt while its model turn is active. */
+    public void heartbeatManagedExecution(String sessionId) {
+        ManagedExecutionScope scope = managedExecutionScopes.get(sessionId);
+        if (scope == null) {
+            return;
+        }
+        webClient
+                .post()
+                .uri("/api/internal/runtime-sessions/{sessionId}/heartbeat", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(internalHeaders(null))
+                .bodyValue(
+                        Map.of(
+                                "attemptId",
+                                scope.attemptId(),
+                                "dispatchGeneration",
+                                scope.dispatchGeneration(),
+                                "turnId",
+                                scope.turnId()))
+                .retrieve()
+                .toBodilessEntity()
+                .block();
     }
 
     /**
@@ -107,6 +163,39 @@ public class ControlPlaneClient {
                     ex);
         }
     }
+
+    /**
+     * Captures the Attempt fence for one admitted physical turn. Later session resolves may observe
+     * a retry Attempt, but events from this turn must remain attached to the Attempt that launched
+     * it until {@link #endManagedExecution(String)} is called.
+     */
+    public void beginManagedExecution(String sessionId) {
+        SessionResolveResult result = resolveSession(sessionId);
+        rememberManagedExecutionScope(sessionId, result.executionContext());
+    }
+
+    /** Releases the immutable Attempt fence captured for a completed physical turn. */
+    public void endManagedExecution(String sessionId) {
+        managedExecutionScopes.remove(sessionId);
+    }
+
+    private void rememberManagedExecutionScope(
+            String sessionId, Map<String, Object> executionContext) {
+        if (executionContext == null
+                || !(executionContext.get("attemptId") instanceof String attemptId)
+                || attemptId.isBlank()) {
+            managedExecutionScopes.remove(sessionId);
+            return;
+        }
+        long generation =
+                executionContext.get("dispatchGeneration") instanceof Number n ? n.longValue() : 0L;
+        String turnId = String.valueOf(executionContext.getOrDefault("turnId", ""));
+        managedExecutionScopes.put(
+                sessionId, new ManagedExecutionScope(attemptId, generation, turnId));
+    }
+
+    private record ManagedExecutionScope(
+            String attemptId, long dispatchGeneration, String turnId) {}
 
     /**
      * Lists recent product sessions for data-plane contract probing ({@code GET

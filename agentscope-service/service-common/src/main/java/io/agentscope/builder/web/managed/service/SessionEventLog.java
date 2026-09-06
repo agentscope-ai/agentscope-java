@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -55,21 +56,43 @@ public class SessionEventLog {
     private final TransactionTemplate transactionTemplate;
     private final DeletedSessionRegistry deletedSessions;
     private final SessionEventNotifier notifier;
+    private final List<SessionEventMirror> mirrors;
     private final long recoveryIntervalMs;
 
+    @Autowired
     public SessionEventLog(
             SessionEventEntityRepository repository,
             ManagedJsonHelper jsonHelper,
             TransactionTemplate transactionTemplate,
             DeletedSessionRegistry deletedSessions,
             SessionEventNotifier notifier,
+            List<SessionEventMirror> mirrors,
             @Value("${builder.session-event.recovery-interval-ms:30000}") long recoveryIntervalMs) {
         this.repository = repository;
         this.jsonHelper = jsonHelper;
         this.transactionTemplate = transactionTemplate;
         this.deletedSessions = deletedSessions;
         this.notifier = notifier;
+        this.mirrors = mirrors != null ? List.copyOf(mirrors) : List.of();
         this.recoveryIntervalMs = Math.max(1_000L, recoveryIntervalMs);
+    }
+
+    /** Constructor retained for focused tests and embedders without event mirrors. */
+    public SessionEventLog(
+            SessionEventEntityRepository repository,
+            ManagedJsonHelper jsonHelper,
+            TransactionTemplate transactionTemplate,
+            DeletedSessionRegistry deletedSessions,
+            SessionEventNotifier notifier,
+            long recoveryIntervalMs) {
+        this(
+                repository,
+                jsonHelper,
+                transactionTemplate,
+                deletedSessions,
+                notifier,
+                List.of(),
+                recoveryIntervalMs);
     }
 
     /**
@@ -98,6 +121,7 @@ public class SessionEventLog {
                         transactionTemplate.execute(
                                 status -> appendOnce(sessionId, type, payload, eventId));
                 notifier.publish(sessionId);
+                mirrorBestEffort(appended);
                 return appended;
             } catch (RuntimeException ex) {
                 if (!isSeqConflict(ex)) {
@@ -118,6 +142,23 @@ public class SessionEventLog {
                         + " seq retries: "
                         + sessionId,
                 lastConflict);
+    }
+
+    private void mirrorBestEffort(SessionEventDto event) {
+        if (event == null || event.seq() <= 0) {
+            return;
+        }
+        for (SessionEventMirror mirror : mirrors) {
+            try {
+                mirror.mirror(event);
+            } catch (RuntimeException ex) {
+                log.warn(
+                        "Session event mirror failed for {} seq {}: {}",
+                        event.sessionId(),
+                        event.seq(),
+                        ex.getMessage());
+            }
+        }
     }
 
     private SessionEventDto appendOnce(

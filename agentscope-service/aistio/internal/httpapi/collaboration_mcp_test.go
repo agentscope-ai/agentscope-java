@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spring-ai-alibaba/aistio/internal/artifact"
+	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
@@ -73,7 +74,8 @@ func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 
 	listed := call("tools/list", map[string]any{})
 	encoded, _ := json.Marshal(listed.Result)
-	if !bytes.Contains(encoded, []byte(`"issue.comment.add"`)) || !bytes.Contains(encoded, []byte(`"artifact.upload"`)) {
+	if !bytes.Contains(encoded, []byte(`"issue.comment.add"`)) || !bytes.Contains(encoded, []byte(`"artifact.upload"`)) ||
+		!bytes.Contains(encoded, []byte(`"task.start"`)) {
 		t.Fatalf("incomplete MCP tool catalog: %s", encoded)
 	}
 	bearerBody := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
@@ -170,6 +172,81 @@ func TestCollaborationMCPIsTaskScopedAndUsesDomainServices(t *testing.T) {
 	corruptJSON, _ := json.Marshal(corrupt.Result)
 	if !bytes.Contains(corruptJSON, []byte(`"isError":true`)) || !bytes.Contains(corruptJSON, []byte(`integrity`)) {
 		t.Fatalf("artifact checksum mismatch was not blocked: %s", corruptJSON)
+	}
+}
+
+func TestCollaborationMCPCompletedLeaderTokenOnlyFinalizesCoordinator(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant-a", Namespace: "default", Name: "finalizers", LeaderAgentRef: "leader",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		Tenant: team.Tenant, Namespace: team.Namespace, Title: "explicit finish",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
+	claimed, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+			State: controlmodel.ExecutionAssigned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err := st.Collaboration().StartAgentTask(ctx, claimed.ID, claimed.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(ServerOptions{Store: st, TaskTokenSecret: "0123456789abcdef0123456789abcdef"})
+	token, err := srv.taskTokens.MintScoped(running.ID, attempt.ID, attempt.DispatchGeneration, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = (&collaboration.Service{Store: st}).CompleteTask(ctx, running.ID,
+		store.TaskCompletion{ExpectedVersion: running.Version, Summary: "leader result"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string) mcpResponse {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+			"params": map[string]any{"name": name, "arguments": map[string]any{"output": map[string]any{"ok": true}}}})
+		req := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Agent-Task-Token", token)
+		response := httptest.NewRecorder()
+		srv.router.ServeHTTP(response, req)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", name, response.Code, response.Body.String())
+		}
+		var value mcpResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	blocked, _ := json.Marshal(call("issue.get").Result)
+	if !bytes.Contains(blocked, []byte(`"isError":true`)) || !bytes.Contains(blocked, []byte(`restricted`)) {
+		t.Fatalf("completed token accessed non-final tool: %s", blocked)
+	}
+	completed, _ := json.Marshal(call("run.node.complete").Result)
+	if bytes.Contains(completed, []byte(`"isError":true`)) {
+		t.Fatalf("completed leader could not finalize coordinator: %s", completed)
+	}
+	node, _ := st.Orchestration().GetNode(ctx, running.RunNodeID)
+	if node.State != controlmodel.RunNodeSucceeded {
+		t.Fatalf("coordinator state=%s", node.State)
 	}
 }
 

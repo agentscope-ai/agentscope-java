@@ -19,6 +19,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.SessionAgentBuildSpec;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.harness.agent.tools.McpServerConfig;
+import io.agentscope.harness.agent.tools.ToolsConfig;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class HarnessAgentBuildServiceCacheKeyTest {
@@ -54,15 +60,101 @@ class HarnessAgentBuildServiceCacheKeyTest {
     }
 
     @Test
-    void externalKeysDoNotCreateRuntimeSpecificAgentVariants() {
+    void taskAttemptsUseIsolatedRuntimeInstances() {
+        Map<String, Object> workerContext =
+                Map.of("attemptId", "attempt-worker", "dispatchGeneration", 1);
+        Map<String, Object> leadContext =
+                Map.of("attemptId", "attempt-lead", "dispatchGeneration", 1);
+        Map<String, Object> retryContext =
+                Map.of("attemptId", "attempt-worker", "dispatchGeneration", 2);
         String worker =
                 HarnessAgentBuildService.cacheKey(
-                        session("s1", "agent-task|f92cf745-82f5-45f3-a273-8ad96a87aa5a"), SPEC);
+                        session("s1", "agent-task|f92cf745-82f5-45f3-a273-8ad96a87aa5a"),
+                        SPEC,
+                        workerContext);
         String lead =
                 HarnessAgentBuildService.cacheKey(
-                        session("s2", "agent-task|85254b55-1a6d-4e5c-9499-d913561930c2"), SPEC);
+                        session("s2", "agent-task|85254b55-1a6d-4e5c-9499-d913561930c2"),
+                        SPEC,
+                        leadContext);
+        String retry =
+                HarnessAgentBuildService.cacheKey(
+                        session("s1", "agent-task|f92cf745-82f5-45f3-a273-8ad96a87aa5a"),
+                        SPEC,
+                        retryContext);
         String plain = HarnessAgentBuildService.cacheKey(session("s3", null), SPEC);
 
-        assertThat(worker).isEqualTo(lead).isEqualTo(plain);
+        assertThat(worker).isNotEqualTo(lead).isNotEqualTo(retry).isNotEqualTo(plain);
+    }
+
+    @Test
+    void managedPromptIncludesProtocolButNeverCredentials() {
+        Map<String, Object> executionContext =
+                Map.of(
+                        "taskContext",
+                        Map.of(
+                                "taskToken",
+                                "super-secret-token",
+                                "issue",
+                                Map.of("title", "Fix managed task"),
+                                "availableActions",
+                                List.of("task.respond", "task.complete")));
+
+        String prompt =
+                HarnessAgentBuildService.appendManagedExecutionPrompt(
+                        "base instructions", executionContext);
+
+        assertThat(prompt)
+                .contains("base instructions", "Managed AgentTask protocol", "Fix managed task")
+                .doesNotContain("super-secret-token", "taskToken");
+    }
+
+    @Test
+    void managedTaskInjectsFencedCollaborationMcpTools() {
+        ToolsConfig source = new ToolsConfig();
+        source.setAllow(List.of("shell_execute"));
+        source.setDeny(List.of("task.complete", "unsafe"));
+        Map<String, Object> executionContext =
+                Map.of(
+                        "taskContext",
+                        Map.of(
+                                "taskToken",
+                                "fenced-token",
+                                "availableActions",
+                                List.of("task.respond", "task.complete")));
+
+        ToolsConfig merged =
+                HarnessAgentBuildService.withManagedCollaborationTools(
+                        source, executionContext, "http://control/mcp/collaboration");
+
+        McpServerConfig mcp = merged.getMcpServers().get("aistio-collaboration");
+        assertThat(mcp.getTransport()).isEqualTo("http");
+        assertThat(mcp.getUrl()).isEqualTo("http://control/mcp/collaboration");
+        assertThat(mcp.getHeaders()).containsEntry("X-Agent-Task-Token", "fenced-token");
+        assertThat(mcp.getEnableTools()).containsExactly("task.respond", "task.complete");
+        assertThat(merged.getAllow()).contains("shell_execute", "task.respond", "task.complete");
+        assertThat(merged.getDeny()).containsExactly("unsafe");
+        assertThat(source.getDeny()).containsExactly("task.complete", "unsafe");
+    }
+
+    @Test
+    void managedTaskAllowsOnlyItsTokenScopedCollaborationActions() {
+        Map<String, Object> executionContext =
+                Map.of(
+                        "taskContext",
+                        Map.of(
+                                "availableActions",
+                                List.of("task.start", "task.respond", "task.complete")));
+
+        PermissionContextState permissions =
+                HarnessAgentBuildService.managedTaskPermissionContext(executionContext);
+
+        assertThat(permissions).isNotNull();
+        assertThat(permissions.getAllowRules())
+                .containsOnlyKeys("task.start", "task.respond", "task.complete");
+        assertThat(permissions.getAllowRules().get("task.complete"))
+                .allMatch(rule -> rule.behavior() == PermissionBehavior.ALLOW);
+        assertThat(permissions.getDenyRules()).isEmpty();
+        assertThat(permissions.getAskRules()).isEmpty();
     }
 }

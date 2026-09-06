@@ -67,7 +67,10 @@ const ctxConsoleAuth = "consoleAuth"
 // ctxInternalAuth marks a request authenticated by X-Builder-Internal-Token
 // (data-plane trust boundary).
 const ctxInternalAuth = "internalAuth"
-const ctxTaskAuth = "taskAuth"
+const (
+	ctxTaskAuth                 = "taskAuth"
+	ctxCompletedCoordinatorAuth = "completedCoordinatorAuth"
+)
 
 // authzMiddleware performs SubjectAccessReview-based authorization.
 // It runs after authMiddleware and expects the "username" key to be set in the

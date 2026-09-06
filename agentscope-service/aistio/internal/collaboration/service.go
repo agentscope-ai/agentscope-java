@@ -953,7 +953,7 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 	}
 	envelope := &ContextEnvelope{Task: task, Issue: issue,
 		AvailableActions: []string{"issue.get", "issue.comment.list", "issue.comment.add", "artifact.upload", "artifact.download",
-			"task.get", "task.progress", "task.respond", "task.complete", "task.fail", "approval.request",
+			"task.get", "task.start", "task.progress", "task.respond", "task.complete", "task.fail", "approval.request",
 			"run.get", "run.graph", "run.signal", "run.artifacts"}}
 	for _, input := range task.Inputs {
 		comment, loadErr := s.Store.Collaboration().GetComment(ctx, input.CommentID)
@@ -986,6 +986,14 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 	}
 	if actor.Type == "" {
 		actor = controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	}
+	if task.CurrentAttemptID != nil && completion.AttemptID == uuid.Nil {
+		attempt, loadErr := s.Store.ExecutionAttempts().Get(ctx, *task.CurrentAttemptID)
+		if loadErr != nil {
+			return nil, nil, loadErr
+		}
+		completion.AttemptID = attempt.ID
+		completion.DispatchGeneration = attempt.DispatchGeneration
 	}
 	if budgetErr := s.validateCompletionBudget(ctx, task, completion.Result); budgetErr != nil {
 		failed, failErr := s.FailTask(ctx, task.ID, completion.ExpectedVersion, "budget_exceeded", budgetErr.Error())

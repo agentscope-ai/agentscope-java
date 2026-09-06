@@ -17,6 +17,7 @@ package io.agentscope.builder.web.coord;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -68,8 +69,14 @@ public class TurnLeaseService {
      */
     public TurnLease acquireOrConflict(
             String sessionId, String ownerId, Runnable onRemoteInterrupt) {
+        // A JVM instance can receive the next message while the previous turn is still
+        // publishing its final events. A process-wide owner id would make that second
+        // turn look like a lease refresh and allow both turns to overlap. Fence every
+        // turn with its own owner id so teardown from an older turn can never delete or
+        // heartbeat the lease of a newer one.
+        String leaseOwnerId = instanceId.get() + "/" + UUID.randomUUID();
         Optional<CoordinationStore.LeaseHandle> acquired =
-                coordinationStore.tryAcquireTurnLease(sessionId, ownerId, instanceId.get(), ttl);
+                coordinationStore.tryAcquireTurnLease(sessionId, ownerId, leaseOwnerId, ttl);
         if (acquired.isEmpty()) {
             Optional<CoordinationStore.LeaseHandle> holder =
                     coordinationStore.getTurnLease(sessionId);
@@ -86,8 +93,7 @@ public class TurnLeaseService {
                 heartbeatScheduler.scheduleAtFixedRate(
                         () -> {
                             try {
-                                coordinationStore.heartbeatTurnLease(
-                                        sessionId, instanceId.get(), ttl);
+                                coordinationStore.heartbeatTurnLease(sessionId, leaseOwnerId, ttl);
                                 Optional<String> reason =
                                         coordinationStore.consumeTurnInterrupt(sessionId);
                                 if (reason.isPresent()) {
@@ -111,7 +117,7 @@ public class TurnLeaseService {
                         ttl.toMillis() / 3,
                         TimeUnit.MILLISECONDS);
         futureRef.set(future);
-        return new TurnLease(sessionId, futureRef, interruptRef);
+        return new TurnLease(sessionId, leaseOwnerId, futureRef, interruptRef);
     }
 
     /** @deprecated use {@link #acquireOrConflict(String, String, Runnable)} */
@@ -129,14 +135,17 @@ public class TurnLeaseService {
 
     public final class TurnLease implements AutoCloseable {
         private final String sessionId;
+        private final String leaseOwnerId;
         private final AtomicReference<ScheduledFuture<?>> heartbeat;
         private final AtomicReference<Runnable> onRemoteInterrupt;
 
         private TurnLease(
                 String sessionId,
+                String leaseOwnerId,
                 AtomicReference<ScheduledFuture<?>> heartbeat,
                 AtomicReference<Runnable> onRemoteInterrupt) {
             this.sessionId = sessionId;
+            this.leaseOwnerId = leaseOwnerId;
             this.heartbeat = heartbeat;
             this.onRemoteInterrupt = onRemoteInterrupt;
         }
@@ -156,7 +165,7 @@ public class TurnLeaseService {
             if (f != null) {
                 f.cancel(false);
             }
-            coordinationStore.releaseTurnLease(sessionId, TurnLeaseService.this.instanceId.get());
+            coordinationStore.releaseTurnLease(sessionId, leaseOwnerId);
         }
     }
 }

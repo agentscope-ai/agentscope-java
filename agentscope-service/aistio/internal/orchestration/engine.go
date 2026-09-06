@@ -488,24 +488,10 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 			if !controlmodel.IsAgentTaskTerminal(latest.Status) {
 				continue
 			}
-			// For a successful Team leader turn, an explicit
-			// run.node.complete/fail wins when the leader used it. For
-			// simple Team work with no delegation, however, the successful leader
-			// result is already a converged outcome and should not wait forever for
-			// a redundant control-plane callback.
+			// A Team leader must explicitly conclude its coordinator node after
+			// durable delegation and convergence. Treating a completed leader task
+			// as proof of coordination lets prose-only claims complete the run.
 			if node.Type == controlmodel.RunNodeTeam && latest.Status == controlmodel.AgentTaskCompleted {
-				converged, convergeErr := e.teamCoordinatorCanAutoComplete(ctx, run, node, latest, nodes, tasks)
-				if convergeErr != nil {
-					return changed, convergeErr
-				}
-				if converged {
-					_, transitionErr := e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version,
-						controlmodel.RunNodeSucceeded, latest.Result, "", "")
-					if transitionErr != nil && transitionErr != store.ErrConflict {
-						return changed, transitionErr
-					}
-					changed = transitionErr == nil
-				}
 				continue
 			}
 			if latest.Status == controlmodel.AgentTaskCompleted {
@@ -596,37 +582,6 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 		}
 	}
 	return changed, nil
-}
-
-func (e *Engine) teamCoordinatorCanAutoComplete(ctx context.Context, run *controlmodel.OrchestrationRun,
-	node *controlmodel.RunNode, latest *controlmodel.AgentTask, nodes []*controlmodel.RunNode,
-	tasks []*controlmodel.AgentTask) (bool, error) {
-	if run == nil || node == nil || latest == nil || !latest.LeaderTask ||
-		latest.Status != controlmodel.AgentTaskCompleted {
-		return false, nil
-	}
-	for _, task := range tasks {
-		if task.ID != latest.ID && !controlmodel.IsAgentTaskTerminal(task.Status) {
-			return false, nil
-		}
-	}
-	for _, candidate := range nodes {
-		if candidate.ID != node.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
-			return false, nil
-		}
-	}
-	children, err := e.Store.Collaboration().ListIssues(ctx, store.IssueFilter{
-		Tenant: run.Tenant, Namespace: run.Namespace, ParentID: &latest.IssueID, Limit: 500,
-	})
-	if err != nil {
-		return false, err
-	}
-	for _, child := range children {
-		if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
-			return false, nil
-		}
-	}
-	return true, nil
 }
 
 func (e *Engine) createSubrun(ctx context.Context, parent *controlmodel.OrchestrationRun, node *controlmodel.RunNode, revision *controlmodel.OrchestrationRevision, input json.RawMessage) (*controlmodel.OrchestrationRun, error) {

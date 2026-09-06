@@ -283,6 +283,49 @@ func TestCompletionAtomicallyAggregatesAttemptAndRunUsage(t *testing.T) {
 	}
 }
 
+func TestRespondThenCompleteAtomicallyFinishesAttemptAndRun(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	issue, task, err := svc.CreateIssue(ctx, CreateIssueRequest{Tenant: "respond-complete", Namespace: "default",
+		Title: "preserve response", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker",
+		Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: task.ID, ExpectedVersion: task.Version},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+			State: controlmodel.ExecutionAssigned, DispatchGeneration: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = st.Collaboration().StartAgentTask(ctx, task.ID, task.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := svc.AddComment(ctx, AddCommentRequest{IssueID: issue.ID,
+		Author:  controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"},
+		Content: "WORKER_RESULT", Type: controlmodel.CommentResult, SourceTaskID: &task.ID})
+	if err != nil || response.Comment == nil {
+		t.Fatalf("respond: result=%+v err=%v", response, err)
+	}
+	completed, reused, err := svc.CompleteTask(ctx, task.ID, store.TaskCompletion{
+		ExpectedVersion: task.Version, Summary: "WORKER_RESULT", Result: json.RawMessage(`{"ok":true}`)},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"})
+	if err != nil || completed.Status != controlmodel.AgentTaskCompleted || reused == nil || reused.ID != response.Comment.ID {
+		t.Fatalf("complete: task=%+v comment=%+v err=%v", completed, reused, err)
+	}
+	storedAttempt, err := st.ExecutionAttempts().Get(ctx, attempt.ID)
+	if err != nil || storedAttempt.State != controlmodel.ExecutionSucceeded || storedAttempt.CompletedAt == nil {
+		t.Fatalf("attempt not terminal: attempt=%+v err=%v", storedAttempt, err)
+	}
+	run, err := st.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil || run.State != controlmodel.RunSucceeded || run.CompletedAt == nil {
+		t.Fatalf("run not terminal: run=%+v err=%v", run, err)
+	}
+}
+
 func TestChildDelegationUsesFrozenTeamRoster(t *testing.T) {
 	ctx := context.Background()
 	st := openTestStore(t)

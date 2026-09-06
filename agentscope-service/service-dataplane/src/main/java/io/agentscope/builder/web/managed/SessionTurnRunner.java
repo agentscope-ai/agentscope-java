@@ -15,6 +15,7 @@
  */
 package io.agentscope.builder.web.managed;
 
+import io.agentscope.builder.control.ControlPlaneClient;
 import io.agentscope.builder.web.api.error.ApiErrorDetail;
 import io.agentscope.builder.web.api.error.ApiErrorType;
 import io.agentscope.builder.web.api.error.ApiException;
@@ -44,6 +45,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +71,7 @@ public class SessionTurnRunner {
     private final TurnLeaseService turnLeaseService;
     private final CoordinationStore coordinationStore;
     private final DeletedSessionRegistry deletedSessions;
+    private final ControlPlaneClient controlPlaneClient;
     private final ConcurrentHashMap<String, Disposable> activeTurns = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, HarnessAgent> activeAgents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TurnLeaseService.TurnLease> activeTurnLeases =
@@ -88,7 +91,8 @@ public class SessionTurnRunner {
             HandsLeaseService handsLeaseService,
             TurnLeaseService turnLeaseService,
             CoordinationStore coordinationStore,
-            DeletedSessionRegistry deletedSessions) {
+            DeletedSessionRegistry deletedSessions,
+            ControlPlaneClient controlPlaneClient) {
         this.agentBuildService = agentBuildService;
         this.sessionService = sessionService;
         this.eventLog = eventLog;
@@ -99,6 +103,7 @@ public class SessionTurnRunner {
         this.turnLeaseService = turnLeaseService;
         this.coordinationStore = coordinationStore;
         this.deletedSessions = deletedSessions;
+        this.controlPlaneClient = controlPlaneClient;
     }
 
     /** Runs a turn asynchronously so inbound HTTP handlers can return quickly. */
@@ -145,28 +150,58 @@ public class SessionTurnRunner {
                         session.id(),
                         session.ownerId(),
                         () -> interruptLocal(session.id(), "remote"));
-        activeTurnLeases.put(session.id(), lease);
-        onAdmitted.run();
-        sessionService.updateStatus(
-                session.ownerId(), session.id(), DataSessionService.STATUS_RUNNING, null);
-        Schedulers.boundedElastic()
-                .schedule(
-                        () -> {
-                            try {
-                                runTurn(session, inputMsgs, lease);
-                            } catch (Exception ex) {
-                                log.warn(
-                                        "Managed session turn failed: sessionId={}, error={}",
-                                        session.id(),
-                                        ex.getMessage());
-                                failTurn(session, ex, "turn_failed");
-                            } finally {
-                                activeTurnLeases.remove(session.id(), lease);
-                                lease.close();
-                                previewIdsBySession.remove(session.id());
-                                startedPreviewTypes.remove(session.id());
-                            }
-                        });
+        try {
+            controlPlaneClient.beginManagedExecution(session.id());
+            activeTurnLeases.put(session.id(), lease);
+            onAdmitted.run();
+            sessionService.updateStatus(
+                    session.ownerId(), session.id(), DataSessionService.STATUS_RUNNING, null);
+            Schedulers.boundedElastic()
+                    .schedule(
+                            () -> {
+                                Disposable heartbeat =
+                                        Schedulers.boundedElastic()
+                                                .schedulePeriodically(
+                                                        () ->
+                                                                heartbeatManagedExecution(
+                                                                        session.id()),
+                                                        10,
+                                                        10,
+                                                        TimeUnit.SECONDS);
+                                try {
+                                    runTurn(session, inputMsgs, lease);
+                                } catch (Exception ex) {
+                                    log.warn(
+                                            "Managed session turn failed: sessionId={}, error={}",
+                                            session.id(),
+                                            ex.getMessage());
+                                    failTurn(session, ex, "turn_failed");
+                                } finally {
+                                    heartbeat.dispose();
+                                    activeTurnLeases.remove(session.id(), lease);
+                                    controlPlaneClient.endManagedExecution(session.id());
+                                    lease.close();
+                                    previewIdsBySession.remove(session.id());
+                                    startedPreviewTypes.remove(session.id());
+                                }
+                            });
+        } catch (RuntimeException ex) {
+            activeTurnLeases.remove(session.id(), lease);
+            controlPlaneClient.endManagedExecution(session.id());
+            lease.close();
+            throw ex;
+        }
+    }
+
+    private void heartbeatManagedExecution(String sessionId) {
+        try {
+            controlPlaneClient.heartbeatManagedExecution(sessionId);
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "Managed execution heartbeat failed: sessionId={}, error={}",
+                    sessionId,
+                    ex.getMessage());
+        }
     }
 
     /**
@@ -296,7 +331,6 @@ public class SessionTurnRunner {
             done.await();
             Throwable error = errorRef.get();
             if (error != null) {
-                failTurn(session, error, "model_call_failed");
                 if (error instanceof RuntimeException re) {
                     throw re;
                 }
