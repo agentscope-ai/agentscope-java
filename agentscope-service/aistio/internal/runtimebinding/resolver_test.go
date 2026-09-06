@@ -6,6 +6,7 @@ package runtimebinding
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,10 +93,19 @@ func TestResolverDispatchesSameAgentTaskContractToEveryBackend(t *testing.T) {
 		if result.Task.Status != controlmodel.AgentTaskDispatched || result.SessionID != managed.sessionID || result.TaskToken == "" || len(managed.wakes) != 1 {
 			t.Fatalf("managed dispatch: result=%+v wakes=%+v", result, managed.wakes)
 		}
+		if strings.Contains(managed.wakes[0], result.TaskToken) ||
+			strings.Contains(strings.ToLower(managed.wakes[0]), "token") ||
+			strings.Contains(managed.wakes[0], task.ID.String()) {
+			t.Fatalf("managed wake leaked task identity or credentials: %q", managed.wakes[0])
+		}
 		session, err := st.Sessions().Get(ctx, task.Tenant, agent.AgentKey, task.Namespace, managed.sessionID)
 		if err != nil || session.AgentID != agent.ID || session.BindingID != binding.ID || session.OriginType != "agent-task" ||
 			session.AgentTaskID == nil || *session.AgentTaskID != task.ID || session.Tenant != task.Tenant {
 			t.Fatalf("managed session context: %+v %v", session, err)
+		}
+		var persistedContext map[string]any
+		if json.Unmarshal(session.TaskContext, &persistedContext) != nil || persistedContext["taskToken"] != nil {
+			t.Fatalf("public session context persisted task credentials: %s", session.TaskContext)
 		}
 	})
 

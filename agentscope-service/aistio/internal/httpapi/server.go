@@ -266,6 +266,9 @@ func NewServer(opts ServerOptions) *Server {
 		s.runtimeBindings = &runtimebinding.Resolver{Store: opts.Store, Tasks: s.taskPlane,
 			Managed: opts.Product, External: external, Tokens: &s.taskTokens}
 		s.taskPlane.CancelBackend = s.runtimeBindings.CancelAttempt
+		if s.product != nil {
+			s.product.SetManagedExecutionContextLookup(s.managedExecutionContextForSession)
+		}
 	}
 
 	if opts.KubeClient == nil {
@@ -327,6 +330,12 @@ func (s *Server) registerRoutes() {
 		pg.Use(s.product.Middlewares()...)
 		pg.Use(s.scopeMiddleware())
 		s.product.Register(pg)
+	}
+	if s.store != nil {
+		managedRuntime := s.router.Group("/api/internal/runtime-sessions")
+		managedRuntime.Use(s.internalTokenMiddleware())
+		managedRuntime.POST("/:sessionId/events", s.reportManagedSessionEvent)
+		managedRuntime.POST("/:sessionId/heartbeat", s.heartbeatManagedSession)
 	}
 
 	v1 := s.router.Group("/api/v1")
@@ -834,6 +843,13 @@ func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 				verify = s.verifyCoordinatorTaskToken
 			}
 			task, err := verify(c.Request.Context(), token, uuid.Nil)
+			completedCoordinator := false
+			if err != nil && c.Request.URL.Path == "/mcp/collaboration" {
+				if coordinatorTask, coordinatorErr := s.verifyCoordinatorTaskToken(
+					c.Request.Context(), token, uuid.Nil); coordinatorErr == nil {
+					task, err, completedCoordinator = coordinatorTask, nil, true
+				}
+			}
 			if err != nil {
 				if !bearerCandidate {
 					c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
@@ -842,6 +858,9 @@ func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 			} else {
 				c.Set(ctxInternalAuth, true)
 				c.Set(ctxTaskAuth, task)
+				if completedCoordinator {
+					c.Set(ctxCompletedCoordinatorAuth, true)
+				}
 				c.Next()
 				return
 			}

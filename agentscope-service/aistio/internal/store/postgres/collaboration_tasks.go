@@ -745,6 +745,19 @@ func (r *collaborationRepo) CompleteAgentTask(ctx context.Context, id uuid.UUID,
 			return nil, store.ErrConflict
 		}
 	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	if completion.ResponseCommentID != nil {
+		comment, loadErr := scanComment(tx.QueryRow(ctx, `SELECT `+commentColumns+`
+			FROM comments WHERE id=$1`, *completion.ResponseCommentID))
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if comment.IssueID != task.IssueID || comment.SourceTaskID == nil ||
+			*comment.SourceTaskID != task.ID || comment.Type != controlmodel.CommentResult {
+			return nil, store.ErrConflict
+		}
+		actor = comment.Author
+	}
 	if len(completion.ProcessedInputIDs) > 0 {
 		if _, err := tx.Exec(ctx, `UPDATE agent_task_inputs SET state=$2,processed_at=now(),
 			response_comment_id=COALESCE($3,response_comment_id)
@@ -790,11 +803,13 @@ func (r *collaborationRepo) CompleteAgentTask(ctx context.Context, id uuid.UUID,
 	if err != nil {
 		return nil, err
 	}
-	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
-	if err = reconcileCompletedTaskTx(ctx, tx, task, attempt, completion.Result, actor); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE issues SET version=version+1,updated_at=now() WHERE id=$1`, task.IssueID); err != nil {
 		return nil, err
 	}
-	if err = insertActivityTx(ctx, tx, &controlmodel.Activity{Tenant: task.Tenant, Namespace: task.Namespace,
+	if err := reconcileCompletedTaskTx(ctx, tx, task, attempt, completion.Result, actor); err != nil {
+		return nil, err
+	}
+	if err := insertActivityTx(ctx, tx, &controlmodel.Activity{Tenant: task.Tenant, Namespace: task.Namespace,
 		IssueID: &task.IssueID, Actor: actor, Action: "agent_task.completed", ObjectType: "agent_task",
 		ObjectRef: task.ID.String(), CausationID: task.CausationID, CorrelationID: task.CorrelationID}); err != nil {
 		return nil, err

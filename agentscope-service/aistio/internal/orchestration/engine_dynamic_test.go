@@ -51,7 +51,7 @@ func TestEngineKeepsDynamicAdaptiveNodeWaiting(t *testing.T) {
 	}
 }
 
-func TestSuccessfulTeamLeaderWithoutExplicitCompletionKeepsCoordinatorWaiting(t *testing.T) {
+func TestSuccessfulTeamLeaderRequiresExplicitCoordinatorCompletion(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
 	if err != nil {
@@ -95,11 +95,19 @@ func TestSuccessfulTeamLeaderWithoutExplicitCompletionKeepsCoordinatorWaiting(t 
 	}
 	node, err := st.Orchestration().GetNode(ctx, task.RunNodeID)
 	if err != nil || node.State != controlmodel.RunNodeWaiting {
-		t.Fatalf("coordinator completed without explicit action: node=%+v err=%v", node, err)
+		t.Fatalf("coordinator should require explicit completion: node=%+v err=%v", node, err)
 	}
 	run, err := st.Orchestration().GetRun(ctx, task.OrchestrationRunID)
 	if err != nil || run.State != controlmodel.RunWaiting {
 		t.Fatalf("Team Run completed without explicit action: run=%+v err=%v", run, err)
+	}
+	if _, err = (&Service{Store: st}).CompleteCoordinatorNode(ctx, task.ID, result,
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	run, err = st.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil || run.State != controlmodel.RunSucceeded {
+		t.Fatalf("Team Run did not complete after explicit action: run=%+v err=%v", run, err)
 	}
 }
 

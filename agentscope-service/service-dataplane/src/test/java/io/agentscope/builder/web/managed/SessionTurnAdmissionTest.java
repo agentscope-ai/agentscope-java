@@ -91,7 +91,8 @@ class SessionTurnAdmissionTest {
                 mock(HandsLeaseService.class),
                 leases,
                 mock(CoordinationStore.class),
-                new DeletedSessionRegistry());
+                new DeletedSessionRegistry(),
+                mock(io.agentscope.builder.control.ControlPlaneClient.class));
     }
 
     private static ManagedSessionDto session() {

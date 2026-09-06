@@ -35,6 +35,10 @@ import (
 // project team membership without coupling product schema to Team rows.
 type TeamContextLookup func(ctx context.Context, sessionID string) json.RawMessage
 
+// ManagedExecutionContextLookup returns private task execution context for a
+// managed session. It is exposed only through the internal resolve endpoint.
+type ManagedExecutionContextLookup func(ctx context.Context, sessionID string) json.RawMessage
+
 // TeamMemberActivityHook is invoked after a product session runtime status
 // patch succeeds. Used to mirror idle/running onto store-backed team members.
 type TeamMemberActivityHook func(ctx context.Context, sessionID, status string)
@@ -44,6 +48,7 @@ type Server struct {
 	db                     *DB
 	vaultKey               []byte
 	teamContextLookup      TeamContextLookup
+	executionContextLookup ManagedExecutionContextLookup
 	teamMemberActivityHook TeamMemberActivityHook
 }
 
@@ -52,6 +57,32 @@ func (s *Server) SetTeamContextLookup(fn TeamContextLookup) {
 	if s != nil {
 		s.teamContextLookup = fn
 	}
+}
+
+// SetManagedExecutionContextLookup injects the runtime-store lookup used to
+// materialize task-scoped MCP credentials in the data plane.
+func (s *Server) SetManagedExecutionContextLookup(fn ManagedExecutionContextLookup) {
+	if s != nil {
+		s.executionContextLookup = fn
+	}
+}
+
+// ValidateManagedRuntime verifies that a managed Agent can create an
+// executable session, including the otherwise easy-to-miss Environment.
+func (s *Server) ValidateManagedRuntime(ctx context.Context, ownerID, agentID string) error {
+	if s == nil {
+		return fmt.Errorf("managed control plane is unavailable")
+	}
+	if strings.TrimSpace(s.cfg.DataURL) == "" {
+		return fmt.Errorf("managed data plane URL is not configured")
+	}
+	if _, err := s.loadAgent(ctx, ownerID, agentID); err != nil {
+		return fmt.Errorf("managed Agent definition is unavailable")
+	}
+	if _, err := s.resolveDefaultEnvironmentID(ctx, ownerID, agentID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // SetTeamMemberActivityHook injects the store-backed member phase sync used when

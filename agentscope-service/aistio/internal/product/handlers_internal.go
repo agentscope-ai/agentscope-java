@@ -201,6 +201,14 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 			}
 		}
 	}
+	if s.executionContextLookup != nil {
+		if executionContext := s.executionContextLookup(c.Request.Context(), sess.SessionID); len(executionContext) > 0 {
+			var parsed any
+			if err := json.Unmarshal(executionContext, &parsed); err == nil {
+				out["executionContext"] = parsed
+			}
+		}
+	}
 	c.JSON(http.StatusOK, out)
 }
 
@@ -332,32 +340,42 @@ func (s *Server) PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, t
 		return err
 	}
 	url := strings.TrimRight(s.cfg.DataURL, "/") + "/api/sessions/" + sessionID + "/events"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Builder-Internal-Token", s.cfg.InternalToken)
-	if ownerID != "" {
-		req.Header.Set("X-Builder-Internal-User", ownerID)
-	}
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
+	for attempt := 0; attempt < 20; attempt++ {
+		req, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+		if requestErr != nil {
+			return requestErr
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Builder-Internal-Token", s.cfg.InternalToken)
+		if ownerID != "" {
+			req.Header.Set("X-Builder-Internal-User", ownerID)
+		}
+		resp, requestErr := client.Do(req)
+		if requestErr != nil {
+			return requestErr
+		}
+		if resp.StatusCode == http.StatusConflict {
+			_ = resp.Body.Close()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(50 * time.Millisecond):
+			}
+			continue
+		}
+		if resp.StatusCode >= 300 {
+			msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			_ = resp.Body.Close()
+			return fmt.Errorf("wake event %s: %s", resp.Status, string(msg))
+		}
+		_ = resp.Body.Close()
+		log.Printf("managed AgentTask wake posted session=%s status=%d", sessionID, resp.StatusCode)
+		return nil
 	}
-	defer resp.Body.Close()
-	// The data plane rejects a wake while the session is mid-turn; the caller must
-	// keep the notice queued rather than spend a delivery attempt on it.
-	if resp.StatusCode == http.StatusConflict {
-		return errManagedSessionBusy
-	}
-	if resp.StatusCode >= 300 {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("wake event %s: %s", resp.Status, string(msg))
-	}
-	log.Printf("managed AgentTask wake posted session=%s status=%d", sessionID, resp.StatusCode)
-	return nil
+	// A genuinely long-running turn stays queued at the orchestration caller;
+	// only the narrow final-event/lease-release race is retried inline.
+	return errManagedSessionBusy
 }
 
 // AbortManagedSession interrupts the active managed Turn through the same

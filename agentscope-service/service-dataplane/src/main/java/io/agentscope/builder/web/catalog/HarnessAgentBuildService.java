@@ -35,14 +35,19 @@ import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -82,6 +87,8 @@ public class HarnessAgentBuildService {
 
     /** Prefix for locally-built data-plane agent instance ids. */
     private static final String DP_AGENT_PREFIX = "dpa-";
+
+    private static final String COLLABORATION_MCP_NAME = "aistio-collaboration";
 
     private final Model model;
     private final ToolEventBus toolEventBus;
@@ -124,13 +131,44 @@ public class HarnessAgentBuildService {
 
     /** Resolves (and caches) the {@link HarnessAgent} for a managed-session turn. */
     public HarnessAgent getOrBuildAgent(ManagedSessionDto session, SessionAgentBuildSpec spec) {
-        String cacheKey = cacheKey(session, spec);
-        return agentCache.computeIfAbsent(cacheKey, k -> build(session, spec));
+        if (!isAgentTaskSession(session)) {
+            String cacheKey = cacheKey(session, spec);
+            return agentCache.computeIfAbsent(cacheKey, k -> build(session, spec, null, k));
+        }
+        SessionResolveResult resolved = resolveSession(session);
+        String cacheKey = cacheKey(session, spec, resolved.executionContext());
+        String attemptPrefix = cacheKey(session, spec) + "/managed/" + session.id() + "/";
+        agentCache.keySet().removeIf(k -> k.startsWith(attemptPrefix) && !k.equals(cacheKey));
+        return agentCache.computeIfAbsent(cacheKey, k -> build(session, spec, resolved, k));
     }
 
     /** Returns the immutable-definition cache key for a managed agent instance. */
     static String cacheKey(ManagedSessionDto session, SessionAgentBuildSpec spec) {
         return session.ownerId() + "/" + session.agentId() + "/" + spec.cacheSuffix();
+    }
+
+    /** Task attempts carry fenced credentials and therefore never share cached instances. */
+    static String cacheKey(
+            ManagedSessionDto session,
+            SessionAgentBuildSpec spec,
+            Map<String, Object> executionContext) {
+        String base = cacheKey(session, spec);
+        if (executionContext == null || executionContext.isEmpty()) {
+            return base + "/managed/" + session.id() + "/unresolved";
+        }
+        return base
+                + "/managed/"
+                + session.id()
+                + "/"
+                + String.valueOf(executionContext.get("attemptId"))
+                + ":"
+                + String.valueOf(executionContext.get("dispatchGeneration"));
+    }
+
+    private static boolean isAgentTaskSession(ManagedSessionDto session) {
+        return session != null
+                && session.externalKey() != null
+                && session.externalKey().startsWith("agent-task|");
     }
 
     /** Evicts all cached instance variants for a session-owner/agent pair. */
@@ -149,6 +187,7 @@ public class HarnessAgentBuildService {
         }
         try {
             agentStateStore.delete(ownerId, sessionId);
+            agentCache.keySet().removeIf(k -> k.contains("/managed/" + sessionId + "/"));
         } catch (RuntimeException ex) {
             log.warn("Agent state cleanup failed for session {}: {}", sessionId, ex.getMessage());
         }
@@ -162,7 +201,11 @@ public class HarnessAgentBuildService {
         return sharedWorkspacePaths.resolveAgentDataPath(null, agentId);
     }
 
-    private HarnessAgent build(ManagedSessionDto session, SessionAgentBuildSpec spec) {
+    private HarnessAgent build(
+            ManagedSessionDto session,
+            SessionAgentBuildSpec spec,
+            SessionResolveResult preResolved,
+            String cacheKey) {
         String agentId = session.agentId();
         String agentOwnerId = session.agentOwnerId();
         boolean global = agentOwnerId == null;
@@ -171,7 +214,7 @@ public class HarnessAgentBuildService {
         // control-plane write path).
         String buildOwnerId = global ? session.ownerId() : agentOwnerId;
 
-        SessionResolveResult resolved = resolveSession(session);
+        SessionResolveResult resolved = preResolved != null ? preResolved : resolveSession(session);
         AgentVersionSnapshot snapshot = snapshotFromResolve(resolved);
         if (snapshot == null) {
             throw new ResponseStatusException(
@@ -219,6 +262,7 @@ public class HarnessAgentBuildService {
                 maxIters = n.intValue();
             }
         }
+        sysPrompt = appendManagedExecutionPrompt(sysPrompt, resolved.executionContext());
 
         String instanceId =
                 DP_AGENT_PREFIX
@@ -226,7 +270,7 @@ public class HarnessAgentBuildService {
                         + "-"
                         + agentId
                         + "-"
-                        + Integer.toHexString(spec.cacheSuffix().hashCode());
+                        + Integer.toHexString(cacheKey.hashCode());
 
         HarnessAgent.Builder b = HarnessAgent.builder();
         // Pin the stable namespace key to the instance id (unique across users). The display
@@ -262,8 +306,18 @@ public class HarnessAgentBuildService {
         ToolsConfig resolvedTools =
                 vaultCredentialResolver.resolveToolsConfig(
                         buildOwnerId, toolsConfig, spec.vaultIds());
+        resolvedTools =
+                withManagedCollaborationTools(
+                        resolvedTools,
+                        resolved.executionContext(),
+                        controlPlaneClient.collaborationMcpUrl());
         if (resolvedTools != null) {
             b.toolsConfig(resolvedTools);
+        }
+        PermissionContextState managedTaskPermissions =
+                managedTaskPermissionContext(resolved.executionContext());
+        if (managedTaskPermissions != null) {
+            b.permissionContext(managedTaskPermissions);
         }
 
         syncDefinitionFilesFromResolve(resolved, buildOwnerId, agentId);
@@ -294,6 +348,117 @@ public class HarnessAgentBuildService {
                 instanceId,
                 spec.version());
         return agent;
+    }
+
+    @SuppressWarnings("unchecked")
+    static ToolsConfig withManagedCollaborationTools(
+            ToolsConfig source, Map<String, Object> executionContext, String collaborationMcpUrl) {
+        if (executionContext == null
+                || !(executionContext.get("taskContext") instanceof Map<?, ?> rawTaskContext)) {
+            return source;
+        }
+        Map<String, Object> taskContext = (Map<String, Object>) rawTaskContext;
+        Object rawToken = taskContext.get("taskToken");
+        if (!(rawToken instanceof String taskToken) || taskToken.isBlank()) {
+            return source;
+        }
+        List<String> actions = stringList(taskContext.get("availableActions"));
+        ToolsConfig merged = copyToolsConfig(source);
+        McpServerConfig collaboration = new McpServerConfig();
+        collaboration.setTransport("http");
+        collaboration.setUrl(collaborationMcpUrl);
+        collaboration.setHeaders(Map.of("X-Agent-Task-Token", taskToken));
+        collaboration.setEnableTools(actions);
+        Map<String, McpServerConfig> servers =
+                merged.getMcpServers() != null
+                        ? new LinkedHashMap<>(merged.getMcpServers())
+                        : new LinkedHashMap<>();
+        servers.put(COLLABORATION_MCP_NAME, collaboration);
+        merged.setMcpServers(servers);
+
+        if (merged.getAllow() != null && !merged.getAllow().isEmpty()) {
+            LinkedHashSet<String> allow = new LinkedHashSet<>(merged.getAllow());
+            allow.addAll(actions);
+            merged.setAllow(new ArrayList<>(allow));
+        }
+        if (merged.getDeny() != null && !merged.getDeny().isEmpty()) {
+            List<String> deny = new ArrayList<>(merged.getDeny());
+            deny.removeAll(actions);
+            merged.setDeny(deny);
+        }
+        return merged;
+    }
+
+    @SuppressWarnings("unchecked")
+    static PermissionContextState managedTaskPermissionContext(
+            Map<String, Object> executionContext) {
+        if (executionContext == null
+                || !(executionContext.get("taskContext") instanceof Map<?, ?> rawTaskContext)) {
+            return null;
+        }
+        List<String> actions =
+                stringList(((Map<String, Object>) rawTaskContext).get("availableActions"));
+        if (actions.isEmpty()) {
+            return null;
+        }
+        PermissionContextState.Builder permissions = PermissionContextState.builder();
+        for (String action : actions) {
+            permissions.addAllowRule(
+                    action,
+                    new PermissionRule(
+                            action, null, PermissionBehavior.ALLOW, "managed-agent-task"));
+        }
+        return permissions.build();
+    }
+
+    private static ToolsConfig copyToolsConfig(ToolsConfig source) {
+        ToolsConfig copy = new ToolsConfig();
+        if (source == null) {
+            return copy;
+        }
+        copy.setAllow(source.getAllow() != null ? new ArrayList<>(source.getAllow()) : null);
+        copy.setDeny(source.getDeny() != null ? new ArrayList<>(source.getDeny()) : null);
+        copy.setMcpServers(source.getMcpServers());
+        return copy;
+    }
+
+    private static List<String> stringList(Object value) {
+        if (!(value instanceof List<?> raw)) {
+            return List.of();
+        }
+        return raw.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    static String appendManagedExecutionPrompt(
+            String basePrompt, Map<String, Object> executionContext) {
+        if (executionContext == null
+                || !(executionContext.get("taskContext") instanceof Map<?, ?> rawTaskContext)) {
+            return basePrompt;
+        }
+        Map<String, Object> taskContext = new LinkedHashMap<>((Map<String, Object>) rawTaskContext);
+        taskContext.remove("taskToken");
+        try {
+            String contextJson = JSON_MAPPER.writeValueAsString(taskContext);
+            return (basePrompt == null ? "" : basePrompt)
+                    + "\n\n"
+                    + "Managed AgentTask protocol:\n"
+                    + "- The control plane has already admitted and started this execution"
+                    + " attempt.\n"
+                    + "- Use the aistio-collaboration tools for every durable read, progress"
+                    + " update, delegation, response, and completion.\n"
+                    + "- Never claim that an Issue, child task, or coordinator node changed unless"
+                    + " the corresponding tool call succeeded.\n"
+                    + "- A worker should publish its result with task.respond and then call"
+                    + " task.complete (or task.fail).\n"
+                    + "- A Team leader delegates with issue.child.create, waits for all child work"
+                    + " to converge, completes its task, and explicitly calls run.node.complete;"
+                    + " use run.node.fail on failure.\n"
+                    + "Authoritative task context (credentials omitted):\n"
+                    + contextJson;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to serialize managed AgentTask context", ex);
+        }
     }
 
     private void applyManagedSessionBuildOptions(

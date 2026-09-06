@@ -256,9 +256,9 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 		return nil, err
 	}
 	if err := r.Managed.PostSessionWakeEvent(ctx, sessionID, binding.ManagedOwnerRef,
-		"ExecutionAttempt available: "+attempt.ID.String()+" for AgentTask "+task.ID.String()+
-			". Pull /api/v1/agent-tasks/"+task.ID.String()+"/context with task token "+r.taskTokenForAttempt(task.ID, attempt)+
-			"; report with attempt token "+r.attemptToken(attempt)); err != nil {
+		"A durable AgentTask is ready. Follow the managed task instructions and use the "+
+			"aistio-collaboration tools to read authoritative context, perform work, report progress, "+
+			"and finish. Do not merely describe intended actions; only report an action after tool success."); err != nil {
 		_, _, _ = r.Store.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID, store.TaskFailure{
 			ExpectedVersion: dispatched.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
 			Code: "managed_wake_failed", Message: err.Error()})
@@ -352,7 +352,6 @@ func (r *Resolver) persistSession(ctx context.Context, task *controlmodel.AgentT
 	if err != nil {
 		return err
 	}
-	envelope.TaskToken = r.taskToken(task.ID)
 	contextJSON, err := json.Marshal(envelope)
 	if err != nil {
 		return err

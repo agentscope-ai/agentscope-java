@@ -983,6 +983,15 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 			return nil, store.ErrConflict
 		}
 	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	if completion.ResponseCommentID != nil {
+		comment := r.s.comments[*completion.ResponseCommentID]
+		if comment == nil || comment.IssueID != task.IssueID || comment.SourceTaskID == nil ||
+			*comment.SourceTaskID != task.ID || comment.Type != controlmodel.CommentResult {
+			return nil, store.ErrConflict
+		}
+		actor = comment.Author
+	}
 	processed, deferred := uuidSet(completion.ProcessedInputIDs), uuidSet(completion.DeferredInputIDs)
 	now := time.Now().UTC()
 	inputs := r.s.taskInputs[id]
@@ -992,7 +1001,7 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 			inputs[i].State, inputs[i].ProcessedAt, inputs[i].ResponseCommentID = controlmodel.TaskInputProcessed, &now, completion.ResponseCommentID
 		case deferred[inputs[i].ID]:
 			inputs[i].State = controlmodel.TaskInputDeferred
-		case inputs[i].State == controlmodel.TaskInputAcknowledged || inputs[i].State == controlmodel.TaskInputDelivered:
+		case inputs[i].State != controlmodel.TaskInputProcessed && inputs[i].State != controlmodel.TaskInputDeferred:
 			return nil, store.ErrConflict
 		}
 	}
@@ -1010,7 +1019,9 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 	}
 	task.Status, task.Result, task.Version, task.CompletedAt = controlmodel.AgentTaskCompleted, cloneJSON(completion.Result), task.Version+1, &now
 	task.ErrorCode, task.ErrorMessage = "", ""
-	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	if issue := r.s.issues[task.IssueID]; issue != nil {
+		issue.Version, issue.UpdatedAt = issue.Version+1, now
+	}
 	if err := r.reconcileCompletedTaskLocked(task, attempt, completion.Result, actor, now); err != nil {
 		return nil, err
 	}

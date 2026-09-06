@@ -238,7 +238,12 @@ func inspectAgentReadinessCandidates(ctx *gin.Context, s *Server, agent *control
 		available := false
 		switch binding.Kind {
 		case controlmodel.DataPlaneManaged:
-			available = controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints)
+			var cfg controlmodel.ManagedBindingConfiguration
+			configurationValid := json.Unmarshal(binding.Configuration, &cfg) == nil &&
+				cfg.OwnerRef != "" && cfg.ManagedDefinitionRef != ""
+			available = s.product != nil && configurationValid &&
+				controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints) &&
+				s.product.ValidateManagedRuntime(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef) == nil
 		case controlmodel.DataPlaneExternalApplication:
 			for _, instance := range instances {
 				if instance.BindingID != binding.ID ||

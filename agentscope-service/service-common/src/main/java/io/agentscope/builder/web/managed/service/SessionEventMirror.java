@@ -1,0 +1,19 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.agentscope.builder.web.managed.service;
+
+import io.agentscope.builder.web.managed.SessionEventDto;
+
+/** Best-effort observer used to project persisted managed events to another read model. */
+@FunctionalInterface
+public interface SessionEventMirror {
+
+    void mirror(SessionEventDto event);
+}

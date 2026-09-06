@@ -85,6 +85,7 @@ func collaborationMCPTools() []mcpTool {
 		{Name: "artifact.upload", Description: "Upload base64 bytes into shared artifact storage and link them to this task or Issue.", InputSchema: object(map[string]any{"filename": stringProp, "contentBase64": stringProp, "contentType": stringProp, "targetType": stringProp, "targetRef": stringProp}, "filename", "contentBase64")},
 		{Name: "artifact.download", Description: "Download a task-visible Artifact as base64 bytes.", InputSchema: object(map[string]any{"artifactId": stringProp}, "artifactId")},
 		{Name: "task.get", Description: "Read this AgentTask and its input states.", InputSchema: object(map[string]any{"taskId": stringProp})},
+		{Name: "task.start", Description: "Acknowledge that execution of this dispatched AgentTask has started.", InputSchema: object(map[string]any{})},
 		{Name: "task.progress", Description: "Write a progress Comment for this AgentTask.", InputSchema: object(map[string]any{"content": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.respond", Description: "Write the result Comment for this AgentTask. A later task.complete call reuses it instead of publishing a duplicate.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.complete", Description: "Complete this AgentTask, reconcile every input, and reuse any result previously written by task.respond.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids})},
@@ -152,6 +153,11 @@ func (s *Server) collaborationMCP(c *gin.Context) {
 		var params mcpCallParams
 		if err := json.Unmarshal(req.Params, &params); err != nil || params.Name == "" {
 			respond(nil, &mcpError{Code: -32602, Message: "invalid tools/call params"})
+			return
+		}
+		if completedCoordinator, _ := c.Get(ctxCompletedCoordinatorAuth); completedCoordinator == true &&
+			params.Name != "run.node.complete" && params.Name != "run.node.fail" {
+			respond(mcpResult(map[string]any{"error": "completed coordinator token is restricted to the final node transition"}, true), nil)
 			return
 		}
 		value, err := s.callCollaborationMCPTool(c, task, params.Name, params.Arguments)
@@ -231,6 +237,16 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 	case "task.get":
 		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
 		return map[string]any{"task": current}, err
+	case "task.start":
+		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
+		if err != nil {
+			return nil, err
+		}
+		if current.Status == controlmodel.AgentTaskRunning {
+			return map[string]any{"task": current}, nil
+		}
+		started, err := s.store.Collaboration().StartAgentTask(ctx, task.ID, current.Version)
+		return map[string]any{"task": started}, err
 	case "task.complete":
 		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
 		if err != nil {

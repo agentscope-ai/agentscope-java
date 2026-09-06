@@ -92,7 +92,8 @@ func (s *Server) inspectInvocationCapabilities(c *gin.Context, agent *controlmod
 			configurationValid := json.Unmarshal(binding.Configuration, &cfg) == nil &&
 				cfg.OwnerRef != "" && cfg.ManagedDefinitionRef != ""
 			if s.product != nil && configurationValid &&
-				controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints) {
+				controlmodel.RuntimeSecurityMatches(binding.Kind, nil, candidate.SecurityConstraints) &&
+				s.product.ValidateManagedRuntime(c, cfg.OwnerRef, cfg.ManagedDefinitionRef) == nil {
 				result.Conversation = invocationModeCapability{State: "available", Reason: "Managed runtime supports interactive sessions"}
 				result.Features["resume"] = invocationModeCapability{State: "available", Reason: "Managed sessions can accept additional turns"}
 				return result
