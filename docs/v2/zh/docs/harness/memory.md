@@ -107,6 +107,8 @@ CompactionConfig.builder()
 
 `MemoryConfig` 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值，不调 `.memory(...)` 时与历史行为完全一致。
 
+Per-call flush 与后台 consolidation 使用两套独立的节流窗口。两者第一次符合条件的 `call()` 都会立即放行；最小间隔只限制后续运行，不表示首次运行前需要等待。
+
 ### 例 1：节流 per-call flush，省 token
 
 每次 agent 调用结束都做一次 flush LLM 调用，对长会话来说成本不低。把它节流到「最多每 10 分钟一次」：
@@ -123,6 +125,7 @@ HarnessAgent.builder()
 注意：
 
 - `THROTTLED` 只影响**路径 1**（per-call flush）。压缩内嵌的 flush（路径 2）和兜底 flush（路径 3）按各自的触发条件照常跑——压缩很少发生，那两条本来就不频繁。
+- 第一次符合条件的 call 会立即 flush；`Duration.ofMinutes(10)` 只限制后续的 per-call flush。
 - **Offload 不受影响**，session JSONL 仍然每次写完整。`session_search` 和会话恢复正常工作。
 
 ### 例 2：完全关掉 per-call flush
@@ -168,7 +171,7 @@ HarnessAgent.builder()
 
 ```java
 .memory(MemoryConfig.builder()
-    .consolidationMinGap(Duration.ofHours(2))   // 后台合并最少 2 小时一次
+    .consolidationMinGap(Duration.ofHours(2))   // 首次可立即运行，之后至少间隔 2 小时
     .dailyFileRetentionDays(30)                 // 30 天就归档
     .sessionRetentionDays(60)                   // 60 天后删 session JSONL
     .consolidationMaxTokens(8_000)              // MEMORY.md 上限放宽到 8K tokens
@@ -201,7 +204,7 @@ HarnessAgent.builder()
 | `flushPrompt` | `null`（使用 `DEFAULT_FLUSH_PROMPT`） | 路径 1 的 SYSTEM prompt |
 | `consolidationPrompt` | `null`（使用 `DEFAULT_CONSOLIDATION_PROMPT`） | 路径 2 的 prompt 模板（必须含两个 `%d`） |
 | `consolidationMaxTokens` | `4_000` | `MEMORY.md` token 上限 |
-| `consolidationMinGap` | `30 min` | 后台维护节流间隔 |
+| `consolidationMinGap` | `30 min` | 后台维护运行间隔；第一次符合条件的 call 立即放行 |
 | `dailyFileRetentionDays` | `90` | 多少天后把日流水账归档到 `memory/archive/` |
 | `sessionRetentionDays` | `180` | 多少天后清掉 `*.log.jsonl` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
@@ -236,11 +239,13 @@ HarnessAgent.builder()
 
 ## 后台维护
 
-启用记忆能力时还会跑一个后台节流任务（每个 `call()` 结束时按最小间隔触发，默认 30 分钟一次最多）：
+启用记忆能力时还会跑一个后台节流任务。第一次符合条件的 `call()` 会立即运行，后续调用遵守最小间隔（默认 30 分钟）：
 
 - 把超过 `dailyFileRetentionDays`（默认 90 天）的日流水账归档到 `memory/archive/`
 - 跑一次 `MEMORY.md` 合并（consolidation）
 - 清理超过 `sessionRetentionDays`（默认 180 天）的会话日志
+
+进入维护流程不一定会调用模型：如果自上次成功合并以来没有新增日流水账内容，consolidation 会跳过 LLM 请求。`FlushTrigger.never()` 不会关闭这条维护路径。
 
 所有阈值都可以通过 `.memory(MemoryConfig.builder()...)` 调，绝大多数项目不需要碰。
 
