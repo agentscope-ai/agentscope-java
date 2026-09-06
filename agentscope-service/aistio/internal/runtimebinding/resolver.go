@@ -300,7 +300,9 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 			"wait inside this turn. A fresh leader follow-up will arrive with each worker result."
 	}
 	return base + " You are a Team leader follow-up caused by a worker outcome. Read the supplied task " +
-		"inputs and comments and validate the outcome. Call issue.accept only for satisfactory completed " +
+		"inputs and comments and validate the outcome. task.get also returns coordinatorChildren with every " +
+		"delegated Issue and result; use that complete set when producing the final coordinator output. " +
+		"Call issue.accept only for satisfactory completed " +
 		"work. For blocked or failed work, retry or reassign only when the new attempt changes the available " +
 		"agent, capability, credential, input, or tool; otherwise choose a degraded result, request human " +
 		"action, cancel the blocked child, or fail the coordinator. To wait for human action, call " +
@@ -309,7 +311,8 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 		"task.progress, and task.complete; use task.respond once for a final visible response and then call " +
 		"task.complete, which reuses it. Do not use issue.child.create to bypass " +
 		"an unresolved blocked Issue; use the explicit decision actions. Call run.node.complete only when the whole " +
-		"coordinator has converged. If sibling work is still active, do not retry run.node.complete in a loop; " +
+		"coordinator has converged, and make its output synthesize every child outcome rather than only the " +
+		"current input. If sibling work is still active, do not retry run.node.complete in a loop; " +
 		"call task.complete with a waiting/decision summary so this follow-up ends and the next worker outcome " +
 		"can wake a fresh follow-up. A successful run.node.complete already completes this task."
 }

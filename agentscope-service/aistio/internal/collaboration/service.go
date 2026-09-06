@@ -1162,15 +1162,25 @@ type ContextInput struct {
 	Comment *controlmodel.Comment       `json:"comment"`
 }
 
+// CoordinatorChildContext gives a Team leader a durable view of every delegated
+// branch. Follow-up tasks are routed from one child Issue at a time, so their
+// direct Inputs alone are not sufficient to synthesize the coordinator result.
+type CoordinatorChildContext struct {
+	Issue   *controlmodel.Issue     `json:"issue"`
+	Results []*controlmodel.Comment `json:"results,omitempty"`
+}
+
 type ContextEnvelope struct {
-	Task             *controlmodel.AgentTask         `json:"task"`
-	Issue            *controlmodel.Issue             `json:"issue"`
-	Run              *controlmodel.OrchestrationRun  `json:"run"`
-	Inputs           []ContextInput                  `json:"inputs"`
-	Team             *controlmodel.CollaborationTeam `json:"team,omitempty"`
-	Artifacts        []*controlmodel.Artifact        `json:"artifacts,omitempty"`
-	AvailableActions []string                        `json:"availableActions"`
-	TaskToken        string                          `json:"taskToken,omitempty"`
+	Task                *controlmodel.AgentTask         `json:"task"`
+	Issue               *controlmodel.Issue             `json:"issue"`
+	Run                 *controlmodel.OrchestrationRun  `json:"run"`
+	Inputs              []ContextInput                  `json:"inputs"`
+	CoordinatorIssue    *controlmodel.Issue             `json:"coordinatorIssue,omitempty"`
+	CoordinatorChildren []CoordinatorChildContext       `json:"coordinatorChildren,omitempty"`
+	Team                *controlmodel.CollaborationTeam `json:"team,omitempty"`
+	Artifacts           []*controlmodel.Artifact        `json:"artifacts,omitempty"`
+	AvailableActions    []string                        `json:"availableActions"`
+	TaskToken           string                          `json:"taskToken,omitempty"`
 }
 
 func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextEnvelope, error) {
@@ -1204,6 +1214,9 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 		}
 		envelope.AvailableActions = append(envelope.AvailableActions, "team.get")
 		if task.LeaderTask {
+			if err = s.addCoordinatorContext(ctx, envelope); err != nil {
+				return nil, err
+			}
 			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "issue.accept", "issue.cancel", "run.node.complete", "run.node.fail", "run.replan")
 		}
 	}
@@ -1212,6 +1225,45 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 		return nil, err
 	}
 	return envelope, nil
+}
+
+func (s *Service) addCoordinatorContext(ctx context.Context, envelope *ContextEnvelope) error {
+	if envelope == nil || envelope.Task == nil || !envelope.Task.LeaderTask {
+		return nil
+	}
+	node, err := s.Store.Orchestration().GetNode(ctx, envelope.Task.RunNodeID)
+	if err != nil {
+		return err
+	}
+	coordinatorIssueID := envelope.Task.IssueID
+	if node.IssueID != nil {
+		coordinatorIssueID = *node.IssueID
+	}
+	coordinatorIssue, err := s.Store.Collaboration().GetIssue(ctx, coordinatorIssueID)
+	if err != nil {
+		return err
+	}
+	envelope.CoordinatorIssue = coordinatorIssue
+	children, err := s.listAllIssues(ctx, store.IssueFilter{
+		Tenant: envelope.Task.Tenant, Namespace: envelope.Task.Namespace, ParentID: &coordinatorIssueID,
+	})
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		comments, listErr := s.listAllComments(ctx, child.ID)
+		if listErr != nil {
+			return listErr
+		}
+		childContext := CoordinatorChildContext{Issue: child}
+		for _, comment := range comments {
+			if comment.Type == controlmodel.CommentResult && comment.DeletedAt == nil {
+				childContext.Results = append(childContext.Results, comment)
+			}
+		}
+		envelope.CoordinatorChildren = append(envelope.CoordinatorChildren, childContext)
+	}
+	return nil
 }
 
 func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion store.TaskCompletion, actor controlmodel.Actor) (*controlmodel.AgentTask, *controlmodel.Comment, error) {

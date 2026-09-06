@@ -376,10 +376,18 @@ func (s *Service) ValidateCoordinatorNodeCompletion(ctx context.Context, taskID 
 		return nil, nil, err
 	}
 	for _, candidate := range tasks {
-		if candidate.ID != task.ID && !controlmodel.IsAgentTaskTerminal(candidate.Status) &&
-			(!candidate.LeaderTask || candidate.RunNodeID != node.ID) {
-			return nil, nil, fmt.Errorf("coordinator has active worker task %s", candidate.ID)
+		if candidate.ID == task.ID || controlmodel.IsAgentTaskTerminal(candidate.Status) {
+			continue
 		}
+		if candidate.LeaderTask && candidate.RunNodeID == node.ID {
+			// A routed leader follow-up owns worker outcome inputs. It is safe to
+			// retire an empty duplicate, but never cancel an unconsumed outcome.
+			if len(candidate.Inputs) > 0 {
+				return nil, nil, fmt.Errorf("coordinator has pending leader outcome task %s", candidate.ID)
+			}
+			continue
+		}
+		return nil, nil, fmt.Errorf("coordinator has active worker task %s", candidate.ID)
 	}
 	nodes, err := s.Store.Orchestration().ListNodes(ctx, task.OrchestrationRunID)
 	if err != nil {

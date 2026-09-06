@@ -100,6 +100,20 @@ func (m *WorkspaceManager) PrepareForExecution(ctx context.Context, envelope *co
 			prompt += "\n\nDiscussion input:\n" + routed.Comment.Content
 		}
 	}
+	if task.LeaderTask && len(envelope.CoordinatorChildren) > 0 {
+		prompt += "\n\nCoordinator child outcomes (synthesize all of these before completing the coordinator):"
+		for _, child := range envelope.CoordinatorChildren {
+			if child.Issue == nil {
+				continue
+			}
+			prompt += "\n\n- " + child.Issue.Title + " [" + child.Issue.ID.String() + ", " + string(child.Issue.Status) + "]"
+			for _, result := range child.Results {
+				if result != nil {
+					prompt += "\n  Result: " + result.Content
+				}
+			}
+		}
+	}
 	return path, key, prompt, nil
 }
 

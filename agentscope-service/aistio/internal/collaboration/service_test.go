@@ -905,6 +905,94 @@ func TestWorkerResultWakesOriginalCoordinatorAndLeaderCanAccept(t *testing.T) {
 	}
 }
 
+func TestLeaderFollowUpContextIncludesEverySiblingResult(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+		Tenant: "tenant", Namespace: "default", Name: "aggregate-results", LeaderAgentRef: "leader",
+		Policy: controlmodel.TeamPolicy{MaxChildDepth: 4, MaxChildIssues: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Collaboration().AddTeamMember(ctx, &controlmodel.CollaborationTeamMember{
+		TeamID: team.ID, AgentRef: "worker", Role: "worker",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	root, leader, err := svc.CreateIssue(ctx, CreateIssueRequest{
+		Tenant: "tenant", Namespace: "default", Title: "list files and write poem",
+		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: leader.ID, ExpectedVersion: leader.Version})
+	if err == nil {
+		leader, err = st.Collaboration().StartAgentTask(ctx, leader.ID, leader.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	children := make([]*controlmodel.Issue, 0, 2)
+	workers := make([]*controlmodel.AgentTask, 0, 2)
+	for _, title := range []string{"list files", "write poem"} {
+		child, worker, createErr := svc.CreateChildFromTask(ctx, leader.ID, CreateIssueRequest{
+			Title: title, AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker",
+		})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		children, workers = append(children, child), append(workers, worker)
+	}
+	if _, _, err = svc.CompleteTask(ctx, leader.ID, store.TaskCompletion{
+		ExpectedVersion: leader.Version, Summary: "delegated",
+	}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
+		t.Fatal(err)
+	}
+	results := []string{"file-a\nfile-b", "a complete poem"}
+	for index, worker := range workers {
+		worker, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: worker.ID, ExpectedVersion: worker.Version})
+		if err == nil {
+			worker, err = st.Collaboration().StartAgentTask(ctx, worker.ID, worker.Version)
+		}
+		if err == nil {
+			_, _, err = svc.CompleteTask(ctx, worker.ID, store.TaskCompletion{
+				ExpectedVersion: worker.Version, Summary: results[index],
+			}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "worker"})
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
+		IssueID: children[1].ID, AgentRef: "leader", Limit: 10,
+	})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("second follow-up: tasks=%+v err=%v", tasks, err)
+	}
+	envelope, err := svc.BuildContext(ctx, tasks[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if envelope.CoordinatorIssue == nil || envelope.CoordinatorIssue.ID != root.ID || len(envelope.CoordinatorChildren) != 2 {
+		t.Fatalf("coordinator context incomplete: %+v", envelope)
+	}
+	seen := map[string]bool{}
+	for _, child := range envelope.CoordinatorChildren {
+		for _, result := range child.Results {
+			seen[result.Content] = true
+		}
+	}
+	for _, result := range results {
+		if !seen[result] {
+			t.Fatalf("missing sibling result %q from coordinator context: %+v", result, envelope.CoordinatorChildren)
+		}
+	}
+}
+
 func TestTaskRespondThenCompleteReusesSingleResultComment(t *testing.T) {
 	ctx := context.Background()
 	st := openTestStore(t)

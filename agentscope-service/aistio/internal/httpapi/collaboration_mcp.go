@@ -96,7 +96,7 @@ func collaborationMCPTools() []mcpTool {
 		{Name: "issue.cancel", Description: "Explicitly skip the current blocked delegated child Issue after the Team leader decides a degraded or partial result is acceptable.", InputSchema: object(map[string]any{"reason": stringProp})},
 		{Name: "artifact.upload", Description: "Upload base64 bytes into shared artifact storage and link them to this task or Issue.", InputSchema: object(map[string]any{"filename": stringProp, "contentBase64": stringProp, "contentType": stringProp, "targetType": stringProp, "targetRef": stringProp}, "filename", "contentBase64")},
 		{Name: "artifact.download", Description: "Download a task-visible Artifact as base64 bytes.", InputSchema: object(map[string]any{"artifactId": stringProp}, "artifactId")},
-		{Name: "task.get", Description: "Read this AgentTask and its input states. Omit taskId or use \"current\" for the token-scoped task.", InputSchema: object(map[string]any{"taskId": stringProp})},
+		{Name: "task.get", Description: "Read this AgentTask, its input comments, and for Team leaders the coordinator Issue plus every child result. Omit taskId or use \"current\" for the token-scoped task.", InputSchema: object(map[string]any{"taskId": stringProp})},
 		{Name: "task.start", Description: "Acknowledge that execution of this dispatched AgentTask has started.", InputSchema: object(map[string]any{})},
 		{Name: "task.progress", Description: "Write a progress Comment for this AgentTask.", InputSchema: object(map[string]any{"content": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.respond", Description: "Write the result Comment for this AgentTask. A later task.complete call reuses it instead of publishing a duplicate.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
@@ -305,8 +305,12 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 	case "artifact.download":
 		return s.downloadMCPArtifact(ctx, task, args)
 	case "task.get":
-		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
-		return map[string]any{"task": current}, err
+		envelope, err := svc.BuildContext(ctx, task.ID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"task": envelope.Task, "inputs": envelope.Inputs,
+			"coordinatorIssue": envelope.CoordinatorIssue, "coordinatorChildren": envelope.CoordinatorChildren}, nil
 	case "task.start":
 		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
 		if err != nil {

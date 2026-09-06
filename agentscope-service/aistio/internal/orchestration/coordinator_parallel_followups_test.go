@@ -6,6 +6,7 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -96,5 +97,76 @@ func TestParallelLeaderFollowUpsDoNotDeadlockCoordinator(t *testing.T) {
 	}
 	if run.State != controlmodel.RunSucceeded {
 		t.Fatalf("run state=%s", run.State)
+	}
+}
+
+func TestCoordinatorDoesNotCancelPendingLeaderOutcome(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	issueID, runID, nodeID, teamID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	actor := controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}
+	if _, err = st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		ID: issueID, Tenant: "tenant", Namespace: "default", Title: "pending outcome", Creator: actor,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{
+		ID: runID, Tenant: "tenant", Namespace: "default", RootIssueID: issueID,
+		Mode: controlmodel.RunModeAdaptive, State: controlmodel.RunRunning, CreatedBy: actor,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	node, err := st.Orchestration().CreateNode(ctx, &controlmodel.RunNode{
+		ID: nodeID, RunID: runID, Tenant: "tenant", Namespace: "default", NodeKey: "coordinator",
+		Type: controlmodel.RunNodeTeam, IssueID: &issueID, State: controlmodel.RunNodeReady,
+	})
+	if err == nil {
+		node, err = st.Orchestration().TransitionNode(ctx, node.ID, node.Version,
+			controlmodel.RunNodeWaiting, nil, "team_coordinator", "")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	winner, err := st.Collaboration().CreateRunAgentTask(ctx, store.RunTaskRequest{
+		RunID: runID, NodeID: node.ID, IssueID: issueID, AgentRef: "leader", TeamID: &teamID,
+		TeamRole: "leader", Leader: true, Originator: actor,
+	})
+	if err == nil {
+		winner, err = st.Collaboration().ClaimAgentTask(ctx, store.TaskClaim{TaskID: winner.ID, ExpectedVersion: winner.Version})
+	}
+	if err == nil {
+		winner, err = st.Collaboration().StartAgentTask(ctx, winner.ID, winner.Version)
+	}
+	if err == nil {
+		winner, err = st.Collaboration().CompleteAgentTask(ctx, winner.ID,
+			store.TaskCompletion{ExpectedVersion: winner.Version, Result: json.RawMessage(`{"ok":true}`)})
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	routed, err := st.Collaboration().CreateComment(ctx, store.CreateCommentRequest{
+		Comment: &controlmodel.Comment{IssueID: issueID, Author: actor, Content: "second worker result", Type: controlmodel.CommentResult},
+		Targets: []store.CommentTarget{{TargetType: controlmodel.AssigneeAgent, TargetRef: "leader", AgentRef: "leader",
+			TeamID: &teamID, TeamRole: "leader", ParentTaskID: &winner.ID, RouteType: controlmodel.RouteTeamLeader}},
+	})
+	if err != nil || len(routed.Tasks) != 1 {
+		t.Fatalf("pending outcome route: result=%+v err=%v", routed, err)
+	}
+	pending, err := st.Collaboration().GetAgentTask(ctx, routed.Tasks[0].ID)
+	if err != nil || len(pending.Inputs) != 1 {
+		t.Fatalf("pending outcome input: task=%+v err=%v", pending, err)
+	}
+	if _, err = (&Service{Store: st}).CompleteCoordinatorNode(ctx, winner.ID,
+		json.RawMessage(`{"ok":true}`), controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err == nil || !strings.Contains(err.Error(), "pending leader outcome") {
+		t.Fatalf("coordinator discarded pending leader outcome: %v", err)
+	}
+	pending, err = st.Collaboration().GetAgentTask(ctx, routed.Tasks[0].ID)
+	if err != nil || pending.Status != controlmodel.AgentTaskQueued {
+		t.Fatalf("pending leader outcome was not preserved: task=%+v err=%v", pending, err)
 	}
 }

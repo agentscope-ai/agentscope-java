@@ -166,7 +166,7 @@ func coordinatorOutcomeText(output json.RawMessage) string {
 	}
 	var value map[string]any
 	if json.Unmarshal(output, &value) == nil {
-		for _, key := range []string{"summary", "output", "message", "result"} {
+		for _, key := range []string{"summary", "output", "message", "result", "reason"} {
 			if text, ok := value[key].(string); ok && strings.TrimSpace(text) != "" {
 				return strings.TrimSpace(text)
 			}
