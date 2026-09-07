@@ -59,6 +59,7 @@ top_p: 0.95                   # optional
 hidden: false                 # true = not listed to the model (still callable programmatically)
 mode: subagent                # primary / subagent / all (default all); primary can't be spawned
 expose_to_user: true          # optional tri-state; force/forbid user exposure (omit = no opinion)
+enable_pending_tool_recovery: true # optional; omit to inherit the parent's recovery setting
 tools: [read_file, grep_files]   # optional; allowlist over inherited tools
 ---
 
@@ -91,6 +92,15 @@ HarnessAgent.builder()
 ```
 
 Three sources are mutually exclusive: `workspace(...)`, `inlineAgentsBody(...)`, `url(...)` — pick one.
+
+Automatically built local subagents, including `general-purpose`, inherit the parent's
+`HarnessAgent.Builder.enablePendingToolRecovery(...)` setting (default `false`). A declaration can
+override it with `.enablePendingToolRecovery(true)` or `.enablePendingToolRecovery(false)`; `null`
+inherits. Workspace specs accept `enable_pending_tool_recovery` (or `enablePendingToolRecovery`).
+When enabled, a new ordinary message repairs orphaned pending tool calls with synthetic error
+results, including calls loaded from a failed session. Pending permission confirmations still
+require confirmation; empty-input resume and caller-supplied tool results retain their existing
+behavior. Remote agents and custom factories configure recovery themselves.
 
 ### Built-in `general-purpose`
 
