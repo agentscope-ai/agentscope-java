@@ -22,7 +22,8 @@ import io.agentscope.harness.agent.sandbox.SandboxLease;
  *
  * <p>The default implementation in {@link AbstractJdbcDialect#tryEnter} uses a portable
  * table-based lock (INSERT/DELETE with polling). Vendor dialects with native advisory
- * locks override {@code tryEnter} — e.g. {@code MysqlDialect} uses {@code GET_LOCK}.
+ * locks override {@code tryEnter} — e.g. {@code MysqlDialect} uses {@code GET_LOCK} and
+ * {@code PostgresDialect} uses {@code pg_try_advisory_lock}.
  *
  * <p>Adding a new database with native lock support requires only overriding
  * {@code tryEnter()} in the vendor dialect class — no separate strategy class needed.

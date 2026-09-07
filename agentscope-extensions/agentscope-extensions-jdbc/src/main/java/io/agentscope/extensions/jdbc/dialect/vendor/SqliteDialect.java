@@ -91,6 +91,7 @@ public class SqliteDialect extends AbstractJdbcDialect {
                         + "  state_key   TEXT    NOT NULL,"
                         + "  item_index  INTEGER NOT NULL DEFAULT 0,"
                         + "  state_data  TEXT    NOT NULL,"
+                        + "  version     INTEGER NOT NULL DEFAULT 0,"
                         + "  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
                         + "  updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
                         + "  PRIMARY KEY (session_id, state_key, item_index)"
@@ -108,9 +109,11 @@ public class SqliteDialect extends AbstractJdbcDialect {
         return new BoundSql(
                 "INSERT INTO "
                         + sessionStateTableName()
-                        + " (session_id, state_key, item_index, state_data) VALUES (?, ?, ?, ?)"
+                        + " (session_id, state_key, item_index, state_data, version)"
+                        + " VALUES (?, ?, ?, ?, 1)"
                         + " ON CONFLICT(session_id, state_key, item_index) DO UPDATE SET"
-                        + "   state_data = excluded.state_data",
+                        + "   state_data = excluded.state_data,"
+                        + "   version    = version + 1",
                 sessionId,
                 stateKey,
                 itemIndex,

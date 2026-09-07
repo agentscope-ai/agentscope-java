@@ -110,6 +110,7 @@ public class MysqlDialect extends AbstractJdbcDialect {
                   state_key   VARCHAR(255) NOT NULL,
                   item_index  INT          NOT NULL DEFAULT 0,
                   state_data  LONGTEXT     NOT NULL,
+                  version     BIGINT       NOT NULL DEFAULT 0,
                   created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
                   updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                   PRIMARY KEY (session_id, state_key, item_index),
@@ -125,8 +126,10 @@ public class MysqlDialect extends AbstractJdbcDialect {
         return new BoundSql(
                 "INSERT INTO "
                         + sessionStateTableName()
-                        + " (session_id, state_key, item_index, state_data) VALUES (?, ?, ?, ?)"
-                        + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data)",
+                        + " (session_id, state_key, item_index, state_data, version)"
+                        + " VALUES (?, ?, ?, ?, 1)"
+                        + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data),"
+                        + "   version = version + 1",
                 sessionId,
                 stateKey,
                 itemIndex,
@@ -191,10 +194,10 @@ public class MysqlDialect extends AbstractJdbcDialect {
                     }
                 }
             } catch (Exception e) {
-                conn.close();
+                closeConnection(conn);
                 throw e;
             }
-            conn.close();
+            closeConnection(conn);
             throw new InterruptedException(
                     "Timed out waiting for MySQL lock: "
                             + normalized
@@ -252,11 +255,7 @@ public class MysqlDialect extends AbstractJdbcDialect {
             } catch (Exception e) {
                 log.warn("[mysql-lock] Failed to release {}: {}", lockName, e.getMessage(), e);
             } finally {
-                try {
-                    conn.close();
-                } catch (SQLException e) {
-                    log.warn("[mysql-lock] Failed to close connection: {}", e.getMessage());
-                }
+                closeConnection(conn);
             }
         }
     }

@@ -29,8 +29,9 @@ import org.slf4j.LoggerFactory;
  * {@link SandboxLockStrategy} provided by the dialect.
  *
  * <p>This component contains zero database-specific logic — the dialect handles
- * whether to use MySQL {@code GET_LOCK} or the portable table-based lock
- * (default in {@link io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect}).
+ * whether to use MySQL {@code GET_LOCK}, PostgreSQL {@code pg_try_advisory_lock}, or
+ * the portable table-based lock (default in
+ * {@link io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect}).
  *
  * <p>Each lock is identified by a string key derived from the
  * {@link SandboxIsolationKey}'s scope and value.

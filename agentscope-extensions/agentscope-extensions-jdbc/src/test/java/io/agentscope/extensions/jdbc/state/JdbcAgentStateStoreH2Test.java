@@ -17,15 +17,23 @@ package io.agentscope.extensions.jdbc.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.extensions.jdbc.H2TestSupport;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -207,5 +215,115 @@ class JdbcAgentStateStoreH2Test {
         Set<String> sessions = store.listSessionIds("a_%_b");
         assertEquals(1, sessions.size());
         assertTrue(sessions.contains("s1"));
+    }
+
+    // ------------------------------------------------------------------
+    //  Optimistic concurrency (version column + CAS)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("supportsVersioning is true for the JDBC store")
+    void supportsVersioning() {
+        assertTrue(store.supportsVersioning());
+    }
+
+    @Test
+    @DisplayName("getVersioned returns null value and version 0 for an absent key")
+    void getVersionedAbsentReturnsVersionZero() {
+        VersionedState<TestState> versioned =
+                store.getVersioned("user1", "session1", "agent_state", TestState.class);
+
+        assertNull(versioned.value());
+        assertEquals(0L, versioned.version());
+    }
+
+    @Test
+    @DisplayName("saveIfVersion with expectedVersion 0 creates if absent and conflicts on repeat")
+    void saveIfVersionCreateIfAbsent() {
+        long created =
+                store.saveIfVersion("user1", "s1", "agent_state", new TestState("created"), 0L);
+        assertEquals(1L, created);
+        assertEquals(
+                "created",
+                store.getVersioned("user1", "s1", "agent_state", TestState.class).value().value());
+
+        long conflict =
+                store.saveIfVersion("user1", "s1", "agent_state", new TestState("lost"), 0L);
+        assertEquals(AgentStateStore.UNVERSIONED, conflict);
+        assertEquals(
+                "created",
+                store.get("user1", "s1", "agent_state", TestState.class).orElseThrow().value());
+    }
+
+    @Test
+    @DisplayName("plain save bumps the version")
+    void plainSaveBumpsVersion() {
+        store.save("user1", "s1", "agent_state", new TestState("one"));
+        assertEquals(
+                1L, store.getVersioned("user1", "s1", "agent_state", TestState.class).version());
+
+        store.save("user1", "s1", "agent_state", new TestState("two"));
+        assertEquals(
+                2L, store.getVersioned("user1", "s1", "agent_state", TestState.class).version());
+    }
+
+    @Test
+    @DisplayName("saveIfVersion with a stale expectedVersion rejects the write")
+    void saveIfVersionStaleVersionRejected() {
+        store.save("user1", "s1", "agent_state", new TestState("one"));
+        long observed = store.getVersioned("user1", "s1", "agent_state", TestState.class).version();
+        store.save("user1", "s1", "agent_state", new TestState("two"));
+
+        long rejected =
+                store.saveIfVersion("user1", "s1", "agent_state", new TestState("stale"), observed);
+        assertEquals(AgentStateStore.UNVERSIONED, rejected);
+        assertEquals(
+                "two",
+                store.get("user1", "s1", "agent_state", TestState.class).orElseThrow().value());
+    }
+
+    @Test
+    @DisplayName("concurrent writers with the same expected version: only one succeeds")
+    void concurrentWritersOnlyOneSucceeds() throws InterruptedException {
+        store.saveIfVersion("user1", "s1", "agent_state", new TestState("baseline"), 0L);
+        long observed = store.getVersioned("user1", "s1", "agent_state", TestState.class).version();
+        assertEquals(1L, observed);
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger successes = new AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Runnable attempt =
+                    () -> {
+                        ready.countDown();
+                        try {
+                            start.await();
+                            long result =
+                                    store.saveIfVersion(
+                                            "user1",
+                                            "s1",
+                                            "agent_state",
+                                            new TestState("winner"),
+                                            observed);
+                            if (result != AgentStateStore.UNVERSIONED) {
+                                successes.incrementAndGet();
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    };
+            pool.submit(attempt);
+            pool.submit(attempt);
+            ready.await();
+            start.countDown();
+        } finally {
+            pool.shutdown();
+        }
+        assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+
+        assertEquals(1, successes.get());
+        assertEquals(
+                2L, store.getVersioned("user1", "s1", "agent_state", TestState.class).version());
     }
 }

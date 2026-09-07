@@ -17,11 +17,22 @@ package io.agentscope.extensions.jdbc.dialect.vendor;
 
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import io.agentscope.harness.agent.sandbox.SandboxLease;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * PostgreSQL dialect — the ANSI baseline.
@@ -33,6 +44,8 @@ import java.util.Locale;
  * @author shanhongyu
  */
 public class PostgresDialect extends AbstractJdbcDialect {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PostgresDialect.class);
 
     // ------------------------------------------------------------------
     //  StoreDialect
@@ -93,6 +106,7 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + "  state_key   VARCHAR(255) NOT NULL,"
                         + "  item_index  INT          NOT NULL DEFAULT 0,"
                         + "  state_data  TEXT         NOT NULL,"
+                        + "  version     BIGINT       NOT NULL DEFAULT 0,"
                         + "  created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
                         + "  updated_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
                         + "  PRIMARY KEY (session_id, state_key, item_index)"
@@ -111,9 +125,13 @@ public class PostgresDialect extends AbstractJdbcDialect {
         return new BoundSql(
                 "INSERT INTO "
                         + sessionStateTableName()
-                        + " (session_id, state_key, item_index, state_data) VALUES (?, ?, ?, ?)"
+                        + " (session_id, state_key, item_index, state_data, version)"
+                        + " VALUES (?, ?, ?, ?, 1)"
                         + " ON CONFLICT (session_id, state_key, item_index) DO UPDATE SET"
-                        + "   state_data = EXCLUDED.state_data",
+                        + "   state_data = EXCLUDED.state_data,"
+                        + "   version    = "
+                        + sessionStateTableName()
+                        + ".version + 1",
                 sessionId,
                 stateKey,
                 itemIndex,
@@ -154,6 +172,110 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + "   data = EXCLUDED.data, created_at = CURRENT_TIMESTAMP",
                 snapshotId,
                 data);
+    }
+
+    // ------------------------------------------------------------------
+    //  SandboxLockStrategy — PostgreSQL native advisory locks
+    // ------------------------------------------------------------------
+
+    @Override
+    public SandboxLease tryEnter(String lockName, int timeoutSeconds) throws InterruptedException {
+        Objects.requireNonNull(lockName, "lockName");
+        if (timeoutSeconds < 0) {
+            throw new IllegalArgumentException("timeoutSeconds must be non-negative");
+        }
+        long lockKey = composeLockKey(lockName);
+        long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
+        LOG.debug("[postgres-lock] Acquiring: {} -> {}", lockName, lockKey);
+
+        try {
+            Connection conn = getDataSource().getConnection();
+            try {
+                while (true) {
+                    try (PreparedStatement ps =
+                            conn.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+                        ps.setLong(1, lockKey);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            if (rs.next() && rs.getBoolean(1)) {
+                                LOG.debug("[postgres-lock] Acquired: {}", lockKey);
+                                return new PostgresLease(conn, lockKey);
+                            }
+                        }
+                    }
+                    if (System.currentTimeMillis() >= deadline) {
+                        throw new InterruptedException(
+                                "Timed out waiting for PostgreSQL advisory lock: "
+                                        + lockName
+                                        + " (timeout="
+                                        + timeoutSeconds
+                                        + "s)");
+                    }
+                    TimeUnit.MILLISECONDS.sleep(100);
+                }
+            } catch (InterruptedException e) {
+                closeConnection(conn);
+                throw e;
+            } catch (SQLException e) {
+                closeConnection(conn);
+                throw new RuntimeException(
+                        "Failed to acquire PostgreSQL advisory lock: " + lockName, e);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(
+                    "Failed to acquire PostgreSQL advisory lock: " + lockName, e);
+        }
+    }
+
+    /**
+     * Maps a lock name to a 64-bit advisory-lock key by folding the first 8 bytes of its SHA-256
+     * digest. Distinct names collide with probability ~2^-32, matching the legacy PostgreSQL
+     * module's MurmurHash3 width.
+     */
+    private static long composeLockKey(String lockName) {
+        try {
+            byte[] digest =
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(lockName.getBytes(StandardCharsets.UTF_8));
+            long key = 0L;
+            for (int i = 0; i < Long.BYTES; i++) {
+                key = (key << 8) | (digest[i] & 0xFFL);
+            }
+            return key;
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
+    }
+
+    /**
+     * Lease backed by {@code pg_advisory_unlock} plus connection close. Closing the connection also
+     * releases the advisory lock automatically as a safety net.
+     */
+    private static final class PostgresLease implements SandboxLease {
+
+        private final Connection conn;
+        private final long lockKey;
+
+        PostgresLease(Connection conn, long lockKey) {
+            this.conn = conn;
+            this.lockKey = lockKey;
+        }
+
+        @Override
+        public void close() {
+            try (PreparedStatement ps = conn.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+                ps.setLong(1, lockKey);
+                ps.executeQuery();
+                LOG.debug("[postgres-lock] Released: {}", lockKey);
+            } catch (Exception e) {
+                LOG.warn(
+                        "[postgres-lock] Failed to release PostgreSQL advisory lock {}: {}",
+                        lockKey,
+                        e.getMessage(),
+                        e);
+            } finally {
+                closeConnection(conn);
+            }
+        }
     }
 
     // ------------------------------------------------------------------

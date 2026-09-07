@@ -22,7 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
+import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.util.List;
@@ -100,6 +103,19 @@ class PostgresIntegrationTest {
         try (var downloaded = client.download("pg-snap")) {
             assertEquals(data.length, downloaded.readAllBytes().length);
         }
+    }
+
+    @Test
+    @DisplayName("05: sandbox lock uses PostgreSQL advisory lock")
+    void advisoryLock() throws Exception {
+        var guard = JdbcDistributedStore.create(createDataSource()).sandboxExecutionGuard();
+        // A long lock name exercises the SHA-256 -> 64-bit advisory-lock key derivation.
+        String longValue = "agent-" + "x".repeat(120);
+        var key = SandboxIsolationKey.resolve(IsolationScope.GLOBAL, null, longValue).orElseThrow();
+
+        SandboxLease lease = guard.tryEnter(key);
+        assertNotNull(lease);
+        lease.close();
     }
 
     private DataSource createDataSource() {

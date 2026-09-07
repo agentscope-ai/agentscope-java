@@ -90,6 +90,7 @@ public class H2Dialect extends AbstractJdbcDialect {
                         + "  state_key   VARCHAR(255) NOT NULL,"
                         + "  item_index  INT          NOT NULL DEFAULT 0,"
                         + "  state_data  CLOB         NOT NULL,"
+                        + "  version     BIGINT       NOT NULL DEFAULT 0,"
                         + "  created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
                         + "  updated_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,"
                         + "  PRIMARY KEY (session_id, state_key, item_index)"
@@ -110,10 +111,10 @@ public class H2Dialect extends AbstractJdbcDialect {
                         + sessionStateTableName()
                         + " AS t USING (VALUES (?, ?, ?, ?)) AS s(sid, sk, ii, sd)"
                         + " ON t.session_id = s.sid AND t.state_key = s.sk AND t.item_index = s.ii"
-                        + " WHEN MATCHED THEN UPDATE SET state_data = s.sd"
+                        + " WHEN MATCHED THEN UPDATE SET state_data = s.sd, version = t.version + 1"
                         + " WHEN NOT MATCHED THEN INSERT"
-                        + "   (session_id, state_key, item_index, state_data)"
-                        + "   VALUES (s.sid, s.sk, s.ii, s.sd)",
+                        + "   (session_id, state_key, item_index, state_data, version)"
+                        + "   VALUES (s.sid, s.sk, s.ii, s.sd, 1)",
                 sessionId,
                 stateKey,
                 itemIndex,

@@ -18,6 +18,7 @@ package io.agentscope.extensions.jdbc.state;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import io.agentscope.extensions.jdbc.dialect.table.SessionStateDialect;
@@ -25,6 +26,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -194,6 +196,83 @@ public class JdbcAgentStateStore implements AgentStateStore {
                     });
         } catch (Exception e) {
             throw new RuntimeException("Failed to save list: " + key, e);
+        }
+    }
+
+    @Override
+    public boolean supportsVersioning() {
+        return true;
+    }
+
+    @Override
+    public <T extends State> VersionedState<T> getVersioned(
+            String userId, String sessionId, String key, Class<T> type) {
+        String slotId = slotId(userId, sessionId);
+        validateSlotId(slotId);
+        validateStateKey(key);
+
+        BoundSql boundSql = dialect.sessionStateSelectVersioned(slotId, key, SINGLE_STATE_INDEX);
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return new VersionedState<>(null, 0L);
+                }
+                String json = rs.getString("state_data");
+                long version = rs.getLong("version");
+                return new VersionedState<>(JsonUtils.getJsonCodec().fromJson(json, type), version);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get versioned state: " + key, e);
+        }
+    }
+
+    @Override
+    public long saveIfVersion(
+            String userId, String sessionId, String key, State value, long expectedVersion) {
+        if (expectedVersion == UNVERSIONED) {
+            save(userId, sessionId, key, value);
+            return getVersioned(userId, sessionId, key, State.class).version();
+        }
+        String slotId = slotId(userId, sessionId);
+        validateSlotId(slotId);
+        validateStateKey(key);
+
+        String json = JsonUtils.getJsonCodec().toJson(value);
+        try (Connection conn = dataSource.getConnection()) {
+            long[] result = new long[1];
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        BoundSql boundSql =
+                                expectedVersion == 0L
+                                        ? dialect.sessionStateInsertIfAbsent(
+                                                slotId, key, SINGLE_STATE_INDEX, json)
+                                        : dialect.sessionStateUpdateIfVersion(
+                                                slotId,
+                                                key,
+                                                SINGLE_STATE_INDEX,
+                                                json,
+                                                expectedVersion);
+                        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+                            bindParams(stmt, boundSql.params());
+                            int affected = stmt.executeUpdate();
+                            result[0] =
+                                    expectedVersion == 0L
+                                            ? (affected == 1 ? 1L : UNVERSIONED)
+                                            : (affected == 1 ? expectedVersion + 1L : UNVERSIONED);
+                        } catch (SQLException e) {
+                            if (expectedVersion == 0L && isDuplicateKey(e)) {
+                                result[0] = UNVERSIONED;
+                                return;
+                            }
+                            throw e;
+                        }
+                    });
+            return result[0];
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save state if version: " + key, e);
         }
     }
 
@@ -432,6 +511,20 @@ public class JdbcAgentStateStore implements AgentStateStore {
         for (int i = 0; i < params.size(); i++) {
             ps.setObject(i + 1, params.get(i));
         }
+    }
+
+    private static boolean isDuplicateKey(SQLException e) {
+        if (e instanceof SQLIntegrityConstraintViolationException) {
+            return true;
+        }
+        String state = e.getSQLState();
+        if (state != null && state.startsWith("23")) {
+            // 23xxx = integrity constraint violation in SQL:2003
+            return true;
+        }
+        // SQLite reports constraint violations as errorCode=19 with a null SQLSTATE.
+        String className = e.getClass().getName();
+        return e.getErrorCode() == 19 && className.startsWith("org.sqlite.");
     }
 
     private static final String ANON_USER = "__anon__";

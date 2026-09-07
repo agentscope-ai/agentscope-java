@@ -73,10 +73,59 @@ public interface SessionStateDialect {
                 stateData);
     }
 
+    /**
+     * INSERT of a single state with {@code version = 1}. Used by {@code saveIfVersion} when
+     * {@code expectedVersion == 0} (create-if-absent); a primary-key conflict is detected by the
+     * caller and mapped to {@link io.agentscope.core.state.AgentStateStore#UNVERSIONED}.
+     */
+    default BoundSql sessionStateInsertIfAbsent(
+            String sessionId, String stateKey, int itemIndex, String stateData) {
+        return new BoundSql(
+                "INSERT INTO "
+                        + sessionStateTableName()
+                        + " (session_id, state_key, item_index, state_data, version)"
+                        + " VALUES (?, ?, ?, ?, 1)",
+                sessionId,
+                stateKey,
+                itemIndex,
+                stateData);
+    }
+
+    /** Compare-and-swap UPDATE guarded by {@code version == expectedVersion}. */
+    default BoundSql sessionStateUpdateIfVersion(
+            String sessionId,
+            String stateKey,
+            int itemIndex,
+            String stateData,
+            long expectedVersion) {
+        return new BoundSql(
+                "UPDATE "
+                        + sessionStateTableName()
+                        + " SET state_data = ?, version = ? WHERE session_id = ? AND state_key = ?"
+                        + " AND item_index = ? AND version = ?",
+                stateData,
+                expectedVersion + 1L,
+                sessionId,
+                stateKey,
+                itemIndex,
+                expectedVersion);
+    }
+
     /** Single-state SELECT by item_index. Projection: state_data. */
     default BoundSql sessionStateSelect(String sessionId, String stateKey, int itemIndex) {
         return new BoundSql(
                 "SELECT state_data FROM "
+                        + sessionStateTableName()
+                        + " WHERE session_id = ? AND state_key = ? AND item_index = ?",
+                sessionId,
+                stateKey,
+                itemIndex);
+    }
+
+    /** Single-state SELECT with optimistic-concurrency version. Projection: state_data, version. */
+    default BoundSql sessionStateSelectVersioned(String sessionId, String stateKey, int itemIndex) {
+        return new BoundSql(
+                "SELECT state_data, version FROM "
                         + sessionStateTableName()
                         + " WHERE session_id = ? AND state_key = ? AND item_index = ?",
                 sessionId,

@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.sandbox.SandboxLease;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
@@ -40,7 +41,8 @@ import org.slf4j.LoggerFactory;
  * extend this class and override only the methods where their SQL diverges from
  * ANSI defaults. Lock behavior is also overridable: the default {@link #tryEnter}
  * uses a portable table-based lock; vendor dialects with native advisory locks
- * (e.g. MySQL {@code GET_LOCK}) override {@code tryEnter}.
+ * (e.g. MySQL {@code GET_LOCK}, PostgreSQL {@code pg_try_advisory_lock}) override
+ * {@code tryEnter}.
  *
  * <p>Table-name resolution priority: <strong>per-table override &gt; prefix + base</strong>.
  * The {@code final} resolution methods lock the logic in the base class; vendor
@@ -175,6 +177,49 @@ public abstract class AbstractJdbcDialect
                             + " or JdbcDistributedStore.create(ds)");
         }
         return dataSource;
+    }
+
+    /**
+     * Closes a JDBC connection quietly, returning it to the pool when pooled. Null-safe; a close
+     * failure is logged at debug level rather than propagated. Intended for vendor dialects that
+     * acquire a dedicated lock connection in their {@code tryEnter} implementation.
+     */
+    public static void closeConnection(Connection con) {
+        if (con != null) {
+            try {
+                con.close();
+            } catch (SQLException ex) {
+                LOG.debug("Could not close JDBC Connection", ex);
+            } catch (Throwable ex) {
+                LOG.debug("Unexpected exception on closing JDBC Connection", ex);
+            }
+        }
+    }
+
+    /** Closes a JDBC statement quietly. Null-safe; failures are logged, not propagated. */
+    public static void closeStatement(Statement stmt) {
+        if (stmt != null) {
+            try {
+                stmt.close();
+            } catch (SQLException ex) {
+                LOG.trace("Could not close JDBC Statement", ex);
+            } catch (Throwable ex) {
+                LOG.trace("Unexpected exception on closing JDBC Statement", ex);
+            }
+        }
+    }
+
+    /** Closes a JDBC result set quietly. Null-safe; failures are logged, not propagated. */
+    public static void closeResultSet(ResultSet rs) {
+        if (rs != null) {
+            try {
+                rs.close();
+            } catch (SQLException ex) {
+                LOG.trace("Could not close JDBC ResultSet", ex);
+            } catch (Throwable ex) {
+                LOG.trace("Unexpected exception on closing JDBC ResultSet", ex);
+            }
+        }
     }
 
     // ------------------------------------------------------------------
