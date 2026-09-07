@@ -1,0 +1,55 @@
+{
+  "at": "2026-09-07T04:50:00.893969+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/fc759cf3-4b77-4097-99b5-7628c7e32162",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "fc759cf3-4b77-4097-99b5-7628c7e32162",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "8e4afe84-fbe1-4b4d-b2c1-63ab6c9e4a24",
+      "orchestrationRunId": "065ad222-669b-4601-8a88-de8904587828",
+      "runNodeId": "1babb7e3-ef15-4af5-954f-5068efb94183",
+      "currentAttemptId": "dee4393d-0cc3-446a-81d7-054ca6b75668",
+      "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "8e4afe84-fbe1-4b4d-b2c1-63ab6c9e4a24",
+      "correlationId": "8e4afe84-fbe1-4b4d-b2c1-63ab6c9e4a24",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+          "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "sessionId": "sess_62b630dc6a38",
+        "resolvedAt": "2026-09-07T04:47:33.804406Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_62b630dc6a38",
+      "result": "已经成功创建了两个子任务，分别委派给了researcher和analyst进行新能源汽车行业和手机行业的调研。请等待他们的反馈。",
+      "version": 4,
+      "createdAt": "2026-09-07T12:47:32.848842+08:00",
+      "dispatchedAt": "2026-09-07T12:47:33.803645+08:00",
+      "startedAt": "2026-09-07T12:47:33.902138+08:00",
+      "completedAt": "2026-09-07T12:47:58.341943+08:00"
+    }
+  }
+}

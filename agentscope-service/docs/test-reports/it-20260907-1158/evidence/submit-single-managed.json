@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-07T03:59:55.354554+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "it-20260907-1158-single-managed",
+    "description": "计算19×21+1。回复 MANAGED=400。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+    "assigneeType": "agent",
+    "assigneeRef": "36813b00-2887-469c-a5c2-3def9a08f103"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "3e6c4381-4535-47c1-9deb-83f23d401eb7",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+      "orchestrationRunId": "df681c9e-2661-4624-8c45-fa88976495f9",
+      "runNodeId": "bbc1da42-d438-4576-9269-df22fc5b93a2",
+      "agentId": "36813b00-2887-469c-a5c2-3def9a08f103",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+      "correlationId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T11:59:55.358761+08:00"
+    },
+    "issue": {
+      "id": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-1158-single-managed",
+      "description": "计算19×21+1。回复 MANAGED=400。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "36813b00-2887-469c-a5c2-3def9a08f103",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T11:59:55.358761+08:00",
+      "updatedAt": "2026-09-07T11:59:55.358761+08:00"
+    }
+  }
+}

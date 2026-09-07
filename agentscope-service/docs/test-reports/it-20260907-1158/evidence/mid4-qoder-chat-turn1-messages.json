@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-07T04:01:23.310412+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/9b495eaf-4d05-486c-aceb-99a494a1de77/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "5808ba92-6872-4407-b6f2-4f0b4cb67f18",
+    "offset": 0,
+    "limit": 100,
+    "total": 1,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。",
+        "occurredAt": "2026-09-07T04:00:01.887451Z"
+      }
+    ],
+    "source": "events"
+  }
+}

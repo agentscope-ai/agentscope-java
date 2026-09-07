@@ -1,0 +1,102 @@
+{
+  "at": "2026-09-07T03:31:37.426088+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/e2db0375-8928-487e-b26c-4dfbfe656680/comments",
+  "request": {
+    "content": "管理员开始新的协作回合。本条替代之前的计算要求。你是A=ca7e6203-e59b-43e8-b6fa-2340925a66e1：请只调用一次issue.comment.add，结构化mentions=[{\"type\":\"agent\",\"ref\":\"e8c6887d-f89f-4d59-bc37-6b9affd88f2a\"}]。给B的content要求：你是B，计算12×12并输出 CROSS_B=144，然后用issue.comment.add结构化mention A=ca7e6203-e59b-43e8-b6fa-2340925a66e1 回复结果一次，随后完成任务；不要重放A的发起指令。A发出任务后完成当前task；A收到B的回复后只输出 CROSS_ACK=144并task.complete，不再mention任何人。必须真实投递，不仅在文本里写@。",
+    "mentions": [
+      {
+        "type": "agent",
+        "ref": "ca7e6203-e59b-43e8-b6fa-2340925a66e1"
+      }
+    ]
+  },
+  "status": 201,
+  "response": {
+    "Comment": {
+      "id": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "e2db0375-8928-487e-b26c-4dfbfe656680",
+      "threadRootId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+      "author": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "content": "管理员开始新的协作回合。本条替代之前的计算要求。你是A=ca7e6203-e59b-43e8-b6fa-2340925a66e1：请只调用一次issue.comment.add，结构化mentions=[{\"type\":\"agent\",\"ref\":\"e8c6887d-f89f-4d59-bc37-6b9affd88f2a\"}]。给B的content要求：你是B，计算12×12并输出 CROSS_B=144，然后用issue.comment.add结构化mention A=ca7e6203-e59b-43e8-b6fa-2340925a66e1 回复结果一次，随后完成任务；不要重放A的发起指令。A发出任务后完成当前task；A收到B的回复后只输出 CROSS_ACK=144并task.complete，不再mention任何人。必须真实投递，不仅在文本里写@。",
+      "type": "comment",
+      "version": 1,
+      "createdAt": "2026-09-07T11:31:37.42908+08:00",
+      "updatedAt": "2026-09-07T11:31:37.42908+08:00",
+      "mentions": [
+        {
+          "id": "a510ed52-e663-4de7-87f1-05defa852ac6",
+          "tenant": "default",
+          "namespace": "default",
+          "issueId": "e2db0375-8928-487e-b26c-4dfbfe656680",
+          "commentId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+          "targetType": "agent",
+          "targetRef": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+          "createdAt": "2026-09-07T11:31:37.42908+08:00"
+        }
+      ],
+      "routes": [
+        {
+          "id": "c627182e-1c99-4343-984d-5229faf83daa",
+          "tenant": "default",
+          "namespace": "default",
+          "issueId": "e2db0375-8928-487e-b26c-4dfbfe656680",
+          "commentId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+          "commentVersion": 1,
+          "targetType": "agent",
+          "targetRef": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+          "routeType": "explicit",
+          "outcome": "queued",
+          "taskId": "c0a8b077-abb1-4cd8-bec7-d8d22a41350f",
+          "createdAt": "2026-09-07T11:31:37.42908+08:00"
+        }
+      ]
+    },
+    "Routes": [
+      {
+        "id": "c627182e-1c99-4343-984d-5229faf83daa",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e2db0375-8928-487e-b26c-4dfbfe656680",
+        "commentId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+        "commentVersion": 1,
+        "targetType": "agent",
+        "targetRef": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+        "routeType": "explicit",
+        "outcome": "queued",
+        "taskId": "c0a8b077-abb1-4cd8-bec7-d8d22a41350f",
+        "createdAt": "2026-09-07T11:31:37.42908+08:00"
+      }
+    ],
+    "Tasks": [
+      {
+        "id": "c0a8b077-abb1-4cd8-bec7-d8d22a41350f",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e2db0375-8928-487e-b26c-4dfbfe656680",
+        "orchestrationRunId": "58f9b768-65e6-47a6-a3d0-5804a7ed85a2",
+        "runNodeId": "dc64bc28-06b4-479f-847c-41ab6288464e",
+        "agentId": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+        "status": "queued",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "causationId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+        "correlationId": "e2db0375-8928-487e-b26c-4dfbfe656680",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "version": 1,
+        "createdAt": "2026-09-07T11:31:37.42908+08:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-07T03:30:37.623321+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints/674e9403-ddc7-4db8-a312-967a4fea5b23/publish",
+  "request": {
+    "version": 1
+  },
+  "status": 200,
+  "response": {
+    "endpoint": {
+      "id": "674e9403-ddc7-4db8-a312-967a4fea5b23",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-1130-team-research-job",
+      "slug": "it-20260907-1130-team-research-job",
+      "targetType": "team",
+      "targetRef": "719ff7b3-d49c-4213-9e78-dedb46a5a476",
+      "invocationMode": "job",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "activeReleaseId": "2497b72a-2520-4e38-8ef7-37ef19a7a2ab",
+      "activeRelease": 1,
+      "status": "published",
+      "version": 3,
+      "createdAt": "2026-09-07T11:30:37.612749+08:00",
+      "updatedAt": "2026-09-07T11:30:37.628698+08:00"
+    },
+    "readiness": {
+      "state": "ready",
+      "reason": "Team leader: Primary runtime candidate is dispatchable",
+      "compatible": true
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "at": "2026-09-07T00:26:06.451218+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks?tenant=default&namespace=default&agentId=cb3a3959-a01c-42df-a510-a9872e83cf41",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "5c65f04f-3f84-41d3-8a3e-5572a4542cfa",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+        "orchestrationRunId": "f4225a25-aa68-4fd0-adf9-65b7e871fe8b",
+        "runNodeId": "0f6c5515-6f32-4a39-a295-d6c12644c6f1",
+        "currentAttemptId": "788b7068-8387-4aa1-9934-307e9c51aff1",
+        "agentId": "cb3a3959-a01c-42df-a510-a9872e83cf41",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+        "correlationId": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "cb3a3959-a01c-42df-a510-a9872e83cf41",
+            "bindingId": "9a808e3a-0baa-58c9-a1ac-80ff72c34db7",
+            "runtimePoolId": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "runtimeProfileId": "83fd1789-f7a5-4d3f-97da-13658b0923ae"
+          },
+          "sessionId": "231d24cb-efd1-46b4-8c64-8be8ed005211",
+          "resolvedAt": "2026-09-07T00:15:27.4791Z",
+          "runtimePool": {
+            "id": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-06T23:37:26.078122+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.078122+08:00"
+          },
+          "runtimeProfile": {
+            "id": "83fd1789-f7a5-4d3f-97da-13658b0923ae",
+            "name": "auto-codex",
+            "tenant": "default",
+            "runtime": "codex",
+            "version": 1,
+            "provider": "codex",
+            "createdAt": "2026-09-06T23:37:26.080973+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.080973+08:00",
+            "requirements": {},
+            "configuration": {
+              "sandbox": "workspace-write"
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "sandbox": "workspace-write"
+          }
+        },
+        "sessionId": "231d24cb-efd1-46b4-8c64-8be8ed005211",
+        "result": {
+          "output": "97 是质数。因为 \\(9<\\sqrt{97}<10\\)，只需试除不大于 \\(\\sqrt{97}\\) 的质数：2、3、5、7。\n\n97 除以它们的余数分别为 1、1、2、6，均不能整除，因此 97 是质数。\n\nCODEX=prime"
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T08:15:26.88969+08:00",
+        "dispatchedAt": "2026-09-07T08:15:27.47784+08:00",
+        "startedAt": "2026-09-07T08:15:54.076169+08:00",
+        "completedAt": "2026-09-07T08:16:11.391277+08:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "at": "2026-09-07T05:51:08.663042+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/07b6829e-006f-4db1-ada3-2a1658907129",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "07b6829e-006f-4db1-ada3-2a1658907129",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "0004e98e-b80c-44ab-b289-060f5160eefd",
+      "orchestrationRunId": "dbed0d6b-bb85-4a2d-b949-a51ae7f66aca",
+      "runNodeId": "66efedad-ddc0-413f-af65-5fd9120ef000",
+      "currentAttemptId": "2e62d941-8ea6-400e-9ba2-5a9eba62e24c",
+      "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "388a42ae-5bab-4998-bd84-e06e64e97923",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "0004e98e-b80c-44ab-b289-060f5160eefd",
+      "correlationId": "0004e98e-b80c-44ab-b289-060f5160eefd",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+          "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "sessionId": "sess_750a8040a984",
+        "resolvedAt": "2026-09-07T04:47:33.709439Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_750a8040a984",
+      "result": "已成功创建了两个子Issue，分别分配给calculator和analyst：\n- calculator负责计算19×21+1的结果。\n- analyst负责将zebra, apple, pear按照字典顺序进行排序。\n接下来等待他们的结果。",
+      "version": 4,
+      "createdAt": "2026-09-07T12:47:32.836561+08:00",
+      "dispatchedAt": "2026-09-07T12:47:33.70883+08:00",
+      "startedAt": "2026-09-07T12:47:33.778051+08:00",
+      "completedAt": "2026-09-07T12:47:56.815002+08:00"
+    }
+  }
+}

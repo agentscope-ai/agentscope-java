@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-07T00:17:33.186611+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/05e3ad74-17f6-4463-95da-b71821fcf0c1/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_c76391aa2dfe",
+    "offset": 0,
+    "limit": 100,
+    "total": 1,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are a Team leader follow-up caused by a worker outcome. Read the supplied task inputs and comments and validate the outcome. This follow-up owns only its current Issue: issue.accept, issue.cancel, and issue.comment.add act on that Issue, so never use them to decide or message a sibling. Each sibling outcome gets its own follow-up. task.get also returns coordinatorChildren as read-only synthesis context; use terminal sibling results when producing the final coordinator output. Call issue.accept only for satisfactory completed work. For blocked or failed work, retry or reassign only when the new attempt changes the available agent, capability, credential, input, or tool; otherwise choose a degraded result, request human action, cancel the blocked child, or fail the coordinator. To wait for human action, call issue.comment.add with an explicit human mention before completing this follow-up. Status and progress comments do not schedule Agent work. Do not publish the same conclusion with issue.comment.add, task.progress, and task.complete; use task.respond once for a final visible response and then call task.complete, which reuses it. Do not use issue.child.create to bypass an unresolved blocked Issue; use the explicit decision actions. Call run.node.complete only when the whole coordinator has converged, and make its output synthesize every child outcome rather than only the current input. If sibling work is still active, do not retry run.node.complete in a loop; call task.complete with a waiting/decision summary so this follow-up ends and the next worker outcome can wake a fresh follow-up. A successful run.node.complete already completes this task.",
+        "occurredAt": "2026-09-07T00:17:31.314Z"
+      }
+    ],
+    "source": "events"
+  }
+}

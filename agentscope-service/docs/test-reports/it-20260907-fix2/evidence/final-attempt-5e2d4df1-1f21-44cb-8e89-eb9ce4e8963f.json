@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T06:09:22.274347+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/5e2d4df1-1f21-44cb-8e89-eb9ce4e8963f",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "5e2d4df1-1f21-44cb-8e89-eb9ce4e8963f",
+      "agentTaskId": "f5e7bc51-9f2c-43d9-b594-230fd9b42dd2",
+      "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+      "runId": "f2115298-9350-4f40-a90a-cd131acdc1fa",
+      "nodeId": "85c0bc68-5815-4217-8086-a35eb023c2eb",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+          "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "sessionId": "sess_9a640a7dc55b",
+        "resolvedAt": "2026-09-07T05:57:52.441883Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "sessionId": "sess_9a640a7dc55b",
+      "sessionRef": "377ee8ed-952e-42bd-9766-712f556ae6e0",
+      "turnId": "fd475a2c-649f-4647-a632-215641533ffc",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T13:58:18.078589+08:00",
+      "result": "已成功创建两个子Issue。calculator将计算19×21+1的结果，而analyst将对zebra,apple,pear进行字典序排序。我们将等待他们的结果并汇总。",
+      "version": 23,
+      "createdAt": "2026-09-07T13:57:52.44124+08:00",
+      "updatedAt": "2026-09-07T13:58:18.096391+08:00",
+      "startedAt": "2026-09-07T13:57:52.510817+08:00",
+      "completedAt": "2026-09-07T13:58:18.096391+08:00"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-07T06:00:08.393323+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/6fb6d61e-fdde-4bb3-9657-74d235c2f591/turns?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "turns": [
+      {
+        "id": "83898559-37f5-4fdd-b278-d70a8e4bb883",
+        "sessionFk": "6fb6d61e-fdde-4bb3-9657-74d235c2f591",
+        "turnIndex": 1,
+        "status": "completed",
+        "startedAt": "2026-09-07T13:58:09.138348+08:00",
+        "endedAt": "2026-09-07T13:58:22.224156+08:00",
+        "durationMs": 13085,
+        "createdAt": "2026-09-07T13:58:09.138348+08:00"
+      }
+    ]
+  }
+}

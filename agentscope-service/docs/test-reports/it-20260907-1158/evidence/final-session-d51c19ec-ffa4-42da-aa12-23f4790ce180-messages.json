@@ -1,0 +1,121 @@
+{
+  "at": "2026-09-07T04:06:50.576259+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/d51c19ec-ffa4-42da-aa12-23f4790ce180/messages?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_36bda058888c",
+    "offset": 0,
+    "limit": 500,
+    "total": 11,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are the initial Team leader. Delegate suitable child work once, using the member.agentId from team.get as assigneeRef (never the membership id). After every issue.child.create succeeds, call task.complete immediately with a delegation summary; do not wait inside this turn. A fresh leader follow-up will arrive with each worker result.",
+        "occurredAt": "2026-09-07T04:00:01.753Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "team.get",
+        "toolCallId": "call_5de2399014b24b288f4bf7",
+        "toolInput": {},
+        "occurredAt": "2026-09-07T04:00:04.966Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "{\"team\": {\"id\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"tenant\": \"default\", \"namespace\": \"default\", \"name\": \"it-20260907-1158-mixed\", \"instructions\": \"所有子Issue标题以 it-20260907-1158 开头。必须实际委派指定成员并收集结果，不要自己替代成员工作。工具受限要如实传递。\", \"status\": \"active\", \"leaderAgentId\": \"2e663462-f57e-4a08-9d14-8f672defab41\", \"policy\": {}, \"version\": 1, \"createdAt\": \"2026-09-07T11:59:51.05191+08:00\", \"updatedAt\": \"2026-09-07T11:59:51.05191+08:00\", \"members\": [{\"id\": \"2f9f4cbf-f6fd-4f2e-968e-6fd14d5661ba\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"agentId\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"role\": \"analyst\", \"createdAt\": \"2026-09-07T11:59:51.05191+08:00\"}, {\"id\": \"4033837a-b7dc-4928-9674-0b244892be25\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"agentId\": \"5a85fb34-bb61-4cc8-b693-153c2b23ae11\", \"role\": \"researcher\", \"createdAt\": \"2026-09-07T11:59:51.05191+08:00\"}]}}",
+        "toolName": "team.get",
+        "toolCallId": "call_5de2399014b24b288f4bf7",
+        "toolOutput": "{\"team\": {\"id\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"tenant\": \"default\", \"namespace\": \"default\", \"name\": \"it-20260907-1158-mixed\", \"instructions\": \"所有子Issue标题以 it-20260907-1158 开头。必须实际委派指定成员并收集结果，不要自己替代成员工作。工具受限要如实传递。\", \"status\": \"active\", \"leaderAgentId\": \"2e663462-f57e-4a08-9d14-8f672defab41\", \"policy\": {}, \"version\": 1, \"createdAt\": \"2026-09-07T11:59:51.05191+08:00\", \"updatedAt\": \"2026-09-07T11:59:51.05191+08:00\", \"members\": [{\"id\": \"2f9f4cbf-f6fd-4f2e-968e-6fd14d5661ba\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"agentId\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"role\": \"analyst\", \"createdAt\": \"2026-09-07T11:59:51.05191+08:00\"}, {\"id\": \"4033837a-b7dc-4928-9674-0b244892be25\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"agentId\": \"5a85fb34-bb61-4cc8-b693-153c2b23ae11\", \"role\": \"researcher\", \"createdAt\": \"2026-09-07T11:59:51.05191+08:00\"}]}}",
+        "occurredAt": "2026-09-07T04:00:05.021Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "issue.child.create",
+        "toolCallId": "call_b8214edff53c41f48ca740",
+        "toolInput": {
+          "title": "it-20260907-1158-新能源汽车行业调研",
+          "priority": "normal",
+          "assigneeRef": "5a85fb34-bb61-4cc8-b693-153c2b23ae11",
+          "description": "请使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确上报行业名和缺失能力。",
+          "assigneeType": "agent"
+        },
+        "occurredAt": "2026-09-07T04:00:14.309Z"
+      },
+      {
+        "seq": 10,
+        "role": "tool",
+        "content": "{\"agentTask\": {\"id\": \"7b9db39f-65d3-4448-9297-63d8a3f92ce4\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"8f0ab133-08ee-4d02-8648-4c5b1103bea4\", \"orchestrationRunId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"runNodeId\": \"26ae9795-bc39-4017-b2a3-a3dcd33e16f4\", \"agentId\": \"5a85fb34-bb61-4cc8-b693-153c2b23ae11\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"teamRole\": \"researcher\", \"parentTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"delegatedFromTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"originator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"causationId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"correlationId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T12:00:14.335355+08:00\"}, \"issue\": {\"id\": \"8f0ab133-08ee-4d02-8648-4c5b1103bea4\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-1158-新能源汽车行业调研\", \"description\": \"请使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确上报行业名和缺失能力。\", \"status\": \"backlog\", \"priority\": \"normal\", \"kind\": \"endpoint_job\", \"visibility\": \"operational\", \"completionPolicy\": \"automatic\", \"assigneeType\": \"agent\", \"assigneeRef\": \"5a85fb34-bb61-4cc8-b693-153c2b23ae11\", \"creator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"parentIssueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"version\": 1, \"createdAt\": \"2026-09-07T12:00:14.335355+08:00\", \"updatedAt\": \"2026-09-07T12:00:14.335355+08:00\"}}",
+        "toolName": "issue.child.create",
+        "toolCallId": "call_b8214edff53c41f48ca740",
+        "toolOutput": "{\"agentTask\": {\"id\": \"7b9db39f-65d3-4448-9297-63d8a3f92ce4\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"8f0ab133-08ee-4d02-8648-4c5b1103bea4\", \"orchestrationRunId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"runNodeId\": \"26ae9795-bc39-4017-b2a3-a3dcd33e16f4\", \"agentId\": \"5a85fb34-bb61-4cc8-b693-153c2b23ae11\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"teamRole\": \"researcher\", \"parentTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"delegatedFromTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"originator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"causationId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"correlationId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T12:00:14.335355+08:00\"}, \"issue\": {\"id\": \"8f0ab133-08ee-4d02-8648-4c5b1103bea4\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-1158-新能源汽车行业调研\", \"description\": \"请使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确上报行业名和缺失能力。\", \"status\": \"backlog\", \"priority\": \"normal\", \"kind\": \"endpoint_job\", \"visibility\": \"operational\", \"completionPolicy\": \"automatic\", \"assigneeType\": \"agent\", \"assigneeRef\": \"5a85fb34-bb61-4cc8-b693-153c2b23ae11\", \"creator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"parentIssueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"version\": 1, \"createdAt\": \"2026-09-07T12:00:14.335355+08:00\", \"updatedAt\": \"2026-09-07T12:00:14.335355+08:00\"}}",
+        "occurredAt": "2026-09-07T04:00:14.343Z"
+      },
+      {
+        "seq": 12,
+        "role": "assistant",
+        "content": "",
+        "toolName": "issue.child.create",
+        "toolCallId": "call_7d8720ceb72040279742b2",
+        "toolInput": {
+          "title": "it-20260907-1158-手机行业调研",
+          "priority": "normal",
+          "assigneeRef": "0535720b-d0aa-4170-b0dc-eed4294f59ec",
+          "description": "请使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确上报行业名和缺失能力。",
+          "assigneeType": "agent"
+        },
+        "occurredAt": "2026-09-07T04:00:24.663Z"
+      },
+      {
+        "seq": 14,
+        "role": "tool",
+        "content": "{\"agentTask\": {\"id\": \"b0165acf-8b40-4d01-8497-219ff3a98209\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"5cfa2cb3-4c56-4a69-b271-5a00b2002ba9\", \"orchestrationRunId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"runNodeId\": \"23f01cca-f86e-46e0-817b-7558f24dff07\", \"agentId\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"teamRole\": \"analyst\", \"parentTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"delegatedFromTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"originator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"causationId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"correlationId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T12:00:24.713212+08:00\"}, \"issue\": {\"id\": \"5cfa2cb3-4c56-4a69-b271-5a00b2002ba9\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-1158-手机行业调研\", \"description\": \"请使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确上报行业名和缺失能力。\", \"status\": \"backlog\", \"priority\": \"normal\", \"kind\": \"endpoint_job\", \"visibility\": \"operational\", \"completionPolicy\": \"automatic\", \"assigneeType\": \"agent\", \"assigneeRef\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"creator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"parentIssueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"version\": 1, \"createdAt\": \"2026-09-07T12:00:24.713212+08:00\", \"updatedAt\": \"2026-09-07T12:00:24.713212+08:00\"}}",
+        "toolName": "issue.child.create",
+        "toolCallId": "call_7d8720ceb72040279742b2",
+        "toolOutput": "{\"agentTask\": {\"id\": \"b0165acf-8b40-4d01-8497-219ff3a98209\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"5cfa2cb3-4c56-4a69-b271-5a00b2002ba9\", \"orchestrationRunId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"runNodeId\": \"23f01cca-f86e-46e0-817b-7558f24dff07\", \"agentId\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"teamRole\": \"analyst\", \"parentTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"delegatedFromTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"originator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"causationId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"correlationId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T12:00:24.713212+08:00\"}, \"issue\": {\"id\": \"5cfa2cb3-4c56-4a69-b271-5a00b2002ba9\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-1158-手机行业调研\", \"description\": \"请使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确上报行业名和缺失能力。\", \"status\": \"backlog\", \"priority\": \"normal\", \"kind\": \"endpoint_job\", \"visibility\": \"operational\", \"completionPolicy\": \"automatic\", \"assigneeType\": \"agent\", \"assigneeRef\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"creator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"parentIssueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"version\": 1, \"createdAt\": \"2026-09-07T12:00:24.713212+08:00\", \"updatedAt\": \"2026-09-07T12:00:24.713212+08:00\"}}",
+        "occurredAt": "2026-09-07T04:00:24.724Z"
+      },
+      {
+        "seq": 16,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.complete",
+        "toolCallId": "call_f898f70ebd864f2798a39d",
+        "toolInput": {
+          "outcome": "succeeded",
+          "summary": "已经成功创建了两个子任务：一个针对新能源汽车行业的调研，另一个针对手机行业的调研。分别分配给了researcher和analyst。"
+        },
+        "occurredAt": "2026-09-07T04:00:34.728Z"
+      },
+      {
+        "seq": 18,
+        "role": "assistant",
+        "content": "已经成功创建了两个子任务：一个针对新能源汽车行业的调研，另一个针对手机行业的调研。分别分配给了researcher和analyst。",
+        "occurredAt": "2026-09-07T04:00:34.800457Z"
+      },
+      {
+        "seq": 20,
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"9112e64d-1466-45d1-ba9c-528a666f6b53\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"threadRootId\": \"9112e64d-1466-45d1-ba9c-528a666f6b53\", \"author\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"content\": \"已经成功创建了两个子任务：一个针对新能源汽车行业的调研，另一个针对手机行业的调研。分别分配给了researcher和analyst。\", \"type\": \"result\", \"sourceTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"sourceAttemptId\": \"968fdb50-b958-46ec-8cf9-2f774657ffb2\", \"version\": 1, \"createdAt\": \"2026-09-07T12:00:34.789999+08:00\", \"updatedAt\": \"2026-09-07T12:00:34.789999+08:00\", \"routes\": [{\"id\": \"c9c86443-00b7-45db-8535-3636183e90f2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"commentId\": \"9112e64d-1466-45d1-ba9c-528a666f6b53\", \"commentVersion\": 1, \"targetType\": \"team\", \"targetRef\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"routeType\": \"team_leader\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T12:00:34.789999+08:00\"}]}, \"task\": {\"id\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"orchestrationRunId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"runNodeId\": \"85799fc0-bd30-5723-a4df-ea8447957e08\", \"currentAttemptId\": \"968fdb50-b958-46ec-8cf9-2f774657ffb2\", \"agentId\": \"2e663462-f57e-4a08-9d14-8f672defab41\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"orchestration_node\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"teamRole\": \"leader\", \"leaderTask\": true, \"originator\": {\"type\": \"system\", \"ref\": \"endpoint:6c5a24a6-98e2-4959-84dd-9e4159acf6fc\"}, \"causationId\": \"85799fc0-bd30-5723-a4df-ea8447957e08\", \"correlationId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"2e663462-f57e-4a08-9d14-8f672defab41\", \"bindingId\": \"f4949949-3bd2-54b4-8cea-5b0138292be4\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"sessionId\": \"sess_36bda058888c\", \"resolvedAt\": \"2026-09-07T04:00:01.70453Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_36bda058888c\", \"result\": null, \"version\": 4, \"createdAt\": \"2026-09-07T12:00:01.691462+08:00\", \"dispatchedAt\": \"2026-09-07T12:00:01.704194+08:00\", \"startedAt\": \"2026-09-07T12:00:01.782004+08:00\", \"completedAt\": \"2026-09-07T12:00:34.789999+08:00\"}}",
+        "toolName": "task.complete",
+        "toolCallId": "call_f898f70ebd864f2798a39d",
+        "toolOutput": "{\"comment\": {\"id\": \"9112e64d-1466-45d1-ba9c-528a666f6b53\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"threadRootId\": \"9112e64d-1466-45d1-ba9c-528a666f6b53\", \"author\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"content\": \"已经成功创建了两个子任务：一个针对新能源汽车行业的调研，另一个针对手机行业的调研。分别分配给了researcher和analyst。\", \"type\": \"result\", \"sourceTaskId\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"sourceAttemptId\": \"968fdb50-b958-46ec-8cf9-2f774657ffb2\", \"version\": 1, \"createdAt\": \"2026-09-07T12:00:34.789999+08:00\", \"updatedAt\": \"2026-09-07T12:00:34.789999+08:00\", \"routes\": [{\"id\": \"c9c86443-00b7-45db-8535-3636183e90f2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"commentId\": \"9112e64d-1466-45d1-ba9c-528a666f6b53\", \"commentVersion\": 1, \"targetType\": \"team\", \"targetRef\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"routeType\": \"team_leader\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T12:00:34.789999+08:00\"}]}, \"task\": {\"id\": \"7b14cd2e-245d-4644-ae86-1d69a2d9683c\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"2cbada4e-e468-505f-bacc-d6a7586c6e94\", \"orchestrationRunId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"runNodeId\": \"85799fc0-bd30-5723-a4df-ea8447957e08\", \"currentAttemptId\": \"968fdb50-b958-46ec-8cf9-2f774657ffb2\", \"agentId\": \"2e663462-f57e-4a08-9d14-8f672defab41\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"orchestration_node\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"teamRole\": \"leader\", \"leaderTask\": true, \"originator\": {\"type\": \"system\", \"ref\": \"endpoint:6c5a24a6-98e2-4959-84dd-9e4159acf6fc\"}, \"causationId\": \"85799fc0-bd30-5723-a4df-ea8447957e08\", \"correlationId\": \"6c3072b6-50b2-5e73-82ae-08ab9261d0c7\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"2e663462-f57e-4a08-9d14-8f672defab41\", \"bindingId\": \"f4949949-3bd2-54b4-8cea-5b0138292be4\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"sessionId\": \"sess_36bda058888c\", \"resolvedAt\": \"2026-09-07T04:00:01.70453Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_36bda058888c\", \"result\": null, \"version\": 4, \"createdAt\": \"2026-09-07T12:00:01.691462+08:00\", \"dispatchedAt\": \"2026-09-07T12:00:01.704194+08:00\", \"startedAt\": \"2026-09-07T12:00:01.782004+08:00\", \"completedAt\": \"2026-09-07T12:00:34.789999+08:00\"}}",
+        "occurredAt": "2026-09-07T04:00:34.811Z"
+      },
+      {
+        "seq": 23,
+        "role": "assistant",
+        "content": "已经成功创建了两个子任务：一个针对新能源汽车行业的调研，分配给了researcher；另一个针对手机行业的调研，分配给了analyst。现在等待他们完成各自的任务并提供结果。",
+        "occurredAt": "2026-09-07T04:00:42.568Z"
+      }
+    ],
+    "source": "events"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "at": "2026-09-07T04:50:00.908467+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/41532b64-c597-4f32-a768-8982bc849150",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "41532b64-c597-4f32-a768-8982bc849150",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "18d2d02a-954c-4b11-8664-920b5e0b3980",
+      "orchestrationRunId": "065ad222-669b-4601-8a88-de8904587828",
+      "runNodeId": "1babb7e3-ef15-4af5-954f-5068efb94183",
+      "currentAttemptId": "0b86c414-468a-4463-a428-b35aa8c156cc",
+      "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+      "status": "failed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "22fcc452-4c1d-4a35-aecc-9025232c1947",
+      "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "parentTaskId": "fc759cf3-4b77-4097-99b5-7628c7e32162",
+      "delegatedFromTaskId": "fc759cf3-4b77-4097-99b5-7628c7e32162",
+      "originator": {
+        "type": "agent",
+        "ref": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "22fcc452-4c1d-4a35-aecc-9025232c1947",
+      "correlationId": "8e4afe84-fbe1-4b4d-b2c1-63ab6c9e4a24",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+          "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "sessionId": "sess_354f9e1d9259",
+        "resolvedAt": "2026-09-07T04:48:08.403122Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_354f9e1d9259",
+      "errorCode": "WAITING_FOR_CREDENTIAL",
+      "errorMessage": "已请求人类用户提供TAVILY_API_KEY凭证以继续手机行业调研任务。",
+      "version": 4,
+      "createdAt": "2026-09-07T12:48:07.760452+08:00",
+      "dispatchedAt": "2026-09-07T12:48:08.402213+08:00",
+      "startedAt": "2026-09-07T12:48:08.471426+08:00",
+      "completedAt": "2026-09-07T12:48:43.105038+08:00",
+      "inputs": [
+        {
+          "id": "5a7e02fd-dd44-4ceb-8b90-8c1d71a99237",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "41532b64-c597-4f32-a768-8982bc849150",
+          "commentId": "22fcc452-4c1d-4a35-aecc-9025232c1947",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "blocked",
+          "deliveredAt": "2026-09-07T12:48:08.402213+08:00",
+          "attempts": 0,
+          "lastError": "已请求人类用户提供TAVILY_API_KEY凭证以继续手机行业调研任务。",
+          "createdAt": "2026-09-07T12:48:07.760452+08:00"
+        }
+      ]
+    }
+  }
+}

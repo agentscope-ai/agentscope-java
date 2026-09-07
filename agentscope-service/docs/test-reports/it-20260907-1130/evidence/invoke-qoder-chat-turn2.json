@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-07T03:33:00.478446+00:00",
+  "method": "POST",
+  "path": "/invoke/v1/conversations/3f26743f-86b4-41ac-9904-74018c5e0148/turns",
+  "request": {
+    "message": "上一轮要求记住的标记是什么？计算6×7。只回答之前的标记和数字，不使用联网工具。"
+  },
+  "status": 202,
+  "response": {
+    "conversationId": "3f26743f-86b4-41ac-9904-74018c5e0148",
+    "eventsUrl": "/invoke/v1/conversations/3f26743f-86b4-41ac-9904-74018c5e0148/events?invocationId=38567cae-6c34-49ad-a9b1-a9b4952e4aad",
+    "invocationId": "38567cae-6c34-49ad-a9b1-a9b4952e4aad",
+    "sessionId": "473bcc53-098d-4dbc-9971-a64a6999798b",
+    "sessionRef": "7c95087d-a226-4dad-ab4c-d0ad55eeb2a7",
+    "status": "running",
+    "statusUrl": "/invoke/v1/conversations/3f26743f-86b4-41ac-9904-74018c5e0148",
+    "turnId": "a2f73b5a-c8a7-44fb-acd3-5682d66f9e8b"
+  }
+}

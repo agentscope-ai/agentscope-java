@@ -24,7 +24,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     ['Overview', '/work/overview'],
     ['Chat', '/work/chat'],
     ['Issues', '/work/issues'],
-    ['Approvals', '/work/approvals'],
+    ['Inbox', '/work/inbox'],
     ['Automations', '/work/automations'],
     ...(canAgentCenter ? [
       ['Agents', '/agent-center/agents'],

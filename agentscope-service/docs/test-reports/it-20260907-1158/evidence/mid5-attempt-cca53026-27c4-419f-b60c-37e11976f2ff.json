@@ -1,0 +1,82 @@
+{
+  "at": "2026-09-07T04:01:52.784775+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/cca53026-27c4-419f-b60c-37e11976f2ff",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "cca53026-27c4-419f-b60c-37e11976f2ff",
+      "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+      "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+      "bindingId": "85d22e50-ecec-5e63-aef4-e0b2c6dff0c6",
+      "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+      "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "hosted-runtime",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "hosted-runtime",
+          "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+          "bindingId": "85d22e50-ecec-5e63-aef4-e0b2c6dff0c6",
+          "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+          "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+        },
+        "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+        "resolvedAt": "2026-09-07T03:59:56.655074Z",
+        "runtimePool": {
+          "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+          "name": "coding-default",
+          "tenant": "default",
+          "version": 1,
+          "createdAt": "2026-09-07T11:56:11.922607+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+        },
+        "runtimeProfile": {
+          "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+          "name": "auto-codex",
+          "tenant": "default",
+          "runtime": "codex",
+          "version": 1,
+          "provider": "codex",
+          "createdAt": "2026-09-07T11:56:11.927088+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+          "requirements": {},
+          "configuration": {
+            "sandbox": "workspace-write"
+          }
+        },
+        "selectionSource": "policy",
+        "resolvedProviderConfiguration": {
+          "sandbox": "workspace-write"
+        }
+      },
+      "runtimeProfileName": "auto-codex",
+      "runtimePoolName": "coding-default",
+      "hostId": "b0aea46d-4ecb-4a58-8279-7469ce1ea28c",
+      "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+      "turnId": "c7192b99-ec62-4528-b9b3-1eff6750f173",
+      "providerSessionId": "01a07a06-25ab-7350-9d18-f9922b92fad6",
+      "workspaceKey": "default/default/conversations/4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a/93199a9a-9561-494a-9189-a4338becf13f",
+      "state": "succeeded",
+      "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/44e77dd6-e759-414e-8320-ed37d03bbdd9",
+      "leaseToken": "[REDACTED]",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T12:00:17.52056+08:00",
+      "checkpoint": {
+        "providerSessionId": "01a07a06-25ab-7350-9d18-f9922b92fad6"
+      },
+      "result": "101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+      "version": 7,
+      "createdAt": "2026-09-07T11:59:56.654809+08:00",
+      "updatedAt": "2026-09-07T12:00:34.286164+08:00",
+      "startedAt": "2026-09-07T12:00:17.519194+08:00",
+      "completedAt": "2026-09-07T12:00:34.286164+08:00"
+    }
+  }
+}

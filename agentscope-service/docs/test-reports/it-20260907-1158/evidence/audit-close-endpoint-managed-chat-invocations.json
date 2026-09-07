@@ -1,0 +1,52 @@
+{
+  "at": "2026-09-07T04:06:18.381582+00:00",
+  "method": "GET",
+  "path": "/api/v1/endpoints/44fdf7e3-be7b-403f-9f6b-6cc5be999c5c/invocations",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "b71c99df-5c62-4b10-a1b7-b44815f941f2",
+        "endpointId": "44fdf7e3-be7b-403f-9f6b-6cc5be999c5c",
+        "mode": "conversation",
+        "principalType": "credential",
+        "principalRef": "api-key:65102594-439f-4f6e-b466-159997436c77",
+        "idempotencyKey": "it-20260907-1158-managed-chat-turn2",
+        "status": "running",
+        "conversationId": "ace01b6b-1ded-4b70-b208-025a5e99f8b6",
+        "turnId": "c6a33cd7-81f4-4706-aa22-0c50d0d96a59",
+        "sessionId": "sess_b1cb79ee5d3a",
+        "input": {
+          "message": "上一轮要求记住的标记是什么？计算6×7。只回答之前的标记和数字，不使用联网工具。"
+        },
+        "correlationId": "f2ce29e1-cf00-45d0-92df-81340c23d1a5",
+        "createdAt": "2026-09-07T12:01:32.845571+08:00",
+        "startedAt": "2026-09-07T12:01:32.895726+08:00",
+        "updatedAt": "2026-09-07T12:01:32.895623+08:00"
+      },
+      {
+        "id": "90bcdcee-1eff-4a68-aaf7-19bd7d43775f",
+        "endpointId": "44fdf7e3-be7b-403f-9f6b-6cc5be999c5c",
+        "mode": "conversation",
+        "principalType": "credential",
+        "principalRef": "api-key:65102594-439f-4f6e-b466-159997436c77",
+        "idempotencyKey": "it-20260907-1158-managed-chat-turn1",
+        "status": "timed_out",
+        "conversationId": "ace01b6b-1ded-4b70-b208-025a5e99f8b6",
+        "turnId": "adcf09f6-6b15-4a34-8fa9-fd94691f6eb0",
+        "sessionId": "sess_b1cb79ee5d3a",
+        "input": {
+          "message": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。"
+        },
+        "errorCode": "endpoint_timeout",
+        "errorMessage": "Endpoint invocation exceeded its configured timeout",
+        "correlationId": "0f97389b-e246-4bc0-956f-ba43514635ed",
+        "createdAt": "2026-09-07T12:00:01.803246+08:00",
+        "startedAt": "2026-09-07T12:00:01.847861+08:00",
+        "completedAt": "2026-09-07T12:05:25.10328+08:00",
+        "updatedAt": "2026-09-07T12:05:25.120022+08:00"
+      }
+    ]
+  }
+}

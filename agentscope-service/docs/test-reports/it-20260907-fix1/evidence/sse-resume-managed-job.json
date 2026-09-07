@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "ids": [
+    5,
+    6
+  ],
+  "stream": "id: 5\nevent: node.succeeded\ndata: {\"id\":\"28ee1f27-e89e-4bfc-8a86-dcb4022dc986\",\"runId\":\"5dd176f3-29b2-510a-a58f-4a79fb4dc05f\",\"tenant\":\"default\",\"namespace\":\"default\",\"sequence\":5,\"nodeId\":\"aadf1c7c-e710-52d7-bace-188870325825\",\"agentTaskId\":\"c6b211d0-061e-42e7-99ef-a9d54a5b8b5a\",\"type\":\"node.succeeded\",\"actor\":{\"type\":\"agent\",\"ref\":\"ada05724-2a54-42dd-94b6-88900802f2fb\"},\"payload\":{\"output\":{\"API_TOTAL\":144}},\"causationId\":\"aadf1c7c-e710-52d7-bace-188870325825\",\"correlationId\":\"5dd176f3-29b2-510a-a58f-4a79fb4dc05f\",\"idempotencyKey\":\"node-succeeded:aadf1c7c-e710-52d7-bace-188870325825\",\"occurredAt\":\"2026-09-07T12:47:44.780628+08:00\"}\n\nid: 6\nevent: run.succeeded\ndata: {\"id\":\"d4a91179-79d5-465e-ac5b-e56953e1fec3\",\"runId\":\"5dd176f3-29b2-510a-a58f-4a79fb4dc05f\",\"tenant\":\"default\",\"namespace\":\"default\",\"sequence\":6,\"type\":\"run.succeeded\",\"actor\":{\"type\":\"agent\",\"ref\":\"ada05724-2a54-42dd-94b6-88900802f2fb\"},\"causationId\":\"aadf1c7c-e710-52d7-bace-188870325825\",\"correlationId\":\"5dd176f3-29b2-510a-a58f-4a79fb4dc05f\",\"idempotencyKey\":\"run-succeeded:5dd176f3-29b2-510a-a58f-4a79fb4dc05f\",\"occurredAt\":\"2026-09-07T12:47:44.780628+08:00\"}\n\n"
+}

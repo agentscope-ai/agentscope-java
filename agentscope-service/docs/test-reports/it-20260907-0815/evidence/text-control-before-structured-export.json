@@ -1,0 +1,86 @@
+{
+  "at": "2026-09-07T00:18:18.800980+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/d288e78c-be35-4297-9912-654dc1ee1d5b/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "cb98d33a-1e9e-4bf3-b8e6-0ebeb010f011",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "createdAt": "2026-09-07T08:16:32.810327+08:00"
+      },
+      {
+        "id": "7fe969bc-2d75-479f-9e82-19d5e0df2628",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "41ef82b5-4423-41cb-805a-997e6e9b1953",
+        "createdAt": "2026-09-07T08:16:32.816991+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [],
+    "comments": [
+      {
+        "id": "41ef82b5-4423-41cb-805a-997e6e9b1953",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "threadRootId": "41ef82b5-4423-41cb-805a-997e6e9b1953",
+        "author": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "content": "@it-20260907-0815-analyst 请只输出 TEXT_ONLY_SHOULD_NOT_WAKE",
+        "type": "comment",
+        "version": 1,
+        "createdAt": "2026-09-07T08:16:32.813676+08:00",
+        "updatedAt": "2026-09-07T08:16:32.813676+08:00"
+      }
+    ],
+    "exportedAt": "2026-09-07T00:18:18.804984Z",
+    "issue": {
+      "id": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-mention-text-control",
+      "description": "用于对照纯文本@与结构化mentions，没有默认assignee。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 2,
+      "createdAt": "2026-09-07T08:16:32.809336+08:00",
+      "updatedAt": "2026-09-07T08:16:32.813676+08:00"
+    },
+    "runDiagnostics": [],
+    "runs": [],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": []
+  }
+}

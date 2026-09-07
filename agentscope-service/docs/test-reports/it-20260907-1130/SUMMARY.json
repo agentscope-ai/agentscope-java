@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-07T11:44:03.980977+08:00",
+  "agents": 5,
+  "teams": 2,
+  "endpoints": 6,
+  "invocations": 9,
+  "counts": {
+    "issues": 20,
+    "runs": 14,
+    "tasks": 36,
+    "attempts": 36,
+    "sessions": 27
+  },
+  "runStates": {
+    "succeeded": 11,
+    "waiting": 1,
+    "failed": 2
+  },
+  "taskStates": {
+    "completed": 31,
+    "failed": 5
+  },
+  "attemptStates": {
+    "succeeded": 31,
+    "failed": 5
+  },
+  "runEventCount": 318,
+  "activeAttempts": [],
+  "idempotency": {
+    "requestBodiesEqual": true,
+    "identicalRequestHTTPStatus": 409,
+    "changedRequestHTTPStatus": 409
+  },
+  "allRequirementsPassed": false
+}

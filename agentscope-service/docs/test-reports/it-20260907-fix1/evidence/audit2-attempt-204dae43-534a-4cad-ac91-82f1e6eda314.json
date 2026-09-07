@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-07T04:51:22.105678+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/204dae43-534a-4cad-ac91-82f1e6eda314",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "204dae43-534a-4cad-ac91-82f1e6eda314",
+      "agentTaskId": "cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+      "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+      "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+      "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+      "nodeId": "31b6856d-7075-43ba-919c-70b0710684ac",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+          "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+        },
+        "sessionId": "sess_4f1243893906",
+        "resolvedAt": "2026-09-07T04:47:51.430322Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+      "sessionId": "sess_4f1243893906",
+      "sessionRef": "848d5d08-6093-443f-937e-988e15359988",
+      "turnId": "55f179a2-970d-4a34-a5a9-bfeadd86255c",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T12:48:09.971425+08:00",
+      "failureCode": "MISSING_CREDENTIALS",
+      "failureMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry.",
+      "version": 18,
+      "createdAt": "2026-09-07T12:47:51.429487+08:00",
+      "updatedAt": "2026-09-07T12:48:09.986582+08:00",
+      "startedAt": "2026-09-07T12:47:51.474424+08:00",
+      "completedAt": "2026-09-07T12:48:09.986582+08:00"
+    }
+  }
+}

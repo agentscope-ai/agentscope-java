@@ -796,6 +796,10 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 				if parent.SourceTaskID != nil {
 					if sourceTask, taskErr := s.Store.Collaboration().GetAgentTask(ctx, *parent.SourceTaskID); taskErr == nil {
 						target.TeamID, target.TeamRole = sourceTask.TeamID, sourceTask.TeamRole
+						if req.Author.Type == controlmodel.ActorHuman && sourceTask.LeaderTask {
+							target.ParentTaskID = &sourceTask.ID
+							target.RouteType = controlmodel.RouteTeamLeader
+						}
 					}
 				}
 				targets = append(targets, s.guardTarget(ctx, issue, req.SourceTaskID, target))
@@ -845,6 +849,19 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 			}
 		}
 	}
+	if req.SourceTaskID == nil && req.Author.Type == controlmodel.ActorHuman && issue.ParentIssueID != nil {
+		for index := range targets {
+			target := &targets[index]
+			if target.Blocked || target.AgentRef != issue.AssigneeRef || issue.AssigneeType != controlmodel.AssigneeAgent {
+				continue
+			}
+			teamID, role, parent, contextErr := s.activeTeamAssigneeContext(ctx, issue, target.AgentRef)
+			if contextErr != nil {
+				return nil, contextErr
+			}
+			target.TeamID, target.TeamRole, target.ParentTaskID = teamID, role, parent
+		}
+	}
 	result, err := s.Store.Collaboration().CreateComment(ctx, store.CreateCommentRequest{
 		Comment: &controlmodel.Comment{IssueID: issue.ID, ParentID: req.ParentID,
 			Author: req.Author, Content: strings.TrimSpace(req.Content), Type: commentType,
@@ -869,8 +886,11 @@ func (s *Service) activeTeamAssigneeContext(ctx context.Context, issue *controlm
 	runs, err := s.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{
 		Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: issue.ID, ActiveOnly: true, Limit: 3,
 	})
-	if err != nil || len(runs) == 0 {
+	if err != nil {
 		return nil, "", nil, err
+	}
+	if len(runs) == 0 {
+		return s.failedTeamAssigneeContext(ctx, issue, agentRef)
 	}
 	if len(runs) > 1 {
 		return nil, "", nil, fmt.Errorf("Issue %s has multiple active orchestration Runs", issue.ID)
@@ -905,6 +925,8 @@ func (s *Service) activeTeamAssigneeContext(ctx context.Context, issue *controlm
 	if leader != nil {
 		id := leader.ID
 		parentTaskID = &id
+	} else {
+		parentTaskID = worker.ParentTaskID
 	}
 	teamID := *worker.TeamID
 	return &teamID, worker.TeamRole, parentTaskID, nil
@@ -1172,8 +1194,9 @@ type ContextInput struct {
 // branch. Follow-up tasks are routed from one child Issue at a time, so their
 // direct Inputs alone are not sufficient to synthesize the coordinator result.
 type CoordinatorChildContext struct {
-	Issue   *controlmodel.Issue     `json:"issue"`
-	Results []*controlmodel.Comment `json:"results,omitempty"`
+	Issue        *controlmodel.Issue     `json:"issue"`
+	Results      []*controlmodel.Comment `json:"results,omitempty"`
+	HumanUpdates []*controlmodel.Comment `json:"humanUpdates,omitempty"`
 	// Outcomes preserve structured worker results independently of discussion summaries.
 	Outcomes []CoordinatorWorkerOutcome `json:"outcomes,omitempty"`
 }
@@ -1233,6 +1256,12 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 			envelope.CurrentRequest += "\n\n"
 		}
 		envelope.CurrentRequest += comment.Content
+	}
+	if run.TriggerType == "endpoint" && issue.ID == run.RootIssueID {
+		copy := *issue
+		copy.Description = EndpointIssueDescription(issue.Description, run.Input)
+		issue = &copy
+		envelope.Issue = issue
 	}
 	if envelope.CurrentRequest == "" {
 		envelope.CurrentRequest = issue.Title + "\n\n" + issue.Description
@@ -1327,7 +1356,7 @@ func (s *Service) addCoordinatorContext(ctx context.Context, envelope *ContextEn
 		if child.ID == envelope.Task.IssueID || child.Status == controlmodel.IssueDone ||
 			child.Status == controlmodel.IssueCancelled {
 			tasks, listErr := s.listAllTasks(ctx, store.AgentTaskFilter{IssueID: child.ID,
-				RunID: envelope.Task.OrchestrationRunID, Tenant: child.Tenant, Namespace: child.Namespace})
+				Tenant: child.Tenant, Namespace: child.Namespace})
 			if listErr != nil {
 				return listErr
 			}
@@ -1343,8 +1372,14 @@ func (s *Service) addCoordinatorContext(ctx context.Context, envelope *ContextEn
 				return listErr
 			}
 			for _, comment := range comments {
-				if comment.Type == controlmodel.CommentResult && comment.DeletedAt == nil {
+				if comment.DeletedAt != nil {
+					continue
+				}
+				if comment.Type == controlmodel.CommentResult {
 					childContext.Results = append(childContext.Results, comment)
+				}
+				if comment.Author.Type == controlmodel.ActorHuman {
+					childContext.HumanUpdates = append(childContext.HumanUpdates, comment)
 				}
 			}
 		}
@@ -1466,12 +1501,6 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 		targets, targetErr := s.completionTargets(ctx, task, parentID)
 		if targetErr != nil {
 			return nil, nil, targetErr
-		}
-		if task.TeamID != nil && task.LeaderTask && task.AccountableHumanRef != "" {
-			if team, teamErr := s.TeamForTask(ctx, task); teamErr == nil && team.Policy.RequireReview {
-				targets = append(targets, store.CommentTarget{TargetType: controlmodel.AssigneeHuman,
-					TargetRef: task.AccountableHumanRef, RouteType: controlmodel.RouteReviewRequest})
-			}
 		}
 		completed, resultComment, completeErr := s.Store.Collaboration().CompleteAgentTaskWithComment(ctx, taskID, completion,
 			&controlmodel.Comment{IssueID: task.IssueID, ParentID: parentID, Author: actor,
@@ -1842,6 +1871,13 @@ func (s *Service) completionTargets(ctx context.Context, task *controlmodel.Agen
 	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
 	if err != nil {
 		return nil, err
+	}
+	recovered, recoverErr := s.resumedChildCoordinatorTarget(ctx, task, issue)
+	if recoverErr != nil {
+		return nil, recoverErr
+	}
+	if recovered != nil {
+		return []store.CommentTarget{*recovered}, nil
 	}
 	if task.TeamID == nil && task.TriggerCommentID != nil {
 		trigger, loadErr := s.Store.Collaboration().GetComment(ctx, *task.TriggerCommentID)

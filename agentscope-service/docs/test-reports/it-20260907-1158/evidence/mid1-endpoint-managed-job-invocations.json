@@ -1,0 +1,34 @@
+{
+  "at": "2026-09-07T04:00:18.185502+00:00",
+  "method": "GET",
+  "path": "/api/v1/endpoints/b07ca648-420f-4a27-8f5d-f68c773eea12/invocations",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "e88afff7-2a92-4bd2-bcdd-8e8e0ced303e",
+        "endpointId": "b07ca648-420f-4a27-8f5d-f68c773eea12",
+        "mode": "job",
+        "principalType": "credential",
+        "principalRef": "api-key:1826999f-e102-43d5-ad12-8e312a0e7d1c",
+        "idempotencyKey": "it-20260907-1158-managed-job-ok",
+        "status": "running",
+        "issueId": "c8458e4e-0fc0-5f1e-8230-8c48277e0263",
+        "runId": "35bfab8e-ac9d-56a1-bb6b-96203f52f652",
+        "input": {
+          "input": {
+            "quantity": 12,
+            "unitPrice": 12
+          },
+          "title": "it-20260907-1158-endpoint-arithmetic",
+          "description": "读取任务input：计算quantity×unitPrice，输出 API_TOTAL=144 并完成任务。无需联网。"
+        },
+        "correlationId": "79ab3815-8a47-474b-b82c-4a52388cc2e7",
+        "createdAt": "2026-09-07T12:00:01.453702+08:00",
+        "startedAt": "2026-09-07T12:00:01.455128+08:00",
+        "updatedAt": "2026-09-07T12:00:01.531937+08:00"
+      }
+    ]
+  }
+}

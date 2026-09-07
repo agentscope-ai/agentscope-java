@@ -1,0 +1,91 @@
+{
+  "at": "2026-09-07T03:37:39.884467+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/6fe55ed7-0556-47c3-b52a-e914d161915a",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "6fe55ed7-0556-47c3-b52a-e914d161915a",
+      "agentTaskId": "1b445a8b-0365-4339-92a0-fb1cf493fa71",
+      "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+      "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+      "runId": "fe5237e6-d65b-45e9-8ee7-8a8bcca7ea32",
+      "nodeId": "3b6a9404-adc5-4a5f-a4e2-ec36b8a7a929",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "hosted-runtime",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "hosted-runtime",
+          "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+          "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+          "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+          "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9"
+        },
+        "sessionId": "21e68ce9-f8cc-495d-b213-cbf598f98b26",
+        "resolvedAt": "2026-09-07T03:30:01.335114Z",
+        "runtimePool": {
+          "id": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+          "name": "coding-default",
+          "tenant": "default",
+          "version": 1,
+          "createdAt": "2026-09-07T11:18:16.901382+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T11:18:16.901382+08:00"
+        },
+        "runtimeProfile": {
+          "id": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9",
+          "name": "auto-qoder",
+          "tenant": "default",
+          "runtime": "qodercli",
+          "version": 1,
+          "provider": "qoder",
+          "createdAt": "2026-09-07T11:18:16.930373+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T11:18:16.930373+08:00",
+          "requirements": {},
+          "configuration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "selectionSource": "policy",
+        "resolvedProviderConfiguration": {
+          "allowedTools": [
+            "mcp__agentscope-collaboration__*"
+          ],
+          "permissionMode": "default",
+          "strictMCPConfig": true
+        }
+      },
+      "runtimeProfileName": "auto-qoder",
+      "runtimePoolName": "coding-default",
+      "hostId": "b4691067-81e8-4803-8046-99d9935f6d54",
+      "sessionId": "21e68ce9-f8cc-495d-b213-cbf598f98b26",
+      "turnId": "8783e0f6-8f56-495f-900b-9cd5e4964cad",
+      "providerSessionId": "93087e47-521c-463b-9caf-9d6bc050ef31",
+      "workspaceKey": "default/default/conversations/e8c6887d-f89f-4d59-bc37-6b9affd88f2a/21e68ce9-f8cc-495d-b213-cbf598f98b26",
+      "state": "failed",
+      "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/eaf4f81d-231c-40d8-b44d-dfdc3d54e3b8",
+      "leaseToken": "[REDACTED]",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T11:31:17.21523+08:00",
+      "checkpoint": {
+        "providerSessionId": "93087e47-521c-463b-9caf-9d6bc050ef31"
+      },
+      "failureCode": "MISSING_WEB_TOOL",
+      "failureMessage": "新能源汽车行业调研缺少 web 搜索/访问工具（如搜索引擎或浏览器 MCP），无法获取并核实近期官方来源与事实，不能凭训练知识编造来源。",
+      "version": 7,
+      "createdAt": "2026-09-07T11:30:01.334975+08:00",
+      "updatedAt": "2026-09-07T11:31:29.91032+08:00",
+      "startedAt": "2026-09-07T11:31:17.213611+08:00",
+      "completedAt": "2026-09-07T11:31:29.91032+08:00"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "httpStatus": 200,
+  "lastEventId": 4,
+  "expected": [
+    5,
+    6
+  ],
+  "received": [
+    5,
+    6
+  ],
+  "matches": true,
+  "stream": "id: 5\nevent: node.succeeded\ndata: {\"id\":\"984067df-b20c-4fc1-9157-8e5c46613dff\",\"runId\":\"bbb2d2e8-0f86-520b-a9e8-f82e821f355f\",\"tenant\":\"default\",\"namespace\":\"default\",\"sequence\":5,\"nodeId\":\"7c507539-f5f0-5494-9540-91b7e792bc37\",\"agentTaskId\":\"ffac53bd-34e8-4ede-afca-7c26519b7836\",\"type\":\"node.succeeded\",\"actor\":{\"type\":\"agent\",\"ref\":\"ca7e6203-e59b-43e8-b6fa-2340925a66e1\"},\"causationId\":\"7c507539-f5f0-5494-9540-91b7e792bc37\",\"correlationId\":\"bbb2d2e8-0f86-520b-a9e8-f82e821f355f\",\"idempotencyKey\":\"node-succeeded:7c507539-f5f0-5494-9540-91b7e792bc37\",\"occurredAt\":\"2026-09-07T11:30:47.860822+08:00\"}\n\nid: 6\nevent: run.succeeded\ndata: {\"id\":\"87822f64-1976-4a36-b1dc-8e463188585f\",\"runId\":\"bbb2d2e8-0f86-520b-a9e8-f82e821f355f\",\"tenant\":\"default\",\"namespace\":\"default\",\"sequence\":6,\"type\":\"run.succeeded\",\"actor\":{\"type\":\"agent\",\"ref\":\"ca7e6203-e59b-43e8-b6fa-2340925a66e1\"},\"causationId\":\"7c507539-f5f0-5494-9540-91b7e792bc37\",\"correlationId\":\"bbb2d2e8-0f86-520b-a9e8-f82e821f355f\",\"idempotencyKey\":\"run-succeeded:bbb2d2e8-0f86-520b-a9e8-f82e821f355f\",\"occurredAt\":\"2026-09-07T11:30:47.860822+08:00\"}\n\n"
+}

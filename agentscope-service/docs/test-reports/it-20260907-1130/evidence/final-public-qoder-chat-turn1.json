@@ -1,0 +1,58 @@
+{
+  "at": "2026-09-07T03:37:39.383544+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/conversations/3f26743f-86b4-41ac-9904-74018c5e0148",
+  "request": null,
+  "status": 200,
+  "response": {
+    "conversation": {
+      "createdAt": "2026-09-07T11:30:38.091158+08:00",
+      "endpointId": "cd27fa22-e1c7-430e-8481-7dcc261eb5e6",
+      "id": "3f26743f-86b4-41ac-9904-74018c5e0148",
+      "lastTurnAt": "2026-09-07T11:33:00.52145+08:00",
+      "sessionId": "473bcc53-098d-4dbc-9971-a64a6999798b",
+      "status": "active",
+      "updatedAt": "2026-09-07T11:33:00.521515+08:00"
+    },
+    "turns": [
+      {
+        "completedAt": "2026-09-07T11:34:23.008575+08:00",
+        "conversationId": "3f26743f-86b4-41ac-9904-74018c5e0148",
+        "correlationId": "5bd13c1a-13ce-44a5-b7c3-a538a82026dd",
+        "createdAt": "2026-09-07T11:33:00.485634+08:00",
+        "endpointId": "cd27fa22-e1c7-430e-8481-7dcc261eb5e6",
+        "id": "38567cae-6c34-49ad-a9b1-a9b4952e4aad",
+        "issueId": "c45db916-1579-5339-aefd-5051d493c6af",
+        "mode": "conversation",
+        "result": {
+          "output": "API_MEMORY_1130；42"
+        },
+        "runId": "bf454e5f-77e2-570e-87f5-69459cf243cf",
+        "sessionId": "473bcc53-098d-4dbc-9971-a64a6999798b",
+        "startedAt": "2026-09-07T11:33:00.52145+08:00",
+        "status": "completed",
+        "turnId": "a2f73b5a-c8a7-44fb-acd3-5682d66f9e8b",
+        "updatedAt": "2026-09-07T11:34:23.007918+08:00"
+      },
+      {
+        "completedAt": "2026-09-07T11:31:51.663114+08:00",
+        "conversationId": "3f26743f-86b4-41ac-9904-74018c5e0148",
+        "correlationId": "c8e872bc-5542-4b5e-91a3-66e83c749538",
+        "createdAt": "2026-09-07T11:30:38.087786+08:00",
+        "endpointId": "cd27fa22-e1c7-430e-8481-7dcc261eb5e6",
+        "id": "473bcc53-098d-4dbc-9971-a64a6999798b",
+        "issueId": "9587f27f-abf7-587f-b2a9-8a4b43a52c33",
+        "mode": "conversation",
+        "result": {
+          "output": "API_MEMORY_1130；20+22=42。"
+        },
+        "runId": "44c8de54-1870-5ecf-a40f-8dc0c79fc13f",
+        "sessionId": "473bcc53-098d-4dbc-9971-a64a6999798b",
+        "startedAt": "2026-09-07T11:30:38.116497+08:00",
+        "status": "completed",
+        "turnId": "5fbf9be3-e759-49d6-9d69-5eff1f691b16",
+        "updatedAt": "2026-09-07T11:31:51.663008+08:00"
+      }
+    ]
+  }
+}

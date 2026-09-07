@@ -1,0 +1,154 @@
+{
+  "at": "2026-09-07T00:21:23.408582+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/df28d494-cc4f-4e10-b886-500a6754eeee/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "df28d494-cc4f-4e10-b886-500a6754eeee",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+      "mode": "direct",
+      "triggerType": "comment",
+      "triggerRef": "6975546a-a0ef-477f-9415-699afce0382a",
+      "output": "STRUCTURED_WAKE=OK",
+      "state": "succeeded",
+      "version": 5,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T08:18:18.807131+08:00",
+      "updatedAt": "2026-09-07T08:18:29.388339+08:00",
+      "startedAt": "2026-09-07T08:18:18.807131+08:00",
+      "completedAt": "2026-09-07T08:18:29.388339+08:00"
+    },
+    "nodes": [
+      {
+        "id": "8058c044-17b6-4be5-ac7e-976a7b804827",
+        "runId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "type": "agent",
+        "issueId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "state": "succeeded",
+        "output": "STRUCTURED_WAKE=OK",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T08:18:18.807131+08:00",
+        "updatedAt": "2026-09-07T08:18:29.388339+08:00",
+        "startedAt": "2026-09-07T08:18:19.257027+08:00",
+        "completedAt": "2026-09-07T08:18:29.388339+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "orchestrationRunId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "runNodeId": "8058c044-17b6-4be5-ac7e-976a7b804827",
+        "currentAttemptId": "2fc0bc27-dae0-4c5a-9381-556a35bc15e9",
+        "agentId": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "6975546a-a0ef-477f-9415-699afce0382a",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "causationId": "6975546a-a0ef-477f-9415-699afce0382a",
+        "correlationId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+            "bindingId": "b46ffc09-4c3f-56b4-8587-58d0055a8981",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+          },
+          "sessionId": "sess_24c0bd6a226f",
+          "resolvedAt": "2026-09-07T00:18:19.29138Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_24c0bd6a226f",
+        "result": "STRUCTURED_WAKE=OK",
+        "version": 4,
+        "createdAt": "2026-09-07T08:18:18.807131+08:00",
+        "dispatchedAt": "2026-09-07T08:18:19.291059+08:00",
+        "startedAt": "2026-09-07T08:18:19.336789+08:00",
+        "completedAt": "2026-09-07T08:18:29.388339+08:00",
+        "inputs": [
+          {
+            "id": "3f5eba73-389b-4a92-96d8-eec1b626aa01",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "745d54e2-79d7-4732-8d88-56a367ff3ec6",
+            "commentId": "6975546a-a0ef-477f-9415-699afce0382a",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T08:18:19.291059+08:00",
+            "processedAt": "2026-09-07T08:18:29.388339+08:00",
+            "responseCommentId": "a24b7659-7bf6-4883-8bea-5ef9e72c449f",
+            "attempts": 0,
+            "createdAt": "2026-09-07T08:18:18.807131+08:00"
+          }
+        ]
+      }
+    ],
+    "attempts": [
+      {
+        "id": "2fc0bc27-dae0-4c5a-9381-556a35bc15e9",
+        "agentTaskId": "745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "agentId": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+        "bindingId": "b46ffc09-4c3f-56b4-8587-58d0055a8981",
+        "runId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "nodeId": "8058c044-17b6-4be5-ac7e-976a7b804827",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+            "bindingId": "b46ffc09-4c3f-56b4-8587-58d0055a8981",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+          },
+          "sessionId": "sess_24c0bd6a226f",
+          "resolvedAt": "2026-09-07T00:18:19.29138Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+        "sessionId": "sess_24c0bd6a226f",
+        "sessionRef": "744c1a67-50de-4872-ac28-fad56b0c7837",
+        "turnId": "ccdf662d-d0a8-4123-afd0-5e7e742d7d7e",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T08:18:29.364686+08:00",
+        "result": "STRUCTURED_WAKE=OK",
+        "version": 14,
+        "createdAt": "2026-09-07T08:18:19.291059+08:00",
+        "updatedAt": "2026-09-07T08:18:29.388339+08:00",
+        "startedAt": "2026-09-07T08:18:19.336789+08:00",
+        "completedAt": "2026-09-07T08:18:29.388339+08:00"
+      }
+    ]
+  }
+}

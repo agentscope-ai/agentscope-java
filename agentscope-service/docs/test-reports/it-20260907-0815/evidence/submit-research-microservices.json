@@ -1,0 +1,65 @@
+{
+  "at": "2026-09-07T00:16:32.789777+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "it-20260907-0815-research-microservices",
+    "description": "请研究截至2026年9月的微服务行业趋势。必须由researcher成员实际尝试当前可用的联网/检索工具，取得至少2条2026年发布来源，包含标题、日期、URL；不要仅凭训练知识给答案。明确要求researcher先尝试一次WebSearch搜索“2026 microservices trends”，若不存在此工具，尝试可用的等效联网工具；工具被拒绝或不存在就如实报告工具名和错误，不得绕过权限、请求扩大权限、安装工具或修改配置。calculator成员只计算工具无关的基线2+3=5。协调员实际委派并收集结果；如果无法核实2026来源，明确判定研究目标失败并终结run为failed，禁止假装研究成功。子Issue标题前缀 it-20260907-0815。",
+    "assigneeType": "team",
+    "assigneeRef": "7089f084-903e-4bf2-b395-2f610e24e81a"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+      "orchestrationRunId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+      "runNodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+      "agentId": "068b4f8a-39c2-4482-b328-5d46cf28c113",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "7089f084-903e-4bf2-b395-2f610e24e81a",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+      "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T08:16:32.791847+08:00"
+    },
+    "issue": {
+      "id": "56ae8c89-9ca7-4438-8ed5-698707719695",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-research-microservices",
+      "description": "请研究截至2026年9月的微服务行业趋势。必须由researcher成员实际尝试当前可用的联网/检索工具，取得至少2条2026年发布来源，包含标题、日期、URL；不要仅凭训练知识给答案。明确要求researcher先尝试一次WebSearch搜索“2026 microservices trends”，若不存在此工具，尝试可用的等效联网工具；工具被拒绝或不存在就如实报告工具名和错误，不得绕过权限、请求扩大权限、安装工具或修改配置。calculator成员只计算工具无关的基线2+3=5。协调员实际委派并收集结果；如果无法核实2026来源，明确判定研究目标失败并终结run为failed，禁止假装研究成功。子Issue标题前缀 it-20260907-0815。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "7089f084-903e-4bf2-b395-2f610e24e81a",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T08:16:32.791847+08:00",
+      "updatedAt": "2026-09-07T08:16:32.791847+08:00"
+    }
+  }
+}

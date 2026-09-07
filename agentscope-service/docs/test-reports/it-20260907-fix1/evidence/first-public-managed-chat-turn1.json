@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-07T04:47:51.065616+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/conversations/73966042-ad0b-428a-a029-bf0ef82e9ca8",
+  "request": null,
+  "status": 200,
+  "response": {
+    "conversation": {
+      "createdAt": "2026-09-07T12:47:34.037841+08:00",
+      "endpointId": "c073630c-a7a2-4ca4-b3ba-6321788ead48",
+      "id": "73966042-ad0b-428a-a029-bf0ef82e9ca8",
+      "lastTurnAt": "2026-09-07T12:47:45.064+08:00",
+      "sessionId": "sess_e945205e07be",
+      "status": "active",
+      "updatedAt": "2026-09-07T12:47:45.072119+08:00"
+    },
+    "turns": [
+      {
+        "completedAt": "2026-09-07T12:47:45.064+08:00",
+        "conversationId": "73966042-ad0b-428a-a029-bf0ef82e9ca8",
+        "correlationId": "cf2028a9-729a-4d0a-8e2e-5f02f7f037e9",
+        "createdAt": "2026-09-07T12:47:34.030522+08:00",
+        "endpointId": "c073630c-a7a2-4ca4-b3ba-6321788ead48",
+        "id": "8138d12a-5e20-4910-bbd9-a65452400e24",
+        "mode": "conversation",
+        "result": "标记 API_MEMORY_1130 与计算结果 42 已被成功记住。如果您有任何其他问题，请随时提问。",
+        "sessionId": "sess_e945205e07be",
+        "startedAt": "2026-09-07T12:47:34.040305+08:00",
+        "status": "completed",
+        "turnId": "af79e95b-b04d-44e5-9a96-e5a846e20c56",
+        "updatedAt": "2026-09-07T12:47:45.071342+08:00"
+      }
+    ]
+  }
+}

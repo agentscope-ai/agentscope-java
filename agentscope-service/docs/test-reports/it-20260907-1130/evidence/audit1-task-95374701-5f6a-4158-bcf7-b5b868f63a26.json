@@ -1,0 +1,76 @@
+{
+  "at": "2026-09-07T03:34:48.677393+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/95374701-5f6a-4158-bcf7-b5b868f63a26",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "95374701-5f6a-4158-bcf7-b5b868f63a26",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "c4be61de-b000-4c67-a73d-7130ef141f0f",
+      "orchestrationRunId": "964d4551-6b5a-5d95-8fa9-38ae84fc934a",
+      "runNodeId": "1304afc7-1113-595f-addf-c03ae3fb31aa",
+      "currentAttemptId": "00bc0db2-b1e3-4a6c-9b14-881579b4fd92",
+      "agentId": "b1d48558-a60c-4c96-b9b7-0b2150caccd2",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "ff8f628a-6c5b-47a0-9263-0ced4fed7c98",
+      "teamId": "e73acb19-fc07-4e58-99e2-7513c7bf7a0b",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "parentTaskId": "e67a70d4-8090-4a69-abde-543601e00165",
+      "delegatedFromTaskId": "e67a70d4-8090-4a69-abde-543601e00165",
+      "originator": {
+        "type": "agent",
+        "ref": "c1240863-14ae-4e43-a4dc-56d29b3b685e"
+      },
+      "causationId": "ff8f628a-6c5b-47a0-9263-0ced4fed7c98",
+      "correlationId": "964d4551-6b5a-5d95-8fa9-38ae84fc934a",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "b1d48558-a60c-4c96-b9b7-0b2150caccd2",
+          "bindingId": "18ea8840-0cbd-5132-b094-44805392cc58",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "b1d48558-a60c-4c96-b9b7-0b2150caccd2"
+        },
+        "sessionId": "sess_4abc440068e0",
+        "resolvedAt": "2026-09-07T03:31:05.33515Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_4abc440068e0",
+      "result": {
+        "content": "已接受分析师的任务结果。正在等待计算器任务的结果。"
+      },
+      "version": 4,
+      "createdAt": "2026-09-07T11:31:04.890114+08:00",
+      "dispatchedAt": "2026-09-07T11:31:05.334864+08:00",
+      "startedAt": "2026-09-07T11:31:05.422969+08:00",
+      "completedAt": "2026-09-07T11:31:47.658935+08:00",
+      "inputs": [
+        {
+          "id": "e9931227-6fef-4160-96e2-c72a65590631",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "95374701-5f6a-4158-bcf7-b5b868f63a26",
+          "commentId": "ff8f628a-6c5b-47a0-9263-0ced4fed7c98",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "processed",
+          "deliveredAt": "2026-09-07T11:31:05.334864+08:00",
+          "processedAt": "2026-09-07T11:31:47.658935+08:00",
+          "responseCommentId": "f6bfaa47-ed5d-42fd-a68a-b7bbb70b0f47",
+          "attempts": 0,
+          "createdAt": "2026-09-07T11:31:04.890114+08:00"
+        }
+      ]
+    }
+  }
+}

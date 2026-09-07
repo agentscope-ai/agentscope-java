@@ -1,0 +1,94 @@
+{
+  "at": "2026-09-07T00:15:57.444045+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/0aa5862c-093e-49bb-aa23-4749b41c0d93/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_45eb9368b02d",
+    "offset": 0,
+    "limit": 100,
+    "total": 7,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are handling standalone or explicitly mentioned work. Call task.complete only when you have a usable result. If a required capability, credential, input, or tool is unavailable, or a required tool call fails without a real fallback, call task.fail with a durable code and explanation; do not complete with a description of the failure. task.complete publishes the one authoritative visible reply, so do not repeat the same conclusion with issue.comment.add or task.progress. A human explicit mention is a direct request: answer it and finish without notifying the Issue assignee unless that Agent genuinely needs new work, in which case use an explicit mention.",
+        "occurredAt": "2026-09-07T00:15:27.426Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.get",
+        "toolCallId": "call_7245f00a650e4af6a484a0",
+        "toolInput": {},
+        "occurredAt": "2026-09-07T00:15:30.837Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"f6be6b4c-99ea-4860-9968-76a9d5cb2c20\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"orchestrationRunId\": \"9312eb0e-83f5-4b55-b9f2-bc8ce155f35e\", \"runNodeId\": \"0c4eafe4-8bc1-41b6-bcc8-7cf347ed97d0\", \"currentAttemptId\": \"8375d65a-b917-4a47-b7b0-09433bb57957\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"correlationId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"bindingId\": \"b46ffc09-4c3f-56b4-8587-58d0055a8981\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\"}, \"sessionId\": \"sess_45eb9368b02d\", \"resolvedAt\": \"2026-09-07T00:15:27.396976Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_45eb9368b02d\", \"version\": 3, \"createdAt\": \"2026-09-07T08:15:26.872547+08:00\", \"dispatchedAt\": \"2026-09-07T08:15:27.395713+08:00\", \"startedAt\": \"2026-09-07T08:15:27.447034+08:00\"}}",
+        "toolName": "task.get",
+        "toolCallId": "call_7245f00a650e4af6a484a0",
+        "toolOutput": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"f6be6b4c-99ea-4860-9968-76a9d5cb2c20\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"orchestrationRunId\": \"9312eb0e-83f5-4b55-b9f2-bc8ce155f35e\", \"runNodeId\": \"0c4eafe4-8bc1-41b6-bcc8-7cf347ed97d0\", \"currentAttemptId\": \"8375d65a-b917-4a47-b7b0-09433bb57957\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"correlationId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"bindingId\": \"b46ffc09-4c3f-56b4-8587-58d0055a8981\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\"}, \"sessionId\": \"sess_45eb9368b02d\", \"resolvedAt\": \"2026-09-07T00:15:27.396976Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_45eb9368b02d\", \"version\": 3, \"createdAt\": \"2026-09-07T08:15:26.872547+08:00\", \"dispatchedAt\": \"2026-09-07T08:15:27.395713+08:00\", \"startedAt\": \"2026-09-07T08:15:27.447034+08:00\"}}",
+        "occurredAt": "2026-09-07T00:15:30.885Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.complete",
+        "toolCallId": "call_73d5660b70784a41a9dcf1",
+        "toolInput": {
+          "result": {
+            "乙": {
+              "增速(%)": -10,
+              "2023年销量": 20,
+              "2024年销量": 18
+            },
+            "甲": {
+              "增速(%)": 25,
+              "2023年销量": 12,
+              "2024年销量": 15
+            },
+            "按2024销量降序排列": [
+              {
+                "名称": "乙",
+                "2024年销量": 18
+              },
+              {
+                "名称": "甲",
+                "2024年销量": 15
+              }
+            ]
+          },
+          "summary": "已计算两家的增速，并按2024年销量进行了降序排列。"
+        },
+        "occurredAt": "2026-09-07T00:15:37.906Z"
+      },
+      {
+        "seq": 10,
+        "role": "assistant",
+        "content": "已计算两家的增速，并按2024年销量进行了降序排列。",
+        "occurredAt": "2026-09-07T00:15:37.994624Z"
+      },
+      {
+        "seq": 12,
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"3089d0bb-9e81-4d2c-be98-fb4b063343e2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"threadRootId\": \"3089d0bb-9e81-4d2c-be98-fb4b063343e2\", \"author\": {\"type\": \"agent\", \"ref\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\"}, \"content\": \"已计算两家的增速，并按2024年销量进行了降序排列。\", \"type\": \"result\", \"sourceTaskId\": \"f6be6b4c-99ea-4860-9968-76a9d5cb2c20\", \"sourceAttemptId\": \"8375d65a-b917-4a47-b7b0-09433bb57957\", \"version\": 1, \"createdAt\": \"2026-09-07T08:15:37.979057+08:00\", \"updatedAt\": \"2026-09-07T08:15:37.979057+08:00\", \"routes\": [{\"id\": \"2ead237d-6df1-4e75-85cd-bc6e93adf287\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"commentId\": \"3089d0bb-9e81-4d2c-be98-fb4b063343e2\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T08:15:37.979057+08:00\"}]}, \"task\": {\"id\": \"f6be6b4c-99ea-4860-9968-76a9d5cb2c20\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"orchestrationRunId\": \"9312eb0e-83f5-4b55-b9f2-bc8ce155f35e\", \"runNodeId\": \"0c4eafe4-8bc1-41b6-bcc8-7cf347ed97d0\", \"currentAttemptId\": \"8375d65a-b917-4a47-b7b0-09433bb57957\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"correlationId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"bindingId\": \"b46ffc09-4c3f-56b4-8587-58d0055a8981\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\"}, \"sessionId\": \"sess_45eb9368b02d\", \"resolvedAt\": \"2026-09-07T00:15:27.396976Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_45eb9368b02d\", \"result\": {\"乙\": {\"增速(%)\": -10, \"2023年销量\": 20, \"2024年销量\": 18}, \"甲\": {\"增速(%)\": 25, \"2023年销量\": 12, \"2024年销量\": 15}, \"按2024销量降序排列\": [{\"名称\": \"乙\", \"2024年销量\": 18}, {\"名称\": \"甲\", \"2024年销量\": 15}]}, \"version\": 4, \"createdAt\": \"2026-09-07T08:15:26.872547+08:00\", \"dispatchedAt\": \"2026-09-07T08:15:27.395713+08:00\", \"startedAt\": \"2026-09-07T08:15:27.447034+08:00\", \"completedAt\": \"2026-09-07T08:15:37.979057+08:00\"}}",
+        "toolName": "task.complete",
+        "toolCallId": "call_73d5660b70784a41a9dcf1",
+        "toolOutput": "{\"comment\": {\"id\": \"3089d0bb-9e81-4d2c-be98-fb4b063343e2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"threadRootId\": \"3089d0bb-9e81-4d2c-be98-fb4b063343e2\", \"author\": {\"type\": \"agent\", \"ref\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\"}, \"content\": \"已计算两家的增速，并按2024年销量进行了降序排列。\", \"type\": \"result\", \"sourceTaskId\": \"f6be6b4c-99ea-4860-9968-76a9d5cb2c20\", \"sourceAttemptId\": \"8375d65a-b917-4a47-b7b0-09433bb57957\", \"version\": 1, \"createdAt\": \"2026-09-07T08:15:37.979057+08:00\", \"updatedAt\": \"2026-09-07T08:15:37.979057+08:00\", \"routes\": [{\"id\": \"2ead237d-6df1-4e75-85cd-bc6e93adf287\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"commentId\": \"3089d0bb-9e81-4d2c-be98-fb4b063343e2\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T08:15:37.979057+08:00\"}]}, \"task\": {\"id\": \"f6be6b4c-99ea-4860-9968-76a9d5cb2c20\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"orchestrationRunId\": \"9312eb0e-83f5-4b55-b9f2-bc8ce155f35e\", \"runNodeId\": \"0c4eafe4-8bc1-41b6-bcc8-7cf347ed97d0\", \"currentAttemptId\": \"8375d65a-b917-4a47-b7b0-09433bb57957\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"correlationId\": \"aec979fd-14dc-4e5f-8e41-496cd81e6291\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"bindingId\": \"b46ffc09-4c3f-56b4-8587-58d0055a8981\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\"}, \"sessionId\": \"sess_45eb9368b02d\", \"resolvedAt\": \"2026-09-07T00:15:27.396976Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_45eb9368b02d\", \"result\": {\"乙\": {\"增速(%)\": -10, \"2023年销量\": 20, \"2024年销量\": 18}, \"甲\": {\"增速(%)\": 25, \"2023年销量\": 12, \"2024年销量\": 15}, \"按2024销量降序排列\": [{\"名称\": \"乙\", \"2024年销量\": 18}, {\"名称\": \"甲\", \"2024年销量\": 15}]}, \"version\": 4, \"createdAt\": \"2026-09-07T08:15:26.872547+08:00\", \"dispatchedAt\": \"2026-09-07T08:15:27.395713+08:00\", \"startedAt\": \"2026-09-07T08:15:27.447034+08:00\", \"completedAt\": \"2026-09-07T08:15:37.979057+08:00\"}}",
+        "occurredAt": "2026-09-07T00:15:38.003Z"
+      },
+      {
+        "seq": 15,
+        "role": "assistant",
+        "content": "已完成计算两家的增速，并按2024年销量进行了降序排列。以下是结果：\n\n- 甲：\n  - 2023年销量：12\n  - 2024年销量：15\n  - 增速（%）：25%\n\n- 乙：\n  - 2023年销量：20\n  - 2024年销量：18\n  - 增速（%）：-10%\n\n按2024年销量降序排列如下：\n1. 乙 (2024年销量：18)\n2. 甲 (2024年销量：15)",
+        "occurredAt": "2026-09-07T00:15:44.779Z"
+      }
+    ],
+    "source": "events"
+  }
+}

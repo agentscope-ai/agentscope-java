@@ -1,0 +1,46 @@
+{
+  "at": "2026-09-07T00:16:33.813354+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/4923de41-6abe-4da7-90db-d5d971f9c8cd/comments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "3b50be60-b4d2-4acc-9035-9e683f9012cc",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "threadRootId": "3b50be60-b4d2-4acc-9035-9e683f9012cc",
+        "author": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "content": "计算 17×23+19 的结果是 410。等式如下：\n\n17 × 23 + 19 = 391 + 19 = 410",
+        "type": "result",
+        "sourceTaskId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+        "sourceAttemptId": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+        "version": 1,
+        "createdAt": "2026-09-07T08:15:35.674445+08:00",
+        "updatedAt": "2026-09-07T08:15:35.674445+08:00",
+        "routes": [
+          {
+            "id": "ee1076b9-0e11-4fcc-8969-06cc1ab8c1db",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "commentId": "3b50be60-b4d2-4acc-9035-9e683f9012cc",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "routeType": "assignee",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T08:15:35.674445+08:00"
+          }
+        ]
+      }
+    ],
+    "nextCursor": ""
+  }
+}

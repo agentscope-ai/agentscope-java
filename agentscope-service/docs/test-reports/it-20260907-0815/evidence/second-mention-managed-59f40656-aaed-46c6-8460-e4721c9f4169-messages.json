@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-07T00:16:33.986389+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/e21b331e-68e0-4c92-ad1c-d63d117533c2/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_13ae4fc65e49",
+    "offset": 0,
+    "limit": 100,
+    "total": 1,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are handling standalone or explicitly mentioned work. Call task.complete only when you have a usable result. If a required capability, credential, input, or tool is unavailable, or a required tool call fails without a real fallback, call task.fail with a durable code and explanation; do not complete with a description of the failure. task.complete publishes the one authoritative visible reply, so do not repeat the same conclusion with issue.comment.add or task.progress. A human explicit mention is a direct request: answer it and finish without notifying the Issue assignee unless that Agent genuinely needs new work, in which case use an explicit mention.",
+        "occurredAt": "2026-09-07T00:16:33.356Z"
+      }
+    ],
+    "source": "events"
+  }
+}

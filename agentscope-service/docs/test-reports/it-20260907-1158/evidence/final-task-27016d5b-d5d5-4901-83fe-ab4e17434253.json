@@ -1,0 +1,78 @@
+{
+  "at": "2026-09-07T04:06:49.394005+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/27016d5b-d5d5-4901-83fe-ab4e17434253",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "27016d5b-d5d5-4901-83fe-ab4e17434253",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "b8ca8835-fb9a-4aa5-983f-cfafb95132df",
+      "orchestrationRunId": "4ee384ce-a0d1-46a9-ba2f-46358534fd44",
+      "runNodeId": "aeb65365-bf1b-4432-91b0-d1bb31964005",
+      "currentAttemptId": "82641d93-40b1-45b8-a477-afd4714e6f75",
+      "agentId": "2e663462-f57e-4a08-9d14-8f672defab41",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "cf8e4cb1-bfd4-46e2-b316-d8b3e8411421",
+      "teamId": "b18a8afb-b34a-4275-a44b-61f003fb60ac",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "parentTaskId": "b0cd0afd-9083-4b1d-9986-de6279c7381e",
+      "delegatedFromTaskId": "b0cd0afd-9083-4b1d-9986-de6279c7381e",
+      "originator": {
+        "type": "agent",
+        "ref": "0535720b-d0aa-4170-b0dc-eed4294f59ec"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "cf8e4cb1-bfd4-46e2-b316-d8b3e8411421",
+      "correlationId": "e6c1e78c-299c-47e4-b937-e2b6e72c1bfe",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "2e663462-f57e-4a08-9d14-8f672defab41",
+          "bindingId": "f4949949-3bd2-54b4-8cea-5b0138292be4",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "2e663462-f57e-4a08-9d14-8f672defab41"
+        },
+        "sessionId": "sess_2710b0ad8c0b",
+        "resolvedAt": "2026-09-07T04:01:28.202211Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_2710b0ad8c0b",
+      "result": {
+        "content": "TEAM_OK;CALC=399;SORT=apple,pear,zebra",
+        "mentions": []
+      },
+      "version": 4,
+      "createdAt": "2026-09-07T12:00:28.263996+08:00",
+      "dispatchedAt": "2026-09-07T12:01:28.202049+08:00",
+      "startedAt": "2026-09-07T12:01:28.302326+08:00",
+      "completedAt": "2026-09-07T12:01:36.590217+08:00",
+      "inputs": [
+        {
+          "id": "fd2c14ad-2ba6-42fa-97a4-b893d501d3bd",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "27016d5b-d5d5-4901-83fe-ab4e17434253",
+          "commentId": "cf8e4cb1-bfd4-46e2-b316-d8b3e8411421",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "processed",
+          "deliveredAt": "2026-09-07T12:01:28.202049+08:00",
+          "processedAt": "2026-09-07T12:01:36.590217+08:00",
+          "responseCommentId": "1ca4508f-7ad5-43d2-aaed-a4d9d0ab4b0c",
+          "attempts": 0,
+          "createdAt": "2026-09-07T12:00:28.263996+08:00"
+        }
+      ]
+    }
+  }
+}

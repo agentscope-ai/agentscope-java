@@ -1,0 +1,296 @@
+{
+  "at": "2026-09-07T04:06:17.890268+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/6a94b4cd-623f-49f4-9806-f60c3b04d5bc/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 35,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_407617f7cdb9451aba4e5a14ccaf66d6",
+          "managedSeq": 1,
+          "agentTaskId": "",
+          "managedEventId": "evt_407617f7cdb9451aba4e5a14ccaf66d6",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:01.827+08:00"
+      },
+      {
+        "id": 36,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_8f49533c33054f359a397b920a5817b2",
+          "managedSeq": 2,
+          "agentTaskId": "",
+          "managedEventId": "evt_8f49533c33054f359a397b920a5817b2",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:01.839+08:00"
+      },
+      {
+        "id": 37,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_47460690f7894e6ea57e58bb62371b2f",
+          "managedSeq": 3,
+          "agentTaskId": "",
+          "managedEventId": "evt_47460690f7894e6ea57e58bb62371b2f",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:01.868+08:00"
+      },
+      {
+        "id": 58,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 4,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "memory_save",
+        "toolInput": {
+          "content": "- API_MEMORY_1130 is associated with the number 42."
+        },
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_aef55b56eed64a97b769cde6c6ba07a5",
+          "managedSeq": 4,
+          "toolCallId": "call_3830586b1d4442c3aabb59",
+          "agentTaskId": "",
+          "managedEventId": "evt_aef55b56eed64a97b769cde6c6ba07a5",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:07.434+08:00"
+      },
+      {
+        "id": 59,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 5,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_40c87c1320334730984447411e91b591",
+          "managedSeq": 5,
+          "agentTaskId": "",
+          "managedEventId": "evt_40c87c1320334730984447411e91b591",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:07.444+08:00"
+      },
+      {
+        "id": 60,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 6,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "\"Saved 1 memory to MEMORY.md\"",
+        "toolName": "memory_save",
+        "toolOutput": "\"Saved 1 memory to MEMORY.md\"",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_1503dcf5404b4d90b218af431a3c9fa2",
+          "managedSeq": 6,
+          "toolCallId": "call_3830586b1d4442c3aabb59",
+          "agentTaskId": "",
+          "tool_use_id": "call_3830586b1d4442c3aabb59",
+          "managedEventId": "evt_1503dcf5404b4d90b218af431a3c9fa2",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:07.48+08:00"
+      },
+      {
+        "id": 61,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 7,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_da8cef4e602845a29b4afaa382c58e97",
+          "managedSeq": 7,
+          "agentTaskId": "",
+          "managedEventId": "evt_da8cef4e602845a29b4afaa382c58e97",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:07.489+08:00"
+      },
+      {
+        "id": 66,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 8,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_432bff098a1a4d0c8931bd0a28354da0",
+          "managedSeq": 8,
+          "agentTaskId": "",
+          "managedEventId": "evt_432bff098a1a4d0c8931bd0a28354da0",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:09.393+08:00"
+      },
+      {
+        "id": 68,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 9,
+        "eventType": "agent.message",
+        "role": "assistant",
+        "content": "已将标记 API_MEMORY_1130 与数字42的关系保存到长期记忆中。您可以继续提问，我会记住这个信息以便后续使用。请问您接下来需要帮助的是什么？",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_a76fc59cae9f4022b406530d57658223",
+          "managedSeq": 9,
+          "agentTaskId": "",
+          "managedEventId": "evt_a76fc59cae9f4022b406530d57658223",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:09.466+08:00"
+      },
+      {
+        "id": 76,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 10,
+        "eventType": "session.status_idle",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "idle",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_07264f15401f490a88225db8f333ecf7",
+          "managedSeq": 10,
+          "agentTaskId": "",
+          "managedEventId": "evt_07264f15401f490a88225db8f333ecf7",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:00:11.128+08:00"
+      },
+      {
+        "id": 369,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 11,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "上一轮要求记住的标记是什么？计算6×7。只回答之前的标记和数字，不使用联网工具。",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_d046042001244935ae737df5713c0096",
+          "managedSeq": 11,
+          "agentTaskId": "",
+          "managedEventId": "evt_d046042001244935ae737df5713c0096",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:01:32.868+08:00"
+      },
+      {
+        "id": 370,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 12,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_2c0c1be2b5b048378f4345ee8c0047ff",
+          "managedSeq": 12,
+          "agentTaskId": "",
+          "managedEventId": "evt_2c0c1be2b5b048378f4345ee8c0047ff",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:01:32.884+08:00"
+      },
+      {
+        "id": 371,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 13,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_2e5a2422654c409e824c6423dd53f01e",
+          "managedSeq": 13,
+          "agentTaskId": "",
+          "managedEventId": "evt_2e5a2422654c409e824c6423dd53f01e",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:01:32.944+08:00"
+      },
+      {
+        "id": 377,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 14,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_62559d9373824e28a7145cb3f8000908",
+          "managedSeq": 14,
+          "agentTaskId": "",
+          "managedEventId": "evt_62559d9373824e28a7145cb3f8000908",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:01:36+08:00"
+      },
+      {
+        "id": 378,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 15,
+        "eventType": "agent.message",
+        "role": "assistant",
+        "content": "上一轮要求记住的标记是 API_MEMORY_1130，它与数字42相关联。计算6×7的结果也是42。",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_7d209002afac4312a1f41c3b580ef629",
+          "managedSeq": 15,
+          "agentTaskId": "",
+          "managedEventId": "evt_7d209002afac4312a1f41c3b580ef629",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:01:36.08+08:00"
+      },
+      {
+        "id": 387,
+        "sessionFk": "6a94b4cd-623f-49f4-9806-f60c3b04d5bc",
+        "seq": 16,
+        "eventType": "session.status_idle",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "idle",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_e6e2b4305c2840fc87d5d31fffe976a2",
+          "managedSeq": 16,
+          "agentTaskId": "",
+          "managedEventId": "evt_e6e2b4305c2840fc87d5d31fffe976a2",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T12:01:37.345+08:00"
+      }
+    ]
+  }
+}

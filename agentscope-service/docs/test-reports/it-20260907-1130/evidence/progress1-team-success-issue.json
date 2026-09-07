@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-07T03:31:05.648130+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/79ae7e2e-4f5b-49e3-b3a7-82def07110a6",
+  "request": null,
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "79ae7e2e-4f5b-49e3-b3a7-82def07110a6",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-1130-team-success",
+      "description": "必须真实创建两个子Issue分给calculator和analyst，不能自己替代。calculator计算19×21+1；analyst把zebra,apple,pear按字典序排序。当前子Issue收到结果就验收，不等待兄弟才验收；两份成果都验收后汇总 TEAM_OK;CALC=400;SORT=apple,pear,zebra 并完成整个run。子Issue标题前缀 it-20260907-1130。",
+      "status": "in_progress",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "e73acb19-fc07-4e58-99e2-7513c7bf7a0b",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 3,
+      "createdAt": "2026-09-07T11:29:39.702242+08:00",
+      "updatedAt": "2026-09-07T11:30:05.536558+08:00"
+    }
+  }
+}

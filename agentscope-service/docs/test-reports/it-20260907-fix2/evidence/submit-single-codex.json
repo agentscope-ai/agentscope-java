@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-07T05:57:51.454062+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "it-20260907-fix2-single-codex",
+    "description": "判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+    "assigneeType": "agent",
+    "assigneeRef": "91e06719-ffee-4d3b-ad3a-aa4e42142f25"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "9b856ff0-886c-45de-be66-36ce0522a15e",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "7f191ad2-6fc1-41d6-b020-5c232660060b",
+      "orchestrationRunId": "1af8671f-7b28-4ec6-bbb4-9e41ef4cb4b1",
+      "runNodeId": "f152b15c-ac58-4d61-b31d-32ed8cc91469",
+      "agentId": "91e06719-ffee-4d3b-ad3a-aa4e42142f25",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "7f191ad2-6fc1-41d6-b020-5c232660060b",
+      "correlationId": "7f191ad2-6fc1-41d6-b020-5c232660060b",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T13:57:51.456934+08:00"
+    },
+    "issue": {
+      "id": "7f191ad2-6fc1-41d6-b020-5c232660060b",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-fix2-single-codex",
+      "description": "判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "91e06719-ffee-4d3b-ad3a-aa4e42142f25",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T13:57:51.456934+08:00",
+      "updatedAt": "2026-09-07T13:57:51.456934+08:00"
+    }
+  }
+}

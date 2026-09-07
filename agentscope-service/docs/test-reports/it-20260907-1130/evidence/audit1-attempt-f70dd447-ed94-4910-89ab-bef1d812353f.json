@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-07T03:34:48.537097+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/f70dd447-ed94-4910-89ab-bef1d812353f",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "f70dd447-ed94-4910-89ab-bef1d812353f",
+      "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+      "agentId": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+      "bindingId": "2a9986b7-3634-5c06-9482-91fda5832fb9",
+      "runId": "fe5237e6-d65b-45e9-8ee7-8a8bcca7ea32",
+      "nodeId": "e25d7885-2844-47a2-ac82-de8e53ba6d85",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+          "bindingId": "2a9986b7-3634-5c06-9482-91fda5832fb9",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "c1240863-14ae-4e43-a4dc-56d29b3b685e"
+        },
+        "sessionId": "sess_e3aaa15dc9f2",
+        "resolvedAt": "2026-09-07T03:30:01.353838Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+      "sessionId": "sess_e3aaa15dc9f2",
+      "sessionRef": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+      "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T11:30:08.014514+08:00",
+      "failureCode": "MISSING_CREDENTIALS",
+      "failureMessage": "缺少必要的TAVILY_API_KEY，无法执行网络搜索以完成手机行业调研任务。",
+      "version": 13,
+      "createdAt": "2026-09-07T11:30:01.35361+08:00",
+      "updatedAt": "2026-09-07T11:30:08.026139+08:00",
+      "startedAt": "2026-09-07T11:30:01.415407+08:00",
+      "completedAt": "2026-09-07T11:30:08.026139+08:00"
+    }
+  }
+}

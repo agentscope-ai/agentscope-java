@@ -1,0 +1,63 @@
+{
+  "at": "2026-09-07T04:51:22.697803+00:00",
+  "method": "GET",
+  "path": "/api/v1/endpoints/a226ffe9-5430-456b-bd05-2cbd93a3ae5f/invocations",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "f07c06b6-920d-4db3-98e1-bd5d95b7049e",
+        "endpointId": "a226ffe9-5430-456b-bd05-2cbd93a3ae5f",
+        "mode": "job",
+        "principalType": "credential",
+        "principalRef": "api-key:eca5e67a-7868-43b2-a11b-ddd362ef61d8",
+        "idempotencyKey": "it-20260907-fix1-qoder-job-fail",
+        "status": "failed",
+        "issueId": "9a5d4065-55a8-5655-9b23-5f1e2818731d",
+        "runId": "b9e18fb5-911f-5fda-bd17-7b50ab4e0213",
+        "input": {
+          "input": {
+            "requiredCapability": "web-search"
+          },
+          "title": "it-20260907-fix1-endpoint-required-web",
+          "description": "必须实际使用web工具调研手机行业近期变化，提供2个官方URL和日期。若缺少web工具或无法验证来源，必须task.fail并说明缺失能力，不得把无法调研作为成功结果，不修改权限。"
+        },
+        "result": {
+          "runState": "failed"
+        },
+        "errorCode": "hitl_approver_unavailable",
+        "errorMessage": "runtime tool confirmation has no accountable human",
+        "correlationId": "c702db8b-bd4d-4baa-a8cf-22c6ad09dc0d",
+        "createdAt": "2026-09-07T12:47:34.131726+08:00",
+        "startedAt": "2026-09-07T12:47:34.132943+08:00",
+        "completedAt": "2026-09-07T12:49:15.411814+08:00",
+        "updatedAt": "2026-09-07T12:49:15.412004+08:00"
+      },
+      {
+        "id": "d7a387ad-b20b-400f-beba-c01b3146f54a",
+        "endpointId": "a226ffe9-5430-456b-bd05-2cbd93a3ae5f",
+        "mode": "job",
+        "principalType": "credential",
+        "principalRef": "api-key:eca5e67a-7868-43b2-a11b-ddd362ef61d8",
+        "idempotencyKey": "it-20260907-fix1-qoder-job-ok",
+        "status": "completed",
+        "issueId": "e4bb634e-9c85-5984-95ad-506532413c6d",
+        "runId": "2d15bd2e-5c79-5494-98c3-b2c1bc86d80d",
+        "input": {
+          "input": {
+            "text": "red blue green yellow"
+          },
+          "title": "it-20260907-fix1-endpoint-text",
+          "description": "按input里的文本统计英文单词数，输出 API_WORDS=4 并完成任务。无需联网。"
+        },
+        "result": "{\"API_WORDS\": 4}",
+        "correlationId": "4d3e28f5-1a2d-4dd5-a8e0-b50760fcc840",
+        "createdAt": "2026-09-07T12:47:33.683491+08:00",
+        "startedAt": "2026-09-07T12:47:33.685109+08:00",
+        "completedAt": "2026-09-07T12:48:55.414358+08:00",
+        "updatedAt": "2026-09-07T12:48:55.413965+08:00"
+      }
+    ]
+  }
+}

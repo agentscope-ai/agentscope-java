@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-07T00:17:01.298182+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/5ce54819-6a31-41a8-9cd2-a8139a9802b4/comments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [],
+    "nextCursor": ""
+  }
+}

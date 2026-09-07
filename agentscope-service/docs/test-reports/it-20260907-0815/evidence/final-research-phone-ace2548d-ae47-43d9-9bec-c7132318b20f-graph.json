@@ -1,0 +1,227 @@
+{
+  "at": "2026-09-07T00:21:23.353683+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/ace2548d-ae47-43d9-9bec-c7132318b20f/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "ace2548d-ae47-43d9-9bec-c7132318b20f",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+      "mode": "direct",
+      "triggerType": "comment",
+      "triggerRef": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+      "output": "{\"answer\": \"RECOVERED=81\", \"arithmetic\": \"9 × 9 = 81\", \"note\": \"Accepted no internet access this round. Stopped research, performed offline arithmetic only.\"}",
+      "state": "succeeded",
+      "version": 5,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T08:18:18.79204+08:00",
+      "updatedAt": "2026-09-07T08:19:14.298003+08:00",
+      "startedAt": "2026-09-07T08:18:18.79204+08:00",
+      "completedAt": "2026-09-07T08:19:14.298003+08:00"
+    },
+    "nodes": [
+      {
+        "id": "7c9f5c1c-1030-4324-8837-18c1fcbcc5f6",
+        "runId": "ace2548d-ae47-43d9-9bec-c7132318b20f",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:41c074e5-0d83-4d88-a77b-831638862a07",
+        "type": "agent",
+        "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "state": "succeeded",
+        "output": "{\"answer\": \"RECOVERED=81\", \"arithmetic\": \"9 × 9 = 81\", \"note\": \"Accepted no internet access this round. Stopped research, performed offline arithmetic only.\"}",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T08:18:18.79204+08:00",
+        "updatedAt": "2026-09-07T08:19:14.298003+08:00",
+        "startedAt": "2026-09-07T08:18:19.266411+08:00",
+        "completedAt": "2026-09-07T08:19:14.298003+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "41c074e5-0d83-4d88-a77b-831638862a07",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "orchestrationRunId": "ace2548d-ae47-43d9-9bec-c7132318b20f",
+        "runNodeId": "7c9f5c1c-1030-4324-8837-18c1fcbcc5f6",
+        "currentAttemptId": "dd9b64eb-fc6a-4e15-a880-1694a6a3b818",
+        "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "causationId": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+        "correlationId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+            "runtimePoolId": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "runtimeProfileId": "bc887fda-ca12-4c78-9626-60180c64eec7"
+          },
+          "sessionId": "49d86a04-857b-4489-adc1-09888f0a50ea",
+          "resolvedAt": "2026-09-07T00:18:19.275982Z",
+          "runtimePool": {
+            "id": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-06T23:37:26.078122+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.078122+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc887fda-ca12-4c78-9626-60180c64eec7",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-06T23:37:26.082207+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.082207+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "sessionId": "49d86a04-857b-4489-adc1-09888f0a50ea",
+        "result": "{\"answer\": \"RECOVERED=81\", \"arithmetic\": \"9 × 9 = 81\", \"note\": \"Accepted no internet access this round. Stopped research, performed offline arithmetic only.\"}",
+        "version": 4,
+        "createdAt": "2026-09-07T08:18:18.79204+08:00",
+        "dispatchedAt": "2026-09-07T08:18:19.275691+08:00",
+        "startedAt": "2026-09-07T08:19:02.531426+08:00",
+        "completedAt": "2026-09-07T08:19:14.298003+08:00",
+        "inputs": [
+          {
+            "id": "45cb3c5b-8763-4f03-a0c4-62e747fbe54f",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "41c074e5-0d83-4d88-a77b-831638862a07",
+            "commentId": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T08:18:19.275691+08:00",
+            "processedAt": "2026-09-07T08:19:14.298003+08:00",
+            "responseCommentId": "dd439b7c-8a0e-48d9-8f50-828ebc72fa16",
+            "attempts": 0,
+            "createdAt": "2026-09-07T08:18:18.79204+08:00"
+          }
+        ]
+      }
+    ],
+    "attempts": [
+      {
+        "id": "dd9b64eb-fc6a-4e15-a880-1694a6a3b818",
+        "agentTaskId": "41c074e5-0d83-4d88-a77b-831638862a07",
+        "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+        "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+        "runId": "ace2548d-ae47-43d9-9bec-c7132318b20f",
+        "nodeId": "7c9f5c1c-1030-4324-8837-18c1fcbcc5f6",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "hosted-runtime",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+            "runtimePoolId": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "runtimeProfileId": "bc887fda-ca12-4c78-9626-60180c64eec7"
+          },
+          "sessionId": "49d86a04-857b-4489-adc1-09888f0a50ea",
+          "resolvedAt": "2026-09-07T00:18:19.275982Z",
+          "runtimePool": {
+            "id": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-06T23:37:26.078122+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.078122+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc887fda-ca12-4c78-9626-60180c64eec7",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-06T23:37:26.082207+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.082207+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "runtimeProfileName": "auto-qoder",
+        "runtimePoolName": "coding-default",
+        "hostId": "348b0331-630a-49dd-93c0-ef553858b8ae",
+        "sessionId": "49d86a04-857b-4489-adc1-09888f0a50ea",
+        "turnId": "330a2f0a-26b0-4061-9b76-4d8884bb87d9",
+        "providerSessionId": "d1c1fce4-0ee2-49d9-95e2-06d50f345fa1",
+        "workspaceKey": "default/default/conversations/679b7bf9-c9c1-4828-a129-4045be75090e/49d86a04-857b-4489-adc1-09888f0a50ea",
+        "state": "succeeded",
+        "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/b807f5a9-f54e-4ea2-a392-f8c67291de93",
+        "leaseToken": "[REDACTED]",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T08:19:02.531426+08:00",
+        "checkpoint": {
+          "providerSessionId": "d1c1fce4-0ee2-49d9-95e2-06d50f345fa1"
+        },
+        "result": "{\"answer\": \"RECOVERED=81\", \"arithmetic\": \"9 × 9 = 81\", \"note\": \"Accepted no internet access this round. Stopped research, performed offline arithmetic only.\"}",
+        "version": 7,
+        "createdAt": "2026-09-07T08:18:19.275691+08:00",
+        "updatedAt": "2026-09-07T08:19:14.298003+08:00",
+        "startedAt": "2026-09-07T08:19:02.530126+08:00",
+        "completedAt": "2026-09-07T08:19:14.298003+08:00"
+      }
+    ]
+  }
+}

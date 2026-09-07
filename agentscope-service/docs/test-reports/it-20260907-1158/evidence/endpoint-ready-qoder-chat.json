@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-07T04:00:01.378923+00:00",
+  "method": "GET",
+  "path": "/api/v1/endpoints/25ac6fda-4b76-4807-8617-c66661b80255/readiness",
+  "request": null,
+  "status": 200,
+  "response": {
+    "readiness": {
+      "state": "unavailable",
+      "reason": "No runtime candidate currently has capacity",
+      "compatible": true
+    }
+  }
+}

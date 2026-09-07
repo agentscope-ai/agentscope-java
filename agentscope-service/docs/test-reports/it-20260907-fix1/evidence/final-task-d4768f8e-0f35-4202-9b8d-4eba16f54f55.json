@@ -1,0 +1,85 @@
+{
+  "at": "2026-09-07T05:51:08.560642+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/d4768f8e-0f35-4202-9b8d-4eba16f54f55",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "d4768f8e-0f35-4202-9b8d-4eba16f54f55",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "3d76e6e8-7f03-4d1a-af1e-9e06f9b1ba66",
+      "orchestrationRunId": "cbf66050-b791-4340-af47-8a888eb8d309",
+      "runNodeId": "312aa510-252b-4e4c-881d-73a307a33a74",
+      "currentAttemptId": "aa36e083-d347-412f-9a6c-2c95c2985ec5",
+      "agentId": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "assignment",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "3d76e6e8-7f03-4d1a-af1e-9e06f9b1ba66",
+      "correlationId": "3d76e6e8-7f03-4d1a-af1e-9e06f9b1ba66",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "hosted-runtime",
+          "agentId": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+          "bindingId": "87640370-5bfb-54b6-8795-20093d6edbea",
+          "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+          "runtimeProfileId": "bc4167bc-0f7b-41c6-b83d-6b034f46f822"
+        },
+        "sessionId": "665415f7-1cc6-4585-a7a1-049669a1a29b",
+        "resolvedAt": "2026-09-07T04:47:33.673611Z",
+        "runtimePool": {
+          "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+          "name": "coding-default",
+          "tenant": "default",
+          "version": 1,
+          "createdAt": "2026-09-07T11:56:11.922607+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+        },
+        "runtimeProfile": {
+          "id": "bc4167bc-0f7b-41c6-b83d-6b034f46f822",
+          "name": "auto-qoder",
+          "tenant": "default",
+          "runtime": "qodercli",
+          "version": 1,
+          "provider": "qoder",
+          "createdAt": "2026-09-07T11:56:11.92843+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T11:56:11.92843+08:00",
+          "requirements": {},
+          "configuration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "selectionSource": "policy",
+        "resolvedProviderConfiguration": {
+          "allowedTools": [
+            "mcp__agentscope-collaboration__*"
+          ],
+          "permissionMode": "default",
+          "strictMCPConfig": true
+        }
+      },
+      "sessionId": "665415f7-1cc6-4585-a7a1-049669a1a29b",
+      "result": "{\"answer\": \"QODER=apple,pear,zebra\"}",
+      "version": 4,
+      "createdAt": "2026-09-07T12:47:32.812531+08:00",
+      "dispatchedAt": "2026-09-07T12:47:33.672913+08:00",
+      "startedAt": "2026-09-07T12:47:33.880356+08:00",
+      "completedAt": "2026-09-07T12:47:48.325639+08:00"
+    }
+  }
+}

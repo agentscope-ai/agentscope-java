@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-07T04:00:18.083328+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/0dc8afc6-b719-4823-86b4-7379640be976/messages?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_d3d7c32c4297",
+    "offset": 0,
+    "limit": 500,
+    "total": 1,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are a Team worker. Complete only the assigned child work and call task.complete with outcome=succeeded and the result only when the assigned objective is achieved. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "occurredAt": "2026-09-07T04:00:16.255Z"
+      }
+    ],
+    "source": "events"
+  }
+}

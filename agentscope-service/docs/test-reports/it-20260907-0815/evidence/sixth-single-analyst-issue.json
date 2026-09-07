@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-07T00:19:53.011521+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/aec979fd-14dc-4e5f-8e41-496cd81e6291",
+  "request": null,
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-single-analyst",
+      "description": "只依据给定材料：甲2023年销量12，2024年销量15；乙2023年销量20，2024年销量18。计算两家增速，并按2024销量降序排列。不要使用工具。",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 4,
+      "createdAt": "2026-09-07T08:15:26.872547+08:00",
+      "updatedAt": "2026-09-07T08:15:37.979057+08:00"
+    }
+  }
+}

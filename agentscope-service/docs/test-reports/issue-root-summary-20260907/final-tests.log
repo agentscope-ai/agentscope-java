@@ -1,0 +1,5 @@
+ok  	github.com/spring-ai-alibaba/aistio/internal/collaboration	0.860s
+ok  	github.com/spring-ai-alibaba/aistio/internal/orchestration	1.216s
+ok  	github.com/spring-ai-alibaba/aistio/internal/httpapi	1.522s
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimehost	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimebinding	(cached)

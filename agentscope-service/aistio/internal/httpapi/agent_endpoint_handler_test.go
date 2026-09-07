@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -212,7 +213,7 @@ func TestEndpointJobIsIdempotent(t *testing.T) {
 		t.Fatalf("expected one stable Agent task: %+v err=%v", tasks, err)
 	}
 	taskContext, err := (&collaboration.Service{Store: st}).BuildContext(ctx, tasks[0].ID)
-	if err != nil || taskContext.Run == nil || string(taskContext.Run.Input) != `{"x":1}` {
+	if err != nil || taskContext.Run == nil || string(taskContext.Run.Input) != `{"x":1}` || !strings.Contains(taskContext.CurrentRequest, `"x": 1`) || !strings.Contains(issue.Description, `"x": 1`) {
 		t.Fatalf("Endpoint input was not propagated to AgentTask context: context=%+v err=%v", taskContext, err)
 	}
 	claimed, _, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,

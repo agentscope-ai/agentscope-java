@@ -1,0 +1,54 @@
+{
+  "at": "2026-09-07T05:51:09.063247+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/b2f22935-1333-4154-b7a7-8cdc076a5265",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+      "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+      "runNodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+      "currentAttemptId": "d77087a6-0c3a-47c9-94e5-df48610fd606",
+      "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "orchestration_node",
+      "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "system",
+        "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+      },
+      "causationId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+      "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+          "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "sessionId": "sess_872d9a5962c4",
+        "resolvedAt": "2026-09-07T04:47:33.909416Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_872d9a5962c4",
+      "result": "已成功创建了两个子任务：\n1. it-20260907-fix1-新能源汽车行业调研，分配给researcher (agentId: 22a5dc1b-944a-4085-a59d-8ff45611e690)\n2. it-20260907-fix1-手机行业调研，分配给analyst (agentId: 891e747f-e57b-45ce-ac90-cfaf72721da8)。",
+      "version": 4,
+      "createdAt": "2026-09-07T12:47:33.881474+08:00",
+      "dispatchedAt": "2026-09-07T12:47:33.908678+08:00",
+      "startedAt": "2026-09-07T12:47:34.009878+08:00",
+      "completedAt": "2026-09-07T12:48:00.227592+08:00"
+    }
+  }
+}

@@ -1,0 +1,219 @@
+{
+  "at": "2026-09-07T00:21:23.518093+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/dab956bd-44aa-40cc-a463-66b13b3eed3c/events",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 394,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "记住测试标记 MEMORY_0815。计算21+21，仅回答标记和答案。无需工具。",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_7ec682590c5e4cc183c5d7739f97cc4e",
+          "managedSeq": 1,
+          "agentTaskId": "",
+          "managedEventId": "evt_7ec682590c5e4cc183c5d7739f97cc4e",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:17:22.416+08:00"
+      },
+      {
+        "id": 395,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_a1d40f459d464e9f8cb63e728e621310",
+          "managedSeq": 2,
+          "agentTaskId": "",
+          "managedEventId": "evt_a1d40f459d464e9f8cb63e728e621310",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:17:22.426+08:00"
+      },
+      {
+        "id": 396,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_15c331a84c6e4b4e97b4dfd15841f004",
+          "managedSeq": 3,
+          "agentTaskId": "",
+          "managedEventId": "evt_15c331a84c6e4b4e97b4dfd15841f004",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:17:22.444+08:00"
+      },
+      {
+        "id": 403,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 4,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_bdd87d5b0ab34c888115b0d6a84453ae",
+          "managedSeq": 4,
+          "agentTaskId": "",
+          "managedEventId": "evt_bdd87d5b0ab34c888115b0d6a84453ae",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:17:24.251+08:00"
+      },
+      {
+        "id": 404,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 5,
+        "eventType": "agent.message",
+        "role": "assistant",
+        "content": "MEMORY_0815: 42",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_10522f6991554df89e34e93a4d57a65a",
+          "managedSeq": 5,
+          "agentTaskId": "",
+          "managedEventId": "evt_10522f6991554df89e34e93a4d57a65a",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:17:24.265+08:00"
+      },
+      {
+        "id": 405,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 6,
+        "eventType": "session.status_idle",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "idle",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_b9c7f9e8b0394f4f8a8b28664f00b3df",
+          "managedSeq": 6,
+          "agentTaskId": "",
+          "managedEventId": "evt_b9c7f9e8b0394f4f8a8b28664f00b3df",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:17:25.065+08:00"
+      },
+      {
+        "id": 495,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 7,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "上一轮我让你记住的测试标记是什么？另外计算6×7。仅输出标记和答案，不用工具。",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_607ee48b163a40c487b7d586d12d43d9",
+          "managedSeq": 7,
+          "agentTaskId": "",
+          "managedEventId": "evt_607ee48b163a40c487b7d586d12d43d9",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:18:18.741+08:00"
+      },
+      {
+        "id": 496,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 8,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_ed99c0c23dba436dbe6a8ea70459cb77",
+          "managedSeq": 8,
+          "agentTaskId": "",
+          "managedEventId": "evt_ed99c0c23dba436dbe6a8ea70459cb77",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:18:18.749+08:00"
+      },
+      {
+        "id": 499,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 9,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_22540d2fe48c474ba419a8d82b7b187c",
+          "managedSeq": 9,
+          "agentTaskId": "",
+          "managedEventId": "evt_22540d2fe48c474ba419a8d82b7b187c",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:18:18.782+08:00"
+      },
+      {
+        "id": 503,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 10,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_bbae08ff6088443cb9018aa66f58bb3e",
+          "managedSeq": 10,
+          "agentTaskId": "",
+          "managedEventId": "evt_bbae08ff6088443cb9018aa66f58bb3e",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:18:20.885+08:00"
+      },
+      {
+        "id": 504,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 11,
+        "eventType": "agent.message",
+        "role": "assistant",
+        "content": "MEMORY_0815: 42\n6×7的答案是42",
+        "frameworkMeta": {
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_666be3db4ff54d83a7fc007c9bc2db63",
+          "managedSeq": 11,
+          "agentTaskId": "",
+          "managedEventId": "evt_666be3db4ff54d83a7fc007c9bc2db63",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:18:20.952+08:00"
+      },
+      {
+        "id": 505,
+        "sessionFk": "dab956bd-44aa-40cc-a463-66b13b3eed3c",
+        "seq": 12,
+        "eventType": "session.status_idle",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "idle",
+          "turnId": "",
+          "attemptId": "",
+          "sourceKey": "managed:evt_560a2839c701464693cf6a98fcabbab4",
+          "managedSeq": 12,
+          "agentTaskId": "",
+          "managedEventId": "evt_560a2839c701464693cf6a98fcabbab4",
+          "dispatchGeneration": 0
+        },
+        "occurredAt": "2026-09-07T08:18:21.851+08:00"
+      }
+    ]
+  }
+}

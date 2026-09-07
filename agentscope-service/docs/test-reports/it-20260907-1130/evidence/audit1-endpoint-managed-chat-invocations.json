@@ -1,0 +1,49 @@
+{
+  "at": "2026-09-07T03:34:49.373065+00:00",
+  "method": "GET",
+  "path": "/api/v1/endpoints/ce54462c-525b-4bc6-bcb6-4528977db78f/invocations",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "a7f07fdd-0aeb-41c3-8737-52920eeb6f99",
+        "endpointId": "ce54462c-525b-4bc6-bcb6-4528977db78f",
+        "mode": "conversation",
+        "principalType": "credential",
+        "principalRef": "api-key:e5351b50-31a0-49d0-9572-fcd05d14b285",
+        "idempotencyKey": "it-20260907-1130-managed-chat-turn2",
+        "status": "running",
+        "conversationId": "62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+        "turnId": "9e56a34b-e37d-4494-81ab-3147f5ac0100",
+        "sessionId": "sess_f54ce2549e38",
+        "input": {
+          "message": "上一轮要求记住的标记是什么？计算6×7。只回答之前的标记和数字，不使用联网工具。"
+        },
+        "correlationId": "6a9fdacf-57ef-4b4b-918c-c460d97ff0b6",
+        "createdAt": "2026-09-07T11:33:00.408366+08:00",
+        "startedAt": "2026-09-07T11:33:00.474166+08:00",
+        "updatedAt": "2026-09-07T11:33:00.474442+08:00"
+      },
+      {
+        "id": "01d782ec-4ad1-4afc-9fd6-db9ee9043338",
+        "endpointId": "ce54462c-525b-4bc6-bcb6-4528977db78f",
+        "mode": "conversation",
+        "principalType": "credential",
+        "principalRef": "api-key:e5351b50-31a0-49d0-9572-fcd05d14b285",
+        "idempotencyKey": "it-20260907-1130-managed-chat-turn1",
+        "status": "running",
+        "conversationId": "62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+        "turnId": "aefecb97-37d5-499b-a50e-832e35ab56dd",
+        "sessionId": "sess_f54ce2549e38",
+        "input": {
+          "message": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。"
+        },
+        "correlationId": "579e5ab0-b757-4ca9-8066-15aa26972941",
+        "createdAt": "2026-09-07T11:30:38.041437+08:00",
+        "startedAt": "2026-09-07T11:30:38.081726+08:00",
+        "updatedAt": "2026-09-07T11:30:38.08114+08:00"
+      }
+    ]
+  }
+}

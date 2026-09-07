@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T00:14:12.277806+00:00",
+  "method": "GET",
+  "path": "/api/v1/agents?tenant=default&namespace=default",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "412b8523-59e4-4b32-8a39-2d343c435132",
+        "tenant": "default",
+        "namespace": "default",
+        "agentKey": "ma1",
+        "displayName": "MA1",
+        "ownerType": "user",
+        "ownerRef": "admin",
+        "status": "active",
+        "version": 2,
+        "createdAt": "2026-09-06T23:40:27.574154+08:00",
+        "updatedAt": "2026-09-06T23:40:27.600417+08:00"
+      },
+      {
+        "id": "8f305bb1-5aba-4574-a8ca-6fcbf174f24c",
+        "tenant": "default",
+        "namespace": "default",
+        "agentKey": "ma2",
+        "displayName": "MA2",
+        "ownerType": "user",
+        "ownerRef": "admin",
+        "status": "active",
+        "version": 2,
+        "createdAt": "2026-09-06T23:40:36.69403+08:00",
+        "updatedAt": "2026-09-06T23:40:36.766211+08:00"
+      },
+      {
+        "id": "cede31bd-7922-4786-8526-78254b631bbe",
+        "tenant": "default",
+        "namespace": "default",
+        "agentKey": "qoder-demo",
+        "displayName": "qoder-demo",
+        "ownerType": "user",
+        "ownerRef": "admin",
+        "status": "active",
+        "version": 2,
+        "createdAt": "2026-09-06T23:40:45.845698+08:00",
+        "updatedAt": "2026-09-06T23:40:45.862161+08:00"
+      }
+    ]
+  }
+}

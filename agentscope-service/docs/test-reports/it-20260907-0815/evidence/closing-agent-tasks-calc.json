@@ -1,0 +1,456 @@
+{
+  "at": "2026-09-07T00:26:06.431549+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks?tenant=default&namespace=default&agentId=2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "orchestrationRunId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+        "runNodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+        "currentAttemptId": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_d98d9edbee99",
+          "resolvedAt": "2026-09-07T00:15:27.265637Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_d98d9edbee99",
+        "result": {
+          "CALC": 410
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T08:15:26.855547+08:00",
+        "dispatchedAt": "2026-09-07T08:15:27.265027+08:00",
+        "startedAt": "2026-09-07T08:15:27.370242+08:00",
+        "completedAt": "2026-09-07T08:15:35.674445+08:00"
+      },
+      {
+        "id": "bcc6c6a7-978b-44e8-8822-1cdd1c06cc1a",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "49b343d9-69ad-48c7-a088-43cdce3f5d6b",
+        "orchestrationRunId": "7e124d99-47db-41c8-8507-1400eb728a71",
+        "runNodeId": "446d5c28-fc6a-4fdf-a17a-e93e62266bfa",
+        "currentAttemptId": "3d148425-5fad-422e-ac75-94f84cd2d5b4",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "e711dab4-812f-44ba-9a7a-4474f0cd48b0",
+        "teamRole": "calculator",
+        "parentTaskId": "2b2a5ffd-ba9b-4067-acfe-c9cc3dd91fe7",
+        "delegatedFromTaskId": "2b2a5ffd-ba9b-4067-acfe-c9cc3dd91fe7",
+        "originator": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "2b2a5ffd-ba9b-4067-acfe-c9cc3dd91fe7",
+        "correlationId": "b7496c7b-646d-4e1c-b241-2d1845ca8225",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_6c12be09126c",
+          "resolvedAt": "2026-09-07T00:15:37.264085Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_6c12be09126c",
+        "result": "CALC=410",
+        "version": 4,
+        "createdAt": "2026-09-07T08:15:36.674892+08:00",
+        "dispatchedAt": "2026-09-07T08:15:37.263699+08:00",
+        "startedAt": "2026-09-07T08:15:37.339081+08:00",
+        "completedAt": "2026-09-07T08:15:45.434529+08:00"
+      },
+      {
+        "id": "ea854d62-1caf-4394-8b54-7d492af4d5ab",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "orchestrationRunId": "25c032fe-9dcb-4e9a-8331-a2c22b6a8d08",
+        "runNodeId": "373f448f-6ea4-4030-b6a8-fe02d28686b3",
+        "currentAttemptId": "59f40656-aaed-46c6-8460-e4721c9f4169",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "correlationId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_13ae4fc65e49",
+          "resolvedAt": "2026-09-07T00:16:33.333138Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_13ae4fc65e49",
+        "result": null,
+        "version": 4,
+        "createdAt": "2026-09-07T08:16:32.782791+08:00",
+        "dispatchedAt": "2026-09-07T08:16:33.332718+08:00",
+        "startedAt": "2026-09-07T08:16:33.375267+08:00",
+        "completedAt": "2026-09-07T08:16:43.152106+08:00"
+      },
+      {
+        "id": "c8e68950-38a9-4351-b8a5-e5b265642aee",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "738826d4-928b-401e-a36a-453daf0f6c7f",
+        "orchestrationRunId": "6c6253a0-92c4-44b1-a39c-ae4fb0321dfc",
+        "runNodeId": "a7a6d97a-020f-4d72-8b55-7a31f51f303f",
+        "currentAttemptId": "ceadc8b2-5d14-4154-a13a-9b868dbf9c5a",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "7089f084-903e-4bf2-b395-2f610e24e81a",
+        "teamRole": "calculator",
+        "parentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+        "delegatedFromTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+        "originator": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "afc00169-6b90-49ee-8240-b8c40353760e",
+        "correlationId": "b268c889-b18d-4da7-8ee2-b80f15794134",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_ba345f536bf7",
+          "resolvedAt": "2026-09-07T00:16:45.37079Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_ba345f536bf7",
+        "result": {
+          "SUM": 300
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T08:16:44.911483+08:00",
+        "dispatchedAt": "2026-09-07T08:16:45.370257+08:00",
+        "startedAt": "2026-09-07T08:16:45.402203+08:00",
+        "completedAt": "2026-09-07T08:17:03.06242+08:00"
+      },
+      {
+        "id": "72a2ca16-90d6-425c-87ca-4413337bd081",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "orchestrationRunId": "25c032fe-9dcb-4e9a-8331-a2c22b6a8d08",
+        "runNodeId": "bcaa0c59-bef6-48ae-8375-71f30430a75b",
+        "currentAttemptId": "51ef9611-c2d5-4d22-9b7e-86eddab6e1b2",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "843e42ea-1a49-4cff-826d-b8b549a81bfb",
+        "parentTaskId": "822c895f-8d91-40be-8c5c-161fc3efa60e",
+        "delegatedFromTaskId": "822c895f-8d91-40be-8c5c-161fc3efa60e",
+        "originator": {
+          "type": "agent",
+          "ref": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "843e42ea-1a49-4cff-826d-b8b549a81bfb",
+        "correlationId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "hopCount": 2,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_ed158b460958",
+          "resolvedAt": "2026-09-07T00:16:47.263528Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_ed158b460958",
+        "result": null,
+        "version": 4,
+        "createdAt": "2026-09-07T08:16:47.122782+08:00",
+        "dispatchedAt": "2026-09-07T08:16:47.263003+08:00",
+        "startedAt": "2026-09-07T08:16:47.314048+08:00",
+        "completedAt": "2026-09-07T08:16:53.876651+08:00",
+        "inputs": [
+          {
+            "id": "7324d4f4-44ed-453f-bcf8-c8ab94686b9a",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "72a2ca16-90d6-425c-87ca-4413337bd081",
+            "commentId": "843e42ea-1a49-4cff-826d-b8b549a81bfb",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T08:16:47.263003+08:00",
+            "processedAt": "2026-09-07T08:16:53.876651+08:00",
+            "responseCommentId": "ca9504ca-af9e-4998-a4b7-999f979526a9",
+            "attempts": 0,
+            "createdAt": "2026-09-07T08:16:47.122782+08:00"
+          },
+          {
+            "id": "c5470545-6935-4ca7-85a0-1fb0473f4c5a",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "72a2ca16-90d6-425c-87ca-4413337bd081",
+            "commentId": "0f26326c-2725-4649-b319-2adaca2b0977",
+            "commentVersion": 1,
+            "sequence": 2,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T08:16:47.263003+08:00",
+            "processedAt": "2026-09-07T08:16:53.876651+08:00",
+            "responseCommentId": "ca9504ca-af9e-4998-a4b7-999f979526a9",
+            "attempts": 0,
+            "createdAt": "2026-09-07T08:16:47.158374+08:00"
+          }
+        ]
+      },
+      {
+        "id": "0f44a96f-7913-479c-9412-e3ed01c99902",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "ab058c1e-7d54-4c57-91d4-1a0b44ec82bf",
+        "orchestrationRunId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "runNodeId": "c1ca5d53-77b4-4b96-8bda-d8b39bf4a0c6",
+        "currentAttemptId": "ac9c2be7-8991-4d4f-aa9b-a09236af587e",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "7089f084-903e-4bf2-b395-2f610e24e81a",
+        "teamRole": "calculator",
+        "parentTaskId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "delegatedFromTaskId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "originator": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_93a8367c3e4b",
+          "resolvedAt": "2026-09-07T00:16:55.274717Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_93a8367c3e4b",
+        "result": 5,
+        "version": 4,
+        "createdAt": "2026-09-07T08:16:54.572899+08:00",
+        "dispatchedAt": "2026-09-07T08:16:55.274153+08:00",
+        "startedAt": "2026-09-07T08:16:55.322348+08:00",
+        "completedAt": "2026-09-07T08:17:03.747833+08:00"
+      },
+      {
+        "id": "5ba344dc-0044-432f-8850-486329fe668d",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+        "orchestrationRunId": "1a41d083-e533-492d-998c-d9dad5667a9d",
+        "runNodeId": "3a6caa9c-a49f-4222-8a5e-19bdaa544443",
+        "currentAttemptId": "bb0c6f7d-5900-45d8-b963-7448bee1be2b",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "7b961c1e-96de-45a8-b724-e333265f9d34",
+        "parentTaskId": "f52a4f75-3555-47c4-a392-1e54f07bfac8",
+        "delegatedFromTaskId": "f52a4f75-3555-47c4-a392-1e54f07bfac8",
+        "originator": {
+          "type": "agent",
+          "ref": "679b7bf9-c9c1-4828-a129-4045be75090e"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "7b961c1e-96de-45a8-b724-e333265f9d34",
+        "correlationId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_04d5f1cf3cae",
+          "resolvedAt": "2026-09-07T00:19:36.264758Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_04d5f1cf3cae",
+        "result": {
+          "content": "CROSS_B=144",
+          "mentions": [
+            {
+              "ref": "679b7bf9-c9c1-4828-a129-4045be75090e",
+              "type": "agent"
+            }
+          ]
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T08:19:35.964089+08:00",
+        "dispatchedAt": "2026-09-07T08:19:36.264546+08:00",
+        "startedAt": "2026-09-07T08:19:36.339724+08:00",
+        "completedAt": "2026-09-07T08:19:43.833307+08:00",
+        "inputs": [
+          {
+            "id": "55facb11-e404-45a7-9d2b-013b31619c18",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "5ba344dc-0044-432f-8850-486329fe668d",
+            "commentId": "7b961c1e-96de-45a8-b724-e333265f9d34",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T08:19:36.264546+08:00",
+            "processedAt": "2026-09-07T08:19:43.833307+08:00",
+            "responseCommentId": "39bdaa2e-de03-4744-89b9-d387e93c9f4c",
+            "attempts": 0,
+            "createdAt": "2026-09-07T08:19:35.964089+08:00"
+          }
+        ]
+      },
+      {
+        "id": "fce8c898-0c50-420b-bb6c-e0b1120e67e3",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+        "orchestrationRunId": "1a41d083-e533-492d-998c-d9dad5667a9d",
+        "runNodeId": "3359b9ba-eb19-4995-9a0d-22731ad4653f",
+        "currentAttemptId": "8d471c78-0715-44f9-bcb2-47257fcb1dce",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "ee58fc8d-222a-4574-90cf-5620a6dea488",
+        "parentTaskId": "5ba344dc-0044-432f-8850-486329fe668d",
+        "delegatedFromTaskId": "5ba344dc-0044-432f-8850-486329fe668d",
+        "originator": {
+          "type": "agent",
+          "ref": "679b7bf9-c9c1-4828-a129-4045be75090e"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "ee58fc8d-222a-4574-90cf-5620a6dea488",
+        "correlationId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+        "hopCount": 2,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_c7799529a37c",
+          "resolvedAt": "2026-09-07T00:20:04.264499Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_c7799529a37c",
+        "result": {
+          "content": "CROSS_ACK confirmed. Task complete."
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T08:20:03.448218+08:00",
+        "dispatchedAt": "2026-09-07T08:20:04.264404+08:00",
+        "startedAt": "2026-09-07T08:20:04.333617+08:00",
+        "completedAt": "2026-09-07T08:20:16.422066+08:00",
+        "inputs": [
+          {
+            "id": "7b94b687-3948-42ad-a6fb-29370f6b4f5d",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "fce8c898-0c50-420b-bb6c-e0b1120e67e3",
+            "commentId": "ee58fc8d-222a-4574-90cf-5620a6dea488",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T08:20:04.264404+08:00",
+            "processedAt": "2026-09-07T08:20:16.422066+08:00",
+            "responseCommentId": "5ad104f2-16a0-4616-ab01-b06547547f55",
+            "attempts": 0,
+            "createdAt": "2026-09-07T08:20:03.448218+08:00"
+          }
+        ]
+      }
+    ]
+  }
+}

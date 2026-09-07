@@ -1,0 +1,101 @@
+{
+  "at": "2026-09-07T03:28:51.832304+00:00",
+  "method": "POST",
+  "path": "/api/v1/agents",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "agentKey": "it-20260907-1130-analyst",
+    "displayName": "it-20260907-1130-analyst",
+    "ownerType": "user",
+    "description": "真实集成测试保留资源",
+    "binding": {
+      "kind": "managed",
+      "priority": 100
+    },
+    "definition": {
+      "name": "it-20260907-1130-analyst",
+      "system": "你是集成测试助手。只在当前测试 Issue/工作区工作，不操作其他资源，不修改实现或权限。无工具的算术和文本题直接作答；需要实时资料时实际使用可用工具，工具不可用须明确说明，禁止编造来源。遵守运行时协作协议，真实协作必须调用工具，不能只声称已委派或在正文写@。你是文本分析员，擅长排序和从给定材料提取事实。",
+      "maxIters": 20
+    }
+  },
+  "status": 201,
+  "response": {
+    "agent": {
+      "id": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+      "tenant": "default",
+      "namespace": "default",
+      "agentKey": "it-20260907-1130-analyst",
+      "displayName": "it-20260907-1130-analyst",
+      "description": "真实集成测试保留资源",
+      "ownerType": "user",
+      "ownerRef": "admin",
+      "status": "active",
+      "version": 2,
+      "createdAt": "2026-09-07T11:28:51.834781+08:00",
+      "updatedAt": "2026-09-07T11:28:51.841916+08:00"
+    },
+    "binding": {
+      "id": "2a9986b7-3634-5c06-9482-91fda5832fb9",
+      "agentId": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+      "tenant": "default",
+      "namespace": "default",
+      "kind": "managed",
+      "configuration": {
+        "ownerRef": "admin",
+        "managedDefinitionRef": "c1240863-14ae-4e43-a4dc-56d29b3b685e"
+      },
+      "priority": 100,
+      "enabled": true,
+      "version": 1,
+      "createdAt": "2026-09-07T11:28:51.840014+08:00",
+      "updatedAt": "2026-09-07T11:28:51.840014+08:00"
+    },
+    "definition": {
+      "archivedAt": null,
+      "createdAt": 1788751731838,
+      "defaultEnvironmentId": "env_8b24b38ac1f9",
+      "defaultMemoryStoreIds": [],
+      "defaultVaultIds": [],
+      "description": "",
+      "id": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+      "maxIters": 20,
+      "mcpServers": null,
+      "model": "",
+      "name": "it-20260907-1130-analyst",
+      "ownerId": "admin",
+      "scope": "user",
+      "skills": null,
+      "system": "你是集成测试助手。只在当前测试 Issue/工作区工作，不操作其他资源，不修改实现或权限。无工具的算术和文本题直接作答；需要实时资料时实际使用可用工具，工具不可用须明确说明，禁止编造来源。遵守运行时协作协议，真实协作必须调用工具，不能只声称已委派或在正文写@。你是文本分析员，擅长排序和从给定材料提取事实。",
+      "tools": null,
+      "updatedAt": 1788751731838,
+      "version": 1,
+      "workspaceId": null,
+      "workspacePath": "/Users/ken/agentscope-2/agentscope-java/agentscope-service/.dev-stack/workspaces/admin/c1240863-14ae-4e43-a4dc-56d29b3b685e"
+    },
+    "policy": {
+      "id": "919383ad-044b-4d0a-a91e-93f6d4c44b46",
+      "tenant": "default",
+      "namespace": "default",
+      "agentId": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+      "candidates": [
+        {
+          "binding": {
+            "agentId": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+            "bindingId": "2a9986b7-3634-5c06-9482-91fda5832fb9",
+            "kind": "managed",
+            "managedOwnerRef": "admin",
+            "managedDefinitionRef": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000"
+          }
+        }
+      ],
+      "selectionMode": "ordered",
+      "fallbackMode": "disabled",
+      "version": 1,
+      "createdAt": "2026-09-07T11:28:51.840839+08:00",
+      "updatedAt": "2026-09-07T11:28:51.840839+08:00"
+    }
+  }
+}

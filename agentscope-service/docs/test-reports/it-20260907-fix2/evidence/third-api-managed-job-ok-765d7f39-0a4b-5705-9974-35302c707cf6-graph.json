@@ -1,0 +1,141 @@
+{
+  "at": "2026-09-07T06:01:14.498912+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/765d7f39-0a4b-5705-9974-35302c707cf6/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "765d7f39-0a4b-5705-9974-35302c707cf6",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "ff8f4313-f8fa-57e8-ae5a-9d1be4b58222",
+      "mode": "direct",
+      "triggerType": "endpoint",
+      "triggerRef": "c473033c-6c9f-4f3e-97b7-095227a5ee1d",
+      "idempotencyKey": "c473033c-6c9f-4f3e-97b7-095227a5ee1d:it-20260907-fix2-managed-job-ok",
+      "input": {
+        "quantity": 12,
+        "unitPrice": 12
+      },
+      "output": "计算结果为 144。根据任务要求，输出 API_TOTAL=144。",
+      "state": "succeeded",
+      "version": 5,
+      "createdBy": {
+        "type": "system",
+        "ref": "endpoint:c473033c-6c9f-4f3e-97b7-095227a5ee1d"
+      },
+      "createdAt": "2026-09-07T13:57:51.853719+08:00",
+      "updatedAt": "2026-09-07T13:58:03.400722+08:00",
+      "startedAt": "2026-09-07T13:57:51.853719+08:00",
+      "completedAt": "2026-09-07T13:58:03.400722+08:00"
+    },
+    "nodes": [
+      {
+        "id": "62298898-0cc1-5857-8a0b-cf37b92d04a1",
+        "runId": "765d7f39-0a4b-5705-9974-35302c707cf6",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "target",
+        "type": "agent",
+        "issueId": "ff8f4313-f8fa-57e8-ae5a-9d1be4b58222",
+        "state": "succeeded",
+        "output": "计算结果为 144。根据任务要求，输出 API_TOTAL=144。",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T13:57:51.854763+08:00",
+        "updatedAt": "2026-09-07T13:58:03.400722+08:00",
+        "startedAt": "2026-09-07T13:57:51.86708+08:00",
+        "completedAt": "2026-09-07T13:58:03.400722+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "fbb9dd1d-28b9-48a8-aeb0-01fb6e4d07cd",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "ff8f4313-f8fa-57e8-ae5a-9d1be4b58222",
+        "orchestrationRunId": "765d7f39-0a4b-5705-9974-35302c707cf6",
+        "runNodeId": "62298898-0cc1-5857-8a0b-cf37b92d04a1",
+        "currentAttemptId": "b19fdfe1-47a8-4314-9f5d-ebc30e52be04",
+        "agentId": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "system",
+          "ref": "endpoint:c473033c-6c9f-4f3e-97b7-095227a5ee1d"
+        },
+        "causationId": "62298898-0cc1-5857-8a0b-cf37b92d04a1",
+        "correlationId": "765d7f39-0a4b-5705-9974-35302c707cf6",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7",
+            "bindingId": "a6163783-bfa5-5026-8447-fc85d01117b9",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7"
+          },
+          "sessionId": "sess_1742f65b483c",
+          "resolvedAt": "2026-09-07T05:57:51.887594Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_1742f65b483c",
+        "result": "计算结果为 144。根据任务要求，输出 API_TOTAL=144。",
+        "version": 4,
+        "createdAt": "2026-09-07T13:57:51.855779+08:00",
+        "dispatchedAt": "2026-09-07T13:57:51.886954+08:00",
+        "startedAt": "2026-09-07T13:57:52.368939+08:00",
+        "completedAt": "2026-09-07T13:58:03.400722+08:00"
+      }
+    ],
+    "attempts": [
+      {
+        "id": "b19fdfe1-47a8-4314-9f5d-ebc30e52be04",
+        "agentTaskId": "fbb9dd1d-28b9-48a8-aeb0-01fb6e4d07cd",
+        "agentId": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7",
+        "bindingId": "a6163783-bfa5-5026-8447-fc85d01117b9",
+        "runId": "765d7f39-0a4b-5705-9974-35302c707cf6",
+        "nodeId": "62298898-0cc1-5857-8a0b-cf37b92d04a1",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7",
+            "bindingId": "a6163783-bfa5-5026-8447-fc85d01117b9",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7"
+          },
+          "sessionId": "sess_1742f65b483c",
+          "resolvedAt": "2026-09-07T05:57:51.887594Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7",
+        "sessionId": "sess_1742f65b483c",
+        "sessionRef": "45a6aa79-bbed-4ff8-9731-3fc1094dcba4",
+        "turnId": "9114be6f-15c8-4b0c-b670-6d428f3eb2b5",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T13:58:03.382889+08:00",
+        "result": "计算结果为 144。根据任务要求，输出 API_TOTAL=144。",
+        "version": 18,
+        "createdAt": "2026-09-07T13:57:51.886954+08:00",
+        "updatedAt": "2026-09-07T13:58:03.400722+08:00",
+        "startedAt": "2026-09-07T13:57:52.368939+08:00",
+        "completedAt": "2026-09-07T13:58:03.400722+08:00"
+      }
+    ]
+  }
+}

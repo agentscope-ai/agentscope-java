@@ -1,0 +1,46 @@
+?   	github.com/spring-ai-alibaba/aistio/api/v1alpha1	[no test files]
+ok  	github.com/spring-ai-alibaba/aistio/cmd/aistio-runtime-host	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/cmd/aistioctl	(cached)
+?   	github.com/spring-ai-alibaba/aistio/cmd/aistiod	[no test files]
+ok  	github.com/spring-ai-alibaba/aistio/connector	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/adapter	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/artifact	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/asdp	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/automation	1.103s
+ok  	github.com/spring-ai-alibaba/aistio/internal/collaboration	0.558s
+ok  	github.com/spring-ai-alibaba/aistio/internal/controller	1.791s
+ok  	github.com/spring-ai-alibaba/aistio/internal/controlplane/model	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/dataplane	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/discovery	(cached)
+?   	github.com/spring-ai-alibaba/aistio/internal/endpoints	[no test files]
+?   	github.com/spring-ai-alibaba/aistio/internal/features	[no test files]
+ok  	github.com/spring-ai-alibaba/aistio/internal/httpapi	1.612s
+ok  	github.com/spring-ai-alibaba/aistio/internal/mcp	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/metrics	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/orchestration	1.931s
+ok  	github.com/spring-ai-alibaba/aistio/internal/prober	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/product	(cached)
+?   	github.com/spring-ai-alibaba/aistio/internal/realtime	[no test files]
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimeauth	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimebinding	2.984s
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimehost	5.482s
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider	4.317s
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider/anthropiccli	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider/codex	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider/openclaw	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider/qoder	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider/qwenpaw	(cached)
+?   	github.com/spring-ai-alibaba/aistio/internal/sandbox	[no test files]
+ok  	github.com/spring-ai-alibaba/aistio/internal/scheduler	3.526s
+ok  	github.com/spring-ai-alibaba/aistio/internal/secretcrypto	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/sessionops	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/store	3.911s
+ok  	github.com/spring-ai-alibaba/aistio/internal/store/memory	4.708s
+ok  	github.com/spring-ai-alibaba/aistio/internal/store/postgres	5.124s
+?   	github.com/spring-ai-alibaba/aistio/internal/store/storetest	[no test files]
+ok  	github.com/spring-ai-alibaba/aistio/internal/taskauth	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/internal/taskplane	5.648s
+?   	github.com/spring-ai-alibaba/aistio/internal/tracing	[no test files]
+?   	github.com/spring-ai-alibaba/aistio/internal/version	[no test files]
+ok  	github.com/spring-ai-alibaba/aistio/internal/worksource	(cached)
+ok  	github.com/spring-ai-alibaba/aistio/test/mock	(cached)

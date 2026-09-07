@@ -120,7 +120,7 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 			}
 		case target.TargetType == controlmodel.AssigneeHuman:
 			route.Outcome = controlmodel.RouteQueued
-			itemType, title := "result", issue.Title
+			itemType, title := store.CommentInboxType(target.RouteType, true), issue.Title
 			if target.RouteType == controlmodel.RouteReviewRequest {
 				itemType, title = "review_request", "Review requested: "+issue.Title
 			}
@@ -132,7 +132,7 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 				uuid.New(), issue.Tenant, issue.Namespace, controlmodel.AssigneeHuman,
 				target.TargetRef, itemType, issue.ID, created.ID, created.Author.Type,
 				nullStr(created.Author.Ref), title, created.Content,
-				itemType+":"+created.ID.String()+":"+target.TargetRef); err != nil {
+				"comment:"+created.ID.String()+":"+target.TargetRef); err != nil {
 				return nil, nil, err
 			}
 		case target.AgentRef == task.AgentRef:
@@ -352,6 +352,9 @@ func requestIssueReviewForCompletedRunTx(ctx context.Context, tx pgx.Tx, task *c
 		Namespace: issue.Namespace, IssueID: &issue.ID, Actor: actor,
 		Action: "issue.status_changed", ObjectType: "issue", ObjectRef: issue.ID.String(),
 		Details: details}); err != nil {
+		return err
+	}
+	if err := notifyIssueInboxTx(ctx, tx, issue, controlmodel.IssueInProgress, actor, reason, task); err != nil {
 		return err
 	}
 	return enqueueCollaborationEventTx(ctx, tx, issue.Tenant, "issue", issue.ID,

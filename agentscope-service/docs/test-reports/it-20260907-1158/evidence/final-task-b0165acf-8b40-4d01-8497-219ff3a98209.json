@@ -1,0 +1,56 @@
+{
+  "at": "2026-09-07T04:06:49.822560+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/b0165acf-8b40-4d01-8497-219ff3a98209",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "b0165acf-8b40-4d01-8497-219ff3a98209",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "5cfa2cb3-4c56-4a69-b271-5a00b2002ba9",
+      "orchestrationRunId": "6c3072b6-50b2-5e73-82ae-08ab9261d0c7",
+      "runNodeId": "23f01cca-f86e-46e0-817b-7558f24dff07",
+      "currentAttemptId": "57971974-88a9-47b5-bcd6-9b79512b200d",
+      "agentId": "0535720b-d0aa-4170-b0dc-eed4294f59ec",
+      "status": "failed",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "d49533f7-16a4-489a-9698-769b31c4cda6",
+      "teamRole": "analyst",
+      "parentTaskId": "7b14cd2e-245d-4644-ae86-1d69a2d9683c",
+      "delegatedFromTaskId": "7b14cd2e-245d-4644-ae86-1d69a2d9683c",
+      "originator": {
+        "type": "agent",
+        "ref": "2e663462-f57e-4a08-9d14-8f672defab41"
+      },
+      "causationId": "7b14cd2e-245d-4644-ae86-1d69a2d9683c",
+      "correlationId": "6c3072b6-50b2-5e73-82ae-08ab9261d0c7",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "0535720b-d0aa-4170-b0dc-eed4294f59ec",
+          "bindingId": "d6d96063-0470-5ebf-a9f1-27096aadc4c2",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "0535720b-d0aa-4170-b0dc-eed4294f59ec"
+        },
+        "sessionId": "sess_8fab0682bf46",
+        "resolvedAt": "2026-09-07T04:00:25.214877Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_8fab0682bf46",
+      "errorCode": "MISSING_CREDENTIALS",
+      "errorMessage": "缺少必要的TAVILY_API_KEY来执行web搜索。请配置相应的凭证以启用web_search功能。",
+      "version": 4,
+      "createdAt": "2026-09-07T12:00:24.713212+08:00",
+      "dispatchedAt": "2026-09-07T12:00:25.214422+08:00",
+      "startedAt": "2026-09-07T12:00:25.265382+08:00",
+      "completedAt": "2026-09-07T12:00:33.217507+08:00"
+    }
+  }
+}

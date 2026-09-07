@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "issueId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+  "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+  "rootState": "in_review",
+  "childState": "done",
+  "runState": "succeeded",
+  "tasks": 5,
+  "attempts": 5,
+  "nodes": 3,
+  "waitingEvents": 2,
+  "failedOrCancelledEvents": 0,
+  "allInputsProcessed": true,
+  "rootSummary": true
+}

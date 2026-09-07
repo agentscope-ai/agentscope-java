@@ -1,0 +1,40 @@
+{
+  "at": "2026-09-07T06:01:14.297319+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/64e2977c-d5b6-4e80-96c7-9ba55d748bd1/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_03fad2a740dd",
+    "offset": 0,
+    "limit": 100,
+    "total": 4,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。",
+        "occurredAt": "2026-09-07T05:57:52.972Z"
+      },
+      {
+        "seq": 5,
+        "role": "assistant",
+        "content": "- 记住了标记 `API_MEMORY_1130`。\n- 计算 20 + 22 的结果是 42。\n\n您提到的“回答标记与42”已经完成。如果这是指将标记 `API_MEMORY_1130` 与数字 42 关联起来，那么我已经记住了这一点。如果您有其他意思或需要进一步的操作，请告诉我。\n\n接下来，请随时在同一会话中继续提问。",
+        "occurredAt": "2026-09-07T05:57:58.48Z"
+      },
+      {
+        "seq": 7,
+        "role": "user",
+        "content": "上一轮要求记住的标记是什么？计算6×7。只回答之前的标记和数字，不使用联网工具。",
+        "occurredAt": "2026-09-07T05:58:35.004Z"
+      },
+      {
+        "seq": 11,
+        "role": "assistant",
+        "content": "上一轮要求记住的标记是 `API_MEMORY_1130`，计算 6×7 的结果是 42。",
+        "occurredAt": "2026-09-07T05:58:38.084Z"
+      }
+    ],
+    "source": "events"
+  }
+}

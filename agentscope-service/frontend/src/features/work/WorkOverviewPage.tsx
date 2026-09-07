@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { listInbox, listIssues, listTeams } from "@/api/collaboration";
+import { getInboxSummary, listInbox, listIssues, listTeams } from "@/api/collaboration";
 import { getRoles } from "@/api/auth";
 import { useControlPlaneScope } from "@/app/ScopeContext";
 import { Button } from "@/components/ui/button";
@@ -57,11 +57,13 @@ export default function WorkOverviewPage() {
   });
   const inbox = useQuery({
     queryKey: ["inbox", scope.tenant, scope.namespace, "work-overview"],
-    queryFn: () => listInbox(scope.tenant, scope.namespace),
+    queryFn: () => listInbox(scope.tenant, scope.namespace, { view: "attention", limit: 6 }),
     refetchInterval: 7500,
   });
+  const inboxSummary = useQuery({ queryKey: ["inbox-summary", scope.tenant, scope.namespace], queryFn: () => getInboxSummary(scope.tenant, scope.namespace), refetchInterval: 7500 });
+  const attentionCount = inboxSummary.data?.summary.attentionTotal ?? 0;
   const issueItems = issues.data?.items || [];
-  const unreadItems = (inbox.data?.items || []).filter((item) => !item.read);
+  const unreadItems = (inbox.data?.items || []).filter((item) => !item.read || item.needsAction);
   const identities = useEntityIdentities([
     ...issueItems.map((issue) => ({ type: issue.assigneeType, ref: issue.assigneeRef })),
     ...unreadItems.map((item) => ({ type: item.actor.type, ref: item.actor.ref })),
@@ -83,9 +85,9 @@ export default function WorkOverviewPage() {
     }] : []),
     {
       label: "Needs attention",
-      value: unreadItems.length,
+      value: attentionCount,
       loading: inbox.isLoading,
-      to: "/work/approvals",
+      to: "/work/inbox",
       icon: Inbox,
     },
   ];
@@ -184,10 +186,10 @@ export default function WorkOverviewPage() {
         <WorkPanel>
           <WorkPanelHeader
             title="Needs attention"
-            description={unreadItems.length ? `${unreadItems.length} unread notifications` : "You are all caught up"}
+            description={attentionCount ? `${attentionCount} messages need attention` : "You are all caught up"}
             action={
               <Button variant="ghost" size="sm" asChild>
-                <Link to={scope.scopedPath("/work/approvals")}>Open inbox</Link>
+                <Link to={scope.scopedPath("/work/inbox")}>Open inbox</Link>
               </Button>
             }
           />
@@ -198,7 +200,7 @@ export default function WorkOverviewPage() {
               {unreadItems.slice(0, 6).map((item) => (
                 <Link
                   key={item.id}
-                  to={scope.scopedPath(item.issueId ? `/work/issues/${item.issueId}` : "/work/approvals")}
+                  to={scope.scopedPath(`/work/inbox?item=${encodeURIComponent(item.id)}`)}
                   className="flex gap-3 px-5 py-4 transition hover:bg-slate-50/80"
                 >
                   <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-indigo-500" />

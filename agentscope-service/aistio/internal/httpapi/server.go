@@ -674,6 +674,8 @@ func (s *Server) registerRoutes() {
 
 			inbox := collab.Group("/inbox")
 			inbox.GET("", s.listInbox)
+			inbox.GET("/summary", s.inboxSummary)
+			inbox.GET("/:inboxId", s.getInbox)
 			inbox.POST("/:inboxId/read", s.readInbox)
 			inbox.POST("/:inboxId/archive", s.archiveInbox)
 

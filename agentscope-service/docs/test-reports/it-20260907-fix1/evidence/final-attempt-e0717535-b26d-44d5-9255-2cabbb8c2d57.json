@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-07T05:51:08.767466+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/e0717535-b26d-44d5-9255-2cabbb8c2d57",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "e0717535-b26d-44d5-9255-2cabbb8c2d57",
+      "agentTaskId": "c06535e5-ce29-4257-abc6-0c53d40197f2",
+      "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+      "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+      "runId": "065ad222-669b-4601-8a88-de8904587828",
+      "nodeId": "92c7afe8-de89-447f-9cd8-ff4a0d2505ab",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+          "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+        },
+        "sessionId": "sess_a4ba81703589",
+        "resolvedAt": "2026-09-07T04:47:50.42357Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+      "sessionId": "sess_a4ba81703589",
+      "sessionRef": "5387d8da-9d52-4c14-9981-3057de35f977",
+      "turnId": "3ae5b68e-148d-4014-9171-bbd239270dbf",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T12:48:07.721491+08:00",
+      "failureCode": "MISSING_CREDENTIAL",
+      "failureMessage": "缺少必要的TAVILY_API_KEY凭证来执行web搜索以找到手机行业的官方来源URL和近期事实。",
+      "version": 18,
+      "createdAt": "2026-09-07T12:47:50.422793+08:00",
+      "updatedAt": "2026-09-07T12:48:07.740899+08:00",
+      "startedAt": "2026-09-07T12:47:50.487448+08:00",
+      "completedAt": "2026-09-07T12:48:07.740899+08:00"
+    }
+  }
+}

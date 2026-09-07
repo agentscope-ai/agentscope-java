@@ -1,0 +1,611 @@
+{
+  "at": "2026-09-07T14:09:21.799680+08:00",
+  "counts": {
+    "PASS": 35
+  },
+  "checks": [
+    {
+      "name": "运行产物包含已合入修复",
+      "status": "PASS",
+      "observed": {
+        "control_delegation_reply": true,
+        "host_delegation_reply": true,
+        "control_current_request": true,
+        "control_endpoint_correlation": true,
+        "control_exact_math": true,
+        "host_current_request": true,
+        "managed_current_request": true,
+        "managed_math_verification": true,
+        "web_structured_failure": true
+      },
+      "refs": [
+        "evidence/baseline-build.json"
+      ]
+    },
+    {
+      "name": "single-managed 基础业务结果",
+      "status": "PASS",
+      "observed": {
+        "runId": "c8d235af-9f76-4aa3-b045-a8f149a8db7d",
+        "state": "succeeded",
+        "expected": "MANAGED=400",
+        "delivery": "[{\"MANAGED\": 400}, \"计算结果为 400。\\n\\n{\\\"MANAGED\\\":400}\"]"
+      },
+      "refs": []
+    },
+    {
+      "name": "single-qoder 基础业务结果",
+      "status": "PASS",
+      "observed": {
+        "runId": "e396de1b-4ffd-4320-b5df-e73b42123378",
+        "state": "succeeded",
+        "expected": "QODER=apple,pear,zebra",
+        "delivery": "[\"QODER=apple,pear,zebra\", \"QODER=apple,pear,zebra\"]"
+      },
+      "refs": []
+    },
+    {
+      "name": "single-codex 基础业务结果",
+      "status": "PASS",
+      "observed": {
+        "runId": "1af8671f-7b28-4ec6-bbb4-9e41ef4cb4b1",
+        "state": "succeeded",
+        "expected": "CODEX=prime",
+        "delivery": "[\"101 是质数。因为 10² < 101 < 11²，只需试除不超过 √101 的质数 2、3、5、7；余数分别为 1、2、1、3，均不能整除。因此 CODEX=prime。\", \"已独立核验 101 为质数，未联网、未委派。\\n\\n101 是质数。因为 10² < 101 < 11²，只需试除不超过 √101 的质数 2、3、5、7；余数分别为 1、2、1、3，均不能整除。因此 CODEX=prime。\"]"
+      },
+      "refs": []
+    },
+    {
+      "name": "人类管理员验收",
+      "status": "PASS",
+      "observed": {
+        "single-qoder": "done",
+        "single-codex": "done"
+      },
+      "refs": []
+    },
+    {
+      "name": "mention A→B→A 内容",
+      "status": "PASS",
+      "observed": {
+        "runId": "a03f662a-342c-428b-9d60-795d46f43649",
+        "state": "succeeded",
+        "expected": "CROSS_ACK=144",
+        "delivery": "[\"已将任务委托给B，并等待其回复CROSS_B=144。\", \"{\\\"CROSS_B\\\": 144}\", {\"message\": \"The calculation 12×12 has been verified and the result is 144.\", \"acknowledgedResult\": 144}, \"你是B，计算12×12并输出 CROSS_B=144，然后用issue.comment.add结构化mention A=1e76482f-0f2e-48b8-a752-aa64d0bfb1d7 回复结果一次，随后完成任务；不要重放A的发起指令。\", \"已将任务委托给B，并等待其回复CROSS_B=144。\", \"B已完成计算：12×12=144，结果为 CROSS_B=144。\", \"CROSS_B=144，已结构化mention回复A并完成任务。\\n\\n{\\\"CROSS_B\\\": 144}\", \"CROSS_ACK=144\\n\\n{\\\"acknowledgedResult\\\":144,\\\"message\\\":\\\"The calculation 12×12 has been verified and the result is 144.\\\"}\"]"
+      },
+      "refs": []
+    },
+    {
+      "name": "mention 回合数",
+      "status": "PASS",
+      "observed": {
+        "runId": "a03f662a-342c-428b-9d60-795d46f43649",
+        "expectedTasks": 3,
+        "actualTasks": 3,
+        "agents": [
+          "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7",
+          "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+          "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7"
+        ]
+      },
+      "refs": []
+    },
+    {
+      "name": "管理员更正需求 内容",
+      "status": "PASS",
+      "observed": {
+        "runId": "9c32a78a-f41c-46b3-933a-2a4bcb90774e",
+        "state": "succeeded",
+        "expected": "ADMIN_FINAL=156",
+        "delivery": "[\"{\\\"ADMIN_FINAL\\\": 156, \\\"expression\\\": \\\"12 * 13\\\"}\", \"12×13 = 156, delivered as ADMIN_FINAL=156\\n\\n{\\\"ADMIN_FINAL\\\": 156, \\\"expression\\\": \\\"12 * 13\\\"}\"]"
+      },
+      "refs": []
+    },
+    {
+      "name": "team-success 交付一致且正确",
+      "status": "PASS",
+      "observed": {
+        "issueId": "2e2036ab-7ba2-4bc9-8ef2-d8d68897dfa4",
+        "state": "done",
+        "runState": "succeeded",
+        "final": "TEAM_OK;CALC=400;SORT=apple,pear,zebra",
+        "calculatorResults": [
+          "CALC=400"
+        ],
+        "children": [
+          [
+            "ef69a30a-08f6-47b5-9a6b-2184f3bec549",
+            "done"
+          ],
+          [
+            "097a67d3-994d-46b2-b647-ec3452b7c367",
+            "done"
+          ]
+        ]
+      },
+      "refs": []
+    },
+    {
+      "name": "api-team-job-ok 交付一致且正确",
+      "status": "PASS",
+      "observed": {
+        "issueId": "627a694e-2b5b-5a60-b070-a663069eca07",
+        "state": "done",
+        "runState": "succeeded",
+        "final": "TEAM_OK;CALC=400;SORT=apple,pear,zebra",
+        "calculatorResults": [
+          400
+        ],
+        "children": [
+          [
+            "4bbefaa8-89aa-45cd-9fdc-48aa2a5c9b9c",
+            "done"
+          ],
+          [
+            "2024cd9d-a52f-40bd-9734-8d7d6385d46d",
+            "done"
+          ]
+        ]
+      },
+      "refs": []
+    },
+    {
+      "name": "team-web-research 失败收敛",
+      "status": "PASS",
+      "observed": {
+        "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "issueState": "blocked",
+        "runState": "failed",
+        "taskStates": {
+          "completed": 1,
+          "cancelled": 1,
+          "failed": 2
+        },
+        "failureMessage": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。"
+      },
+      "refs": []
+    },
+    {
+      "name": "api-team-job-research 失败收敛",
+      "status": "PASS",
+      "observed": {
+        "issueId": "f2798b5c-cc96-5e75-ab08-5710eee0d172",
+        "issueState": "cancelled",
+        "runState": "failed",
+        "taskStates": {
+          "completed": 1,
+          "cancelled": 1,
+          "failed": 2
+        },
+        "failureMessage": "由于缺少 `TAVILY_API_KEY` 凭证，手机行业调研子任务无法完成。已请求人类用户提供凭证或采取其他适当措施。"
+      },
+      "refs": []
+    },
+    {
+      "name": "managed-job-ok 内部业务",
+      "status": "PASS",
+      "observed": {
+        "runId": "765d7f39-0a4b-5705-9974-35302c707cf6",
+        "delivery": "[\"计算结果为 144。根据任务要求，输出 API_TOTAL=144。\", \"计算结果为 144。根据任务要求，输出 API_TOTAL=144。\"]"
+      },
+      "refs": []
+    },
+    {
+      "name": "managed-job-ok 公开 API 返回业务结果",
+      "status": "PASS",
+      "observed": {
+        "invocationId": "c74b9e55-ed8e-42ac-9c59-15ed306e7e5b",
+        "status": "completed",
+        "result": "计算结果为 144。根据任务要求，输出 API_TOTAL=144。"
+      },
+      "refs": []
+    },
+    {
+      "name": "qoder-job-ok 内部业务",
+      "status": "PASS",
+      "observed": {
+        "runId": "b634131f-9fcf-5c10-9c14-2c7084ad1bb3",
+        "delivery": "[{\"API_WORDS\": 4}, \"{\\\"API_WORDS\\\": 4}\"]"
+      },
+      "refs": []
+    },
+    {
+      "name": "qoder-job-ok 公开 API 返回业务结果",
+      "status": "PASS",
+      "observed": {
+        "invocationId": "2ba7aae8-53d4-4664-83d7-52c36eca4c5d",
+        "status": "completed",
+        "result": {
+          "API_WORDS": 4
+        }
+      },
+      "refs": []
+    },
+    {
+      "name": "team-job-ok 公开 API 返回业务结果",
+      "status": "PASS",
+      "observed": {
+        "invocationId": "aa99296d-5b44-4acf-ba0b-903de0025867",
+        "status": "completed",
+        "result": "TEAM_OK;CALC=400;SORT=apple,pear,zebra"
+      },
+      "refs": []
+    },
+    {
+      "name": "qoder-job-fail API 失败详情",
+      "status": "PASS",
+      "observed": {
+        "invocationId": "ef3b495e-c579-4854-8394-ca552501567a",
+        "status": "failed",
+        "errorCode": "hitl_approver_unavailable",
+        "errorMessage": "runtime tool confirmation has no accountable human"
+      },
+      "refs": []
+    },
+    {
+      "name": "team-job-research API 失败详情",
+      "status": "PASS",
+      "observed": {
+        "invocationId": "8cbd91f5-3cac-401f-91c4-24fb7045f4a4",
+        "status": "failed",
+        "errorCode": "MISSING_CREDENTIAL",
+        "errorMessage": "由于缺少 `TAVILY_API_KEY` 凭证，手机行业调研子任务无法完成。已请求人类用户提供凭证或采取其他适当措施。"
+      },
+      "refs": []
+    },
+    {
+      "name": "managed-chat 两轮内部会话",
+      "status": "PASS",
+      "observed": {
+        "sessionRef": "64e2977c-d5b6-4e80-96c7-9ba55d748bd1",
+        "turns": [
+          {
+            "id": "77218d37-b052-4cda-9b1f-9edaccd57971",
+            "sessionFk": "64e2977c-d5b6-4e80-96c7-9ba55d748bd1",
+            "turnIndex": 2,
+            "status": "completed",
+            "startedAt": "2026-09-07T13:58:35.01932+08:00",
+            "endedAt": "2026-09-07T13:58:39.206599+08:00",
+            "durationMs": 4187,
+            "createdAt": "2026-09-07T13:58:35.01932+08:00"
+          },
+          {
+            "id": "975666b4-e237-4307-a420-6a162741fc33",
+            "sessionFk": "64e2977c-d5b6-4e80-96c7-9ba55d748bd1",
+            "turnIndex": 1,
+            "status": "completed",
+            "startedAt": "2026-09-07T13:57:53.019656+08:00",
+            "endedAt": "2026-09-07T13:58:00.039443+08:00",
+            "durationMs": 7019,
+            "createdAt": "2026-09-07T13:57:53.019656+08:00"
+          }
+        ],
+        "answers": [
+          "- 记住了标记 `API_MEMORY_1130`。\n- 计算 20 + 22 的结果是 42。\n\n您提到的“回答标记与42”已经完成。如果这是指将标记 `API_MEMORY_1130` 与数字 42 关联起来，那么我已经记住了这一点。如果您有其他意思或需要进一步的操作，请告诉我。\n\n接下来，请随时在同一会话中继续提问。",
+          "上一轮要求记住的标记是 `API_MEMORY_1130`，计算 6×7 的结果是 42。"
+        ]
+      },
+      "refs": []
+    },
+    {
+      "name": "managed-chat 公开 Turn 状态",
+      "status": "PASS",
+      "observed": {
+        "conversationId": "23d3021e-8e07-4149-aaae-b7c659ce9d93",
+        "turns": [
+          {
+            "completedAt": "2026-09-07T13:58:39.197+08:00",
+            "conversationId": "23d3021e-8e07-4149-aaae-b7c659ce9d93",
+            "correlationId": "d7893f64-8ff4-4320-8a9c-8f5d218cd9fa",
+            "createdAt": "2026-09-07T13:58:34.985344+08:00",
+            "endpointId": "2e181fa3-8378-49c8-8c3d-dce71b622a1f",
+            "id": "c2ac0667-2489-44d2-8c11-2c9fb93aac5d",
+            "mode": "conversation",
+            "result": "上一轮要求记住的标记是 `API_MEMORY_1130`，计算 6×7 的结果是 42。",
+            "sessionId": "sess_03fad2a740dd",
+            "startedAt": "2026-09-07T13:58:34.98763+08:00",
+            "status": "completed",
+            "turnId": "b2ffb89e-f8dc-4941-8098-e8cb17ac1f1b",
+            "updatedAt": "2026-09-07T13:58:39.208257+08:00"
+          },
+          {
+            "completedAt": "2026-09-07T13:58:00.025+08:00",
+            "conversationId": "23d3021e-8e07-4149-aaae-b7c659ce9d93",
+            "correlationId": "c6256e6c-8f21-43fb-8028-dcb9e40775c7",
+            "createdAt": "2026-09-07T13:57:52.930224+08:00",
+            "endpointId": "2e181fa3-8378-49c8-8c3d-dce71b622a1f",
+            "id": "b61326d2-78bc-409b-96c5-3f9bc5b7a2ff",
+            "mode": "conversation",
+            "result": "- 记住了标记 `API_MEMORY_1130`。\n- 计算 20 + 22 的结果是 42。\n\n您提到的“回答标记与42”已经完成。如果这是指将标记 `API_MEMORY_1130` 与数字 42 关联起来，那么我已经记住了这一点。如果您有其他意思或需要进一步的操作，请告诉我。\n\n接下来，请随时在同一会话中继续提问。",
+            "sessionId": "sess_03fad2a740dd",
+            "startedAt": "2026-09-07T13:57:52.946358+08:00",
+            "status": "completed",
+            "turnId": "485fb31c-0fe4-4f2f-a831-56ade4bc9091",
+            "updatedAt": "2026-09-07T13:58:00.044472+08:00"
+          }
+        ]
+      },
+      "refs": []
+    },
+    {
+      "name": "qoder-chat 两轮内部会话",
+      "status": "PASS",
+      "observed": {
+        "sessionRef": "9cab4512-b389-4a9d-a8d0-b6945437d568",
+        "turns": [
+          {
+            "id": "104442ff-4dc1-438d-b0b0-c559f1cd7788",
+            "sessionFk": "9cab4512-b389-4a9d-a8d0-b6945437d568",
+            "turnIndex": 2,
+            "status": "completed",
+            "startedAt": "2026-09-07T13:59:41.402499+08:00",
+            "endedAt": "2026-09-07T14:01:26.747758+08:00",
+            "durationMs": 105345,
+            "createdAt": "2026-09-07T13:59:41.402499+08:00"
+          },
+          {
+            "id": "514b14dc-2f60-4ab1-9694-8b6c8de03534",
+            "sessionFk": "9cab4512-b389-4a9d-a8d0-b6945437d568",
+            "turnIndex": 1,
+            "status": "completed",
+            "startedAt": "2026-09-07T13:57:53.109041+08:00",
+            "endedAt": "2026-09-07T13:59:31.849195+08:00",
+            "durationMs": 98740,
+            "createdAt": "2026-09-07T13:57:53.109041+08:00"
+          }
+        ],
+        "answers": [
+          "{\"calculation\": \"20+22=42\", \"marker\": \"API_MEMORY_1130\"}",
+          "{\"calculation\": \"6x7=42\", \"marker\": \"API_MEMORY_1130\"}"
+        ]
+      },
+      "refs": []
+    },
+    {
+      "name": "qoder-chat 公开 Turn 状态",
+      "status": "PASS",
+      "observed": {
+        "conversationId": "ab947725-6164-432d-a4d0-38bfc8fdbab3",
+        "turns": [
+          {
+            "completedAt": "2026-09-07T14:01:26.750357+08:00",
+            "conversationId": "ab947725-6164-432d-a4d0-38bfc8fdbab3",
+            "correlationId": "fb726984-f808-46a2-8e79-623debc46b68",
+            "createdAt": "2026-09-07T13:59:41.373178+08:00",
+            "endpointId": "884198cc-0338-4532-893b-9c47248cee97",
+            "id": "e1011b30-11cd-4b9b-aca7-b9d8f43f4b5c",
+            "issueId": "a257dedb-7fbd-50b6-acde-313248968b6c",
+            "mode": "conversation",
+            "result": "{\"calculation\": \"6x7=42\", \"marker\": \"API_MEMORY_1130\"}",
+            "runId": "ba939ff9-0002-5ab9-9b7f-dbfe1c803ac9",
+            "sessionId": "5280d39e-e3c2-4b57-b160-9d278400db7f",
+            "startedAt": "2026-09-07T13:59:41.412434+08:00",
+            "status": "completed",
+            "turnId": "e44183c7-129b-482a-a0f1-0a3c4b77affa",
+            "updatedAt": "2026-09-07T14:01:26.750223+08:00"
+          },
+          {
+            "completedAt": "2026-09-07T13:59:31.851414+08:00",
+            "conversationId": "ab947725-6164-432d-a4d0-38bfc8fdbab3",
+            "correlationId": "0809e589-3c1b-4e12-bdce-07ce780c5447",
+            "createdAt": "2026-09-07T13:57:53.050372+08:00",
+            "endpointId": "884198cc-0338-4532-893b-9c47248cee97",
+            "id": "5280d39e-e3c2-4b57-b160-9d278400db7f",
+            "issueId": "0e36efa4-5221-5987-9bcc-d4b822ecd6ce",
+            "mode": "conversation",
+            "result": "{\"calculation\": \"20+22=42\", \"marker\": \"API_MEMORY_1130\"}",
+            "runId": "800037ad-a53b-52b2-b011-cd321c746e77",
+            "sessionId": "5280d39e-e3c2-4b57-b160-9d278400db7f",
+            "startedAt": "2026-09-07T13:57:53.130513+08:00",
+            "status": "completed",
+            "turnId": "b7255db6-1bc0-4e69-9587-e1b214a8bc25",
+            "updatedAt": "2026-09-07T13:59:31.849458+08:00"
+          }
+        ]
+      },
+      "refs": []
+    },
+    {
+      "name": "Hosted 历史 Attempt 保留 SessionRef",
+      "status": "PASS",
+      "observed": [
+        {
+          "id": "feee337f-d534-4ea8-a7f0-47021a762ac2",
+          "state": "succeeded",
+          "sessionRef": "9cab4512-b389-4a9d-a8d0-b6945437d568"
+        },
+        {
+          "id": "d1b4720c-40db-4643-82b9-dbe5eaba109c",
+          "state": "succeeded",
+          "sessionRef": "9cab4512-b389-4a9d-a8d0-b6945437d568"
+        }
+      ],
+      "refs": []
+    },
+    {
+      "name": "Endpoint 无 Key 鉴权",
+      "status": "PASS",
+      "observed": 401,
+      "refs": []
+    },
+    {
+      "name": "相同请求幂等重试",
+      "status": "PASS",
+      "observed": {
+        "first": {
+          "eventsUrl": "/invoke/v1/jobs/c74b9e55-ed8e-42ac-9c59-15ed306e7e5b/events",
+          "invocationId": "c74b9e55-ed8e-42ac-9c59-15ed306e7e5b",
+          "issueId": "ff8f4313-f8fa-57e8-ae5a-9d1be4b58222",
+          "runId": "765d7f39-0a4b-5705-9974-35302c707cf6",
+          "status": "running",
+          "statusUrl": "/invoke/v1/jobs/c74b9e55-ed8e-42ac-9c59-15ed306e7e5b"
+        },
+        "same": {
+          "eventsUrl": "/invoke/v1/jobs/c74b9e55-ed8e-42ac-9c59-15ed306e7e5b/events",
+          "invocationId": "c74b9e55-ed8e-42ac-9c59-15ed306e7e5b",
+          "issueId": "ff8f4313-f8fa-57e8-ae5a-9d1be4b58222",
+          "runId": "765d7f39-0a4b-5705-9974-35302c707cf6",
+          "status": "running",
+          "statusUrl": "/invoke/v1/jobs/c74b9e55-ed8e-42ac-9c59-15ed306e7e5b"
+        },
+        "sameStatus": 202,
+        "changed": {
+          "error": "Idempotency-Key was already used with different input"
+        },
+        "changedStatus": 409
+      },
+      "refs": []
+    },
+    {
+      "name": "完成后相同请求幂等重试",
+      "status": "PASS",
+      "observed": {
+        "status": 202,
+        "response": {
+          "eventsUrl": "/invoke/v1/jobs/c74b9e55-ed8e-42ac-9c59-15ed306e7e5b/events",
+          "invocationId": "c74b9e55-ed8e-42ac-9c59-15ed306e7e5b",
+          "issueId": "ff8f4313-f8fa-57e8-ae5a-9d1be4b58222",
+          "runId": "765d7f39-0a4b-5705-9974-35302c707cf6",
+          "status": "completed",
+          "statusUrl": "/invoke/v1/jobs/c74b9e55-ed8e-42ac-9c59-15ed306e7e5b"
+        }
+      },
+      "refs": []
+    },
+    {
+      "name": "幂等键冲突拒绝",
+      "status": "PASS",
+      "observed": 409,
+      "refs": []
+    },
+    {
+      "name": "Team conversation 能力边界",
+      "status": "PASS",
+      "observed": {
+        "status": 400,
+        "response": {
+          "error": "conversation endpoints require targetType=agent"
+        }
+      },
+      "refs": []
+    },
+    {
+      "name": "SSE 断点续读",
+      "status": "PASS",
+      "observed": {
+        "status": 200,
+        "ids": [
+          5,
+          6
+        ]
+      },
+      "refs": []
+    },
+    {
+      "name": "全部公开 SSE 顺序及终止",
+      "status": "PASS",
+      "observed": {
+        "stream-team-job-ok": {
+          "path": "/invoke/v1/jobs/aa99296d-5b44-4acf-ba0b-903de0025867/events",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 28,
+          "idsIncreasing": true
+        },
+        "stream-qoder-chat-turn2": {
+          "path": "/invoke/v1/conversations/ab947725-6164-432d-a4d0-38bfc8fdbab3/events?invocationId=e1011b30-11cd-4b9b-aca7-b9d8f43f4b5c",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 16,
+          "idsIncreasing": true
+        },
+        "stream-team-job-research": {
+          "path": "/invoke/v1/jobs/8cbd91f5-3cac-401f-91c4-24fb7045f4a4/events",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 19,
+          "idsIncreasing": true
+        },
+        "stream-managed-chat-turn2": {
+          "path": "/invoke/v1/conversations/23d3021e-8e07-4149-aaae-b7c659ce9d93/events?invocationId=c2ac0667-2489-44d2-8c11-2c9fb93aac5d",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 12,
+          "idsIncreasing": true
+        },
+        "stream-qoder-job-fail": {
+          "path": "/invoke/v1/jobs/ef3b495e-c579-4854-8394-ca552501567a/events",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 17,
+          "idsIncreasing": true
+        },
+        "stream-qoder-job-ok": {
+          "path": "/invoke/v1/jobs/2ba7aae8-53d4-4664-83d7-52c36eca4c5d/events",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 12,
+          "idsIncreasing": true
+        },
+        "stream-managed-job-ok": {
+          "path": "/invoke/v1/jobs/c74b9e55-ed8e-42ac-9c59-15ed306e7e5b/events",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 6,
+          "idsIncreasing": true
+        },
+        "stream-managed-chat-turn1": {
+          "path": "/invoke/v1/conversations/23d3021e-8e07-4149-aaae-b7c659ce9d93/events?invocationId=b61326d2-78bc-409b-96c5-3f9bc5b7a2ff",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 12,
+          "idsIncreasing": true
+        },
+        "stream-qoder-chat-turn1": {
+          "path": "/invoke/v1/conversations/ab947725-6164-432d-a4d0-38bfc8fdbab3/events?invocationId=5280d39e-e3c2-4b57-b160-9d278400db7f",
+          "httpStatus": 200,
+          "readEnd": "EOF",
+          "eventCount": 16,
+          "idsIncreasing": true
+        }
+      },
+      "refs": []
+    },
+    {
+      "name": "managed-job-ok SSE 返回业务结果",
+      "status": "PASS",
+      "observed": {
+        "expected": "API_TOTAL=144",
+        "events": 6
+      },
+      "refs": []
+    },
+    {
+      "name": "qoder-job-ok SSE 返回业务结果",
+      "status": "PASS",
+      "observed": {
+        "expected": "API_WORDS=4",
+        "events": 12
+      },
+      "refs": []
+    },
+    {
+      "name": "team-job-ok SSE 返回业务结果",
+      "status": "PASS",
+      "observed": {
+        "expected": "TEAM_OK;CALC=400;SORT=apple,pear,zebra",
+        "events": 28
+      },
+      "refs": []
+    },
+    {
+      "name": "MCP GET 协议",
+      "status": "PASS",
+      "observed": {
+        "status": 405,
+        "allow": "POST"
+      },
+      "refs": []
+    }
+  ]
+}

@@ -34,6 +34,9 @@ export function useCollaborationEvents(tenant: string, namespace: string) {
           void queryClient.invalidateQueries({ queryKey: ['issues'] });
           void queryClient.invalidateQueries({ queryKey: ['tasks'] });
           void queryClient.invalidateQueries({ queryKey: ['inbox'] });
+          void queryClient.invalidateQueries({ queryKey: ['inbox-item'] });
+          void queryClient.invalidateQueries({ queryKey: ['inbox-summary'] });
+          void queryClient.invalidateQueries({ queryKey: ['approval'] });
           void queryClient.invalidateQueries({ queryKey: ['approvals'] });
           void queryClient.invalidateQueries({ queryKey: ['teams'] });
           if (event.aggregateType === 'issue' && event.aggregateId) {

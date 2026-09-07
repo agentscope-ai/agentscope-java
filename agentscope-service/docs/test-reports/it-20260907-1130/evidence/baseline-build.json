@@ -1,0 +1,30 @@
+{
+  "at": "2026-09-07T11:28:29.564589+08:00",
+  "fixMarkers": {
+    "current delegated Issue": false,
+    "io.agentscope/toolCallId": false,
+    "coordinatorChildren.outcomes": false,
+    "Team is waiting on blocked or unreviewed delegated work": false,
+    "java_mcp_call_id": false
+  },
+  "artifacts": {
+    "/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/bin/aistiod": {
+      "sha256": "c8ef6702a76669444fe33f78d9c41fa0440d896257c412383bb6d144ea1e18b4",
+      "mtime": 1788751089.748267
+    },
+    "/Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/service-dataplane-2.0.3-SNAPSHOT.jar": {
+      "sha256": "cbb3177f3fa3fad8b49cb67b4c0747b0c0d6477ac73cbd4544af139057c163ca",
+      "mtime": 1788751026.395432
+    },
+    "/Users/ken/agentscope-2/agentscope-java/agentscope-service/service-gateway/target/service-gateway-2.0.3-SNAPSHOT.jar": {
+      "sha256": "90b856212e9c679eb72681bc8dea24997160093ff4dd9cb263f6b137bd51da21",
+      "mtime": 1788221116.1986995
+    },
+    "/Users/ken/agentscope-2/agentscope-java/agentscope-service/service-scheduler/target/service-scheduler-2.0.3-SNAPSHOT.jar": {
+      "sha256": "15e5b2e8cc360e3146540fa887b3da4ea9dd63a87d8fa58c68fe67379c5cb7f6",
+      "mtime": 1788678679.9371052
+    }
+  },
+  "processes": "  PID STARTED                      COMM\n62152 Mon Sep  7 11:18:11 2026     /Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/bin/aistiod\n62157 Mon Sep  7 11:18:11 2026     java\n62162 Mon Sep  7 11:18:11 2026     java\n62174 Mon Sep  7 11:18:11 2026     java\n",
+  "sourceHead": "9c01530abe49c0202ca9ac3dc187381322045f50"
+}

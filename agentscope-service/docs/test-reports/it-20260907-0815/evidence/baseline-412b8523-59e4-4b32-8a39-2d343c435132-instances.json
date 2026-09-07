@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-07T00:14:12.305419+00:00",
+  "method": "GET",
+  "path": "/api/v1/agents/412b8523-59e4-4b32-8a39-2d343c435132/instances",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": []
+  }
+}

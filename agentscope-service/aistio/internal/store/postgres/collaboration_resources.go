@@ -571,6 +571,9 @@ func (r *collaborationRepo) CreateApproval(ctx context.Context, approval *contro
 		nullStr(created.RequestedBy.Ref), nullStr(created.Reason), "approval:"+created.ID.String()); err != nil {
 		return nil, err
 	}
+	if _, err := tx.Exec(ctx, `UPDATE inbox_items SET needs_action=true WHERE approval_id=$1`, created.ID); err != nil {
+		return nil, err
+	}
 	if err := enqueueCollaborationEventTx(ctx, tx, created.Tenant, "approval", created.ID,
 		"approval.requested.v1", created, "approval-requested:"+created.ID.String()); err != nil {
 		return nil, err
@@ -683,6 +686,9 @@ func (r *collaborationRepo) CreateManagedToolApproval(ctx context.Context, req s
 		AgentTaskID: &task.ID, AttemptID: &attempt.ID, Type: "attempt.waiting_for_approval",
 		Actor: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}, Payload: payload,
 		IdempotencyKey: "attempt-waiting-approval:" + created.ID.String()}); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE inbox_items SET needs_action=true WHERE approval_id=$1`, created.ID); err != nil {
 		return nil, nil, nil, err
 	}
 	if err = enqueueCollaborationEventTx(ctx, tx, created.Tenant, "approval", created.ID,
@@ -815,7 +821,7 @@ func (r *collaborationRepo) DecideApproval(ctx context.Context, id uuid.UUID, ex
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE inbox_items SET read=true,archived=true WHERE approval_id=$1`, id); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE inbox_items SET archived=true,needs_action=false,resolved_at=now() WHERE approval_id=$1`, id); err != nil {
 		return nil, err
 	}
 	if err := enqueueCollaborationEventTx(ctx, tx, updated.Tenant, "approval", updated.ID,
@@ -826,37 +832,6 @@ func (r *collaborationRepo) DecideApproval(ctx context.Context, id uuid.UUID, ex
 		return nil, err
 	}
 	return updated, nil
-}
-
-func (r *collaborationRepo) ListInbox(ctx context.Context, filter store.InboxFilter) ([]*controlmodel.InboxItem, error) {
-	limit := filter.Limit
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
-	rows, err := r.pool.Query(ctx, `SELECT `+inboxColumns+` FROM inbox_items
-		WHERE ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND recipient_ref=$3
-		AND archived=$4 ORDER BY created_at DESC,id LIMIT $5 OFFSET $6`, filter.Tenant,
-		filter.Namespace, filter.RecipientRef, filter.Archived, limit, maxInt(filter.Offset, 0))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]*controlmodel.InboxItem, 0)
-	for rows.Next() {
-		item, err := scanInbox(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	return out, rows.Err()
-}
-
-func (r *collaborationRepo) UpdateInbox(ctx context.Context, id uuid.UUID, recipientRef string, read, archived *bool) (*controlmodel.InboxItem, error) {
-	return scanInbox(r.pool.QueryRow(ctx, `UPDATE inbox_items SET
-		read=COALESCE($3,read),archived=COALESCE($4,archived)
-		WHERE id=$1 AND recipient_ref=$2 RETURNING `+inboxColumns,
-		id, recipientRef, read, archived))
 }
 
 func (r *collaborationRepo) ListActivities(ctx context.Context, issueID uuid.UUID, limit, offset int) ([]*controlmodel.Activity, error) {

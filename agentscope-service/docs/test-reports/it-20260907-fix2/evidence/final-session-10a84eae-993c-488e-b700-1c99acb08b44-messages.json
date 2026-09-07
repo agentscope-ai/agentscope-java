@@ -1,0 +1,77 @@
+{
+  "at": "2026-09-07T06:09:22.971186+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/10a84eae-993c-488e-b700-1c99acb08b44/messages?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_472292f9c786",
+    "offset": 0,
+    "limit": 500,
+    "total": 7,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. Read task.get currentRequest first. For comment-triggered work, the routed comments are the CURRENT assignment and override older Issue requirements. Use requestContext only to interpret the reply and its original hand-off; do not execute that history again. When replyToOwnDelegation is true, evaluate the returned result according to initiatingRequest and complete the current task. Do not mention the responding Agent just to acknowledge their answer; that creates another task. An explicit mention is only for new actionable work required by the current requester. Use math.evaluate to verify arithmetic before submitting or accepting numeric results. Verify other objective claims as well; a worker success flag alone is not acceptance evidence. You are a Team worker. Complete only the assigned child work and call task.complete with outcome=succeeded and the result only when the assigned objective is achieved. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "occurredAt": "2026-09-07T05:58:11.021Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "math.evaluate",
+        "toolCallId": "call_3841992cab4443d98c55fe",
+        "toolInput": {
+          "expression": "19 * 21 + 1"
+        },
+        "occurredAt": "2026-09-07T05:58:15.567Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "{\"exact\": true, \"expression\": \"19 * 21 + 1\", \"result\": \"400\"}",
+        "toolName": "math.evaluate",
+        "toolCallId": "call_3841992cab4443d98c55fe",
+        "toolOutput": "{\"exact\": true, \"expression\": \"19 * 21 + 1\", \"result\": \"400\"}",
+        "occurredAt": "2026-09-07T05:58:15.607Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.complete",
+        "toolCallId": "call_6b69137d5465451b95db84",
+        "toolInput": {
+          "result": "CALC=400",
+          "outcome": "succeeded",
+          "summary": "计算19×21+1的结果并以CALC=答案的形式返回。",
+          "processedInputIds": []
+        },
+        "occurredAt": "2026-09-07T05:58:23.203Z"
+      },
+      {
+        "seq": 10,
+        "role": "assistant",
+        "content": "计算19×21+1的结果并以CALC=答案的形式返回。\n\nCALC=400",
+        "occurredAt": "2026-09-07T05:58:23.243737Z"
+      },
+      {
+        "seq": 12,
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"3edb4cc8-556f-4372-bb71-cf9eb34eff13\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"ef69a30a-08f6-47b5-9a6b-2184f3bec549\", \"threadRootId\": \"3edb4cc8-556f-4372-bb71-cf9eb34eff13\", \"author\": {\"type\": \"agent\", \"ref\": \"1e76482f-0f2e-48b8-a752-aa64d0bfb1d7\"}, \"content\": \"计算19×21+1的结果并以CALC=答案的形式返回。\\n\\nCALC=400\", \"type\": \"result\", \"sourceTaskId\": \"9f21b156-6381-47c1-997e-fb63079bfe8b\", \"sourceAttemptId\": \"85bd5baf-767d-42ab-94f1-621befe93762\", \"version\": 1, \"createdAt\": \"2026-09-07T13:58:23.229938+08:00\", \"updatedAt\": \"2026-09-07T13:58:23.229938+08:00\", \"routes\": [{\"id\": \"9765f9b7-5f78-4c32-83bc-31322893a0d6\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"ef69a30a-08f6-47b5-9a6b-2184f3bec549\", \"commentId\": \"3edb4cc8-556f-4372-bb71-cf9eb34eff13\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"7dfd6e84-68a7-4711-985d-097e16e621e9\", \"routeType\": \"team_leader\", \"outcome\": \"queued\", \"taskId\": \"764a0b41-7052-4d52-bae9-841055c545da\", \"createdAt\": \"2026-09-07T13:58:23.229938+08:00\"}]}, \"task\": {\"id\": \"9f21b156-6381-47c1-997e-fb63079bfe8b\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"ef69a30a-08f6-47b5-9a6b-2184f3bec549\", \"orchestrationRunId\": \"f2115298-9350-4f40-a90a-cd131acdc1fa\", \"runNodeId\": \"8c4a2a56-f097-455f-9dd6-e8748e393b1a\", \"currentAttemptId\": \"85bd5baf-767d-42ab-94f1-621befe93762\", \"agentId\": \"1e76482f-0f2e-48b8-a752-aa64d0bfb1d7\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"d74fdddd-0c6d-4ead-87b5-69bc9eac4919\", \"teamRole\": \"calculator\", \"parentTaskId\": \"f5e7bc51-9f2c-43d9-b594-230fd9b42dd2\", \"delegatedFromTaskId\": \"f5e7bc51-9f2c-43d9-b594-230fd9b42dd2\", \"originator\": {\"type\": \"agent\", \"ref\": \"7dfd6e84-68a7-4711-985d-097e16e621e9\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"f5e7bc51-9f2c-43d9-b594-230fd9b42dd2\", \"correlationId\": \"2e2036ab-7ba2-4bc9-8ef2-d8d68897dfa4\", \"hopCount\": 1, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"1e76482f-0f2e-48b8-a752-aa64d0bfb1d7\", \"bindingId\": \"a6163783-bfa5-5026-8447-fc85d01117b9\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"1e76482f-0f2e-48b8-a752-aa64d0bfb1d7\"}, \"sessionId\": \"sess_472292f9c786\", \"resolvedAt\": \"2026-09-07T05:58:10.991545Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_472292f9c786\", \"result\": \"CALC=400\", \"version\": 4, \"createdAt\": \"2026-09-07T13:58:10.395635+08:00\", \"dispatchedAt\": \"2026-09-07T13:58:10.991027+08:00\", \"startedAt\": \"2026-09-07T13:58:11.050279+08:00\", \"completedAt\": \"2026-09-07T13:58:23.229938+08:00\"}}",
+        "toolName": "task.complete",
+        "toolCallId": "call_6b69137d5465451b95db84",
+        "toolOutput": "{\"comment\": {\"id\": \"3edb4cc8-556f-4372-bb71-cf9eb34eff13\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"ef69a30a-08f6-47b5-9a6b-2184f3bec549\", \"threadRootId\": \"3edb4cc8-556f-4372-bb71-cf9eb34eff13\", \"author\": {\"type\": \"agent\", \"ref\": \"1e76482f-0f2e-48b8-a752-aa64d0bfb1d7\"}, \"content\": \"计算19×21+1的结果并以CALC=答案的形式返回。\\n\\nCALC=400\", \"type\": \"result\", \"sourceTaskId\": \"9f21b156-6381-47c1-997e-fb63079bfe8b\", \"sourceAttemptId\": \"85bd5baf-767d-42ab-94f1-621befe93762\", \"version\": 1, \"createdAt\": \"2026-09-07T13:58:23.229938+08:00\", \"updatedAt\": \"2026-09-07T13:58:23.229938+08:00\", \"routes\": [{\"id\": \"9765f9b7-5f78-4c32-83bc-31322893a0d6\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"ef69a30a-08f6-47b5-9a6b-2184f3bec549\", \"commentId\": \"3edb4cc8-556f-4372-bb71-cf9eb34eff13\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"7dfd6e84-68a7-4711-985d-097e16e621e9\", \"routeType\": \"team_leader\", \"outcome\": \"queued\", \"taskId\": \"764a0b41-7052-4d52-bae9-841055c545da\", \"createdAt\": \"2026-09-07T13:58:23.229938+08:00\"}]}, \"task\": {\"id\": \"9f21b156-6381-47c1-997e-fb63079bfe8b\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"ef69a30a-08f6-47b5-9a6b-2184f3bec549\", \"orchestrationRunId\": \"f2115298-9350-4f40-a90a-cd131acdc1fa\", \"runNodeId\": \"8c4a2a56-f097-455f-9dd6-e8748e393b1a\", \"currentAttemptId\": \"85bd5baf-767d-42ab-94f1-621befe93762\", \"agentId\": \"1e76482f-0f2e-48b8-a752-aa64d0bfb1d7\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"d74fdddd-0c6d-4ead-87b5-69bc9eac4919\", \"teamRole\": \"calculator\", \"parentTaskId\": \"f5e7bc51-9f2c-43d9-b594-230fd9b42dd2\", \"delegatedFromTaskId\": \"f5e7bc51-9f2c-43d9-b594-230fd9b42dd2\", \"originator\": {\"type\": \"agent\", \"ref\": \"7dfd6e84-68a7-4711-985d-097e16e621e9\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"f5e7bc51-9f2c-43d9-b594-230fd9b42dd2\", \"correlationId\": \"2e2036ab-7ba2-4bc9-8ef2-d8d68897dfa4\", \"hopCount\": 1, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"1e76482f-0f2e-48b8-a752-aa64d0bfb1d7\", \"bindingId\": \"a6163783-bfa5-5026-8447-fc85d01117b9\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"1e76482f-0f2e-48b8-a752-aa64d0bfb1d7\"}, \"sessionId\": \"sess_472292f9c786\", \"resolvedAt\": \"2026-09-07T05:58:10.991545Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_472292f9c786\", \"result\": \"CALC=400\", \"version\": 4, \"createdAt\": \"2026-09-07T13:58:10.395635+08:00\", \"dispatchedAt\": \"2026-09-07T13:58:10.991027+08:00\", \"startedAt\": \"2026-09-07T13:58:11.050279+08:00\", \"completedAt\": \"2026-09-07T13:58:23.229938+08:00\"}}",
+        "occurredAt": "2026-09-07T05:58:23.249Z"
+      },
+      {
+        "seq": 15,
+        "role": "assistant",
+        "content": "任务已经完成，计算19×21+1的结果是400，并以CALC=答案的形式返回了结果：CALC=400。此任务已成功关闭。",
+        "occurredAt": "2026-09-07T05:58:32.017Z"
+      }
+    ],
+    "source": "events"
+  }
+}

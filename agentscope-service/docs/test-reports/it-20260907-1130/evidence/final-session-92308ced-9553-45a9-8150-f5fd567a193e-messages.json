@@ -1,0 +1,73 @@
+{
+  "at": "2026-09-07T03:37:40.851511+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/92308ced-9553-45a9-8150-f5fd567a193e/messages?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_2e6f90719de5",
+    "offset": 0,
+    "limit": 500,
+    "total": 7,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are a Team worker. Complete only the assigned child work and call task.complete with the result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "occurredAt": "2026-09-07T03:30:53.424Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "issue.get",
+        "toolCallId": "call_3e134cf7cf70458f95aae2",
+        "toolInput": {},
+        "occurredAt": "2026-09-07T03:30:57.202Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "{\"issue\": {\"id\": \"c4be61de-b000-4c67-a73d-7130ef141f0f\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-1130-analyst-task\", \"description\": \"请将 zebra, apple, pear 按字典序排序。\", \"status\": \"in_progress\", \"priority\": \"normal\", \"kind\": \"endpoint_job\", \"visibility\": \"operational\", \"completionPolicy\": \"automatic\", \"assigneeType\": \"agent\", \"assigneeRef\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\", \"creator\": {\"type\": \"agent\", \"ref\": \"b1d48558-a60c-4c96-b9b7-0b2150caccd2\"}, \"parentIssueId\": \"9d5266ed-40f4-517e-b1da-e6e437af2204\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"e67a70d4-8090-4a69-abde-543601e00165\", \"version\": 2, \"createdAt\": \"2026-09-07T11:30:53.300872+08:00\", \"updatedAt\": \"2026-09-07T11:30:53.439442+08:00\"}}",
+        "toolName": "issue.get",
+        "toolCallId": "call_3e134cf7cf70458f95aae2",
+        "toolOutput": "{\"issue\": {\"id\": \"c4be61de-b000-4c67-a73d-7130ef141f0f\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-1130-analyst-task\", \"description\": \"请将 zebra, apple, pear 按字典序排序。\", \"status\": \"in_progress\", \"priority\": \"normal\", \"kind\": \"endpoint_job\", \"visibility\": \"operational\", \"completionPolicy\": \"automatic\", \"assigneeType\": \"agent\", \"assigneeRef\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\", \"creator\": {\"type\": \"agent\", \"ref\": \"b1d48558-a60c-4c96-b9b7-0b2150caccd2\"}, \"parentIssueId\": \"9d5266ed-40f4-517e-b1da-e6e437af2204\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"e67a70d4-8090-4a69-abde-543601e00165\", \"version\": 2, \"createdAt\": \"2026-09-07T11:30:53.300872+08:00\", \"updatedAt\": \"2026-09-07T11:30:53.439442+08:00\"}}",
+        "occurredAt": "2026-09-07T03:30:57.269Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.complete",
+        "toolCallId": "call_437e6ec7207b4e30a34574",
+        "toolInput": {
+          "result": "apple, pear, zebra",
+          "summary": "已按字典序对提供的单词进行了排序。"
+        },
+        "occurredAt": "2026-09-07T03:31:04.857Z"
+      },
+      {
+        "seq": 10,
+        "role": "assistant",
+        "content": "已按字典序对提供的单词进行了排序。",
+        "occurredAt": "2026-09-07T03:31:04.907459Z"
+      },
+      {
+        "seq": 12,
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"ff8f628a-6c5b-47a0-9263-0ced4fed7c98\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c4be61de-b000-4c67-a73d-7130ef141f0f\", \"threadRootId\": \"ff8f628a-6c5b-47a0-9263-0ced4fed7c98\", \"author\": {\"type\": \"agent\", \"ref\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\"}, \"content\": \"已按字典序对提供的单词进行了排序。\", \"type\": \"result\", \"sourceTaskId\": \"988b352a-867a-4958-9e35-a11b1fa4a573\", \"sourceAttemptId\": \"224c9e76-ab3a-43b8-8e48-1225537c5f35\", \"version\": 1, \"createdAt\": \"2026-09-07T11:31:04.890114+08:00\", \"updatedAt\": \"2026-09-07T11:31:04.890114+08:00\", \"routes\": [{\"id\": \"aaee1494-c796-4593-a35f-4728ef5e586f\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c4be61de-b000-4c67-a73d-7130ef141f0f\", \"commentId\": \"ff8f628a-6c5b-47a0-9263-0ced4fed7c98\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"b1d48558-a60c-4c96-b9b7-0b2150caccd2\", \"routeType\": \"team_leader\", \"outcome\": \"queued\", \"taskId\": \"95374701-5f6a-4158-bcf7-b5b868f63a26\", \"createdAt\": \"2026-09-07T11:31:04.890114+08:00\"}]}, \"task\": {\"id\": \"988b352a-867a-4958-9e35-a11b1fa4a573\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c4be61de-b000-4c67-a73d-7130ef141f0f\", \"orchestrationRunId\": \"964d4551-6b5a-5d95-8fa9-38ae84fc934a\", \"runNodeId\": \"ad081ff8-4caa-4b1e-ae6e-08eff0ada5d2\", \"currentAttemptId\": \"224c9e76-ab3a-43b8-8e48-1225537c5f35\", \"agentId\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"e73acb19-fc07-4e58-99e2-7513c7bf7a0b\", \"teamRole\": \"analyst\", \"parentTaskId\": \"e67a70d4-8090-4a69-abde-543601e00165\", \"delegatedFromTaskId\": \"e67a70d4-8090-4a69-abde-543601e00165\", \"originator\": {\"type\": \"agent\", \"ref\": \"b1d48558-a60c-4c96-b9b7-0b2150caccd2\"}, \"causationId\": \"e67a70d4-8090-4a69-abde-543601e00165\", \"correlationId\": \"964d4551-6b5a-5d95-8fa9-38ae84fc934a\", \"hopCount\": 1, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\", \"bindingId\": \"2a9986b7-3634-5c06-9482-91fda5832fb9\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\"}, \"sessionId\": \"sess_2e6f90719de5\", \"resolvedAt\": \"2026-09-07T03:30:53.400478Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_2e6f90719de5\", \"result\": \"apple, pear, zebra\", \"version\": 4, \"createdAt\": \"2026-09-07T11:30:53.300872+08:00\", \"dispatchedAt\": \"2026-09-07T11:30:53.399839+08:00\", \"startedAt\": \"2026-09-07T11:30:53.439442+08:00\", \"completedAt\": \"2026-09-07T11:31:04.890114+08:00\"}}",
+        "toolName": "task.complete",
+        "toolCallId": "call_437e6ec7207b4e30a34574",
+        "toolOutput": "{\"comment\": {\"id\": \"ff8f628a-6c5b-47a0-9263-0ced4fed7c98\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c4be61de-b000-4c67-a73d-7130ef141f0f\", \"threadRootId\": \"ff8f628a-6c5b-47a0-9263-0ced4fed7c98\", \"author\": {\"type\": \"agent\", \"ref\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\"}, \"content\": \"已按字典序对提供的单词进行了排序。\", \"type\": \"result\", \"sourceTaskId\": \"988b352a-867a-4958-9e35-a11b1fa4a573\", \"sourceAttemptId\": \"224c9e76-ab3a-43b8-8e48-1225537c5f35\", \"version\": 1, \"createdAt\": \"2026-09-07T11:31:04.890114+08:00\", \"updatedAt\": \"2026-09-07T11:31:04.890114+08:00\", \"routes\": [{\"id\": \"aaee1494-c796-4593-a35f-4728ef5e586f\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c4be61de-b000-4c67-a73d-7130ef141f0f\", \"commentId\": \"ff8f628a-6c5b-47a0-9263-0ced4fed7c98\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"b1d48558-a60c-4c96-b9b7-0b2150caccd2\", \"routeType\": \"team_leader\", \"outcome\": \"queued\", \"taskId\": \"95374701-5f6a-4158-bcf7-b5b868f63a26\", \"createdAt\": \"2026-09-07T11:31:04.890114+08:00\"}]}, \"task\": {\"id\": \"988b352a-867a-4958-9e35-a11b1fa4a573\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c4be61de-b000-4c67-a73d-7130ef141f0f\", \"orchestrationRunId\": \"964d4551-6b5a-5d95-8fa9-38ae84fc934a\", \"runNodeId\": \"ad081ff8-4caa-4b1e-ae6e-08eff0ada5d2\", \"currentAttemptId\": \"224c9e76-ab3a-43b8-8e48-1225537c5f35\", \"agentId\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"e73acb19-fc07-4e58-99e2-7513c7bf7a0b\", \"teamRole\": \"analyst\", \"parentTaskId\": \"e67a70d4-8090-4a69-abde-543601e00165\", \"delegatedFromTaskId\": \"e67a70d4-8090-4a69-abde-543601e00165\", \"originator\": {\"type\": \"agent\", \"ref\": \"b1d48558-a60c-4c96-b9b7-0b2150caccd2\"}, \"causationId\": \"e67a70d4-8090-4a69-abde-543601e00165\", \"correlationId\": \"964d4551-6b5a-5d95-8fa9-38ae84fc934a\", \"hopCount\": 1, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\", \"bindingId\": \"2a9986b7-3634-5c06-9482-91fda5832fb9\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c1240863-14ae-4e43-a4dc-56d29b3b685e\"}, \"sessionId\": \"sess_2e6f90719de5\", \"resolvedAt\": \"2026-09-07T03:30:53.400478Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_2e6f90719de5\", \"result\": \"apple, pear, zebra\", \"version\": 4, \"createdAt\": \"2026-09-07T11:30:53.300872+08:00\", \"dispatchedAt\": \"2026-09-07T11:30:53.399839+08:00\", \"startedAt\": \"2026-09-07T11:30:53.439442+08:00\", \"completedAt\": \"2026-09-07T11:31:04.890114+08:00\"}}",
+        "occurredAt": "2026-09-07T03:31:04.915Z"
+      },
+      {
+        "seq": 15,
+        "role": "assistant",
+        "content": "已经按照字典序对提供的单词进行了排序，结果为：apple, pear, zebra。任务已完成。",
+        "occurredAt": "2026-09-07T03:31:09.694Z"
+      }
+    ],
+    "source": "events"
+  }
+}

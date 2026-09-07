@@ -1,0 +1,1001 @@
+{
+  "at": "2026-09-07T04:01:44.158949+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/245c9fc7-b733-43bb-9c7c-a16f63f3e128/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "aa7c3d11-1157-494f-b7ec-8a30969f6e7b",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "createdAt": "2026-09-07T11:59:55.393366+08:00"
+      },
+      {
+        "id": "5c8e76f5-8910-48a7-8fbe-9a468d402de2",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "actor": {
+          "type": "agent",
+          "ref": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "causationId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+        "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-07T12:00:17.524054+08:00"
+      },
+      {
+        "id": "95eda33f-328e-4145-be58-32357d351a46",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "actor": {
+          "type": "agent",
+          "ref": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "details": {
+          "to": "in_review",
+          "from": "in_progress",
+          "reason": "execution completed; awaiting acceptance"
+        },
+        "createdAt": "2026-09-07T12:00:34.293893+08:00"
+      },
+      {
+        "id": "27e87fa1-bb9c-491e-bd32-25fc04aca615",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "actor": {
+          "type": "agent",
+          "ref": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+        "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "createdAt": "2026-09-07T12:00:34.294354+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [],
+    "comments": [
+      {
+        "id": "0f42fba0-6192-4801-9c43-a7f62496cf22",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "threadRootId": "0f42fba0-6192-4801-9c43-a7f62496cf22",
+        "author": {
+          "type": "agent",
+          "ref": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a"
+        },
+        "content": "已独立核验101为质数，完成当前任务。\n\n101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+        "type": "result",
+        "sourceTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+        "sourceAttemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+        "version": 1,
+        "createdAt": "2026-09-07T12:00:34.286164+08:00",
+        "updatedAt": "2026-09-07T12:00:34.286164+08:00",
+        "routes": [
+          {
+            "id": "7390d922-415c-4048-9b70-01f216745b8e",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "commentId": "0f42fba0-6192-4801-9c43-a7f62496cf22",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+            "routeType": "assignee",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T12:00:34.286164+08:00"
+          }
+        ]
+      }
+    ],
+    "exportedAt": "2026-09-07T04:01:44.167766Z",
+    "issue": {
+      "id": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-1158-single-codex",
+      "description": "判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 4,
+      "createdAt": "2026-09-07T11:59:55.388767+08:00",
+      "updatedAt": "2026-09-07T12:00:34.286164+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "57ea7aa4-7e3a-4018-92be-c37e02cba460",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "idempotencyKey": "agent-task-queued:e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "occurredAt": "2026-09-07T11:59:55.388767+08:00"
+          },
+          {
+            "id": "877ce910-4d8d-4802-8c2d-d1377ba9ab48",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "idempotencyKey": "attempt-queued:cca53026-27c4-419f-b60c-37e11976f2ff",
+            "occurredAt": "2026-09-07T11:59:56.654809+08:00"
+          },
+          {
+            "id": "4220e5a3-e1a9-47be-96cc-dd649ffffa1d",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.assigned",
+            "actor": {
+              "type": "system",
+              "ref": "task-plane"
+            },
+            "payload": {
+              "state": "assigned",
+              "hostId": "b0aea46d-4ecb-4a58-8279-7469ce1ea28c",
+              "attempt": 1,
+              "backendKind": "hosted-runtime"
+            },
+            "idempotencyKey": "attempt.assigned:cca53026-27c4-419f-b60c-37e11976f2ff",
+            "occurredAt": "2026-09-07T12:00:17.502303+08:00"
+          },
+          {
+            "id": "a10096a7-8beb-4e43-8a5c-3f9cee019b1d",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.preparing",
+            "actor": {
+              "type": "system",
+              "ref": "task-plane"
+            },
+            "payload": {
+              "state": "preparing",
+              "hostId": "b0aea46d-4ecb-4a58-8279-7469ce1ea28c",
+              "attempt": 1,
+              "backendKind": "hosted-runtime"
+            },
+            "idempotencyKey": "attempt.preparing:cca53026-27c4-419f-b60c-37e11976f2ff",
+            "occurredAt": "2026-09-07T12:00:17.512852+08:00"
+          },
+          {
+            "id": "98bf436b-c603-45f2-a6a7-271df903f57e",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a"
+            },
+            "idempotencyKey": "attempt-running:cca53026-27c4-419f-b60c-37e11976f2ff",
+            "occurredAt": "2026-09-07T12:00:17.52056+08:00"
+          },
+          {
+            "id": "ef6fbd74-0b29-4046-b910-16d82d460be1",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "type": "thread.started",
+                "thread_id": "01a07a06-25ab-7350-9d18-f9922b92fad6"
+              },
+              "provider": "codex",
+              "eventType": "thread.started",
+              "providerSessionId": "01a07a06-25ab-7350-9d18-f9922b92fad6"
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:1",
+            "occurredAt": "2026-09-07T12:00:18.478668+08:00"
+          },
+          {
+            "id": "13ecb94f-9c23-404e-aa4d-8a614cd03ee8",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "type": "turn.started"
+              },
+              "provider": "codex",
+              "eventType": "turn.started",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:3",
+            "occurredAt": "2026-09-07T12:00:18.497802+08:00"
+          },
+          {
+            "id": "7359e2ad-8470-4cfd-b002-5541de1c7a0d",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 8,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "item": {
+                  "id": "item_1",
+                  "text": "我会核验试除结果，并通过当前任务的协作协议提交结论、完成任务。",
+                  "type": "agent_message"
+                },
+                "type": "item.completed"
+              },
+              "provider": "codex",
+              "eventType": "item.completed",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:4",
+            "occurredAt": "2026-09-07T12:00:25.651548+08:00"
+          },
+          {
+            "id": "bd9fd97d-9725-4395-9131-03798e49ccac",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "item": {
+                  "id": "item_2",
+                  "type": "command_execution",
+                  "status": "in_progress",
+                  "command": "/bin/zsh -lc 'agentscope task context'",
+                  "exit_code": null,
+                  "aggregated_output": ""
+                },
+                "type": "item.started"
+              },
+              "provider": "codex",
+              "eventType": "item.started",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:5",
+            "occurredAt": "2026-09-07T12:00:27.539222+08:00"
+          },
+          {
+            "id": "8e3cff38-8d80-4106-b698-48ebdea79a10",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "item": {
+                  "id": "item_2",
+                  "type": "command_execution",
+                  "status": "completed",
+                  "command": "/bin/zsh -lc 'agentscope task context'",
+                  "exit_code": 0,
+                  "aggregated_output": "{\"availableActions\": [\"issue.get\", \"issue.comment.list\", \"issue.comment.add\", \"artifact.upload\", \"artifact.download\", \"task.get\", \"task.start\", \"task.progress\", \"task.respond\", \"task.complete\", \"task.fail\", \"approval.request\", \"run.get\", \"run.graph\", \"run.signal\", \"run.artifacts\"], \"inputs\": null, \"issue\": {\"acceptanceCriteria\": [], \"assigneeRef\": \"4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a\", \"assigneeType\": \"agent\", \"completionPolicy\": \"review\", \"contextRefs\": [], \"createdAt\": \"2026-09-07T11:59:55.388767+08:00\", \"creator\": {\"ref\": \"admin\", \"type\": \"human\"}, \"description\": \"判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。\", \"id\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"kind\": \"user_work\", \"namespace\": \"default\", \"priority\": \"none\", \"status\": \"in_progress\", \"tenant\": \"default\", \"title\": \"it-20260907-1158-single-codex\", \"updatedAt\": \"2026-09-07T12:00:17.52056+08:00\", \"version\": 2, \"visibility\": \"work_hub\"}, \"run\": {\"createdAt\": \"2026-09-07T11:59:55.388767+08:00\", \"createdBy\": {\"ref\": \"admin\", \"type\": \"human\"}, \"id\": \"c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d\", \"mode\": \"direct\", \"namespace\": \"default\", \"rootIssueId\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"startedAt\": \"2026-09-07T11:59:55.388767+08:00\", \"state\": \"waiting\", \"tenant\": \"default\", \"triggerRef\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"triggerType\": \"assignment\", \"updatedAt\": \"2026-09-07T12:00:18.20572+08:00\", \"version\": 4, \"waitReason\": \"node_wait\"}, \"task\": {\"accountableHumanRef\": \"admin\", \"agentId\": \"4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a\", \"causationId\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"correlationId\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"createdAt\": \"2026-09-07T11:59:55.388767+08:00\", \"currentAttemptId\": \"cca53026-27c4-419f-b60c-37e11976f2ff\", \"dispatchedAt\": \"2026-09-07T11:59:56.654809+08:00\", \"hopCount\": 0, \"id\": \"e5c9c437-04b8-41b3-8418-470d07ee14a6\", \"issueId\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"namespace\": \"default\", \"orchestrationRunId\": \"c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d\", \"originator\": {\"ref\": \"admin\", \"type\": \"human\"}, \"priority\": 0, \"runNodeId\": \"ca211dd9-514a-4fd0-b747-666b9df6a31b\", \"runtimeBinding\": {\"binding\": {\"agentId\": \"4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a\", \"bindingId\": \"85d22e50-ecec-5e63-aef4-e0b2c6dff0c6\", \"kind\": \"hosted-runtime\", \"runtimePoolId\": \"b1a11d76-0a41-43c8-b6a1-0a3f227a9c74\", \"runtimeProfileId\": \"0d582c5d-a02a-448f-9ac2-451fff69d08e\"}, \"resolvedAt\": \"2026-09-07T03:59:56.655074Z\", \"resolvedProviderConfiguration\": {\"sandbox\": \"workspace-write\"}, \"runtimePool\": {\"createdAt\": \"2026-09-07T11:56:11.922607+08:00\", \"id\": \"b1a11d76-0a41-43c8-b6a1-0a3f227a9c74\", \"name\": \"coding-default\", \"namespace\": \"default\", \"tenant\": \"default\", \"updatedAt\": \"2026-09-07T11:56:11.922607+08:00\", \"version\": 1}, \"runtimeProfile\": {\"configuration\": {\"sandbox\": \"workspace-write\"}, \"createdAt\": \"2026-09-07T11:56:11.927088+08:00\", \"id\": \"0d582c5d-a02a-448f-9ac2-451fff69d08e\", \"name\": \"auto-codex\", \"namespace\": \"default\", \"provider\": \"codex\", \"requirements\": {}, \"runtime\": \"codex\", \"tenant\": \"default\", \"updatedAt\": \"2026-09-07T11:56:11.927088+08:00\", \"version\": 1}, \"selectionSource\": \"policy\", \"sessionId\": \"93199a9a-9561-494a-9189-a4338becf13f\"}, \"sessionId\": \"93199a9a-9561-494a-9189-a4338becf13f\", \"startedAt\": \"2026-09-07T12:00:17.52056+08:00\", \"status\": \"running\", \"teamDepth\": 0, \"tenant\": \"default\", \"triggerType\": \"assignment\", \"version\": 3}}"
+                },
+                "type": "item.completed"
+              },
+              "provider": "codex",
+              "eventType": "item.completed",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:6",
+            "occurredAt": "2026-09-07T12:00:28.00487+08:00"
+          },
+          {
+            "id": "5f1140c6-781c-4614-8304-1274cae5317d",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 11,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "item": {
+                  "id": "item_3",
+                  "tool": "task.get",
+                  "type": "mcp_tool_call",
+                  "error": null,
+                  "result": null,
+                  "server": "agentscope_collaboration",
+                  "status": "in_progress",
+                  "arguments": {}
+                },
+                "type": "item.started"
+              },
+              "provider": "codex",
+              "eventType": "item.started",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:7",
+            "occurredAt": "2026-09-07T12:00:30.574808+08:00"
+          },
+          {
+            "id": "a5514e45-813f-4eba-8353-6e04a5c44438",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "item": {
+                  "id": "item_3",
+                  "tool": "task.get",
+                  "type": "mcp_tool_call",
+                  "error": null,
+                  "result": {
+                    "content": [
+                      {
+                        "text": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"e5c9c437-04b8-41b3-8418-470d07ee14a6\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"orchestrationRunId\": \"c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d\", \"runNodeId\": \"ca211dd9-514a-4fd0-b747-666b9df6a31b\", \"currentAttemptId\": \"cca53026-27c4-419f-b60c-37e11976f2ff\", \"agentId\": \"4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"correlationId\": \"245c9fc7-b733-43bb-9c7c-a16f63f3e128\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"hosted-runtime\", \"agentId\": \"4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a\", \"bindingId\": \"85d22e50-ecec-5e63-aef4-e0b2c6dff0c6\", \"runtimePoolId\": \"b1a11d76-0a41-43c8-b6a1-0a3f227a9c74\", \"runtimeProfileId\": \"0d582c5d-a02a-448f-9ac2-451fff69d08e\"}, \"sessionId\": \"93199a9a-9561-494a-9189-a4338becf13f\", \"resolvedAt\": \"2026-09-07T03:59:56.655074Z\", \"runtimePool\": {\"id\": \"b1a11d76-0a41-43c8-b6a1-0a3f227a9c74\", \"name\": \"coding-default\", \"tenant\": \"default\", \"version\": 1, \"createdAt\": \"2026-09-07T11:56:11.922607+08:00\", \"namespace\": \"default\", \"updatedAt\": \"2026-09-07T11:56:11.922607+08:00\"}, \"runtimeProfile\": {\"id\": \"0d582c5d-a02a-448f-9ac2-451fff69d08e\", \"name\": \"auto-codex\", \"tenant\": \"default\", \"runtime\": \"codex\", \"version\": 1, \"provider\": \"codex\", \"createdAt\": \"2026-09-07T11:56:11.927088+08:00\", \"namespace\": \"default\", \"updatedAt\": \"2026-09-07T11:56:11.927088+08:00\", \"requirements\": {}, \"configuration\": {\"sandbox\": \"workspace-write\"}}, \"selectionSource\": \"policy\", \"resolvedProviderConfiguration\": {\"sandbox\": \"workspace-write\"}}, \"sessionId\": \"93199a9a-9561-494a-9189-a4338becf13f\", \"version\": 3, \"createdAt\": \"2026-09-07T11:59:55.388767+08:00\", \"dispatchedAt\": \"2026-09-07T11:59:56.654809+08:00\", \"startedAt\": \"2026-09-07T12:00:17.52056+08:00\"}}",
+                        "type": "text"
+                      }
+                    ],
+                    "structured_content": {
+                      "task": {
+                        "id": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+                        "status": "running",
+                        "tenant": "default",
+                        "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+                        "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+                        "version": 3,
+                        "hopCount": 0,
+                        "priority": 0,
+                        "createdAt": "2026-09-07T11:59:55.388767+08:00",
+                        "namespace": "default",
+                        "runNodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+                        "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+                        "startedAt": "2026-09-07T12:00:17.52056+08:00",
+                        "teamDepth": 0,
+                        "originator": {
+                          "ref": "admin",
+                          "type": "human"
+                        },
+                        "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+                        "triggerType": "assignment",
+                        "dispatchedAt": "2026-09-07T11:59:56.654809+08:00",
+                        "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+                        "runtimeBinding": {
+                          "binding": {
+                            "kind": "hosted-runtime",
+                            "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+                            "bindingId": "85d22e50-ecec-5e63-aef4-e0b2c6dff0c6",
+                            "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                            "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+                          },
+                          "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+                          "resolvedAt": "2026-09-07T03:59:56.655074Z",
+                          "runtimePool": {
+                            "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                            "name": "coding-default",
+                            "tenant": "default",
+                            "version": 1,
+                            "createdAt": "2026-09-07T11:56:11.922607+08:00",
+                            "namespace": "default",
+                            "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+                          },
+                          "runtimeProfile": {
+                            "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+                            "name": "auto-codex",
+                            "tenant": "default",
+                            "runtime": "codex",
+                            "version": 1,
+                            "provider": "codex",
+                            "createdAt": "2026-09-07T11:56:11.927088+08:00",
+                            "namespace": "default",
+                            "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+                            "requirements": {},
+                            "configuration": {
+                              "sandbox": "workspace-write"
+                            }
+                          },
+                          "selectionSource": "policy",
+                          "resolvedProviderConfiguration": {
+                            "sandbox": "workspace-write"
+                          }
+                        },
+                        "currentAttemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+                        "orchestrationRunId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+                        "accountableHumanRef": "admin"
+                      },
+                      "inputs": null,
+                      "coordinatorIssue": null,
+                      "coordinatorChildren": null
+                    }
+                  },
+                  "server": "agentscope_collaboration",
+                  "status": "completed",
+                  "arguments": {}
+                },
+                "type": "item.completed"
+              },
+              "provider": "codex",
+              "eventType": "item.completed",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:8",
+            "occurredAt": "2026-09-07T12:00:30.584683+08:00"
+          },
+          {
+            "id": "e3b6305b-136d-449f-b01b-d3e3bb1d2479",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "item": {
+                  "id": "item_4",
+                  "tool": "issue.comment.list",
+                  "type": "mcp_tool_call",
+                  "error": null,
+                  "result": null,
+                  "server": "agentscope_collaboration",
+                  "status": "in_progress",
+                  "arguments": {}
+                },
+                "type": "item.started"
+              },
+              "provider": "codex",
+              "eventType": "item.started",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:9",
+            "occurredAt": "2026-09-07T12:00:30.637852+08:00"
+          },
+          {
+            "id": "cf2d713b-1f43-4293-90e3-da60c526c6b4",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 14,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "item": {
+                  "id": "item_4",
+                  "tool": "issue.comment.list",
+                  "type": "mcp_tool_call",
+                  "error": null,
+                  "result": {
+                    "content": [
+                      {
+                        "text": "{\"items\": []}",
+                        "type": "text"
+                      }
+                    ],
+                    "structured_content": {
+                      "items": []
+                    }
+                  },
+                  "server": "agentscope_collaboration",
+                  "status": "completed",
+                  "arguments": {}
+                },
+                "type": "item.completed"
+              },
+              "provider": "codex",
+              "eventType": "item.completed",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:10",
+            "occurredAt": "2026-09-07T12:00:30.647927+08:00"
+          },
+          {
+            "id": "fc7d42c6-3005-4140-9fb8-2b8efd0e3264",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "item": {
+                  "id": "item_5",
+                  "tool": "task.complete",
+                  "type": "mcp_tool_call",
+                  "error": null,
+                  "result": null,
+                  "server": "agentscope_collaboration",
+                  "status": "in_progress",
+                  "arguments": {
+                    "result": "101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+                    "outcome": "succeeded",
+                    "summary": "已独立核验101为质数，完成当前任务。",
+                    "deferredInputIds": [],
+                    "processedInputIds": []
+                  }
+                },
+                "type": "item.started"
+              },
+              "provider": "codex",
+              "eventType": "item.started",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:cca53026-27c4-419f-b60c-37e11976f2ff:11",
+            "occurredAt": "2026-09-07T12:00:34.283427+08:00"
+          },
+          {
+            "id": "51cedfda-7729-487a-a18f-340930a2049c",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 16,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "attemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a"
+            },
+            "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "idempotencyKey": "attempt-succeeded:cca53026-27c4-419f-b60c-37e11976f2ff",
+            "occurredAt": "2026-09-07T12:00:34.286164+08:00"
+          },
+          {
+            "id": "98131ee9-400b-4130-8e0f-09125a3fba86",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 17,
+            "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a"
+            },
+            "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "idempotencyKey": "node-succeeded:ca211dd9-514a-4fd0-b747-666b9df6a31b",
+            "occurredAt": "2026-09-07T12:00:34.286164+08:00"
+          },
+          {
+            "id": "31efcb94-7883-4a5e-9b18-41106a72ab27",
+            "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 18,
+            "type": "run.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a"
+            },
+            "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "idempotencyKey": "run-succeeded:c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "occurredAt": "2026-09-07T12:00:34.286164+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "mode": "direct",
+            "triggerType": "assignment",
+            "triggerRef": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+            "output": "101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+            "state": "succeeded",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T11:59:55.388767+08:00",
+            "updatedAt": "2026-09-07T12:00:34.286164+08:00",
+            "startedAt": "2026-09-07T11:59:55.388767+08:00",
+            "completedAt": "2026-09-07T12:00:34.286164+08:00"
+          },
+          "nodes": [
+            {
+              "id": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+              "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:e5c9c437-04b8-41b3-8418-470d07ee14a6",
+              "type": "agent",
+              "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+              "state": "succeeded",
+              "output": "101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T11:59:55.388767+08:00",
+              "updatedAt": "2026-09-07T12:00:34.286164+08:00",
+              "startedAt": "2026-09-07T11:59:56.228468+08:00",
+              "completedAt": "2026-09-07T12:00:34.286164+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+              "orchestrationRunId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+              "runNodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+              "currentAttemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+              "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+              "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "hosted-runtime",
+                  "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+                  "bindingId": "85d22e50-ecec-5e63-aef4-e0b2c6dff0c6",
+                  "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+                },
+                "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+                "resolvedAt": "2026-09-07T03:59:56.655074Z",
+                "runtimePool": {
+                  "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "name": "coding-default",
+                  "tenant": "default",
+                  "version": 1,
+                  "createdAt": "2026-09-07T11:56:11.922607+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+                },
+                "runtimeProfile": {
+                  "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+                  "name": "auto-codex",
+                  "tenant": "default",
+                  "runtime": "codex",
+                  "version": 1,
+                  "provider": "codex",
+                  "createdAt": "2026-09-07T11:56:11.927088+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+                  "requirements": {},
+                  "configuration": {
+                    "sandbox": "workspace-write"
+                  }
+                },
+                "selectionSource": "policy",
+                "resolvedProviderConfiguration": {
+                  "sandbox": "workspace-write"
+                }
+              },
+              "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+              "result": "101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+              "version": 4,
+              "createdAt": "2026-09-07T11:59:55.388767+08:00",
+              "dispatchedAt": "2026-09-07T11:59:56.654809+08:00",
+              "startedAt": "2026-09-07T12:00:17.52056+08:00",
+              "completedAt": "2026-09-07T12:00:34.286164+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "cca53026-27c4-419f-b60c-37e11976f2ff",
+              "agentTaskId": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+              "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+              "bindingId": "85d22e50-ecec-5e63-aef4-e0b2c6dff0c6",
+              "runId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+              "nodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "hosted-runtime",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "hosted-runtime",
+                  "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+                  "bindingId": "85d22e50-ecec-5e63-aef4-e0b2c6dff0c6",
+                  "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+                },
+                "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+                "resolvedAt": "2026-09-07T03:59:56.655074Z",
+                "runtimePool": {
+                  "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "name": "coding-default",
+                  "tenant": "default",
+                  "version": 1,
+                  "createdAt": "2026-09-07T11:56:11.922607+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+                },
+                "runtimeProfile": {
+                  "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+                  "name": "auto-codex",
+                  "tenant": "default",
+                  "runtime": "codex",
+                  "version": 1,
+                  "provider": "codex",
+                  "createdAt": "2026-09-07T11:56:11.927088+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+                  "requirements": {},
+                  "configuration": {
+                    "sandbox": "workspace-write"
+                  }
+                },
+                "selectionSource": "policy",
+                "resolvedProviderConfiguration": {
+                  "sandbox": "workspace-write"
+                }
+              },
+              "runtimeProfileName": "auto-codex",
+              "runtimePoolName": "coding-default",
+              "hostId": "b0aea46d-4ecb-4a58-8279-7469ce1ea28c",
+              "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+              "turnId": "c7192b99-ec62-4528-b9b3-1eff6750f173",
+              "providerSessionId": "01a07a06-25ab-7350-9d18-f9922b92fad6",
+              "workspaceKey": "default/default/conversations/4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a/93199a9a-9561-494a-9189-a4338becf13f",
+              "state": "succeeded",
+              "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/44e77dd6-e759-414e-8320-ed37d03bbdd9",
+              "leaseToken": "[REDACTED]",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T12:00:17.52056+08:00",
+              "checkpoint": {
+                "providerSessionId": "01a07a06-25ab-7350-9d18-f9922b92fad6"
+              },
+              "result": "101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+              "version": 7,
+              "createdAt": "2026-09-07T11:59:56.654809+08:00",
+              "updatedAt": "2026-09-07T12:00:34.286164+08:00",
+              "startedAt": "2026-09-07T12:00:17.519194+08:00",
+              "completedAt": "2026-09-07T12:00:34.286164+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "mode": "direct",
+        "triggerType": "assignment",
+        "triggerRef": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "output": "101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+        "state": "succeeded",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T11:59:55.388767+08:00",
+        "updatedAt": "2026-09-07T12:00:34.286164+08:00",
+        "startedAt": "2026-09-07T11:59:55.388767+08:00",
+        "completedAt": "2026-09-07T12:00:34.286164+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "e5c9c437-04b8-41b3-8418-470d07ee14a6",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "orchestrationRunId": "c06a4ae5-fc3d-4751-ae3f-7cdb1a03f32d",
+        "runNodeId": "ca211dd9-514a-4fd0-b747-666b9df6a31b",
+        "currentAttemptId": "cca53026-27c4-419f-b60c-37e11976f2ff",
+        "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "correlationId": "245c9fc7-b733-43bb-9c7c-a16f63f3e128",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "4f8f500e-cc9c-41e2-8a94-c5d9469e1f4a",
+            "bindingId": "85d22e50-ecec-5e63-aef4-e0b2c6dff0c6",
+            "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+          },
+          "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+          "resolvedAt": "2026-09-07T03:59:56.655074Z",
+          "runtimePool": {
+            "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:56:11.922607+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+          },
+          "runtimeProfile": {
+            "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+            "name": "auto-codex",
+            "tenant": "default",
+            "runtime": "codex",
+            "version": 1,
+            "provider": "codex",
+            "createdAt": "2026-09-07T11:56:11.927088+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+            "requirements": {},
+            "configuration": {
+              "sandbox": "workspace-write"
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "sandbox": "workspace-write"
+          }
+        },
+        "sessionId": "93199a9a-9561-494a-9189-a4338becf13f",
+        "result": "101是质数。因为10²<101<11²，只需试除不超过√101的质数2、3、5、7；余数分别为1、2、1、3，均不能整除101。CODEX=prime。",
+        "version": 4,
+        "createdAt": "2026-09-07T11:59:55.388767+08:00",
+        "dispatchedAt": "2026-09-07T11:59:56.654809+08:00",
+        "startedAt": "2026-09-07T12:00:17.52056+08:00",
+        "completedAt": "2026-09-07T12:00:34.286164+08:00"
+      }
+    ]
+  }
+}

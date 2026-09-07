@@ -1,0 +1,194 @@
+{
+  "at": "2026-09-07T03:34:49.079952+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/7eba31d4-1634-4cb4-98f1-1afe20c37b65/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 56,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are a Team worker. Complete only the assigned child work and call task.complete with the result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_eb6c22d735ca4546b07a3e66b84ca100",
+          "managedSeq": 1,
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "managedEventId": "evt_eb6c22d735ca4546b07a3e66b84ca100",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:01.39+08:00"
+      },
+      {
+        "id": 57,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_e8589d7687284e308248019bb5490d9a",
+          "managedSeq": 2,
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "managedEventId": "evt_e8589d7687284e308248019bb5490d9a",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:01.408+08:00"
+      },
+      {
+        "id": 58,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_c57efbd0cf904738884c2e1b67fd30b6",
+          "managedSeq": 3,
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "managedEventId": "evt_c57efbd0cf904738884c2e1b67fd30b6",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:01.457+08:00"
+      },
+      {
+        "id": 74,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 4,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "web_search",
+        "toolInput": {
+          "query": "手机行业 最新消息",
+          "max_results": 2
+        },
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_730cc206dcd24e61a3f5ff4083986a55",
+          "managedSeq": 4,
+          "toolCallId": "call_332a9b47881242d1a93396",
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "managedEventId": "evt_730cc206dcd24e61a3f5ff4083986a55",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:05.654+08:00"
+      },
+      {
+        "id": 75,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 5,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_75578ad07ec546b58166e06da329d39c",
+          "managedSeq": 5,
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "managedEventId": "evt_75578ad07ec546b58166e06da329d39c",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:05.67+08:00"
+      },
+      {
+        "id": 76,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 6,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "\"Error: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.\"",
+        "toolName": "web_search",
+        "toolOutput": "\"Error: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.\"",
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_a2166d07964a46798ed6f482e9d253be",
+          "managedSeq": 6,
+          "toolCallId": "call_332a9b47881242d1a93396",
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "tool_use_id": "call_332a9b47881242d1a93396",
+          "managedEventId": "evt_a2166d07964a46798ed6f482e9d253be",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:05.696+08:00"
+      },
+      {
+        "id": 77,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 7,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_fcdb1c1684144c47ad0d9ceacfd403c0",
+          "managedSeq": 7,
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "managedEventId": "evt_fcdb1c1684144c47ad0d9ceacfd403c0",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:05.707+08:00"
+      },
+      {
+        "id": 84,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 8,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.fail",
+        "toolInput": {
+          "code": "MISSING_CREDENTIALS",
+          "message": "缺少必要的TAVILY_API_KEY，无法执行网络搜索以完成手机行业调研任务。"
+        },
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_cf7d4fc712404ee3931a590fd2bc7e0b",
+          "managedSeq": 8,
+          "toolCallId": "call_360024323e0f44499530d3",
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "managedEventId": "evt_cf7d4fc712404ee3931a590fd2bc7e0b",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:07.992+08:00"
+      },
+      {
+        "id": 85,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 9,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "managed:evt_3381ccdcdf6d43c481c5d777d9350431",
+          "managedSeq": 9,
+          "agentTaskId": "bbf9e06b-a076-4aa0-aba7-48c0e390efed",
+          "managedEventId": "evt_3381ccdcdf6d43c481c5d777d9350431",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T11:30:08.005+08:00"
+      },
+      {
+        "id": 86,
+        "sessionFk": "7eba31d4-1634-4cb4-98f1-1afe20c37b65",
+        "seq": 10,
+        "eventType": "turn.failed",
+        "role": "error",
+        "content": "缺少必要的TAVILY_API_KEY，无法执行网络搜索以完成手机行业调研任务。",
+        "frameworkMeta": {
+          "turnId": "bd85738d-69af-4283-9afa-4237595bbf3f",
+          "attemptId": "f70dd447-ed94-4910-89ab-bef1d812353f",
+          "sourceKey": "turn-failed:f70dd447-ed94-4910-89ab-bef1d812353f",
+          "failureCode": "MISSING_CREDENTIALS"
+        },
+        "occurredAt": "2026-09-07T11:30:08.051364+08:00"
+      }
+    ]
+  }
+}

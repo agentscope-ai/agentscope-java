@@ -1,0 +1,219 @@
+{
+  "at": "2026-09-07T03:34:48.809766+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/44c8de54-1870-5ecf-a40f-8dc0c79fc13f/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "44c8de54-1870-5ecf-a40f-8dc0c79fc13f",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "9587f27f-abf7-587f-b2a9-8a4b43a52c33",
+      "mode": "direct",
+      "triggerType": "endpoint_conversation",
+      "triggerRef": "473bcc53-098d-4dbc-9971-a64a6999798b",
+      "idempotencyKey": "conversation:473bcc53-098d-4dbc-9971-a64a6999798b:5fbf9be3-e759-49d6-9d69-5eff1f691b16",
+      "input": {
+        "prompt": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。"
+      },
+      "output": {
+        "output": "API_MEMORY_1130；20+22=42。"
+      },
+      "state": "succeeded",
+      "version": 5,
+      "createdBy": {
+        "type": "system",
+        "ref": "endpoint_conversation"
+      },
+      "createdAt": "2026-09-07T11:30:38.099684+08:00",
+      "updatedAt": "2026-09-07T11:31:51.637474+08:00",
+      "startedAt": "2026-09-07T11:30:38.099684+08:00",
+      "completedAt": "2026-09-07T11:31:51.637474+08:00"
+    },
+    "nodes": [
+      {
+        "id": "81ee144f-e3cd-5ce9-85f1-0b3287de9f94",
+        "runId": "44c8de54-1870-5ecf-a40f-8dc0c79fc13f",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "target",
+        "type": "agent",
+        "issueId": "9587f27f-abf7-587f-b2a9-8a4b43a52c33",
+        "state": "succeeded",
+        "output": {
+          "output": "API_MEMORY_1130；20+22=42。"
+        },
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T11:30:38.100387+08:00",
+        "updatedAt": "2026-09-07T11:31:51.637474+08:00",
+        "startedAt": "2026-09-07T11:30:38.106666+08:00",
+        "completedAt": "2026-09-07T11:31:51.637474+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "514beb20-39bd-4c9e-9896-7a3e348471ca",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "9587f27f-abf7-587f-b2a9-8a4b43a52c33",
+        "orchestrationRunId": "44c8de54-1870-5ecf-a40f-8dc0c79fc13f",
+        "runNodeId": "81ee144f-e3cd-5ce9-85f1-0b3287de9f94",
+        "currentAttemptId": "3b25d925-7feb-487a-a4e0-db997adffbe9",
+        "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "system",
+          "ref": "endpoint_conversation"
+        },
+        "causationId": "81ee144f-e3cd-5ce9-85f1-0b3287de9f94",
+        "correlationId": "44c8de54-1870-5ecf-a40f-8dc0c79fc13f",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+            "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+            "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+            "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9"
+          },
+          "sessionId": "473bcc53-098d-4dbc-9971-a64a6999798b",
+          "resolvedAt": "2026-09-07T03:30:38.11307Z",
+          "runtimePool": {
+            "id": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:18:16.901382+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:18:16.901382+08:00"
+          },
+          "runtimeProfile": {
+            "id": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-07T11:18:16.930373+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:18:16.930373+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "sessionId": "473bcc53-098d-4dbc-9971-a64a6999798b",
+        "result": {
+          "output": "API_MEMORY_1130；20+22=42。"
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T11:30:38.101237+08:00",
+        "dispatchedAt": "2026-09-07T11:30:38.112371+08:00",
+        "startedAt": "2026-09-07T11:31:47.312951+08:00",
+        "completedAt": "2026-09-07T11:31:51.637474+08:00"
+      }
+    ],
+    "attempts": [
+      {
+        "id": "3b25d925-7feb-487a-a4e0-db997adffbe9",
+        "agentTaskId": "514beb20-39bd-4c9e-9896-7a3e348471ca",
+        "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+        "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+        "runId": "44c8de54-1870-5ecf-a40f-8dc0c79fc13f",
+        "nodeId": "81ee144f-e3cd-5ce9-85f1-0b3287de9f94",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "hosted-runtime",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+            "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+            "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+            "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9"
+          },
+          "sessionId": "473bcc53-098d-4dbc-9971-a64a6999798b",
+          "resolvedAt": "2026-09-07T03:30:38.11307Z",
+          "runtimePool": {
+            "id": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:18:16.901382+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:18:16.901382+08:00"
+          },
+          "runtimeProfile": {
+            "id": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-07T11:18:16.930373+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:18:16.930373+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "runtimeProfileName": "auto-qoder",
+        "runtimePoolName": "coding-default",
+        "hostId": "b4691067-81e8-4803-8046-99d9935f6d54",
+        "sessionId": "473bcc53-098d-4dbc-9971-a64a6999798b",
+        "turnId": "5fbf9be3-e759-49d6-9d69-5eff1f691b16",
+        "providerSessionId": "8ec5ab36-dfe1-4c02-bda7-e0bef17b26d4",
+        "workspaceKey": "default/default/conversations/e8c6887d-f89f-4d59-bc37-6b9affd88f2a/473bcc53-098d-4dbc-9971-a64a6999798b",
+        "state": "succeeded",
+        "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/33f05051-89f1-428b-aabd-71268d4947fb",
+        "leaseToken": "[REDACTED]",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T11:31:47.312951+08:00",
+        "checkpoint": {
+          "providerSessionId": "8ec5ab36-dfe1-4c02-bda7-e0bef17b26d4"
+        },
+        "result": {
+          "output": "API_MEMORY_1130；20+22=42。"
+        },
+        "version": 7,
+        "createdAt": "2026-09-07T11:30:38.112371+08:00",
+        "updatedAt": "2026-09-07T11:31:51.637474+08:00",
+        "startedAt": "2026-09-07T11:31:47.310957+08:00",
+        "completedAt": "2026-09-07T11:31:51.637474+08:00"
+      }
+    ]
+  }
+}

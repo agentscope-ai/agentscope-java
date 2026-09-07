@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-07T04:50:00.397812+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/jobs/d7a387ad-b20b-400f-beba-c01b3146f54a",
+  "request": null,
+  "status": 200,
+  "response": {
+    "invocation": {
+      "completedAt": "2026-09-07T12:48:55.414358+08:00",
+      "correlationId": "4d3e28f5-1a2d-4dd5-a8e0-b50760fcc840",
+      "createdAt": "2026-09-07T12:47:33.683491+08:00",
+      "endpointId": "a226ffe9-5430-456b-bd05-2cbd93a3ae5f",
+      "id": "d7a387ad-b20b-400f-beba-c01b3146f54a",
+      "issueId": "e4bb634e-9c85-5984-95ad-506532413c6d",
+      "mode": "job",
+      "result": "{\"API_WORDS\": 4}",
+      "runId": "2d15bd2e-5c79-5494-98c3-b2c1bc86d80d",
+      "startedAt": "2026-09-07T12:47:33.685109+08:00",
+      "status": "completed",
+      "updatedAt": "2026-09-07T12:48:55.413965+08:00"
+    },
+    "issue": {
+      "id": "e4bb634e-9c85-5984-95ad-506532413c6d",
+      "status": "done",
+      "updatedAt": "2026-09-07T12:48:45.466729+08:00"
+    },
+    "run": {
+      "id": "2d15bd2e-5c79-5494-98c3-b2c1bc86d80d",
+      "state": "succeeded",
+      "updatedAt": "2026-09-07T12:48:45.466729+08:00"
+    }
+  }
+}

@@ -302,7 +302,7 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 	}
 	if !task.LeaderTask {
 		return base + " You are a Team worker. Complete only the assigned child work and call task.complete " +
-			"with outcome=succeeded and the result only when the assigned objective is achieved. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call " +
+			"with outcome=succeeded and the result only when the assigned objective is achieved. Put the actual requested deliverable in result or summary, including the full report, answer, or accessible artifact reference; a claim that a report was written is not a deliverable. Do not leave the useful content only in private reasoning or text after task.complete. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call " +
 			"task.fail with a durable code and explanation; do not merely return explanatory text. Do not " +
 			"call task.respond, coordinate, or create child Issues."
 	}
@@ -313,15 +313,21 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 			"wait inside this turn. A fresh leader follow-up will arrive with each worker result."
 	}
 	return base + " You are a Team leader follow-up caused by a worker outcome. Read the supplied task " +
-		"inputs and coordinatorChildren.outcomes (including structured result and failure fields), not just comment summaries. FIRST decide the CURRENT child: if its objective was achieved call issue.accept now; if evidence is missing, request concrete follow-up work with an explicit worker mention when that worker can supply it. After the mention succeeds call task.complete with outcome=waiting. Use run.node.fail only when the whole objective is unrecoverable and you intend to cancel remaining work, or explicitly request human action. Do not accept a report of inability as successful research. Only AFTER deciding the current child, inspect sibling statuses to synthesize or wait. This follow-up owns only its current Issue: issue.accept, " +
+		"inputs and coordinatorChildren.outcomes (including structured result and failure fields), not just comment summaries. Use coordinatorChildren.humanUpdates to apply the human's revised requirements when accepting resumed work. FIRST decide the CURRENT child: if its objective was achieved call issue.accept now; if evidence is missing, request concrete follow-up work with an explicit worker mention when that worker can supply it. After the mention succeeds call task.complete with outcome=waiting. Use run.node.fail only when the whole objective is unrecoverable and you intend to cancel remaining work, or explicitly request human action. Do not accept a report of inability as successful research. Only AFTER deciding the current child, inspect sibling statuses to synthesize or wait. This follow-up owns only its current Issue: issue.accept, " +
 		"issue.cancel, and issue.comment.add act on that Issue, so never use them to decide or message a sibling. " +
 		"Each sibling outcome gets its own follow-up. task.get also returns coordinatorChildren as read-only " +
 		"synthesis context; use terminal sibling results when producing the final coordinator output. " +
+		"Before declaring the whole objective complete, re-read coordinatorIssue.title and coordinatorIssue.description, " +
+		"and check every requested deliverable against the actual returned content. Child acceptance alone does not " +
+		"fulfill any remaining synthesis or writing requested by the user. Perform that remaining work now. " +
+		"Put the actual final deliverables in run.node.complete.output, including the full requested text or accessible " +
+		"artifact references. A sentence claiming that content was created is not the content itself. Text written " +
+		"only after the completion tool is not delivered to the main Issue or Endpoint caller. " +
 		"Call issue.accept only for satisfactory completed " +
 		"work. For blocked or failed work, retry or reassign only when the new attempt changes the available " +
 		"agent, capability, credential, input, or tool; otherwise choose a degraded result, request human " +
 		"action, cancel the blocked child, or fail the coordinator. To wait for human action, call " +
-		"issue.comment.add with an explicit human mention before completing this follow-up. Status and progress " +
+		"issue.comment.add with an explicit human mention using task.accountableHumanRef, then task.complete(outcome=succeeded) to finish only this decision turn. Do not use outcome=waiting for a human request without pending Agent work. To mark the entire objective blocked instead, call run.node.fail with the missing inputs and next action in its message. A comment alone does not change the root Issue status. Status and progress " +
 		"comments schedule Agent work only through explicit mentions. Do not publish the same conclusion with issue.comment.add, " +
 		"task.progress, and task.complete; use task.respond once for a final visible response and then call " +
 		"task.complete, which reuses it. Do not use issue.child.create to bypass " +

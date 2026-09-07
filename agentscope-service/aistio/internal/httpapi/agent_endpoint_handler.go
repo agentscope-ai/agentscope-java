@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spring-ai-alibaba/aistio/internal/asdp"
+	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/secretcrypto"
@@ -1468,7 +1469,7 @@ func (s *Server) invokeEndpointJob(c *gin.Context) {
 	issueID := uuid.NewSHA1(invocation.ID, []byte("issue"))
 	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "endpoint:" + endpoint.ID.String()}
 	issue := &controlmodel.Issue{ID: issueID, Tenant: endpoint.Tenant, Namespace: endpoint.Namespace,
-		Title: req.Title, Description: req.Description, Status: controlmodel.IssueInProgress, Priority: "normal",
+		Title: req.Title, Description: collaboration.EndpointIssueDescription(req.Description, req.Input), Status: controlmodel.IssueInProgress, Priority: "normal",
 		Kind: controlmodel.IssueKindEndpointJob, Visibility: controlmodel.IssueVisibilityOperational,
 		CompletionPolicy: controlmodel.IssueCompletionAutomatic, Creator: actor,
 		SourceType: "endpoint", SourceRef: invocation.ID.String(),

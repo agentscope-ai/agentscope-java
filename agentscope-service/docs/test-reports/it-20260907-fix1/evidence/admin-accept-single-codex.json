@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-07T04:51:10.026529+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/07f26a0f-9372-4bfa-ae5c-48a0e3565527/accept",
+  "request": {
+    "expectedVersion": 4,
+    "reason": "管理员人工验收：计算、排序或质数结论与任务要求一致，批准交付。"
+  },
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-fix1-single-codex",
+      "description": "判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+      "status": "done",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 5,
+      "createdAt": "2026-09-07T12:47:32.823418+08:00",
+      "updatedAt": "2026-09-07T12:51:10.033217+08:00",
+      "resolvedAt": "2026-09-07T12:51:10.034283+08:00"
+    }
+  }
+}

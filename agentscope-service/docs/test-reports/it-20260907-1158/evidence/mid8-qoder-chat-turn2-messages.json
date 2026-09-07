@@ -1,0 +1,34 @@
+{
+  "at": "2026-09-07T04:04:05.008324+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/9b495eaf-4d05-486c-aceb-99a494a1de77/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "5808ba92-6872-4407-b6f2-4f0b4cb67f18",
+    "offset": 0,
+    "limit": 100,
+    "total": 3,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。",
+        "occurredAt": "2026-09-07T04:00:01.887451Z"
+      },
+      {
+        "seq": 14,
+        "role": "assistant",
+        "content": "已记住标记 API_MEMORY_1130。计算 20+22 = 42。回答：标记为 API_MEMORY_1130，计算结果为 42。无需联网，未调用外部资料工具。后续在同会话中可随时提问标记。",
+        "occurredAt": "2026-09-07T04:01:35.140345Z"
+      },
+      {
+        "seq": 16,
+        "role": "user",
+        "content": "上一轮要求记住的标记是什么？计算6×7。只回答之前的标记和数字，不使用联网工具。",
+        "occurredAt": "2026-09-07T04:02:03.292556Z"
+      }
+    ],
+    "source": "events"
+  }
+}

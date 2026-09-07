@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-07T00:15:26.889229+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "it-20260907-0815-single-codex",
+    "description": "判断 97 是否为质数，说明只需要试除哪些质数。不要联网或使用工具。最终包含 CODEX=prime。",
+    "assigneeType": "agent",
+    "assigneeRef": "cb3a3959-a01c-42df-a510-a9872e83cf41"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "5c65f04f-3f84-41d3-8a3e-5572a4542cfa",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+      "orchestrationRunId": "f4225a25-aa68-4fd0-adf9-65b7e871fe8b",
+      "runNodeId": "0f6c5515-6f32-4a39-a295-d6c12644c6f1",
+      "agentId": "cb3a3959-a01c-42df-a510-a9872e83cf41",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+      "correlationId": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T08:15:26.88969+08:00"
+    },
+    "issue": {
+      "id": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-single-codex",
+      "description": "判断 97 是否为质数，说明只需要试除哪些质数。不要联网或使用工具。最终包含 CODEX=prime。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "cb3a3959-a01c-42df-a510-a9872e83cf41",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T08:15:26.88969+08:00",
+      "updatedAt": "2026-09-07T08:15:26.88969+08:00"
+    }
+  }
+}

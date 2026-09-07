@@ -346,9 +346,6 @@ func (w *RuntimeControlSweeper) reconcileEndpointJobInvocations(ctx context.Cont
 				invocation.ErrorCode = "run_failed"
 			}
 		}
-		if _, updateErr := w.Store.Endpoints().UpdateInvocation(ctx, invocation); updateErr != nil {
-			return updateErr
-		}
 		if invocation.IssueID != nil {
 			issue, issueErr := w.Store.Collaboration().GetIssue(ctx, *invocation.IssueID)
 			if issueErr != nil && !errors.Is(issueErr, store.ErrNotFound) {
@@ -357,16 +354,27 @@ func (w *RuntimeControlSweeper) reconcileEndpointJobInvocations(ctx context.Cont
 			if issue != nil && issue.Kind == controlmodel.IssueKindEndpointJob &&
 				issue.CompletionPolicy == controlmodel.IssueCompletionAutomatic &&
 				issue.Status != controlmodel.IssueDone && issue.Status != controlmodel.IssueCancelled {
-				target, reason := controlmodel.IssueCancelled, "Endpoint Job execution did not complete successfully"
+				target, reason := controlmodel.IssueBlocked, "Endpoint Job execution failed: "+run.FailureMessage
+				if run.State == controlmodel.RunCancelled {
+					target, reason = controlmodel.IssueCancelled, "Endpoint Job execution was cancelled"
+				}
 				if run.State == controlmodel.RunSucceeded || run.State == controlmodel.RunPartialSucceeded {
 					target, reason = controlmodel.IssueDone, "automatic Endpoint Job execution completed"
 				}
-				_, transitionErr := w.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version, target,
-					controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "endpoint-invocation:" + invocation.ID.String()}, reason)
-				if transitionErr != nil && !errors.Is(transitionErr, store.ErrConflict) {
-					return transitionErr
+				if issue.Status != target {
+					_, transitionErr := w.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version, target,
+						controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "endpoint-invocation:" + invocation.ID.String()}, reason)
+					if errors.Is(transitionErr, store.ErrConflict) {
+						continue // Leave the invocation active so the next sweep retries projection.
+					}
+					if transitionErr != nil {
+						return transitionErr
+					}
 				}
 			}
+		}
+		if _, updateErr := w.Store.Endpoints().UpdateInvocation(ctx, invocation); updateErr != nil {
+			return updateErr
 		}
 	}
 	return nil

@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-07T00:17:01.119513+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/4923de41-6abe-4da7-90db-d5d971f9c8cd",
+  "request": null,
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-single-calc",
+      "description": "计算 17×23+19，给出一个等式和最终答案。不要使用工具。预期输出 CALC=410。",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 4,
+      "createdAt": "2026-09-07T08:15:26.855547+08:00",
+      "updatedAt": "2026-09-07T08:15:35.674445+08:00"
+    }
+  }
+}

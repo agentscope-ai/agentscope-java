@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-07T04:51:10.057523+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/0004e98e-b80c-44ab-b289-060f5160eefd/accept",
+  "request": {
+    "expectedVersion": 5,
+    "reason": "管理员人工验收：计算、排序或质数结论与任务要求一致，批准交付。"
+  },
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "0004e98e-b80c-44ab-b289-060f5160eefd",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-fix1-team-success",
+      "description": "必须真实创建两个子Issue分给calculator和analyst，不能自己替代。calculator计算19×21+1；analyst把zebra,apple,pear按字典序排序。当前子Issue收到结果就验收，不等待兄弟才验收；两份成果都验收后汇总 TEAM_OK;CALC=400;SORT=apple,pear,zebra 并完成整个run。子Issue标题前缀 it-20260907-fix1。",
+      "status": "done",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "388a42ae-5bab-4998-bd84-e06e64e97923",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 6,
+      "createdAt": "2026-09-07T12:47:32.836561+08:00",
+      "updatedAt": "2026-09-07T12:51:10.068884+08:00",
+      "resolvedAt": "2026-09-07T12:51:10.070074+08:00"
+    }
+  }
+}

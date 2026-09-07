@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-07T04:47:32.810294+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "it-20260907-fix1-single-qoder",
+    "description": "将zebra,apple,pear按字典序排序，回复 QODER=apple,pear,zebra。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+    "assigneeType": "agent",
+    "assigneeRef": "22a5dc1b-944a-4085-a59d-8ff45611e690"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "d4768f8e-0f35-4202-9b8d-4eba16f54f55",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "3d76e6e8-7f03-4d1a-af1e-9e06f9b1ba66",
+      "orchestrationRunId": "cbf66050-b791-4340-af47-8a888eb8d309",
+      "runNodeId": "312aa510-252b-4e4c-881d-73a307a33a74",
+      "agentId": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "3d76e6e8-7f03-4d1a-af1e-9e06f9b1ba66",
+      "correlationId": "3d76e6e8-7f03-4d1a-af1e-9e06f9b1ba66",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T12:47:32.812531+08:00"
+    },
+    "issue": {
+      "id": "3d76e6e8-7f03-4d1a-af1e-9e06f9b1ba66",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-fix1-single-qoder",
+      "description": "将zebra,apple,pear按字典序排序，回复 QODER=apple,pear,zebra。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T12:47:32.812531+08:00",
+      "updatedAt": "2026-09-07T12:47:32.812531+08:00"
+    }
+  }
+}

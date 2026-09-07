@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-07T00:14:12.298342+00:00",
+  "method": "GET",
+  "path": "/api/v1/agents/412b8523-59e4-4b32-8a39-2d343c435132/definition",
+  "request": null,
+  "status": 200,
+  "response": {
+    "agentId": "412b8523-59e4-4b32-8a39-2d343c435132",
+    "definition": {
+      "archivedAt": null,
+      "createdAt": 1788709227582,
+      "defaultEnvironmentId": "env_3e26585f96b2",
+      "defaultMemoryStoreIds": [],
+      "defaultVaultIds": [],
+      "description": "",
+      "id": "412b8523-59e4-4b32-8a39-2d343c435132",
+      "maxIters": 20,
+      "mcpServers": null,
+      "model": "",
+      "name": "MA1",
+      "ownerId": "admin",
+      "scope": "user",
+      "skills": null,
+      "system": "一个助手",
+      "tools": null,
+      "updatedAt": 1788709227582,
+      "version": 1,
+      "workspaceId": null,
+      "workspacePath": "/Users/ken/agentscope-2/agentscope-java/agentscope-service/.dev-stack/workspaces/admin/412b8523-59e4-4b32-8a39-2d343c435132"
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-07T00:18:47.578201+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "it-20260907-0815-mention-mixed",
+    "description": "测试同属混合Team的两个成员跨运行时真实mention：你是Hosted A=679b7bf9-c9c1-4828-a129-4045be75090e，Managed B=2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7。初次执行：用issue.comment.add发送一次结构化mentions=[{\"type\":\"agent\",\"ref\":\"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}]，content=\"这是给B的新指令：计算12×12，输出 CROSS_B=144；再用issue.comment.add结构化mention回复A=679b7bf9-c9c1-4828-a129-4045be75090e一次，然后完成你的任务，不要执行原始A的发起步骤。\"。A发出后立即结束本次任务，勿等待。A收到B回复后仅输出 CROSS_ACK 并完成任务，不再调用comment.add，不再mention。B只执行收到的comment的新指令。禁止重新执行已完成的发起步骤。",
+    "assigneeType": "agent",
+    "assigneeRef": "679b7bf9-c9c1-4828-a129-4045be75090e"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "f52a4f75-3555-47c4-a392-1e54f07bfac8",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+      "orchestrationRunId": "1a41d083-e533-492d-998c-d9dad5667a9d",
+      "runNodeId": "2fd51d13-3099-402a-abfb-8467cc12876b",
+      "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+      "correlationId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T08:18:47.582059+08:00"
+    },
+    "issue": {
+      "id": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-mention-mixed",
+      "description": "测试同属混合Team的两个成员跨运行时真实mention：你是Hosted A=679b7bf9-c9c1-4828-a129-4045be75090e，Managed B=2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7。初次执行：用issue.comment.add发送一次结构化mentions=[{\"type\":\"agent\",\"ref\":\"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}]，content=\"这是给B的新指令：计算12×12，输出 CROSS_B=144；再用issue.comment.add结构化mention回复A=679b7bf9-c9c1-4828-a129-4045be75090e一次，然后完成你的任务，不要执行原始A的发起步骤。\"。A发出后立即结束本次任务，勿等待。A收到B回复后仅输出 CROSS_ACK 并完成任务，不再调用comment.add，不再mention。B只执行收到的comment的新指令。禁止重新执行已完成的发起步骤。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T08:18:47.582059+08:00",
+      "updatedAt": "2026-09-07T08:18:47.582059+08:00"
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "at": "2026-09-07T05:51:08.754463+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/c06535e5-ce29-4257-abc6-0c53d40197f2",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "c06535e5-ce29-4257-abc6-0c53d40197f2",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "18d2d02a-954c-4b11-8664-920b5e0b3980",
+      "orchestrationRunId": "065ad222-669b-4601-8a88-de8904587828",
+      "runNodeId": "92c7afe8-de89-447f-9cd8-ff4a0d2505ab",
+      "currentAttemptId": "e0717535-b26d-44d5-9255-2cabbb8c2d57",
+      "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+      "status": "failed",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+      "teamRole": "analyst",
+      "parentTaskId": "fc759cf3-4b77-4097-99b5-7628c7e32162",
+      "delegatedFromTaskId": "fc759cf3-4b77-4097-99b5-7628c7e32162",
+      "originator": {
+        "type": "agent",
+        "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "fc759cf3-4b77-4097-99b5-7628c7e32162",
+      "correlationId": "8e4afe84-fbe1-4b4d-b2c1-63ab6c9e4a24",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+          "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+        },
+        "sessionId": "sess_a4ba81703589",
+        "resolvedAt": "2026-09-07T04:47:50.42357Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_a4ba81703589",
+      "errorCode": "MISSING_CREDENTIAL",
+      "errorMessage": "缺少必要的TAVILY_API_KEY凭证来执行web搜索以找到手机行业的官方来源URL和近期事实。",
+      "version": 4,
+      "createdAt": "2026-09-07T12:47:49.950074+08:00",
+      "dispatchedAt": "2026-09-07T12:47:50.422793+08:00",
+      "startedAt": "2026-09-07T12:47:50.487448+08:00",
+      "completedAt": "2026-09-07T12:48:07.740899+08:00"
+    }
+  }
+}

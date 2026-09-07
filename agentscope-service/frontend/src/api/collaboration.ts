@@ -1,4 +1,4 @@
-import { api, apiFetch } from "@/lib/apiClient";
+import { api, apiFetch, apiResponse } from "@/lib/apiClient";
 
 export interface Actor {
   type: "human" | "agent" | "system" | "automation";
@@ -122,6 +122,8 @@ export interface AgentTask {
   status: string;
   priority: number;
   triggerType: string;
+  retryOfTaskId?: string;
+  rerunOfTaskId?: string;
   teamId?: string;
   teamRole?: string;
   leaderTask?: boolean;
@@ -208,6 +210,10 @@ export interface InboxItem {
   actor: Actor;
   title: string;
   body?: string;
+  details?: Record<string, unknown>;
+  needsAction: boolean;
+  readAt?: string;
+  resolvedAt?: string;
   read: boolean;
   archived: boolean;
   createdAt: string;
@@ -327,18 +333,21 @@ export const exportIssue = (id: string) =>
   api.get<Record<string, unknown>>(
     `/api/v1/issues/${encodeURIComponent(id)}/export`,
   );
-export const listComments = async (issueId: string) => {
-  const response = await api.get<{
-    items: Comment[];
-    externalSync?: Record<string, NonNullable<Comment["externalSync"]>>;
-  }>(`/api/v1/issues/${encodeURIComponent(issueId)}/comments`);
-  return {
-    ...response,
-    items: response.items.map((comment) => ({
-      ...comment,
-      externalSync: response.externalSync?.[comment.id],
-    })),
-  };
+export const listComments = async (issueId: string, focusCommentId?: string) => {
+  const items: Comment[] = [];
+  let cursor = "";
+  do {
+    const response = await api.get<{
+      items: Comment[];
+      nextCursor?: string;
+      externalSync?: Record<string, NonNullable<Comment["externalSync"]>>;
+    }>(`/api/v1/issues/${encodeURIComponent(issueId)}/comments${query({ cursor: cursor || undefined })}`);
+    items.push(...response.items.map(comment => ({ ...comment, externalSync: response.externalSync?.[comment.id] })));
+    const next = response.nextCursor || "";
+    if (!focusCommentId || items.some(comment => comment.id === focusCommentId) || !next || next === cursor) break;
+    cursor = next;
+  } while (cursor);
+  return { items };
 };
 export const listIssueActivity = (issueId: string) =>
   api.get<{ items: IssueActivity[] }>(
@@ -365,6 +374,10 @@ export const listIssueArtifacts = (issueId: string) =>
   api.get<{ items: Artifact[] }>(
     `/api/v1/issues/${encodeURIComponent(issueId)}/artifacts`,
   );
+export async function downloadIssueArtifact(artifact: Pick<Artifact, "id" | "filename">): Promise<Blob> {
+  const response = await apiResponse(`/api/v1/artifacts/${encodeURIComponent(artifact.id)}/download`, { method: "POST" });
+  return response.blob();
+}
 export const addComment = (
   issueId: string,
   content: string,
@@ -440,6 +453,16 @@ export const listTasks = (
   api.get<{ items: AgentTask[] }>(
     `/api/v1/agent-tasks${query({ tenant, namespace, status, agentId })}`,
   );
+export async function listIssueTasks(tenant: string, namespace: string, issueId: string) {
+  const items: AgentTask[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await api.get<{ items: AgentTask[] }>(
+      `/api/v1/agent-tasks${query({ tenant, namespace, issueId, limit: 100, offset })}`,
+    );
+    items.push(...page.items);
+    if (page.items.length < 100) return { items };
+  }
+}
 export const listTeamTasks = (tenant: string, namespace: string, teamId: string) =>
   api.get<{ items: AgentTask[] }>(
     `/api/v1/agent-tasks${query({ tenant, namespace, teamId })}`,
@@ -497,15 +520,37 @@ export const removeTeamMember = (teamId: string, memberId: string) =>
   api.delete<void>(
     `/api/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(memberId)}`,
   );
-export const listInbox = (tenant: string, namespace: string) =>
-  api.get<{ items: InboxItem[] }>(
-    `/api/v1/inbox${query({ tenant, namespace })}`,
-  );
-export const readInbox = (id: string) =>
-  api.post<{ item: InboxItem }>(
-    `/api/v1/inbox/${encodeURIComponent(id)}/read`,
-    {},
-  );
+export interface InboxSummary {
+  unread: number;
+  actionRequired: number;
+  pendingApprovals: number;
+  attentionTotal: number;
+  byType: Record<string, number>;
+}
+export interface InboxOptions {
+  view?: string;
+  type?: string;
+  archived?: string;
+  cursor?: string;
+  limit?: number;
+}
+export interface InboxPageResult {
+  items: InboxItem[];
+  hasMore: boolean;
+  nextCursor: string;
+}
+export const listInbox = (tenant: string, namespace: string, options: InboxOptions = {}) =>
+  api.get<InboxPageResult>(`/api/v1/inbox${query({ tenant, namespace, ...options })}`);
+export const getInbox = (id: string, tenant: string, namespace: string) =>
+  api.get<{ item: InboxItem }>(`/api/v1/inbox/${encodeURIComponent(id)}${query({ tenant, namespace })}`);
+export const getInboxSummary = (tenant: string, namespace: string) =>
+  api.get<{ summary: InboxSummary }>(`/api/v1/inbox/summary${query({ tenant, namespace })}`);
+export const readInbox = (id: string, tenant?: string, namespace?: string) =>
+  api.post<{ item: InboxItem }>(`/api/v1/inbox/${encodeURIComponent(id)}/read${query({ tenant, namespace })}`, {});
+export const archiveInboxMessage = (id: string, tenant: string, namespace: string) =>
+  api.post<{ item: InboxItem }>(`/api/v1/inbox/${encodeURIComponent(id)}/archive${query({ tenant, namespace })}`, {});
+export const getApproval = (id: string) =>
+  api.get<{ approval: Approval }>(`/api/v1/approvals/${encodeURIComponent(id)}`);
 export const listApprovals = (
   tenant: string,
   namespace: string,

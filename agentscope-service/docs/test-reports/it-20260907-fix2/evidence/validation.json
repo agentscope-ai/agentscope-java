@@ -1,0 +1,64 @@
+{
+  "complete": true,
+  "at": "2026-09-07T14:16:25.327184+08:00",
+  "result": "PASS",
+  "mavenExplanation": "clean verify found 12 formatter fixture mismatches after changing local image transport from file URLs to bytes; fixed exact fixture expectations, resumed from the affected module, and all remaining modules passed. No failing tests skipped.",
+  "checks": [
+    {
+      "command": "mvn clean verify",
+      "status": "FAILED_THEN_CORRECTED",
+      "fullLogPath": "/tmp/agentscope-fix2-maven-clean-verify.log",
+      "fullLogSha256": "d248d166bb25f62959df774f599a9f68bce045662ed9393e9e72001e952303b9",
+      "evidence": "validation-1.log"
+    },
+    {
+      "command": "mvn verify -rf :agentscope-extensions-model-dashscope",
+      "status": "PASS",
+      "fullLogPath": "/tmp/agentscope-fix2-maven-final-resume.log",
+      "fullLogSha256": "28bdba6e9cdd6e807625b3ffe132609460ad93e7b7ad8c91a0b24744ec1694cf",
+      "evidence": "validation-2.log"
+    },
+    {
+      "command": "go test ./...",
+      "status": "PASS",
+      "fullLogPath": "/tmp/agentscope-fix2-go-terminal.log",
+      "fullLogSha256": "e1ec8cdb0c63dcd7b4370ff6e318162c65792be41b8c73a4a0e8ea3263ea91bd",
+      "evidence": "validation-3.log"
+    },
+    {
+      "command": "PostgreSQL full contract suite (isolated database)",
+      "status": "PASS",
+      "fullLogPath": "/tmp/agentscope-fix2-terminal-postgres.log",
+      "fullLogSha256": "543bf76ac7c1fcf3b1b716f12d56d5e27704211181ddb510f693e9c0b2fa6bfe",
+      "evidence": "validation-4.log"
+    },
+    {
+      "command": "PostgreSQL terminal event idempotency",
+      "status": "PASS",
+      "fullLogPath": "/tmp/agentscope-fix2-terminal-pg-idempotent.log",
+      "fullLogSha256": "92b8d5e7922f369707aaf4d41c2e6df85678633e97efc74c370604060017dd30",
+      "evidence": "validation-5.log"
+    },
+    {
+      "command": "Memory terminal event idempotency",
+      "status": "PASS",
+      "fullLogPath": "/tmp/agentscope-fix2-terminal-idempotent.log",
+      "fullLogSha256": "2054d58e6381635249bee046809fd53e510d5ae7c11d70735f2808677dc04e87",
+      "evidence": "validation-6.log"
+    },
+    {
+      "command": "Runtime Host regression",
+      "status": "PASS",
+      "fullLogPath": "/tmp/agentscope-fix2-host-test.log",
+      "fullLogSha256": "6e72ccf3e9d1e40819a771283e7a279e8fae97624b04738247f5cdf49d634b16",
+      "evidence": "validation-7.log"
+    },
+    {
+      "command": "Live RAG image and generic hook regression",
+      "status": "PASS",
+      "fullLogPath": "/tmp/agentscope-fix-rag-focused.log",
+      "fullLogSha256": "db7018ce38a3c2465ce734f722ec3d536dabfef74652747d20b8a559921a9b14",
+      "evidence": "validation-8.log"
+    }
+  ]
+}

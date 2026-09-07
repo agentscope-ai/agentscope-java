@@ -1,0 +1,617 @@
+{
+  "at": "2026-09-07T10:03:18.510390+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/564a06ad-4b10-4f52-b65c-ce7104426063/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "564a06ad-4b10-4f52-b65c-ce7104426063",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+      "mode": "adaptive",
+      "triggerType": "assignment",
+      "triggerRef": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+      "output": {
+        "summary": "完成了对子Issue的两阶段验收：第一阶段收到了DRAFT_READY字符串，第二阶段MA2成功计算了12×12的结果为144，并以FOLLOWUP_OK_144作为最终结果提交。"
+      },
+      "state": "succeeded",
+      "version": 13,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T17:39:59.586892+08:00",
+      "updatedAt": "2026-09-07T17:41:32.192403+08:00",
+      "startedAt": "2026-09-07T17:39:59.586892+08:00",
+      "completedAt": "2026-09-07T17:41:32.192403+08:00"
+    },
+    "nodes": [
+      {
+        "id": "3e330efb-788b-4d7b-876e-32bb447663a7",
+        "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:4298d95b-ccec-4a49-9803-73ef8d2e4550",
+        "type": "agent",
+        "role": "worker",
+        "issueId": "aa3516e0-d915-460e-9809-8aba81e339cc",
+        "state": "succeeded",
+        "output": "FOLLOWUP_OK_144",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T17:40:48.529122+08:00",
+        "updatedAt": "2026-09-07T17:41:06.906141+08:00",
+        "startedAt": "2026-09-07T17:40:49.125143+08:00",
+        "completedAt": "2026-09-07T17:41:06.906141+08:00"
+      },
+      {
+        "id": "fe21012a-def8-4543-a494-f90573eaf676",
+        "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:565bac50-cbdc-4267-822e-94f9bcc09d2f",
+        "type": "agent",
+        "role": "worker",
+        "issueId": "aa3516e0-d915-460e-9809-8aba81e339cc",
+        "state": "succeeded",
+        "output": "DRAFT_READY",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T17:40:17.325666+08:00",
+        "updatedAt": "2026-09-07T17:40:29.788457+08:00",
+        "startedAt": "2026-09-07T17:40:18.114819+08:00",
+        "completedAt": "2026-09-07T17:40:29.788457+08:00"
+      },
+      {
+        "id": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+        "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:d32bd03c-4cfb-4784-9126-533a4c48c74b",
+        "type": "team",
+        "role": "leader",
+        "issueId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+        "state": "succeeded",
+        "output": {
+          "summary": "完成了对子Issue的两阶段验收：第一阶段收到了DRAFT_READY字符串，第二阶段MA2成功计算了12×12的结果为144，并以FOLLOWUP_OK_144作为最终结果提交。"
+        },
+        "iteration": 1,
+        "version": 6,
+        "createdAt": "2026-09-07T17:39:59.586892+08:00",
+        "updatedAt": "2026-09-07T17:41:32.188161+08:00",
+        "startedAt": "2026-09-07T17:40:00.123309+08:00",
+        "completedAt": "2026-09-07T17:41:32.188161+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+        "orchestrationRunId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "runNodeId": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+        "currentAttemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "b20522d4-09e2-438a-8df7-06475870c2e5",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+        "correlationId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_b4adf7beef28",
+          "resolvedAt": "2026-09-07T09:40:00.143123Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_b4adf7beef28",
+        "result": {
+          "outcome": "waiting",
+          "summary": "等待MA2补充验证结果",
+          "waitingForTaskIds": [
+            "565bac50-cbdc-4267-822e-94f9bcc09d2f"
+          ]
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T17:39:59.586892+08:00",
+        "dispatchedAt": "2026-09-07T17:40:00.142588+08:00",
+        "startedAt": "2026-09-07T17:40:00.625457+08:00",
+        "completedAt": "2026-09-07T17:40:22.745103+08:00"
+      },
+      {
+        "id": "565bac50-cbdc-4267-822e-94f9bcc09d2f",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "aa3516e0-d915-460e-9809-8aba81e339cc",
+        "orchestrationRunId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "runNodeId": "fe21012a-def8-4543-a494-f90573eaf676",
+        "currentAttemptId": "d21e0741-e08d-4337-8cec-1c71c76ba5a7",
+        "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "b20522d4-09e2-438a-8df7-06475870c2e5",
+        "teamRole": "worker",
+        "parentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+        "delegatedFromTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+        "originator": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+        "correlationId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+            "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+          },
+          "sessionId": "sess_2114fc42644c",
+          "resolvedAt": "2026-09-07T09:40:18.121837Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_2114fc42644c",
+        "result": "DRAFT_READY",
+        "version": 4,
+        "createdAt": "2026-09-07T17:40:17.325666+08:00",
+        "dispatchedAt": "2026-09-07T17:40:18.121033+08:00",
+        "startedAt": "2026-09-07T17:40:18.208974+08:00",
+        "completedAt": "2026-09-07T17:40:29.788457+08:00"
+      },
+      {
+        "id": "cde997b6-3e0c-4d66-9f0b-793c1fe296b0",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "aa3516e0-d915-460e-9809-8aba81e339cc",
+        "orchestrationRunId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "runNodeId": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+        "currentAttemptId": "1c5bb74c-d900-49a6-a89a-b4bc6439f416",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "6c616012-c0b9-43b2-939b-25d75406f8c8",
+        "teamId": "b20522d4-09e2-438a-8df7-06475870c2e5",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "parentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+        "delegatedFromTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+        "originator": {
+          "type": "agent",
+          "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "6c616012-c0b9-43b2-939b-25d75406f8c8",
+        "correlationId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_2c178d19c6ae",
+          "resolvedAt": "2026-09-07T09:40:30.138884Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_2c178d19c6ae",
+        "result": {
+          "outcome": "waiting",
+          "summary": "等待MA2补充验证结果",
+          "waitingForTaskIds": [
+            "4298d95b-ccec-4a49-9803-73ef8d2e4550"
+          ]
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T17:40:29.788457+08:00",
+        "dispatchedAt": "2026-09-07T17:40:30.135145+08:00",
+        "startedAt": "2026-09-07T17:40:30.232636+08:00",
+        "completedAt": "2026-09-07T17:41:00.352048+08:00",
+        "inputs": [
+          {
+            "id": "1bc555cf-11ac-4eff-a56f-037a07869523",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "cde997b6-3e0c-4d66-9f0b-793c1fe296b0",
+            "commentId": "6c616012-c0b9-43b2-939b-25d75406f8c8",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T17:40:30.135145+08:00",
+            "processedAt": "2026-09-07T17:41:00.352048+08:00",
+            "responseCommentId": "624103ec-8d77-44ad-81f8-38d1ae09d246",
+            "attempts": 0,
+            "createdAt": "2026-09-07T17:40:29.788457+08:00"
+          }
+        ]
+      },
+      {
+        "id": "4298d95b-ccec-4a49-9803-73ef8d2e4550",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "aa3516e0-d915-460e-9809-8aba81e339cc",
+        "orchestrationRunId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "runNodeId": "3e330efb-788b-4d7b-876e-32bb447663a7",
+        "currentAttemptId": "73d9af04-efad-41d0-a9c8-88070db7cc8e",
+        "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "bb730196-0489-4ff8-aff3-a5574c0ac7d5",
+        "teamId": "b20522d4-09e2-438a-8df7-06475870c2e5",
+        "teamRole": "worker",
+        "parentTaskId": "cde997b6-3e0c-4d66-9f0b-793c1fe296b0",
+        "delegatedFromTaskId": "cde997b6-3e0c-4d66-9f0b-793c1fe296b0",
+        "originator": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "bb730196-0489-4ff8-aff3-a5574c0ac7d5",
+        "correlationId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+        "hopCount": 2,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+            "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+          },
+          "sessionId": "sess_eebc81134a54",
+          "resolvedAt": "2026-09-07T09:40:49.138427Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_eebc81134a54",
+        "result": "FOLLOWUP_OK_144",
+        "version": 4,
+        "createdAt": "2026-09-07T17:40:48.529122+08:00",
+        "dispatchedAt": "2026-09-07T17:40:49.13468+08:00",
+        "startedAt": "2026-09-07T17:40:49.217621+08:00",
+        "completedAt": "2026-09-07T17:41:06.906141+08:00",
+        "inputs": [
+          {
+            "id": "f54a9669-b163-405d-9c16-34f0dc23623d",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "4298d95b-ccec-4a49-9803-73ef8d2e4550",
+            "commentId": "bb730196-0489-4ff8-aff3-a5574c0ac7d5",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T17:40:49.13468+08:00",
+            "processedAt": "2026-09-07T17:41:06.906141+08:00",
+            "responseCommentId": "a6c7aa0f-dca5-48ef-8f22-b2cbe4b3ce73",
+            "attempts": 0,
+            "createdAt": "2026-09-07T17:40:48.529122+08:00"
+          }
+        ]
+      },
+      {
+        "id": "9472cce6-613a-43c5-b95a-44f9664d7bf8",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "aa3516e0-d915-460e-9809-8aba81e339cc",
+        "orchestrationRunId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "runNodeId": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+        "currentAttemptId": "4ca387e9-2917-4697-ba08-b675771415db",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "a6c7aa0f-dca5-48ef-8f22-b2cbe4b3ce73",
+        "teamId": "b20522d4-09e2-438a-8df7-06475870c2e5",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "parentTaskId": "cde997b6-3e0c-4d66-9f0b-793c1fe296b0",
+        "delegatedFromTaskId": "cde997b6-3e0c-4d66-9f0b-793c1fe296b0",
+        "originator": {
+          "type": "agent",
+          "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "a6c7aa0f-dca5-48ef-8f22-b2cbe4b3ce73",
+        "correlationId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+        "hopCount": 2,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_6b73e00babd6",
+          "resolvedAt": "2026-09-07T09:41:07.128283Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_6b73e00babd6",
+        "result": {
+          "summary": "完成了对子Issue的两阶段验收：第一阶段收到了DRAFT_READY字符串，第二阶段MA2成功计算了12×12的结果为144，并以FOLLOWUP_OK_144作为最终结果提交。"
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T17:41:06.906141+08:00",
+        "dispatchedAt": "2026-09-07T17:41:07.127518+08:00",
+        "startedAt": "2026-09-07T17:41:07.225064+08:00",
+        "completedAt": "2026-09-07T17:41:32.164282+08:00",
+        "inputs": [
+          {
+            "id": "c279e52e-f792-4a82-9740-92f5c4c74cf0",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "9472cce6-613a-43c5-b95a-44f9664d7bf8",
+            "commentId": "a6c7aa0f-dca5-48ef-8f22-b2cbe4b3ce73",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T17:41:07.127518+08:00",
+            "processedAt": "2026-09-07T17:41:32.164282+08:00",
+            "responseCommentId": "f9b7f16d-55f8-4fbf-8393-f63848047a1d",
+            "attempts": 0,
+            "createdAt": "2026-09-07T17:41:06.906141+08:00"
+          }
+        ]
+      }
+    ],
+    "attempts": [
+      {
+        "id": "a7daac1d-5413-4916-86d0-ff15516a732c",
+        "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+        "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "nodeId": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_b4adf7beef28",
+          "resolvedAt": "2026-09-07T09:40:00.143123Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "sessionId": "sess_b4adf7beef28",
+        "sessionRef": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T17:40:22.720482+08:00",
+        "result": {
+          "outcome": "waiting",
+          "summary": "等待MA2补充验证结果",
+          "waitingForTaskIds": [
+            "565bac50-cbdc-4267-822e-94f9bcc09d2f"
+          ]
+        },
+        "version": 21,
+        "createdAt": "2026-09-07T17:40:00.142588+08:00",
+        "updatedAt": "2026-09-07T17:40:22.745103+08:00",
+        "startedAt": "2026-09-07T17:40:00.625457+08:00",
+        "completedAt": "2026-09-07T17:40:22.745103+08:00"
+      },
+      {
+        "id": "d21e0741-e08d-4337-8cec-1c71c76ba5a7",
+        "agentTaskId": "565bac50-cbdc-4267-822e-94f9bcc09d2f",
+        "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+        "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "nodeId": "fe21012a-def8-4543-a494-f90573eaf676",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+            "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+          },
+          "sessionId": "sess_2114fc42644c",
+          "resolvedAt": "2026-09-07T09:40:18.121837Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "sessionId": "sess_2114fc42644c",
+        "sessionRef": "73b3d7d4-bd75-4bc3-a4eb-b5bf0122f55f",
+        "turnId": "da7fbfa7-36d0-4819-a379-36a88b5d8eef",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T17:40:29.762978+08:00",
+        "result": "DRAFT_READY",
+        "version": 14,
+        "createdAt": "2026-09-07T17:40:18.121033+08:00",
+        "updatedAt": "2026-09-07T17:40:29.788457+08:00",
+        "startedAt": "2026-09-07T17:40:18.208974+08:00",
+        "completedAt": "2026-09-07T17:40:29.788457+08:00"
+      },
+      {
+        "id": "1c5bb74c-d900-49a6-a89a-b4bc6439f416",
+        "agentTaskId": "cde997b6-3e0c-4d66-9f0b-793c1fe296b0",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+        "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "nodeId": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_2c178d19c6ae",
+          "resolvedAt": "2026-09-07T09:40:30.138884Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "sessionId": "sess_2c178d19c6ae",
+        "sessionRef": "c79f89c9-e885-443b-8e1b-5ace6aa0ca48",
+        "turnId": "bf78ab4c-2f16-4a0c-a106-c7778557d8f1",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T17:41:00.323016+08:00",
+        "result": {
+          "outcome": "waiting",
+          "summary": "等待MA2补充验证结果",
+          "waitingForTaskIds": [
+            "4298d95b-ccec-4a49-9803-73ef8d2e4550"
+          ]
+        },
+        "version": 20,
+        "createdAt": "2026-09-07T17:40:30.135145+08:00",
+        "updatedAt": "2026-09-07T17:41:00.352048+08:00",
+        "startedAt": "2026-09-07T17:40:30.232636+08:00",
+        "completedAt": "2026-09-07T17:41:00.352048+08:00"
+      },
+      {
+        "id": "73d9af04-efad-41d0-a9c8-88070db7cc8e",
+        "agentTaskId": "4298d95b-ccec-4a49-9803-73ef8d2e4550",
+        "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+        "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "nodeId": "3e330efb-788b-4d7b-876e-32bb447663a7",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+            "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+          },
+          "sessionId": "sess_eebc81134a54",
+          "resolvedAt": "2026-09-07T09:40:49.138427Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "sessionId": "sess_eebc81134a54",
+        "sessionRef": "8d1945d5-f37f-4f95-9ee3-cab66a6d41aa",
+        "turnId": "a5dca46c-c809-4f83-9d22-cd8b625b2e8a",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T17:41:06.881833+08:00",
+        "result": "FOLLOWUP_OK_144",
+        "version": 18,
+        "createdAt": "2026-09-07T17:40:49.13468+08:00",
+        "updatedAt": "2026-09-07T17:41:06.906141+08:00",
+        "startedAt": "2026-09-07T17:40:49.217621+08:00",
+        "completedAt": "2026-09-07T17:41:06.906141+08:00"
+      },
+      {
+        "id": "4ca387e9-2917-4697-ba08-b675771415db",
+        "agentTaskId": "9472cce6-613a-43c5-b95a-44f9664d7bf8",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+        "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+        "nodeId": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_6b73e00babd6",
+          "resolvedAt": "2026-09-07T09:41:07.128283Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "sessionId": "sess_6b73e00babd6",
+        "sessionRef": "3b8faef9-7d98-4a9d-85f1-35360633b49a",
+        "turnId": "5dc6c208-fff7-4b27-89f0-7ff0c607a667",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T17:41:32.115562+08:00",
+        "result": {
+          "summary": "完成了对子Issue的两阶段验收：第一阶段收到了DRAFT_READY字符串，第二阶段MA2成功计算了12×12的结果为144，并以FOLLOWUP_OK_144作为最终结果提交。"
+        },
+        "version": 18,
+        "createdAt": "2026-09-07T17:41:07.127518+08:00",
+        "updatedAt": "2026-09-07T17:41:32.164282+08:00",
+        "startedAt": "2026-09-07T17:41:07.225064+08:00",
+        "completedAt": "2026-09-07T17:41:32.164282+08:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "at": "2026-09-07T00:19:53.288901+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/e21b331e-68e0-4c92-ad1c-d63d117533c2/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_13ae4fc65e49",
+    "offset": 0,
+    "limit": 100,
+    "total": 7,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are handling standalone or explicitly mentioned work. Call task.complete only when you have a usable result. If a required capability, credential, input, or tool is unavailable, or a required tool call fails without a real fallback, call task.fail with a durable code and explanation; do not complete with a description of the failure. task.complete publishes the one authoritative visible reply, so do not repeat the same conclusion with issue.comment.add or task.progress. A human explicit mention is a direct request: answer it and finish without notifying the Issue assignee unless that Agent genuinely needs new work, in which case use an explicit mention.",
+        "occurredAt": "2026-09-07T00:16:33.356Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "issue.comment.add",
+        "toolCallId": "call_b3715bff2fec4eb684b6b6",
+        "toolInput": {
+          "content": "请对pear,apple进行排序，返回 MENTION_B=apple,pear，并用结构化mention回复A一次。",
+          "mentions": [
+            {
+              "ref": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+              "type": "agent"
+            }
+          ]
+        },
+        "occurredAt": "2026-09-07T00:16:38.296Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "{\"Comment\": {\"id\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"threadRootId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"author\": {\"type\": \"agent\", \"ref\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"content\": \"请对pear,apple进行排序，返回 MENTION_B=apple,pear，并用结构化mention回复A一次。\", \"type\": \"comment\", \"sourceTaskId\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\", \"updatedAt\": \"2026-09-07T08:16:38.330299+08:00\", \"mentions\": [{\"id\": \"9dd0944e-887e-495f-802f-b6bb30795bd9\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"commentId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"targetType\": \"agent\", \"targetRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\"}], \"routes\": [{\"id\": \"686e4144-4385-4fd3-b9bb-74fc686effe2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"commentId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"routeType\": \"explicit\", \"outcome\": \"queued\", \"taskId\": \"822c895f-8d91-40be-8c5c-161fc3efa60e\", \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\"}]}, \"Routes\": [{\"id\": \"686e4144-4385-4fd3-b9bb-74fc686effe2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"commentId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"routeType\": \"explicit\", \"outcome\": \"queued\", \"taskId\": \"822c895f-8d91-40be-8c5c-161fc3efa60e\", \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\"}], \"Tasks\": [{\"id\": \"822c895f-8d91-40be-8c5c-161fc3efa60e\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"orchestrationRunId\": \"25c032fe-9dcb-4e9a-8331-a2c22b6a8d08\", \"runNodeId\": \"f670db89-2166-4b30-a0f2-ecd36749765f\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"comment\", \"triggerCommentId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"parentTaskId\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"delegatedFromTaskId\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"originator\": {\"type\": \"agent\", \"ref\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"correlationId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\"}]}",
+        "toolName": "issue.comment.add",
+        "toolCallId": "call_b3715bff2fec4eb684b6b6",
+        "toolOutput": "{\"Comment\": {\"id\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"threadRootId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"author\": {\"type\": \"agent\", \"ref\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"content\": \"请对pear,apple进行排序，返回 MENTION_B=apple,pear，并用结构化mention回复A一次。\", \"type\": \"comment\", \"sourceTaskId\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\", \"updatedAt\": \"2026-09-07T08:16:38.330299+08:00\", \"mentions\": [{\"id\": \"9dd0944e-887e-495f-802f-b6bb30795bd9\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"commentId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"targetType\": \"agent\", \"targetRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\"}], \"routes\": [{\"id\": \"686e4144-4385-4fd3-b9bb-74fc686effe2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"commentId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"routeType\": \"explicit\", \"outcome\": \"queued\", \"taskId\": \"822c895f-8d91-40be-8c5c-161fc3efa60e\", \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\"}]}, \"Routes\": [{\"id\": \"686e4144-4385-4fd3-b9bb-74fc686effe2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"commentId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"routeType\": \"explicit\", \"outcome\": \"queued\", \"taskId\": \"822c895f-8d91-40be-8c5c-161fc3efa60e\", \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\"}], \"Tasks\": [{\"id\": \"822c895f-8d91-40be-8c5c-161fc3efa60e\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"orchestrationRunId\": \"25c032fe-9dcb-4e9a-8331-a2c22b6a8d08\", \"runNodeId\": \"f670db89-2166-4b30-a0f2-ecd36749765f\", \"agentId\": \"e0511f1c-4e0d-4b3b-ae93-58e181bfdede\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"comment\", \"triggerCommentId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"parentTaskId\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"delegatedFromTaskId\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"originator\": {\"type\": \"agent\", \"ref\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"81b81254-09a7-468d-bf19-44d0a9329887\", \"correlationId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T08:16:38.330299+08:00\"}]}",
+        "occurredAt": "2026-09-07T00:16:38.343Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.complete",
+        "toolCallId": "call_29b14bfa983c4c49ab05b2",
+        "toolInput": {
+          "summary": "已创建评论并提及了B（文本分析员），等待B的回复。"
+        },
+        "occurredAt": "2026-09-07T00:16:43.109Z"
+      },
+      {
+        "seq": 10,
+        "role": "assistant",
+        "content": "已创建评论并提及了B（文本分析员），等待B的回复。",
+        "occurredAt": "2026-09-07T00:16:43.167786Z"
+      },
+      {
+        "seq": 12,
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"7fd1d064-9c11-45ce-a715-3ba107191b40\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"threadRootId\": \"7fd1d064-9c11-45ce-a715-3ba107191b40\", \"author\": {\"type\": \"agent\", \"ref\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"content\": \"已创建评论并提及了B（文本分析员），等待B的回复。\", \"type\": \"result\", \"sourceTaskId\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"sourceAttemptId\": \"59f40656-aaed-46c6-8460-e4721c9f4169\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:43.152106+08:00\", \"updatedAt\": \"2026-09-07T08:16:43.152106+08:00\", \"routes\": [{\"id\": \"671f2bbc-9de3-4606-aedf-da126f444b04\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"commentId\": \"7fd1d064-9c11-45ce-a715-3ba107191b40\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T08:16:43.152106+08:00\"}]}, \"task\": {\"id\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"orchestrationRunId\": \"25c032fe-9dcb-4e9a-8331-a2c22b6a8d08\", \"runNodeId\": \"373f448f-6ea4-4030-b6a8-fe02d28686b3\", \"currentAttemptId\": \"59f40656-aaed-46c6-8460-e4721c9f4169\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"correlationId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"bindingId\": \"d809705a-dd23-5dba-8647-40d9b01d6baa\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"sessionId\": \"sess_13ae4fc65e49\", \"resolvedAt\": \"2026-09-07T00:16:33.333138Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_13ae4fc65e49\", \"result\": null, \"version\": 4, \"createdAt\": \"2026-09-07T08:16:32.782791+08:00\", \"dispatchedAt\": \"2026-09-07T08:16:33.332718+08:00\", \"startedAt\": \"2026-09-07T08:16:33.375267+08:00\", \"completedAt\": \"2026-09-07T08:16:43.152106+08:00\"}}",
+        "toolName": "task.complete",
+        "toolCallId": "call_29b14bfa983c4c49ab05b2",
+        "toolOutput": "{\"comment\": {\"id\": \"7fd1d064-9c11-45ce-a715-3ba107191b40\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"threadRootId\": \"7fd1d064-9c11-45ce-a715-3ba107191b40\", \"author\": {\"type\": \"agent\", \"ref\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"content\": \"已创建评论并提及了B（文本分析员），等待B的回复。\", \"type\": \"result\", \"sourceTaskId\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"sourceAttemptId\": \"59f40656-aaed-46c6-8460-e4721c9f4169\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:43.152106+08:00\", \"updatedAt\": \"2026-09-07T08:16:43.152106+08:00\", \"routes\": [{\"id\": \"671f2bbc-9de3-4606-aedf-da126f444b04\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"commentId\": \"7fd1d064-9c11-45ce-a715-3ba107191b40\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T08:16:43.152106+08:00\"}]}, \"task\": {\"id\": \"ea854d62-1caf-4394-8b54-7d492af4d5ab\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"orchestrationRunId\": \"25c032fe-9dcb-4e9a-8331-a2c22b6a8d08\", \"runNodeId\": \"373f448f-6ea4-4030-b6a8-fe02d28686b3\", \"currentAttemptId\": \"59f40656-aaed-46c6-8460-e4721c9f4169\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"correlationId\": \"559c0954-e48a-4625-b967-1be8af13453c\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"bindingId\": \"d809705a-dd23-5dba-8647-40d9b01d6baa\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"sessionId\": \"sess_13ae4fc65e49\", \"resolvedAt\": \"2026-09-07T00:16:33.333138Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_13ae4fc65e49\", \"result\": null, \"version\": 4, \"createdAt\": \"2026-09-07T08:16:32.782791+08:00\", \"dispatchedAt\": \"2026-09-07T08:16:33.332718+08:00\", \"startedAt\": \"2026-09-07T08:16:33.375267+08:00\", \"completedAt\": \"2026-09-07T08:16:43.152106+08:00\"}}",
+        "occurredAt": "2026-09-07T00:16:43.173Z"
+      },
+      {
+        "seq": 15,
+        "role": "assistant",
+        "content": "任务已完成，已创建评论并提及了B（文本分析员），现在我将等待B的回复。",
+        "occurredAt": "2026-09-07T00:16:48.379Z"
+      }
+    ],
+    "source": "events"
+  }
+}

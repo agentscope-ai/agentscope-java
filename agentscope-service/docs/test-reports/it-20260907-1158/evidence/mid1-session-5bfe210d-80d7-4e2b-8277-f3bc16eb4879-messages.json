@@ -1,0 +1,78 @@
+{
+  "at": "2026-09-07T04:00:18.042072+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/5bfe210d-80d7-4e2b-8277-f3bc16eb4879/messages?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_d26aef90832b",
+    "offset": 0,
+    "limit": 500,
+    "total": 7,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are handling standalone or explicitly mentioned work. Call task.complete only when you have a usable result. If a required capability, credential, input, or tool is unavailable, or a required tool call fails without a real fallback, call task.fail with a durable code and explanation; do not complete with a description of the failure. task.complete publishes the one authoritative visible reply, so do not repeat the same conclusion with issue.comment.add or task.progress. A human explicit mention is a direct request: answer it and finish without notifying the Issue assignee unless that Agent genuinely needs new work, in which case use an explicit mention.",
+        "occurredAt": "2026-09-07T04:00:01.501Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.get",
+        "toolCallId": "call_51e74fc3834a48aa801b09",
+        "toolInput": {},
+        "occurredAt": "2026-09-07T04:00:05.043Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"40de5a32-608c-498d-b7ec-592892d4dce7\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"orchestrationRunId\": \"35bfab8e-ac9d-56a1-bb6b-96203f52f652\", \"runNodeId\": \"cbd5f30e-8a1e-59de-be6b-009ae6607bca\", \"currentAttemptId\": \"24fabc09-3c94-416e-9ab4-ba4574190e36\", \"agentId\": \"36813b00-2887-469c-a5c2-3def9a08f103\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"orchestration_node\", \"originator\": {\"type\": \"system\", \"ref\": \"endpoint:b07ca648-420f-4a27-8f5d-f68c773eea12\"}, \"causationId\": \"cbd5f30e-8a1e-59de-be6b-009ae6607bca\", \"correlationId\": \"35bfab8e-ac9d-56a1-bb6b-96203f52f652\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"36813b00-2887-469c-a5c2-3def9a08f103\", \"bindingId\": \"c20a7ab7-ba50-58dc-a943-3bff296ccf6a\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"36813b00-2887-469c-a5c2-3def9a08f103\"}, \"sessionId\": \"sess_d26aef90832b\", \"resolvedAt\": \"2026-09-07T04:00:01.472761Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_d26aef90832b\", \"version\": 3, \"createdAt\": \"2026-09-07T12:00:01.460838+08:00\", \"dispatchedAt\": \"2026-09-07T12:00:01.472411+08:00\", \"startedAt\": \"2026-09-07T12:00:01.525398+08:00\"}}",
+        "toolName": "task.get",
+        "toolCallId": "call_51e74fc3834a48aa801b09",
+        "toolOutput": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"40de5a32-608c-498d-b7ec-592892d4dce7\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"orchestrationRunId\": \"35bfab8e-ac9d-56a1-bb6b-96203f52f652\", \"runNodeId\": \"cbd5f30e-8a1e-59de-be6b-009ae6607bca\", \"currentAttemptId\": \"24fabc09-3c94-416e-9ab4-ba4574190e36\", \"agentId\": \"36813b00-2887-469c-a5c2-3def9a08f103\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"orchestration_node\", \"originator\": {\"type\": \"system\", \"ref\": \"endpoint:b07ca648-420f-4a27-8f5d-f68c773eea12\"}, \"causationId\": \"cbd5f30e-8a1e-59de-be6b-009ae6607bca\", \"correlationId\": \"35bfab8e-ac9d-56a1-bb6b-96203f52f652\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"36813b00-2887-469c-a5c2-3def9a08f103\", \"bindingId\": \"c20a7ab7-ba50-58dc-a943-3bff296ccf6a\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"36813b00-2887-469c-a5c2-3def9a08f103\"}, \"sessionId\": \"sess_d26aef90832b\", \"resolvedAt\": \"2026-09-07T04:00:01.472761Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_d26aef90832b\", \"version\": 3, \"createdAt\": \"2026-09-07T12:00:01.460838+08:00\", \"dispatchedAt\": \"2026-09-07T12:00:01.472411+08:00\", \"startedAt\": \"2026-09-07T12:00:01.525398+08:00\"}}",
+        "occurredAt": "2026-09-07T04:00:05.073Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "run.get",
+        "toolCallId": "call_f883aedd304a4e88a1a699",
+        "toolInput": {},
+        "occurredAt": "2026-09-07T04:00:08.255Z"
+      },
+      {
+        "seq": 10,
+        "role": "tool",
+        "content": "{\"run\": {\"id\": \"35bfab8e-ac9d-56a1-bb6b-96203f52f652\", \"tenant\": \"default\", \"namespace\": \"default\", \"rootIssueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"mode\": \"direct\", \"triggerType\": \"endpoint\", \"triggerRef\": \"b07ca648-420f-4a27-8f5d-f68c773eea12\", \"idempotencyKey\": \"b07ca648-420f-4a27-8f5d-f68c773eea12:it-20260907-1158-managed-job-ok\", \"input\": {\"quantity\": 12, \"unitPrice\": 12}, \"state\": \"waiting\", \"waitReason\": \"node_wait\", \"version\": 4, \"createdBy\": {\"type\": \"system\", \"ref\": \"endpoint:b07ca648-420f-4a27-8f5d-f68c773eea12\"}, \"createdAt\": \"2026-09-07T12:00:01.459465+08:00\", \"updatedAt\": \"2026-09-07T12:00:02.196786+08:00\", \"startedAt\": \"2026-09-07T12:00:01.459465+08:00\"}}",
+        "toolName": "run.get",
+        "toolCallId": "call_f883aedd304a4e88a1a699",
+        "toolOutput": "{\"run\": {\"id\": \"35bfab8e-ac9d-56a1-bb6b-96203f52f652\", \"tenant\": \"default\", \"namespace\": \"default\", \"rootIssueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"mode\": \"direct\", \"triggerType\": \"endpoint\", \"triggerRef\": \"b07ca648-420f-4a27-8f5d-f68c773eea12\", \"idempotencyKey\": \"b07ca648-420f-4a27-8f5d-f68c773eea12:it-20260907-1158-managed-job-ok\", \"input\": {\"quantity\": 12, \"unitPrice\": 12}, \"state\": \"waiting\", \"waitReason\": \"node_wait\", \"version\": 4, \"createdBy\": {\"type\": \"system\", \"ref\": \"endpoint:b07ca648-420f-4a27-8f5d-f68c773eea12\"}, \"createdAt\": \"2026-09-07T12:00:01.459465+08:00\", \"updatedAt\": \"2026-09-07T12:00:02.196786+08:00\", \"startedAt\": \"2026-09-07T12:00:01.459465+08:00\"}}",
+        "occurredAt": "2026-09-07T04:00:08.308Z"
+      },
+      {
+        "seq": 12,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.respond",
+        "toolCallId": "call_c153907d81944500bda1e0",
+        "toolInput": {
+          "content": "根据任务要求，计算 quantity（12）与 unitPrice（12）的乘积。结果是 144。因此，API_TOTAL=144。"
+        },
+        "occurredAt": "2026-09-07T04:00:13.702Z"
+      },
+      {
+        "seq": 14,
+        "role": "tool",
+        "content": "{\"Comment\": {\"id\": \"e1b6fee2-58a5-490a-a1cc-43d1c8727a8f\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"threadRootId\": \"e1b6fee2-58a5-490a-a1cc-43d1c8727a8f\", \"author\": {\"type\": \"agent\", \"ref\": \"36813b00-2887-469c-a5c2-3def9a08f103\"}, \"content\": \"根据任务要求，计算 quantity（12）与 unitPrice（12）的乘积。结果是 144。因此，API_TOTAL=144。\", \"type\": \"result\", \"sourceTaskId\": \"40de5a32-608c-498d-b7ec-592892d4dce7\", \"version\": 1, \"createdAt\": \"2026-09-07T12:00:13.775828+08:00\", \"updatedAt\": \"2026-09-07T12:00:13.775828+08:00\", \"routes\": [{\"id\": \"958bdb28-c7e8-4de3-aac3-b6e6e42e6bc3\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"commentId\": \"e1b6fee2-58a5-490a-a1cc-43d1c8727a8f\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"36813b00-2887-469c-a5c2-3def9a08f103\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T12:00:13.775828+08:00\"}]}, \"Routes\": [{\"id\": \"958bdb28-c7e8-4de3-aac3-b6e6e42e6bc3\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"commentId\": \"e1b6fee2-58a5-490a-a1cc-43d1c8727a8f\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"36813b00-2887-469c-a5c2-3def9a08f103\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T12:00:13.775828+08:00\"}], \"Tasks\": []}",
+        "toolName": "task.respond",
+        "toolCallId": "call_c153907d81944500bda1e0",
+        "toolOutput": "{\"Comment\": {\"id\": \"e1b6fee2-58a5-490a-a1cc-43d1c8727a8f\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"threadRootId\": \"e1b6fee2-58a5-490a-a1cc-43d1c8727a8f\", \"author\": {\"type\": \"agent\", \"ref\": \"36813b00-2887-469c-a5c2-3def9a08f103\"}, \"content\": \"根据任务要求，计算 quantity（12）与 unitPrice（12）的乘积。结果是 144。因此，API_TOTAL=144。\", \"type\": \"result\", \"sourceTaskId\": \"40de5a32-608c-498d-b7ec-592892d4dce7\", \"version\": 1, \"createdAt\": \"2026-09-07T12:00:13.775828+08:00\", \"updatedAt\": \"2026-09-07T12:00:13.775828+08:00\", \"routes\": [{\"id\": \"958bdb28-c7e8-4de3-aac3-b6e6e42e6bc3\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"commentId\": \"e1b6fee2-58a5-490a-a1cc-43d1c8727a8f\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"36813b00-2887-469c-a5c2-3def9a08f103\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T12:00:13.775828+08:00\"}]}, \"Routes\": [{\"id\": \"958bdb28-c7e8-4de3-aac3-b6e6e42e6bc3\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"c8458e4e-0fc0-5f1e-8230-8c48277e0263\", \"commentId\": \"e1b6fee2-58a5-490a-a1cc-43d1c8727a8f\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"36813b00-2887-469c-a5c2-3def9a08f103\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T12:00:13.775828+08:00\"}], \"Tasks\": []}",
+        "occurredAt": "2026-09-07T04:00:13.786Z"
+      }
+    ],
+    "source": "events"
+  }
+}

@@ -179,6 +179,9 @@ type InboxFilter struct {
 	Namespace    string
 	RecipientRef string
 	Archived     bool
+	Type         string
+	View         string
+	Cursor       string
 	Limit        int
 	Offset       int
 }
@@ -420,6 +423,8 @@ type CollaborationRepository interface {
 	DecideApproval(ctx context.Context, id uuid.UUID, expectedVersion int64, status controlmodel.ApprovalStatus, actor controlmodel.Actor, decision json.RawMessage) (*controlmodel.Approval, error)
 
 	ListInbox(ctx context.Context, filter InboxFilter) ([]*controlmodel.InboxItem, error)
+	GetInbox(ctx context.Context, id uuid.UUID, recipientRef string) (*controlmodel.InboxItem, error)
+	InboxSummary(ctx context.Context, filter InboxFilter) (*controlmodel.InboxSummary, error)
 	UpdateInbox(ctx context.Context, id uuid.UUID, recipientRef string, read, archived *bool) (*controlmodel.InboxItem, error)
 	ListActivities(ctx context.Context, issueID uuid.UUID, limit, offset int) ([]*controlmodel.Activity, error)
 	SweepOverdueIssues(ctx context.Context, now time.Time, limit int) (int, error)

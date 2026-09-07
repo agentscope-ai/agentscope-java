@@ -1,0 +1,417 @@
+{
+  "at": "2026-09-07T10:03:18.545659+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/2340e1fb-3da1-4c32-a63f-77ea073de331/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 200,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. Read task.get currentRequest first. For comment-triggered work, the routed comments are the CURRENT assignment and override older Issue requirements. Use requestContext only to interpret the reply and its original hand-off; do not execute that history again. When replyToOwnDelegation is true, evaluate the returned result according to initiatingRequest and complete the current task. Do not mention the responding Agent just to acknowledge their answer; that creates another task. An explicit mention is only for new actionable work required by the current requester. Use math.evaluate to verify arithmetic before submitting or accepting numeric results. Verify other objective claims as well; a worker success flag alone is not acceptance evidence. You are the initial Team leader. Delegate suitable child work once, using the member.agentId from team.get as assigneeRef (never the membership id). After every issue.child.create succeeds, call task.complete immediately with a delegation summary; do not wait inside this turn. A fresh leader follow-up will arrive with each worker result.",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_18b75207570c4a1a93101fd9d0fe9452",
+          "managedSeq": 1,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_18b75207570c4a1a93101fd9d0fe9452",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:00.567+08:00"
+      },
+      {
+        "id": 201,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_78eeb10e7b60425f951a216acbb1e14e",
+          "managedSeq": 2,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_78eeb10e7b60425f951a216acbb1e14e",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:00.612+08:00"
+      },
+      {
+        "id": 202,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_9727cac5e40c451893f6d3c5f0558f1f",
+          "managedSeq": 3,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_9727cac5e40c451893f6d3c5f0558f1f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:00.909+08:00"
+      },
+      {
+        "id": 203,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 4,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.get",
+        "toolInput": {},
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_7df18c9d351f488ebf8c7597d50aac3d",
+          "managedSeq": 4,
+          "toolCallId": "call_5f64f43779dd45578eb076",
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_7df18c9d351f488ebf8c7597d50aac3d",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:06.659+08:00"
+      },
+      {
+        "id": 204,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 5,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "team.get",
+        "toolInput": {},
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_2e8d6a592ab640aba62cdbb986fd8635",
+          "managedSeq": 5,
+          "toolCallId": "call_0ca4a07eb5f4415099c377",
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_2e8d6a592ab640aba62cdbb986fd8635",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:06.733+08:00"
+      },
+      {
+        "id": 205,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 6,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_d1d823e452074fb99c6b618acbb0e430",
+          "managedSeq": 6,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_d1d823e452074fb99c6b618acbb0e430",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:06.754+08:00"
+      },
+      {
+        "id": 206,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 7,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"coordinatorChildren\": null, \"coordinatorIssue\": {\"id\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"leader-wait-20260907 MA1追问MA2后继续执行\", \"description\": \"请严格通过实际协作完成以下两阶段验收，不能自己代替成员工作：\\n1. MA1只创建一个子Issue给worker（MA2），第一轮要求MA2直接提交字符串 DRAFT_READY，不能写文件。\\n2. 收到DRAFT_READY后，MA1不应验收，而应在同一个子Issue通过issue.comment.add的结构化mentions明确让MA2计算12×12，并以FOLLOWUP_OK_144作为最终结果。mention成功后，MA1必须调用task.complete(outcome=waiting,summary=\\\"等待MA2补充验证结果\\\")结束自己的当前回合，不要将等待视为失败。\\n3. MA2收到第二轮追问时用math.evaluate验证12×12，提交result=\\\"FOLLOWUP_OK_144\\\"。\\n4. MA1收到FOLLOWUP_OK_144后才调用issue.accept验收，并调用run.node.complete，在主Issue总结第一次草稿、后续补充与最终144结果。不要重新追问或重复创建子Issue。只需这一个子Issue，不用web工具、也不要读写文件。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"team\", \"assigneeRef\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"creator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"acceptanceCriteria\": [], \"contextRefs\": [], \"version\": 2, \"createdAt\": \"2026-09-07T17:39:59.586892+08:00\", \"updatedAt\": \"2026-09-07T17:40:00.625457+08:00\"}, \"currentRequest\": \"leader-wait-20260907 MA1追问MA2后继续执行\\n\\n请严格通过实际协作完成以下两阶段验收，不能自己代替成员工作：\\n1. MA1只创建一个子Issue给worker（MA2），第一轮要求MA2直接提交字符串 DRAFT_READY，不能写文件。\\n2. 收到DRAFT_READY后，MA1不应验收，而应在同一个子Issue通过issue.comment.add的结构化mentions明确让MA2计算12×12，并以FOLLOWUP_OK_144作为最终结果。mention成功后，MA1必须调用task.complete(outcome=waiting,summary=\\\"等待MA2补充验证结果\\\")结束自己的当前回合，不要将等待视为失败。\\n3. MA2收到第二轮追问时用math.evaluate验证12×12，提交result=\\\"FOLLOWUP_OK_144\\\"。\\n4. MA1收到FOLLOWUP_OK_144后才调用issue.accept验收，并调用run.node.complete，在主Issue总结第一次草稿、后续补充与最终144结果。不要重新追问或重复创建子Issue。只需这一个子Issue，不用web工具、也不要读写文件。\", \"initiatingRequest\": \"\", \"inputs\": null, \"issue\": {\"id\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"leader-wait-20260907 MA1追问MA2后继续执行\", \"description\": \"请严格通过实际协作完成以下两阶段验收，不能自己代替成员工作：\\n1. MA1只创建一个子Issue给worker（MA2），第一轮要求MA2直接提交字符串 DRAFT_READY，不能写文件。\\n2. 收到DRAFT_READY后，MA1不应验收，而应在同一个子Issue通过issue.comment.add的结构化mentions明确让MA2计算12×12，并以FOLLOWUP_OK_144作为最终结果。mention成功后，MA1必须调用task.complete(outcome=waiting,summary=\\\"等待MA2补充验证结果\\\")结束自己的当前回合，不要将等待视为失败。\\n3. MA2收到第二轮追问时用math.evaluate验证12×12，提交result=\\\"FOLLOWUP_OK_144\\\"。\\n4. MA1收到FOLLOWUP_OK_144后才调用issue.accept验收，并调用run.node.complete，在主Issue总结第一次草稿、后续补充与最终144结果。不要重新追问或重复创建子Issue。只需这一个子Issue，不用web工具、也不要读写文件。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"team\", \"assigneeRef\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"creator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"acceptanceCriteria\": [], \"contextRefs\": [], \"version\": 2, \"createdAt\": \"2026-09-07T17:39:59.586892+08:00\", \"updatedAt\": \"2026-09-07T17:40:00.625457+08:00\"}, \"replyToOwnDelegation\": false, \"requestContext\": null, \"task\": {\"id\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"orchestrationRunId\": \"564a06ad-4b10-4f52-b65c-ce7104426063\", \"runNodeId\": \"af7aba8e-c95d-4d64-90f6-92e026dd719b\", \"currentAttemptId\": \"a7daac1d-5413-4916-86d0-ff15516a732c\", \"agentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"teamRole\": \"leader\", \"leaderTask\": true, \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"correlationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"bindingId\": \"8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"sessionId\": \"sess_b4adf7beef28\", \"resolvedAt\": \"2026-09-07T09:40:00.143123Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_b4adf7beef28\", \"version\": 3, \"createdAt\": \"2026-09-07T17:39:59.586892+08:00\", \"dispatchedAt\": \"2026-09-07T17:40:00.142588+08:00\", \"startedAt\": \"2026-09-07T17:40:00.625457+08:00\"}}",
+        "toolName": "task.get",
+        "toolOutput": "{\"coordinatorChildren\": null, \"coordinatorIssue\": {\"id\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"leader-wait-20260907 MA1追问MA2后继续执行\", \"description\": \"请严格通过实际协作完成以下两阶段验收，不能自己代替成员工作：\\n1. MA1只创建一个子Issue给worker（MA2），第一轮要求MA2直接提交字符串 DRAFT_READY，不能写文件。\\n2. 收到DRAFT_READY后，MA1不应验收，而应在同一个子Issue通过issue.comment.add的结构化mentions明确让MA2计算12×12，并以FOLLOWUP_OK_144作为最终结果。mention成功后，MA1必须调用task.complete(outcome=waiting,summary=\\\"等待MA2补充验证结果\\\")结束自己的当前回合，不要将等待视为失败。\\n3. MA2收到第二轮追问时用math.evaluate验证12×12，提交result=\\\"FOLLOWUP_OK_144\\\"。\\n4. MA1收到FOLLOWUP_OK_144后才调用issue.accept验收，并调用run.node.complete，在主Issue总结第一次草稿、后续补充与最终144结果。不要重新追问或重复创建子Issue。只需这一个子Issue，不用web工具、也不要读写文件。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"team\", \"assigneeRef\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"creator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"acceptanceCriteria\": [], \"contextRefs\": [], \"version\": 2, \"createdAt\": \"2026-09-07T17:39:59.586892+08:00\", \"updatedAt\": \"2026-09-07T17:40:00.625457+08:00\"}, \"currentRequest\": \"leader-wait-20260907 MA1追问MA2后继续执行\\n\\n请严格通过实际协作完成以下两阶段验收，不能自己代替成员工作：\\n1. MA1只创建一个子Issue给worker（MA2），第一轮要求MA2直接提交字符串 DRAFT_READY，不能写文件。\\n2. 收到DRAFT_READY后，MA1不应验收，而应在同一个子Issue通过issue.comment.add的结构化mentions明确让MA2计算12×12，并以FOLLOWUP_OK_144作为最终结果。mention成功后，MA1必须调用task.complete(outcome=waiting,summary=\\\"等待MA2补充验证结果\\\")结束自己的当前回合，不要将等待视为失败。\\n3. MA2收到第二轮追问时用math.evaluate验证12×12，提交result=\\\"FOLLOWUP_OK_144\\\"。\\n4. MA1收到FOLLOWUP_OK_144后才调用issue.accept验收，并调用run.node.complete，在主Issue总结第一次草稿、后续补充与最终144结果。不要重新追问或重复创建子Issue。只需这一个子Issue，不用web工具、也不要读写文件。\", \"initiatingRequest\": \"\", \"inputs\": null, \"issue\": {\"id\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"leader-wait-20260907 MA1追问MA2后继续执行\", \"description\": \"请严格通过实际协作完成以下两阶段验收，不能自己代替成员工作：\\n1. MA1只创建一个子Issue给worker（MA2），第一轮要求MA2直接提交字符串 DRAFT_READY，不能写文件。\\n2. 收到DRAFT_READY后，MA1不应验收，而应在同一个子Issue通过issue.comment.add的结构化mentions明确让MA2计算12×12，并以FOLLOWUP_OK_144作为最终结果。mention成功后，MA1必须调用task.complete(outcome=waiting,summary=\\\"等待MA2补充验证结果\\\")结束自己的当前回合，不要将等待视为失败。\\n3. MA2收到第二轮追问时用math.evaluate验证12×12，提交result=\\\"FOLLOWUP_OK_144\\\"。\\n4. MA1收到FOLLOWUP_OK_144后才调用issue.accept验收，并调用run.node.complete，在主Issue总结第一次草稿、后续补充与最终144结果。不要重新追问或重复创建子Issue。只需这一个子Issue，不用web工具、也不要读写文件。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"team\", \"assigneeRef\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"creator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"acceptanceCriteria\": [], \"contextRefs\": [], \"version\": 2, \"createdAt\": \"2026-09-07T17:39:59.586892+08:00\", \"updatedAt\": \"2026-09-07T17:40:00.625457+08:00\"}, \"replyToOwnDelegation\": false, \"requestContext\": null, \"task\": {\"id\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"orchestrationRunId\": \"564a06ad-4b10-4f52-b65c-ce7104426063\", \"runNodeId\": \"af7aba8e-c95d-4d64-90f6-92e026dd719b\", \"currentAttemptId\": \"a7daac1d-5413-4916-86d0-ff15516a732c\", \"agentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"teamRole\": \"leader\", \"leaderTask\": true, \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"correlationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"bindingId\": \"8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"sessionId\": \"sess_b4adf7beef28\", \"resolvedAt\": \"2026-09-07T09:40:00.143123Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_b4adf7beef28\", \"version\": 3, \"createdAt\": \"2026-09-07T17:39:59.586892+08:00\", \"dispatchedAt\": \"2026-09-07T17:40:00.142588+08:00\", \"startedAt\": \"2026-09-07T17:40:00.625457+08:00\"}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_ba492cd2ef6343c5986ad51896f9dab2",
+          "managedSeq": 7,
+          "toolCallId": "call_5f64f43779dd45578eb076",
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "tool_use_id": "call_5f64f43779dd45578eb076",
+          "managedEventId": "evt_ba492cd2ef6343c5986ad51896f9dab2",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:06.838+08:00"
+      },
+      {
+        "id": 207,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 8,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"team\": {\"id\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"tenant\": \"default\", \"namespace\": \"default\", \"name\": \"leader-wait-20260907\", \"instructions\": \"这是等待协作回复的集成验证。只在本测试创建的Issue工作。所有成果直接放在task.complete.result中，不使用文件路径交付。Lead追问后以task.complete(outcome=waiting)让出当前回合，等待新的结果触发后续回合。\", \"status\": \"active\", \"leaderAgentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"policy\": {}, \"version\": 1, \"createdAt\": \"2026-09-07T17:39:59.575552+08:00\", \"updatedAt\": \"2026-09-07T17:39:59.575552+08:00\", \"members\": [{\"id\": \"b04bf563-8962-4cf4-b9ce-a6749adb0098\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"agentId\": \"b86719e8-f495-402f-bffa-b6d76eee8965\", \"role\": \"worker\", \"createdAt\": \"2026-09-07T17:39:59.575552+08:00\"}]}}",
+        "toolName": "team.get",
+        "toolOutput": "{\"team\": {\"id\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"tenant\": \"default\", \"namespace\": \"default\", \"name\": \"leader-wait-20260907\", \"instructions\": \"这是等待协作回复的集成验证。只在本测试创建的Issue工作。所有成果直接放在task.complete.result中，不使用文件路径交付。Lead追问后以task.complete(outcome=waiting)让出当前回合，等待新的结果触发后续回合。\", \"status\": \"active\", \"leaderAgentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"policy\": {}, \"version\": 1, \"createdAt\": \"2026-09-07T17:39:59.575552+08:00\", \"updatedAt\": \"2026-09-07T17:39:59.575552+08:00\", \"members\": [{\"id\": \"b04bf563-8962-4cf4-b9ce-a6749adb0098\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"agentId\": \"b86719e8-f495-402f-bffa-b6d76eee8965\", \"role\": \"worker\", \"createdAt\": \"2026-09-07T17:39:59.575552+08:00\"}]}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_d7477fa34d0b4429a604dce53075dfaa",
+          "managedSeq": 8,
+          "toolCallId": "call_0ca4a07eb5f4415099c377",
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "tool_use_id": "call_0ca4a07eb5f4415099c377",
+          "managedEventId": "evt_d7477fa34d0b4429a604dce53075dfaa",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:06.855+08:00"
+      },
+      {
+        "id": 208,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 9,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_ab7d6557eb4b44a2b39c2c1864fd99cc",
+          "managedSeq": 9,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_ab7d6557eb4b44a2b39c2c1864fd99cc",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:06.872+08:00"
+      },
+      {
+        "id": 209,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 10,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "issue.child.create",
+        "toolInput": {
+          "title": "提交 DRAFT_READY 字符串",
+          "assigneeRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+          "description": "请直接回复此Issue并提交字符串 DRAFT_READY。",
+          "assigneeType": "agent"
+        },
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_f5d53a7751c94c899edffa58c720a5bc",
+          "managedSeq": 10,
+          "toolCallId": "call_634e1515a9cc4bee946455",
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_f5d53a7751c94c899edffa58c720a5bc",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:17.279+08:00"
+      },
+      {
+        "id": 210,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 11,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_b04a9fbfa9214162ac397307fb472019",
+          "managedSeq": 11,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_b04a9fbfa9214162ac397307fb472019",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:17.297+08:00"
+      },
+      {
+        "id": 211,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 12,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"agentTask\": {\"id\": \"565bac50-cbdc-4267-822e-94f9bcc09d2f\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aa3516e0-d915-460e-9809-8aba81e339cc\", \"orchestrationRunId\": \"564a06ad-4b10-4f52-b65c-ce7104426063\", \"runNodeId\": \"fe21012a-def8-4543-a494-f90573eaf676\", \"agentId\": \"b86719e8-f495-402f-bffa-b6d76eee8965\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"teamRole\": \"worker\", \"parentTaskId\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"delegatedFromTaskId\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"originator\": {\"type\": \"agent\", \"ref\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"correlationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T17:40:17.325666+08:00\"}, \"issue\": {\"id\": \"aa3516e0-d915-460e-9809-8aba81e339cc\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"提交 DRAFT_READY 字符串\", \"description\": \"请直接回复此Issue并提交字符串 DRAFT_READY。\", \"status\": \"backlog\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"b86719e8-f495-402f-bffa-b6d76eee8965\", \"creator\": {\"type\": \"agent\", \"ref\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"parentIssueId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"version\": 1, \"createdAt\": \"2026-09-07T17:40:17.325666+08:00\", \"updatedAt\": \"2026-09-07T17:40:17.325666+08:00\"}}",
+        "toolName": "issue.child.create",
+        "toolOutput": "{\"agentTask\": {\"id\": \"565bac50-cbdc-4267-822e-94f9bcc09d2f\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"aa3516e0-d915-460e-9809-8aba81e339cc\", \"orchestrationRunId\": \"564a06ad-4b10-4f52-b65c-ce7104426063\", \"runNodeId\": \"fe21012a-def8-4543-a494-f90573eaf676\", \"agentId\": \"b86719e8-f495-402f-bffa-b6d76eee8965\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"teamRole\": \"worker\", \"parentTaskId\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"delegatedFromTaskId\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"originator\": {\"type\": \"agent\", \"ref\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"correlationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T17:40:17.325666+08:00\"}, \"issue\": {\"id\": \"aa3516e0-d915-460e-9809-8aba81e339cc\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"提交 DRAFT_READY 字符串\", \"description\": \"请直接回复此Issue并提交字符串 DRAFT_READY。\", \"status\": \"backlog\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"b86719e8-f495-402f-bffa-b6d76eee8965\", \"creator\": {\"type\": \"agent\", \"ref\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"parentIssueId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"version\": 1, \"createdAt\": \"2026-09-07T17:40:17.325666+08:00\", \"updatedAt\": \"2026-09-07T17:40:17.325666+08:00\"}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_ad3c9a3939be451cb5350f699c60cba3",
+          "managedSeq": 12,
+          "toolCallId": "call_634e1515a9cc4bee946455",
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "tool_use_id": "call_634e1515a9cc4bee946455",
+          "managedEventId": "evt_ad3c9a3939be451cb5350f699c60cba3",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:17.354+08:00"
+      },
+      {
+        "id": 212,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 13,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_aca4bbcc9f40465b99ba9bee38e71137",
+          "managedSeq": 13,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_aca4bbcc9f40465b99ba9bee38e71137",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:17.368+08:00"
+      },
+      {
+        "id": 220,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 14,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.complete",
+        "toolInput": {
+          "outcome": "waiting",
+          "summary": "等待MA2补充验证结果"
+        },
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_a59a358089c54b54b6987c34f768199d",
+          "managedSeq": 14,
+          "toolCallId": "call_f652257482174b3ea61bb7",
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_a59a358089c54b54b6987c34f768199d",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:22.674+08:00"
+      },
+      {
+        "id": 221,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 15,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_e6ef03a560ec4e3f85ae8ec5a77f7e49",
+          "managedSeq": 15,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_e6ef03a560ec4e3f85ae8ec5a77f7e49",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:22.708+08:00"
+      },
+      {
+        "id": 222,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 16,
+        "eventType": "assistant.message",
+        "role": "assistant",
+        "content": "等待MA2补充验证结果",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "assistant:a7daac1d-5413-4916-86d0-ff15516a732c"
+        },
+        "occurredAt": "2026-09-07T17:40:22.766364+08:00"
+      },
+      {
+        "id": 223,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 17,
+        "eventType": "turn.completed",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "turn-completed:a7daac1d-5413-4916-86d0-ff15516a732c"
+        },
+        "occurredAt": "2026-09-07T17:40:22.768411+08:00"
+      },
+      {
+        "id": 224,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 18,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"c6521f3f-9059-4414-b85d-c2d9881a5367\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"threadRootId\": \"c6521f3f-9059-4414-b85d-c2d9881a5367\", \"author\": {\"type\": \"agent\", \"ref\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"content\": \"等待MA2补充验证结果\", \"type\": \"result\", \"sourceTaskId\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"sourceAttemptId\": \"a7daac1d-5413-4916-86d0-ff15516a732c\", \"version\": 1, \"createdAt\": \"2026-09-07T17:40:22.745103+08:00\", \"updatedAt\": \"2026-09-07T17:40:22.745103+08:00\"}, \"outcome\": \"waiting\", \"task\": {\"id\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"orchestrationRunId\": \"564a06ad-4b10-4f52-b65c-ce7104426063\", \"runNodeId\": \"af7aba8e-c95d-4d64-90f6-92e026dd719b\", \"currentAttemptId\": \"a7daac1d-5413-4916-86d0-ff15516a732c\", \"agentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"teamRole\": \"leader\", \"leaderTask\": true, \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"correlationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"bindingId\": \"8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"sessionId\": \"sess_b4adf7beef28\", \"resolvedAt\": \"2026-09-07T09:40:00.143123Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_b4adf7beef28\", \"result\": {\"outcome\": \"waiting\", \"summary\": \"等待MA2补充验证结果\", \"waitingForTaskIds\": [\"565bac50-cbdc-4267-822e-94f9bcc09d2f\"]}, \"version\": 4, \"createdAt\": \"2026-09-07T17:39:59.586892+08:00\", \"dispatchedAt\": \"2026-09-07T17:40:00.142588+08:00\", \"startedAt\": \"2026-09-07T17:40:00.625457+08:00\", \"completedAt\": \"2026-09-07T17:40:22.745103+08:00\"}}",
+        "toolName": "task.complete",
+        "toolOutput": "{\"comment\": {\"id\": \"c6521f3f-9059-4414-b85d-c2d9881a5367\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"threadRootId\": \"c6521f3f-9059-4414-b85d-c2d9881a5367\", \"author\": {\"type\": \"agent\", \"ref\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"content\": \"等待MA2补充验证结果\", \"type\": \"result\", \"sourceTaskId\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"sourceAttemptId\": \"a7daac1d-5413-4916-86d0-ff15516a732c\", \"version\": 1, \"createdAt\": \"2026-09-07T17:40:22.745103+08:00\", \"updatedAt\": \"2026-09-07T17:40:22.745103+08:00\"}, \"outcome\": \"waiting\", \"task\": {\"id\": \"d32bd03c-4cfb-4784-9126-533a4c48c74b\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"orchestrationRunId\": \"564a06ad-4b10-4f52-b65c-ce7104426063\", \"runNodeId\": \"af7aba8e-c95d-4d64-90f6-92e026dd719b\", \"currentAttemptId\": \"a7daac1d-5413-4916-86d0-ff15516a732c\", \"agentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"b20522d4-09e2-438a-8df7-06475870c2e5\", \"teamRole\": \"leader\", \"leaderTask\": true, \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"correlationId\": \"d1f1ce82-d0f1-46fd-9f8c-3186115bf24b\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"67a796b7-02e7-493f-8990-931f0759f95e\", \"bindingId\": \"8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"67a796b7-02e7-493f-8990-931f0759f95e\"}, \"sessionId\": \"sess_b4adf7beef28\", \"resolvedAt\": \"2026-09-07T09:40:00.143123Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_b4adf7beef28\", \"result\": {\"outcome\": \"waiting\", \"summary\": \"等待MA2补充验证结果\", \"waitingForTaskIds\": [\"565bac50-cbdc-4267-822e-94f9bcc09d2f\"]}, \"version\": 4, \"createdAt\": \"2026-09-07T17:39:59.586892+08:00\", \"dispatchedAt\": \"2026-09-07T17:40:00.142588+08:00\", \"startedAt\": \"2026-09-07T17:40:00.625457+08:00\", \"completedAt\": \"2026-09-07T17:40:22.745103+08:00\"}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_b7177451bc6943f98e191b4916b94af7",
+          "managedSeq": 16,
+          "toolCallId": "call_f652257482174b3ea61bb7",
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "tool_use_id": "call_f652257482174b3ea61bb7",
+          "managedEventId": "evt_b7177451bc6943f98e191b4916b94af7",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:22.777+08:00"
+      },
+      {
+        "id": 225,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 19,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_d902a07390f540cfb3fa01c7fbf20c73",
+          "managedSeq": 17,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_d902a07390f540cfb3fa01c7fbf20c73",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:22.788+08:00"
+      },
+      {
+        "id": 235,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 20,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_9cfcdc44d71c4577b87d2a8108c4e481",
+          "managedSeq": 18,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_9cfcdc44d71c4577b87d2a8108c4e481",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:30.391+08:00"
+      },
+      {
+        "id": 236,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 21,
+        "eventType": "agent.message",
+        "role": "assistant",
+        "content": "我已经成功完成了当前回合，并设置了状态为等待，现在将等待 MA2 提交 `DRAFT_READY` 字符串。一旦收到回复，我将继续下一步操作。",
+        "frameworkMeta": {
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_1cdfa93380c0443fba0567a05041bd5c",
+          "managedSeq": 19,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_1cdfa93380c0443fba0567a05041bd5c",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:30.46+08:00"
+      },
+      {
+        "id": 244,
+        "sessionFk": "2340e1fb-3da1-4c32-a63f-77ea073de331",
+        "seq": 22,
+        "eventType": "session.status_idle",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "idle",
+          "turnId": "61e083d7-7a1e-40c8-b2f1-adf4a390fed0",
+          "attemptId": "a7daac1d-5413-4916-86d0-ff15516a732c",
+          "sourceKey": "managed:evt_daff58b044e94c30b02d909221122963",
+          "managedSeq": 20,
+          "agentTaskId": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+          "managedEventId": "evt_daff58b044e94c30b02d909221122963",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T17:40:39.41+08:00"
+      }
+    ]
+  }
+}

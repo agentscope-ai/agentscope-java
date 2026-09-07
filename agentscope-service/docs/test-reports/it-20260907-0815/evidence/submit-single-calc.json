@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-07T00:15:26.853719+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "it-20260907-0815-single-calc",
+    "description": "计算 17×23+19，给出一个等式和最终答案。不要使用工具。预期输出 CALC=410。",
+    "assigneeType": "agent",
+    "assigneeRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+      "orchestrationRunId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+      "runNodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+      "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+      "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T08:15:26.855547+08:00"
+    },
+    "issue": {
+      "id": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-single-calc",
+      "description": "计算 17×23+19，给出一个等式和最终答案。不要使用工具。预期输出 CALC=410。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T08:15:26.855547+08:00",
+      "updatedAt": "2026-09-07T08:15:26.855547+08:00"
+    }
+  }
+}

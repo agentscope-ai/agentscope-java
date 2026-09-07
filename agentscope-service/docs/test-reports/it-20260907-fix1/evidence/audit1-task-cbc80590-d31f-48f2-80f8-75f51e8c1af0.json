@@ -1,0 +1,56 @@
+{
+  "at": "2026-09-07T04:50:01.238872+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "0112a036-65ae-441a-bc48-09a02ca3cdf6",
+      "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+      "runNodeId": "31b6856d-7075-43ba-919c-70b0710684ac",
+      "currentAttemptId": "204dae43-534a-4cad-ac91-82f1e6eda314",
+      "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+      "status": "failed",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+      "teamRole": "analyst",
+      "parentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+      "delegatedFromTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+      "originator": {
+        "type": "agent",
+        "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+      },
+      "causationId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+      "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+          "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+        },
+        "sessionId": "sess_4f1243893906",
+        "resolvedAt": "2026-09-07T04:47:51.430322Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_4f1243893906",
+      "errorCode": "MISSING_CREDENTIALS",
+      "errorMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry.",
+      "version": 4,
+      "createdAt": "2026-09-07T12:47:50.585081+08:00",
+      "dispatchedAt": "2026-09-07T12:47:51.429487+08:00",
+      "startedAt": "2026-09-07T12:47:51.474424+08:00",
+      "completedAt": "2026-09-07T12:48:09.986582+08:00"
+    }
+  }
+}

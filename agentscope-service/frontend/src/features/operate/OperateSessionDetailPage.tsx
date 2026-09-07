@@ -226,8 +226,8 @@ export default function OperateSessionDetailPage() {
   return (
     <Page>
       <div>
-        <Link to={scope.scopedPath(agentId ? `/agent-center/agents/${encodeURIComponent(agentId)}?tab=sessions` : '/work/sessions')} className="text-sm text-muted-foreground hover:text-foreground">
-          ← {agentId ? 'Agent' : 'Sessions'}
+        <Link to={scope.scopedPath(agentId ? `/agent-center/agents/${encodeURIComponent(agentId)}?tab=activity&view=sessions` : '/work/sessions')} className="text-sm text-muted-foreground hover:text-foreground">
+          ← {agentId ? 'Agent activity' : 'Sessions'}
         </Link>
         <PageHeader
           className="mt-2"

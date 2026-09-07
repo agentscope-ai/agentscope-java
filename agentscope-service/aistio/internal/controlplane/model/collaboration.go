@@ -467,8 +467,19 @@ type InboxItem struct {
 	Details       json.RawMessage `json:"details,omitempty"`
 	Read          bool            `json:"read"`
 	Archived      bool            `json:"archived"`
+	NeedsAction   bool            `json:"needsAction"`
+	ReadAt        *time.Time      `json:"readAt,omitempty"`
+	ResolvedAt    *time.Time      `json:"resolvedAt,omitempty"`
 	DedupeKey     string          `json:"dedupeKey,omitempty"`
 	CreatedAt     time.Time       `json:"createdAt"`
+}
+
+type InboxSummary struct {
+	Unread           int            `json:"unread"`
+	ActionRequired   int            `json:"actionRequired"`
+	PendingApprovals int            `json:"pendingApprovals"`
+	AttentionTotal   int            `json:"attentionTotal"`
+	ByType           map[string]int `json:"byType"`
 }
 
 type Activity struct {

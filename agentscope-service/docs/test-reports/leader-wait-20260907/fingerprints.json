@@ -1,0 +1,9 @@
+{
+  "/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/internal/collaboration/leader_wait.go": "bcd24c988de9e6f80c59963393f8e9fd704dd36378be56bb5df593e74ee6edd3",
+  "/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/internal/httpapi/collaboration_mcp.go": "81eefcc05e33e6814784e96be0c67daf983d18aa843a3fc278fcce4009f49e0b",
+  "/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/internal/runtimebinding/resolver.go": "3b8a4baeddb97aa64c6811a5b330a10d53a2095d8f45db2cc765a3c676846ec2",
+  "/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/internal/runtimehost/workspace.go": "7fe89eda02583c884884216f53948606a53a4184b3ae4bac461c9c2e21973c00",
+  "/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/internal/store/postgres/collaboration_completion.go": "d4ef85ccc32a0ab4f4b99c6a381599bee8043c772d9c4c5e15d3bbb168287f96",
+  "/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/internal/store/memory/collaboration.go": "7e2d390c0680f9ca0ad6fc9e137a0eb90ab42b1a4edae9328ec30688f1d17d2b",
+  "/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/bin/aistiod": "ae2d7269c522cfced671d2e7ccddc3e15cee7dccfdecc14f66f4da0e7d3c147d"
+}

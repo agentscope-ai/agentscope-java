@@ -1,0 +1,120 @@
+{
+  "at": "2026-09-07T00:14:12.291478+00:00",
+  "method": "GET",
+  "path": "/api/v1/runtime-hosts",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "348b0331-630a-49dd-93c0-ef553858b8ae",
+        "tenant": "default",
+        "namespace": "default",
+        "hostKey": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a",
+        "poolName": "coding-default",
+        "daemonVersion": "0.2.0",
+        "os": "darwin",
+        "arch": "arm64",
+        "capabilities": {
+          "providers": {
+            "codex": "codex-cli 0.152.1",
+            "qoder": "1.0.37"
+          },
+          "providerCapabilities": {
+            "codex": {
+              "mcp": {
+                "mode": "cli-config",
+                "supported": true
+              },
+              "model": {
+                "mode": "cli-argument",
+                "target": "--model",
+                "supported": true
+              },
+              "shell": {
+                "mode": "native",
+                "target": "shell",
+                "supported": true
+              },
+              "tools": {
+                "mode": "native",
+                "supported": true
+              },
+              "resume": true,
+              "skills": {
+                "mode": "native-directory",
+                "target": ".agents/skills",
+                "supported": true
+              },
+              "runtime": "codex",
+              "workspace": {
+                "mode": "cwd",
+                "supported": true
+              },
+              "customArgs": {
+                "mode": "argv",
+                "target": "codex exec",
+                "supported": true
+              },
+              "displayName": "Codex",
+              "instructions": {
+                "mode": "file",
+                "target": "AGENTS.md",
+                "supported": true
+              }
+            },
+            "qoder": {
+              "mcp": {
+                "mode": "cli-config",
+                "target": "--mcp-config",
+                "supported": true
+              },
+              "model": {
+                "mode": "cli-argument",
+                "target": "--model",
+                "supported": true
+              },
+              "shell": {
+                "mode": "native",
+                "target": "Bash",
+                "supported": true
+              },
+              "tools": {
+                "mode": "allowlist",
+                "supported": true
+              },
+              "resume": true,
+              "skills": {
+                "mode": "context-directory",
+                "target": ".agentscope/definition/skills",
+                "supported": true
+              },
+              "runtime": "qodercli",
+              "workspace": {
+                "mode": "cwd",
+                "supported": true
+              },
+              "customArgs": {
+                "mode": "argv",
+                "target": "qodercli",
+                "supported": true
+              },
+              "displayName": "Qoder",
+              "instructions": {
+                "mode": "prompt",
+                "supported": true
+              }
+            }
+          }
+        },
+        "state": "online",
+        "capacity": 1,
+        "active": 0,
+        "lastSeenAt": "2026-09-07T08:14:07.971867+08:00",
+        "leaseGeneration": 1,
+        "createdAt": "2026-09-06T23:37:26.083261+08:00",
+        "updatedAt": "2026-09-07T08:14:07.971867+08:00"
+      }
+    ]
+  }
+}

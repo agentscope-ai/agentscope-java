@@ -1,0 +1,210 @@
+{
+  "at": "2026-09-07T03:32:07.008951+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/1e190959-e5ed-462e-bfc3-aa20706e394c/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "1e190959-e5ed-462e-bfc3-aa20706e394c",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "144d18e2-23b6-4f93-9b79-54aceb08a34a",
+      "mode": "direct",
+      "triggerType": "assignment",
+      "triggerRef": "144d18e2-23b6-4f93-9b79-54aceb08a34a",
+      "output": "{\"sorted\": \"apple,pear,zebra\", \"answer\": \"QODER=apple,pear,zebra\"}",
+      "state": "succeeded",
+      "version": 5,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T11:29:39.680558+08:00",
+      "updatedAt": "2026-09-07T11:29:53.925191+08:00",
+      "startedAt": "2026-09-07T11:29:39.680558+08:00",
+      "completedAt": "2026-09-07T11:29:53.925191+08:00"
+    },
+    "nodes": [
+      {
+        "id": "faedb15b-7294-40d0-954b-9ea49d3a393c",
+        "runId": "1e190959-e5ed-462e-bfc3-aa20706e394c",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:41d6e580-40c0-489b-86e7-ded67983a458",
+        "type": "agent",
+        "issueId": "144d18e2-23b6-4f93-9b79-54aceb08a34a",
+        "state": "succeeded",
+        "output": "{\"sorted\": \"apple,pear,zebra\", \"answer\": \"QODER=apple,pear,zebra\"}",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T11:29:39.680558+08:00",
+        "updatedAt": "2026-09-07T11:29:53.925191+08:00",
+        "startedAt": "2026-09-07T11:29:40.347877+08:00",
+        "completedAt": "2026-09-07T11:29:53.925191+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "41d6e580-40c0-489b-86e7-ded67983a458",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "144d18e2-23b6-4f93-9b79-54aceb08a34a",
+        "orchestrationRunId": "1e190959-e5ed-462e-bfc3-aa20706e394c",
+        "runNodeId": "faedb15b-7294-40d0-954b-9ea49d3a393c",
+        "currentAttemptId": "31a61b77-3f1b-4574-8fec-2af0d7d72605",
+        "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "144d18e2-23b6-4f93-9b79-54aceb08a34a",
+        "correlationId": "144d18e2-23b6-4f93-9b79-54aceb08a34a",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+            "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+            "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+            "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9"
+          },
+          "sessionId": "7de15457-0a97-4e4d-8c50-49e5999f4f3f",
+          "resolvedAt": "2026-09-07T03:29:40.813874Z",
+          "runtimePool": {
+            "id": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:18:16.901382+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:18:16.901382+08:00"
+          },
+          "runtimeProfile": {
+            "id": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-07T11:18:16.930373+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:18:16.930373+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "sessionId": "7de15457-0a97-4e4d-8c50-49e5999f4f3f",
+        "result": "{\"sorted\": \"apple,pear,zebra\", \"answer\": \"QODER=apple,pear,zebra\"}",
+        "version": 4,
+        "createdAt": "2026-09-07T11:29:39.680558+08:00",
+        "dispatchedAt": "2026-09-07T11:29:40.812835+08:00",
+        "startedAt": "2026-09-07T11:29:41.080651+08:00",
+        "completedAt": "2026-09-07T11:29:53.925191+08:00"
+      }
+    ],
+    "attempts": [
+      {
+        "id": "31a61b77-3f1b-4574-8fec-2af0d7d72605",
+        "agentTaskId": "41d6e580-40c0-489b-86e7-ded67983a458",
+        "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+        "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+        "runId": "1e190959-e5ed-462e-bfc3-aa20706e394c",
+        "nodeId": "faedb15b-7294-40d0-954b-9ea49d3a393c",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "hosted-runtime",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+            "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+            "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+            "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9"
+          },
+          "sessionId": "7de15457-0a97-4e4d-8c50-49e5999f4f3f",
+          "resolvedAt": "2026-09-07T03:29:40.813874Z",
+          "runtimePool": {
+            "id": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:18:16.901382+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:18:16.901382+08:00"
+          },
+          "runtimeProfile": {
+            "id": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-07T11:18:16.930373+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:18:16.930373+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "runtimeProfileName": "auto-qoder",
+        "runtimePoolName": "coding-default",
+        "hostId": "b4691067-81e8-4803-8046-99d9935f6d54",
+        "sessionId": "7de15457-0a97-4e4d-8c50-49e5999f4f3f",
+        "turnId": "78228045-50b3-470d-921c-145387ba2e85",
+        "providerSessionId": "b4d56378-0c15-460b-a092-31f6b6f5fc91",
+        "workspaceKey": "default/default/conversations/e8c6887d-f89f-4d59-bc37-6b9affd88f2a/7de15457-0a97-4e4d-8c50-49e5999f4f3f",
+        "state": "succeeded",
+        "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/63604ed7-dfc8-47a4-a820-777d79cd8747",
+        "leaseToken": "[REDACTED]",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T11:29:41.080651+08:00",
+        "checkpoint": {
+          "providerSessionId": "b4d56378-0c15-460b-a092-31f6b6f5fc91"
+        },
+        "result": "{\"sorted\": \"apple,pear,zebra\", \"answer\": \"QODER=apple,pear,zebra\"}",
+        "version": 7,
+        "createdAt": "2026-09-07T11:29:40.812835+08:00",
+        "updatedAt": "2026-09-07T11:29:53.925191+08:00",
+        "startedAt": "2026-09-07T11:29:41.079666+08:00",
+        "completedAt": "2026-09-07T11:29:53.925191+08:00"
+      }
+    ]
+  }
+}

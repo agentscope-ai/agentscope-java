@@ -1,0 +1,328 @@
+{
+  "at": "2026-09-07T04:01:52.658349+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/f27a05d7-49bb-4ebf-bc32-28b114f86d19/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "f27a05d7-49bb-4ebf-bc32-28b114f86d19",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+      "mode": "direct",
+      "triggerType": "comment",
+      "triggerRef": "507737f1-a581-42f1-8bec-4545d1d8f50a",
+      "state": "waiting",
+      "waitReason": "node_wait",
+      "version": 4,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T12:00:29.020916+08:00",
+      "updatedAt": "2026-09-07T12:00:29.259698+08:00",
+      "startedAt": "2026-09-07T12:00:29.020916+08:00"
+    },
+    "nodes": [
+      {
+        "id": "fce63dfc-5333-4cbe-bafd-561805dea443",
+        "runId": "f27a05d7-49bb-4ebf-bc32-28b114f86d19",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:06b88191-f541-44dd-a424-6d75d52fbcc3",
+        "type": "agent",
+        "issueId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+        "state": "succeeded",
+        "output": null,
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T12:00:29.020916+08:00",
+        "updatedAt": "2026-09-07T12:00:39.99325+08:00",
+        "startedAt": "2026-09-07T12:00:29.185247+08:00",
+        "completedAt": "2026-09-07T12:00:39.99325+08:00"
+      },
+      {
+        "id": "e2c4fe9b-3c4b-4446-821d-7178a5518489",
+        "runId": "f27a05d7-49bb-4ebf-bc32-28b114f86d19",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:124fcf85-2b9e-4025-ba54-4820b33987a4",
+        "type": "agent",
+        "issueId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+        "state": "waiting",
+        "iteration": 1,
+        "waitReason": "agent_task",
+        "version": 2,
+        "createdAt": "2026-09-07T12:00:39.976279+08:00",
+        "updatedAt": "2026-09-07T12:00:40.187686+08:00",
+        "startedAt": "2026-09-07T12:00:40.187686+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "06b88191-f541-44dd-a424-6d75d52fbcc3",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+        "orchestrationRunId": "f27a05d7-49bb-4ebf-bc32-28b114f86d19",
+        "runNodeId": "fce63dfc-5333-4cbe-bafd-561805dea443",
+        "currentAttemptId": "4094f1d9-2680-4039-8580-142a0d597704",
+        "agentId": "36813b00-2887-469c-a5c2-3def9a08f103",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "507737f1-a581-42f1-8bec-4545d1d8f50a",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "causationId": "507737f1-a581-42f1-8bec-4545d1d8f50a",
+        "correlationId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "36813b00-2887-469c-a5c2-3def9a08f103",
+            "bindingId": "c20a7ab7-ba50-58dc-a943-3bff296ccf6a",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "36813b00-2887-469c-a5c2-3def9a08f103"
+          },
+          "sessionId": "sess_8b1e870f25b5",
+          "resolvedAt": "2026-09-07T04:00:29.201066Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_8b1e870f25b5",
+        "result": null,
+        "version": 4,
+        "createdAt": "2026-09-07T12:00:29.020916+08:00",
+        "dispatchedAt": "2026-09-07T12:00:29.200551+08:00",
+        "startedAt": "2026-09-07T12:00:29.251593+08:00",
+        "completedAt": "2026-09-07T12:00:39.99325+08:00",
+        "inputs": [
+          {
+            "id": "864adec4-efd8-4fba-86bb-0f7188cc353d",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "06b88191-f541-44dd-a424-6d75d52fbcc3",
+            "commentId": "507737f1-a581-42f1-8bec-4545d1d8f50a",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T12:00:29.200551+08:00",
+            "processedAt": "2026-09-07T12:00:39.99325+08:00",
+            "responseCommentId": "6950fe9c-9510-4130-ad91-d37998e1b05d",
+            "attempts": 0,
+            "createdAt": "2026-09-07T12:00:29.020916+08:00"
+          }
+        ]
+      },
+      {
+        "id": "124fcf85-2b9e-4025-ba54-4820b33987a4",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+        "orchestrationRunId": "f27a05d7-49bb-4ebf-bc32-28b114f86d19",
+        "runNodeId": "e2c4fe9b-3c4b-4446-821d-7178a5518489",
+        "currentAttemptId": "c9488f21-afee-4b97-9e91-ee9f59c3fc12",
+        "agentId": "5a85fb34-bb61-4cc8-b693-153c2b23ae11",
+        "status": "dispatched",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "86ad45bb-1622-472c-8a01-3d54437b0f02",
+        "parentTaskId": "06b88191-f541-44dd-a424-6d75d52fbcc3",
+        "delegatedFromTaskId": "06b88191-f541-44dd-a424-6d75d52fbcc3",
+        "originator": {
+          "type": "agent",
+          "ref": "36813b00-2887-469c-a5c2-3def9a08f103"
+        },
+        "causationId": "86ad45bb-1622-472c-8a01-3d54437b0f02",
+        "correlationId": "48695df5-5ced-4512-bf3b-a4dc78f68ebd",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "5a85fb34-bb61-4cc8-b693-153c2b23ae11",
+            "bindingId": "cf384113-1e33-50d7-a3a4-68221653939a",
+            "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "runtimeProfileId": "bc4167bc-0f7b-41c6-b83d-6b034f46f822"
+          },
+          "sessionId": "2c1ef295-8ac0-488e-b5e9-0d81b3eba95d",
+          "resolvedAt": "2026-09-07T04:01:17.215651Z",
+          "runtimePool": {
+            "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:56:11.922607+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc4167bc-0f7b-41c6-b83d-6b034f46f822",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-07T11:56:11.92843+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.92843+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "sessionId": "2c1ef295-8ac0-488e-b5e9-0d81b3eba95d",
+        "version": 2,
+        "createdAt": "2026-09-07T12:00:39.976279+08:00",
+        "dispatchedAt": "2026-09-07T12:01:17.215344+08:00",
+        "inputs": [
+          {
+            "id": "037b416b-dcb7-4535-8a31-afac4336cd73",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "124fcf85-2b9e-4025-ba54-4820b33987a4",
+            "commentId": "86ad45bb-1622-472c-8a01-3d54437b0f02",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "delivered",
+            "deliveredAt": "2026-09-07T12:01:17.215344+08:00",
+            "attempts": 0,
+            "createdAt": "2026-09-07T12:00:39.976279+08:00"
+          }
+        ]
+      }
+    ],
+    "attempts": [
+      {
+        "id": "4094f1d9-2680-4039-8580-142a0d597704",
+        "agentTaskId": "06b88191-f541-44dd-a424-6d75d52fbcc3",
+        "agentId": "36813b00-2887-469c-a5c2-3def9a08f103",
+        "bindingId": "c20a7ab7-ba50-58dc-a943-3bff296ccf6a",
+        "runId": "f27a05d7-49bb-4ebf-bc32-28b114f86d19",
+        "nodeId": "fce63dfc-5333-4cbe-bafd-561805dea443",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "36813b00-2887-469c-a5c2-3def9a08f103",
+            "bindingId": "c20a7ab7-ba50-58dc-a943-3bff296ccf6a",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "36813b00-2887-469c-a5c2-3def9a08f103"
+          },
+          "sessionId": "sess_8b1e870f25b5",
+          "resolvedAt": "2026-09-07T04:00:29.201066Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "36813b00-2887-469c-a5c2-3def9a08f103",
+        "sessionId": "sess_8b1e870f25b5",
+        "sessionRef": "9184d1c8-9188-40e7-b505-31ca27e3b932",
+        "turnId": "2693a925-15bc-44bf-9094-c9bc6c0e2942",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T12:00:39.954619+08:00",
+        "result": null,
+        "version": 11,
+        "createdAt": "2026-09-07T12:00:29.200551+08:00",
+        "updatedAt": "2026-09-07T12:00:39.99325+08:00",
+        "startedAt": "2026-09-07T12:00:29.251593+08:00",
+        "completedAt": "2026-09-07T12:00:39.99325+08:00"
+      },
+      {
+        "id": "c9488f21-afee-4b97-9e91-ee9f59c3fc12",
+        "agentTaskId": "124fcf85-2b9e-4025-ba54-4820b33987a4",
+        "agentId": "5a85fb34-bb61-4cc8-b693-153c2b23ae11",
+        "bindingId": "cf384113-1e33-50d7-a3a4-68221653939a",
+        "runId": "f27a05d7-49bb-4ebf-bc32-28b114f86d19",
+        "nodeId": "e2c4fe9b-3c4b-4446-821d-7178a5518489",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "hosted-runtime",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "5a85fb34-bb61-4cc8-b693-153c2b23ae11",
+            "bindingId": "cf384113-1e33-50d7-a3a4-68221653939a",
+            "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "runtimeProfileId": "bc4167bc-0f7b-41c6-b83d-6b034f46f822"
+          },
+          "sessionId": "2c1ef295-8ac0-488e-b5e9-0d81b3eba95d",
+          "resolvedAt": "2026-09-07T04:01:17.215651Z",
+          "runtimePool": {
+            "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:56:11.922607+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc4167bc-0f7b-41c6-b83d-6b034f46f822",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-07T11:56:11.92843+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.92843+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "runtimeProfileName": "auto-qoder",
+        "runtimePoolName": "coding-default",
+        "sessionId": "2c1ef295-8ac0-488e-b5e9-0d81b3eba95d",
+        "turnId": "c5b2116d-43e9-4c99-99c6-72cb87ce4a70",
+        "state": "queued",
+        "fencingToken": "[REDACTED]",
+        "version": 1,
+        "createdAt": "2026-09-07T12:01:17.215344+08:00",
+        "updatedAt": "2026-09-07T12:01:17.215344+08:00"
+      }
+    ]
+  }
+}

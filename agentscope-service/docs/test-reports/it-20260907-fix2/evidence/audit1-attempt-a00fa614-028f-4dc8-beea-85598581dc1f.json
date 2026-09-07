@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T06:00:07.939681+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/a00fa614-028f-4dc8-beea-85598581dc1f",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "a00fa614-028f-4dc8-beea-85598581dc1f",
+      "agentTaskId": "bdf7b4fb-408a-48c2-820d-7d3c31f607fa",
+      "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+      "runId": "60f18d98-575e-5979-8785-8eb84aa4880c",
+      "nodeId": "dd2ad3ac-53b3-5b47-bf78-0fe104431be3",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+          "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "sessionId": "sess_342c2536c1a5",
+        "resolvedAt": "2026-09-07T05:57:52.776064Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "sessionId": "sess_342c2536c1a5",
+      "sessionRef": "c600982c-095d-4052-838d-c987bb3aab1f",
+      "turnId": "5c401aca-ad5e-4169-8466-98b2e1d06e70",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T13:58:30.570974+08:00",
+      "result": "已成功创建两个子任务：\n1. 新能源汽车行业调研，分配给researcher (agent ID: 602427d4-efe7-4a28-9ed8-b7ed3e5433e8)。\n2. 手机行业调研，分配给analyst (agent ID: 84238a0b-c1f3-4f93-9c15-f7e0c697aecc)。\n\n每个成员需要使用可用的web搜索/访问工具找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。如果缺少所需web工具/凭证或无法核实来源，他们将明确上报task.fail，并说明缺失能力。在收到所有结果后，我将进行验收汇总并完成整个run。",
+      "version": 24,
+      "createdAt": "2026-09-07T13:57:52.77533+08:00",
+      "updatedAt": "2026-09-07T13:58:30.590947+08:00",
+      "startedAt": "2026-09-07T13:57:52.89314+08:00",
+      "completedAt": "2026-09-07T13:58:30.590947+08:00"
+    }
+  }
+}

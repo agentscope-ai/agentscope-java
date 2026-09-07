@@ -1,0 +1,210 @@
+{
+  "at": "2026-09-07T00:19:53.041312+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/e1019f36-5a70-4256-b14b-5682cbea243d/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "e1019f36-5a70-4256-b14b-5682cbea243d",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "a461c301-29bb-4ff4-b596-cbd391f7e55e",
+      "mode": "direct",
+      "triggerType": "assignment",
+      "triggerRef": "a461c301-29bb-4ff4-b596-cbd391f7e55e",
+      "output": "{\"answer\": \"QODER=50\", \"computation\": \"8×7-6 = 56-6 = 50\"}",
+      "state": "succeeded",
+      "version": 5,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T08:15:26.881078+08:00",
+      "updatedAt": "2026-09-07T08:15:37.544265+08:00",
+      "startedAt": "2026-09-07T08:15:26.881078+08:00",
+      "completedAt": "2026-09-07T08:15:37.544265+08:00"
+    },
+    "nodes": [
+      {
+        "id": "cf27b391-1e0c-438c-95ef-eb73cbd62582",
+        "runId": "e1019f36-5a70-4256-b14b-5682cbea243d",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:c58e1865-b773-4c2e-9b13-3bd7e775acd1",
+        "type": "agent",
+        "issueId": "a461c301-29bb-4ff4-b596-cbd391f7e55e",
+        "state": "succeeded",
+        "output": "{\"answer\": \"QODER=50\", \"computation\": \"8×7-6 = 56-6 = 50\"}",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T08:15:26.881078+08:00",
+        "updatedAt": "2026-09-07T08:15:37.544265+08:00",
+        "startedAt": "2026-09-07T08:15:27.277096+08:00",
+        "completedAt": "2026-09-07T08:15:37.544265+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "c58e1865-b773-4c2e-9b13-3bd7e775acd1",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "a461c301-29bb-4ff4-b596-cbd391f7e55e",
+        "orchestrationRunId": "e1019f36-5a70-4256-b14b-5682cbea243d",
+        "runNodeId": "cf27b391-1e0c-438c-95ef-eb73cbd62582",
+        "currentAttemptId": "5ff7ef78-5ac3-4db9-8c76-da3005ab9974",
+        "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "a461c301-29bb-4ff4-b596-cbd391f7e55e",
+        "correlationId": "a461c301-29bb-4ff4-b596-cbd391f7e55e",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+            "runtimePoolId": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "runtimeProfileId": "bc887fda-ca12-4c78-9626-60180c64eec7"
+          },
+          "sessionId": "b637d0ba-a3e8-4a58-af8e-3c9770af9c05",
+          "resolvedAt": "2026-09-07T00:15:27.466428Z",
+          "runtimePool": {
+            "id": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-06T23:37:26.078122+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.078122+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc887fda-ca12-4c78-9626-60180c64eec7",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-06T23:37:26.082207+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.082207+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "sessionId": "b637d0ba-a3e8-4a58-af8e-3c9770af9c05",
+        "result": "{\"answer\": \"QODER=50\", \"computation\": \"8×7-6 = 56-6 = 50\"}",
+        "version": 4,
+        "createdAt": "2026-09-07T08:15:26.881078+08:00",
+        "dispatchedAt": "2026-09-07T08:15:27.465152+08:00",
+        "startedAt": "2026-09-07T08:15:27.973022+08:00",
+        "completedAt": "2026-09-07T08:15:37.544265+08:00"
+      }
+    ],
+    "attempts": [
+      {
+        "id": "5ff7ef78-5ac3-4db9-8c76-da3005ab9974",
+        "agentTaskId": "c58e1865-b773-4c2e-9b13-3bd7e775acd1",
+        "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+        "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+        "runId": "e1019f36-5a70-4256-b14b-5682cbea243d",
+        "nodeId": "cf27b391-1e0c-438c-95ef-eb73cbd62582",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "hosted-runtime",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+            "runtimePoolId": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "runtimeProfileId": "bc887fda-ca12-4c78-9626-60180c64eec7"
+          },
+          "sessionId": "b637d0ba-a3e8-4a58-af8e-3c9770af9c05",
+          "resolvedAt": "2026-09-07T00:15:27.466428Z",
+          "runtimePool": {
+            "id": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-06T23:37:26.078122+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.078122+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc887fda-ca12-4c78-9626-60180c64eec7",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-06T23:37:26.082207+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.082207+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "runtimeProfileName": "auto-qoder",
+        "runtimePoolName": "coding-default",
+        "hostId": "348b0331-630a-49dd-93c0-ef553858b8ae",
+        "sessionId": "b637d0ba-a3e8-4a58-af8e-3c9770af9c05",
+        "turnId": "9a2c22f9-935e-47f8-a8d2-05b9b3039efb",
+        "providerSessionId": "7667df64-8991-4f54-bf72-c6c384506b54",
+        "workspaceKey": "default/default/conversations/679b7bf9-c9c1-4828-a129-4045be75090e/b637d0ba-a3e8-4a58-af8e-3c9770af9c05",
+        "state": "succeeded",
+        "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/073e031e-b930-4f74-b48c-48fe29a302e0",
+        "leaseToken": "[REDACTED]",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T08:15:27.973022+08:00",
+        "checkpoint": {
+          "providerSessionId": "7667df64-8991-4f54-bf72-c6c384506b54"
+        },
+        "result": "{\"answer\": \"QODER=50\", \"computation\": \"8×7-6 = 56-6 = 50\"}",
+        "version": 7,
+        "createdAt": "2026-09-07T08:15:27.465152+08:00",
+        "updatedAt": "2026-09-07T08:15:37.544265+08:00",
+        "startedAt": "2026-09-07T08:15:27.971475+08:00",
+        "completedAt": "2026-09-07T08:15:37.544265+08:00"
+      }
+    ]
+  }
+}

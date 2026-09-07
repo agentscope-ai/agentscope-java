@@ -1,0 +1,117 @@
+{
+  "at": "2026-09-07T00:21:23.414706+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/df28d494-cc4f-4e10-b886-500a6754eeee/events?limit=500",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": "c5fceac5-4c0f-4eb3-9434-045c24942020",
+        "runId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 1,
+        "nodeId": "8058c044-17b6-4be5-ac7e-976a7b804827",
+        "agentTaskId": "745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "type": "agent-task.queued",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "causationId": "6975546a-a0ef-477f-9415-699afce0382a",
+        "correlationId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "idempotencyKey": "agent-task-queued:745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "occurredAt": "2026-09-07T08:18:18.807131+08:00"
+      },
+      {
+        "id": "05220832-9e59-4d8b-bb6f-203accd4386d",
+        "runId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 2,
+        "nodeId": "8058c044-17b6-4be5-ac7e-976a7b804827",
+        "agentTaskId": "745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "attemptId": "2fc0bc27-dae0-4c5a-9381-556a35bc15e9",
+        "type": "attempt.queued",
+        "actor": {
+          "type": "system"
+        },
+        "causationId": "6975546a-a0ef-477f-9415-699afce0382a",
+        "correlationId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "idempotencyKey": "attempt-queued:2fc0bc27-dae0-4c5a-9381-556a35bc15e9",
+        "occurredAt": "2026-09-07T08:18:19.291059+08:00"
+      },
+      {
+        "id": "c7b4acd8-dd95-4c63-b016-1f92a63e8d1d",
+        "runId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 3,
+        "nodeId": "8058c044-17b6-4be5-ac7e-976a7b804827",
+        "agentTaskId": "745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "attemptId": "2fc0bc27-dae0-4c5a-9381-556a35bc15e9",
+        "type": "attempt.running",
+        "actor": {
+          "type": "agent",
+          "ref": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+        },
+        "idempotencyKey": "attempt-running:2fc0bc27-dae0-4c5a-9381-556a35bc15e9",
+        "occurredAt": "2026-09-07T08:18:19.336789+08:00"
+      },
+      {
+        "id": "d8049b43-2018-4553-90d3-b4bba4bfa35d",
+        "runId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 4,
+        "nodeId": "8058c044-17b6-4be5-ac7e-976a7b804827",
+        "agentTaskId": "745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "attemptId": "2fc0bc27-dae0-4c5a-9381-556a35bc15e9",
+        "type": "attempt.succeeded",
+        "actor": {
+          "type": "agent",
+          "ref": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+        },
+        "causationId": "6975546a-a0ef-477f-9415-699afce0382a",
+        "correlationId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "idempotencyKey": "attempt-succeeded:2fc0bc27-dae0-4c5a-9381-556a35bc15e9",
+        "occurredAt": "2026-09-07T08:18:29.388339+08:00"
+      },
+      {
+        "id": "60c5a7d6-df3a-4cdd-b317-c57428eb3335",
+        "runId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 5,
+        "nodeId": "8058c044-17b6-4be5-ac7e-976a7b804827",
+        "agentTaskId": "745d54e2-79d7-4732-8d88-56a367ff3ec6",
+        "type": "node.succeeded",
+        "actor": {
+          "type": "agent",
+          "ref": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+        },
+        "causationId": "6975546a-a0ef-477f-9415-699afce0382a",
+        "correlationId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "idempotencyKey": "node-succeeded:8058c044-17b6-4be5-ac7e-976a7b804827",
+        "occurredAt": "2026-09-07T08:18:29.388339+08:00"
+      },
+      {
+        "id": "ccc27ccb-e197-441b-8e5d-73bd4c69bb06",
+        "runId": "df28d494-cc4f-4e10-b886-500a6754eeee",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 6,
+        "type": "run.succeeded",
+        "actor": {
+          "type": "agent",
+          "ref": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+        },
+        "causationId": "6975546a-a0ef-477f-9415-699afce0382a",
+        "correlationId": "d288e78c-be35-4297-9912-654dc1ee1d5b",
+        "idempotencyKey": "run-succeeded:df28d494-cc4f-4e10-b886-500a6754eeee",
+        "occurredAt": "2026-09-07T08:18:29.388339+08:00"
+      }
+    ]
+  }
+}

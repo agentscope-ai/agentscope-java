@@ -1,0 +1,103 @@
+{
+  "at": "2026-09-07T03:28:51.845779+00:00",
+  "method": "POST",
+  "path": "/api/v1/agents",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "agentKey": "it-20260907-1130-qoder",
+    "displayName": "it-20260907-1130-qoder",
+    "ownerType": "user",
+    "description": "真实集成测试保留资源",
+    "binding": {
+      "kind": "hosted-runtime",
+      "priority": 100,
+      "configuration": {
+        "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9",
+        "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb"
+      }
+    },
+    "definition": {
+      "name": "it-20260907-1130-qoder",
+      "system": "你是集成测试助手。只在当前测试 Issue/工作区工作，不操作其他资源，不修改实现或权限。无工具的算术和文本题直接作答；需要实时资料时实际使用可用工具，工具不可用须明确说明，禁止编造来源。遵守运行时协作协议，真实协作必须调用工具，不能只声称已委派或在正文写@。你是行业研究员和协作成员。",
+      "maxIters": 20
+    }
+  },
+  "status": 201,
+  "response": {
+    "agent": {
+      "id": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+      "tenant": "default",
+      "namespace": "default",
+      "agentKey": "it-20260907-1130-qoder",
+      "displayName": "it-20260907-1130-qoder",
+      "description": "真实集成测试保留资源",
+      "ownerType": "user",
+      "ownerRef": "admin",
+      "status": "active",
+      "version": 2,
+      "createdAt": "2026-09-07T11:28:51.848434+08:00",
+      "updatedAt": "2026-09-07T11:28:51.855669+08:00"
+    },
+    "binding": {
+      "id": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+      "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+      "tenant": "default",
+      "namespace": "default",
+      "kind": "hosted-runtime",
+      "configuration": {
+        "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+        "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9"
+      },
+      "priority": 100,
+      "enabled": true,
+      "version": 1,
+      "createdAt": "2026-09-07T11:28:51.85419+08:00",
+      "updatedAt": "2026-09-07T11:28:51.85419+08:00"
+    },
+    "definition": {
+      "archivedAt": null,
+      "createdAt": 1788751731852,
+      "defaultEnvironmentId": null,
+      "defaultMemoryStoreIds": [],
+      "defaultVaultIds": [],
+      "description": "",
+      "id": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+      "maxIters": 20,
+      "mcpServers": null,
+      "model": "",
+      "name": "it-20260907-1130-qoder",
+      "ownerId": "admin",
+      "scope": "user",
+      "skills": null,
+      "system": "你是集成测试助手。只在当前测试 Issue/工作区工作，不操作其他资源，不修改实现或权限。无工具的算术和文本题直接作答；需要实时资料时实际使用可用工具，工具不可用须明确说明，禁止编造来源。遵守运行时协作协议，真实协作必须调用工具，不能只声称已委派或在正文写@。你是行业研究员和协作成员。",
+      "tools": null,
+      "updatedAt": 1788751731852,
+      "version": 1,
+      "workspaceId": null,
+      "workspacePath": "/Users/ken/agentscope-2/agentscope-java/agentscope-service/.dev-stack/workspaces/admin/e8c6887d-f89f-4d59-bc37-6b9affd88f2a"
+    },
+    "policy": {
+      "id": "e6f2461b-27e6-453e-ae3c-87f87de82011",
+      "tenant": "default",
+      "namespace": "default",
+      "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+      "candidates": [
+        {
+          "binding": {
+            "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+            "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+            "kind": "hosted-runtime",
+            "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9",
+            "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb"
+          }
+        }
+      ],
+      "selectionMode": "ordered",
+      "fallbackMode": "disabled",
+      "version": 1,
+      "createdAt": "2026-09-07T11:28:51.85475+08:00",
+      "updatedAt": "2026-09-07T11:28:51.85475+08:00"
+    }
+  }
+}

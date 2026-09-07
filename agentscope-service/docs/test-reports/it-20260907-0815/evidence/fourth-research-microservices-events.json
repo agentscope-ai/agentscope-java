@@ -1,0 +1,357 @@
+{
+  "at": "2026-09-07T00:17:33.313155+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/1ef6ff35-6ccb-48a7-be15-2bfabc79ec95/events?limit=500",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": "57aba260-ceda-476e-97ec-d07a51d5d86d",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 1,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "type": "agent-task.queued",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "causationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "agent-task-queued:297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "occurredAt": "2026-09-07T08:16:32.791847+08:00"
+      },
+      {
+        "id": "70c22141-62bd-4892-b723-1e88a33a0a91",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 2,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "attemptId": "c590e964-b96d-48b6-9c62-e8278a2a337f",
+        "type": "attempt.queued",
+        "actor": {
+          "type": "system"
+        },
+        "causationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "attempt-queued:c590e964-b96d-48b6-9c62-e8278a2a337f",
+        "occurredAt": "2026-09-07T08:16:33.392944+08:00"
+      },
+      {
+        "id": "68fdf91b-e0b2-4102-92eb-b4fa57bd586f",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 3,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "attemptId": "c590e964-b96d-48b6-9c62-e8278a2a337f",
+        "type": "attempt.running",
+        "actor": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "idempotencyKey": "attempt-running:c590e964-b96d-48b6-9c62-e8278a2a337f",
+        "occurredAt": "2026-09-07T08:16:33.431413+08:00"
+      },
+      {
+        "id": "7efaf6b2-dc2d-4975-baba-96ac43b0ff9d",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 4,
+        "nodeId": "20f15143-7b44-4d88-8621-341a69ead7cb",
+        "agentTaskId": "ead3f1c4-3bee-4977-a059-560414924e70",
+        "type": "agent-task.queued",
+        "actor": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "causationId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "agent-task-queued:ead3f1c4-3bee-4977-a059-560414924e70",
+        "occurredAt": "2026-09-07T08:16:46.610312+08:00"
+      },
+      {
+        "id": "1eb3c61a-6da5-48b7-9d66-7380f0fac287",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 5,
+        "nodeId": "20f15143-7b44-4d88-8621-341a69ead7cb",
+        "agentTaskId": "ead3f1c4-3bee-4977-a059-560414924e70",
+        "type": "agent-task.dispatch_deferred",
+        "actor": {
+          "type": "system",
+          "ref": "runtime-scheduler"
+        },
+        "payload": {
+          "source": "control_outbox",
+          "message": "policy runtime candidate 0 is unavailable",
+          "retryable": true
+        },
+        "causationId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "agent-task-dispatch-deferred:ead3f1c4-3bee-4977-a059-560414924e70",
+        "occurredAt": "2026-09-07T08:16:47.255021+08:00"
+      },
+      {
+        "id": "3b5645e7-1426-40cd-aff4-d63667587329",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 6,
+        "nodeId": "c1ca5d53-77b4-4b96-8bda-d8b39bf4a0c6",
+        "agentTaskId": "0f44a96f-7913-479c-9412-e3ed01c99902",
+        "type": "agent-task.queued",
+        "actor": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "causationId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "agent-task-queued:0f44a96f-7913-479c-9412-e3ed01c99902",
+        "occurredAt": "2026-09-07T08:16:54.572899+08:00"
+      },
+      {
+        "id": "7e157fae-de07-4c46-9183-2cc8e60a1638",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 7,
+        "nodeId": "c1ca5d53-77b4-4b96-8bda-d8b39bf4a0c6",
+        "agentTaskId": "0f44a96f-7913-479c-9412-e3ed01c99902",
+        "attemptId": "ac9c2be7-8991-4d4f-aa9b-a09236af587e",
+        "type": "attempt.queued",
+        "actor": {
+          "type": "system"
+        },
+        "causationId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "attempt-queued:ac9c2be7-8991-4d4f-aa9b-a09236af587e",
+        "occurredAt": "2026-09-07T08:16:55.274153+08:00"
+      },
+      {
+        "id": "b6f749b0-4cf7-4c02-837a-949c32575811",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 8,
+        "nodeId": "c1ca5d53-77b4-4b96-8bda-d8b39bf4a0c6",
+        "agentTaskId": "0f44a96f-7913-479c-9412-e3ed01c99902",
+        "attemptId": "ac9c2be7-8991-4d4f-aa9b-a09236af587e",
+        "type": "attempt.running",
+        "actor": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "idempotencyKey": "attempt-running:ac9c2be7-8991-4d4f-aa9b-a09236af587e",
+        "occurredAt": "2026-09-07T08:16:55.322348+08:00"
+      },
+      {
+        "id": "27757038-a3ce-4c03-bee1-c37ad02b7c5e",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 9,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "type": "agent-task.queued",
+        "actor": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "causationId": "140ecdef-96af-4c18-96a5-fd0b2b68e512",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "agent-task-queued:63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "occurredAt": "2026-09-07T08:17:03.747833+08:00"
+      },
+      {
+        "id": "2bde7448-a7b5-4276-87f8-1de79256e57e",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 10,
+        "nodeId": "c1ca5d53-77b4-4b96-8bda-d8b39bf4a0c6",
+        "agentTaskId": "0f44a96f-7913-479c-9412-e3ed01c99902",
+        "attemptId": "ac9c2be7-8991-4d4f-aa9b-a09236af587e",
+        "type": "attempt.succeeded",
+        "actor": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "causationId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "attempt-succeeded:ac9c2be7-8991-4d4f-aa9b-a09236af587e",
+        "occurredAt": "2026-09-07T08:17:03.747833+08:00"
+      },
+      {
+        "id": "dd72576c-d61c-4ec4-9cf2-bbe7450afbbf",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 11,
+        "nodeId": "c1ca5d53-77b4-4b96-8bda-d8b39bf4a0c6",
+        "agentTaskId": "0f44a96f-7913-479c-9412-e3ed01c99902",
+        "type": "node.succeeded",
+        "actor": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "causationId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "node-succeeded:c1ca5d53-77b4-4b96-8bda-d8b39bf4a0c6",
+        "occurredAt": "2026-09-07T08:17:03.747833+08:00"
+      },
+      {
+        "id": "5f07cc9d-6e8a-4b8b-a4a7-730e75af33c2",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 12,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "type": "agent-task.dispatch_deferred",
+        "actor": {
+          "type": "system",
+          "ref": "runtime-scheduler"
+        },
+        "payload": {
+          "source": "control_outbox",
+          "message": "Team leader follow-up already active",
+          "retryable": true
+        },
+        "causationId": "140ecdef-96af-4c18-96a5-fd0b2b68e512",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "agent-task-dispatch-deferred:63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "occurredAt": "2026-09-07T08:17:04.259689+08:00"
+      },
+      {
+        "id": "a8dd6147-4ecc-420b-9106-41f2aac17fc7",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 13,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "attemptId": "c590e964-b96d-48b6-9c62-e8278a2a337f",
+        "type": "attempt.succeeded",
+        "actor": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "causationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "attempt-succeeded:c590e964-b96d-48b6-9c62-e8278a2a337f",
+        "occurredAt": "2026-09-07T08:17:07.507565+08:00"
+      },
+      {
+        "id": "5888a1f8-3c0c-4529-895a-0da62bcda1da",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 14,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "type": "node.waiting",
+        "actor": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "causationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "node-waiting:5caacfdc-db23-4fc3-b971-0437d341d822",
+        "occurredAt": "2026-09-07T08:17:07.507565+08:00"
+      },
+      {
+        "id": "60518636-6ede-4ba7-be16-eade0cbebbc7",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 15,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "attemptId": "61e06b9c-4387-4217-8ebd-cf84f1800f1f",
+        "type": "attempt.queued",
+        "actor": {
+          "type": "system"
+        },
+        "causationId": "140ecdef-96af-4c18-96a5-fd0b2b68e512",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "attempt-queued:61e06b9c-4387-4217-8ebd-cf84f1800f1f",
+        "occurredAt": "2026-09-07T08:17:09.26072+08:00"
+      },
+      {
+        "id": "03e0518e-fdda-4cfc-8a72-4e4928c7bfdb",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 16,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "attemptId": "61e06b9c-4387-4217-8ebd-cf84f1800f1f",
+        "type": "attempt.running",
+        "actor": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "idempotencyKey": "attempt-running:61e06b9c-4387-4217-8ebd-cf84f1800f1f",
+        "occurredAt": "2026-09-07T08:17:09.317627+08:00"
+      },
+      {
+        "id": "6d2e9b1f-60b3-4c72-a83e-d357cc2d5db7",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 17,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "type": "agent-task.dispatch_recovered",
+        "actor": {
+          "type": "system",
+          "ref": "runtime-scheduler"
+        },
+        "payload": {
+          "source": "control_outbox",
+          "attempts": 3,
+          "previousError": "control event delivery deferred: Team leader follow-up already active"
+        },
+        "causationId": "140ecdef-96af-4c18-96a5-fd0b2b68e512",
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "idempotencyKey": "agent-task-dispatch-recovered:63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "occurredAt": "2026-09-07T08:17:09.32244+08:00"
+      },
+      {
+        "id": "91872e00-de17-4717-a7ba-7df69f1d8cc1",
+        "runId": "1ef6ff35-6ccb-48a7-be15-2bfabc79ec95",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 18,
+        "nodeId": "5caacfdc-db23-4fc3-b971-0437d341d822",
+        "agentTaskId": "63d5b074-34b7-42e0-8014-e11202ad6b7b",
+        "attemptId": "61e06b9c-4387-4217-8ebd-cf84f1800f1f",
+        "type": "agent_tool.failed",
+        "actor": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "payload": {
+          "state": "error",
+          "source": "collaboration_mcp",
+          "message": "coordinator has active worker task ead3f1c4-3bee-4977-a059-560414924e70",
+          "toolName": "run.node.complete",
+          "sessionId": "sess_1419ee8755a8",
+          "sessionRef": "e124e69b-fd3a-4e26-9c50-d99d9c85d692",
+          "toolCallId": ""
+        },
+        "correlationId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "occurredAt": "2026-09-07T08:17:25.607597+08:00"
+      }
+    ]
+  }
+}

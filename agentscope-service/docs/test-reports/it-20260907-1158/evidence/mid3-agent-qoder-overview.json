@@ -1,0 +1,61 @@
+{
+  "at": "2026-09-07T04:00:54.546660+00:00",
+  "method": "GET",
+  "path": "/api/v1/agents/5a85fb34-bb61-4cc8-b693-153c2b23ae11/overview",
+  "request": null,
+  "status": 200,
+  "response": {
+    "agentId": "5a85fb34-bb61-4cc8-b693-153c2b23ae11",
+    "observedAt": "2026-09-07T04:00:54.549436Z",
+    "window": "24h0m0s",
+    "lifecycle": "active",
+    "readiness": {
+      "state": "unavailable",
+      "mode": "on-demand",
+      "reason": "No runtime candidate currently has capacity",
+      "activeBindingId": "00000000-0000-0000-0000-000000000000"
+    },
+    "bindings": {
+      "total": 1,
+      "enabled": 1,
+      "dispatchable": 0
+    },
+    "instances": {
+      "total": 0,
+      "healthy": 0,
+      "unhealthy": 0,
+      "capacity": null,
+      "activeSessions": 0,
+      "availableCapacity": null
+    },
+    "sessions": {
+      "active": 1,
+      "idle": 0,
+      "compressing": 0,
+      "history": 0,
+      "createdInWindow": 1,
+      "lastActiveAt": "2026-09-07T12:00:01.887451+08:00",
+      "status": "available"
+    },
+    "usage": {
+      "totalTokens": "[REDACTED]",
+      "errorCount": null,
+      "status": "not_reporting"
+    },
+    "entrypoints": {
+      "total": 2,
+      "enabled": 2,
+      "conversation": 1,
+      "jobs": 1
+    },
+    "telemetry": {
+      "agent-task": "not_applicable",
+      "context-query": "not_applicable",
+      "event-reporting": "not_applicable",
+      "message-query": "not_applicable",
+      "session-reporting": "not_applicable",
+      "subagent-inventory": "not_applicable",
+      "workspace-inventory": "not_applicable"
+    }
+  }
+}

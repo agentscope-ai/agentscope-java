@@ -195,7 +195,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="chat" element={<ChatPage />} />
               <Route path="issues" element={<IssuesPage />} />
               <Route path="issues/:issueId" element={<IssueDetailPage />} />
-              <Route path="approvals" element={<ApprovalsPage />} />
+              <Route path="inbox" element={<ApprovalsPage />} />
+              <Route path="approvals" element={<RedirectWithSearch to="/work/inbox" />} />
               <Route path="automations" element={<AutomationsPage />} />
               <Route path="activity" element={<WorkActivityPage />} />
               <Route element={<OperatorAccess />}>
@@ -212,7 +213,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route index element={<Navigate to="agents" replace />} />
               <Route path="agents" element={<AgentsHubPage />} />
               <Route path="agents/new" element={<AgentCreatePage />} />
-              <Route path="agents/:agentId" element={<AgentCatalogDetailPage />} />
+              <Route path="agents/:agentId" element={<AgentCatalogDetailPage />}>
+                <Route path="definition" element={<Navigate to="behavior" replace />} />
+                <Route path="definition/behavior" element={<AgentSettingsPage />} />
+                <Route path="definition/workspace" element={<AgentWorkspacePage />} />
+                <Route path="definition/skills" element={<AgentSkillsPage />} />
+                <Route path="definition/tools" element={<AgentToolsPage />} />
+                <Route path="definition/subagents" element={<AgentSubagentsPage />} />
+                <Route path="definition/versions" element={<AgentSettingsPage section="versions" />} />
+                <Route path="connections/channels" element={<AgentChannelsPage />} />
+              </Route>
               <Route path="agents/:agentId/sessions/:sessionId" element={<OperateSessionDetailPage />} />
               <Route path="agents/:id/manage" element={<AgentLayout />}>
                 <Route index element={<Navigate to="settings" replace />} />
@@ -260,7 +270,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/control/sessions" element={<RedirectWithSearch to="/work/sessions" />} />
             <Route path="/control/sessions/:sessionId" element={<RedirectWithSearch to="/work/sessions" param="sessionId" />} />
             <Route path="/control/runtime/*" element={<RedirectWithSearch to="/agent-center/agents" />} />
-            <Route path="/control/approvals" element={<RedirectWithSearch to="/work/approvals" />} />
+            <Route path="/control/approvals" element={<RedirectWithSearch to="/work/inbox" />} />
             <Route path="/control/automations" element={<RedirectWithSearch to="/work/automations" />} />
             <Route path="/control/governance" element={<RedirectWithSearch to="/work/activity" />} />
             <Route path="/control/teams" element={<RedirectWithSearch to="/agent-center/teams" />} />

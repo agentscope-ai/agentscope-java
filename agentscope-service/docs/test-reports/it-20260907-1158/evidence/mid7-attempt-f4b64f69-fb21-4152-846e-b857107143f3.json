@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-07T04:03:13.902875+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/f4b64f69-fb21-4152-846e-b857107143f3",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "f4b64f69-fb21-4152-846e-b857107143f3",
+      "agentTaskId": "42efb9dd-342c-4d88-9874-6a37abe26509",
+      "agentId": "2e663462-f57e-4a08-9d14-8f672defab41",
+      "bindingId": "f4949949-3bd2-54b4-8cea-5b0138292be4",
+      "runId": "b5a1de60-2e6c-440f-acff-3b4e9f04d21d",
+      "nodeId": "8f157acf-1452-4e39-a68c-325d4faa44b2",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "2e663462-f57e-4a08-9d14-8f672defab41",
+          "bindingId": "f4949949-3bd2-54b4-8cea-5b0138292be4",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "2e663462-f57e-4a08-9d14-8f672defab41"
+        },
+        "sessionId": "sess_281cd81a8ba0",
+        "resolvedAt": "2026-09-07T04:00:29.272279Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "2e663462-f57e-4a08-9d14-8f672defab41",
+      "sessionId": "sess_281cd81a8ba0",
+      "sessionRef": "0db2be2d-f39a-4890-ac5e-3a899994ff9d",
+      "turnId": "1a621974-0597-42ba-8b04-919ce0150a8d",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T12:00:47.584834+08:00",
+      "failureCode": "MISSING_CREDENTIAL",
+      "failureMessage": "手机行业调研子任务失败：缺少 TAVILY_API_KEY 凭证，无法执行网络搜索任务。",
+      "version": 14,
+      "createdAt": "2026-09-07T12:00:29.271806+08:00",
+      "updatedAt": "2026-09-07T12:00:47.607355+08:00",
+      "startedAt": "2026-09-07T12:00:29.32972+08:00",
+      "completedAt": "2026-09-07T12:00:47.607355+08:00"
+    }
+  }
+}

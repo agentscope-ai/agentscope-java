@@ -1,0 +1,111 @@
+[INFO] Scanning for projects...
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for io.agentscope:agentscope-core:jar:2.0.3-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-jar-plugin is missing. @ io.agentscope:agentscope-core:${revision}, /Users/ken/agentscope-2/agentscope-java/agentscope-core/pom.xml, line 212, column 21
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for io.agentscope:agentscope-extensions-aistio:jar:2.0.3-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-resources-plugin is missing. @ io.agentscope:agentscope-extensions-aistio:${revision}, /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/pom.xml, line 133, column 21
+[WARNING] 
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING] 
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING] 
+[INFO] 
+[INFO] -----------< io.agentscope:agentscope-extensions-rag-simple >-----------
+[INFO] Building AgentScope Java - Extensions - RAG - Simple 2.0.3-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+Downloading from ali-releases: https://mvnrepo.alibaba-inc.com/mvn/repository/io/agentscope/agentscope-core/2.0.3-SNAPSHOT/maven-metadata.xml
+Downloading from ali-snapshots: https://mvnrepo.alibaba-inc.com/mvn/repository/io/agentscope/agentscope-core/2.0.3-SNAPSHOT/maven-metadata.xml
+Downloading from ali-releases: https://mvnrepo.alibaba-inc.com/mvn/repository/io/agentscope/agentscope-extensions-model-dashscope/2.0.3-SNAPSHOT/maven-metadata.xml
+Downloading from ali-snapshots: https://mvnrepo.alibaba-inc.com/mvn/repository/io/agentscope/agentscope-extensions-model-dashscope/2.0.3-SNAPSHOT/maven-metadata.xml
+Downloading from ali-releases: https://mvnrepo.alibaba-inc.com/mvn/repository/io/agentscope/agentscope-extensions-model-ollama/2.0.3-SNAPSHOT/maven-metadata.xml
+Downloading from ali-snapshots: https://mvnrepo.alibaba-inc.com/mvn/repository/io/agentscope/agentscope-extensions-model-ollama/2.0.3-SNAPSHOT/maven-metadata.xml
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-rag-simple ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-rag/agentscope-extensions-rag-simple/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-extensions-rag-simple ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-rag/agentscope-extensions-rag-simple/src/main/resources
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-rag-simple ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-rag-simple:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agentscope-extensions-rag-simple ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-rag-simple ---
+[INFO] Spotless.Java is keeping 70 files clean - 0 needs changes to be clean, 0 were already clean, 70 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-extensions-rag-simple ---
+[INFO] Copying 3 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agentscope-extensions-rag-simple ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ agentscope-extensions-rag-simple ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running RAG In-Memory Storage E2E Tests
+
+=== Test: Generic Mode Image Retrieval (MultiModal) ===
+SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+Image document loaded: 1
+Image document stored in InMemoryStore
+Query: Based on the architecture diagram, what is the version number and port number?
+Response: From the architecture diagram:
+
+- **Version number**: `v2.5.1` (shown in the title: *AgentScope Platform Architecture v2.5.1*)  
+- **Port number**: `8080` (listed under *API Gateway*: Port: 8080)
+
+Additionally, the Client Layer uses port `443`, but since the question asks for *the* version number and port number (singular), the most prominent platform version is **v2.5.1**, and the API Gateway port **8080** is a key architectural port.
+
+✅ Final answer:
+- **Version**: `v2.5.1`  
+- **Port**: `8080`
+Version info found: true
+Port info found: true
+✓ Generic mode image retrieval verified with actual content
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.835 s -- in RAG In-Memory Storage E2E Tests
+[INFO] io.agentscope.core.rag.e2e.RAGInMemoryE2ETest.testGenericModeImageRetrieval -- Time elapsed: 7.825 s
+[INFO] Running GenericRAGHook Unit Tests
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (/Users/ken/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.7/byte-buddy-agent-1.17.7.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.744 s -- in GenericRAGHook Unit Tests
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testCreateNullConfig -- Time elapsed: 0.002 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testCreateWithCustomConfig -- Time elapsed: 0.002 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testHandlePreCallEvent -- Time elapsed: 0.020 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testCreateWithDefaults -- Time elapsed: 0.001 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testHandleEmptyMessages -- Time elapsed: 0.001 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testHandleRetrievalError -- Time elapsed: 0.001 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testHandleEmptyQuery -- Time elapsed: 0 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testPriority -- Time elapsed: 0 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testFormatKnowledgeContent -- Time elapsed: 0.002 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testIgnoreOtherEvents -- Time elapsed: 0 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testCreateNullKnowledgeBase -- Time elapsed: 0 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testPreservesRetrievedImageAlongsideText -- Time elapsed: 0.706 s
+[INFO] io.agentscope.core.rag.hook.GenericRAGHookTest.testSkipNonUserMessages -- Time elapsed: 0.001 s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-rag-simple ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-rag/agentscope-extensions-rag-simple/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Extensions - RAG - Simple' with 44 classes
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  20.875 s
+[INFO] Finished at: 2026-09-07T13:51:39+08:00
+[INFO] ------------------------------------------------------------------------

@@ -1973,63 +1973,6 @@ func taskCanReadArtifact(task *controlmodel.AgentTask, artifact *controlmodel.Ar
 	return false
 }
 
-func (s *Server) listInbox(c *gin.Context) {
-	if !requireHumanPrincipal(c) {
-		return
-	}
-	tenant, namespace, ok := requireCollaborationScope(c)
-	if !ok {
-		return
-	}
-	limit, offset := collaborationPagination(c)
-	items, err := s.store.Collaboration().ListInbox(c.Request.Context(), store.InboxFilter{
-		Tenant: tenant, Namespace: namespace,
-		RecipientRef: s.operatorFromContext(c), Archived: c.Query("archived") == "true",
-		Limit: limit, Offset: offset,
-	})
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
-func (s *Server) readInbox(c *gin.Context) {
-	if !requireHumanPrincipal(c) {
-		return
-	}
-	id, ok := parseUUIDParam(c, "inboxId")
-	if !ok {
-		return
-	}
-	value := true
-	item, err := s.store.Collaboration().UpdateInbox(c.Request.Context(), id,
-		s.operatorFromContext(c), &value, nil)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"item": item})
-}
-
-func (s *Server) archiveInbox(c *gin.Context) {
-	if !requireHumanPrincipal(c) {
-		return
-	}
-	id, ok := parseUUIDParam(c, "inboxId")
-	if !ok {
-		return
-	}
-	value := true
-	item, err := s.store.Collaboration().UpdateInbox(c.Request.Context(), id,
-		s.operatorFromContext(c), nil, &value)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"item": item})
-}
-
 func (s *Server) createApproval(c *gin.Context) {
 	var approval controlmodel.Approval
 	if err := c.ShouldBindJSON(&approval); err != nil || approval.TargetType == "" || approval.TargetRef == "" || approval.ApproverRef == "" {

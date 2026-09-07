@@ -1,0 +1,48 @@
+{
+  "at": "2026-09-07T03:37:39.393316+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/conversations/62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+  "request": null,
+  "status": 200,
+  "response": {
+    "conversation": {
+      "createdAt": "2026-09-07T11:30:38.046175+08:00",
+      "endpointId": "ce54462c-525b-4bc6-bcb6-4528977db78f",
+      "id": "62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+      "sessionId": "sess_f54ce2549e38",
+      "status": "active",
+      "updatedAt": "2026-09-07T11:30:38.046175+08:00"
+    },
+    "turns": [
+      {
+        "conversationId": "62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+        "correlationId": "6a9fdacf-57ef-4b4b-918c-c460d97ff0b6",
+        "createdAt": "2026-09-07T11:33:00.408366+08:00",
+        "endpointId": "ce54462c-525b-4bc6-bcb6-4528977db78f",
+        "id": "a7f07fdd-0aeb-41c3-8737-52920eeb6f99",
+        "mode": "conversation",
+        "sessionId": "sess_f54ce2549e38",
+        "startedAt": "2026-09-07T11:33:00.474166+08:00",
+        "status": "running",
+        "turnId": "9e56a34b-e37d-4494-81ab-3147f5ac0100",
+        "updatedAt": "2026-09-07T11:33:00.474442+08:00"
+      },
+      {
+        "completedAt": "2026-09-07T11:36:48.693281+08:00",
+        "conversationId": "62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+        "correlationId": "579e5ab0-b757-4ca9-8066-15aa26972941",
+        "createdAt": "2026-09-07T11:30:38.041437+08:00",
+        "endpointId": "ce54462c-525b-4bc6-bcb6-4528977db78f",
+        "errorCode": "endpoint_timeout",
+        "errorMessage": "Endpoint invocation exceeded its configured timeout",
+        "id": "01d782ec-4ad1-4afc-9fd6-db9ee9043338",
+        "mode": "conversation",
+        "sessionId": "sess_f54ce2549e38",
+        "startedAt": "2026-09-07T11:30:38.081726+08:00",
+        "status": "timed_out",
+        "turnId": "aefecb97-37d5-499b-a50e-832e35ab56dd",
+        "updatedAt": "2026-09-07T11:36:48.693022+08:00"
+      }
+    ]
+  }
+}

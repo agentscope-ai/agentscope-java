@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-07T00:19:01.898295+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs?tenant=default&namespace=default&issueId=5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+  "request": null,
+  "status": 200,
+  "response": {
+    "runs": [
+      {
+        "id": "ace2548d-ae47-43d9-9bec-c7132318b20f",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "mode": "direct",
+        "triggerType": "comment",
+        "triggerRef": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+        "state": "waiting",
+        "waitReason": "node_wait",
+        "version": 2,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T08:18:18.79204+08:00",
+        "updatedAt": "2026-09-07T08:18:19.270544+08:00",
+        "startedAt": "2026-09-07T08:18:18.79204+08:00"
+      },
+      {
+        "id": "6cd7a1e8-f797-401c-aee2-4c67b606f40b",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "mode": "direct",
+        "triggerType": "assignment",
+        "triggerRef": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "state": "failed",
+        "failureCode": "websearch_tool_unavailable",
+        "failureMessage": "实时研究未完成：本会话未提供 WebSearch 或任何联网搜索工具。已实际核查：任务 79cc640a 的运行时配置 allowedTools 仅为 [\"mcp__agentscope-collaboration__*\"]（strictMCPConfig=true，permissionMode=default），工具列表中无 WebSearch/WebFetch/联网检索类工具，也未暴露 Bash/shell 工具，agentscope CLI 回退不可用；运行 6cd7a1e8 的图谱与共享 artifacts 中无其他成员的搜索结果可复用。因此未能搜索 \"2026 smartphone market shipments\"，未取得任何 2026 年发布的来源（标题/日期/URL 均为空）。按要求未安装工具、未修改权限或配置、未以记忆替代或编造来源；保留此错误，本轮到此结束，不再重试。",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T08:16:32.802005+08:00",
+        "updatedAt": "2026-09-07T08:17:27.689349+08:00",
+        "startedAt": "2026-09-07T08:16:32.802005+08:00",
+        "completedAt": "2026-09-07T08:17:27.689349+08:00"
+      }
+    ]
+  }
+}

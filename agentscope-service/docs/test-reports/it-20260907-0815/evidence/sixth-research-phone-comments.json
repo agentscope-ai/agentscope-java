@@ -1,0 +1,108 @@
+{
+  "at": "2026-09-07T00:19:53.409868+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/5ce54819-6a31-41a8-9cd2-a8139a9802b4/comments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "6eff60a2-999d-4d0a-b8a0-1ec5bd9a63ac",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "threadRootId": "6eff60a2-999d-4d0a-b8a0-1ec5bd9a63ac",
+        "author": {
+          "type": "agent",
+          "ref": "679b7bf9-c9c1-4828-a129-4045be75090e"
+        },
+        "content": "Agent could not complete this Issue.\nFailure code: websearch_tool_unavailable\nFailure: 实时研究未完成：本会话未提供 WebSearch 或任何联网搜索工具。已实际核查：任务 79cc640a 的运行时配置 allowedTools 仅为 [\"mcp__agentscope-collaboration__*\"]（strictMCPConfig=true，permissionMode=default），工具列表中无 WebSearch/WebFetch/联网检索类工具，也未暴露 Bash/shell 工具，agentscope CLI 回退不可用；运行 6cd7a1e8 的图谱与共享 artifacts 中无其他成员的搜索结果可复用。因此未能搜索 \"2026 smartphone market shipments\"，未取得任何 2026 年发布的来源（标题/日期/URL 均为空）。按要求未安装工具、未修改权限或配置、未以记忆替代或编造来源；保留此错误，本轮到此结束，不再重试。\nIssue status: blocked.",
+        "type": "status",
+        "sourceTaskId": "79cc640a-077f-4c72-a9be-ca25dd05f3b5",
+        "sourceAttemptId": "8bc71afe-712f-4c15-9b23-d4050552e118",
+        "version": 1,
+        "createdAt": "2026-09-07T08:17:27.680631+08:00",
+        "updatedAt": "2026-09-07T08:17:27.680631+08:00"
+      },
+      {
+        "id": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "threadRootId": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+        "author": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "content": "继续测试：接受本轮无法联网的事实，停止研究。现在请只计算9×9，回复 RECOVERED=81，不用任何联网工具，也不请求改变权限。",
+        "type": "comment",
+        "version": 1,
+        "createdAt": "2026-09-07T08:18:18.79204+08:00",
+        "updatedAt": "2026-09-07T08:18:18.79204+08:00",
+        "mentions": [
+          {
+            "id": "71019849-863c-4450-92c4-bb810307d4fb",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+            "commentId": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+            "targetType": "agent",
+            "targetRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "createdAt": "2026-09-07T08:18:18.79204+08:00"
+          }
+        ],
+        "routes": [
+          {
+            "id": "d2b24cbe-3ae6-4f1c-a857-87b678942031",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+            "commentId": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "routeType": "explicit",
+            "outcome": "queued",
+            "taskId": "41c074e5-0d83-4d88-a77b-831638862a07",
+            "createdAt": "2026-09-07T08:18:18.79204+08:00"
+          }
+        ]
+      },
+      {
+        "id": "dd439b7c-8a0e-48d9-8f50-828ebc72fa16",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "parentId": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+        "threadRootId": "f6c29f3f-9a29-448c-9247-5339e3eae213",
+        "author": {
+          "type": "agent",
+          "ref": "679b7bf9-c9c1-4828-a129-4045be75090e"
+        },
+        "content": "Computed 9×9 = 81 per discussion input. RECOVERED=81.",
+        "type": "result",
+        "sourceTaskId": "41c074e5-0d83-4d88-a77b-831638862a07",
+        "sourceAttemptId": "dd9b64eb-fc6a-4e15-a880-1694a6a3b818",
+        "version": 1,
+        "createdAt": "2026-09-07T08:19:14.298003+08:00",
+        "updatedAt": "2026-09-07T08:19:14.298003+08:00",
+        "routes": [
+          {
+            "id": "9d6c6e14-b4e8-4d51-874e-f07ec70ebf9b",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+            "commentId": "dd439b7c-8a0e-48d9-8f50-828ebc72fa16",
+            "commentVersion": 1,
+            "targetType": "human",
+            "targetRef": "admin",
+            "routeType": "thread_parent",
+            "outcome": "queued",
+            "createdAt": "2026-09-07T08:19:14.298003+08:00"
+          }
+        ]
+      }
+    ],
+    "nextCursor": ""
+  }
+}

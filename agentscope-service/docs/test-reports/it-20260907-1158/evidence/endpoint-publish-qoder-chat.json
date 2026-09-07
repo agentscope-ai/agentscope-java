@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-07T04:00:01.385265+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints/25ac6fda-4b76-4807-8617-c66661b80255/publish",
+  "request": {
+    "version": 1
+  },
+  "status": 200,
+  "response": {
+    "endpoint": {
+      "id": "25ac6fda-4b76-4807-8617-c66661b80255",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-1158-qoder-chat",
+      "slug": "it-20260907-1158-qoder-chat",
+      "targetType": "agent",
+      "targetRef": "5a85fb34-bb61-4cc8-b693-153c2b23ae11",
+      "invocationMode": "conversation",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "activeReleaseId": "71cdce1a-49a2-4ea8-a26d-aa70d401b993",
+      "activeRelease": 1,
+      "status": "published",
+      "version": 3,
+      "createdAt": "2026-09-07T12:00:01.374196+08:00",
+      "updatedAt": "2026-09-07T12:00:01.390483+08:00"
+    },
+    "readiness": {
+      "state": "unavailable",
+      "reason": "No runtime candidate currently has capacity",
+      "compatible": true
+    }
+  }
+}

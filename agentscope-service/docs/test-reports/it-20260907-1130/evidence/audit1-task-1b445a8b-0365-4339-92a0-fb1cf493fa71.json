@@ -1,0 +1,90 @@
+{
+  "at": "2026-09-07T03:34:48.509649+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/1b445a8b-0365-4339-92a0-fb1cf493fa71",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "1b445a8b-0365-4339-92a0-fb1cf493fa71",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "753ea123-df0a-4852-ae5f-4eca3c24e5e3",
+      "orchestrationRunId": "fe5237e6-d65b-45e9-8ee7-8a8bcca7ea32",
+      "runNodeId": "3b6a9404-adc5-4a5f-a4e2-ec36b8a7a929",
+      "currentAttemptId": "6fe55ed7-0556-47c3-b52a-e914d161915a",
+      "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+      "status": "failed",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "719ff7b3-d49c-4213-9e78-dedb46a5a476",
+      "teamRole": "researcher",
+      "parentTaskId": "e1a28f6d-f361-40fe-be14-d2e38f98f872",
+      "delegatedFromTaskId": "e1a28f6d-f361-40fe-be14-d2e38f98f872",
+      "originator": {
+        "type": "agent",
+        "ref": "b1d48558-a60c-4c96-b9b7-0b2150caccd2"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "e1a28f6d-f361-40fe-be14-d2e38f98f872",
+      "correlationId": "f19740bc-3b68-42fb-8eb3-512c99521f03",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "hosted-runtime",
+          "agentId": "e8c6887d-f89f-4d59-bc37-6b9affd88f2a",
+          "bindingId": "05b683fb-a9fd-53a2-ae56-744fffd699cc",
+          "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+          "runtimeProfileId": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9"
+        },
+        "sessionId": "21e68ce9-f8cc-495d-b213-cbf598f98b26",
+        "resolvedAt": "2026-09-07T03:30:01.335114Z",
+        "runtimePool": {
+          "id": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+          "name": "coding-default",
+          "tenant": "default",
+          "version": 1,
+          "createdAt": "2026-09-07T11:18:16.901382+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T11:18:16.901382+08:00"
+        },
+        "runtimeProfile": {
+          "id": "e368c1c3-c52e-4140-8f26-9629b3f7c2f9",
+          "name": "auto-qoder",
+          "tenant": "default",
+          "runtime": "qodercli",
+          "version": 1,
+          "provider": "qoder",
+          "createdAt": "2026-09-07T11:18:16.930373+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T11:18:16.930373+08:00",
+          "requirements": {},
+          "configuration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "selectionSource": "policy",
+        "resolvedProviderConfiguration": {
+          "allowedTools": [
+            "mcp__agentscope-collaboration__*"
+          ],
+          "permissionMode": "default",
+          "strictMCPConfig": true
+        }
+      },
+      "sessionId": "21e68ce9-f8cc-495d-b213-cbf598f98b26",
+      "errorCode": "MISSING_WEB_TOOL",
+      "errorMessage": "新能源汽车行业调研缺少 web 搜索/访问工具（如搜索引擎或浏览器 MCP），无法获取并核实近期官方来源与事实，不能凭训练知识编造来源。",
+      "version": 4,
+      "createdAt": "2026-09-07T11:30:00.387945+08:00",
+      "dispatchedAt": "2026-09-07T11:30:01.334975+08:00",
+      "startedAt": "2026-09-07T11:31:17.21523+08:00",
+      "completedAt": "2026-09-07T11:31:29.91032+08:00"
+    }
+  }
+}

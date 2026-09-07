@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-07T03:29:46.973662+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/f19740bc-3b68-42fb-8eb3-512c99521f03",
+  "request": null,
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "f19740bc-3b68-42fb-8eb3-512c99521f03",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-1130-team-web-research",
+      "description": "并行委派两个不同成员：researcher调研新能源汽车行业，analyst调研手机行业。每个行业要求实际使用可用web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实；不能凭训练知识编造近期事实或来源。两份子任务都必须创建，标题前缀 it-20260907-1130。任何成员缺少所需web工具/凭证或无法核实来源，必须明确task.fail，上报行业名和缺失能力。协调员收到失败不得当成功验收；必须明确让整个run failed并说明缺口。若两份调研均真实完成，才验收汇总并完成run。不要修改权限或配置来完成测试。",
+      "status": "in_progress",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "719ff7b3-d49c-4213-9e78-dedb46a5a476",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 2,
+      "createdAt": "2026-09-07T11:29:39.714213+08:00",
+      "updatedAt": "2026-09-07T11:29:41.047533+08:00"
+    }
+  }
+}

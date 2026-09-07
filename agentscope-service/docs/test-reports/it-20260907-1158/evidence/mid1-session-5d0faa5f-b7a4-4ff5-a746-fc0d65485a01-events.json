@@ -1,0 +1,138 @@
+{
+  "at": "2026-09-07T04:00:18.012727+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/5d0faa5f-b7a4-4ff5-a746-fc0d65485a01/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 94,
+        "sessionFk": "5d0faa5f-b7a4-4ff5-a746-fc0d65485a01",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are a Team worker. Complete only the assigned child work and call task.complete with outcome=succeeded and the result only when the assigned objective is achieved. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "frameworkMeta": {
+          "turnId": "c1ee8d04-e00b-415c-bb42-e8a1441fe08c",
+          "attemptId": "50de99de-4bef-422f-b724-0d8ad5e5a3da",
+          "sourceKey": "managed:evt_eff59027a5054a78a3c8b771d86c43cb",
+          "managedSeq": 1,
+          "agentTaskId": "71028eaa-517e-4707-b3da-0fefdfe18774",
+          "managedEventId": "evt_eff59027a5054a78a3c8b771d86c43cb",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:14.244+08:00"
+      },
+      {
+        "id": 95,
+        "sessionFk": "5d0faa5f-b7a4-4ff5-a746-fc0d65485a01",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "c1ee8d04-e00b-415c-bb42-e8a1441fe08c",
+          "attemptId": "50de99de-4bef-422f-b724-0d8ad5e5a3da",
+          "sourceKey": "managed:evt_4c5db6f943df4cc7a1bc8b1946716c70",
+          "managedSeq": 2,
+          "agentTaskId": "71028eaa-517e-4707-b3da-0fefdfe18774",
+          "managedEventId": "evt_4c5db6f943df4cc7a1bc8b1946716c70",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:14.26+08:00"
+      },
+      {
+        "id": 97,
+        "sessionFk": "5d0faa5f-b7a4-4ff5-a746-fc0d65485a01",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "c1ee8d04-e00b-415c-bb42-e8a1441fe08c",
+          "attemptId": "50de99de-4bef-422f-b724-0d8ad5e5a3da",
+          "sourceKey": "managed:evt_4e70595ce11c4fab9a67e265bdd6429f",
+          "managedSeq": 3,
+          "agentTaskId": "71028eaa-517e-4707-b3da-0fefdfe18774",
+          "managedEventId": "evt_4e70595ce11c4fab9a67e265bdd6429f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:14.313+08:00"
+      },
+      {
+        "id": 122,
+        "sessionFk": "5d0faa5f-b7a4-4ff5-a746-fc0d65485a01",
+        "seq": 4,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.get",
+        "toolInput": {},
+        "frameworkMeta": {
+          "turnId": "c1ee8d04-e00b-415c-bb42-e8a1441fe08c",
+          "attemptId": "50de99de-4bef-422f-b724-0d8ad5e5a3da",
+          "sourceKey": "managed:evt_506e964c712e40d7a17c6e20524f110d",
+          "managedSeq": 4,
+          "toolCallId": "call_24e09c9912f948109d07af",
+          "agentTaskId": "71028eaa-517e-4707-b3da-0fefdfe18774",
+          "managedEventId": "evt_506e964c712e40d7a17c6e20524f110d",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:17.938+08:00"
+      },
+      {
+        "id": 123,
+        "sessionFk": "5d0faa5f-b7a4-4ff5-a746-fc0d65485a01",
+        "seq": 5,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "c1ee8d04-e00b-415c-bb42-e8a1441fe08c",
+          "attemptId": "50de99de-4bef-422f-b724-0d8ad5e5a3da",
+          "sourceKey": "managed:evt_bf6d533154024080b2fd0dad1b02c5b5",
+          "managedSeq": 5,
+          "agentTaskId": "71028eaa-517e-4707-b3da-0fefdfe18774",
+          "managedEventId": "evt_bf6d533154024080b2fd0dad1b02c5b5",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:17.95+08:00"
+      },
+      {
+        "id": 124,
+        "sessionFk": "5d0faa5f-b7a4-4ff5-a746-fc0d65485a01",
+        "seq": 6,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"71028eaa-517e-4707-b3da-0fefdfe18774\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"d3488d6b-330f-4e6a-8217-91dd95c2279d\", \"orchestrationRunId\": \"b5a1de60-2e6c-440f-acff-3b4e9f04d21d\", \"runNodeId\": \"51a3c7eb-b189-4a7e-940c-dba5aac4e1a6\", \"currentAttemptId\": \"50de99de-4bef-422f-b724-0d8ad5e5a3da\", \"agentId\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"teamRole\": \"analyst\", \"parentTaskId\": \"4db7cad8-2891-47fa-b5c8-2c3d2f11ffe7\", \"delegatedFromTaskId\": \"4db7cad8-2891-47fa-b5c8-2c3d2f11ffe7\", \"originator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"4db7cad8-2891-47fa-b5c8-2c3d2f11ffe7\", \"correlationId\": \"26bd1c12-fa83-49ea-84c9-1c364da0a3f6\", \"hopCount\": 1, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"bindingId\": \"d6d96063-0470-5ebf-a9f1-27096aadc4c2\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\"}, \"sessionId\": \"sess_88e2780ad030\", \"resolvedAt\": \"2026-09-07T04:00:14.211943Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_88e2780ad030\", \"version\": 3, \"createdAt\": \"2026-09-07T12:00:13.832192+08:00\", \"dispatchedAt\": \"2026-09-07T12:00:14.211559+08:00\", \"startedAt\": \"2026-09-07T12:00:14.268932+08:00\"}}",
+        "toolName": "task.get",
+        "toolOutput": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"71028eaa-517e-4707-b3da-0fefdfe18774\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"d3488d6b-330f-4e6a-8217-91dd95c2279d\", \"orchestrationRunId\": \"b5a1de60-2e6c-440f-acff-3b4e9f04d21d\", \"runNodeId\": \"51a3c7eb-b189-4a7e-940c-dba5aac4e1a6\", \"currentAttemptId\": \"50de99de-4bef-422f-b724-0d8ad5e5a3da\", \"agentId\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"d49533f7-16a4-489a-9698-769b31c4cda6\", \"teamRole\": \"analyst\", \"parentTaskId\": \"4db7cad8-2891-47fa-b5c8-2c3d2f11ffe7\", \"delegatedFromTaskId\": \"4db7cad8-2891-47fa-b5c8-2c3d2f11ffe7\", \"originator\": {\"type\": \"agent\", \"ref\": \"2e663462-f57e-4a08-9d14-8f672defab41\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"4db7cad8-2891-47fa-b5c8-2c3d2f11ffe7\", \"correlationId\": \"26bd1c12-fa83-49ea-84c9-1c364da0a3f6\", \"hopCount\": 1, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\", \"bindingId\": \"d6d96063-0470-5ebf-a9f1-27096aadc4c2\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"0535720b-d0aa-4170-b0dc-eed4294f59ec\"}, \"sessionId\": \"sess_88e2780ad030\", \"resolvedAt\": \"2026-09-07T04:00:14.211943Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_88e2780ad030\", \"version\": 3, \"createdAt\": \"2026-09-07T12:00:13.832192+08:00\", \"dispatchedAt\": \"2026-09-07T12:00:14.211559+08:00\", \"startedAt\": \"2026-09-07T12:00:14.268932+08:00\"}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "c1ee8d04-e00b-415c-bb42-e8a1441fe08c",
+          "attemptId": "50de99de-4bef-422f-b724-0d8ad5e5a3da",
+          "sourceKey": "managed:evt_4b2b1b59c8bd4c24ba2c52df0e30f240",
+          "managedSeq": 6,
+          "toolCallId": "call_24e09c9912f948109d07af",
+          "agentTaskId": "71028eaa-517e-4707-b3da-0fefdfe18774",
+          "tool_use_id": "call_24e09c9912f948109d07af",
+          "managedEventId": "evt_4b2b1b59c8bd4c24ba2c52df0e30f240",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:17.973+08:00"
+      },
+      {
+        "id": 125,
+        "sessionFk": "5d0faa5f-b7a4-4ff5-a746-fc0d65485a01",
+        "seq": 7,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "c1ee8d04-e00b-415c-bb42-e8a1441fe08c",
+          "attemptId": "50de99de-4bef-422f-b724-0d8ad5e5a3da",
+          "sourceKey": "managed:evt_33d4f6c488ce4e8584e132b9c815d169",
+          "managedSeq": 7,
+          "agentTaskId": "71028eaa-517e-4707-b3da-0fefdfe18774",
+          "managedEventId": "evt_33d4f6c488ce4e8584e132b9c815d169",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:17.985+08:00"
+      }
+    ]
+  }
+}

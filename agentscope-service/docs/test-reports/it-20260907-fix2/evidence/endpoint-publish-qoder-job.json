@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-07T05:57:51.712162+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints/2c320381-50ef-4bfc-a0d6-3e8a7c6f6154/publish",
+  "request": {
+    "version": 1
+  },
+  "status": 200,
+  "response": {
+    "endpoint": {
+      "id": "2c320381-50ef-4bfc-a0d6-3e8a7c6f6154",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-fix2-qoder-job",
+      "slug": "it-20260907-fix2-qoder-job",
+      "targetType": "agent",
+      "targetRef": "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+      "invocationMode": "job",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "activeReleaseId": "a417d5fa-e67e-4fdc-99ba-5b7b51c3bc68",
+      "activeRelease": 1,
+      "status": "published",
+      "version": 3,
+      "createdAt": "2026-09-07T13:57:51.700326+08:00",
+      "updatedAt": "2026-09-07T13:57:51.717122+08:00"
+    },
+    "readiness": {
+      "state": "ready",
+      "reason": "Primary runtime candidate is dispatchable",
+      "compatible": true
+    }
+  }
+}

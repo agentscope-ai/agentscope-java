@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T04:50:01.124349+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/dace9622-78f7-4a2f-8b2f-92e2fec786bc",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "dace9622-78f7-4a2f-8b2f-92e2fec786bc",
+      "agentTaskId": "a56a0fc2-e5bf-4d33-ba84-42cf15bc9a31",
+      "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+      "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+      "runId": "0ac73705-91e0-51a2-b8a5-3805312c4b1d",
+      "nodeId": "fda35543-66e3-5af7-a1d6-36079bb0d18e",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+          "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "sessionId": "sess_e02898759ac4",
+        "resolvedAt": "2026-09-07T04:47:33.756242Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "ed634c61-e615-4604-9d8a-72dabede64cc",
+      "sessionId": "sess_e02898759ac4",
+      "sessionRef": "ea18677a-d39e-44ee-afb6-7ee39082cdbd",
+      "turnId": "5851566a-cfd4-4d83-a152-ba7c8d46a487",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T12:47:59.574373+08:00",
+      "result": "已成功创建了两个子任务：一个给calculator用于计算19×21+1的结果；另一个给analyst用于将zebra, apple, pear按字典序排序。现在等待子任务的结果。",
+      "version": 23,
+      "createdAt": "2026-09-07T12:47:33.755475+08:00",
+      "updatedAt": "2026-09-07T12:47:59.60184+08:00",
+      "startedAt": "2026-09-07T12:47:33.828756+08:00",
+      "completedAt": "2026-09-07T12:47:59.60184+08:00"
+    }
+  }
+}

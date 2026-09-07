@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-07T03:30:37.637428+00:00",
+  "method": "POST",
+  "path": "/invoke/v1/endpoints/it-20260907-1130-managed-job/jobs",
+  "request": {
+    "title": "it-20260907-1130-endpoint-arithmetic",
+    "description": "读取任务input：计算quantity×unitPrice，输出 API_TOTAL=144 并完成任务。无需联网。",
+    "input": {
+      "quantity": 12,
+      "unitPrice": 12
+    }
+  },
+  "status": 202,
+  "response": {
+    "eventsUrl": "/invoke/v1/jobs/d93a7354-e01d-4f5b-afe5-bdaee1f79cf5/events",
+    "invocationId": "d93a7354-e01d-4f5b-afe5-bdaee1f79cf5",
+    "issueId": "c200ae73-73b9-58ae-831d-33721df23365",
+    "runId": "bbb2d2e8-0f86-520b-a9e8-f82e821f355f",
+    "status": "running",
+    "statusUrl": "/invoke/v1/jobs/d93a7354-e01d-4f5b-afe5-bdaee1f79cf5"
+  }
+}

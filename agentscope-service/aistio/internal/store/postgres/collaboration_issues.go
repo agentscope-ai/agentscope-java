@@ -346,6 +346,9 @@ func (r *collaborationRepo) TransitionIssue(ctx context.Context, id uuid.UUID, e
 		Details: details}); err != nil {
 		return nil, err
 	}
+	if err := notifyIssueInboxTx(ctx, tx, updated, current.Status, actor, reason, nil); err != nil {
+		return nil, err
+	}
 	if err := enqueueCollaborationEventTx(ctx, tx, updated.Tenant, "issue", id,
 		"issue.status-changed.v1", map[string]any{"issue": updated, "previousStatus": current.Status},
 		fmt.Sprintf("issue-status:%s:%d", id, updated.Version)); err != nil {

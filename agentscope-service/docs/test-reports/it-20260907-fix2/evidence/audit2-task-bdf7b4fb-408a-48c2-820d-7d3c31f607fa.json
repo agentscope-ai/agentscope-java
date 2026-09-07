@@ -1,0 +1,54 @@
+{
+  "at": "2026-09-07T06:02:11.771114+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/bdf7b4fb-408a-48c2-820d-7d3c31f607fa",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "bdf7b4fb-408a-48c2-820d-7d3c31f607fa",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "f2798b5c-cc96-5e75-ab08-5710eee0d172",
+      "orchestrationRunId": "60f18d98-575e-5979-8785-8eb84aa4880c",
+      "runNodeId": "dd2ad3ac-53b3-5b47-bf78-0fe104431be3",
+      "currentAttemptId": "a00fa614-028f-4dc8-beea-85598581dc1f",
+      "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "orchestration_node",
+      "teamId": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "system",
+        "ref": "endpoint:06479ed5-bca5-49be-b173-21522a870e3a"
+      },
+      "causationId": "dd2ad3ac-53b3-5b47-bf78-0fe104431be3",
+      "correlationId": "60f18d98-575e-5979-8785-8eb84aa4880c",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+          "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "sessionId": "sess_342c2536c1a5",
+        "resolvedAt": "2026-09-07T05:57:52.776064Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_342c2536c1a5",
+      "result": "已成功创建两个子任务：\n1. 新能源汽车行业调研，分配给researcher (agent ID: 602427d4-efe7-4a28-9ed8-b7ed3e5433e8)。\n2. 手机行业调研，分配给analyst (agent ID: 84238a0b-c1f3-4f93-9c15-f7e0c697aecc)。\n\n每个成员需要使用可用的web搜索/访问工具找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。如果缺少所需web工具/凭证或无法核实来源，他们将明确上报task.fail，并说明缺失能力。在收到所有结果后，我将进行验收汇总并完成整个run。",
+      "version": 4,
+      "createdAt": "2026-09-07T13:57:52.734076+08:00",
+      "dispatchedAt": "2026-09-07T13:57:52.77533+08:00",
+      "startedAt": "2026-09-07T13:57:52.89314+08:00",
+      "completedAt": "2026-09-07T13:58:30.590947+08:00"
+    }
+  }
+}

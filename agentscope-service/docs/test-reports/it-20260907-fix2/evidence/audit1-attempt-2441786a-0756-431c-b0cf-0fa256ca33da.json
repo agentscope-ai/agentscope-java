@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-07T06:00:07.658507+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/2441786a-0756-431c-b0cf-0fa256ca33da",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "2441786a-0756-431c-b0cf-0fa256ca33da",
+      "agentTaskId": "310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+      "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+      "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+      "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+          "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "sessionId": "sess_b7511ca1cc64",
+        "resolvedAt": "2026-09-07T05:58:26.018763Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "sessionId": "sess_b7511ca1cc64",
+      "sessionRef": "d979b0d4-5ef0-4da6-9944-6a6a550a7abe",
+      "turnId": "ee7fdab3-1198-4764-b200-4b30acbd3101",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T13:58:54.982577+08:00",
+      "failureCode": "HUMAN_ACTION_REQUIRED",
+      "failureMessage": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。",
+      "version": 19,
+      "createdAt": "2026-09-07T13:58:26.017629+08:00",
+      "updatedAt": "2026-09-07T13:58:55.002894+08:00",
+      "startedAt": "2026-09-07T13:58:26.085935+08:00",
+      "completedAt": "2026-09-07T13:58:55.002894+08:00"
+    }
+  }
+}

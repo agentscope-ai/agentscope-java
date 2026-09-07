@@ -1,0 +1,65 @@
+{
+  "at": "2026-09-07T09:39:59.584344+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "leader-wait-20260907 MA1追问MA2后继续执行",
+    "description": "请严格通过实际协作完成以下两阶段验收，不能自己代替成员工作：\n1. MA1只创建一个子Issue给worker（MA2），第一轮要求MA2直接提交字符串 DRAFT_READY，不能写文件。\n2. 收到DRAFT_READY后，MA1不应验收，而应在同一个子Issue通过issue.comment.add的结构化mentions明确让MA2计算12×12，并以FOLLOWUP_OK_144作为最终结果。mention成功后，MA1必须调用task.complete(outcome=waiting,summary=\"等待MA2补充验证结果\")结束自己的当前回合，不要将等待视为失败。\n3. MA2收到第二轮追问时用math.evaluate验证12×12，提交result=\"FOLLOWUP_OK_144\"。\n4. MA1收到FOLLOWUP_OK_144后才调用issue.accept验收，并调用run.node.complete，在主Issue总结第一次草稿、后续补充与最终144结果。不要重新追问或重复创建子Issue。只需这一个子Issue，不用web工具、也不要读写文件。",
+    "assigneeType": "team",
+    "assigneeRef": "b20522d4-09e2-438a-8df7-06475870c2e5"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "d32bd03c-4cfb-4784-9126-533a4c48c74b",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+      "orchestrationRunId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+      "runNodeId": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+      "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "b20522d4-09e2-438a-8df7-06475870c2e5",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+      "correlationId": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T17:39:59.586892+08:00"
+    },
+    "issue": {
+      "id": "d1f1ce82-d0f1-46fd-9f8c-3186115bf24b",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "leader-wait-20260907 MA1追问MA2后继续执行",
+      "description": "请严格通过实际协作完成以下两阶段验收，不能自己代替成员工作：\n1. MA1只创建一个子Issue给worker（MA2），第一轮要求MA2直接提交字符串 DRAFT_READY，不能写文件。\n2. 收到DRAFT_READY后，MA1不应验收，而应在同一个子Issue通过issue.comment.add的结构化mentions明确让MA2计算12×12，并以FOLLOWUP_OK_144作为最终结果。mention成功后，MA1必须调用task.complete(outcome=waiting,summary=\"等待MA2补充验证结果\")结束自己的当前回合，不要将等待视为失败。\n3. MA2收到第二轮追问时用math.evaluate验证12×12，提交result=\"FOLLOWUP_OK_144\"。\n4. MA1收到FOLLOWUP_OK_144后才调用issue.accept验收，并调用run.node.complete，在主Issue总结第一次草稿、后续补充与最终144结果。不要重新追问或重复创建子Issue。只需这一个子Issue，不用web工具、也不要读写文件。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "b20522d4-09e2-438a-8df7-06475870c2e5",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T17:39:59.586892+08:00",
+      "updatedAt": "2026-09-07T17:39:59.586892+08:00"
+    }
+  }
+}

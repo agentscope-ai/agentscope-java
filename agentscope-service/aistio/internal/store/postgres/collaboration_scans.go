@@ -207,7 +207,7 @@ func scanApproval(row scannable) (*controlmodel.Approval, error) {
 
 const inboxColumns = `id,tenant,namespace,recipient_type,recipient_ref,type,severity,issue_id,
 	comment_id,approval_id,actor_type,actor_ref,title,body,details,read,archived,
-	dedupe_key,created_at`
+	dedupe_key,created_at,needs_action,read_at,resolved_at`
 
 func scanInbox(row scannable) (*controlmodel.InboxItem, error) {
 	item := &controlmodel.InboxItem{}
@@ -216,7 +216,7 @@ func scanInbox(row scannable) (*controlmodel.InboxItem, error) {
 	err := row.Scan(&item.ID, &item.Tenant, &item.Namespace, &item.RecipientType, &item.RecipientRef,
 		&item.Type, &item.Severity, &item.IssueID, &item.CommentID, &item.ApprovalID,
 		&item.Actor.Type, &actorRef, &item.Title, &body, &details, &item.Read,
-		&item.Archived, &dedupe, &item.CreatedAt)
+		&item.Archived, &dedupe, &item.CreatedAt, &item.NeedsAction, &item.ReadAt, &item.ResolvedAt)
 	if err != nil {
 		return nil, collaborationScanError(err)
 	}

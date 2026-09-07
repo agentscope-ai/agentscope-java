@@ -1,0 +1,74 @@
+{
+  "at": "2026-09-07T04:04:36.577584+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/42efb9dd-342c-4d88-9874-6a37abe26509",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "42efb9dd-342c-4d88-9874-6a37abe26509",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "d3488d6b-330f-4e6a-8217-91dd95c2279d",
+      "orchestrationRunId": "b5a1de60-2e6c-440f-acff-3b4e9f04d21d",
+      "runNodeId": "8f157acf-1452-4e39-a68c-325d4faa44b2",
+      "currentAttemptId": "f4b64f69-fb21-4152-846e-b857107143f3",
+      "agentId": "2e663462-f57e-4a08-9d14-8f672defab41",
+      "status": "failed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "ce1ba353-0296-4e7a-99cb-d4bb7a8ea90b",
+      "teamId": "d49533f7-16a4-489a-9698-769b31c4cda6",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "parentTaskId": "4db7cad8-2891-47fa-b5c8-2c3d2f11ffe7",
+      "delegatedFromTaskId": "4db7cad8-2891-47fa-b5c8-2c3d2f11ffe7",
+      "originator": {
+        "type": "agent",
+        "ref": "0535720b-d0aa-4170-b0dc-eed4294f59ec"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "ce1ba353-0296-4e7a-99cb-d4bb7a8ea90b",
+      "correlationId": "26bd1c12-fa83-49ea-84c9-1c364da0a3f6",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "2e663462-f57e-4a08-9d14-8f672defab41",
+          "bindingId": "f4949949-3bd2-54b4-8cea-5b0138292be4",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "2e663462-f57e-4a08-9d14-8f672defab41"
+        },
+        "sessionId": "sess_281cd81a8ba0",
+        "resolvedAt": "2026-09-07T04:00:29.272279Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_281cd81a8ba0",
+      "errorCode": "MISSING_CREDENTIAL",
+      "errorMessage": "手机行业调研子任务失败：缺少 TAVILY_API_KEY 凭证，无法执行网络搜索任务。",
+      "version": 4,
+      "createdAt": "2026-09-07T12:00:29.12323+08:00",
+      "dispatchedAt": "2026-09-07T12:00:29.271806+08:00",
+      "startedAt": "2026-09-07T12:00:29.32972+08:00",
+      "completedAt": "2026-09-07T12:00:47.607355+08:00",
+      "inputs": [
+        {
+          "id": "14283783-733a-49e2-99ae-a8cb7b022498",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "42efb9dd-342c-4d88-9874-6a37abe26509",
+          "commentId": "ce1ba353-0296-4e7a-99cb-d4bb7a8ea90b",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "delivered",
+          "deliveredAt": "2026-09-07T12:00:29.271806+08:00",
+          "attempts": 0,
+          "createdAt": "2026-09-07T12:00:29.12323+08:00"
+        }
+      ]
+    }
+  }
+}

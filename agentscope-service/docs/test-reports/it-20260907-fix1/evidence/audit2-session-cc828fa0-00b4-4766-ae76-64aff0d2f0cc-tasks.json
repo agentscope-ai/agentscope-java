@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-07T04:51:22.389660+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/cc828fa0-00b4-4766-ae76-64aff0d2f0cc/tasks?limit=1000",
+  "request": null,
+  "status": 501,
+  "response": {
+    "error": "task-query requires a registered instanceRef",
+    "code": "unsupported"
+  }
+}

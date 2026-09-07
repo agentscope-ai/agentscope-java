@@ -1,0 +1,469 @@
+{
+  "at": "2026-09-07T00:21:22.617777+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/4923de41-6abe-4da7-90db-d5d971f9c8cd/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "a51aabc6-a741-4413-b3b6-00c4986b3cc9",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "createdAt": "2026-09-07T08:15:26.867614+08:00"
+      },
+      {
+        "id": "bb0ffca2-3ff7-41a6-b68c-c33c03d7f81c",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "actor": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "causationId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+        "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-07T08:15:27.379988+08:00"
+      },
+      {
+        "id": "3520f278-9847-40dd-aabc-989ef7c15ab5",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "actor": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "details": {
+          "to": "in_review",
+          "from": "in_progress",
+          "reason": "execution completed; awaiting acceptance"
+        },
+        "createdAt": "2026-09-07T08:15:35.695095+08:00"
+      },
+      {
+        "id": "220082e0-4adc-4593-92a8-0a5a9a78a59a",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "actor": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+        "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "createdAt": "2026-09-07T08:15:35.695927+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [],
+    "comments": [
+      {
+        "id": "3b50be60-b4d2-4acc-9035-9e683f9012cc",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "threadRootId": "3b50be60-b4d2-4acc-9035-9e683f9012cc",
+        "author": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "content": "计算 17×23+19 的结果是 410。等式如下：\n\n17 × 23 + 19 = 391 + 19 = 410",
+        "type": "result",
+        "sourceTaskId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+        "sourceAttemptId": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+        "version": 1,
+        "createdAt": "2026-09-07T08:15:35.674445+08:00",
+        "updatedAt": "2026-09-07T08:15:35.674445+08:00",
+        "routes": [
+          {
+            "id": "ee1076b9-0e11-4fcc-8969-06cc1ab8c1db",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "commentId": "3b50be60-b4d2-4acc-9035-9e683f9012cc",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "routeType": "assignee",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T08:15:35.674445+08:00"
+          }
+        ]
+      }
+    ],
+    "exportedAt": "2026-09-07T00:21:22.637353Z",
+    "issue": {
+      "id": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-single-calc",
+      "description": "计算 17×23+19，给出一个等式和最终答案。不要使用工具。预期输出 CALC=410。",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 4,
+      "createdAt": "2026-09-07T08:15:26.855547+08:00",
+      "updatedAt": "2026-09-07T08:15:35.674445+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "2725ece9-08f6-4342-86f1-78bca5e7418a",
+            "runId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+            "agentTaskId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "idempotencyKey": "agent-task-queued:51fd9344-fa83-46f9-8027-39543cbc2ebe",
+            "occurredAt": "2026-09-07T08:15:26.855547+08:00"
+          },
+          {
+            "id": "05c4b77c-ddc8-400d-b052-1ead7a3e4f86",
+            "runId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+            "agentTaskId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+            "attemptId": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "idempotencyKey": "attempt-queued:18559774-5ca8-4f8d-bd94-f76d7e71296d",
+            "occurredAt": "2026-09-07T08:15:27.265027+08:00"
+          },
+          {
+            "id": "0d81c683-fa54-4c79-b761-49670f618cb3",
+            "runId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+            "agentTaskId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+            "attemptId": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+            },
+            "idempotencyKey": "attempt-running:18559774-5ca8-4f8d-bd94-f76d7e71296d",
+            "occurredAt": "2026-09-07T08:15:27.370242+08:00"
+          },
+          {
+            "id": "1d1d10e0-4496-409c-b2da-8314cd3e3738",
+            "runId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+            "agentTaskId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+            "attemptId": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+            },
+            "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "idempotencyKey": "attempt-succeeded:18559774-5ca8-4f8d-bd94-f76d7e71296d",
+            "occurredAt": "2026-09-07T08:15:35.674445+08:00"
+          },
+          {
+            "id": "fe4ddfb1-940b-4551-acce-b7e29bda5230",
+            "runId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+            "agentTaskId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+            },
+            "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "idempotencyKey": "node-succeeded:5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+            "occurredAt": "2026-09-07T08:15:35.674445+08:00"
+          },
+          {
+            "id": "a1751452-28ea-4fc7-b4cc-f75c5950aa6c",
+            "runId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "type": "run.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+            },
+            "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "idempotencyKey": "run-succeeded:b359e38c-67d1-4d16-9ac5-cc96780d864f",
+            "occurredAt": "2026-09-07T08:15:35.674445+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "mode": "direct",
+            "triggerType": "assignment",
+            "triggerRef": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+            "output": {
+              "CALC": 410
+            },
+            "state": "succeeded",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T08:15:26.855547+08:00",
+            "updatedAt": "2026-09-07T08:15:35.674445+08:00",
+            "startedAt": "2026-09-07T08:15:26.855547+08:00",
+            "completedAt": "2026-09-07T08:15:35.674445+08:00"
+          },
+          "nodes": [
+            {
+              "id": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+              "runId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:51fd9344-fa83-46f9-8027-39543cbc2ebe",
+              "type": "agent",
+              "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+              "state": "succeeded",
+              "output": {
+                "CALC": 410
+              },
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T08:15:26.855547+08:00",
+              "updatedAt": "2026-09-07T08:15:35.674445+08:00",
+              "startedAt": "2026-09-07T08:15:27.290604+08:00",
+              "completedAt": "2026-09-07T08:15:35.674445+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+              "orchestrationRunId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+              "runNodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+              "currentAttemptId": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+              "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+              "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+                  "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+                },
+                "sessionId": "sess_d98d9edbee99",
+                "resolvedAt": "2026-09-07T00:15:27.265637Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_d98d9edbee99",
+              "result": {
+                "CALC": 410
+              },
+              "version": 4,
+              "createdAt": "2026-09-07T08:15:26.855547+08:00",
+              "dispatchedAt": "2026-09-07T08:15:27.265027+08:00",
+              "startedAt": "2026-09-07T08:15:27.370242+08:00",
+              "completedAt": "2026-09-07T08:15:35.674445+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+              "agentTaskId": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+              "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+              "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+              "runId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+              "nodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+                  "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+                },
+                "sessionId": "sess_d98d9edbee99",
+                "resolvedAt": "2026-09-07T00:15:27.265637Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+              "sessionId": "sess_d98d9edbee99",
+              "sessionRef": "97747d16-bd0e-4c17-9bfb-6b55f6c00603",
+              "turnId": "28b92eeb-759d-496b-93db-e2bac365a61c",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T08:15:35.644338+08:00",
+              "result": {
+                "CALC": 410
+              },
+              "version": 13,
+              "createdAt": "2026-09-07T08:15:27.265027+08:00",
+              "updatedAt": "2026-09-07T08:15:35.674445+08:00",
+              "startedAt": "2026-09-07T08:15:27.370242+08:00",
+              "completedAt": "2026-09-07T08:15:35.674445+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "mode": "direct",
+        "triggerType": "assignment",
+        "triggerRef": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "output": {
+          "CALC": 410
+        },
+        "state": "succeeded",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T08:15:26.855547+08:00",
+        "updatedAt": "2026-09-07T08:15:35.674445+08:00",
+        "startedAt": "2026-09-07T08:15:26.855547+08:00",
+        "completedAt": "2026-09-07T08:15:35.674445+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "51fd9344-fa83-46f9-8027-39543cbc2ebe",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "orchestrationRunId": "b359e38c-67d1-4d16-9ac5-cc96780d864f",
+        "runNodeId": "5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8",
+        "currentAttemptId": "18559774-5ca8-4f8d-bd94-f76d7e71296d",
+        "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "correlationId": "4923de41-6abe-4da7-90db-d5d971f9c8cd",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "bindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+          },
+          "sessionId": "sess_d98d9edbee99",
+          "resolvedAt": "2026-09-07T00:15:27.265637Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_d98d9edbee99",
+        "result": {
+          "CALC": 410
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T08:15:26.855547+08:00",
+        "dispatchedAt": "2026-09-07T08:15:27.265027+08:00",
+        "startedAt": "2026-09-07T08:15:27.370242+08:00",
+        "completedAt": "2026-09-07T08:15:35.674445+08:00"
+      }
+    ]
+  }
+}

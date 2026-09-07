@@ -29,7 +29,7 @@ const helpStyle: React.CSSProperties = {
 };
 
 export default function AgentSkillsPage() {
-  const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
+  const { agentId, agent, canEdit = false, refreshAgent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null; canEdit?: boolean; refreshAgent?: () => Promise<unknown> }>();
   const [refreshKey, setRefreshKey] = useState(0);
   const linked = agent?.workspaceId;
 
@@ -40,15 +40,15 @@ export default function AgentSkillsPage() {
       ) : (
         <div style={helpStyle}>
           Manage skills under this agent&apos;s private workspace. For shared packs, create a Workspace
-          and link it in Settings.
+          and link it under Definition → Workspace.
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>
         <SkillsWorkspacePanel
           agentId={agentId}
           refreshKey={refreshKey}
-          onChange={() => setRefreshKey(k => k + 1)}
-          readOnly={!!linked}
+          onChange={() => { setRefreshKey(k => k + 1); void refreshAgent?.(); }}
+          readOnly={!!linked || !canEdit}
         />
       </div>
     </div>

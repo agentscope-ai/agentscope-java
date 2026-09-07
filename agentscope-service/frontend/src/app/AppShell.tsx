@@ -28,8 +28,8 @@ import { Button } from '@/components/ui/button';
 import { useControlPlaneScope } from './ScopeContext';
 import { CommandPalette, useCommandPaletteShortcut } from './CommandPalette';
 import { useCollaborationEvents } from './useCollaborationEvents';
-import { listApprovals, listInbox } from '@/api/collaboration';
-import { approvalAttentionSummary, formatAttentionCount, type ApprovalAttentionSummary } from './approvalAttention';
+import { getInboxSummary } from '@/api/collaboration';
+import { formatAttentionCount, type ApprovalAttentionSummary } from './approvalAttention';
 
 type NavItem = {
   to: string;
@@ -50,7 +50,7 @@ const navigation: NavGroup[] = [
     items: [
       { to: '/work/chat', label: 'Chat', icon: MessageSquare },
       { to: '/work/issues', label: 'Issues', icon: FileStack },
-      { to: '/work/approvals', label: 'Approvals', icon: ClipboardCheck },
+      { to: '/work/inbox', label: 'Inbox', icon: ClipboardCheck },
       { to: '/work/automations', label: 'Automations', icon: BriefcaseBusiness },
     ],
   },
@@ -78,7 +78,7 @@ const routeLabels: Array<[string, string]> = [
   ['/work/overview', 'Overview'],
   ['/work/chat', 'Chat'],
   ['/work/issues', 'Issues'],
-  ['/work/approvals', 'Approvals'],
+  ['/work/inbox', 'Inbox'],
   ['/work/automations', 'Automations'],
   ['/work/activity', 'Activity'],
   ['/work/executions', 'Executions'],
@@ -177,20 +177,13 @@ export default function AppShell() {
   const roles = getRoles().map((role) => role.toLowerCase());
   const scope = useControlPlaneScope();
 	useCollaborationEvents(scope.tenant, scope.namespace);
-  const pendingApprovals = useQuery({
-    queryKey: ['approvals', scope.tenant, scope.namespace],
-    queryFn: () => listApprovals(scope.tenant, scope.namespace),
+  const inboxSummary = useQuery({
+    queryKey: ['inbox-summary', scope.tenant, scope.namespace],
+    queryFn: () => getInboxSummary(scope.tenant, scope.namespace),
     refetchInterval: 5_000,
   });
-  const inbox = useQuery({
-    queryKey: ['inbox', scope.tenant, scope.namespace],
-    queryFn: () => listInbox(scope.tenant, scope.namespace),
-    refetchInterval: 5_000,
-  });
-  const approvalAttention = approvalAttentionSummary(
-    inbox.data?.items ?? [],
-    pendingApprovals.data?.items ?? [],
-  );
+  const summary = inboxSummary.data?.summary;
+  const approvalAttention = summary ? { total: summary.attentionTotal, unread: summary.unread, pending: summary.pendingApprovals } : undefined;
   const canAgentCenter = admin || roles.includes('agent_developer') || roles.includes('operator');
   const visibleNavigation = navigation.map((group) => ({
     ...group,
@@ -229,7 +222,7 @@ export default function AppShell() {
         <nav aria-label="Primary navigation" className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
           {visibleNavigation.map((group, index) => <div key={group.label || `primary-${index}`} className="space-y-1">
             {group.label && <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group.label}</div>}
-            {group.items.map((item) => <SidebarLink key={item.to} item={item} attention={item.to === '/work/approvals' ? approvalAttention : undefined} />)}
+            {group.items.map((item) => <SidebarLink key={item.to} item={item} attention={item.to === '/work/inbox' ? approvalAttention : undefined} />)}
           </div>)}
         </nav>
 

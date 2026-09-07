@@ -1,0 +1,61 @@
+{
+  "at": "2026-09-07T04:04:37.511226+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/27397d0c-f364-4a77-99e1-7d37019ef193/messages?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_8fab0682bf46",
+    "offset": 0,
+    "limit": 500,
+    "total": 5,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are a Team worker. Complete only the assigned child work and call task.complete with outcome=succeeded and the result only when the assigned objective is achieved. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "occurredAt": "2026-09-07T04:00:25.242Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "web_search",
+        "toolCallId": "call_c163eda73d9f4085914278",
+        "toolInput": {
+          "query": "手机行业 近期事实",
+          "max_results": 5
+        },
+        "occurredAt": "2026-09-07T04:00:30.737Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "\"Error: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.\"",
+        "toolName": "web_search",
+        "toolCallId": "call_c163eda73d9f4085914278",
+        "toolOutput": "\"Error: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.\"",
+        "occurredAt": "2026-09-07T04:00:30.781Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.fail",
+        "toolCallId": "call_386a93083a4e48ed9304ad",
+        "toolInput": {
+          "code": "MISSING_CREDENTIALS",
+          "message": "缺少必要的TAVILY_API_KEY来执行web搜索。请配置相应的凭证以启用web_search功能。"
+        },
+        "occurredAt": "2026-09-07T04:00:33.184Z"
+      },
+      {
+        "seq": 10,
+        "role": "error",
+        "content": "缺少必要的TAVILY_API_KEY来执行web搜索。请配置相应的凭证以启用web_search功能。",
+        "occurredAt": "2026-09-07T04:00:33.250692Z"
+      }
+    ],
+    "source": "events"
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "at": "2026-09-07T04:06:50.644745+00:00",
+  "method": "GET",
+  "path": "/api/v1/agents/0535720b-d0aa-4170-b0dc-eed4294f59ec/overview",
+  "request": null,
+  "status": 200,
+  "response": {
+    "agentId": "0535720b-d0aa-4170-b0dc-eed4294f59ec",
+    "observedAt": "2026-09-07T04:06:50.646851Z",
+    "window": "24h0m0s",
+    "lifecycle": "active",
+    "readiness": {
+      "state": "ready",
+      "mode": "online",
+      "reason": "Primary runtime candidate is dispatchable",
+      "activeBindingId": "d6d96063-0470-5ebf-a9f1-27096aadc4c2"
+    },
+    "bindings": {
+      "total": 1,
+      "enabled": 1,
+      "dispatchable": 1
+    },
+    "instances": {
+      "total": 0,
+      "healthy": 0,
+      "unhealthy": 0,
+      "capacity": null,
+      "activeSessions": 0,
+      "availableCapacity": null
+    },
+    "sessions": {
+      "active": 0,
+      "idle": 5,
+      "compressing": 0,
+      "history": 0,
+      "createdInWindow": 5,
+      "lastActiveAt": "2026-09-07T12:01:37.345+08:00",
+      "status": "available"
+    },
+    "usage": {
+      "totalTokens": "[REDACTED]",
+      "errorCount": null,
+      "status": "not_reporting"
+    },
+    "entrypoints": {
+      "total": 1,
+      "enabled": 1,
+      "conversation": 1,
+      "jobs": 0
+    },
+    "telemetry": {
+      "agent-task": "not_reporting",
+      "context-query": "not_reporting",
+      "event-reporting": "not_reporting",
+      "message-query": "not_reporting",
+      "session-reporting": "not_reporting",
+      "subagent-inventory": "not_reporting",
+      "workspace-inventory": "not_reporting"
+    }
+  }
+}

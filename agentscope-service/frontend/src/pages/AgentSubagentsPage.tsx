@@ -29,7 +29,7 @@ const helpStyle: React.CSSProperties = {
 };
 
 export default function AgentSubagentsPage() {
-  const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
+  const { agentId, agent, canEdit = false, refreshAgent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null; canEdit?: boolean; refreshAgent?: () => Promise<unknown> }>();
   const linked = agent?.workspaceId;
 
   return (
@@ -39,11 +39,11 @@ export default function AgentSubagentsPage() {
       ) : (
         <div style={helpStyle}>
           Subagents are stored as <code>subagents/&lt;name&gt;.md</code> with YAML frontmatter. Link a
-          Workspace in Settings to share them across agents.
+          Workspace under Definition → Workspace to share them across agents.
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <SubagentPanel agentId={agentId} readOnly={!!linked} />
+        <SubagentPanel onChanged={() => { void refreshAgent?.(); }} agentId={agentId} readOnly={!!linked || !canEdit} />
       </div>
     </div>
   );

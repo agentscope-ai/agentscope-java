@@ -41,6 +41,9 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		DelegatedFromTaskID: parentTaskID,
 		RetryOfTaskID:       retryOfTaskID, Originator: originator, Version: 1,
 		CorrelationID: issue.ID.String()}
+	if originator.Type == controlmodel.ActorHuman {
+		task.AccountableHumanRef = originator.Ref
+	}
 	var sourceTaskID = parentTaskID
 	if triggerCommentID != nil {
 		task.CausationID = triggerCommentID.String()
@@ -102,8 +105,16 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 					task.RunNodeID = source.RunNodeID
 				}
 			}
-		} else if err := createTaskRunNodeTx(ctx, tx, issue, task, &source.OrchestrationRunID); err != nil {
-			return nil, err
+		} else {
+			attached, attachErr := attachTeamContinuationTx(ctx, tx, issue, task, &source)
+			if attachErr != nil {
+				return nil, attachErr
+			}
+			if !attached {
+				if err := createTaskRunNodeTx(ctx, tx, issue, task, &source.OrchestrationRunID); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 	if task.OrchestrationRunID == uuid.Nil {
@@ -731,6 +742,9 @@ func startIssueForAgentTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 		CausationID: task.ID.String(), CorrelationID: task.CorrelationID, Details: details}); err != nil {
 		return err
 	}
+	if err := notifyIssueInboxTx(ctx, tx, issue, previousStatus, actor, "Agent task started", nil); err != nil {
+		return err
+	}
 	return enqueueCollaborationEventTx(ctx, tx, issue.Tenant, "issue", issue.ID,
 		"issue.status-changed.v1", map[string]any{"issue": issue, "previousStatus": previousStatus},
 		fmt.Sprintf("issue-status:%s:%d", issue.ID, issue.Version))
@@ -933,18 +947,12 @@ func (r *collaborationRepo) transitionAgentTask(ctx context.Context, id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	if target == controlmodel.AgentTaskFailed && task.AccountableHumanRef != "" {
-		if _, err := tx.Exec(ctx, `INSERT INTO inbox_items
-			(id,tenant,namespace,recipient_type,recipient_ref,type,severity,issue_id,
-			 actor_type,actor_ref,title,body,dedupe_key)
-			VALUES ($1,$2,$3,$4,$5,'agent_task_failed','error',$6,$7,$8,$9,$10,$11)
-			ON CONFLICT (tenant,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`, uuid.New(),
-			task.Tenant, task.Namespace, controlmodel.AssigneeHuman, task.AccountableHumanRef,
-			task.IssueID, controlmodel.ActorAgent, task.AgentRef, "AgentTask failed",
-			code+": "+message, "agent-task-failed:"+task.ID.String()); err != nil {
+	if target == controlmodel.AgentTaskFailed {
+		if err := notifyTaskFailureInboxTx(ctx, tx, task); err != nil {
 			return nil, err
 		}
 	}
+
 	eventType := "agent-task." + string(target) + ".v1"
 	if err := enqueueCollaborationEventTx(ctx, tx, task.Tenant, "agent-task", task.ID,
 		eventType, task, fmt.Sprintf("agent-task-%s:%s:%d", target, task.ID, task.Version)); err != nil {

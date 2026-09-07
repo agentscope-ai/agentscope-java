@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-07T04:06:17.754566+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/57971974-88a9-47b5-bcd6-9b79512b200d",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "57971974-88a9-47b5-bcd6-9b79512b200d",
+      "agentTaskId": "b0165acf-8b40-4d01-8497-219ff3a98209",
+      "agentId": "0535720b-d0aa-4170-b0dc-eed4294f59ec",
+      "bindingId": "d6d96063-0470-5ebf-a9f1-27096aadc4c2",
+      "runId": "6c3072b6-50b2-5e73-82ae-08ab9261d0c7",
+      "nodeId": "23f01cca-f86e-46e0-817b-7558f24dff07",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "0535720b-d0aa-4170-b0dc-eed4294f59ec",
+          "bindingId": "d6d96063-0470-5ebf-a9f1-27096aadc4c2",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "0535720b-d0aa-4170-b0dc-eed4294f59ec"
+        },
+        "sessionId": "sess_8fab0682bf46",
+        "resolvedAt": "2026-09-07T04:00:25.214877Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "0535720b-d0aa-4170-b0dc-eed4294f59ec",
+      "sessionId": "sess_8fab0682bf46",
+      "sessionRef": "27397d0c-f364-4a77-99e1-7d37019ef193",
+      "turnId": "89568251-5162-47d7-9613-002d8ad6fc86",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T12:00:33.202756+08:00",
+      "failureCode": "MISSING_CREDENTIALS",
+      "failureMessage": "缺少必要的TAVILY_API_KEY来执行web搜索。请配置相应的凭证以启用web_search功能。",
+      "version": 13,
+      "createdAt": "2026-09-07T12:00:25.214422+08:00",
+      "updatedAt": "2026-09-07T12:00:33.217507+08:00",
+      "startedAt": "2026-09-07T12:00:25.265382+08:00",
+      "completedAt": "2026-09-07T12:00:33.217507+08:00"
+    }
+  }
+}

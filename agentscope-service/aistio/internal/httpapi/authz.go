@@ -246,6 +246,16 @@ func (s *Server) resolveStoredResourceScope(c *gin.Context) (tenant, namespace, 
 		}
 		return item.Tenant, item.Namespace, item.ID.String(), true, nil
 	}
+	if id, ok, parseErr := parse("inboxId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Collaboration().GetInbox(c.Request.Context(), id, s.operatorFromContext(c))
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
 	if id, ok, parseErr := parse("approvalId"); ok {
 		if parseErr != nil {
 			return "", "", "", true, parseErr

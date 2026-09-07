@@ -1,0 +1,39 @@
+{
+  "at": "2026-09-07T03:30:37.537084+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "name": "it-20260907-1130-managed-chat",
+    "slug": "it-20260907-1130-managed-chat",
+    "targetType": "agent",
+    "targetRef": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+    "invocationMode": "conversation"
+  },
+  "status": 201,
+  "response": {
+    "credential": "[REDACTED]",
+    "credentialResource": "[REDACTED]",
+    "endpoint": {
+      "id": "ce54462c-525b-4bc6-bcb6-4528977db78f",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-1130-managed-chat",
+      "slug": "it-20260907-1130-managed-chat",
+      "targetType": "agent",
+      "targetRef": "c1240863-14ae-4e43-a4dc-56d29b3b685e",
+      "invocationMode": "conversation",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "status": "draft",
+      "version": 1,
+      "createdAt": "2026-09-07T11:30:37.539202+08:00",
+      "updatedAt": "2026-09-07T11:30:37.539202+08:00"
+    }
+  }
+}

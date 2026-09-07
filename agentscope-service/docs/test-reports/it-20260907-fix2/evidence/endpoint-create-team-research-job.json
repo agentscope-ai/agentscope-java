@@ -1,0 +1,39 @@
+{
+  "at": "2026-09-07T05:57:51.803770+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "name": "it-20260907-fix2-team-research-job",
+    "slug": "it-20260907-fix2-team-research-job",
+    "targetType": "team",
+    "targetRef": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+    "invocationMode": "job"
+  },
+  "status": 201,
+  "response": {
+    "credential": "[REDACTED]",
+    "credentialResource": "[REDACTED]",
+    "endpoint": {
+      "id": "06479ed5-bca5-49be-b173-21522a870e3a",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-fix2-team-research-job",
+      "slug": "it-20260907-fix2-team-research-job",
+      "targetType": "team",
+      "targetRef": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+      "invocationMode": "job",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "status": "draft",
+      "version": 1,
+      "createdAt": "2026-09-07T13:57:51.806882+08:00",
+      "updatedAt": "2026-09-07T13:57:51.806882+08:00"
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "at": "2026-09-07T03:37:40.702511+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/7eba31d4-1634-4cb4-98f1-1afe20c37b65/messages?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_e3aaa15dc9f2",
+    "offset": 0,
+    "limit": 500,
+    "total": 5,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are a Team worker. Complete only the assigned child work and call task.complete with the result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "occurredAt": "2026-09-07T03:30:01.39Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "web_search",
+        "toolCallId": "call_332a9b47881242d1a93396",
+        "toolInput": {
+          "query": "手机行业 最新消息",
+          "max_results": 2
+        },
+        "occurredAt": "2026-09-07T03:30:05.654Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "\"Error: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.\"",
+        "toolName": "web_search",
+        "toolCallId": "call_332a9b47881242d1a93396",
+        "toolOutput": "\"Error: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.\"",
+        "occurredAt": "2026-09-07T03:30:05.696Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.fail",
+        "toolCallId": "call_360024323e0f44499530d3",
+        "toolInput": {
+          "code": "MISSING_CREDENTIALS",
+          "message": "缺少必要的TAVILY_API_KEY，无法执行网络搜索以完成手机行业调研任务。"
+        },
+        "occurredAt": "2026-09-07T03:30:07.992Z"
+      },
+      {
+        "seq": 10,
+        "role": "error",
+        "content": "缺少必要的TAVILY_API_KEY，无法执行网络搜索以完成手机行业调研任务。",
+        "occurredAt": "2026-09-07T03:30:08.051364Z"
+      }
+    ],
+    "source": "events"
+  }
+}

@@ -246,6 +246,13 @@ func TestAcceptanceCriteriaAndRequiredHumanReview(t *testing.T) {
 	if _, _, err = svc.CompleteTask(ctx, running.ID, store.TaskCompletion{ExpectedVersion: running.Version, Summary: "done"}, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
 		t.Fatal(err)
 	}
+	// A leader turn is not the entire team's completion. Notify when the Issue
+	// actually enters review, independent of whether a new result is published.
+	current, _ := st.Collaboration().GetIssue(ctx, issue.ID)
+	if _, err = st.Collaboration().TransitionIssue(ctx, issue.ID, current.Version, controlmodel.IssueInReview,
+		controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "test"}, "ready for acceptance"); err != nil {
+		t.Fatal(err)
+	}
 	inbox, err := st.Collaboration().ListInbox(ctx, store.InboxFilter{Tenant: "t", Namespace: "n", RecipientRef: "owner", Limit: 10})
 	if err != nil || len(inbox) != 1 || inbox[0].Type != "review_request" {
 		t.Fatalf("expected an explicit human review request, inbox=%#v err=%v", inbox, err)

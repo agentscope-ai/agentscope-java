@@ -1,0 +1,1534 @@
+{
+  "at": "2026-09-07T09:16:08.879691+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/36c07ba6-f394-4d61-9951-c6ac44e6ab95/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "c4f03686-a5d0-4cf5-a0fe-c10156b3f1aa",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "createdAt": "2026-09-07T14:51:38.78535+08:00"
+      },
+      {
+        "id": "dfe557ad-eb15-4fb0-b0f5-459f1d81dab8",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "actor": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+        "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-07T14:51:39.517028+08:00"
+      },
+      {
+        "id": "382c0379-1e6c-4f8f-89d3-4fcd58ad2903",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "actor": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+        "causationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "createdAt": "2026-09-07T14:52:10.667134+08:00"
+      },
+      {
+        "id": "f6c74e5f-c097-4b4d-bf2c-01e890c09113",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: HUMAN_ACTION_REQUIRED"
+        },
+        "createdAt": "2026-09-07T14:53:42.270587+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [
+      {
+        "id": "2f8bad82-93dc-4eb4-bd64-c648e6f7b1dd",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "调研agent的发展趋势",
+        "description": "请调研当前agent技术的发展趋势，包括智能代理、软件代理等的应用场景、技术进步以及未来发展方向。",
+        "status": "blocked",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "creator": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "parentIssueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+        "version": 9,
+        "createdAt": "2026-09-07T14:51:56.879439+08:00",
+        "updatedAt": "2026-09-07T14:55:36.289677+08:00"
+      },
+      {
+        "id": "d64be454-de33-46e4-8e02-724222508e38",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "调研微服务的发展趋势",
+        "description": "请调研当前微服务架构的发展趋势，包括技术进步、应用案例以及未来展望。",
+        "status": "blocked",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "creator": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "parentIssueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+        "version": 5,
+        "createdAt": "2026-09-07T14:51:56.855154+08:00",
+        "updatedAt": "2026-09-07T14:52:40.860096+08:00"
+      }
+    ],
+    "comments": [
+      {
+        "id": "7cfbf8c7-9025-47c9-ab7f-2fde2adb13f4",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "threadRootId": "7cfbf8c7-9025-47c9-ab7f-2fde2adb13f4",
+        "author": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "content": "已经成功地将任务分解为两个子任务并分配给团队成员。我们将等待子任务的结果。",
+        "type": "result",
+        "sourceTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+        "sourceAttemptId": "c145c238-398f-4333-8d45-679f01ad7293",
+        "version": 1,
+        "createdAt": "2026-09-07T14:52:10.652155+08:00",
+        "updatedAt": "2026-09-07T14:52:10.652155+08:00",
+        "routes": [
+          {
+            "id": "78cea764-3709-462d-a408-03d6b51e5b11",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "commentId": "7cfbf8c7-9025-47c9-ab7f-2fde2adb13f4",
+            "commentVersion": 1,
+            "targetType": "team",
+            "targetRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+            "routeType": "team_leader",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T14:52:10.652155+08:00"
+          }
+        ]
+      }
+    ],
+    "exportedAt": "2026-09-07T09:16:08.902268Z",
+    "issue": {
+      "id": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "帮我同时调研微服务与agent发展趋势",
+      "description": "帮我同时调研微服务与agent发展趋势",
+      "status": "blocked",
+      "priority": "normal",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 4,
+      "createdAt": "2026-09-07T14:51:38.753624+08:00",
+      "updatedAt": "2026-09-07T14:53:42.269193+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [
+          {
+            "id": "768b614c-dffa-4f41-b554-ed80a55d5cd3",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 20,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-dispatch-deferred:062480f3-2d30-42c7-a170-83cf99b8f241",
+            "occurredAt": "2026-09-07T14:52:19.945549+08:00"
+          }
+        ],
+        "dispatchRecoveries": [
+          {
+            "id": "257d7979-2482-4e6e-ae99-5e21d5c1677e",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 24,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 8,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-dispatch-recovered:062480f3-2d30-42c7-a170-83cf99b8f241",
+            "occurredAt": "2026-09-07T14:52:54.052941+08:00"
+          }
+        ],
+        "events": [
+          {
+            "id": "f956e432-05c9-48d0-9366-1e0dbd04b13b",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-queued:8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "occurredAt": "2026-09-07T14:51:38.753624+08:00"
+          },
+          {
+            "id": "1bd147ec-9251-48c1-b3c9-68926df90c95",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "attemptId": "c145c238-398f-4333-8d45-679f01ad7293",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-queued:c145c238-398f-4333-8d45-679f01ad7293",
+            "occurredAt": "2026-09-07T14:51:39.081595+08:00"
+          },
+          {
+            "id": "6e02547c-fb5e-4b26-8f95-231f11afa786",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "attemptId": "c145c238-398f-4333-8d45-679f01ad7293",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "idempotencyKey": "attempt-running:c145c238-398f-4333-8d45-679f01ad7293",
+            "occurredAt": "2026-09-07T14:51:39.508787+08:00"
+          },
+          {
+            "id": "f2b54ff9-23b8-4f40-b891-a9416eb9331d",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+            "agentTaskId": "7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-queued:7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+            "occurredAt": "2026-09-07T14:51:56.855154+08:00"
+          },
+          {
+            "id": "9669259b-66b6-467e-b56a-3b71e15cf31e",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+            "agentTaskId": "bf34f9a9-9ccc-4975-87c2-652af640ff18",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-queued:bf34f9a9-9ccc-4975-87c2-652af640ff18",
+            "occurredAt": "2026-09-07T14:51:56.879439+08:00"
+          },
+          {
+            "id": "0cdaee78-f99d-4b13-86f9-dd3b647e76b2",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+            "agentTaskId": "7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+            "attemptId": "da5420be-0117-48fe-8fb1-1641ab559601",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-queued:da5420be-0117-48fe-8fb1-1641ab559601",
+            "occurredAt": "2026-09-07T14:51:56.931786+08:00"
+          },
+          {
+            "id": "6a36a974-dc8b-41f6-9e88-190636bbe9aa",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+            "agentTaskId": "7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+            "attemptId": "da5420be-0117-48fe-8fb1-1641ab559601",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "idempotencyKey": "attempt-running:da5420be-0117-48fe-8fb1-1641ab559601",
+            "occurredAt": "2026-09-07T14:51:56.99864+08:00"
+          },
+          {
+            "id": "212ea166-c1b3-4482-8265-cecb6d85d28b",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 8,
+            "nodeId": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+            "agentTaskId": "bf34f9a9-9ccc-4975-87c2-652af640ff18",
+            "attemptId": "eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-queued:eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+            "occurredAt": "2026-09-07T14:51:57.023816+08:00"
+          },
+          {
+            "id": "aedbbd30-f101-46cb-bc5e-aaf27f950048",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+            "agentTaskId": "bf34f9a9-9ccc-4975-87c2-652af640ff18",
+            "attemptId": "eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "idempotencyKey": "attempt-running:eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+            "occurredAt": "2026-09-07T14:51:57.077564+08:00"
+          },
+          {
+            "id": "4349f82b-524e-4ee3-ab7c-23ff28d7f062",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+            "agentTaskId": "7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+            "attemptId": "da5420be-0117-48fe-8fb1-1641ab559601",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_a8fb00aa1608",
+              "sessionRef": "dc6f7084-fb52-4358-bd74-34ea66b58142",
+              "toolCallId": "call_463e73036a434f9a8270af",
+              "managedEventId": "evt_e1a5291d3a7742a0830aac84ef001734"
+            },
+            "causationId": "call_463e73036a434f9a8270af",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-tool-failed:7d7bf488-5a08-400f-ad34-e33ae5b1f854:call_463e73036a434f9a8270af",
+            "occurredAt": "2026-09-07T14:52:10.5311+08:00"
+          },
+          {
+            "id": "c2c5a25d-24e2-4702-9b67-3d277e3f5601",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 11,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "attemptId": "c145c238-398f-4333-8d45-679f01ad7293",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "causationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-succeeded:c145c238-398f-4333-8d45-679f01ad7293",
+            "occurredAt": "2026-09-07T14:52:10.652155+08:00"
+          },
+          {
+            "id": "affe7eee-7fd6-4b75-abcb-999e7b36bfe4",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "type": "node.waiting",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "output": "已经成功地将任务分解为两个子任务并分配给团队成员。我们将等待子任务的结果。"
+            },
+            "causationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "node-waiting:5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "occurredAt": "2026-09-07T14:52:10.652155+08:00"
+          },
+          {
+            "id": "38d4acbb-c127-41dc-8973-f90cfad2916f",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+            "agentTaskId": "bf34f9a9-9ccc-4975-87c2-652af640ff18",
+            "attemptId": "eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_080572adfe39",
+              "sessionRef": "cd27cddd-1235-44cd-8bc9-a9fc28c59330",
+              "toolCallId": "call_e53362cdc92c4cbea3b403",
+              "managedEventId": "evt_526515b727354e57aa787906decbea36"
+            },
+            "causationId": "call_e53362cdc92c4cbea3b403",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-tool-failed:bf34f9a9-9ccc-4975-87c2-652af640ff18:call_e53362cdc92c4cbea3b403",
+            "occurredAt": "2026-09-07T14:52:10.955538+08:00"
+          },
+          {
+            "id": "f849b008-28c8-450a-9a42-2c7b3baec5d4",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 14,
+            "nodeId": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+            "agentTaskId": "7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+            "attemptId": "da5420be-0117-48fe-8fb1-1641ab559601",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "payload": {
+              "code": "MISSING_CREDENTIAL",
+              "message": "缺少必要的 TAVILY_API_KEY 以执行 web_search，因此无法收集微服务发展趋势的相关资料。"
+            },
+            "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-failed:da5420be-0117-48fe-8fb1-1641ab559601",
+            "occurredAt": "2026-09-07T14:52:17.391641+08:00"
+          },
+          {
+            "id": "e3637981-ddcf-448a-abbf-a6f3cff72e76",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "cb39ce40-5921-4d87-a68c-bbdf80818494",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "causationId": "d6a0414a-7774-4060-8cab-32e54f478f74",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-queued:cb39ce40-5921-4d87-a68c-bbdf80818494",
+            "occurredAt": "2026-09-07T14:52:17.409583+08:00"
+          },
+          {
+            "id": "314d8929-f89f-4eb2-94f3-94c49d364921",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 16,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "cb39ce40-5921-4d87-a68c-bbdf80818494",
+            "attemptId": "f176e79a-5ab6-46a7-8142-9b953ba5ed99",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "d6a0414a-7774-4060-8cab-32e54f478f74",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-queued:f176e79a-5ab6-46a7-8142-9b953ba5ed99",
+            "occurredAt": "2026-09-07T14:52:17.951368+08:00"
+          },
+          {
+            "id": "cff4a749-4080-4af2-bd62-92e10f43dca6",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 17,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "cb39ce40-5921-4d87-a68c-bbdf80818494",
+            "attemptId": "f176e79a-5ab6-46a7-8142-9b953ba5ed99",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "idempotencyKey": "attempt-running:f176e79a-5ab6-46a7-8142-9b953ba5ed99",
+            "occurredAt": "2026-09-07T14:52:18.094537+08:00"
+          },
+          {
+            "id": "b61cf762-4270-48fb-a458-11dfb4e60914",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 18,
+            "nodeId": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+            "agentTaskId": "bf34f9a9-9ccc-4975-87c2-652af640ff18",
+            "attemptId": "eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "payload": {
+              "code": "TOOL_UNAVAILABLE",
+              "message": "The web_search tool is not available due to missing TAVILY_API_KEY configuration, which is required to complete the research on agent technology trends."
+            },
+            "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-failed:eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+            "occurredAt": "2026-09-07T14:52:19.542905+08:00"
+          },
+          {
+            "id": "00d9b2eb-dc32-4ba3-8930-69f86b105d2d",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 19,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "causationId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-queued:062480f3-2d30-42c7-a170-83cf99b8f241",
+            "occurredAt": "2026-09-07T14:52:19.563359+08:00"
+          },
+          {
+            "id": "768b614c-dffa-4f41-b554-ed80a55d5cd3",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 20,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-dispatch-deferred:062480f3-2d30-42c7-a170-83cf99b8f241",
+            "occurredAt": "2026-09-07T14:52:19.945549+08:00"
+          },
+          {
+            "id": "ecd40fe4-8126-4045-aa4e-a93d8e5bc8f4",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 21,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "cb39ce40-5921-4d87-a68c-bbdf80818494",
+            "attemptId": "f176e79a-5ab6-46a7-8142-9b953ba5ed99",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "code": "BLOCKED_BY_MISSING_CREDENTIAL",
+              "message": "缺少 TAVILY_API_KEY 导致无法执行 web_search，已经请求用户介入提供凭证或直接提交研究结果。"
+            },
+            "causationId": "d6a0414a-7774-4060-8cab-32e54f478f74",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-failed:f176e79a-5ab6-46a7-8142-9b953ba5ed99",
+            "occurredAt": "2026-09-07T14:52:51.929504+08:00"
+          },
+          {
+            "id": "e659d397-d1d4-4761-b21b-8bd22cb0702e",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 22,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "attemptId": "569b20fe-ab9e-44d6-9a03-5d7965658878",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-queued:569b20fe-ab9e-44d6-9a03-5d7965658878",
+            "occurredAt": "2026-09-07T14:52:53.935697+08:00"
+          },
+          {
+            "id": "11d60041-db8a-43ef-9d4a-5fbda9c0fc86",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 23,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "attemptId": "569b20fe-ab9e-44d6-9a03-5d7965658878",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "idempotencyKey": "attempt-running:569b20fe-ab9e-44d6-9a03-5d7965658878",
+            "occurredAt": "2026-09-07T14:52:54.043131+08:00"
+          },
+          {
+            "id": "257d7979-2482-4e6e-ae99-5e21d5c1677e",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 24,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 8,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-task-dispatch-recovered:062480f3-2d30-42c7-a170-83cf99b8f241",
+            "occurredAt": "2026-09-07T14:52:54.052941+08:00"
+          },
+          {
+            "id": "91436fc8-c26a-4575-a26c-b3adcecafe4d",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 25,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "attemptId": "569b20fe-ab9e-44d6-9a03-5d7965658878",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_173bd9602684",
+              "sessionRef": "b9753a6e-487f-4544-974e-959585906d02",
+              "toolCallId": "call_e836b812fce44199a8f409",
+              "managedEventId": "evt_d75e70856a3f4d658bb2de326041da48"
+            },
+            "causationId": "call_e836b812fce44199a8f409",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-tool-failed:062480f3-2d30-42c7-a170-83cf99b8f241:call_e836b812fce44199a8f409",
+            "occurredAt": "2026-09-07T14:53:24.481445+08:00"
+          },
+          {
+            "id": "d452d105-e0cb-4332-b293-7864fcc2ab1b",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 26,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "attemptId": "569b20fe-ab9e-44d6-9a03-5d7965658878",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "code": "HUMAN_ACTION_REQUIRED",
+              "message": "The web_search tool is not available due to missing TAVILY_API_KEY configuration. A request for human action has been sent to provide the necessary API key or directly supply relevant information for the task."
+            },
+            "causationId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "attempt-failed:569b20fe-ab9e-44d6-9a03-5d7965658878",
+            "occurredAt": "2026-09-07T14:53:42.24837+08:00"
+          },
+          {
+            "id": "2a9a73ae-2ce3-409a-9e3e-2aca59963b6c",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 27,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "HUMAN_ACTION_REQUIRED",
+              "failureMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration. A request for human action has been sent to provide the necessary API key or directly supply relevant information for the task."
+            },
+            "idempotencyKey": "run-failed:4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "occurredAt": "2026-09-07T14:53:42.26512+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "mode": "adaptive",
+            "triggerType": "assignment",
+            "triggerRef": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "state": "failed",
+            "failureCode": "HUMAN_ACTION_REQUIRED",
+            "failureMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration. A request for human action has been sent to provide the necessary API key or directly supply relevant information for the task.",
+            "version": 13,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T14:51:38.753624+08:00",
+            "updatedAt": "2026-09-07T14:53:42.26512+08:00",
+            "startedAt": "2026-09-07T14:51:38.753624+08:00",
+            "completedAt": "2026-09-07T14:53:42.26512+08:00"
+          },
+          "nodes": [
+            {
+              "id": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+              "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+              "type": "agent",
+              "role": "ma2",
+              "issueId": "d64be454-de33-46e4-8e02-724222508e38",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "MISSING_CREDENTIAL",
+              "failureMessage": "缺少必要的 TAVILY_API_KEY 以执行 web_search，因此无法收集微服务发展趋势的相关资料。",
+              "version": 3,
+              "createdAt": "2026-09-07T14:51:56.855154+08:00",
+              "updatedAt": "2026-09-07T14:52:17.437912+08:00",
+              "startedAt": "2026-09-07T14:51:56.92223+08:00",
+              "completedAt": "2026-09-07T14:52:17.437912+08:00"
+            },
+            {
+              "id": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+              "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "type": "team",
+              "role": "leader",
+              "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+              "state": "failed",
+              "output": "已经成功地将任务分解为两个子任务并分配给团队成员。我们将等待子任务的结果。",
+              "iteration": 1,
+              "failureCode": "HUMAN_ACTION_REQUIRED",
+              "failureMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration. A request for human action has been sent to provide the necessary API key or directly supply relevant information for the task.",
+              "version": 4,
+              "createdAt": "2026-09-07T14:51:38.753624+08:00",
+              "updatedAt": "2026-09-07T14:53:42.261739+08:00",
+              "startedAt": "2026-09-07T14:51:38.997573+08:00",
+              "completedAt": "2026-09-07T14:53:42.261739+08:00"
+            },
+            {
+              "id": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+              "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:bf34f9a9-9ccc-4975-87c2-652af640ff18",
+              "type": "agent",
+              "role": "ma2",
+              "issueId": "2f8bad82-93dc-4eb4-bd64-c648e6f7b1dd",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "TOOL_UNAVAILABLE",
+              "failureMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration, which is required to complete the research on agent technology trends.",
+              "version": 3,
+              "createdAt": "2026-09-07T14:51:56.879439+08:00",
+              "updatedAt": "2026-09-07T14:52:19.579221+08:00",
+              "startedAt": "2026-09-07T14:51:56.92449+08:00",
+              "completedAt": "2026-09-07T14:52:19.579221+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+              "orchestrationRunId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "runNodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+              "currentAttemptId": "c145c238-398f-4333-8d45-679f01ad7293",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+              "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_20c5722166e0",
+                "resolvedAt": "2026-09-07T06:51:39.082907Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_20c5722166e0",
+              "result": "已经成功地将任务分解为两个子任务并分配给团队成员。我们将等待子任务的结果。",
+              "version": 4,
+              "createdAt": "2026-09-07T14:51:38.753624+08:00",
+              "dispatchedAt": "2026-09-07T14:51:39.081595+08:00",
+              "startedAt": "2026-09-07T14:51:39.508787+08:00",
+              "completedAt": "2026-09-07T14:52:10.652155+08:00"
+            },
+            {
+              "id": "7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "d64be454-de33-46e4-8e02-724222508e38",
+              "orchestrationRunId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "runNodeId": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+              "currentAttemptId": "da5420be-0117-48fe-8fb1-1641ab559601",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "ma2",
+              "parentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "delegatedFromTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "originator": {
+                "type": "agent",
+                "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_a8fb00aa1608",
+                "resolvedAt": "2026-09-07T06:51:56.932136Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_a8fb00aa1608",
+              "errorCode": "MISSING_CREDENTIAL",
+              "errorMessage": "缺少必要的 TAVILY_API_KEY 以执行 web_search，因此无法收集微服务发展趋势的相关资料。",
+              "version": 4,
+              "createdAt": "2026-09-07T14:51:56.855154+08:00",
+              "dispatchedAt": "2026-09-07T14:51:56.931786+08:00",
+              "startedAt": "2026-09-07T14:51:56.99864+08:00",
+              "completedAt": "2026-09-07T14:52:17.391641+08:00"
+            },
+            {
+              "id": "bf34f9a9-9ccc-4975-87c2-652af640ff18",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "2f8bad82-93dc-4eb4-bd64-c648e6f7b1dd",
+              "orchestrationRunId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "runNodeId": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+              "currentAttemptId": "eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "ma2",
+              "parentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "delegatedFromTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "originator": {
+                "type": "agent",
+                "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_080572adfe39",
+                "resolvedAt": "2026-09-07T06:51:57.024139Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_080572adfe39",
+              "errorCode": "TOOL_UNAVAILABLE",
+              "errorMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration, which is required to complete the research on agent technology trends.",
+              "version": 4,
+              "createdAt": "2026-09-07T14:51:56.879439+08:00",
+              "dispatchedAt": "2026-09-07T14:51:57.023816+08:00",
+              "startedAt": "2026-09-07T14:51:57.077564+08:00",
+              "completedAt": "2026-09-07T14:52:19.542905+08:00"
+            },
+            {
+              "id": "cb39ce40-5921-4d87-a68c-bbdf80818494",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "d64be454-de33-46e4-8e02-724222508e38",
+              "orchestrationRunId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "runNodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+              "currentAttemptId": "f176e79a-5ab6-46a7-8142-9b953ba5ed99",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "d6a0414a-7774-4060-8cab-32e54f478f74",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "delegatedFromTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "originator": {
+                "type": "agent",
+                "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "d6a0414a-7774-4060-8cab-32e54f478f74",
+              "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_6bb9e874b1fb",
+                "resolvedAt": "2026-09-07T06:52:17.9515Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_6bb9e874b1fb",
+              "errorCode": "BLOCKED_BY_MISSING_CREDENTIAL",
+              "errorMessage": "缺少 TAVILY_API_KEY 导致无法执行 web_search，已经请求用户介入提供凭证或直接提交研究结果。",
+              "version": 4,
+              "createdAt": "2026-09-07T14:52:17.409583+08:00",
+              "dispatchedAt": "2026-09-07T14:52:17.951368+08:00",
+              "startedAt": "2026-09-07T14:52:18.094537+08:00",
+              "completedAt": "2026-09-07T14:52:51.929504+08:00",
+              "inputs": [
+                {
+                  "id": "da7d35e5-024c-4569-b2fd-c0fffecc55a1",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "cb39ce40-5921-4d87-a68c-bbdf80818494",
+                  "commentId": "d6a0414a-7774-4060-8cab-32e54f478f74",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "blocked",
+                  "deliveredAt": "2026-09-07T14:52:17.951368+08:00",
+                  "attempts": 0,
+                  "lastError": "缺少 TAVILY_API_KEY 导致无法执行 web_search，已经请求用户介入提供凭证或直接提交研究结果。",
+                  "createdAt": "2026-09-07T14:52:17.409583+08:00"
+                }
+              ]
+            },
+            {
+              "id": "062480f3-2d30-42c7-a170-83cf99b8f241",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "2f8bad82-93dc-4eb4-bd64-c648e6f7b1dd",
+              "orchestrationRunId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "runNodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+              "currentAttemptId": "569b20fe-ab9e-44d6-9a03-5d7965658878",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "delegatedFromTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "originator": {
+                "type": "agent",
+                "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+              "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_173bd9602684",
+                "resolvedAt": "2026-09-07T06:52:53.935865Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_173bd9602684",
+              "errorCode": "HUMAN_ACTION_REQUIRED",
+              "errorMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration. A request for human action has been sent to provide the necessary API key or directly supply relevant information for the task.",
+              "version": 4,
+              "createdAt": "2026-09-07T14:52:19.563359+08:00",
+              "dispatchedAt": "2026-09-07T14:52:53.935697+08:00",
+              "startedAt": "2026-09-07T14:52:54.043131+08:00",
+              "completedAt": "2026-09-07T14:53:42.24837+08:00",
+              "inputs": [
+                {
+                  "id": "bdee85bd-9e44-493c-9267-915b54b743f6",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+                  "commentId": "f7a911b1-e75a-4fcf-a90d-e8860b044872",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "blocked",
+                  "deliveredAt": "2026-09-07T14:52:53.935697+08:00",
+                  "attempts": 0,
+                  "lastError": "The web_search tool is not available due to missing TAVILY_API_KEY configuration. A request for human action has been sent to provide the necessary API key or directly supply relevant information for the task.",
+                  "createdAt": "2026-09-07T14:52:19.563359+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "c145c238-398f-4333-8d45-679f01ad7293",
+              "agentTaskId": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+              "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_20c5722166e0",
+                "resolvedAt": "2026-09-07T06:51:39.082907Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "sessionId": "sess_20c5722166e0",
+              "sessionRef": "2471cd5c-b844-4409-ae45-d3ac53d20410",
+              "turnId": "e6408953-82b0-46e1-a977-fbfeca8bfd7c",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T14:52:10.612108+08:00",
+              "result": "已经成功地将任务分解为两个子任务并分配给团队成员。我们将等待子任务的结果。",
+              "version": 24,
+              "createdAt": "2026-09-07T14:51:39.081595+08:00",
+              "updatedAt": "2026-09-07T14:52:10.652155+08:00",
+              "startedAt": "2026-09-07T14:51:39.508787+08:00",
+              "completedAt": "2026-09-07T14:52:10.652155+08:00"
+            },
+            {
+              "id": "da5420be-0117-48fe-8fb1-1641ab559601",
+              "agentTaskId": "7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+              "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "nodeId": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_a8fb00aa1608",
+                "resolvedAt": "2026-09-07T06:51:56.932136Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "sessionId": "sess_a8fb00aa1608",
+              "sessionRef": "dc6f7084-fb52-4358-bd74-34ea66b58142",
+              "turnId": "52562c17-c1bc-4b71-b4b9-29257cbf6b68",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T14:52:17.326096+08:00",
+              "failureCode": "MISSING_CREDENTIAL",
+              "failureMessage": "缺少必要的 TAVILY_API_KEY 以执行 web_search，因此无法收集微服务发展趋势的相关资料。",
+              "version": 19,
+              "createdAt": "2026-09-07T14:51:56.931786+08:00",
+              "updatedAt": "2026-09-07T14:52:17.391641+08:00",
+              "startedAt": "2026-09-07T14:51:56.99864+08:00",
+              "completedAt": "2026-09-07T14:52:17.391641+08:00"
+            },
+            {
+              "id": "eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+              "agentTaskId": "bf34f9a9-9ccc-4975-87c2-652af640ff18",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+              "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "nodeId": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_080572adfe39",
+                "resolvedAt": "2026-09-07T06:51:57.024139Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "sessionId": "sess_080572adfe39",
+              "sessionRef": "cd27cddd-1235-44cd-8bc9-a9fc28c59330",
+              "turnId": "e238c18a-8513-49be-935d-d6b4a999fe2d",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T14:52:19.520386+08:00",
+              "failureCode": "TOOL_UNAVAILABLE",
+              "failureMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration, which is required to complete the research on agent technology trends.",
+              "version": 19,
+              "createdAt": "2026-09-07T14:51:57.023816+08:00",
+              "updatedAt": "2026-09-07T14:52:19.542905+08:00",
+              "startedAt": "2026-09-07T14:51:57.077564+08:00",
+              "completedAt": "2026-09-07T14:52:19.542905+08:00"
+            },
+            {
+              "id": "f176e79a-5ab6-46a7-8142-9b953ba5ed99",
+              "agentTaskId": "cb39ce40-5921-4d87-a68c-bbdf80818494",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+              "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_6bb9e874b1fb",
+                "resolvedAt": "2026-09-07T06:52:17.9515Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "sessionId": "sess_6bb9e874b1fb",
+              "sessionRef": "661d2f40-e29d-4ff8-8adb-8a1ee4cb4c2e",
+              "turnId": "bd9538a9-7695-49dd-88f4-d6d51b33a7fa",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T14:52:51.890374+08:00",
+              "failureCode": "BLOCKED_BY_MISSING_CREDENTIAL",
+              "failureMessage": "缺少 TAVILY_API_KEY 导致无法执行 web_search，已经请求用户介入提供凭证或直接提交研究结果。",
+              "version": 20,
+              "createdAt": "2026-09-07T14:52:17.951368+08:00",
+              "updatedAt": "2026-09-07T14:52:51.929504+08:00",
+              "startedAt": "2026-09-07T14:52:18.094537+08:00",
+              "completedAt": "2026-09-07T14:52:51.929504+08:00"
+            },
+            {
+              "id": "569b20fe-ab9e-44d6-9a03-5d7965658878",
+              "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+              "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+              "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_173bd9602684",
+                "resolvedAt": "2026-09-07T06:52:53.935865Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "sessionId": "sess_173bd9602684",
+              "sessionRef": "b9753a6e-487f-4544-974e-959585906d02",
+              "turnId": "6105162b-0554-4db6-8fcb-fd64306d1b4f",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T14:53:42.214473+08:00",
+              "failureCode": "HUMAN_ACTION_REQUIRED",
+              "failureMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration. A request for human action has been sent to provide the necessary API key or directly supply relevant information for the task.",
+              "version": 25,
+              "createdAt": "2026-09-07T14:52:53.935697+08:00",
+              "updatedAt": "2026-09-07T14:53:42.24837+08:00",
+              "startedAt": "2026-09-07T14:52:54.043131+08:00",
+              "completedAt": "2026-09-07T14:53:42.24837+08:00"
+            }
+          ]
+        },
+        "toolFailures": [
+          {
+            "id": "4349f82b-524e-4ee3-ab7c-23ff28d7f062",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "e8226fe2-a241-4e57-886f-abe6c7096aa2",
+            "agentTaskId": "7d7bf488-5a08-400f-ad34-e33ae5b1f854",
+            "attemptId": "da5420be-0117-48fe-8fb1-1641ab559601",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_a8fb00aa1608",
+              "sessionRef": "dc6f7084-fb52-4358-bd74-34ea66b58142",
+              "toolCallId": "call_463e73036a434f9a8270af",
+              "managedEventId": "evt_e1a5291d3a7742a0830aac84ef001734"
+            },
+            "causationId": "call_463e73036a434f9a8270af",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-tool-failed:7d7bf488-5a08-400f-ad34-e33ae5b1f854:call_463e73036a434f9a8270af",
+            "occurredAt": "2026-09-07T14:52:10.5311+08:00"
+          },
+          {
+            "id": "38d4acbb-c127-41dc-8973-f90cfad2916f",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "c371b7fa-57a9-4a43-9f35-4af08ac36529",
+            "agentTaskId": "bf34f9a9-9ccc-4975-87c2-652af640ff18",
+            "attemptId": "eac7e3ee-97f1-4f0f-bcfb-f6ad68a14461",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_080572adfe39",
+              "sessionRef": "cd27cddd-1235-44cd-8bc9-a9fc28c59330",
+              "toolCallId": "call_e53362cdc92c4cbea3b403",
+              "managedEventId": "evt_526515b727354e57aa787906decbea36"
+            },
+            "causationId": "call_e53362cdc92c4cbea3b403",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-tool-failed:bf34f9a9-9ccc-4975-87c2-652af640ff18:call_e53362cdc92c4cbea3b403",
+            "occurredAt": "2026-09-07T14:52:10.955538+08:00"
+          },
+          {
+            "id": "91436fc8-c26a-4575-a26c-b3adcecafe4d",
+            "runId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 25,
+            "nodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+            "agentTaskId": "062480f3-2d30-42c7-a170-83cf99b8f241",
+            "attemptId": "569b20fe-ab9e-44d6-9a03-5d7965658878",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_173bd9602684",
+              "sessionRef": "b9753a6e-487f-4544-974e-959585906d02",
+              "toolCallId": "call_e836b812fce44199a8f409",
+              "managedEventId": "evt_d75e70856a3f4d658bb2de326041da48"
+            },
+            "causationId": "call_e836b812fce44199a8f409",
+            "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+            "idempotencyKey": "agent-tool-failed:062480f3-2d30-42c7-a170-83cf99b8f241:call_e836b812fce44199a8f409",
+            "occurredAt": "2026-09-07T14:53:24.481445+08:00"
+          }
+        ]
+      }
+    ],
+    "runs": [
+      {
+        "id": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "mode": "adaptive",
+        "triggerType": "assignment",
+        "triggerRef": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "state": "failed",
+        "failureCode": "HUMAN_ACTION_REQUIRED",
+        "failureMessage": "The web_search tool is not available due to missing TAVILY_API_KEY configuration. A request for human action has been sent to provide the necessary API key or directly supply relevant information for the task.",
+        "version": 13,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T14:51:38.753624+08:00",
+        "updatedAt": "2026-09-07T14:53:42.26512+08:00",
+        "startedAt": "2026-09-07T14:51:38.753624+08:00",
+        "completedAt": "2026-09-07T14:53:42.26512+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "8ac4a8d2-3117-4322-a0d5-3827cd65c111",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "orchestrationRunId": "4f9d9d9c-1fb4-4ef4-a6c0-3ac37fc6af43",
+        "runNodeId": "5452b162-3ca2-4bc7-9d22-3c6181e211f4",
+        "currentAttemptId": "c145c238-398f-4333-8d45-679f01ad7293",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "correlationId": "36c07ba6-f394-4d61-9951-c6ac44e6ab95",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_20c5722166e0",
+          "resolvedAt": "2026-09-07T06:51:39.082907Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_20c5722166e0",
+        "result": "已经成功地将任务分解为两个子任务并分配给团队成员。我们将等待子任务的结果。",
+        "version": 4,
+        "createdAt": "2026-09-07T14:51:38.753624+08:00",
+        "dispatchedAt": "2026-09-07T14:51:39.081595+08:00",
+        "startedAt": "2026-09-07T14:51:39.508787+08:00",
+        "completedAt": "2026-09-07T14:52:10.652155+08:00"
+      }
+    ]
+  }
+}

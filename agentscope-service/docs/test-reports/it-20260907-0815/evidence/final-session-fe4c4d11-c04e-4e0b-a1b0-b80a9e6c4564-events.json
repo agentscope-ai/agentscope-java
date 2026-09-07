@@ -1,0 +1,355 @@
+{
+  "at": "2026-09-07T00:21:23.032152+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564/events?limit=500",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 200,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are the initial Team leader. Delegate suitable child work once, using the member.agentId from team.get as assigneeRef (never the membership id). After every issue.child.create succeeds, call task.complete immediately with a delegation summary; do not wait inside this turn. A fresh leader follow-up will arrive with each worker result.",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_724e34d88ccc46808654a49e420be251",
+          "managedSeq": 1,
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_724e34d88ccc46808654a49e420be251",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:33.298+08:00"
+      },
+      {
+        "id": 201,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_8f8c5a85dfad4a44bf99ef422c45f16b",
+          "managedSeq": 2,
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_8f8c5a85dfad4a44bf99ef422c45f16b",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:33.312+08:00"
+      },
+      {
+        "id": 202,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_c2d305ed551f4ad887337a60f0c2d51b",
+          "managedSeq": 3,
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_c2d305ed551f4ad887337a60f0c2d51b",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:33.349+08:00"
+      },
+      {
+        "id": 213,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 4,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "team.get",
+        "toolInput": {},
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_fb8d8a1b23f04ed7bccc907b86b2f13d",
+          "managedSeq": 4,
+          "toolCallId": "call_7227aae3399d47309111f1",
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_fb8d8a1b23f04ed7bccc907b86b2f13d",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:36.818+08:00"
+      },
+      {
+        "id": 225,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 5,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "issue.child.create",
+        "toolInput": {
+          "title": "it-20260907-0815-researcher-task",
+          "priority": "none",
+          "assigneeRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+          "description": "请根据给定事实“手机A电池5000mAh，手机B电池4000mAh”计算A比B多多少，期望 BATTERY=25%",
+          "assigneeType": "agent"
+        },
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_1f4aaea44615445fbd47b79aef1ab7bd",
+          "managedSeq": 5,
+          "toolCallId": "call_c42a733c6fad4a289e6436",
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_1f4aaea44615445fbd47b79aef1ab7bd",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:40.414+08:00"
+      },
+      {
+        "id": 230,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 6,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "issue.child.create",
+        "toolInput": {
+          "title": "it-20260907-0815-calculator-task",
+          "priority": "none",
+          "assigneeRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+          "description": "请计算100+200，期望 SUM=300",
+          "assigneeType": "agent"
+        },
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_82246b28787d426d820383f53b89fad9",
+          "managedSeq": 6,
+          "toolCallId": "call_2444482b11734a3cb0b3d2",
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_82246b28787d426d820383f53b89fad9",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:43.093+08:00"
+      },
+      {
+        "id": 243,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 7,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.complete",
+        "toolInput": {
+          "summary": "已经成功委派了两个子任务：一个给researcher（计算手机A和手机B电池容量差值），另一个给calculator（计算100+200）。等待子任务结果。"
+        },
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_3a6a180a48fc451e96717a5da0470f20",
+          "managedSeq": 7,
+          "toolCallId": "call_38c7488ab3d145c7ab0d16",
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_3a6a180a48fc451e96717a5da0470f20",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:44.834+08:00"
+      },
+      {
+        "id": 244,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 8,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_d4458b69493544b1b70e9c798e3bd8ec",
+          "managedSeq": 8,
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_d4458b69493544b1b70e9c798e3bd8ec",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:44.855+08:00"
+      },
+      {
+        "id": 245,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 9,
+        "eventType": "assistant.message",
+        "role": "assistant",
+        "content": "已经成功委派了两个子任务：一个给researcher（计算手机A和手机B电池容量差值），另一个给calculator（计算100+200）。等待子任务结果。",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "assistant:967189c9-5108-4b48-937f-ce2a05b42b78"
+        },
+        "occurredAt": "2026-09-07T08:16:44.939881+08:00"
+      },
+      {
+        "id": 246,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 10,
+        "eventType": "turn.completed",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "turn-completed:967189c9-5108-4b48-937f-ce2a05b42b78"
+        },
+        "occurredAt": "2026-09-07T08:16:44.942259+08:00"
+      },
+      {
+        "id": 247,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 11,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"team\": {\"id\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"tenant\": \"default\", \"namespace\": \"default\", \"name\": \"it-20260907-0815-mixed\", \"instructions\": \"所有子Issue标题以 it-20260907-0815 开头。必须实际委派指定成员并收集结果，不要自己替代成员工作。工具受限要如实传递。\", \"status\": \"active\", \"leaderAgentId\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\", \"policy\": {}, \"version\": 1, \"createdAt\": \"2026-09-07T08:15:00.520561+08:00\", \"updatedAt\": \"2026-09-07T08:15:00.520561+08:00\", \"members\": [{\"id\": \"7b679483-185d-4fa6-a99b-6f3375504e0c\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"role\": \"calculator\", \"createdAt\": \"2026-09-07T08:15:00.520561+08:00\"}, {\"id\": \"7818d5db-44d8-4cbd-a7e9-37183119ea39\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"agentId\": \"679b7bf9-c9c1-4828-a129-4045be75090e\", \"role\": \"researcher\", \"createdAt\": \"2026-09-07T08:15:00.520561+08:00\"}]}}",
+        "toolName": "team.get",
+        "toolOutput": "{\"team\": {\"id\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"tenant\": \"default\", \"namespace\": \"default\", \"name\": \"it-20260907-0815-mixed\", \"instructions\": \"所有子Issue标题以 it-20260907-0815 开头。必须实际委派指定成员并收集结果，不要自己替代成员工作。工具受限要如实传递。\", \"status\": \"active\", \"leaderAgentId\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\", \"policy\": {}, \"version\": 1, \"createdAt\": \"2026-09-07T08:15:00.520561+08:00\", \"updatedAt\": \"2026-09-07T08:15:00.520561+08:00\", \"members\": [{\"id\": \"7b679483-185d-4fa6-a99b-6f3375504e0c\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"role\": \"calculator\", \"createdAt\": \"2026-09-07T08:15:00.520561+08:00\"}, {\"id\": \"7818d5db-44d8-4cbd-a7e9-37183119ea39\", \"tenant\": \"default\", \"namespace\": \"default\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"agentId\": \"679b7bf9-c9c1-4828-a129-4045be75090e\", \"role\": \"researcher\", \"createdAt\": \"2026-09-07T08:15:00.520561+08:00\"}]}}",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_0264fcdd044747a39ba7bc6e78f7276a",
+          "managedSeq": 9,
+          "toolCallId": "call_7227aae3399d47309111f1",
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "tool_use_id": "call_7227aae3399d47309111f1",
+          "managedEventId": "evt_0264fcdd044747a39ba7bc6e78f7276a",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:44.946+08:00"
+      },
+      {
+        "id": 248,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 12,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"agentTask\": {\"id\": \"c7bb5e83-4770-4f06-be9b-c14c1bf5d56c\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"514e3689-5f92-4814-80d4-0225ac4da277\", \"orchestrationRunId\": \"6c6253a0-92c4-44b1-a39c-ae4fb0321dfc\", \"runNodeId\": \"e90e8599-7f56-40ec-8900-16dc3b3b5470\", \"agentId\": \"679b7bf9-c9c1-4828-a129-4045be75090e\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"teamRole\": \"researcher\", \"parentTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"delegatedFromTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"originator\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"correlationId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.895053+08:00\"}, \"issue\": {\"id\": \"514e3689-5f92-4814-80d4-0225ac4da277\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-0815-researcher-task\", \"description\": \"请根据给定事实“手机A电池5000mAh，手机B电池4000mAh”计算A比B多多少，期望 BATTERY=25%\", \"status\": \"backlog\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"679b7bf9-c9c1-4828-a129-4045be75090e\", \"creator\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"parentIssueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.895053+08:00\", \"updatedAt\": \"2026-09-07T08:16:44.895053+08:00\"}}",
+        "toolName": "issue.child.create",
+        "toolOutput": "{\"agentTask\": {\"id\": \"c7bb5e83-4770-4f06-be9b-c14c1bf5d56c\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"514e3689-5f92-4814-80d4-0225ac4da277\", \"orchestrationRunId\": \"6c6253a0-92c4-44b1-a39c-ae4fb0321dfc\", \"runNodeId\": \"e90e8599-7f56-40ec-8900-16dc3b3b5470\", \"agentId\": \"679b7bf9-c9c1-4828-a129-4045be75090e\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"teamRole\": \"researcher\", \"parentTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"delegatedFromTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"originator\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"correlationId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.895053+08:00\"}, \"issue\": {\"id\": \"514e3689-5f92-4814-80d4-0225ac4da277\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-0815-researcher-task\", \"description\": \"请根据给定事实“手机A电池5000mAh，手机B电池4000mAh”计算A比B多多少，期望 BATTERY=25%\", \"status\": \"backlog\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"679b7bf9-c9c1-4828-a129-4045be75090e\", \"creator\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"parentIssueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.895053+08:00\", \"updatedAt\": \"2026-09-07T08:16:44.895053+08:00\"}}",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_cc0cc31f373d4ee981ffaf6a0dbb8f8f",
+          "managedSeq": 10,
+          "toolCallId": "call_c42a733c6fad4a289e6436",
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "tool_use_id": "call_c42a733c6fad4a289e6436",
+          "managedEventId": "evt_cc0cc31f373d4ee981ffaf6a0dbb8f8f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:44.952+08:00"
+      },
+      {
+        "id": 249,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 13,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"agentTask\": {\"id\": \"c8e68950-38a9-4351-b8a5-e5b265642aee\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"738826d4-928b-401e-a36a-453daf0f6c7f\", \"orchestrationRunId\": \"6c6253a0-92c4-44b1-a39c-ae4fb0321dfc\", \"runNodeId\": \"a7a6d97a-020f-4d72-8b55-7a31f51f303f\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"teamRole\": \"calculator\", \"parentTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"delegatedFromTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"originator\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"correlationId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.911483+08:00\"}, \"issue\": {\"id\": \"738826d4-928b-401e-a36a-453daf0f6c7f\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-0815-calculator-task\", \"description\": \"请计算100+200，期望 SUM=300\", \"status\": \"backlog\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"creator\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"parentIssueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.911483+08:00\", \"updatedAt\": \"2026-09-07T08:16:44.911483+08:00\"}}",
+        "toolName": "issue.child.create",
+        "toolOutput": "{\"agentTask\": {\"id\": \"c8e68950-38a9-4351-b8a5-e5b265642aee\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"738826d4-928b-401e-a36a-453daf0f6c7f\", \"orchestrationRunId\": \"6c6253a0-92c4-44b1-a39c-ae4fb0321dfc\", \"runNodeId\": \"a7a6d97a-020f-4d72-8b55-7a31f51f303f\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"status\": \"queued\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"teamRole\": \"calculator\", \"parentTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"delegatedFromTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"originator\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"correlationId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"hopCount\": 1, \"teamDepth\": 0, \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.911483+08:00\"}, \"issue\": {\"id\": \"738826d4-928b-401e-a36a-453daf0f6c7f\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-0815-calculator-task\", \"description\": \"请计算100+200，期望 SUM=300\", \"status\": \"backlog\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"creator\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"parentIssueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.911483+08:00\", \"updatedAt\": \"2026-09-07T08:16:44.911483+08:00\"}}",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_6424bf40393b43f49eb6a3c5996b9675",
+          "managedSeq": 11,
+          "toolCallId": "call_2444482b11734a3cb0b3d2",
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "tool_use_id": "call_2444482b11734a3cb0b3d2",
+          "managedEventId": "evt_6424bf40393b43f49eb6a3c5996b9675",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:44.958+08:00"
+      },
+      {
+        "id": 250,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 14,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"6a535161-1449-4e56-826e-7b069affa0bb\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"threadRootId\": \"6a535161-1449-4e56-826e-7b069affa0bb\", \"author\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"content\": \"已经成功委派了两个子任务：一个给researcher（计算手机A和手机B电池容量差值），另一个给calculator（计算100+200）。等待子任务结果。\", \"type\": \"result\", \"sourceTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"sourceAttemptId\": \"967189c9-5108-4b48-937f-ce2a05b42b78\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.928514+08:00\", \"updatedAt\": \"2026-09-07T08:16:44.928514+08:00\", \"routes\": [{\"id\": \"13cdcf97-8528-4e8d-b8cc-e9f5dd52c38a\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"commentId\": \"6a535161-1449-4e56-826e-7b069affa0bb\", \"commentVersion\": 1, \"targetType\": \"team\", \"targetRef\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"routeType\": \"team_leader\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T08:16:44.928514+08:00\"}]}, \"task\": {\"id\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"orchestrationRunId\": \"6c6253a0-92c4-44b1-a39c-ae4fb0321dfc\", \"runNodeId\": \"b0c621f7-aa57-4387-b4d4-f2a13458e92b\", \"currentAttemptId\": \"967189c9-5108-4b48-937f-ce2a05b42b78\", \"agentId\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"teamRole\": \"leader\", \"leaderTask\": true, \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"correlationId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\", \"bindingId\": \"d143953c-9d89-57b8-9ebe-0b0744fddbb1\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"sessionId\": \"sess_c80dc582916e\", \"resolvedAt\": \"2026-09-07T00:16:33.260686Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_c80dc582916e\", \"result\": null, \"version\": 4, \"createdAt\": \"2026-09-07T08:16:32.767305+08:00\", \"dispatchedAt\": \"2026-09-07T08:16:33.260308+08:00\", \"startedAt\": \"2026-09-07T08:16:33.317453+08:00\", \"completedAt\": \"2026-09-07T08:16:44.928514+08:00\"}}",
+        "toolName": "task.complete",
+        "toolOutput": "{\"comment\": {\"id\": \"6a535161-1449-4e56-826e-7b069affa0bb\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"threadRootId\": \"6a535161-1449-4e56-826e-7b069affa0bb\", \"author\": {\"type\": \"agent\", \"ref\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"content\": \"已经成功委派了两个子任务：一个给researcher（计算手机A和手机B电池容量差值），另一个给calculator（计算100+200）。等待子任务结果。\", \"type\": \"result\", \"sourceTaskId\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"sourceAttemptId\": \"967189c9-5108-4b48-937f-ce2a05b42b78\", \"version\": 1, \"createdAt\": \"2026-09-07T08:16:44.928514+08:00\", \"updatedAt\": \"2026-09-07T08:16:44.928514+08:00\", \"routes\": [{\"id\": \"13cdcf97-8528-4e8d-b8cc-e9f5dd52c38a\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"commentId\": \"6a535161-1449-4e56-826e-7b069affa0bb\", \"commentVersion\": 1, \"targetType\": \"team\", \"targetRef\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"routeType\": \"team_leader\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T08:16:44.928514+08:00\"}]}, \"task\": {\"id\": \"afc00169-6b90-49ee-8240-b8c40353760e\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"orchestrationRunId\": \"6c6253a0-92c4-44b1-a39c-ae4fb0321dfc\", \"runNodeId\": \"b0c621f7-aa57-4387-b4d4-f2a13458e92b\", \"currentAttemptId\": \"967189c9-5108-4b48-937f-ce2a05b42b78\", \"agentId\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"7089f084-903e-4bf2-b395-2f610e24e81a\", \"teamRole\": \"leader\", \"leaderTask\": true, \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"correlationId\": \"b268c889-b18d-4da7-8ee2-b80f15794134\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\", \"bindingId\": \"d143953c-9d89-57b8-9ebe-0b0744fddbb1\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"068b4f8a-39c2-4482-b328-5d46cf28c113\"}, \"sessionId\": \"sess_c80dc582916e\", \"resolvedAt\": \"2026-09-07T00:16:33.260686Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_c80dc582916e\", \"result\": null, \"version\": 4, \"createdAt\": \"2026-09-07T08:16:32.767305+08:00\", \"dispatchedAt\": \"2026-09-07T08:16:33.260308+08:00\", \"startedAt\": \"2026-09-07T08:16:33.317453+08:00\", \"completedAt\": \"2026-09-07T08:16:44.928514+08:00\"}}",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_575017338fad4f6e9b8794890f1d3105",
+          "managedSeq": 12,
+          "toolCallId": "call_38c7488ab3d145c7ab0d16",
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "tool_use_id": "call_38c7488ab3d145c7ab0d16",
+          "managedEventId": "evt_575017338fad4f6e9b8794890f1d3105",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:44.964+08:00"
+      },
+      {
+        "id": 251,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 15,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_57fd3d61425846ed8b41b5f7c7f1fc31",
+          "managedSeq": 13,
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_57fd3d61425846ed8b41b5f7c7f1fc31",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:44.97+08:00"
+      },
+      {
+        "id": 277,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 16,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_31046c16e3e94dfead947ff539082589",
+          "managedSeq": 14,
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_31046c16e3e94dfead947ff539082589",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:51.415+08:00"
+      },
+      {
+        "id": 280,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 17,
+        "eventType": "agent.message",
+        "role": "assistant",
+        "content": "已经成功委派了两个子任务：\n\n- 一个给researcher（计算手机A和手机B电池容量差值）\n- 另一个给calculator（计算100+200）\n\n等待子任务结果。",
+        "frameworkMeta": {
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_b92555f66e6943df8642518ea3f01e49",
+          "managedSeq": 15,
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_b92555f66e6943df8642518ea3f01e49",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:16:51.438+08:00"
+      },
+      {
+        "id": 320,
+        "sessionFk": "fe4c4d11-c04e-4e0b-a1b0-b80a9e6c4564",
+        "seq": 18,
+        "eventType": "session.status_idle",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "idle",
+          "turnId": "c9d561ce-babd-417d-8a18-4b0cd68db514",
+          "attemptId": "967189c9-5108-4b48-937f-ce2a05b42b78",
+          "sourceKey": "managed:evt_c2c84f2c7254460c9422b4f7604b2763",
+          "managedSeq": 16,
+          "agentTaskId": "afc00169-6b90-49ee-8240-b8c40353760e",
+          "managedEventId": "evt_c2c84f2c7254460c9422b4f7604b2763",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T08:17:00.491+08:00"
+      }
+    ]
+  }
+}

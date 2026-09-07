@@ -246,7 +246,8 @@ func (r *collaborationRepo) TransitionIssue(_ context.Context, id uuid.UUID, exp
 	r.s.issues[id] = next
 	details, _ := json.Marshal(map[string]string{"from": string(issue.Status), "to": string(status), "reason": reason})
 	r.appendActivityLocked(&controlmodel.Activity{Tenant: next.Tenant, Namespace: next.Namespace, IssueID: &id, Actor: actor, Action: "issue.status_changed", ObjectType: "issue", ObjectRef: id.String(), Details: details})
-	r.enqueueEventLocked(next.Tenant, "issue", id, "issue.status-changed.v1", next, fmt.Sprintf("issue-status:%s:%d", id, next.Version))
+	r.notifyIssueInboxLocked(next, issue.Status, actor, reason, nil)
+	r.enqueueEventLocked(next.Tenant, "issue", id, "issue.status-changed.v1", map[string]any{"issue": cloneIssue(next), "previousStatus": issue.Status}, fmt.Sprintf("issue-status:%s:%d", id, next.Version))
 	return cloneIssue(next), nil
 }
 
@@ -371,7 +372,7 @@ func (r *collaborationRepo) CreateComment(_ context.Context, req store.CreateCom
 			}
 		} else if target.TargetType == controlmodel.AssigneeHuman {
 			route.Outcome = controlmodel.RouteQueued
-			itemType, title := "mention", issue.Title
+			itemType, title := store.CommentInboxType(target.RouteType, false), issue.Title
 			if target.RouteType == controlmodel.RouteReviewRequest {
 				itemType, title = "review_request", "Review requested: "+issue.Title
 			}
@@ -379,7 +380,7 @@ func (r *collaborationRepo) CreateComment(_ context.Context, req store.CreateCom
 				RecipientType: controlmodel.AssigneeHuman, RecipientRef: target.TargetRef,
 				Type: itemType, Severity: "attention", IssueID: &issue.ID, CommentID: &comment.ID,
 				Actor: comment.Author, Title: title, Body: comment.Content,
-				DedupeKey: itemType + ":" + comment.ID.String() + ":" + target.TargetRef, CreatedAt: now}
+				DedupeKey: "comment:" + comment.ID.String() + ":" + target.TargetRef, CreatedAt: now}
 			r.s.inboxItems[item.ID] = item
 		} else if target.AgentRef == comment.Author.Ref && comment.Author.Type == controlmodel.ActorAgent {
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
@@ -397,14 +398,14 @@ func (r *collaborationRepo) CreateComment(_ context.Context, req store.CreateCom
 	}
 	r.s.commentRoutes[comment.ID] = routes
 	for _, subscriber := range r.s.subscribers[issue.ID] {
-		if subscriber.SubscriberType != controlmodel.AssigneeHuman || comment.Author.Type == controlmodel.ActorHuman && comment.Author.Ref == subscriber.SubscriberRef {
+		if !store.NotifyCommentSubscribers(comment) || subscriber.SubscriberType != controlmodel.AssigneeHuman || comment.Author.Type == controlmodel.ActorHuman && comment.Author.Ref == subscriber.SubscriberRef || seen[string(controlmodel.AssigneeHuman)+"\x00"+subscriber.SubscriberRef+"\x00"] {
 			continue
 		}
 		item := &controlmodel.InboxItem{ID: uuid.New(), Tenant: issue.Tenant, Namespace: issue.Namespace,
 			RecipientType: controlmodel.AssigneeHuman, RecipientRef: subscriber.SubscriberRef,
 			Type: "issue_update", Severity: "info", IssueID: &issue.ID, CommentID: &comment.ID,
 			Actor: comment.Author, Title: issue.Title, Body: comment.Content,
-			DedupeKey: "subscriber:" + comment.ID.String() + ":" + subscriber.SubscriberRef, CreatedAt: now}
+			DedupeKey: "comment:" + comment.ID.String() + ":" + subscriber.SubscriberRef, CreatedAt: now}
 		r.s.inboxItems[item.ID] = item
 	}
 	issue.UpdatedAt = now
@@ -965,6 +966,7 @@ func (r *collaborationRepo) StartAgentTask(_ context.Context, id uuid.UUID, expe
 			Namespace: issue.Namespace, IssueID: &issue.ID, Actor: actor,
 			Action: "issue.status_changed", ObjectType: "issue", ObjectRef: issue.ID.String(),
 			CausationID: task.ID.String(), CorrelationID: task.CorrelationID, Details: details})
+		r.notifyIssueInboxLocked(issue, previousStatus, actor, "Agent task started", nil)
 		r.enqueueEventLocked(issue.Tenant, "issue", issue.ID, "issue.status-changed.v1",
 			map[string]any{"issue": cloneIssue(issue), "previousStatus": previousStatus},
 			fmt.Sprintf("issue-status:%s:%d", issue.ID, issue.Version))
@@ -1114,7 +1116,7 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 			}
 		} else if target.TargetType == controlmodel.AssigneeHuman {
 			route.Outcome = controlmodel.RouteQueued
-			itemType, title := "result", issue.Title
+			itemType, title := store.CommentInboxType(target.RouteType, true), issue.Title
 			if target.RouteType == controlmodel.RouteReviewRequest {
 				itemType, title = "review_request", "Review requested: "+issue.Title
 			}
@@ -1122,7 +1124,7 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 				RecipientType: controlmodel.AssigneeHuman, RecipientRef: target.TargetRef,
 				Type: itemType, Severity: "attention", IssueID: &issue.ID, CommentID: &created.ID,
 				Actor: created.Author, Title: title, Body: created.Content,
-				DedupeKey: itemType + ":" + created.ID.String() + ":" + target.TargetRef, CreatedAt: now}
+				DedupeKey: "comment:" + created.ID.String() + ":" + target.TargetRef, CreatedAt: now}
 			r.s.inboxItems[item.ID] = item
 		} else if target.AgentRef == task.AgentRef {
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
@@ -1248,6 +1250,7 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 				r.appendActivityLocked(&controlmodel.Activity{Tenant: issue.Tenant, Namespace: issue.Namespace,
 					IssueID: &issue.ID, Actor: actor, Action: "issue.status_changed", ObjectType: "issue",
 					ObjectRef: issue.ID.String(), Details: details})
+				r.notifyIssueInboxLocked(issue, controlmodel.IssueInProgress, actor, reason, task)
 				r.enqueueEventLocked(issue.Tenant, "issue", issue.ID, "issue.status-changed.v1",
 					map[string]any{"issue": cloneIssue(issue), "previousStatus": controlmodel.IssueInProgress},
 					fmt.Sprintf("issue-status:%s:%d", issue.ID, issue.Version))
@@ -1310,6 +1313,7 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(_ context.Context, id uuid.
 		CausationID: task.CausationID, CorrelationID: task.CorrelationID,
 		IdempotencyKey: "attempt-failed:" + attempt.ID.String(), OccurredAt: now}
 	r.s.runEvents[task.OrchestrationRunID] = append(r.s.runEvents[task.OrchestrationRunID], event)
+	r.notifyTaskFailureInboxLocked(task)
 	r.enqueueEventLocked(task.Tenant, "agent-task", task.ID, "agent-task.failed.v1", task, fmt.Sprintf("agent-task-failed:%s:%d", task.ID, task.Version))
 	if abortManaged {
 		r.enqueueEventLocked(task.Tenant, "execution-attempt", attempt.ID,
@@ -1735,7 +1739,7 @@ func (r *collaborationRepo) CreateApproval(_ context.Context, approval *controlm
 	r.s.approvals[copy.ID] = copy
 	item := &controlmodel.InboxItem{ID: uuid.New(), Tenant: copy.Tenant, Namespace: copy.Namespace,
 		RecipientType: controlmodel.AssigneeHuman, RecipientRef: copy.ApproverRef,
-		Type: "approval", Severity: "attention", IssueID: copy.IssueID, ApprovalID: &copy.ID,
+		Type: "approval", NeedsAction: true, Severity: "attention", IssueID: copy.IssueID, ApprovalID: &copy.ID,
 		Actor: copy.RequestedBy, Title: "Approval requested", Body: copy.Reason,
 		DedupeKey: "approval:" + copy.ID.String(), CreatedAt: now}
 	r.s.inboxItems[item.ID] = item
@@ -1791,7 +1795,7 @@ func (r *collaborationRepo) CreateManagedToolApproval(_ context.Context, req sto
 	r.s.approvals[approval.ID] = approval
 	item := &controlmodel.InboxItem{ID: uuid.New(), Tenant: approval.Tenant, Namespace: approval.Namespace,
 		RecipientType: controlmodel.AssigneeHuman, RecipientRef: approval.ApproverRef,
-		Type: "approval", Severity: "attention", IssueID: approval.IssueID, ApprovalID: &approval.ID,
+		Type: "approval", NeedsAction: true, Severity: "attention", IssueID: approval.IssueID, ApprovalID: &approval.ID,
 		Actor: approval.RequestedBy, Title: "Tool approval requested", Body: approval.Reason,
 		Details: cloneJSON(approval.Request), DedupeKey: "approval:" + approval.ID.String(), CreatedAt: now}
 	r.s.inboxItems[item.ID] = item
@@ -1898,44 +1902,11 @@ func (r *collaborationRepo) DecideApproval(_ context.Context, id uuid.UUID, expe
 	approval.Version, approval.UpdatedAt, approval.DecidedAt = approval.Version+1, now, &now
 	for _, item := range r.s.inboxItems {
 		if item.ApprovalID != nil && *item.ApprovalID == id {
-			item.Read, item.Archived = true, true
+			item.Archived, item.NeedsAction, item.ResolvedAt = true, false, &now
 		}
 	}
 	r.enqueueEventLocked(approval.Tenant, "approval", approval.ID, "approval.decided.v1", approval, fmt.Sprintf("approval-decided:%s:%d", approval.ID, approval.Version))
 	return cloneApproval(approval), nil
-}
-
-func (r *collaborationRepo) ListInbox(_ context.Context, filter store.InboxFilter) ([]*controlmodel.InboxItem, error) {
-	r.s.mu.RLock()
-	defer r.s.mu.RUnlock()
-	out := make([]*controlmodel.InboxItem, 0)
-	for _, item := range r.s.inboxItems {
-		if filter.Tenant != "" && item.Tenant != filter.Tenant || filter.Namespace != "" && item.Namespace != filter.Namespace || item.RecipientRef != filter.RecipientRef || item.Archived != filter.Archived {
-			continue
-		}
-		copy := *item
-		copy.Details = cloneJSON(copy.Details)
-		out = append(out, &copy)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-	return page(out, filter.Offset, filter.Limit), nil
-}
-
-func (r *collaborationRepo) UpdateInbox(_ context.Context, id uuid.UUID, recipientRef string, read, archived *bool) (*controlmodel.InboxItem, error) {
-	r.s.mu.Lock()
-	defer r.s.mu.Unlock()
-	item := r.s.inboxItems[id]
-	if item == nil || item.RecipientRef != recipientRef {
-		return nil, store.ErrNotFound
-	}
-	if read != nil {
-		item.Read = *read
-	}
-	if archived != nil {
-		item.Archived = *archived
-	}
-	copy := *item
-	return &copy, nil
 }
 
 func (r *collaborationRepo) ListActivities(_ context.Context, issueID uuid.UUID, limit, offset int) ([]*controlmodel.Activity, error) {
@@ -2064,15 +2035,10 @@ func (r *collaborationRepo) transitionTask(id uuid.UUID, expectedVersion int64, 
 		task.CompletedAt = &now
 	}
 	task.Result, task.ErrorCode, task.ErrorMessage = cloneJSON(result), code, message
-	if target == controlmodel.AgentTaskFailed && task.AccountableHumanRef != "" {
-		item := &controlmodel.InboxItem{ID: uuid.New(), Tenant: task.Tenant, Namespace: task.Namespace,
-			RecipientType: controlmodel.AssigneeHuman, RecipientRef: task.AccountableHumanRef,
-			Type: "agent_task_failed", Severity: "error", IssueID: &task.IssueID,
-			Actor: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef},
-			Title: "AgentTask failed", Body: code + ": " + message,
-			DedupeKey: "agent-task-failed:" + task.ID.String(), CreatedAt: now}
-		r.s.inboxItems[item.ID] = item
+	if target == controlmodel.AgentTaskFailed {
+		r.notifyTaskFailureInboxLocked(task)
 	}
+
 	r.enqueueEventLocked(task.Tenant, "agent-task", task.ID, "agent-task."+string(target)+".v1", task, fmt.Sprintf("agent-task-%s:%s:%d", target, task.ID, task.Version))
 	return cloneAgentTask(task), nil
 }
@@ -2150,7 +2116,7 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 			if reuseSourceNode && sourceNode != nil && !controlmodel.IsRunNodeTerminal(sourceNode.State) {
 				task.RunNodeID = source.RunNodeID
 			}
-		} else if source.OrchestrationRunID != uuid.Nil {
+		} else if source.OrchestrationRunID != uuid.Nil && !r.attachTeamContinuationLocked(issue, task, source) {
 			id := source.OrchestrationRunID
 			rerunOf = &id
 		}

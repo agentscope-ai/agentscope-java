@@ -68,12 +68,12 @@ const closeButtonStyle: React.CSSProperties = {
 };
 
 export default function AgentToolsPage() {
-  const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
+  const { agentId, agent, canEdit = false, refreshAgent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null; canEdit?: boolean; refreshAgent?: () => Promise<unknown> }>();
   const [refreshKey, setRefreshKey] = useState(0);
   const [browseOpen, setBrowseOpen] = useState(false);
   const linked = agent?.workspaceId;
 
-  const bumpRefresh = () => setRefreshKey(k => k + 1);
+  const bumpRefresh = () => { setRefreshKey(k => k + 1); void refreshAgent?.(); };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -93,10 +93,10 @@ export default function AgentToolsPage() {
           refreshKey={refreshKey}
           onChange={bumpRefresh}
           onRequestBrowse={() => setBrowseOpen(true)}
-          readOnly={!!linked}
+          readOnly={!!linked || !canEdit}
         />
       </div>
-      {browseOpen && !linked && (
+      {browseOpen && !linked && canEdit && (
         <div style={modalOverlayStyle} onClick={() => setBrowseOpen(false)}>
           <div style={modalShellStyle} onClick={e => e.stopPropagation()}>
             <div style={modalHeaderStyle}>

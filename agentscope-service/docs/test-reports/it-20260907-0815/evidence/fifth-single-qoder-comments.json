@@ -1,0 +1,46 @@
+{
+  "at": "2026-09-07T00:18:48.445969+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/a461c301-29bb-4ff4-b596-cbd391f7e55e/comments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "732e8b86-f781-40fd-a1c9-a80aa6843095",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "a461c301-29bb-4ff4-b596-cbd391f7e55e",
+        "threadRootId": "732e8b86-f781-40fd-a1c9-a80aa6843095",
+        "author": {
+          "type": "agent",
+          "ref": "679b7bf9-c9c1-4828-a129-4045be75090e"
+        },
+        "content": "8×7-6 = 50. QODER=50.",
+        "type": "result",
+        "sourceTaskId": "c58e1865-b773-4c2e-9b13-3bd7e775acd1",
+        "sourceAttemptId": "5ff7ef78-5ac3-4db9-8c76-da3005ab9974",
+        "version": 1,
+        "createdAt": "2026-09-07T08:15:37.544265+08:00",
+        "updatedAt": "2026-09-07T08:15:37.544265+08:00",
+        "routes": [
+          {
+            "id": "21739e4d-a421-44f5-a489-555936b92788",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "a461c301-29bb-4ff4-b596-cbd391f7e55e",
+            "commentId": "732e8b86-f781-40fd-a1c9-a80aa6843095",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "routeType": "assignee",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T08:15:37.544265+08:00"
+          }
+        ]
+      }
+    ],
+    "nextCursor": ""
+  }
+}

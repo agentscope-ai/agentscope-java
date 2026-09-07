@@ -1,0 +1,16 @@
+[GIN] 2026/09/07 - 17:42:18 | 200 |   1.36ms |       192.0.2.1 | POST     "/mcp/collaboration"
+[GIN] 2026/09/07 - 17:42:18 | 200 | 124.958µs |       192.0.2.1 | POST     "/mcp/collaboration"
+[GIN] 2026/09/07 - 17:42:18 | 200 | 104.083µs |       192.0.2.1 | POST     "/mcp/collaboration"
+--- FAIL: TestLeaderWaitPreservesWorkerAndResumesToRootSummary (0.73s)
+    --- FAIL: TestLeaderWaitPreservesWorkerAndResumesToRootSummary/postgres (0.72s)
+        --- FAIL: TestLeaderWaitPreservesWorkerAndResumesToRootSummary/postgres/waiting (0.19s)
+            leader_wait_test.go:165: waiting status woke another task
+        --- FAIL: TestLeaderWaitPreservesWorkerAndResumesToRootSummary/postgres/waiting_worker_already_finished (0.12s)
+            leader_wait_test.go:165: waiting status woke another task
+        --- FAIL: TestLeaderWaitPreservesWorkerAndResumesToRootSummary/postgres/blocked (0.10s)
+            leader_wait_test.go:165: waiting status woke another task
+        --- FAIL: TestLeaderWaitPreservesWorkerAndResumesToRootSummary/postgres/blocked_worker_already_finished (0.10s)
+            leader_wait_test.go:165: waiting status woke another task
+FAIL
+FAIL	github.com/spring-ai-alibaba/aistio/internal/httpapi	1.769s
+FAIL

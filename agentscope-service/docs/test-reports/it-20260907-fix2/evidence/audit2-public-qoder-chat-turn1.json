@@ -1,0 +1,54 @@
+{
+  "at": "2026-09-07T06:02:11.155441+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/conversations/ab947725-6164-432d-a4d0-38bfc8fdbab3",
+  "request": null,
+  "status": 200,
+  "response": {
+    "conversation": {
+      "createdAt": "2026-09-07T13:57:53.056202+08:00",
+      "endpointId": "884198cc-0338-4532-893b-9c47248cee97",
+      "id": "ab947725-6164-432d-a4d0-38bfc8fdbab3",
+      "lastTurnAt": "2026-09-07T13:59:41.412434+08:00",
+      "sessionId": "5280d39e-e3c2-4b57-b160-9d278400db7f",
+      "status": "active",
+      "updatedAt": "2026-09-07T13:59:41.410763+08:00"
+    },
+    "turns": [
+      {
+        "completedAt": "2026-09-07T14:01:26.750357+08:00",
+        "conversationId": "ab947725-6164-432d-a4d0-38bfc8fdbab3",
+        "correlationId": "fb726984-f808-46a2-8e79-623debc46b68",
+        "createdAt": "2026-09-07T13:59:41.373178+08:00",
+        "endpointId": "884198cc-0338-4532-893b-9c47248cee97",
+        "id": "e1011b30-11cd-4b9b-aca7-b9d8f43f4b5c",
+        "issueId": "a257dedb-7fbd-50b6-acde-313248968b6c",
+        "mode": "conversation",
+        "result": "{\"calculation\": \"6x7=42\", \"marker\": \"API_MEMORY_1130\"}",
+        "runId": "ba939ff9-0002-5ab9-9b7f-dbfe1c803ac9",
+        "sessionId": "5280d39e-e3c2-4b57-b160-9d278400db7f",
+        "startedAt": "2026-09-07T13:59:41.412434+08:00",
+        "status": "completed",
+        "turnId": "e44183c7-129b-482a-a0f1-0a3c4b77affa",
+        "updatedAt": "2026-09-07T14:01:26.750223+08:00"
+      },
+      {
+        "completedAt": "2026-09-07T13:59:31.851414+08:00",
+        "conversationId": "ab947725-6164-432d-a4d0-38bfc8fdbab3",
+        "correlationId": "0809e589-3c1b-4e12-bdce-07ce780c5447",
+        "createdAt": "2026-09-07T13:57:53.050372+08:00",
+        "endpointId": "884198cc-0338-4532-893b-9c47248cee97",
+        "id": "5280d39e-e3c2-4b57-b160-9d278400db7f",
+        "issueId": "0e36efa4-5221-5987-9bcc-d4b822ecd6ce",
+        "mode": "conversation",
+        "result": "{\"calculation\": \"20+22=42\", \"marker\": \"API_MEMORY_1130\"}",
+        "runId": "800037ad-a53b-52b2-b011-cd321c746e77",
+        "sessionId": "5280d39e-e3c2-4b57-b160-9d278400db7f",
+        "startedAt": "2026-09-07T13:57:53.130513+08:00",
+        "status": "completed",
+        "turnId": "b7255db6-1bc0-4e69-9587-e1b214a8bc25",
+        "updatedAt": "2026-09-07T13:59:31.849458+08:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "at": "2026-09-07T04:04:36.733132+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/be54fbfe-242a-436f-b41f-cddc10d2dc12",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "be54fbfe-242a-436f-b41f-cddc10d2dc12",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "14e95238-a8dd-57a2-861c-5443f9adb0dc",
+      "orchestrationRunId": "0b5a3379-f2df-50e2-8b9d-bd364e14cd67",
+      "runNodeId": "45024037-9645-5d10-a0a7-b91a5a5c1162",
+      "currentAttemptId": "6d046c92-6004-49b6-9487-b8426c08774b",
+      "agentId": "2e663462-f57e-4a08-9d14-8f672defab41",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "orchestration_node",
+      "teamId": "b18a8afb-b34a-4275-a44b-61f003fb60ac",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "system",
+        "ref": "endpoint:6c5dea37-31ce-4d05-bb80-3d86ffb19a24"
+      },
+      "causationId": "45024037-9645-5d10-a0a7-b91a5a5c1162",
+      "correlationId": "0b5a3379-f2df-50e2-8b9d-bd364e14cd67",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "2e663462-f57e-4a08-9d14-8f672defab41",
+          "bindingId": "f4949949-3bd2-54b4-8cea-5b0138292be4",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "2e663462-f57e-4a08-9d14-8f672defab41"
+        },
+        "sessionId": "sess_dc8075ccd77c",
+        "resolvedAt": "2026-09-07T04:00:01.611236Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_dc8075ccd77c",
+      "result": null,
+      "version": 4,
+      "createdAt": "2026-09-07T12:00:01.597628+08:00",
+      "dispatchedAt": "2026-09-07T12:00:01.610875+08:00",
+      "startedAt": "2026-09-07T12:00:01.66384+08:00",
+      "completedAt": "2026-09-07T12:00:22.473477+08:00"
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "at": "2026-09-07T03:34:48.178309+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/c0a8b077-abb1-4cd8-bec7-d8d22a41350f",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "c0a8b077-abb1-4cd8-bec7-d8d22a41350f",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "e2db0375-8928-487e-b26c-4dfbfe656680",
+      "orchestrationRunId": "58f9b768-65e6-47a6-a3d0-5804a7ed85a2",
+      "runNodeId": "dc64bc28-06b4-479f-847c-41ab6288464e",
+      "currentAttemptId": "c9865a9e-7d0d-4f90-ad15-3a70a145c76b",
+      "agentId": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "causationId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+      "correlationId": "e2db0375-8928-487e-b26c-4dfbfe656680",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+          "bindingId": "cd0b2672-0f83-5cdf-b39b-26f6c0aade09",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "ca7e6203-e59b-43e8-b6fa-2340925a66e1"
+        },
+        "sessionId": "sess_7cd470722e96",
+        "resolvedAt": "2026-09-07T03:31:38.333998Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_7cd470722e96",
+      "result": null,
+      "version": 4,
+      "createdAt": "2026-09-07T11:31:37.42908+08:00",
+      "dispatchedAt": "2026-09-07T11:31:38.333863+08:00",
+      "startedAt": "2026-09-07T11:31:38.399647+08:00",
+      "completedAt": "2026-09-07T11:31:52.103881+08:00",
+      "inputs": [
+        {
+          "id": "0f51534c-0867-47e3-a3cf-b2e4cab6b876",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "c0a8b077-abb1-4cd8-bec7-d8d22a41350f",
+          "commentId": "39493a03-5687-45d8-aead-c0a51dc4fa2a",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "processed",
+          "deliveredAt": "2026-09-07T11:31:38.333863+08:00",
+          "processedAt": "2026-09-07T11:31:52.103881+08:00",
+          "responseCommentId": "ce2061fe-bd16-41dd-a7f0-3d1f64c48783",
+          "attempts": 0,
+          "createdAt": "2026-09-07T11:31:37.42908+08:00"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-07T00:19:32.715347+00:00",
+  "method": "GET",
+  "path": "/api/v1/agents/cb3a3959-a01c-42df-a510-a9872e83cf41/overview",
+  "request": null,
+  "status": 200,
+  "response": {
+    "agentId": "cb3a3959-a01c-42df-a510-a9872e83cf41",
+    "observedAt": "2026-09-07T00:19:32.717084Z",
+    "window": "24h0m0s",
+    "lifecycle": "active",
+    "readiness": {
+      "state": "ready",
+      "mode": "on-demand",
+      "reason": "Primary runtime candidate is dispatchable",
+      "activeBindingId": "9a808e3a-0baa-58c9-a1ac-80ff72c34db7"
+    },
+    "bindings": {
+      "total": 1,
+      "enabled": 1,
+      "dispatchable": 1
+    },
+    "instances": {
+      "total": 0,
+      "healthy": 0,
+      "unhealthy": 0,
+      "capacity": null,
+      "activeSessions": 0,
+      "availableCapacity": null
+    },
+    "sessions": {
+      "active": 0,
+      "idle": 0,
+      "compressing": 0,
+      "history": 0,
+      "createdInWindow": 0,
+      "status": "not_applicable"
+    },
+    "usage": {
+      "totalTokens": "[REDACTED]",
+      "errorCount": null,
+      "status": "not_reporting"
+    },
+    "entrypoints": {
+      "total": 0,
+      "enabled": 0,
+      "conversation": 0,
+      "jobs": 0
+    },
+    "telemetry": {
+      "agent-task": "not_applicable",
+      "context-query": "not_applicable",
+      "event-reporting": "not_applicable",
+      "message-query": "not_applicable",
+      "session-reporting": "not_applicable",
+      "subagent-inventory": "not_applicable",
+      "workspace-inventory": "not_applicable"
+    }
+  }
+}

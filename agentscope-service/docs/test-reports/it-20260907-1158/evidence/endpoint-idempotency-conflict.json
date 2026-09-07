@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-07T04:00:01.547301+00:00",
+  "method": "POST",
+  "path": "/invoke/v1/endpoints/it-20260907-1158-managed-job/jobs",
+  "request": {
+    "title": "it-20260907-1158-endpoint-arithmetic",
+    "description": "different input",
+    "input": {
+      "quantity": 12,
+      "unitPrice": 12
+    }
+  },
+  "status": 409,
+  "response": {
+    "error": "Idempotency-Key was already used with different input"
+  }
+}

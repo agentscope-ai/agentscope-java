@@ -129,7 +129,7 @@ func (r *collaborationRepo) CreateComment(ctx context.Context, req store.CreateC
 			}
 		case target.TargetType == controlmodel.AssigneeHuman:
 			route.Outcome = controlmodel.RouteQueued
-			itemType, title := "mention", issue.Title
+			itemType, title := store.CommentInboxType(target.RouteType, false), issue.Title
 			if target.RouteType == controlmodel.RouteReviewRequest {
 				itemType, title = "review_request", "Review requested: "+issue.Title
 			}
@@ -140,7 +140,7 @@ func (r *collaborationRepo) CreateComment(ctx context.Context, req store.CreateC
 				ON CONFLICT (tenant,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
 				uuid.New(), issue.Tenant, issue.Namespace, target.TargetRef, itemType,
 				issue.ID, created.ID, created.Author.Type, nullStr(created.Author.Ref), title,
-				created.Content, itemType+":"+created.ID.String()+":"+target.TargetRef); err != nil {
+				created.Content, "comment:"+created.ID.String()+":"+target.TargetRef); err != nil {
 				return nil, err
 			}
 		case target.AgentRef == created.Author.Ref && created.Author.Type == controlmodel.ActorAgent:
@@ -174,12 +174,13 @@ func (r *collaborationRepo) CreateComment(ctx context.Context, req store.CreateC
 		 comment_id,actor_type,actor_ref,title,body,dedupe_key)
 		SELECT gen_random_uuid(),s.tenant,s.namespace,'human',s.subscriber_ref,
 			'issue_update','info',$1::uuid,$2::uuid,$3::text,$4::text,$5::text,$6::text,
-			'subscriber:'||$2::text||':'||s.subscriber_ref
+			'comment:'||$2::text||':'||s.subscriber_ref
 		FROM issue_subscribers s WHERE s.issue_id=$1 AND s.subscriber_type='human'
+		AND $7::boolean AND NOT EXISTS (SELECT 1 FROM inbox_items d WHERE d.comment_id=$2 AND d.recipient_ref=s.subscriber_ref)
 		AND NOT ($3::text='human' AND s.subscriber_ref=COALESCE($4::text,''))
 		ON CONFLICT (tenant,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
 		issue.ID, created.ID, created.Author.Type, nullStr(created.Author.Ref), issue.Title,
-		created.Content); err != nil {
+		created.Content, store.NotifyCommentSubscribers(created)); err != nil {
 		return nil, fmt.Errorf("notify Issue subscribers: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE issues SET updated_at=now(),version=version+1 WHERE id=$1`, issue.ID); err != nil {

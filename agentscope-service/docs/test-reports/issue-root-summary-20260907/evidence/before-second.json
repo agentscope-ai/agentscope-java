@@ -1,0 +1,1628 @@
+{
+  "at": "2026-09-07T09:16:08.917718+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "8bcef462-4483-4e12-be52-dc278aa5cfdb",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "createdAt": "2026-09-07T14:55:49.572521+08:00"
+      },
+      {
+        "id": "1b7c3913-17b7-4e21-b28a-1ca2d31cd099",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "actor": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+        "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-07T14:55:50.069448+08:00"
+      },
+      {
+        "id": "cc7bc6cd-bbf1-4dfe-ada5-3c5c3616a692",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "actor": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+        "causationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "createdAt": "2026-09-07T14:56:26.650955+08:00"
+      },
+      {
+        "id": "69aa3783-29f2-4566-b05a-2081b4516577",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:ece47149-78c4-4c60-8d6a-41ecf5cf1b26"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: objective_blocked"
+        },
+        "createdAt": "2026-09-07T15:03:58.704037+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [
+      {
+        "id": "c11324b0-38c2-4da4-999b-e4ab6aad1a26",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "科普太阳系知识",
+        "description": "编写一份详细的文档，介绍太阳系的基本信息，包括但不限于行星、卫星、小行星带等。",
+        "status": "blocked",
+        "priority": "normal",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "creator": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "parentIssueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+        "version": 5,
+        "createdAt": "2026-09-07T14:56:08.371548+08:00",
+        "updatedAt": "2026-09-07T15:03:58.682694+08:00"
+      },
+      {
+        "id": "1d35bd16-b5ca-4072-b96e-15426a09e25f",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "创作关于太阳系的诗歌",
+        "description": "撰写一首诗，以太阳系为主题，表达对宇宙奇观的感受和想象。",
+        "status": "done",
+        "priority": "normal",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "creator": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "parentIssueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+        "version": 4,
+        "createdAt": "2026-09-07T14:56:08.389251+08:00",
+        "updatedAt": "2026-09-07T14:56:55.401366+08:00",
+        "resolvedAt": "2026-09-07T14:56:55.402398+08:00"
+      }
+    ],
+    "comments": [
+      {
+        "id": "93f90072-adbf-47e0-b397-ffda1a89348a",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "threadRootId": "93f90072-adbf-47e0-b397-ffda1a89348a",
+        "author": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "content": "已成功创建并分配了两个子任务：科普太阳系知识 (任务ID: a174061d-9d7d-498a-a35d-69b023f9da30) 和创作关于太阳系的诗歌 (任务ID: 4f2e0fe0-d201-417a-a602-0462eb630e7c)，均指派给代理人 b86719e8-f495-402f-bffa-b6d76eee8965。",
+        "type": "result",
+        "sourceTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+        "sourceAttemptId": "77ac1d6d-b289-416f-addd-0135d2438a96",
+        "version": 1,
+        "createdAt": "2026-09-07T14:56:26.372036+08:00",
+        "updatedAt": "2026-09-07T14:56:26.372036+08:00",
+        "routes": [
+          {
+            "id": "c9516e6e-cb7b-40f5-ba69-586f65972b36",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "commentId": "93f90072-adbf-47e0-b397-ffda1a89348a",
+            "commentVersion": 1,
+            "targetType": "team",
+            "targetRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+            "routeType": "team_leader",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T14:56:26.372036+08:00"
+          }
+        ]
+      }
+    ],
+    "exportedAt": "2026-09-07T09:16:08.932481Z",
+    "issue": {
+      "id": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "帮我科普一下太阳系知识，同时写一篇诗歌",
+      "description": "帮我科普一下太阳系知识，同时写一篇诗歌",
+      "status": "blocked",
+      "priority": "normal",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 4,
+      "createdAt": "2026-09-07T14:55:49.553066+08:00",
+      "updatedAt": "2026-09-07T15:03:58.70218+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [
+          {
+            "id": "8affa6b3-1d55-43fa-af2b-704799a4f772",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 20,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-dispatch-deferred:8bd26765-3565-4240-906d-d66ef35561b4",
+            "occurredAt": "2026-09-07T14:56:46.925804+08:00"
+          }
+        ],
+        "dispatchRecoveries": [
+          {
+            "id": "7e12555e-e5ec-47ec-b1a4-7b36f5fe9466",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 25,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 64,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-dispatch-recovered:8bd26765-3565-4240-906d-d66ef35561b4",
+            "occurredAt": "2026-09-07T15:02:58.352979+08:00"
+          }
+        ],
+        "events": [
+          {
+            "id": "7bb40e6e-3a08-427e-a234-bb7ab7d3f7a4",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-queued:ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "occurredAt": "2026-09-07T14:55:49.553066+08:00"
+          },
+          {
+            "id": "d13d5b1f-ad62-4b7d-a692-524fbbcf427a",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "attemptId": "77ac1d6d-b289-416f-addd-0135d2438a96",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-queued:77ac1d6d-b289-416f-addd-0135d2438a96",
+            "occurredAt": "2026-09-07T14:55:49.946121+08:00"
+          },
+          {
+            "id": "20c16df5-202f-4b45-b625-9a7297b59a2e",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "attemptId": "77ac1d6d-b289-416f-addd-0135d2438a96",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "idempotencyKey": "attempt-running:77ac1d6d-b289-416f-addd-0135d2438a96",
+            "occurredAt": "2026-09-07T14:55:50.065833+08:00"
+          },
+          {
+            "id": "5052d943-18b2-4f8a-bea0-3cbd46f91f7a",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+            "agentTaskId": "a174061d-9d7d-498a-a35d-69b023f9da30",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-queued:a174061d-9d7d-498a-a35d-69b023f9da30",
+            "occurredAt": "2026-09-07T14:56:08.371548+08:00"
+          },
+          {
+            "id": "988c0d0e-5c86-4405-a02e-2211935ad5c7",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "780714e8-b33b-457a-9555-61308f903a14",
+            "agentTaskId": "4f2e0fe0-d201-417a-a602-0462eb630e7c",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-queued:4f2e0fe0-d201-417a-a602-0462eb630e7c",
+            "occurredAt": "2026-09-07T14:56:08.389251+08:00"
+          },
+          {
+            "id": "1aeeb06c-5ba4-43b6-832f-06206e231749",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+            "agentTaskId": "a174061d-9d7d-498a-a35d-69b023f9da30",
+            "attemptId": "5bb971f6-82d1-451d-b512-32c366ea8735",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-queued:5bb971f6-82d1-451d-b512-32c366ea8735",
+            "occurredAt": "2026-09-07T14:56:08.929545+08:00"
+          },
+          {
+            "id": "6c602587-3cbc-4c79-b0b8-f1cab29fd6da",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+            "agentTaskId": "a174061d-9d7d-498a-a35d-69b023f9da30",
+            "attemptId": "5bb971f6-82d1-451d-b512-32c366ea8735",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "idempotencyKey": "attempt-running:5bb971f6-82d1-451d-b512-32c366ea8735",
+            "occurredAt": "2026-09-07T14:56:09.041551+08:00"
+          },
+          {
+            "id": "dafe2167-8634-4e93-9d6f-e57a13b7a749",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 8,
+            "nodeId": "780714e8-b33b-457a-9555-61308f903a14",
+            "agentTaskId": "4f2e0fe0-d201-417a-a602-0462eb630e7c",
+            "attemptId": "a04c2ade-43b1-4723-9672-65133ea9b663",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-queued:a04c2ade-43b1-4723-9672-65133ea9b663",
+            "occurredAt": "2026-09-07T14:56:09.065671+08:00"
+          },
+          {
+            "id": "57168c0e-abe4-4a97-972f-fa731e67dc67",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "780714e8-b33b-457a-9555-61308f903a14",
+            "agentTaskId": "4f2e0fe0-d201-417a-a602-0462eb630e7c",
+            "attemptId": "a04c2ade-43b1-4723-9672-65133ea9b663",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "idempotencyKey": "attempt-running:a04c2ade-43b1-4723-9672-65133ea9b663",
+            "occurredAt": "2026-09-07T14:56:09.115854+08:00"
+          },
+          {
+            "id": "070c61b2-ba93-46a8-9f79-915cbdf41661",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "attemptId": "77ac1d6d-b289-416f-addd-0135d2438a96",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "causationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-succeeded:77ac1d6d-b289-416f-addd-0135d2438a96",
+            "occurredAt": "2026-09-07T14:56:26.372036+08:00"
+          },
+          {
+            "id": "00cb4345-e5bf-413b-b267-1d441391566f",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 11,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "type": "node.waiting",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "output": "已成功创建并分配了两个子任务：科普太阳系知识 (任务ID: a174061d-9d7d-498a-a35d-69b023f9da30) 和创作关于太阳系的诗歌 (任务ID: 4f2e0fe0-d201-417a-a602-0462eb630e7c)，均指派给代理人 b86719e8-f495-402f-bffa-b6d76eee8965。"
+            },
+            "causationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "node-waiting:7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "occurredAt": "2026-09-07T14:56:26.372036+08:00"
+          },
+          {
+            "id": "4c895ae8-7bae-49be-a6e2-02b67f2cfad9",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "causationId": "8b4a5a81-161a-4d49-9e19-56be2b48efa8",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-queued:13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+            "occurredAt": "2026-09-07T14:56:39.630344+08:00"
+          },
+          {
+            "id": "3089da85-64ce-4c2f-9d29-2ce2e5765922",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "780714e8-b33b-457a-9555-61308f903a14",
+            "agentTaskId": "4f2e0fe0-d201-417a-a602-0462eb630e7c",
+            "attemptId": "a04c2ade-43b1-4723-9672-65133ea9b663",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-succeeded:a04c2ade-43b1-4723-9672-65133ea9b663",
+            "occurredAt": "2026-09-07T14:56:39.630344+08:00"
+          },
+          {
+            "id": "ce28d7a8-44ee-490d-b8e4-d0eb46eda62d",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 14,
+            "nodeId": "780714e8-b33b-457a-9555-61308f903a14",
+            "agentTaskId": "4f2e0fe0-d201-417a-a602-0462eb630e7c",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "payload": {
+              "output": "在无垠宇宙中，太阳系如诗如画，\n恒星光辉照耀着行星家族的步伐。\n水金地火绕日舞，木土天海共辉煌，\n每一颗星球都有它独特的光芒。\n\n水星紧贴太阳旁，晨昏线快速交替忙，\n金星云层厚又亮，夜空中最耀眼的光。\n地球蔚蓝生机旺，生命之舟载希望，\n火星红土藏秘密，探索者心中向往。\n\n木星大红斑旋转，气态巨人的面庞，\n土星光环细又长，宛如梦幻般飘荡。\n天王星侧卧轨道上，淡蓝色调显清凉，\n海王星风速狂，深邃蓝中藏力量。\n\n冥界之外有疆场，柯伊伯带冷而广，\n彗星拖尾划过夜空，流星雨洒落梦想。\n在这浩瀚星际间，人类仰望星空畅想，\n追求真理的脚步，永不停歇向远方。"
+            },
+            "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "node-succeeded:780714e8-b33b-457a-9555-61308f903a14",
+            "occurredAt": "2026-09-07T14:56:39.630344+08:00"
+          },
+          {
+            "id": "80210bba-09bc-4962-bf2f-447214de7bda",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+            "attemptId": "62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "8b4a5a81-161a-4d49-9e19-56be2b48efa8",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-queued:62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+            "occurredAt": "2026-09-07T14:56:39.939216+08:00"
+          },
+          {
+            "id": "2b0402da-0d2b-4886-85e1-6e6b1a201f7a",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 16,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+            "attemptId": "62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "idempotencyKey": "attempt-running:62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+            "occurredAt": "2026-09-07T14:56:40.041176+08:00"
+          },
+          {
+            "id": "5051da4c-d429-4d1f-b868-55323929d2d7",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 17,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "causationId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-queued:8bd26765-3565-4240-906d-d66ef35561b4",
+            "occurredAt": "2026-09-07T14:56:46.805329+08:00"
+          },
+          {
+            "id": "236d073a-ad7e-4371-9109-6d4232b09de5",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 18,
+            "nodeId": "48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+            "agentTaskId": "a174061d-9d7d-498a-a35d-69b023f9da30",
+            "attemptId": "5bb971f6-82d1-451d-b512-32c366ea8735",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-succeeded:5bb971f6-82d1-451d-b512-32c366ea8735",
+            "occurredAt": "2026-09-07T14:56:46.805329+08:00"
+          },
+          {
+            "id": "2e924de3-d52c-4516-8f86-8c7a67709533",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 19,
+            "nodeId": "48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+            "agentTaskId": "a174061d-9d7d-498a-a35d-69b023f9da30",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "payload": {
+              "output": {
+                "path": "solar_system_knowledge.md"
+              }
+            },
+            "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "node-succeeded:48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+            "occurredAt": "2026-09-07T14:56:46.805329+08:00"
+          },
+          {
+            "id": "8affa6b3-1d55-43fa-af2b-704799a4f772",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 20,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-dispatch-deferred:8bd26765-3565-4240-906d-d66ef35561b4",
+            "occurredAt": "2026-09-07T14:56:46.925804+08:00"
+          },
+          {
+            "id": "bea85984-d971-4117-b9ef-26c7ea61383a",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 21,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+            "attemptId": "62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "coordinator has pending leader outcome task 8bd26765-3565-4240-906d-d66ef35561b4",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_d9cc5bc4a0cf",
+              "sessionRef": "66e0709b-52fa-495a-bcb9-7950211f61ba",
+              "toolCallId": "call_810894fc33014032965b6f"
+            },
+            "causationId": "call_810894fc33014032965b6f",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-tool-failed:13270d9d-66cf-4eb9-84c4-96ffcfc73a6a:call_810894fc33014032965b6f",
+            "occurredAt": "2026-09-07T14:57:07.580788+08:00"
+          },
+          {
+            "id": "e1c5548c-27b9-48f4-9bb3-b5c59d995863",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 22,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+            "attemptId": "62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "code": "turn_failed",
+              "message": "Model request timeout after PT5M"
+            },
+            "causationId": "8b4a5a81-161a-4d49-9e19-56be2b48efa8",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-failed:62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+            "occurredAt": "2026-09-07T15:02:52.749309+08:00"
+          },
+          {
+            "id": "4f458adc-4d35-4890-997c-1a2ee7f6c830",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 23,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+            "attemptId": "49ebb70c-9061-4d3e-babc-a5f6a01a45a5",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-queued:49ebb70c-9061-4d3e-babc-a5f6a01a45a5",
+            "occurredAt": "2026-09-07T15:02:58.247949+08:00"
+          },
+          {
+            "id": "f2a0dd8d-a665-4b6c-9670-9bffc48640df",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 24,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+            "attemptId": "49ebb70c-9061-4d3e-babc-a5f6a01a45a5",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "idempotencyKey": "attempt-running:49ebb70c-9061-4d3e-babc-a5f6a01a45a5",
+            "occurredAt": "2026-09-07T15:02:58.346911+08:00"
+          },
+          {
+            "id": "7e12555e-e5ec-47ec-b1a4-7b36f5fe9466",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 25,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 64,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-dispatch-recovered:8bd26765-3565-4240-906d-d66ef35561b4",
+            "occurredAt": "2026-09-07T15:02:58.352979+08:00"
+          },
+          {
+            "id": "abca384e-cc58-45f2-874b-a5983304f9ae",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 26,
+            "nodeId": "104707d1-60ff-49ee-979d-d163975eb6d9",
+            "agentTaskId": "f023ccdf-06c5-48d7-8d60-30f32b840338",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "causationId": "40b05906-55ae-4896-8bd2-bca497a79416",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-task-queued:f023ccdf-06c5-48d7-8d60-30f32b840338",
+            "occurredAt": "2026-09-07T15:03:46.813559+08:00"
+          },
+          {
+            "id": "e962370a-47e7-4c73-961f-0b80e12f23a7",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 27,
+            "nodeId": "104707d1-60ff-49ee-979d-d163975eb6d9",
+            "agentTaskId": "f023ccdf-06c5-48d7-8d60-30f32b840338",
+            "attemptId": "08d24626-e8c0-47b0-b525-02f1257efdc1",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "40b05906-55ae-4896-8bd2-bca497a79416",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-queued:08d24626-e8c0-47b0-b525-02f1257efdc1",
+            "occurredAt": "2026-09-07T15:03:47.341652+08:00"
+          },
+          {
+            "id": "72aa8e13-a5a9-494e-a708-cb7402b71378",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 28,
+            "nodeId": "104707d1-60ff-49ee-979d-d163975eb6d9",
+            "agentTaskId": "f023ccdf-06c5-48d7-8d60-30f32b840338",
+            "attemptId": "08d24626-e8c0-47b0-b525-02f1257efdc1",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+            },
+            "idempotencyKey": "attempt-running:08d24626-e8c0-47b0-b525-02f1257efdc1",
+            "occurredAt": "2026-09-07T15:03:47.430049+08:00"
+          },
+          {
+            "id": "eb51637d-aaa3-48b9-979f-203c0515e5e5",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 29,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+            "attemptId": "49ebb70c-9061-4d3e-babc-a5f6a01a45a5",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "code": "objective_blocked",
+              "message": "已向负责创建文档的工作代理查询了文件的具体位置，待其回复后再做进一步处理。"
+            },
+            "causationId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "attempt-failed:49ebb70c-9061-4d3e-babc-a5f6a01a45a5",
+            "occurredAt": "2026-09-07T15:03:58.670731+08:00"
+          },
+          {
+            "id": "9401cafa-e745-4338-84b0-4638fd4a482a",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 30,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "objective_blocked",
+              "failureMessage": "已向负责创建文档的工作代理查询了文件的具体位置，待其回复后再做进一步处理。"
+            },
+            "idempotencyKey": "run-failed:ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "occurredAt": "2026-09-07T15:03:58.699139+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "mode": "adaptive",
+            "triggerType": "assignment",
+            "triggerRef": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "state": "failed",
+            "failureCode": "objective_blocked",
+            "failureMessage": "已向负责创建文档的工作代理查询了文件的具体位置，待其回复后再做进一步处理。",
+            "version": 15,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T14:55:49.553066+08:00",
+            "updatedAt": "2026-09-07T15:03:58.699139+08:00",
+            "startedAt": "2026-09-07T14:55:49.553066+08:00",
+            "completedAt": "2026-09-07T15:03:58.699139+08:00"
+          },
+          "nodes": [
+            {
+              "id": "780714e8-b33b-457a-9555-61308f903a14",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:4f2e0fe0-d201-417a-a602-0462eb630e7c",
+              "type": "agent",
+              "role": "ma2",
+              "issueId": "1d35bd16-b5ca-4072-b96e-15426a09e25f",
+              "state": "succeeded",
+              "output": "在无垠宇宙中，太阳系如诗如画，\n恒星光辉照耀着行星家族的步伐。\n水金地火绕日舞，木土天海共辉煌，\n每一颗星球都有它独特的光芒。\n\n水星紧贴太阳旁，晨昏线快速交替忙，\n金星云层厚又亮，夜空中最耀眼的光。\n地球蔚蓝生机旺，生命之舟载希望，\n火星红土藏秘密，探索者心中向往。\n\n木星大红斑旋转，气态巨人的面庞，\n土星光环细又长，宛如梦幻般飘荡。\n天王星侧卧轨道上，淡蓝色调显清凉，\n海王星风速狂，深邃蓝中藏力量。\n\n冥界之外有疆场，柯伊伯带冷而广，\n彗星拖尾划过夜空，流星雨洒落梦想。\n在这浩瀚星际间，人类仰望星空畅想，\n追求真理的脚步，永不停歇向远方。",
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T14:56:08.389251+08:00",
+              "updatedAt": "2026-09-07T14:56:39.630344+08:00",
+              "startedAt": "2026-09-07T14:56:08.920441+08:00",
+              "completedAt": "2026-09-07T14:56:39.630344+08:00"
+            },
+            {
+              "id": "48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:a174061d-9d7d-498a-a35d-69b023f9da30",
+              "type": "agent",
+              "role": "ma2",
+              "issueId": "c11324b0-38c2-4da4-999b-e4ab6aad1a26",
+              "state": "succeeded",
+              "output": {
+                "path": "solar_system_knowledge.md"
+              },
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T14:56:08.371548+08:00",
+              "updatedAt": "2026-09-07T14:56:46.805329+08:00",
+              "startedAt": "2026-09-07T14:56:08.922188+08:00",
+              "completedAt": "2026-09-07T14:56:46.805329+08:00"
+            },
+            {
+              "id": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "type": "team",
+              "role": "leader",
+              "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "state": "failed",
+              "output": "已成功创建并分配了两个子任务：科普太阳系知识 (任务ID: a174061d-9d7d-498a-a35d-69b023f9da30) 和创作关于太阳系的诗歌 (任务ID: 4f2e0fe0-d201-417a-a602-0462eb630e7c)，均指派给代理人 b86719e8-f495-402f-bffa-b6d76eee8965。",
+              "iteration": 1,
+              "failureCode": "objective_blocked",
+              "failureMessage": "已向负责创建文档的工作代理查询了文件的具体位置，待其回复后再做进一步处理。",
+              "version": 4,
+              "createdAt": "2026-09-07T14:55:49.553066+08:00",
+              "updatedAt": "2026-09-07T15:03:58.687747+08:00",
+              "startedAt": "2026-09-07T14:55:49.924152+08:00",
+              "completedAt": "2026-09-07T15:03:58.687747+08:00"
+            },
+            {
+              "id": "104707d1-60ff-49ee-979d-d163975eb6d9",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:f023ccdf-06c5-48d7-8d60-30f32b840338",
+              "type": "agent",
+              "role": "ma2",
+              "issueId": "c11324b0-38c2-4da4-999b-e4ab6aad1a26",
+              "state": "cancelled",
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 3,
+              "createdAt": "2026-09-07T15:03:46.813559+08:00",
+              "updatedAt": "2026-09-07T15:03:58.6984+08:00",
+              "startedAt": "2026-09-07T15:03:47.258939+08:00",
+              "completedAt": "2026-09-07T15:03:58.6984+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "orchestrationRunId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "runNodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+              "currentAttemptId": "77ac1d6d-b289-416f-addd-0135d2438a96",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_e55253d6c100",
+                "resolvedAt": "2026-09-07T06:55:49.946163Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_e55253d6c100",
+              "result": "已成功创建并分配了两个子任务：科普太阳系知识 (任务ID: a174061d-9d7d-498a-a35d-69b023f9da30) 和创作关于太阳系的诗歌 (任务ID: 4f2e0fe0-d201-417a-a602-0462eb630e7c)，均指派给代理人 b86719e8-f495-402f-bffa-b6d76eee8965。",
+              "version": 4,
+              "createdAt": "2026-09-07T14:55:49.553066+08:00",
+              "dispatchedAt": "2026-09-07T14:55:49.946121+08:00",
+              "startedAt": "2026-09-07T14:55:50.065833+08:00",
+              "completedAt": "2026-09-07T14:56:26.372036+08:00"
+            },
+            {
+              "id": "a174061d-9d7d-498a-a35d-69b023f9da30",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "c11324b0-38c2-4da4-999b-e4ab6aad1a26",
+              "orchestrationRunId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "runNodeId": "48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+              "currentAttemptId": "5bb971f6-82d1-451d-b512-32c366ea8735",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "ma2",
+              "parentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "delegatedFromTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "originator": {
+                "type": "agent",
+                "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_d120adddd99b",
+                "resolvedAt": "2026-09-07T06:56:08.930008Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_d120adddd99b",
+              "result": {
+                "path": "solar_system_knowledge.md"
+              },
+              "version": 4,
+              "createdAt": "2026-09-07T14:56:08.371548+08:00",
+              "dispatchedAt": "2026-09-07T14:56:08.929545+08:00",
+              "startedAt": "2026-09-07T14:56:09.041551+08:00",
+              "completedAt": "2026-09-07T14:56:46.805329+08:00"
+            },
+            {
+              "id": "4f2e0fe0-d201-417a-a602-0462eb630e7c",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "1d35bd16-b5ca-4072-b96e-15426a09e25f",
+              "orchestrationRunId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "runNodeId": "780714e8-b33b-457a-9555-61308f903a14",
+              "currentAttemptId": "a04c2ade-43b1-4723-9672-65133ea9b663",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "ma2",
+              "parentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "delegatedFromTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "originator": {
+                "type": "agent",
+                "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_9845a275f1b1",
+                "resolvedAt": "2026-09-07T06:56:09.066156Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_9845a275f1b1",
+              "result": "在无垠宇宙中，太阳系如诗如画，\n恒星光辉照耀着行星家族的步伐。\n水金地火绕日舞，木土天海共辉煌，\n每一颗星球都有它独特的光芒。\n\n水星紧贴太阳旁，晨昏线快速交替忙，\n金星云层厚又亮，夜空中最耀眼的光。\n地球蔚蓝生机旺，生命之舟载希望，\n火星红土藏秘密，探索者心中向往。\n\n木星大红斑旋转，气态巨人的面庞，\n土星光环细又长，宛如梦幻般飘荡。\n天王星侧卧轨道上，淡蓝色调显清凉，\n海王星风速狂，深邃蓝中藏力量。\n\n冥界之外有疆场，柯伊伯带冷而广，\n彗星拖尾划过夜空，流星雨洒落梦想。\n在这浩瀚星际间，人类仰望星空畅想，\n追求真理的脚步，永不停歇向远方。",
+              "version": 4,
+              "createdAt": "2026-09-07T14:56:08.389251+08:00",
+              "dispatchedAt": "2026-09-07T14:56:09.065671+08:00",
+              "startedAt": "2026-09-07T14:56:09.115854+08:00",
+              "completedAt": "2026-09-07T14:56:39.630344+08:00"
+            },
+            {
+              "id": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "1d35bd16-b5ca-4072-b96e-15426a09e25f",
+              "orchestrationRunId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "runNodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+              "currentAttemptId": "62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "8b4a5a81-161a-4d49-9e19-56be2b48efa8",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "delegatedFromTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "originator": {
+                "type": "agent",
+                "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "8b4a5a81-161a-4d49-9e19-56be2b48efa8",
+              "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_d9cc5bc4a0cf",
+                "resolvedAt": "2026-09-07T06:56:39.939355Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_d9cc5bc4a0cf",
+              "errorCode": "turn_failed",
+              "errorMessage": "Model request timeout after PT5M",
+              "version": 4,
+              "createdAt": "2026-09-07T14:56:39.630344+08:00",
+              "dispatchedAt": "2026-09-07T14:56:39.939216+08:00",
+              "startedAt": "2026-09-07T14:56:40.041176+08:00",
+              "completedAt": "2026-09-07T15:02:52.749309+08:00",
+              "inputs": [
+                {
+                  "id": "6397c72f-3123-42b6-a7cc-1d075737a032",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+                  "commentId": "8b4a5a81-161a-4d49-9e19-56be2b48efa8",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "blocked",
+                  "deliveredAt": "2026-09-07T14:56:39.939216+08:00",
+                  "attempts": 0,
+                  "lastError": "Model request timeout after PT5M",
+                  "createdAt": "2026-09-07T14:56:39.630344+08:00"
+                }
+              ]
+            },
+            {
+              "id": "8bd26765-3565-4240-906d-d66ef35561b4",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "c11324b0-38c2-4da4-999b-e4ab6aad1a26",
+              "orchestrationRunId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "runNodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+              "currentAttemptId": "49ebb70c-9061-4d3e-babc-a5f6a01a45a5",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "delegatedFromTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "originator": {
+                "type": "agent",
+                "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+              "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_fdcf5eedc8c0",
+                "resolvedAt": "2026-09-07T07:02:58.248805Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_fdcf5eedc8c0",
+              "errorCode": "objective_blocked",
+              "errorMessage": "已向负责创建文档的工作代理查询了文件的具体位置，待其回复后再做进一步处理。",
+              "version": 4,
+              "createdAt": "2026-09-07T14:56:46.805329+08:00",
+              "dispatchedAt": "2026-09-07T15:02:58.247949+08:00",
+              "startedAt": "2026-09-07T15:02:58.346911+08:00",
+              "completedAt": "2026-09-07T15:03:58.670731+08:00",
+              "inputs": [
+                {
+                  "id": "f57479c6-5764-4b60-ae44-e4c4b929625b",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+                  "commentId": "6f2f959d-963d-4236-89c8-29f6066bf681",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "blocked",
+                  "deliveredAt": "2026-09-07T15:02:58.247949+08:00",
+                  "attempts": 0,
+                  "lastError": "已向负责创建文档的工作代理查询了文件的具体位置，待其回复后再做进一步处理。",
+                  "createdAt": "2026-09-07T14:56:46.805329+08:00"
+                }
+              ]
+            },
+            {
+              "id": "f023ccdf-06c5-48d7-8d60-30f32b840338",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "c11324b0-38c2-4da4-999b-e4ab6aad1a26",
+              "orchestrationRunId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "runNodeId": "104707d1-60ff-49ee-979d-d163975eb6d9",
+              "currentAttemptId": "08d24626-e8c0-47b0-b525-02f1257efdc1",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "status": "cancelled",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "40b05906-55ae-4896-8bd2-bca497a79416",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "ma2",
+              "parentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+              "delegatedFromTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+              "originator": {
+                "type": "agent",
+                "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "40b05906-55ae-4896-8bd2-bca497a79416",
+              "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+              "hopCount": 2,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_8b8729cfb3e1",
+                "resolvedAt": "2026-09-07T07:03:47.342203Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_8b8729cfb3e1",
+              "version": 4,
+              "createdAt": "2026-09-07T15:03:46.813559+08:00",
+              "dispatchedAt": "2026-09-07T15:03:47.341652+08:00",
+              "startedAt": "2026-09-07T15:03:47.430049+08:00",
+              "completedAt": "2026-09-07T15:03:58.697056+08:00",
+              "inputs": [
+                {
+                  "id": "9ad5315c-094a-40ad-b823-eceed8454680",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "f023ccdf-06c5-48d7-8d60-30f32b840338",
+                  "commentId": "40b05906-55ae-4896-8bd2-bca497a79416",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "delivered",
+                  "deliveredAt": "2026-09-07T15:03:47.341652+08:00",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T15:03:46.813559+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "77ac1d6d-b289-416f-addd-0135d2438a96",
+              "agentTaskId": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_e55253d6c100",
+                "resolvedAt": "2026-09-07T06:55:49.946163Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "sessionId": "sess_e55253d6c100",
+              "sessionRef": "348064a7-3ab5-495e-88da-c0aa83422f46",
+              "turnId": "d1d7f32d-ce59-4cfc-9c4d-628be50e2dfe",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T14:56:26.327079+08:00",
+              "result": "已成功创建并分配了两个子任务：科普太阳系知识 (任务ID: a174061d-9d7d-498a-a35d-69b023f9da30) 和创作关于太阳系的诗歌 (任务ID: 4f2e0fe0-d201-417a-a602-0462eb630e7c)，均指派给代理人 b86719e8-f495-402f-bffa-b6d76eee8965。",
+              "version": 24,
+              "createdAt": "2026-09-07T14:55:49.946121+08:00",
+              "updatedAt": "2026-09-07T14:56:26.372036+08:00",
+              "startedAt": "2026-09-07T14:55:50.065833+08:00",
+              "completedAt": "2026-09-07T14:56:26.372036+08:00"
+            },
+            {
+              "id": "5bb971f6-82d1-451d-b512-32c366ea8735",
+              "agentTaskId": "a174061d-9d7d-498a-a35d-69b023f9da30",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "nodeId": "48e7c13b-9fd6-42c0-a0d3-941bd59acdeb",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_d120adddd99b",
+                "resolvedAt": "2026-09-07T06:56:08.930008Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "sessionId": "sess_d120adddd99b",
+              "sessionRef": "978febed-c8e8-4206-a4f0-f31bc0332391",
+              "turnId": "bb1cb51c-f4a9-4f85-8d99-1d662a5130db",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T14:56:46.771111+08:00",
+              "result": {
+                "path": "solar_system_knowledge.md"
+              },
+              "version": 20,
+              "createdAt": "2026-09-07T14:56:08.929545+08:00",
+              "updatedAt": "2026-09-07T14:56:46.805329+08:00",
+              "startedAt": "2026-09-07T14:56:09.041551+08:00",
+              "completedAt": "2026-09-07T14:56:46.805329+08:00"
+            },
+            {
+              "id": "a04c2ade-43b1-4723-9672-65133ea9b663",
+              "agentTaskId": "4f2e0fe0-d201-417a-a602-0462eb630e7c",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "nodeId": "780714e8-b33b-457a-9555-61308f903a14",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_9845a275f1b1",
+                "resolvedAt": "2026-09-07T06:56:09.066156Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "sessionId": "sess_9845a275f1b1",
+              "sessionRef": "611bf5a7-37bc-4862-aa11-f7027744f1e5",
+              "turnId": "8dbf6b21-27c0-4db2-9aa0-ee905b4f1da1",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T14:56:39.608475+08:00",
+              "result": "在无垠宇宙中，太阳系如诗如画，\n恒星光辉照耀着行星家族的步伐。\n水金地火绕日舞，木土天海共辉煌，\n每一颗星球都有它独特的光芒。\n\n水星紧贴太阳旁，晨昏线快速交替忙，\n金星云层厚又亮，夜空中最耀眼的光。\n地球蔚蓝生机旺，生命之舟载希望，\n火星红土藏秘密，探索者心中向往。\n\n木星大红斑旋转，气态巨人的面庞，\n土星光环细又长，宛如梦幻般飘荡。\n天王星侧卧轨道上，淡蓝色调显清凉，\n海王星风速狂，深邃蓝中藏力量。\n\n冥界之外有疆场，柯伊伯带冷而广，\n彗星拖尾划过夜空，流星雨洒落梦想。\n在这浩瀚星际间，人类仰望星空畅想，\n追求真理的脚步，永不停歇向远方。",
+              "version": 16,
+              "createdAt": "2026-09-07T14:56:09.065671+08:00",
+              "updatedAt": "2026-09-07T14:56:39.630344+08:00",
+              "startedAt": "2026-09-07T14:56:09.115854+08:00",
+              "completedAt": "2026-09-07T14:56:39.630344+08:00"
+            },
+            {
+              "id": "62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+              "agentTaskId": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_d9cc5bc4a0cf",
+                "resolvedAt": "2026-09-07T06:56:39.939355Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "sessionId": "sess_d9cc5bc4a0cf",
+              "sessionRef": "66e0709b-52fa-495a-bcb9-7950211f61ba",
+              "turnId": "4d5f4211-d65d-4701-891e-b80262c096c2",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T15:02:52.746782+08:00",
+              "failureCode": "turn_failed",
+              "failureMessage": "Model request timeout after PT5M",
+              "version": 53,
+              "createdAt": "2026-09-07T14:56:39.939216+08:00",
+              "updatedAt": "2026-09-07T15:02:52.749309+08:00",
+              "startedAt": "2026-09-07T14:56:40.041176+08:00",
+              "completedAt": "2026-09-07T15:02:52.749309+08:00"
+            },
+            {
+              "id": "49ebb70c-9061-4d3e-babc-a5f6a01a45a5",
+              "agentTaskId": "8bd26765-3565-4240-906d-d66ef35561b4",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_fdcf5eedc8c0",
+                "resolvedAt": "2026-09-07T07:02:58.248805Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "sessionId": "sess_fdcf5eedc8c0",
+              "sessionRef": "936b8fb9-ce4f-4c21-9674-08e7a5fafd41",
+              "turnId": "3b4482a9-b30c-4971-9587-109585d90f31",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T15:03:58.639607+08:00",
+              "failureCode": "objective_blocked",
+              "failureMessage": "已向负责创建文档的工作代理查询了文件的具体位置，待其回复后再做进一步处理。",
+              "version": 27,
+              "createdAt": "2026-09-07T15:02:58.247949+08:00",
+              "updatedAt": "2026-09-07T15:03:58.670731+08:00",
+              "startedAt": "2026-09-07T15:02:58.346911+08:00",
+              "completedAt": "2026-09-07T15:03:58.670731+08:00"
+            },
+            {
+              "id": "08d24626-e8c0-47b0-b525-02f1257efdc1",
+              "agentTaskId": "f023ccdf-06c5-48d7-8d60-30f32b840338",
+              "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+              "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+              "nodeId": "104707d1-60ff-49ee-979d-d163975eb6d9",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+                  "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+                },
+                "sessionId": "sess_8b8729cfb3e1",
+                "resolvedAt": "2026-09-07T07:03:47.342203Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+              "sessionId": "sess_8b8729cfb3e1",
+              "sessionRef": "1ad66665-4f3c-48aa-a734-7fd8b21765cb",
+              "turnId": "946b95f4-3260-4f89-9a4a-54f2a8f62637",
+              "state": "cancelled",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T15:03:57.452726+08:00",
+              "cancelRequestedAt": "2026-09-07T15:03:58.694462+08:00",
+              "version": 13,
+              "createdAt": "2026-09-07T15:03:47.341652+08:00",
+              "updatedAt": "2026-09-07T15:04:30.242777+08:00",
+              "startedAt": "2026-09-07T15:03:47.430049+08:00",
+              "completedAt": "2026-09-07T15:04:30.242777+08:00"
+            }
+          ]
+        },
+        "toolFailures": [
+          {
+            "id": "bea85984-d971-4117-b9ef-26c7ea61383a",
+            "runId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 21,
+            "nodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+            "agentTaskId": "13270d9d-66cf-4eb9-84c4-96ffcfc73a6a",
+            "attemptId": "62f4353b-b4e4-41d2-a343-b2cf1f061fb1",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "coordinator has pending leader outcome task 8bd26765-3565-4240-906d-d66ef35561b4",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_d9cc5bc4a0cf",
+              "sessionRef": "66e0709b-52fa-495a-bcb9-7950211f61ba",
+              "toolCallId": "call_810894fc33014032965b6f"
+            },
+            "causationId": "call_810894fc33014032965b6f",
+            "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+            "idempotencyKey": "agent-tool-failed:13270d9d-66cf-4eb9-84c4-96ffcfc73a6a:call_810894fc33014032965b6f",
+            "occurredAt": "2026-09-07T14:57:07.580788+08:00"
+          }
+        ]
+      }
+    ],
+    "runs": [
+      {
+        "id": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "mode": "adaptive",
+        "triggerType": "assignment",
+        "triggerRef": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "state": "failed",
+        "failureCode": "objective_blocked",
+        "failureMessage": "已向负责创建文档的工作代理查询了文件的具体位置，待其回复后再做进一步处理。",
+        "version": 15,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T14:55:49.553066+08:00",
+        "updatedAt": "2026-09-07T15:03:58.699139+08:00",
+        "startedAt": "2026-09-07T14:55:49.553066+08:00",
+        "completedAt": "2026-09-07T15:03:58.699139+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "ca9c7c57-ffbb-42c2-9af1-ed0c4a7837b2",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "orchestrationRunId": "ece47149-78c4-4c60-8d6a-41ecf5cf1b26",
+        "runNodeId": "7bc75cea-be0c-4ac2-83b4-66a5f266e57b",
+        "currentAttemptId": "77ac1d6d-b289-416f-addd-0135d2438a96",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "correlationId": "d9fa3d3f-2be1-4861-9b4d-ff2ae07848a4",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_e55253d6c100",
+          "resolvedAt": "2026-09-07T06:55:49.946163Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_e55253d6c100",
+        "result": "已成功创建并分配了两个子任务：科普太阳系知识 (任务ID: a174061d-9d7d-498a-a35d-69b023f9da30) 和创作关于太阳系的诗歌 (任务ID: 4f2e0fe0-d201-417a-a602-0462eb630e7c)，均指派给代理人 b86719e8-f495-402f-bffa-b6d76eee8965。",
+        "version": 4,
+        "createdAt": "2026-09-07T14:55:49.553066+08:00",
+        "dispatchedAt": "2026-09-07T14:55:49.946121+08:00",
+        "startedAt": "2026-09-07T14:55:50.065833+08:00",
+        "completedAt": "2026-09-07T14:56:26.372036+08:00"
+      }
+    ]
+  }
+}

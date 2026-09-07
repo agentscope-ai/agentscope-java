@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-07T04:47:33.681067+00:00",
+  "method": "POST",
+  "path": "/invoke/v1/endpoints/it-20260907-fix1-qoder-job/jobs",
+  "request": {
+    "title": "it-20260907-fix1-endpoint-text",
+    "description": "按input里的文本统计英文单词数，输出 API_WORDS=4 并完成任务。无需联网。",
+    "input": {
+      "text": "red blue green yellow"
+    }
+  },
+  "status": 202,
+  "response": {
+    "eventsUrl": "/invoke/v1/jobs/d7a387ad-b20b-400f-beba-c01b3146f54a/events",
+    "invocationId": "d7a387ad-b20b-400f-beba-c01b3146f54a",
+    "issueId": "e4bb634e-9c85-5984-95ad-506532413c6d",
+    "runId": "2d15bd2e-5c79-5494-98c3-b2c1bc86d80d",
+    "status": "running",
+    "statusUrl": "/invoke/v1/jobs/d7a387ad-b20b-400f-beba-c01b3146f54a"
+  }
+}

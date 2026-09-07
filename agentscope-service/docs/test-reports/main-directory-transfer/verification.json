@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-07T11:51:58.774983+08:00",
+  "directory": "/Users/ken/agentscope-2/agentscope-java",
+  "branch": "agentscope-service-v5",
+  "commit": "942cb382311c3d8448d4fc3fedb43500957cec7f",
+  "codeFiles": [
+    "agentscope-core/src/main/java/io/agentscope/core/tool/mcp/McpTool.java",
+    "agentscope-core/src/test/java/io/agentscope/core/tool/mcp/McpToolMetaExtractionTest.java",
+    "agentscope-service/aistio/internal/collaboration/service.go",
+    "agentscope-service/aistio/internal/httpapi/collaboration_mcp.go",
+    "agentscope-service/aistio/internal/httpapi/collaboration_mcp_test.go",
+    "agentscope-service/aistio/internal/httpapi/execution_diagnostics_test.go",
+    "agentscope-service/aistio/internal/httpapi/hosted_conversation.go",
+    "agentscope-service/aistio/internal/httpapi/managed_session_event.go",
+    "agentscope-service/aistio/internal/httpapi/managed_session_event_test.go",
+    "agentscope-service/aistio/internal/httpapi/orchestration_handler.go",
+    "agentscope-service/aistio/internal/httpapi/server.go",
+    "agentscope-service/aistio/internal/runtimebinding/resolver.go",
+    "agentscope-service/aistio/internal/store/memory/turns.go",
+    "agentscope-service/aistio/internal/store/postgres/turns.go",
+    "agentscope-service/aistio/internal/store/store.go",
+    "agentscope-service/aistio/internal/store/storetest/suite.go",
+    "agentscope-service/aistio/internal/collaboration/integration_regression_test.go",
+    "agentscope-service/aistio/internal/httpapi/team_convergence_regression_test.go"
+  ],
+  "copiedReportFiles": 1385,
+  "codeMatchesCommittedTree": true,
+  "reportCopiesMatch": true,
+  "originalStagedUIUnchanged": true,
+  "globalInstructions": "/Users/ken/.codex/AGENTS.md",
+  "validation": {
+    "goTestAll": "passed",
+    "javaCoreVerify": "passed"
+  },
+  "clusterRedeployed": false
+}

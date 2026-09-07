@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-07T03:32:06.931513+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/jobs/a62a5752-13e8-4a32-a284-a1740b4d8b53",
+  "request": null,
+  "status": 200,
+  "response": {
+    "invocation": {
+      "correlationId": "75d1ae51-8d1a-49f6-977b-c159922789cc",
+      "createdAt": "2026-09-07T11:30:37.899959+08:00",
+      "endpointId": "674e9403-ddc7-4db8-a312-967a4fea5b23",
+      "id": "a62a5752-13e8-4a32-a284-a1740b4d8b53",
+      "issueId": "16c4ec41-b449-5465-b26d-938007d72365",
+      "mode": "job",
+      "runId": "39f4f910-c409-5d4c-bca7-886ff2cb9ca5",
+      "startedAt": "2026-09-07T11:30:37.901139+08:00",
+      "status": "running",
+      "updatedAt": "2026-09-07T11:30:38.000981+08:00"
+    },
+    "issue": {
+      "id": "16c4ec41-b449-5465-b26d-938007d72365",
+      "status": "in_progress",
+      "updatedAt": "2026-09-07T11:31:03.760322+08:00"
+    },
+    "run": {
+      "id": "39f4f910-c409-5d4c-bca7-886ff2cb9ca5",
+      "state": "waiting",
+      "updatedAt": "2026-09-07T11:31:54.339399+08:00"
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "at": "2026-09-07T03:28:51.858588+00:00",
+  "method": "POST",
+  "path": "/api/v1/agents",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "agentKey": "it-20260907-1130-codex",
+    "displayName": "it-20260907-1130-codex",
+    "ownerType": "user",
+    "description": "真实集成测试保留资源",
+    "binding": {
+      "kind": "hosted-runtime",
+      "priority": 100,
+      "configuration": {
+        "runtimeProfileId": "15b66ae3-1156-46a2-8490-311a5893c304",
+        "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb"
+      }
+    },
+    "definition": {
+      "name": "it-20260907-1130-codex",
+      "system": "你是集成测试助手。只在当前测试 Issue/工作区工作，不操作其他资源，不修改实现或权限。无工具的算术和文本题直接作答；需要实时资料时实际使用可用工具，工具不可用须明确说明，禁止编造来源。遵守运行时协作协议，真实协作必须调用工具，不能只声称已委派或在正文写@。你是复核员，擅长独立验证计算结果。",
+      "maxIters": 20
+    }
+  },
+  "status": 201,
+  "response": {
+    "agent": {
+      "id": "01b9c623-0ac3-4ce9-a07f-36f640486ab8",
+      "tenant": "default",
+      "namespace": "default",
+      "agentKey": "it-20260907-1130-codex",
+      "displayName": "it-20260907-1130-codex",
+      "description": "真实集成测试保留资源",
+      "ownerType": "user",
+      "ownerRef": "admin",
+      "status": "active",
+      "version": 2,
+      "createdAt": "2026-09-07T11:28:51.860225+08:00",
+      "updatedAt": "2026-09-07T11:28:51.865083+08:00"
+    },
+    "binding": {
+      "id": "a83a4370-c07a-538f-bbe6-cd70d169c166",
+      "agentId": "01b9c623-0ac3-4ce9-a07f-36f640486ab8",
+      "tenant": "default",
+      "namespace": "default",
+      "kind": "hosted-runtime",
+      "configuration": {
+        "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb",
+        "runtimeProfileId": "15b66ae3-1156-46a2-8490-311a5893c304"
+      },
+      "priority": 100,
+      "enabled": true,
+      "version": 1,
+      "createdAt": "2026-09-07T11:28:51.863696+08:00",
+      "updatedAt": "2026-09-07T11:28:51.863696+08:00"
+    },
+    "definition": {
+      "archivedAt": null,
+      "createdAt": 1788751731862,
+      "defaultEnvironmentId": null,
+      "defaultMemoryStoreIds": [],
+      "defaultVaultIds": [],
+      "description": "",
+      "id": "01b9c623-0ac3-4ce9-a07f-36f640486ab8",
+      "maxIters": 20,
+      "mcpServers": null,
+      "model": "",
+      "name": "it-20260907-1130-codex",
+      "ownerId": "admin",
+      "scope": "user",
+      "skills": null,
+      "system": "你是集成测试助手。只在当前测试 Issue/工作区工作，不操作其他资源，不修改实现或权限。无工具的算术和文本题直接作答；需要实时资料时实际使用可用工具，工具不可用须明确说明，禁止编造来源。遵守运行时协作协议，真实协作必须调用工具，不能只声称已委派或在正文写@。你是复核员，擅长独立验证计算结果。",
+      "tools": null,
+      "updatedAt": 1788751731862,
+      "version": 1,
+      "workspaceId": null,
+      "workspacePath": "/Users/ken/agentscope-2/agentscope-java/agentscope-service/.dev-stack/workspaces/admin/01b9c623-0ac3-4ce9-a07f-36f640486ab8"
+    },
+    "policy": {
+      "id": "5600fe0f-7ebb-49a5-9463-76604a521dd9",
+      "tenant": "default",
+      "namespace": "default",
+      "agentId": "01b9c623-0ac3-4ce9-a07f-36f640486ab8",
+      "candidates": [
+        {
+          "binding": {
+            "agentId": "01b9c623-0ac3-4ce9-a07f-36f640486ab8",
+            "bindingId": "a83a4370-c07a-538f-bbe6-cd70d169c166",
+            "kind": "hosted-runtime",
+            "runtimeProfileId": "15b66ae3-1156-46a2-8490-311a5893c304",
+            "runtimePoolId": "a974d48f-a3ad-4338-8bf5-3722545186cb"
+          }
+        }
+      ],
+      "selectionMode": "ordered",
+      "fallbackMode": "disabled",
+      "version": 1,
+      "createdAt": "2026-09-07T11:28:51.864247+08:00",
+      "updatedAt": "2026-09-07T11:28:51.864247+08:00"
+    }
+  }
+}

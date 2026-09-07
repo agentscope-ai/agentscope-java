@@ -1,0 +1,64 @@
+{
+  "at": "2026-09-07T00:16:33.978298+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/25c032fe-9dcb-4e9a-8331-a2c22b6a8d08/events?limit=500",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": "2960c5e3-82e2-4e8e-9be6-f7bd65f29d5d",
+        "runId": "25c032fe-9dcb-4e9a-8331-a2c22b6a8d08",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 1,
+        "nodeId": "373f448f-6ea4-4030-b6a8-fe02d28686b3",
+        "agentTaskId": "ea854d62-1caf-4394-8b54-7d492af4d5ab",
+        "type": "agent-task.queued",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "causationId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "correlationId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "idempotencyKey": "agent-task-queued:ea854d62-1caf-4394-8b54-7d492af4d5ab",
+        "occurredAt": "2026-09-07T08:16:32.782791+08:00"
+      },
+      {
+        "id": "1d3345e9-06aa-4185-a1e5-1942f9d9c438",
+        "runId": "25c032fe-9dcb-4e9a-8331-a2c22b6a8d08",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 2,
+        "nodeId": "373f448f-6ea4-4030-b6a8-fe02d28686b3",
+        "agentTaskId": "ea854d62-1caf-4394-8b54-7d492af4d5ab",
+        "attemptId": "59f40656-aaed-46c6-8460-e4721c9f4169",
+        "type": "attempt.queued",
+        "actor": {
+          "type": "system"
+        },
+        "causationId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "correlationId": "559c0954-e48a-4625-b967-1be8af13453c",
+        "idempotencyKey": "attempt-queued:59f40656-aaed-46c6-8460-e4721c9f4169",
+        "occurredAt": "2026-09-07T08:16:33.332718+08:00"
+      },
+      {
+        "id": "c07dceed-779f-407f-853b-d35eb25a6f63",
+        "runId": "25c032fe-9dcb-4e9a-8331-a2c22b6a8d08",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 3,
+        "nodeId": "373f448f-6ea4-4030-b6a8-fe02d28686b3",
+        "agentTaskId": "ea854d62-1caf-4394-8b54-7d492af4d5ab",
+        "attemptId": "59f40656-aaed-46c6-8460-e4721c9f4169",
+        "type": "attempt.running",
+        "actor": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "idempotencyKey": "attempt-running:59f40656-aaed-46c6-8460-e4721c9f4169",
+        "occurredAt": "2026-09-07T08:16:33.375267+08:00"
+      }
+    ]
+  }
+}

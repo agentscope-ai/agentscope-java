@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-07T04:49:28.104315+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/jobs/3d8ee3d1-56e7-4c93-904f-ee38ba1259a2",
+  "request": null,
+  "status": 200,
+  "response": {
+    "invocation": {
+      "completedAt": "2026-09-07T12:49:15.419465+08:00",
+      "correlationId": "5fb7118f-13cb-45af-8c9d-226676fd6092",
+      "createdAt": "2026-09-07T12:47:33.73149+08:00",
+      "endpointId": "7de9c5a3-d93d-4a94-85cb-2aee5af6bfdd",
+      "id": "3d8ee3d1-56e7-4c93-904f-ee38ba1259a2",
+      "issueId": "fbff1ec1-f503-577a-b8ff-ca34695e4dbf",
+      "mode": "job",
+      "result": "TEAM_OK;CALC=400;SORT=apple,pear,zebra",
+      "runId": "0ac73705-91e0-51a2-b8a5-3805312c4b1d",
+      "startedAt": "2026-09-07T12:47:33.733303+08:00",
+      "status": "completed",
+      "updatedAt": "2026-09-07T12:49:15.419194+08:00"
+    },
+    "issue": {
+      "id": "fbff1ec1-f503-577a-b8ff-ca34695e4dbf",
+      "status": "done",
+      "updatedAt": "2026-09-07T12:49:06.769468+08:00"
+    },
+    "run": {
+      "id": "0ac73705-91e0-51a2-b8a5-3805312c4b1d",
+      "state": "succeeded",
+      "updatedAt": "2026-09-07T12:49:06.762202+08:00"
+    }
+  }
+}

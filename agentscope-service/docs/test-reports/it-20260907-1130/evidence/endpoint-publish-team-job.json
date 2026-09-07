@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-07T03:30:37.600873+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints/f2593bb4-6a3e-4577-ac31-b01658e576cf/publish",
+  "request": {
+    "version": 1
+  },
+  "status": 200,
+  "response": {
+    "endpoint": {
+      "id": "f2593bb4-6a3e-4577-ac31-b01658e576cf",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-1130-team-job",
+      "slug": "it-20260907-1130-team-job",
+      "targetType": "team",
+      "targetRef": "e73acb19-fc07-4e58-99e2-7513c7bf7a0b",
+      "invocationMode": "job",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "activeReleaseId": "f11edcc4-ee7d-4038-be95-7e3fcd957161",
+      "activeRelease": 1,
+      "status": "published",
+      "version": 3,
+      "createdAt": "2026-09-07T11:30:37.590566+08:00",
+      "updatedAt": "2026-09-07T11:30:37.606429+08:00"
+    },
+    "readiness": {
+      "state": "ready",
+      "reason": "Team leader: Primary runtime candidate is dispatchable",
+      "compatible": true
+    }
+  }
+}

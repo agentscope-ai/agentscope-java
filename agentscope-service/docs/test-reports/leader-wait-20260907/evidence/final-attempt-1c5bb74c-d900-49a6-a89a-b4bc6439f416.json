@@ -1,0 +1,56 @@
+{
+  "at": "2026-09-07T10:03:18.577687+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/1c5bb74c-d900-49a6-a89a-b4bc6439f416",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "1c5bb74c-d900-49a6-a89a-b4bc6439f416",
+      "agentTaskId": "cde997b6-3e0c-4d66-9f0b-793c1fe296b0",
+      "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+      "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+      "runId": "564a06ad-4b10-4f52-b65c-ce7104426063",
+      "nodeId": "af7aba8e-c95d-4d64-90f6-92e026dd719b",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+          "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "sessionId": "sess_2c178d19c6ae",
+        "resolvedAt": "2026-09-07T09:40:30.138884Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+      "sessionId": "sess_2c178d19c6ae",
+      "sessionRef": "c79f89c9-e885-443b-8e1b-5ace6aa0ca48",
+      "turnId": "bf78ab4c-2f16-4a0c-a106-c7778557d8f1",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T17:41:00.323016+08:00",
+      "result": {
+        "outcome": "waiting",
+        "summary": "等待MA2补充验证结果",
+        "waitingForTaskIds": [
+          "4298d95b-ccec-4a49-9803-73ef8d2e4550"
+        ]
+      },
+      "version": 20,
+      "createdAt": "2026-09-07T17:40:30.135145+08:00",
+      "updatedAt": "2026-09-07T17:41:00.352048+08:00",
+      "startedAt": "2026-09-07T17:40:30.232636+08:00",
+      "completedAt": "2026-09-07T17:41:00.352048+08:00"
+    }
+  }
+}

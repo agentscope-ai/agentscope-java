@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T06:09:22.562747+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/66a9b9c5-3595-4493-9926-b886df28f5e7",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "66a9b9c5-3595-4493-9926-b886df28f5e7",
+      "agentTaskId": "22622072-0a52-4b06-8814-b15622e2393c",
+      "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+      "runId": "ac6b8ead-26e0-52a3-884b-62e3bdcb48a0",
+      "nodeId": "c4ecb2c9-e484-5641-9d8a-574b9db89f7d",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+          "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "sessionId": "sess_faada78b1ef1",
+        "resolvedAt": "2026-09-07T05:57:52.493881Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "sessionId": "sess_faada78b1ef1",
+      "sessionRef": "84da7f86-60f6-4612-ad39-2601c4e4d072",
+      "turnId": "8e3064c0-0490-4755-9aac-7b8fc2f4ffbd",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T13:58:16.488726+08:00",
+      "result": "已经成功创建了两个子任务。calculator将计算19×21+1的结果，而analyst将对zebra,apple,pear进行字典序排序。我们将等待他们的结果。",
+      "version": 23,
+      "createdAt": "2026-09-07T13:57:52.493155+08:00",
+      "updatedAt": "2026-09-07T13:58:16.505817+08:00",
+      "startedAt": "2026-09-07T13:57:52.660507+08:00",
+      "completedAt": "2026-09-07T13:58:16.505817+08:00"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "at": "2026-09-07T06:00:08.047369+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/ba939ff9-0002-5ab9-9b7f-dbfe1c803ac9/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": "03e99ad2-ee63-4af3-a3c9-2139c2b9d3a1",
+        "runId": "ba939ff9-0002-5ab9-9b7f-dbfe1c803ac9",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 1,
+        "nodeId": "08580d90-6761-5cf8-b346-b23e7c40bfcf",
+        "agentTaskId": "a421657b-9b56-45c0-9b4a-ad5d55591331",
+        "type": "agent-task.queued",
+        "actor": {
+          "type": "system",
+          "ref": "endpoint_conversation"
+        },
+        "causationId": "08580d90-6761-5cf8-b346-b23e7c40bfcf",
+        "correlationId": "ba939ff9-0002-5ab9-9b7f-dbfe1c803ac9",
+        "idempotencyKey": "agent-task-queued:a421657b-9b56-45c0-9b4a-ad5d55591331",
+        "occurredAt": "2026-09-07T13:59:41.389704+08:00"
+      },
+      {
+        "id": "aea8ba1e-bc62-4391-8035-710477cad78a",
+        "runId": "ba939ff9-0002-5ab9-9b7f-dbfe1c803ac9",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 2,
+        "nodeId": "08580d90-6761-5cf8-b346-b23e7c40bfcf",
+        "agentTaskId": "a421657b-9b56-45c0-9b4a-ad5d55591331",
+        "attemptId": "d1b4720c-40db-4643-82b9-dbe5eaba109c",
+        "type": "attempt.queued",
+        "actor": {
+          "type": "system"
+        },
+        "causationId": "08580d90-6761-5cf8-b346-b23e7c40bfcf",
+        "correlationId": "ba939ff9-0002-5ab9-9b7f-dbfe1c803ac9",
+        "idempotencyKey": "attempt-queued:d1b4720c-40db-4643-82b9-dbe5eaba109c",
+        "occurredAt": "2026-09-07T13:59:41.405691+08:00"
+      }
+    ]
+  }
+}

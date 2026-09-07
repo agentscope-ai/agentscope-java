@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-07T03:30:37.632818+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "name": "it-20260907-1130-team-chat",
+    "slug": "it-20260907-1130-team-chat",
+    "targetType": "team",
+    "targetRef": "e73acb19-fc07-4e58-99e2-7513c7bf7a0b",
+    "invocationMode": "conversation"
+  },
+  "status": 400,
+  "response": {
+    "error": "conversation endpoints require targetType=agent"
+  }
+}

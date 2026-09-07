@@ -1,0 +1,94 @@
+{
+  "at": "2026-09-07T00:21:23.612853+00:00",
+  "method": "GET",
+  "path": "/api/v1/teams/7089f084-903e-4bf2-b395-2f610e24e81a/overview",
+  "request": null,
+  "status": 200,
+  "response": {
+    "overview": {
+      "teamId": "7089f084-903e-4bf2-b395-2f610e24e81a",
+      "observedAt": "2026-09-07T00:21:23.615612Z",
+      "readiness": "ready",
+      "reason": "Leader and all Team members are dispatchable",
+      "members": [
+        {
+          "agentId": "068b4f8a-39c2-4482-b328-5d46cf28c113",
+          "role": "leader",
+          "leader": true,
+          "lifecycle": "active",
+          "readiness": {
+            "state": "ready",
+            "mode": "online",
+            "reason": "Primary runtime candidate is dispatchable",
+            "activeBindingId": "d143953c-9d89-57b8-9ebe-0b0744fddbb1"
+          }
+        },
+        {
+          "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+          "role": "calculator",
+          "leader": false,
+          "lifecycle": "active",
+          "readiness": {
+            "state": "ready",
+            "mode": "online",
+            "reason": "Primary runtime candidate is dispatchable",
+            "activeBindingId": "d809705a-dd23-5dba-8647-40d9b01d6baa"
+          }
+        },
+        {
+          "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+          "role": "researcher",
+          "leader": false,
+          "lifecycle": "active",
+          "readiness": {
+            "state": "ready",
+            "mode": "on-demand",
+            "reason": "Primary runtime candidate is dispatchable",
+            "activeBindingId": "4971089a-45e2-5d20-adee-28cf020c60a8"
+          }
+        }
+      ],
+      "runs": {
+        "total": 2,
+        "activeTasks": 0
+      },
+      "endpoints": {
+        "total": 0,
+        "published": 0
+      }
+    },
+    "team": {
+      "id": "7089f084-903e-4bf2-b395-2f610e24e81a",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-0815-mixed",
+      "instructions": "所有子Issue标题以 it-20260907-0815 开头。必须实际委派指定成员并收集结果，不要自己替代成员工作。工具受限要如实传递。",
+      "status": "active",
+      "leaderAgentId": "068b4f8a-39c2-4482-b328-5d46cf28c113",
+      "policy": {},
+      "version": 1,
+      "createdAt": "2026-09-07T08:15:00.520561+08:00",
+      "updatedAt": "2026-09-07T08:15:00.520561+08:00",
+      "members": [
+        {
+          "id": "7b679483-185d-4fa6-a99b-6f3375504e0c",
+          "tenant": "default",
+          "namespace": "default",
+          "teamId": "7089f084-903e-4bf2-b395-2f610e24e81a",
+          "agentId": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+          "role": "calculator",
+          "createdAt": "2026-09-07T08:15:00.520561+08:00"
+        },
+        {
+          "id": "7818d5db-44d8-4cbd-a7e9-37183119ea39",
+          "tenant": "default",
+          "namespace": "default",
+          "teamId": "7089f084-903e-4bf2-b395-2f610e24e81a",
+          "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+          "role": "researcher",
+          "createdAt": "2026-09-07T08:15:00.520561+08:00"
+        }
+      ]
+    }
+  }
+}

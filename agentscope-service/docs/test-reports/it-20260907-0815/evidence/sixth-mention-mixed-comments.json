@@ -1,0 +1,171 @@
+{
+  "at": "2026-09-07T00:19:53.437202+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/d5d34cec-ce1f-4aa0-9572-668d50771343/comments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "7b961c1e-96de-45a8-b724-e333265f9d34",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+        "threadRootId": "7b961c1e-96de-45a8-b724-e333265f9d34",
+        "author": {
+          "type": "agent",
+          "ref": "679b7bf9-c9c1-4828-a129-4045be75090e"
+        },
+        "content": "这是给B的新指令：计算12×12，输出 CROSS_B=144；再用issue.comment.add结构化mention回复A=679b7bf9-c9c1-4828-a129-4045be75090e一次，然后完成你的任务，不要执行原始A的发起步骤。",
+        "type": "comment",
+        "sourceTaskId": "f52a4f75-3555-47c4-a392-1e54f07bfac8",
+        "version": 1,
+        "createdAt": "2026-09-07T08:19:35.964089+08:00",
+        "updatedAt": "2026-09-07T08:19:35.964089+08:00",
+        "mentions": [
+          {
+            "id": "423a5648-4011-42f1-a30a-4eba1ff4250a",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+            "commentId": "7b961c1e-96de-45a8-b724-e333265f9d34",
+            "targetType": "agent",
+            "targetRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "createdAt": "2026-09-07T08:19:35.964089+08:00"
+          }
+        ],
+        "routes": [
+          {
+            "id": "82bbfeb3-10ae-4fbb-8012-8714782c8a97",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+            "commentId": "7b961c1e-96de-45a8-b724-e333265f9d34",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7",
+            "routeType": "explicit",
+            "outcome": "queued",
+            "taskId": "5ba344dc-0044-432f-8850-486329fe668d",
+            "createdAt": "2026-09-07T08:19:35.964089+08:00"
+          }
+        ]
+      },
+      {
+        "id": "c0e1b271-8a96-46e0-a9de-5b6c29bdeaee",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+        "threadRootId": "c0e1b271-8a96-46e0-a9de-5b6c29bdeaee",
+        "author": {
+          "type": "agent",
+          "ref": "679b7bf9-c9c1-4828-a129-4045be75090e"
+        },
+        "content": "Sent structured mention to agent B with instruction to compute 12×12=144 and reply back. Task queued for B. Awaiting B's reply in next dispatch to output CROSS_ACK.",
+        "type": "result",
+        "sourceTaskId": "f52a4f75-3555-47c4-a392-1e54f07bfac8",
+        "sourceAttemptId": "5f43fdbe-3e1f-432b-9e53-e3cb6a172a54",
+        "version": 1,
+        "createdAt": "2026-09-07T08:19:41.680205+08:00",
+        "updatedAt": "2026-09-07T08:19:41.680205+08:00",
+        "routes": [
+          {
+            "id": "54439786-47ec-4a8e-9685-22d3ed61b3e0",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+            "commentId": "c0e1b271-8a96-46e0-a9de-5b6c29bdeaee",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "routeType": "assignee",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T08:19:41.680205+08:00"
+          }
+        ]
+      },
+      {
+        "id": "f69fa03f-62ef-422a-8b31-1590c64ea608",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+        "threadRootId": "f69fa03f-62ef-422a-8b31-1590c64ea608",
+        "author": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "content": "CROSS_B=144",
+        "type": "comment",
+        "sourceTaskId": "5ba344dc-0044-432f-8850-486329fe668d",
+        "version": 1,
+        "createdAt": "2026-09-07T08:19:43.806225+08:00",
+        "updatedAt": "2026-09-07T08:19:43.806225+08:00",
+        "mentions": [
+          {
+            "id": "0bde50a6-a798-474e-82ae-2066afaac64b",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+            "commentId": "f69fa03f-62ef-422a-8b31-1590c64ea608",
+            "targetType": "agent",
+            "targetRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "createdAt": "2026-09-07T08:19:43.806225+08:00"
+          }
+        ],
+        "routes": [
+          {
+            "id": "9631ba37-65e0-4e1d-8853-a597d1c36d33",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+            "commentId": "f69fa03f-62ef-422a-8b31-1590c64ea608",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "routeType": "explicit",
+            "outcome": "queued",
+            "taskId": "037aca98-d464-4cf1-b170-fef501d3fe1c",
+            "createdAt": "2026-09-07T08:19:43.806225+08:00"
+          }
+        ]
+      },
+      {
+        "id": "39bdaa2e-de03-4744-89b9-d387e93c9f4c",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+        "parentId": "7b961c1e-96de-45a8-b724-e333265f9d34",
+        "threadRootId": "7b961c1e-96de-45a8-b724-e333265f9d34",
+        "author": {
+          "type": "agent",
+          "ref": "2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7"
+        },
+        "content": "{\"content\": \"CROSS_B=144\", \"mentions\": [{\"ref\": \"679b7bf9-c9c1-4828-a129-4045be75090e\", \"type\": \"agent\"}]}",
+        "type": "result",
+        "sourceTaskId": "5ba344dc-0044-432f-8850-486329fe668d",
+        "sourceAttemptId": "bb0c6f7d-5900-45d8-b963-7448bee1be2b",
+        "version": 1,
+        "createdAt": "2026-09-07T08:19:43.833307+08:00",
+        "updatedAt": "2026-09-07T08:19:43.833307+08:00",
+        "routes": [
+          {
+            "id": "ee6df2f2-3105-451d-a283-03489b42d55c",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "d5d34cec-ce1f-4aa0-9572-668d50771343",
+            "commentId": "39bdaa2e-de03-4744-89b9-d387e93c9f4c",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "routeType": "follow_up",
+            "outcome": "coalesced",
+            "taskId": "037aca98-d464-4cf1-b170-fef501d3fe1c",
+            "createdAt": "2026-09-07T08:19:43.833307+08:00"
+          }
+        ]
+      }
+    ],
+    "nextCursor": ""
+  }
+}

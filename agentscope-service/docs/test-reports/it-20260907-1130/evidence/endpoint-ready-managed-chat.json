@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-07T03:30:37.544023+00:00",
+  "method": "GET",
+  "path": "/api/v1/endpoints/ce54462c-525b-4bc6-bcb6-4528977db78f/readiness",
+  "request": null,
+  "status": 200,
+  "response": {
+    "readiness": {
+      "state": "ready",
+      "reason": "Primary runtime candidate is dispatchable",
+      "compatible": true
+    }
+  }
+}

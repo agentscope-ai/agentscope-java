@@ -1,0 +1,39 @@
+{
+  "at": "2026-09-07T03:30:37.477722+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "name": "it-20260907-1130-managed-job",
+    "slug": "it-20260907-1130-managed-job",
+    "targetType": "agent",
+    "targetRef": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+    "invocationMode": "job"
+  },
+  "status": 201,
+  "response": {
+    "credential": "[REDACTED]",
+    "credentialResource": "[REDACTED]",
+    "endpoint": {
+      "id": "10df09b6-2233-4435-88f7-d11f74d2c099",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-1130-managed-job",
+      "slug": "it-20260907-1130-managed-job",
+      "targetType": "agent",
+      "targetRef": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+      "invocationMode": "job",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "status": "draft",
+      "version": 1,
+      "createdAt": "2026-09-07T11:30:37.48259+08:00",
+      "updatedAt": "2026-09-07T11:30:37.48259+08:00"
+    }
+  }
+}

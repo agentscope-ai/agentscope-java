@@ -1,0 +1,40 @@
+{
+  "at": "2026-09-07T00:19:01.916235+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/16ce7d22-a889-4013-892e-ce8e44006ec2/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "c9ef057a-a57f-43ce-ab00-a2dfddc7a14f",
+    "offset": 0,
+    "limit": 100,
+    "total": 4,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "记住测试标记 MEMORY_0815。计算21+21，仅回答标记和答案。无需工具。",
+        "occurredAt": "2026-09-07T00:17:22.45667Z"
+      },
+      {
+        "seq": 6,
+        "role": "assistant",
+        "content": "Test marker: MEMORY_0815. 21+21 = 42.",
+        "occurredAt": "2026-09-07T00:17:42.655253Z"
+      },
+      {
+        "seq": 8,
+        "role": "user",
+        "content": "上一轮我让你记住的测试标记是什么？另外计算6×7。仅输出标记和答案，不用工具。",
+        "occurredAt": "2026-09-07T00:18:18.782149Z"
+      },
+      {
+        "seq": 12,
+        "role": "assistant",
+        "content": "上一轮测试标记: MEMORY_0815。6×7 = 42。",
+        "occurredAt": "2026-09-07T00:18:58.81818Z"
+      }
+    ],
+    "source": "events"
+  }
+}

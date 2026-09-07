@@ -1,0 +1,110 @@
+[INFO] Reactor Summary for AgentScope Java - Parent 2.0.3-SNAPSHOT:
+[INFO] 
+[INFO] AgentScope Java - Parent ........................... SUCCESS [  1.269 s]
+[INFO] AgentScope Java - Core ............................. SUCCESS [ 54.549 s]
+[INFO] AgentScope Java - Harness .......................... SUCCESS [03:25 min]
+[INFO] AgentScope Java - Extensions ....................... SUCCESS [  0.033 s]
+[INFO] AgentScope Java - Skills ........................... SUCCESS [  0.020 s]
+[INFO] AgentScope Java - Extensions - Skill Git Repository  SUCCESS [  9.764 s]
+[INFO] AgentScope Java - Service .......................... SUCCESS [  0.176 s]
+[INFO] AgentScope Java - Service Common ................... SUCCESS [ 16.465 s]
+[INFO] AgentScope Java - Service Gateway .................. SUCCESS [ 14.434 s]
+[INFO] AgentScope Java - Extensions - aistio Data Plane SDK SUCCESS [ 18.331 s]
+[INFO] AgentScope Java - Extensions - Sandbox ............. SUCCESS [  0.023 s]
+[INFO] AgentScope Java - Extensions - Sandbox - Ue2b ...... SUCCESS [  7.720 s]
+[INFO] AgentScope Java - Extensions - Model ............... SUCCESS [  0.040 s]
+[INFO] AgentScope Java - Extensions - Model - DashScope ... FAILURE [ 12.017 s]
+[INFO] AgentScope Java - Extensions - MySQL ............... SKIPPED
+[INFO] AgentScope Java - Service Data Plane ............... SKIPPED
+[INFO] AgentScope Java - Extensions - Channel ............. SKIPPED
+[INFO] AgentScope Java - Extensions - Channel Common ...... SKIPPED
+[INFO] AgentScope Java - Extensions - Channel DingTalk .... SKIPPED
+[INFO] AgentScope Java - Extensions - Channel Feishu ...... SKIPPED
+[INFO] AgentScope Java - Extensions - Channel WeCom ....... SKIPPED
+[INFO] AgentScope Java - Extensions - Channel GitHub ...... SKIPPED
+[INFO] AgentScope Java - Extensions - Channel GitLab ...... SKIPPED
+[INFO] AgentScope Java - Service Scheduler ................ SKIPPED
+[INFO] AgentScope Java - Protocol ......................... SKIPPED
+[INFO] AgentScope Java - A2A .............................. SKIPPED
+[INFO] AgentScope Java - Extensions - A2A Client .......... SKIPPED
+[INFO] AgentScope Java - Extensions - A2A Server .......... SKIPPED
+[INFO] AgentScope Java - Extensions - AG-UI ............... SKIPPED
+[INFO] AgentScope Java - Extensions - Chat Completions Web  SKIPPED
+[INFO] AgentScope Java - Extensions - Agent Protocol Tasks  SKIPPED
+[INFO] AgentScope Java - Extensions - Higress ............. SKIPPED
+[INFO] AgentScope Java - Extensions - Model - OpenAI ...... SKIPPED
+[INFO] AgentScope Java - Extensions - Training ............ SKIPPED
+[INFO] AgentScope Java - Extensions - Model - Gemini ...... SKIPPED
+[INFO] AgentScope Java - Extensions - Model - Anthropic ... SKIPPED
+[INFO] AgentScope Java - Extensions - Model - Ollama ...... SKIPPED
+[INFO] AgentScope Java - Memory ........................... SKIPPED
+[INFO] AgentScope Java - Extensions - Mem0 ................ SKIPPED
+[INFO] AgentScope Java - Extensions - ReMe ................ SKIPPED
+[INFO] AgentScope Java - Extensions - Bailian Long Term Memory SKIPPED
+[INFO] AgentScope Java - RAG .............................. SKIPPED
+[INFO] AgentScope Java - Extensions - RAG - Bailian ....... SKIPPED
+[INFO] AgentScope Java - Extensions - RAG - Dify .......... SKIPPED
+[INFO] AgentScope Java - Extensions - RAG - RAGFlow ....... SKIPPED
+[INFO] AgentScope Java - Extensions - RAG - HayStack ...... SKIPPED
+[INFO] AgentScope Java - Extensions - RAG - Simple ........ SKIPPED
+[INFO] AgentScope Java - Extensions - Scheduler ........... SKIPPED
+[INFO] AgentScope Java - Extensions - Scheduler - Common .. SKIPPED
+[INFO] AgentScope Java - Extensions - Scheduler - XXL-JOB . SKIPPED
+[INFO] AgentScope Java - Extensions - Scheduler - Quartz .. SKIPPED
+[INFO] AgentScope Java - Extensions - PostgreSQL .......... SKIPPED
+[INFO] AgentScope Java - Extensions - Redis ............... SKIPPED
+[INFO] AgentScope Java - Extensions - Studio .............. SKIPPED
+[INFO] AgentScope Java - Nacos ............................ SKIPPED
+[INFO] AgentScope Java - Nacos A2A Registry ............... SKIPPED
+[INFO] AgentScope Java - Nacos Prompt ..................... SKIPPED
+[INFO] AgentScope Java - Nacos Skill Repository ........... SKIPPED
+[INFO] AgentScope Java - Extensions - Skill MySQL ......... SKIPPED
+[INFO] AgentScope Java - Extensions - OSS ................. SKIPPED
+[INFO] AgentScope Java - Extensions - COS ................. SKIPPED
+[INFO] AgentScope Java - Extensions - Sandbox - Kubernetes  SKIPPED
+[INFO] AgentScope Java - Extensions - Sandbox - Uagentrun . SKIPPED
+[INFO] AgentScope Java - Extensions - Sandbox - Udaytona .. SKIPPED
+[INFO] AgentScope Java - Extensions - Skill PostgreSQL .... SKIPPED
+[INFO] AgentScope Java - Distribution ..................... SKIPPED
+[INFO] AgentScope Java - All in One ....................... SKIPPED
+[INFO] AgentScope Java - Spring Boot Starters ............. SKIPPED
+[INFO] AgentScope Java - Spring Boot Starter .............. SKIPPED
+[INFO] AgentScope Java OpenAI - Spring Boot Starter ....... SKIPPED
+[INFO] AgentScope Java DashScope - Spring Boot Starter .... SKIPPED
+[INFO] AgentScope Java Gemini - Spring Boot Starter ....... SKIPPED
+[INFO] AgentScope Java Anthropic - Spring Boot Starter .... SKIPPED
+[INFO] AgentScope Java Ollama - Spring Boot Starter ....... SKIPPED
+[INFO] AgentScope Java A2A - Spring Boot Starter .......... SKIPPED
+[INFO] AgentScope Java AG-UI - Spring Boot Starter ........ SKIPPED
+[INFO] AgentScope Java - Chat Completions Web Starter ..... SKIPPED
+[INFO] AgentScope Java Nacos - Spring Boot Starter ........ SKIPPED
+[INFO] AgentScope Java - Admin Ops Spring Boot Starter .... SKIPPED
+[INFO] AgentScope Java - Extensions - Model - E2E Tests ... SKIPPED
+[INFO] AgentScope Java - Examples ......................... SKIPPED
+[INFO] AgentScope Java - Examples - Documentation ......... SKIPPED
+[INFO] AgentScope Examples - AG-UI ........................ SKIPPED
+[INFO] AgentScope Java - Paw .............................. SKIPPED
+[INFO] AgentScope Java - DataAgent ........................ SKIPPED
+[INFO] AgentScope Java - Coding Agent ..................... SKIPPED
+[INFO] AgentScope Java - Dependencies Bom ................. SKIPPED
+[INFO] AgentScope Java - Bom .............................. SKIPPED
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  05:41 min
+[INFO] Finished at: 2026-09-07T14:01:47+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.5:test (default-test) on project agentscope-extensions-model-dashscope: There are test failures.
+[ERROR] 
+[ERROR] See /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+[ERROR] 
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :agentscope-extensions-model-dashscope

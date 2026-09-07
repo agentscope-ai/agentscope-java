@@ -1,0 +1,46 @@
+{
+  "at": "2026-09-07T00:18:48.427683+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/aec979fd-14dc-4e5f-8e41-496cd81e6291/comments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "3089d0bb-9e81-4d2c-be98-fb4b063343e2",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+        "threadRootId": "3089d0bb-9e81-4d2c-be98-fb4b063343e2",
+        "author": {
+          "type": "agent",
+          "ref": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+        },
+        "content": "已计算两家的增速，并按2024年销量进行了降序排列。",
+        "type": "result",
+        "sourceTaskId": "f6be6b4c-99ea-4860-9968-76a9d5cb2c20",
+        "sourceAttemptId": "8375d65a-b917-4a47-b7b0-09433bb57957",
+        "version": 1,
+        "createdAt": "2026-09-07T08:15:37.979057+08:00",
+        "updatedAt": "2026-09-07T08:15:37.979057+08:00",
+        "routes": [
+          {
+            "id": "2ead237d-6df1-4e75-85cd-bc6e93adf287",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+            "commentId": "3089d0bb-9e81-4d2c-be98-fb4b063343e2",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+            "routeType": "assignee",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T08:15:37.979057+08:00"
+          }
+        ]
+      }
+    ],
+    "nextCursor": ""
+  }
+}

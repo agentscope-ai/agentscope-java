@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-07T05:58:50.327036+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/20fcf6ca-7de3-48b4-9ac3-b1ff77b437f9/accept",
+  "request": {
+    "expectedVersion": 5,
+    "reason": "管理员人工验收：计算、排序或质数结论与任务要求一致，批准交付。"
+  },
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "20fcf6ca-7de3-48b4-9ac3-b1ff77b437f9",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-fix2-single-qoder",
+      "description": "将zebra,apple,pear按字典序排序，回复 QODER=apple,pear,zebra。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+      "status": "done",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 6,
+      "createdAt": "2026-09-07T13:57:51.444338+08:00",
+      "updatedAt": "2026-09-07T13:58:50.334856+08:00",
+      "resolvedAt": "2026-09-07T13:58:50.335888+08:00"
+    }
+  }
+}

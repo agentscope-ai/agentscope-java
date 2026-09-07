@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-07T04:02:38.224933+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/6a94b4cd-623f-49f4-9806-f60c3b04d5bc/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_b1cb79ee5d3a",
+    "offset": 0,
+    "limit": 100,
+    "total": 6,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。",
+        "occurredAt": "2026-09-07T04:00:01.827Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "memory_save",
+        "toolCallId": "call_3830586b1d4442c3aabb59",
+        "toolInput": {
+          "content": "- API_MEMORY_1130 is associated with the number 42."
+        },
+        "occurredAt": "2026-09-07T04:00:07.434Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "\"Saved 1 memory to MEMORY.md\"",
+        "toolName": "memory_save",
+        "toolCallId": "call_3830586b1d4442c3aabb59",
+        "toolOutput": "\"Saved 1 memory to MEMORY.md\"",
+        "occurredAt": "2026-09-07T04:00:07.48Z"
+      },
+      {
+        "seq": 9,
+        "role": "assistant",
+        "content": "已将标记 API_MEMORY_1130 与数字42的关系保存到长期记忆中。您可以继续提问，我会记住这个信息以便后续使用。请问您接下来需要帮助的是什么？",
+        "occurredAt": "2026-09-07T04:00:09.466Z"
+      },
+      {
+        "seq": 11,
+        "role": "user",
+        "content": "上一轮要求记住的标记是什么？计算6×7。只回答之前的标记和数字，不使用联网工具。",
+        "occurredAt": "2026-09-07T04:01:32.868Z"
+      },
+      {
+        "seq": 15,
+        "role": "assistant",
+        "content": "上一轮要求记住的标记是 API_MEMORY_1130，它与数字42相关联。计算6×7的结果也是42。",
+        "occurredAt": "2026-09-07T04:01:36.08Z"
+      }
+    ],
+    "source": "events"
+  }
+}

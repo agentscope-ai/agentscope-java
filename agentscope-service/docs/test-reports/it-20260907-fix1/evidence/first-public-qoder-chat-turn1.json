@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-07T04:47:51.079807+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/conversations/513d5f0f-2715-4afa-982d-3d621f09b835",
+  "request": null,
+  "status": 200,
+  "response": {
+    "conversation": {
+      "createdAt": "2026-09-07T12:47:34.095061+08:00",
+      "endpointId": "aa7235bd-5b70-4b57-9a15-37a15573f022",
+      "id": "513d5f0f-2715-4afa-982d-3d621f09b835",
+      "lastTurnAt": "2026-09-07T12:47:34.123427+08:00",
+      "sessionId": "d9ce409a-bc0a-433e-aca7-eeb8f620ad9f",
+      "status": "active",
+      "updatedAt": "2026-09-07T12:47:34.122886+08:00"
+    },
+    "turns": [
+      {
+        "conversationId": "513d5f0f-2715-4afa-982d-3d621f09b835",
+        "correlationId": "1af00b10-2fbb-4ed8-8154-74d351473d01",
+        "createdAt": "2026-09-07T12:47:34.089719+08:00",
+        "endpointId": "aa7235bd-5b70-4b57-9a15-37a15573f022",
+        "id": "d9ce409a-bc0a-433e-aca7-eeb8f620ad9f",
+        "issueId": "55e7636b-f8f4-53cc-880d-38298af6995e",
+        "mode": "conversation",
+        "runId": "d49f97bc-5849-5d3d-84f2-26760f11f5cb",
+        "sessionId": "d9ce409a-bc0a-433e-aca7-eeb8f620ad9f",
+        "startedAt": "2026-09-07T12:47:34.123427+08:00",
+        "status": "running",
+        "turnId": "96a6c6d0-2dc8-42fb-824e-2dc21099392a",
+        "updatedAt": "2026-09-07T12:47:34.1233+08:00"
+      }
+    ]
+  }
+}

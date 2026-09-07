@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-07T05:57:51.763633+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints/884198cc-0338-4532-893b-9c47248cee97/publish",
+  "request": {
+    "version": 1
+  },
+  "status": 200,
+  "response": {
+    "endpoint": {
+      "id": "884198cc-0338-4532-893b-9c47248cee97",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-fix2-qoder-chat",
+      "slug": "it-20260907-fix2-qoder-chat",
+      "targetType": "agent",
+      "targetRef": "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+      "invocationMode": "conversation",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "activeReleaseId": "b954124c-5374-4953-b5fe-f599f1560200",
+      "activeRelease": 1,
+      "status": "published",
+      "version": 3,
+      "createdAt": "2026-09-07T13:57:51.750278+08:00",
+      "updatedAt": "2026-09-07T13:57:51.770744+08:00"
+    },
+    "readiness": {
+      "state": "ready",
+      "reason": "Primary runtime candidate is dispatchable",
+      "compatible": true
+    }
+  }
+}

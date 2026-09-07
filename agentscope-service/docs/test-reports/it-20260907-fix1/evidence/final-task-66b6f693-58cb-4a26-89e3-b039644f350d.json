@@ -1,0 +1,75 @@
+{
+  "at": "2026-09-07T05:51:08.675936+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/66b6f693-58cb-4a26-89e3-b039644f350d",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "66b6f693-58cb-4a26-89e3-b039644f350d",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "cd40f51e-ff33-46eb-b3b4-8da9d20a7ddd",
+      "orchestrationRunId": "dbed0d6b-bb85-4a2d-b949-a51ae7f66aca",
+      "runNodeId": "66efedad-ddc0-413f-af65-5fd9120ef000",
+      "currentAttemptId": "e526e075-163b-468a-87b6-fe4f4eed7adc",
+      "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "ad8e62fa-a09c-48a8-9dd1-cb0e540ec58d",
+      "teamId": "388a42ae-5bab-4998-bd84-e06e64e97923",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "parentTaskId": "07b6829e-006f-4db1-ada3-2a1658907129",
+      "delegatedFromTaskId": "07b6829e-006f-4db1-ada3-2a1658907129",
+      "originator": {
+        "type": "agent",
+        "ref": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "ad8e62fa-a09c-48a8-9dd1-cb0e540ec58d",
+      "correlationId": "0004e98e-b80c-44ab-b289-060f5160eefd",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+          "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "sessionId": "sess_3bd843bb286c",
+        "resolvedAt": "2026-09-07T04:48:54.421049Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_3bd843bb286c",
+      "result": "TEAM_OK; CALC=400; SORT=apple,pear,zebra",
+      "version": 4,
+      "createdAt": "2026-09-07T12:48:08.408255+08:00",
+      "dispatchedAt": "2026-09-07T12:48:54.420412+08:00",
+      "startedAt": "2026-09-07T12:48:54.596877+08:00",
+      "completedAt": "2026-09-07T12:49:15.493795+08:00",
+      "inputs": [
+        {
+          "id": "f097dffc-e6c1-4868-97a2-bc89560f8125",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "66b6f693-58cb-4a26-89e3-b039644f350d",
+          "commentId": "ad8e62fa-a09c-48a8-9dd1-cb0e540ec58d",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "processed",
+          "deliveredAt": "2026-09-07T12:48:54.420412+08:00",
+          "processedAt": "2026-09-07T12:49:15.493795+08:00",
+          "responseCommentId": "8888e06c-2dd2-42c5-8ffa-46e9120d35b0",
+          "attempts": 0,
+          "createdAt": "2026-09-07T12:48:08.408255+08:00"
+        }
+      ]
+    }
+  }
+}

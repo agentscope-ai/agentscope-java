@@ -1,0 +1,221 @@
+{
+  "at": "2026-09-07T00:17:01.147473+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/9312eb0e-83f5-4b55-b9f2-bc8ce155f35e/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "9312eb0e-83f5-4b55-b9f2-bc8ce155f35e",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+      "mode": "direct",
+      "triggerType": "assignment",
+      "triggerRef": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+      "output": {
+        "乙": {
+          "增速(%)": -10,
+          "2023年销量": 20,
+          "2024年销量": 18
+        },
+        "甲": {
+          "增速(%)": 25,
+          "2023年销量": 12,
+          "2024年销量": 15
+        },
+        "按2024销量降序排列": [
+          {
+            "名称": "乙",
+            "2024年销量": 18
+          },
+          {
+            "名称": "甲",
+            "2024年销量": 15
+          }
+        ]
+      },
+      "state": "succeeded",
+      "version": 5,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T08:15:26.872547+08:00",
+      "updatedAt": "2026-09-07T08:15:37.979057+08:00",
+      "startedAt": "2026-09-07T08:15:26.872547+08:00",
+      "completedAt": "2026-09-07T08:15:37.979057+08:00"
+    },
+    "nodes": [
+      {
+        "id": "0c4eafe4-8bc1-41b6-bcc8-7cf347ed97d0",
+        "runId": "9312eb0e-83f5-4b55-b9f2-bc8ce155f35e",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:f6be6b4c-99ea-4860-9968-76a9d5cb2c20",
+        "type": "agent",
+        "issueId": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+        "state": "succeeded",
+        "output": {
+          "乙": {
+            "增速(%)": -10,
+            "2023年销量": 20,
+            "2024年销量": 18
+          },
+          "甲": {
+            "增速(%)": 25,
+            "2023年销量": 12,
+            "2024年销量": 15
+          },
+          "按2024销量降序排列": [
+            {
+              "名称": "乙",
+              "2024年销量": 18
+            },
+            {
+              "名称": "甲",
+              "2024年销量": 15
+            }
+          ]
+        },
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T08:15:26.872547+08:00",
+        "updatedAt": "2026-09-07T08:15:37.979057+08:00",
+        "startedAt": "2026-09-07T08:15:27.284395+08:00",
+        "completedAt": "2026-09-07T08:15:37.979057+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "f6be6b4c-99ea-4860-9968-76a9d5cb2c20",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+        "orchestrationRunId": "9312eb0e-83f5-4b55-b9f2-bc8ce155f35e",
+        "runNodeId": "0c4eafe4-8bc1-41b6-bcc8-7cf347ed97d0",
+        "currentAttemptId": "8375d65a-b917-4a47-b7b0-09433bb57957",
+        "agentId": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+        "correlationId": "aec979fd-14dc-4e5f-8e41-496cd81e6291",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+            "bindingId": "b46ffc09-4c3f-56b4-8587-58d0055a8981",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+          },
+          "sessionId": "sess_45eb9368b02d",
+          "resolvedAt": "2026-09-07T00:15:27.396976Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_45eb9368b02d",
+        "result": {
+          "乙": {
+            "增速(%)": -10,
+            "2023年销量": 20,
+            "2024年销量": 18
+          },
+          "甲": {
+            "增速(%)": 25,
+            "2023年销量": 12,
+            "2024年销量": 15
+          },
+          "按2024销量降序排列": [
+            {
+              "名称": "乙",
+              "2024年销量": 18
+            },
+            {
+              "名称": "甲",
+              "2024年销量": 15
+            }
+          ]
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T08:15:26.872547+08:00",
+        "dispatchedAt": "2026-09-07T08:15:27.395713+08:00",
+        "startedAt": "2026-09-07T08:15:27.447034+08:00",
+        "completedAt": "2026-09-07T08:15:37.979057+08:00"
+      }
+    ],
+    "attempts": [
+      {
+        "id": "8375d65a-b917-4a47-b7b0-09433bb57957",
+        "agentTaskId": "f6be6b4c-99ea-4860-9968-76a9d5cb2c20",
+        "agentId": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+        "bindingId": "b46ffc09-4c3f-56b4-8587-58d0055a8981",
+        "runId": "9312eb0e-83f5-4b55-b9f2-bc8ce155f35e",
+        "nodeId": "0c4eafe4-8bc1-41b6-bcc8-7cf347ed97d0",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+            "bindingId": "b46ffc09-4c3f-56b4-8587-58d0055a8981",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede"
+          },
+          "sessionId": "sess_45eb9368b02d",
+          "resolvedAt": "2026-09-07T00:15:27.396976Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "e0511f1c-4e0d-4b3b-ae93-58e181bfdede",
+        "sessionId": "sess_45eb9368b02d",
+        "sessionRef": "0aa5862c-093e-49bb-aa23-4749b41c0d93",
+        "turnId": "f8826c8c-f0c6-4755-882c-a02bd6f1a7e2",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T08:15:37.950924+08:00",
+        "result": {
+          "乙": {
+            "增速(%)": -10,
+            "2023年销量": 20,
+            "2024年销量": 18
+          },
+          "甲": {
+            "增速(%)": 25,
+            "2023年销量": 12,
+            "2024年销量": 15
+          },
+          "按2024销量降序排列": [
+            {
+              "名称": "乙",
+              "2024年销量": 18
+            },
+            {
+              "名称": "甲",
+              "2024年销量": 15
+            }
+          ]
+        },
+        "version": 14,
+        "createdAt": "2026-09-07T08:15:27.395713+08:00",
+        "updatedAt": "2026-09-07T08:15:37.979057+08:00",
+        "startedAt": "2026-09-07T08:15:27.447034+08:00",
+        "completedAt": "2026-09-07T08:15:37.979057+08:00"
+      }
+    ]
+  }
+}

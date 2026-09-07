@@ -1,0 +1,1252 @@
+{
+  "at": "2026-09-07T06:01:14.452932+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/fa0a1def-6ba2-404a-befd-dd1e59660d7e/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "c1ba3fb7-c30b-484c-9548-67f0201a2dd2",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "createdAt": "2026-09-07T13:57:51.492391+08:00"
+      },
+      {
+        "id": "06e367b2-237e-40f6-8877-89c6187ec355",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "actor": {
+          "type": "agent",
+          "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+        "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-07T13:57:52.735614+08:00"
+      },
+      {
+        "id": "11125d2b-0b6e-44e6-b477-64838326b077",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "actor": {
+          "type": "agent",
+          "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "be1115cc-6c03-47da-a748-17d4529b3872",
+        "causationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "createdAt": "2026-09-07T13:58:20.825998+08:00"
+      },
+      {
+        "id": "3ca3a585-0f8a-4d40-a6a0-2afbf157f972",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:58163332-7b97-4f86-8cf2-60ad0520c059"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: HUMAN_ACTION_REQUIRED"
+        },
+        "createdAt": "2026-09-07T13:58:55.024436+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [
+      {
+        "id": "fba5ca6f-2d31-4317-9af9-bc94fea3b8b7",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "it-20260907-fix2-新能源汽车行业调研",
+        "description": "使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确task.fail，并上报行业名和缺失能力。",
+        "status": "blocked",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+        "creator": {
+          "type": "agent",
+          "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "parentIssueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "be1115cc-6c03-47da-a748-17d4529b3872",
+        "version": 3,
+        "createdAt": "2026-09-07T13:58:09.529738+08:00",
+        "updatedAt": "2026-09-07T13:58:55.028792+08:00"
+      },
+      {
+        "id": "064acfb4-7a10-499a-9026-ce48d9aa7f7b",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "it-20260907-fix2-手机行业调研",
+        "description": "使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确task.fail，并上报行业名和缺失能力。",
+        "status": "blocked",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc",
+        "creator": {
+          "type": "agent",
+          "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "parentIssueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "be1115cc-6c03-47da-a748-17d4529b3872",
+        "version": 5,
+        "createdAt": "2026-09-07T13:58:09.540675+08:00",
+        "updatedAt": "2026-09-07T13:58:48.334664+08:00"
+      }
+    ],
+    "comments": [
+      {
+        "id": "7e967a9d-c43b-4880-8b04-984d426a79ea",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "threadRootId": "7e967a9d-c43b-4880-8b04-984d426a79ea",
+        "author": {
+          "type": "agent",
+          "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "content": "已经成功创建了两个子任务：\n1. **it-20260907-fix2-新能源汽车行业调研** - 分配给researcher (agentId: 602427d4-efe7-4a28-9ed8-b7ed3e5433e8)\n2. **it-20260907-fix2-手机行业调研** - 分配给analyst (agentId: 84238a0b-c1f3-4f93-9c15-f7e0c697aecc)\n\n每个成员将使用web搜索/访问工具来找到至少2个可访问的官方来源URL，并给出发布日期和两条近期事实。如果缺少所需web工具/凭证或无法核实来源，成员将明确上报并使整个run失败。",
+        "type": "result",
+        "sourceTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+        "sourceAttemptId": "6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+        "version": 1,
+        "createdAt": "2026-09-07T13:58:20.818156+08:00",
+        "updatedAt": "2026-09-07T13:58:20.818156+08:00",
+        "routes": [
+          {
+            "id": "59af0270-48a7-4e96-8ce2-f046707eb578",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "commentId": "7e967a9d-c43b-4880-8b04-984d426a79ea",
+            "commentVersion": 1,
+            "targetType": "team",
+            "targetRef": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+            "routeType": "team_leader",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T13:58:20.818156+08:00"
+          }
+        ]
+      }
+    ],
+    "exportedAt": "2026-09-07T06:01:14.466344Z",
+    "issue": {
+      "id": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-fix2-team-web-research",
+      "description": "并行委派两个不同成员：researcher调研新能源汽车行业，analyst调研手机行业。每个行业要求实际使用可用web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实；不能凭训练知识编造近期事实或来源。两份子任务都必须创建，标题前缀 it-20260907-fix2。任何成员缺少所需web工具/凭证或无法核实来源，必须明确task.fail，上报行业名和缺失能力。协调员收到失败不得当成功验收；必须明确让整个run failed并说明缺口。若两份调研均真实完成，才验收汇总并完成run。不要修改权限或配置来完成测试。",
+      "status": "blocked",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 4,
+      "createdAt": "2026-09-07T13:57:51.485694+08:00",
+      "updatedAt": "2026-09-07T13:58:55.023127+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [
+          {
+            "id": "242f07db-9b2e-4467-ba0b-d3625a5c87a5",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+            "agentTaskId": "86e3754c-1907-4169-b68e-b9de3abcded9",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "policy runtime candidate 0 is unavailable",
+              "retryable": true
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-task-dispatch-deferred:86e3754c-1907-4169-b68e-b9de3abcded9",
+            "occurredAt": "2026-09-07T13:58:09.995549+08:00"
+          }
+        ],
+        "dispatchRecoveries": [
+          {
+            "id": "df879cfb-6183-4cda-8b2f-f7cfd355920a",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+            "agentTaskId": "86e3754c-1907-4169-b68e-b9de3abcded9",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 5,
+              "previousError": "control event delivery deferred: policy runtime candidate 0 is unavailable"
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-task-dispatch-recovered:86e3754c-1907-4169-b68e-b9de3abcded9",
+            "occurredAt": "2026-09-07T13:58:25.990355+08:00"
+          }
+        ],
+        "events": [
+          {
+            "id": "c2966f25-4aa4-4a73-b886-86960f56f3b4",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-task-queued:be1115cc-6c03-47da-a748-17d4529b3872",
+            "occurredAt": "2026-09-07T13:57:51.485694+08:00"
+          },
+          {
+            "id": "0a678d16-0413-46ca-abac-e9eaf413bc41",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "attemptId": "6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "attempt-queued:6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+            "occurredAt": "2026-09-07T13:57:52.599246+08:00"
+          },
+          {
+            "id": "1efc7bc7-24ea-4db0-8a96-f8e02e1d8ff8",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "attemptId": "6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+            },
+            "idempotencyKey": "attempt-running:6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+            "occurredAt": "2026-09-07T13:57:52.7241+08:00"
+          },
+          {
+            "id": "6db69a61-4e70-4f6f-811c-5c1b6631a96c",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+            "agentTaskId": "86e3754c-1907-4169-b68e-b9de3abcded9",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-task-queued:86e3754c-1907-4169-b68e-b9de3abcded9",
+            "occurredAt": "2026-09-07T13:58:09.529738+08:00"
+          },
+          {
+            "id": "9e9fb6bb-9b3c-470f-b320-b86a426e52e6",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+            "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-task-queued:db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+            "occurredAt": "2026-09-07T13:58:09.540675+08:00"
+          },
+          {
+            "id": "242f07db-9b2e-4467-ba0b-d3625a5c87a5",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+            "agentTaskId": "86e3754c-1907-4169-b68e-b9de3abcded9",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "policy runtime candidate 0 is unavailable",
+              "retryable": true
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-task-dispatch-deferred:86e3754c-1907-4169-b68e-b9de3abcded9",
+            "occurredAt": "2026-09-07T13:58:09.995549+08:00"
+          },
+          {
+            "id": "66f27e1b-3aaa-41ee-b60e-60577d192e46",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+            "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+            "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "attempt-queued:ac786c4c-0e94-4152-9f0a-17b135b9906b",
+            "occurredAt": "2026-09-07T13:58:10.012445+08:00"
+          },
+          {
+            "id": "078efe9c-ee68-4501-876c-1462250370bb",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 8,
+            "nodeId": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+            "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+            "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc"
+            },
+            "idempotencyKey": "attempt-running:ac786c4c-0e94-4152-9f0a-17b135b9906b",
+            "occurredAt": "2026-09-07T13:58:10.076197+08:00"
+          },
+          {
+            "id": "1b18f1d1-8ba7-443b-9a94-36085f42ced0",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+            "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+            "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_614674f19621",
+              "sessionRef": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+              "toolCallId": "call_837bf130b1e84b10a24285",
+              "managedEventId": "evt_ee3eec9b99f14893b272aa2662fe00a1"
+            },
+            "causationId": "call_837bf130b1e84b10a24285",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-tool-failed:db5d79a8-e724-4b4a-8a7d-3f837160f5e5:call_837bf130b1e84b10a24285",
+            "occurredAt": "2026-09-07T13:58:17.753644+08:00"
+          },
+          {
+            "id": "cd843511-9463-48e7-97d4-e1e2855ebcf9",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "attemptId": "6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+            },
+            "causationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "attempt-succeeded:6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+            "occurredAt": "2026-09-07T13:58:20.818156+08:00"
+          },
+          {
+            "id": "fc2ec0a0-15d9-4b2a-a743-73ba2f800871",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 11,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "type": "node.waiting",
+            "actor": {
+              "type": "agent",
+              "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+            },
+            "payload": {
+              "output": "已经成功创建了两个子任务：\n1. **it-20260907-fix2-新能源汽车行业调研** - 分配给researcher (agentId: 602427d4-efe7-4a28-9ed8-b7ed3e5433e8)\n2. **it-20260907-fix2-手机行业调研** - 分配给analyst (agentId: 84238a0b-c1f3-4f93-9c15-f7e0c697aecc)\n\n每个成员将使用web搜索/访问工具来找到至少2个可访问的官方来源URL，并给出发布日期和两条近期事实。如果缺少所需web工具/凭证或无法核实来源，成员将明确上报并使整个run失败。"
+            },
+            "causationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "node-waiting:bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "occurredAt": "2026-09-07T13:58:20.818156+08:00"
+          },
+          {
+            "id": "cc524243-c12f-4faa-8143-053ef3cdc5fb",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+            "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+            "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc"
+            },
+            "payload": {
+              "code": "TOOL_UNAVAILABLE",
+              "message": "缺少必要的web搜索工具/凭证，无法执行手机行业调研任务。"
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "attempt-failed:ac786c4c-0e94-4152-9f0a-17b135b9906b",
+            "occurredAt": "2026-09-07T13:58:25.694464+08:00"
+          },
+          {
+            "id": "78085fcb-26c2-4798-afc6-faff849780c7",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc"
+            },
+            "causationId": "7ba2de92-a44c-46a6-8c2c-e77fbe88fa9b",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-task-queued:310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+            "occurredAt": "2026-09-07T13:58:25.710365+08:00"
+          },
+          {
+            "id": "0a190f0e-cd25-404f-ab17-56b79fd5c2ae",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 14,
+            "nodeId": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+            "agentTaskId": "86e3754c-1907-4169-b68e-b9de3abcded9",
+            "attemptId": "6b341aa4-0ca1-44ad-869f-32c461bba33f",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "attempt-queued:6b341aa4-0ca1-44ad-869f-32c461bba33f",
+            "occurredAt": "2026-09-07T13:58:25.983686+08:00"
+          },
+          {
+            "id": "df879cfb-6183-4cda-8b2f-f7cfd355920a",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+            "agentTaskId": "86e3754c-1907-4169-b68e-b9de3abcded9",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 5,
+              "previousError": "control event delivery deferred: policy runtime candidate 0 is unavailable"
+            },
+            "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-task-dispatch-recovered:86e3754c-1907-4169-b68e-b9de3abcded9",
+            "occurredAt": "2026-09-07T13:58:25.990355+08:00"
+          },
+          {
+            "id": "ecd0fd16-bc6e-4e2c-b5dd-609c3feba6ce",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 16,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+            "attemptId": "2441786a-0756-431c-b0cf-0fa256ca33da",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "7ba2de92-a44c-46a6-8c2c-e77fbe88fa9b",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "attempt-queued:2441786a-0756-431c-b0cf-0fa256ca33da",
+            "occurredAt": "2026-09-07T13:58:26.017629+08:00"
+          },
+          {
+            "id": "3ce71d79-e21d-4f11-86e6-0c6c53e8fb5e",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 17,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+            "attemptId": "2441786a-0756-431c-b0cf-0fa256ca33da",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+            },
+            "idempotencyKey": "attempt-running:2441786a-0756-431c-b0cf-0fa256ca33da",
+            "occurredAt": "2026-09-07T13:58:26.085935+08:00"
+          },
+          {
+            "id": "21c4db58-e045-484b-8b57-81f54a2a7a56",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 18,
+            "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+            "agentTaskId": "310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+            "attemptId": "2441786a-0756-431c-b0cf-0fa256ca33da",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+            },
+            "payload": {
+              "code": "HUMAN_ACTION_REQUIRED",
+              "message": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。"
+            },
+            "causationId": "7ba2de92-a44c-46a6-8c2c-e77fbe88fa9b",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "attempt-failed:2441786a-0756-431c-b0cf-0fa256ca33da",
+            "occurredAt": "2026-09-07T13:58:55.002894+08:00"
+          },
+          {
+            "id": "7ee4474a-0c9c-45bd-ae88-564dd4a36dbe",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 19,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "HUMAN_ACTION_REQUIRED",
+              "failureMessage": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。"
+            },
+            "idempotencyKey": "run-failed:58163332-7b97-4f86-8cf2-60ad0520c059",
+            "occurredAt": "2026-09-07T13:58:55.019945+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "mode": "adaptive",
+            "triggerType": "assignment",
+            "triggerRef": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "state": "failed",
+            "failureCode": "HUMAN_ACTION_REQUIRED",
+            "failureMessage": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。",
+            "version": 9,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T13:57:51.485694+08:00",
+            "updatedAt": "2026-09-07T13:58:55.019945+08:00",
+            "startedAt": "2026-09-07T13:57:51.485694+08:00",
+            "completedAt": "2026-09-07T13:58:55.019945+08:00"
+          },
+          "nodes": [
+            {
+              "id": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+              "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:86e3754c-1907-4169-b68e-b9de3abcded9",
+              "type": "agent",
+              "role": "researcher",
+              "issueId": "fba5ca6f-2d31-4317-9af9-bc94fea3b8b7",
+              "state": "cancelled",
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 3,
+              "createdAt": "2026-09-07T13:58:09.529738+08:00",
+              "updatedAt": "2026-09-07T13:58:55.019397+08:00",
+              "startedAt": "2026-09-07T13:58:09.995061+08:00",
+              "completedAt": "2026-09-07T13:58:55.019397+08:00"
+            },
+            {
+              "id": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+              "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:be1115cc-6c03-47da-a748-17d4529b3872",
+              "type": "team",
+              "role": "leader",
+              "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+              "state": "failed",
+              "output": "已经成功创建了两个子任务：\n1. **it-20260907-fix2-新能源汽车行业调研** - 分配给researcher (agentId: 602427d4-efe7-4a28-9ed8-b7ed3e5433e8)\n2. **it-20260907-fix2-手机行业调研** - 分配给analyst (agentId: 84238a0b-c1f3-4f93-9c15-f7e0c697aecc)\n\n每个成员将使用web搜索/访问工具来找到至少2个可访问的官方来源URL，并给出发布日期和两条近期事实。如果缺少所需web工具/凭证或无法核实来源，成员将明确上报并使整个run失败。",
+              "iteration": 1,
+              "failureCode": "HUMAN_ACTION_REQUIRED",
+              "failureMessage": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。",
+              "version": 4,
+              "createdAt": "2026-09-07T13:57:51.485694+08:00",
+              "updatedAt": "2026-09-07T13:58:55.013094+08:00",
+              "startedAt": "2026-09-07T13:57:51.994913+08:00",
+              "completedAt": "2026-09-07T13:58:55.013094+08:00"
+            },
+            {
+              "id": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+              "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+              "type": "agent",
+              "role": "analyst",
+              "issueId": "064acfb4-7a10-499a-9026-ce48d9aa7f7b",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "TOOL_UNAVAILABLE",
+              "failureMessage": "缺少必要的web搜索工具/凭证，无法执行手机行业调研任务。",
+              "version": 3,
+              "createdAt": "2026-09-07T13:58:09.540675+08:00",
+              "updatedAt": "2026-09-07T13:58:25.719558+08:00",
+              "startedAt": "2026-09-07T13:58:09.996525+08:00",
+              "completedAt": "2026-09-07T13:58:25.719558+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+              "orchestrationRunId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "runNodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+              "currentAttemptId": "6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+              "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+              "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+                  "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+                },
+                "sessionId": "sess_0ef86c6366c7",
+                "resolvedAt": "2026-09-07T05:57:52.599917Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_0ef86c6366c7",
+              "result": "已经成功创建了两个子任务：\n1. **it-20260907-fix2-新能源汽车行业调研** - 分配给researcher (agentId: 602427d4-efe7-4a28-9ed8-b7ed3e5433e8)\n2. **it-20260907-fix2-手机行业调研** - 分配给analyst (agentId: 84238a0b-c1f3-4f93-9c15-f7e0c697aecc)\n\n每个成员将使用web搜索/访问工具来找到至少2个可访问的官方来源URL，并给出发布日期和两条近期事实。如果缺少所需web工具/凭证或无法核实来源，成员将明确上报并使整个run失败。",
+              "version": 4,
+              "createdAt": "2026-09-07T13:57:51.485694+08:00",
+              "dispatchedAt": "2026-09-07T13:57:52.599246+08:00",
+              "startedAt": "2026-09-07T13:57:52.7241+08:00",
+              "completedAt": "2026-09-07T13:58:20.818156+08:00"
+            },
+            {
+              "id": "86e3754c-1907-4169-b68e-b9de3abcded9",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "fba5ca6f-2d31-4317-9af9-bc94fea3b8b7",
+              "orchestrationRunId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "runNodeId": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+              "currentAttemptId": "6b341aa4-0ca1-44ad-869f-32c461bba33f",
+              "agentId": "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+              "status": "cancelled",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+              "teamRole": "researcher",
+              "parentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "delegatedFromTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "originator": {
+                "type": "agent",
+                "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "hosted-runtime",
+                  "agentId": "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+                  "bindingId": "e6aa6de1-c8e9-5d6f-983b-791069febf60",
+                  "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "runtimeProfileId": "bc4167bc-0f7b-41c6-b83d-6b034f46f822"
+                },
+                "sessionId": "4b5cc87f-8c6c-49e1-8d2c-f7cf86048222",
+                "resolvedAt": "2026-09-07T05:58:25.984807Z",
+                "runtimePool": {
+                  "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "name": "coding-default",
+                  "tenant": "default",
+                  "version": 1,
+                  "createdAt": "2026-09-07T11:56:11.922607+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+                },
+                "runtimeProfile": {
+                  "id": "bc4167bc-0f7b-41c6-b83d-6b034f46f822",
+                  "name": "auto-qoder",
+                  "tenant": "default",
+                  "runtime": "qodercli",
+                  "version": 1,
+                  "provider": "qoder",
+                  "createdAt": "2026-09-07T11:56:11.92843+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.92843+08:00",
+                  "requirements": {},
+                  "configuration": {
+                    "allowedTools": [
+                      "mcp__agentscope-collaboration__*"
+                    ],
+                    "permissionMode": "default",
+                    "strictMCPConfig": true
+                  }
+                },
+                "selectionSource": "policy",
+                "resolvedProviderConfiguration": {
+                  "allowedTools": [
+                    "mcp__agentscope-collaboration__*"
+                  ],
+                  "permissionMode": "default",
+                  "strictMCPConfig": true
+                }
+              },
+              "sessionId": "4b5cc87f-8c6c-49e1-8d2c-f7cf86048222",
+              "version": 3,
+              "createdAt": "2026-09-07T13:58:09.529738+08:00",
+              "dispatchedAt": "2026-09-07T13:58:25.983686+08:00",
+              "completedAt": "2026-09-07T13:58:55.018162+08:00"
+            },
+            {
+              "id": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "064acfb4-7a10-499a-9026-ce48d9aa7f7b",
+              "orchestrationRunId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "runNodeId": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+              "currentAttemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+              "agentId": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+              "teamRole": "analyst",
+              "parentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "delegatedFromTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "originator": {
+                "type": "agent",
+                "ref": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc",
+                  "bindingId": "a286b8d7-71a3-5d8a-b744-2ed161cb5f1e",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc"
+                },
+                "sessionId": "sess_614674f19621",
+                "resolvedAt": "2026-09-07T05:58:10.01294Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_614674f19621",
+              "errorCode": "TOOL_UNAVAILABLE",
+              "errorMessage": "缺少必要的web搜索工具/凭证，无法执行手机行业调研任务。",
+              "version": 4,
+              "createdAt": "2026-09-07T13:58:09.540675+08:00",
+              "dispatchedAt": "2026-09-07T13:58:10.012445+08:00",
+              "startedAt": "2026-09-07T13:58:10.076197+08:00",
+              "completedAt": "2026-09-07T13:58:25.694464+08:00"
+            },
+            {
+              "id": "310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "064acfb4-7a10-499a-9026-ce48d9aa7f7b",
+              "orchestrationRunId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "runNodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+              "currentAttemptId": "2441786a-0756-431c-b0cf-0fa256ca33da",
+              "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "7ba2de92-a44c-46a6-8c2c-e77fbe88fa9b",
+              "teamId": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "delegatedFromTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "originator": {
+                "type": "agent",
+                "ref": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "7ba2de92-a44c-46a6-8c2c-e77fbe88fa9b",
+              "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+                  "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+                },
+                "sessionId": "sess_b7511ca1cc64",
+                "resolvedAt": "2026-09-07T05:58:26.018763Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_b7511ca1cc64",
+              "errorCode": "HUMAN_ACTION_REQUIRED",
+              "errorMessage": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。",
+              "version": 4,
+              "createdAt": "2026-09-07T13:58:25.710365+08:00",
+              "dispatchedAt": "2026-09-07T13:58:26.017629+08:00",
+              "startedAt": "2026-09-07T13:58:26.085935+08:00",
+              "completedAt": "2026-09-07T13:58:55.002894+08:00",
+              "inputs": [
+                {
+                  "id": "f63b0165-2c60-4160-9243-75e4704d9445",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+                  "commentId": "7ba2de92-a44c-46a6-8c2c-e77fbe88fa9b",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "blocked",
+                  "deliveredAt": "2026-09-07T13:58:26.017629+08:00",
+                  "attempts": 0,
+                  "lastError": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。",
+                  "createdAt": "2026-09-07T13:58:25.710365+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+              "agentTaskId": "be1115cc-6c03-47da-a748-17d4529b3872",
+              "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+              "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+              "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+                  "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+                },
+                "sessionId": "sess_0ef86c6366c7",
+                "resolvedAt": "2026-09-07T05:57:52.599917Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+              "sessionId": "sess_0ef86c6366c7",
+              "sessionRef": "dd62be8f-3342-4463-8118-b304e672067f",
+              "turnId": "f81ef29f-5d15-4390-9e5d-d0164f040705",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T13:58:20.79942+08:00",
+              "result": "已经成功创建了两个子任务：\n1. **it-20260907-fix2-新能源汽车行业调研** - 分配给researcher (agentId: 602427d4-efe7-4a28-9ed8-b7ed3e5433e8)\n2. **it-20260907-fix2-手机行业调研** - 分配给analyst (agentId: 84238a0b-c1f3-4f93-9c15-f7e0c697aecc)\n\n每个成员将使用web搜索/访问工具来找到至少2个可访问的官方来源URL，并给出发布日期和两条近期事实。如果缺少所需web工具/凭证或无法核实来源，成员将明确上报并使整个run失败。",
+              "version": 23,
+              "createdAt": "2026-09-07T13:57:52.599246+08:00",
+              "updatedAt": "2026-09-07T13:58:20.818156+08:00",
+              "startedAt": "2026-09-07T13:57:52.7241+08:00",
+              "completedAt": "2026-09-07T13:58:20.818156+08:00"
+            },
+            {
+              "id": "6b341aa4-0ca1-44ad-869f-32c461bba33f",
+              "agentTaskId": "86e3754c-1907-4169-b68e-b9de3abcded9",
+              "agentId": "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+              "bindingId": "e6aa6de1-c8e9-5d6f-983b-791069febf60",
+              "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "nodeId": "9e4a91cb-c3c1-475c-ac8a-0fe838aa3100",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "hosted-runtime",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "hosted-runtime",
+                  "agentId": "602427d4-efe7-4a28-9ed8-b7ed3e5433e8",
+                  "bindingId": "e6aa6de1-c8e9-5d6f-983b-791069febf60",
+                  "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "runtimeProfileId": "bc4167bc-0f7b-41c6-b83d-6b034f46f822"
+                },
+                "sessionId": "4b5cc87f-8c6c-49e1-8d2c-f7cf86048222",
+                "resolvedAt": "2026-09-07T05:58:25.984807Z",
+                "runtimePool": {
+                  "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "name": "coding-default",
+                  "tenant": "default",
+                  "version": 1,
+                  "createdAt": "2026-09-07T11:56:11.922607+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+                },
+                "runtimeProfile": {
+                  "id": "bc4167bc-0f7b-41c6-b83d-6b034f46f822",
+                  "name": "auto-qoder",
+                  "tenant": "default",
+                  "runtime": "qodercli",
+                  "version": 1,
+                  "provider": "qoder",
+                  "createdAt": "2026-09-07T11:56:11.92843+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.92843+08:00",
+                  "requirements": {},
+                  "configuration": {
+                    "allowedTools": [
+                      "mcp__agentscope-collaboration__*"
+                    ],
+                    "permissionMode": "default",
+                    "strictMCPConfig": true
+                  }
+                },
+                "selectionSource": "policy",
+                "resolvedProviderConfiguration": {
+                  "allowedTools": [
+                    "mcp__agentscope-collaboration__*"
+                  ],
+                  "permissionMode": "default",
+                  "strictMCPConfig": true
+                }
+              },
+              "runtimeProfileName": "auto-qoder",
+              "runtimePoolName": "coding-default",
+              "sessionId": "4b5cc87f-8c6c-49e1-8d2c-f7cf86048222",
+              "turnId": "1007fdc9-b7b6-4fba-ba76-fba43d8595e5",
+              "state": "cancelled",
+              "fencingToken": "[REDACTED]",
+              "version": 2,
+              "createdAt": "2026-09-07T13:58:25.983686+08:00",
+              "updatedAt": "2026-09-07T13:58:55.016507+08:00",
+              "completedAt": "2026-09-07T13:58:55.016507+08:00"
+            },
+            {
+              "id": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+              "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+              "agentId": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc",
+              "bindingId": "a286b8d7-71a3-5d8a-b744-2ed161cb5f1e",
+              "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "nodeId": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc",
+                  "bindingId": "a286b8d7-71a3-5d8a-b744-2ed161cb5f1e",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc"
+                },
+                "sessionId": "sess_614674f19621",
+                "resolvedAt": "2026-09-07T05:58:10.01294Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc",
+              "sessionId": "sess_614674f19621",
+              "sessionRef": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+              "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T13:58:25.683496+08:00",
+              "failureCode": "TOOL_UNAVAILABLE",
+              "failureMessage": "缺少必要的web搜索工具/凭证，无法执行手机行业调研任务。",
+              "version": 18,
+              "createdAt": "2026-09-07T13:58:10.012445+08:00",
+              "updatedAt": "2026-09-07T13:58:25.694464+08:00",
+              "startedAt": "2026-09-07T13:58:10.076197+08:00",
+              "completedAt": "2026-09-07T13:58:25.694464+08:00"
+            },
+            {
+              "id": "2441786a-0756-431c-b0cf-0fa256ca33da",
+              "agentTaskId": "310f5fd1-ac92-49bb-883d-d18ffad04ec5",
+              "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+              "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+              "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+              "nodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+                  "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+                },
+                "sessionId": "sess_b7511ca1cc64",
+                "resolvedAt": "2026-09-07T05:58:26.018763Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+              "sessionId": "sess_b7511ca1cc64",
+              "sessionRef": "d979b0d4-5ef0-4da6-9944-6a6a550a7abe",
+              "turnId": "ee7fdab3-1198-4764-b200-4b30acbd3101",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T13:58:54.982577+08:00",
+              "failureCode": "HUMAN_ACTION_REQUIRED",
+              "failureMessage": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。",
+              "version": 19,
+              "createdAt": "2026-09-07T13:58:26.017629+08:00",
+              "updatedAt": "2026-09-07T13:58:55.002894+08:00",
+              "startedAt": "2026-09-07T13:58:26.085935+08:00",
+              "completedAt": "2026-09-07T13:58:55.002894+08:00"
+            }
+          ]
+        },
+        "toolFailures": [
+          {
+            "id": "1b18f1d1-8ba7-443b-9a94-36085f42ced0",
+            "runId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "898dd040-a01e-4d7a-a163-0b7d16c1e90c",
+            "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+            "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_614674f19621",
+              "sessionRef": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+              "toolCallId": "call_837bf130b1e84b10a24285",
+              "managedEventId": "evt_ee3eec9b99f14893b272aa2662fe00a1"
+            },
+            "causationId": "call_837bf130b1e84b10a24285",
+            "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+            "idempotencyKey": "agent-tool-failed:db5d79a8-e724-4b4a-8a7d-3f837160f5e5:call_837bf130b1e84b10a24285",
+            "occurredAt": "2026-09-07T13:58:17.753644+08:00"
+          }
+        ]
+      }
+    ],
+    "runs": [
+      {
+        "id": "58163332-7b97-4f86-8cf2-60ad0520c059",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "mode": "adaptive",
+        "triggerType": "assignment",
+        "triggerRef": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "state": "failed",
+        "failureCode": "HUMAN_ACTION_REQUIRED",
+        "failureMessage": "手机行业调研任务因缺少必要的web搜索工具/凭证而无法完成。已请求管理员提供所需的工具或凭证。",
+        "version": 9,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T13:57:51.485694+08:00",
+        "updatedAt": "2026-09-07T13:58:55.019945+08:00",
+        "startedAt": "2026-09-07T13:57:51.485694+08:00",
+        "completedAt": "2026-09-07T13:58:55.019945+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "be1115cc-6c03-47da-a748-17d4529b3872",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "orchestrationRunId": "58163332-7b97-4f86-8cf2-60ad0520c059",
+        "runNodeId": "bcf65cfc-379e-4bf3-bc19-722ee762350b",
+        "currentAttemptId": "6f9b640f-f3d1-48db-ae7a-348786fb5c95",
+        "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "correlationId": "fa0a1def-6ba2-404a-befd-dd1e59660d7e",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+            "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+          },
+          "sessionId": "sess_0ef86c6366c7",
+          "resolvedAt": "2026-09-07T05:57:52.599917Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_0ef86c6366c7",
+        "result": "已经成功创建了两个子任务：\n1. **it-20260907-fix2-新能源汽车行业调研** - 分配给researcher (agentId: 602427d4-efe7-4a28-9ed8-b7ed3e5433e8)\n2. **it-20260907-fix2-手机行业调研** - 分配给analyst (agentId: 84238a0b-c1f3-4f93-9c15-f7e0c697aecc)\n\n每个成员将使用web搜索/访问工具来找到至少2个可访问的官方来源URL，并给出发布日期和两条近期事实。如果缺少所需web工具/凭证或无法核实来源，成员将明确上报并使整个run失败。",
+        "version": 4,
+        "createdAt": "2026-09-07T13:57:51.485694+08:00",
+        "dispatchedAt": "2026-09-07T13:57:52.599246+08:00",
+        "startedAt": "2026-09-07T13:57:52.7241+08:00",
+        "completedAt": "2026-09-07T13:58:20.818156+08:00"
+      }
+    ]
+  }
+}

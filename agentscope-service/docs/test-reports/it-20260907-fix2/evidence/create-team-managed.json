@@ -1,0 +1,58 @@
+{
+  "at": "2026-09-07T05:57:51.219987+00:00",
+  "method": "POST",
+  "path": "/api/v1/teams",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "name": "it-20260907-fix2-managed",
+    "leaderAgentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+    "instructions": "所有子Issue标题以 it-20260907-fix2 开头。必须实际委派指定成员并收集结果，不要自己替代成员工作。工具受限要如实传递。",
+    "members": [
+      {
+        "agentId": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7",
+        "role": "calculator"
+      },
+      {
+        "agentId": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc",
+        "role": "analyst"
+      }
+    ]
+  },
+  "status": 201,
+  "response": {
+    "team": {
+      "id": "d74fdddd-0c6d-4ead-87b5-69bc9eac4919",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-fix2-managed",
+      "instructions": "所有子Issue标题以 it-20260907-fix2 开头。必须实际委派指定成员并收集结果，不要自己替代成员工作。工具受限要如实传递。",
+      "status": "active",
+      "leaderAgentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "policy": {},
+      "version": 1,
+      "createdAt": "2026-09-07T13:57:51.222427+08:00",
+      "updatedAt": "2026-09-07T13:57:51.222427+08:00",
+      "members": [
+        {
+          "id": "2a2f7473-c8fe-452b-9c99-6df20199eab5",
+          "tenant": "default",
+          "namespace": "default",
+          "teamId": "d74fdddd-0c6d-4ead-87b5-69bc9eac4919",
+          "agentId": "1e76482f-0f2e-48b8-a752-aa64d0bfb1d7",
+          "role": "calculator",
+          "createdAt": "2026-09-07T13:57:51.222427+08:00"
+        },
+        {
+          "id": "930861ab-e371-46bf-9c44-3b51a053d007",
+          "tenant": "default",
+          "namespace": "default",
+          "teamId": "d74fdddd-0c6d-4ead-87b5-69bc9eac4919",
+          "agentId": "84238a0b-c1f3-4f93-9c15-f7e0c697aecc",
+          "role": "analyst",
+          "createdAt": "2026-09-07T13:57:51.222427+08:00"
+        }
+      ]
+    }
+  }
+}

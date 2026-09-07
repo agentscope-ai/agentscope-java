@@ -1,0 +1,43 @@
+{
+  "at": "2026-09-07T06:02:12.357996+00:00",
+  "method": "GET",
+  "path": "/api/v1/endpoints/06479ed5-bca5-49be-b173-21522a870e3a/invocations",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "8cbd91f5-3cac-401f-91c4-24fb7045f4a4",
+        "endpointId": "06479ed5-bca5-49be-b173-21522a870e3a",
+        "mode": "job",
+        "principalType": "credential",
+        "principalRef": "api-key:d68df5e6-948b-4084-bf4b-c3cc5da04c21",
+        "idempotencyKey": "it-20260907-fix2-team-job-research",
+        "status": "failed",
+        "issueId": "f2798b5c-cc96-5e75-ab08-5710eee0d172",
+        "runId": "60f18d98-575e-5979-8785-8eb84aa4880c",
+        "input": {
+          "input": {
+            "industries": [
+              "新能源汽车",
+              "手机"
+            ],
+            "mustUseWeb": true
+          },
+          "title": "it-20260907-fix2-endpoint-two-industries",
+          "description": "并行委派两个不同成员：researcher调研新能源汽车行业，analyst调研手机行业。每个行业要求实际使用可用web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实；不能凭训练知识编造近期事实或来源。两份子任务都必须创建，标题前缀 it-20260907-fix2。任何成员缺少所需web工具/凭证或无法核实来源，必须明确task.fail，上报行业名和缺失能力。协调员收到失败不得当成功验收；必须明确让整个run failed并说明缺口。若两份调研均真实完成，才验收汇总并完成run。不要修改权限或配置来完成测试。"
+        },
+        "result": {
+          "runState": "failed"
+        },
+        "errorCode": "MISSING_CREDENTIAL",
+        "errorMessage": "由于缺少 `TAVILY_API_KEY` 凭证，手机行业调研子任务无法完成。已请求人类用户提供凭证或采取其他适当措施。",
+        "correlationId": "f9e73c5d-52cb-47ce-96ef-6a0184fca623",
+        "createdAt": "2026-09-07T13:57:52.700573+08:00",
+        "startedAt": "2026-09-07T13:57:52.7031+08:00",
+        "completedAt": "2026-09-07T13:59:15.992575+08:00",
+        "updatedAt": "2026-09-07T13:59:15.992723+08:00"
+      }
+    ]
+  }
+}

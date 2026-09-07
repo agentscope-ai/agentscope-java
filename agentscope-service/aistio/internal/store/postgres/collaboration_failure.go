@@ -78,6 +78,9 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(ctx context.Context, id uui
 		IdempotencyKey: "attempt-failed:" + attempt.ID.String()}); err != nil {
 		return nil, nil, err
 	}
+	if err = notifyTaskFailureInboxTx(ctx, tx, task); err != nil {
+		return nil, nil, err
+	}
 	if err = enqueueCollaborationEventTx(ctx, tx, task.Tenant, "agent-task", task.ID,
 		"agent-task.failed.v1", task, fmt.Sprintf("agent-task-failed:%s:%d", task.ID, task.Version)); err != nil {
 		return nil, nil, err

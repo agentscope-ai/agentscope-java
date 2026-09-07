@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-07T03:30:37.498832+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints/10df09b6-2233-4435-88f7-d11f74d2c099/publish",
+  "request": {
+    "version": 1
+  },
+  "status": 200,
+  "response": {
+    "endpoint": {
+      "id": "10df09b6-2233-4435-88f7-d11f74d2c099",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "it-20260907-1130-managed-job",
+      "slug": "it-20260907-1130-managed-job",
+      "targetType": "agent",
+      "targetRef": "ca7e6203-e59b-43e8-b6fa-2340925a66e1",
+      "invocationMode": "job",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "activeReleaseId": "6369f998-5260-4b94-ba80-c35eb9d25be8",
+      "activeRelease": 1,
+      "status": "published",
+      "version": 3,
+      "createdAt": "2026-09-07T11:30:37.48259+08:00",
+      "updatedAt": "2026-09-07T11:30:37.507172+08:00"
+    },
+    "readiness": {
+      "state": "ready",
+      "reason": "Primary runtime candidate is dispatchable",
+      "compatible": true
+    }
+  }
+}

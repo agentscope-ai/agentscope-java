@@ -1,0 +1,28 @@
+{
+  "at": "2026-09-07T00:18:18.714242+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/dab956bd-44aa-40cc-a463-66b13b3eed3c/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_e70c952738e2",
+    "offset": 0,
+    "limit": 100,
+    "total": 2,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "记住测试标记 MEMORY_0815。计算21+21，仅回答标记和答案。无需工具。",
+        "occurredAt": "2026-09-07T00:17:22.416Z"
+      },
+      {
+        "seq": 5,
+        "role": "assistant",
+        "content": "MEMORY_0815: 42",
+        "occurredAt": "2026-09-07T00:17:24.265Z"
+      }
+    ],
+    "source": "events"
+  }
+}

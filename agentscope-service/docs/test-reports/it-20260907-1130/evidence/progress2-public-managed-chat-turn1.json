@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-07T03:32:06.936957+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/conversations/62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+  "request": null,
+  "status": 200,
+  "response": {
+    "conversation": {
+      "createdAt": "2026-09-07T11:30:38.046175+08:00",
+      "endpointId": "ce54462c-525b-4bc6-bcb6-4528977db78f",
+      "id": "62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+      "sessionId": "sess_f54ce2549e38",
+      "status": "active",
+      "updatedAt": "2026-09-07T11:30:38.046175+08:00"
+    },
+    "turns": [
+      {
+        "conversationId": "62d9ac2e-7199-4d9b-bbcb-6800c1131bab",
+        "correlationId": "579e5ab0-b757-4ca9-8066-15aa26972941",
+        "createdAt": "2026-09-07T11:30:38.041437+08:00",
+        "endpointId": "ce54462c-525b-4bc6-bcb6-4528977db78f",
+        "id": "01d782ec-4ad1-4afc-9fd6-db9ee9043338",
+        "mode": "conversation",
+        "sessionId": "sess_f54ce2549e38",
+        "startedAt": "2026-09-07T11:30:38.081726+08:00",
+        "status": "running",
+        "turnId": "aefecb97-37d5-499b-a50e-832e35ab56dd",
+        "updatedAt": "2026-09-07T11:30:38.08114+08:00"
+      }
+    ]
+  }
+}

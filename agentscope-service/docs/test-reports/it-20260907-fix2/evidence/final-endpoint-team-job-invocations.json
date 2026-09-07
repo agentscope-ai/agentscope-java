@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-07T06:09:23.453836+00:00",
+  "method": "GET",
+  "path": "/api/v1/endpoints/a6337845-601f-4f5b-a07f-7e4516c1a720/invocations",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "aa99296d-5b44-4acf-ba0b-903de0025867",
+        "endpointId": "a6337845-601f-4f5b-a07f-7e4516c1a720",
+        "mode": "job",
+        "principalType": "credential",
+        "principalRef": "api-key:8b0a4d02-8e2f-447e-aed0-54fe55c52782",
+        "idempotencyKey": "it-20260907-fix2-team-job-ok",
+        "status": "completed",
+        "issueId": "627a694e-2b5b-5a60-b070-a663069eca07",
+        "runId": "ac6b8ead-26e0-52a3-884b-62e3bdcb48a0",
+        "input": {
+          "input": {
+            "scenario": "team-normal"
+          },
+          "title": "it-20260907-fix2-endpoint-team-ok",
+          "description": "必须真实创建两个子Issue分给calculator和analyst，不能自己替代。calculator计算19×21+1；analyst把zebra,apple,pear按字典序排序。当前子Issue收到结果就验收，不等待兄弟才验收；两份成果都验收后汇总 TEAM_OK;CALC=400;SORT=apple,pear,zebra 并完成整个run。子Issue标题前缀 it-20260907-fix2。"
+        },
+        "result": "TEAM_OK;CALC=400;SORT=apple,pear,zebra",
+        "correlationId": "f779f95c-fdf0-4301-aadb-481de55ca927",
+        "createdAt": "2026-09-07T13:57:52.46448+08:00",
+        "startedAt": "2026-09-07T13:57:52.466154+08:00",
+        "completedAt": "2026-09-07T13:59:35.994036+08:00",
+        "updatedAt": "2026-09-07T13:59:35.992535+08:00"
+      }
+    ]
+  }
+}

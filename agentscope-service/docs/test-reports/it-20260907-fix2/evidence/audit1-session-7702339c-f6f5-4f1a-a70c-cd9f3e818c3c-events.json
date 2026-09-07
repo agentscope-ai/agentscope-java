@@ -1,0 +1,270 @@
+{
+  "at": "2026-09-07T06:00:08.295357+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/7702339c-f6f5-4f1a-a70c-cd9f3e818c3c/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 967,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. Read task.get currentRequest first. For comment-triggered work, the routed comments are the CURRENT assignment and override older Issue requirements. Use requestContext only to interpret the reply and its original hand-off; do not execute that history again. When replyToOwnDelegation is true, evaluate the returned result according to initiatingRequest and complete the current task. Do not mention the responding Agent just to acknowledge their answer; that creates another task. An explicit mention is only for new actionable work required by the current requester. Use math.evaluate to verify arithmetic before submitting or accepting numeric results. Verify other objective claims as well; a worker success flag alone is not acceptance evidence. You are a Team worker. Complete only the assigned child work and call task.complete with outcome=succeeded and the result only when the assigned objective is achieved. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_b4789b0961be4c97b026233686186bf0",
+          "managedSeq": 1,
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_b4789b0961be4c97b026233686186bf0",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:10.048+08:00"
+      },
+      {
+        "id": 968,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_83c0f19fd3fa42d585aaa5e76093069e",
+          "managedSeq": 2,
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_83c0f19fd3fa42d585aaa5e76093069e",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:10.067+08:00"
+      },
+      {
+        "id": 969,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_08941ae42f004d538a5ee8f2b0e4eebc",
+          "managedSeq": 3,
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_08941ae42f004d538a5ee8f2b0e4eebc",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:10.115+08:00"
+      },
+      {
+        "id": 998,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 4,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.get",
+        "toolInput": {},
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_cf5f543adcec4d6c9f4b15af44fd454b",
+          "managedSeq": 4,
+          "toolCallId": "call_6c560ee80717476896700a",
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_cf5f543adcec4d6c9f4b15af44fd454b",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:13.856+08:00"
+      },
+      {
+        "id": 999,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 5,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_4e2796c35e1f45518b060299494f0011",
+          "managedSeq": 5,
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_4e2796c35e1f45518b060299494f0011",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:13.871+08:00"
+      },
+      {
+        "id": 1000,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 6,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"currentRequest\": \"it-20260907-fix2-手机行业调研\\n\\n使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确task.fail，并上报行业名和缺失能力。\", \"initiatingRequest\": \"\", \"inputs\": null, \"issue\": {\"id\": \"064acfb4-7a10-499a-9026-ce48d9aa7f7b\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-fix2-手机行业调研\", \"description\": \"使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确task.fail，并上报行业名和缺失能力。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"84238a0b-c1f3-4f93-9c15-f7e0c697aecc\", \"creator\": {\"type\": \"agent\", \"ref\": \"7dfd6e84-68a7-4711-985d-097e16e621e9\"}, \"parentIssueId\": \"fa0a1def-6ba2-404a-befd-dd1e59660d7e\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"be1115cc-6c03-47da-a748-17d4529b3872\", \"version\": 2, \"createdAt\": \"2026-09-07T13:58:09.540675+08:00\", \"updatedAt\": \"2026-09-07T13:58:10.076197+08:00\"}, \"replyToOwnDelegation\": false, \"requestContext\": null, \"task\": {\"id\": \"db5d79a8-e724-4b4a-8a7d-3f837160f5e5\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"064acfb4-7a10-499a-9026-ce48d9aa7f7b\", \"orchestrationRunId\": \"58163332-7b97-4f86-8cf2-60ad0520c059\", \"runNodeId\": \"898dd040-a01e-4d7a-a163-0b7d16c1e90c\", \"currentAttemptId\": \"ac786c4c-0e94-4152-9f0a-17b135b9906b\", \"agentId\": \"84238a0b-c1f3-4f93-9c15-f7e0c697aecc\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6\", \"teamRole\": \"analyst\", \"parentTaskId\": \"be1115cc-6c03-47da-a748-17d4529b3872\", \"delegatedFromTaskId\": \"be1115cc-6c03-47da-a748-17d4529b3872\", \"originator\": {\"type\": \"agent\", \"ref\": \"7dfd6e84-68a7-4711-985d-097e16e621e9\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"be1115cc-6c03-47da-a748-17d4529b3872\", \"correlationId\": \"fa0a1def-6ba2-404a-befd-dd1e59660d7e\", \"hopCount\": 1, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"84238a0b-c1f3-4f93-9c15-f7e0c697aecc\", \"bindingId\": \"a286b8d7-71a3-5d8a-b744-2ed161cb5f1e\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"84238a0b-c1f3-4f93-9c15-f7e0c697aecc\"}, \"sessionId\": \"sess_614674f19621\", \"resolvedAt\": \"2026-09-07T05:58:10.01294Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_614674f19621\", \"version\": 3, \"createdAt\": \"2026-09-07T13:58:09.540675+08:00\", \"dispatchedAt\": \"2026-09-07T13:58:10.012445+08:00\", \"startedAt\": \"2026-09-07T13:58:10.076197+08:00\"}}",
+        "toolName": "task.get",
+        "toolOutput": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"currentRequest\": \"it-20260907-fix2-手机行业调研\\n\\n使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确task.fail，并上报行业名和缺失能力。\", \"initiatingRequest\": \"\", \"inputs\": null, \"issue\": {\"id\": \"064acfb4-7a10-499a-9026-ce48d9aa7f7b\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-fix2-手机行业调研\", \"description\": \"使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。如果缺少所需web工具/凭证或无法核实来源，请明确task.fail，并上报行业名和缺失能力。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"84238a0b-c1f3-4f93-9c15-f7e0c697aecc\", \"creator\": {\"type\": \"agent\", \"ref\": \"7dfd6e84-68a7-4711-985d-097e16e621e9\"}, \"parentIssueId\": \"fa0a1def-6ba2-404a-befd-dd1e59660d7e\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"be1115cc-6c03-47da-a748-17d4529b3872\", \"version\": 2, \"createdAt\": \"2026-09-07T13:58:09.540675+08:00\", \"updatedAt\": \"2026-09-07T13:58:10.076197+08:00\"}, \"replyToOwnDelegation\": false, \"requestContext\": null, \"task\": {\"id\": \"db5d79a8-e724-4b4a-8a7d-3f837160f5e5\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"064acfb4-7a10-499a-9026-ce48d9aa7f7b\", \"orchestrationRunId\": \"58163332-7b97-4f86-8cf2-60ad0520c059\", \"runNodeId\": \"898dd040-a01e-4d7a-a163-0b7d16c1e90c\", \"currentAttemptId\": \"ac786c4c-0e94-4152-9f0a-17b135b9906b\", \"agentId\": \"84238a0b-c1f3-4f93-9c15-f7e0c697aecc\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"teamId\": \"6eb15197-88dd-4e2d-bec4-aa0df7c6e2c6\", \"teamRole\": \"analyst\", \"parentTaskId\": \"be1115cc-6c03-47da-a748-17d4529b3872\", \"delegatedFromTaskId\": \"be1115cc-6c03-47da-a748-17d4529b3872\", \"originator\": {\"type\": \"agent\", \"ref\": \"7dfd6e84-68a7-4711-985d-097e16e621e9\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"be1115cc-6c03-47da-a748-17d4529b3872\", \"correlationId\": \"fa0a1def-6ba2-404a-befd-dd1e59660d7e\", \"hopCount\": 1, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"84238a0b-c1f3-4f93-9c15-f7e0c697aecc\", \"bindingId\": \"a286b8d7-71a3-5d8a-b744-2ed161cb5f1e\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"84238a0b-c1f3-4f93-9c15-f7e0c697aecc\"}, \"sessionId\": \"sess_614674f19621\", \"resolvedAt\": \"2026-09-07T05:58:10.01294Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_614674f19621\", \"version\": 3, \"createdAt\": \"2026-09-07T13:58:09.540675+08:00\", \"dispatchedAt\": \"2026-09-07T13:58:10.012445+08:00\", \"startedAt\": \"2026-09-07T13:58:10.076197+08:00\"}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_5f8c82f95b704961ba9c19b249e5016b",
+          "managedSeq": 6,
+          "toolCallId": "call_6c560ee80717476896700a",
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "tool_use_id": "call_6c560ee80717476896700a",
+          "managedEventId": "evt_5f8c82f95b704961ba9c19b249e5016b",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:13.896+08:00"
+      },
+      {
+        "id": 1001,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 7,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_4a2100b65c254bb3844618346660a1c1",
+          "managedSeq": 7,
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_4a2100b65c254bb3844618346660a1c1",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:13.91+08:00"
+      },
+      {
+        "id": 1016,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 8,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "web_search",
+        "toolInput": {
+          "query": "手机行业 最新消息",
+          "max_results": 2
+        },
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_173c4643e1d64e66aff717fed8963398",
+          "managedSeq": 8,
+          "toolCallId": "call_837bf130b1e84b10a24285",
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_173c4643e1d64e66aff717fed8963398",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:17.529+08:00"
+      },
+      {
+        "id": 1017,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 9,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_dc5dc52a757c4fd9a4032178850e7173",
+          "managedSeq": 9,
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_dc5dc52a757c4fd9a4032178850e7173",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:17.565+08:00"
+      },
+      {
+        "id": 1018,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 10,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+        "toolName": "web_search",
+        "toolOutput": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+        "frameworkMeta": {
+          "state": "ERROR",
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_ee3eec9b99f14893b272aa2662fe00a1",
+          "managedSeq": 10,
+          "toolCallId": "call_837bf130b1e84b10a24285",
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "tool_use_id": "call_837bf130b1e84b10a24285",
+          "managedEventId": "evt_ee3eec9b99f14893b272aa2662fe00a1",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:17.74+08:00"
+      },
+      {
+        "id": 1019,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 11,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_48685c986b7f439784993090ad18c53f",
+          "managedSeq": 11,
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_48685c986b7f439784993090ad18c53f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:17.764+08:00"
+      },
+      {
+        "id": 1080,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 12,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.fail",
+        "toolInput": {
+          "code": "TOOL_UNAVAILABLE",
+          "message": "缺少必要的web搜索工具/凭证，无法执行手机行业调研任务。"
+        },
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_0011dcfb9e5144fba494c3fa35fd40d4",
+          "managedSeq": 12,
+          "toolCallId": "call_813f447e4c644ef1a9a075",
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_0011dcfb9e5144fba494c3fa35fd40d4",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:25.67+08:00"
+      },
+      {
+        "id": 1081,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 13,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "managed:evt_1ae769ca11c04560ae0dd435dea4a885",
+          "managedSeq": 13,
+          "agentTaskId": "db5d79a8-e724-4b4a-8a7d-3f837160f5e5",
+          "managedEventId": "evt_1ae769ca11c04560ae0dd435dea4a885",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T13:58:25.679+08:00"
+      },
+      {
+        "id": 1082,
+        "sessionFk": "7702339c-f6f5-4f1a-a70c-cd9f3e818c3c",
+        "seq": 14,
+        "eventType": "turn.failed",
+        "role": "error",
+        "content": "缺少必要的web搜索工具/凭证，无法执行手机行业调研任务。",
+        "frameworkMeta": {
+          "turnId": "e44fa8ed-0f0f-46d0-88c1-783483c69054",
+          "attemptId": "ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "sourceKey": "turn-failed:ac786c4c-0e94-4152-9f0a-17b135b9906b",
+          "failureCode": "TOOL_UNAVAILABLE"
+        },
+        "occurredAt": "2026-09-07T13:58:25.725996+08:00"
+      }
+    ]
+  }
+}

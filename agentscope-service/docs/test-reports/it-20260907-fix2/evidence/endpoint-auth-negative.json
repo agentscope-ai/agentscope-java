@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-07T05:57:52.393226+00:00",
+  "method": "POST",
+  "path": "/invoke/v1/endpoints/it-20260907-fix2-managed-job/jobs",
+  "request": {
+    "title": "it-20260907-fix2-endpoint-arithmetic",
+    "description": "读取任务input：计算quantity×unitPrice，输出 API_TOTAL=144 并完成任务。无需联网。",
+    "input": {
+      "quantity": 12,
+      "unitPrice": 12
+    }
+  },
+  "status": 401,
+  "response": {
+    "error": "invalid endpoint credential"
+  }
+}

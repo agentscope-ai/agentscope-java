@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-07T00:16:33.932957+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/b268c889-b18d-4da7-8ee2-b80f15794134",
+  "request": null,
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "b268c889-b18d-4da7-8ee2-b80f15794134",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-0815-team-mixed-normal",
+      "description": "请实际分工：researcher成员只根据给定事实“手机A电池5000mAh，手机B电池4000mAh”计算A比B多多少，期望 BATTERY=25%；calculator成员计算100+200，期望 SUM=300。必须分别真实委派两个子Issue，收集并验收后输出 MIXED_OK;BATTERY=25%;SUM=300 并完成run。无需联网或额外工具。子Issue标题前缀 it-20260907-0815。",
+      "status": "in_progress",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "7089f084-903e-4bf2-b395-2f610e24e81a",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 2,
+      "createdAt": "2026-09-07T08:16:32.767305+08:00",
+      "updatedAt": "2026-09-07T08:16:33.317453+08:00"
+    }
+  }
+}

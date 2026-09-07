@@ -1,0 +1,214 @@
+{
+  "at": "2026-09-07T00:19:53.413776+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/6cd7a1e8-f797-401c-aee2-4c67b606f40b/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "6cd7a1e8-f797-401c-aee2-4c67b606f40b",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+      "mode": "direct",
+      "triggerType": "assignment",
+      "triggerRef": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+      "state": "failed",
+      "failureCode": "websearch_tool_unavailable",
+      "failureMessage": "实时研究未完成：本会话未提供 WebSearch 或任何联网搜索工具。已实际核查：任务 79cc640a 的运行时配置 allowedTools 仅为 [\"mcp__agentscope-collaboration__*\"]（strictMCPConfig=true，permissionMode=default），工具列表中无 WebSearch/WebFetch/联网检索类工具，也未暴露 Bash/shell 工具，agentscope CLI 回退不可用；运行 6cd7a1e8 的图谱与共享 artifacts 中无其他成员的搜索结果可复用。因此未能搜索 \"2026 smartphone market shipments\"，未取得任何 2026 年发布的来源（标题/日期/URL 均为空）。按要求未安装工具、未修改权限或配置、未以记忆替代或编造来源；保留此错误，本轮到此结束，不再重试。",
+      "version": 5,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T08:16:32.802005+08:00",
+      "updatedAt": "2026-09-07T08:17:27.689349+08:00",
+      "startedAt": "2026-09-07T08:16:32.802005+08:00",
+      "completedAt": "2026-09-07T08:17:27.689349+08:00"
+    },
+    "nodes": [
+      {
+        "id": "6de80aa9-326c-4eca-8abe-8e869a6ffdf0",
+        "runId": "6cd7a1e8-f797-401c-aee2-4c67b606f40b",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:79cc640a-077f-4c72-a9be-ca25dd05f3b5",
+        "type": "agent",
+        "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "state": "failed",
+        "iteration": 1,
+        "failureCode": "websearch_tool_unavailable",
+        "failureMessage": "实时研究未完成：本会话未提供 WebSearch 或任何联网搜索工具。已实际核查：任务 79cc640a 的运行时配置 allowedTools 仅为 [\"mcp__agentscope-collaboration__*\"]（strictMCPConfig=true，permissionMode=default），工具列表中无 WebSearch/WebFetch/联网检索类工具，也未暴露 Bash/shell 工具，agentscope CLI 回退不可用；运行 6cd7a1e8 的图谱与共享 artifacts 中无其他成员的搜索结果可复用。因此未能搜索 \"2026 smartphone market shipments\"，未取得任何 2026 年发布的来源（标题/日期/URL 均为空）。按要求未安装工具、未修改权限或配置、未以记忆替代或编造来源；保留此错误，本轮到此结束，不再重试。",
+        "version": 3,
+        "createdAt": "2026-09-07T08:16:32.802005+08:00",
+        "updatedAt": "2026-09-07T08:17:27.686133+08:00",
+        "startedAt": "2026-09-07T08:16:33.250015+08:00",
+        "completedAt": "2026-09-07T08:17:27.686133+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "79cc640a-077f-4c72-a9be-ca25dd05f3b5",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "orchestrationRunId": "6cd7a1e8-f797-401c-aee2-4c67b606f40b",
+        "runNodeId": "6de80aa9-326c-4eca-8abe-8e869a6ffdf0",
+        "currentAttemptId": "8bc71afe-712f-4c15-9b23-d4050552e118",
+        "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "correlationId": "5ce54819-6a31-41a8-9cd2-a8139a9802b4",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+            "runtimePoolId": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "runtimeProfileId": "bc887fda-ca12-4c78-9626-60180c64eec7"
+          },
+          "sessionId": "3bf70e9c-19d1-4647-adb9-46994331ebea",
+          "resolvedAt": "2026-09-07T00:16:33.44342Z",
+          "runtimePool": {
+            "id": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-06T23:37:26.078122+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.078122+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc887fda-ca12-4c78-9626-60180c64eec7",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-06T23:37:26.082207+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.082207+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "sessionId": "3bf70e9c-19d1-4647-adb9-46994331ebea",
+        "errorCode": "websearch_tool_unavailable",
+        "errorMessage": "实时研究未完成：本会话未提供 WebSearch 或任何联网搜索工具。已实际核查：任务 79cc640a 的运行时配置 allowedTools 仅为 [\"mcp__agentscope-collaboration__*\"]（strictMCPConfig=true，permissionMode=default），工具列表中无 WebSearch/WebFetch/联网检索类工具，也未暴露 Bash/shell 工具，agentscope CLI 回退不可用；运行 6cd7a1e8 的图谱与共享 artifacts 中无其他成员的搜索结果可复用。因此未能搜索 \"2026 smartphone market shipments\"，未取得任何 2026 年发布的来源（标题/日期/URL 均为空）。按要求未安装工具、未修改权限或配置、未以记忆替代或编造来源；保留此错误，本轮到此结束，不再重试。",
+        "version": 4,
+        "createdAt": "2026-09-07T08:16:32.802005+08:00",
+        "dispatchedAt": "2026-09-07T08:16:33.442984+08:00",
+        "startedAt": "2026-09-07T08:16:34.225275+08:00",
+        "completedAt": "2026-09-07T08:17:27.659048+08:00"
+      }
+    ],
+    "attempts": [
+      {
+        "id": "8bc71afe-712f-4c15-9b23-d4050552e118",
+        "agentTaskId": "79cc640a-077f-4c72-a9be-ca25dd05f3b5",
+        "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+        "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+        "runId": "6cd7a1e8-f797-401c-aee2-4c67b606f40b",
+        "nodeId": "6de80aa9-326c-4eca-8abe-8e869a6ffdf0",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "hosted-runtime",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "679b7bf9-c9c1-4828-a129-4045be75090e",
+            "bindingId": "4971089a-45e2-5d20-adee-28cf020c60a8",
+            "runtimePoolId": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "runtimeProfileId": "bc887fda-ca12-4c78-9626-60180c64eec7"
+          },
+          "sessionId": "3bf70e9c-19d1-4647-adb9-46994331ebea",
+          "resolvedAt": "2026-09-07T00:16:33.44342Z",
+          "runtimePool": {
+            "id": "a6497824-b6a2-4097-87e8-58c4977ecc86",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-06T23:37:26.078122+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.078122+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc887fda-ca12-4c78-9626-60180c64eec7",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-06T23:37:26.082207+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-06T23:37:26.082207+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "runtimeProfileName": "auto-qoder",
+        "runtimePoolName": "coding-default",
+        "hostId": "348b0331-630a-49dd-93c0-ef553858b8ae",
+        "sessionId": "3bf70e9c-19d1-4647-adb9-46994331ebea",
+        "turnId": "6dbb17a6-f0c2-497d-a437-67b54b4a073b",
+        "providerSessionId": "ac16e340-b424-4dfc-9d6d-d523e8ef9b41",
+        "workspaceKey": "default/default/conversations/679b7bf9-c9c1-4828-a129-4045be75090e/3bf70e9c-19d1-4647-adb9-46994331ebea",
+        "state": "failed",
+        "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/976392ef-c0bc-46f8-a01d-9f723748f147",
+        "leaseToken": "[REDACTED]",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T08:17:14.23967+08:00",
+        "checkpoint": {
+          "providerSessionId": "ac16e340-b424-4dfc-9d6d-d523e8ef9b41"
+        },
+        "failureCode": "websearch_tool_unavailable",
+        "failureMessage": "实时研究未完成：本会话未提供 WebSearch 或任何联网搜索工具。已实际核查：任务 79cc640a 的运行时配置 allowedTools 仅为 [\"mcp__agentscope-collaboration__*\"]（strictMCPConfig=true，permissionMode=default），工具列表中无 WebSearch/WebFetch/联网检索类工具，也未暴露 Bash/shell 工具，agentscope CLI 回退不可用；运行 6cd7a1e8 的图谱与共享 artifacts 中无其他成员的搜索结果可复用。因此未能搜索 \"2026 smartphone market shipments\"，未取得任何 2026 年发布的来源（标题/日期/URL 均为空）。按要求未安装工具、未修改权限或配置、未以记忆替代或编造来源；保留此错误，本轮到此结束，不再重试。",
+        "version": 9,
+        "createdAt": "2026-09-07T08:16:33.442984+08:00",
+        "updatedAt": "2026-09-07T08:17:27.659048+08:00",
+        "startedAt": "2026-09-07T08:16:34.223717+08:00",
+        "completedAt": "2026-09-07T08:17:27.659048+08:00"
+      }
+    ]
+  }
+}

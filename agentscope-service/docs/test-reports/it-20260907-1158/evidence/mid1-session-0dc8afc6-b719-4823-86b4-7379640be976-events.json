@@ -1,0 +1,63 @@
+{
+  "at": "2026-09-07T04:00:18.078782+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/0dc8afc6-b719-4823-86b4-7379640be976/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 112,
+        "sessionFk": "0dc8afc6-b719-4823-86b4-7379640be976",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are a Team worker. Complete only the assigned child work and call task.complete with outcome=succeeded and the result only when the assigned objective is achieved. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "frameworkMeta": {
+          "turnId": "2f70bd7e-ccaa-486e-8aa5-f90c5e780024",
+          "attemptId": "ad9cfba2-d3c5-4a72-a73d-5f979f94e2d5",
+          "sourceKey": "managed:evt_ae645e21da424a6d8898ce05ebae433f",
+          "managedSeq": 1,
+          "agentTaskId": "66444db6-0360-4162-a4a8-2e678fef8e3b",
+          "managedEventId": "evt_ae645e21da424a6d8898ce05ebae433f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:16.255+08:00"
+      },
+      {
+        "id": 113,
+        "sessionFk": "0dc8afc6-b719-4823-86b4-7379640be976",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "2f70bd7e-ccaa-486e-8aa5-f90c5e780024",
+          "attemptId": "ad9cfba2-d3c5-4a72-a73d-5f979f94e2d5",
+          "sourceKey": "managed:evt_dcf6ae9c23844ce18ced43be84d664a1",
+          "managedSeq": 2,
+          "agentTaskId": "66444db6-0360-4162-a4a8-2e678fef8e3b",
+          "managedEventId": "evt_dcf6ae9c23844ce18ced43be84d664a1",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:16.27+08:00"
+      },
+      {
+        "id": 114,
+        "sessionFk": "0dc8afc6-b719-4823-86b4-7379640be976",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "2f70bd7e-ccaa-486e-8aa5-f90c5e780024",
+          "attemptId": "ad9cfba2-d3c5-4a72-a73d-5f979f94e2d5",
+          "sourceKey": "managed:evt_bb33d7dfb42f4d95a7225f65b5fb6805",
+          "managedSeq": 3,
+          "agentTaskId": "66444db6-0360-4162-a4a8-2e678fef8e3b",
+          "managedEventId": "evt_bb33d7dfb42f4d95a7225f65b5fb6805",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T12:00:16.312+08:00"
+      }
+    ]
+  }
+}

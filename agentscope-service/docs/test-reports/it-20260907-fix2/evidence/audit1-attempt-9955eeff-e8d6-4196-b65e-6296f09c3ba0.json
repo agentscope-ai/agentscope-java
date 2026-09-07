@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T06:00:07.844568+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/9955eeff-e8d6-4196-b65e-6296f09c3ba0",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "9955eeff-e8d6-4196-b65e-6296f09c3ba0",
+      "agentTaskId": "ed8e393b-41ab-4ae3-b416-95c75c484092",
+      "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+      "runId": "ac6b8ead-26e0-52a3-884b-62e3bdcb48a0",
+      "nodeId": "c4ecb2c9-e484-5641-9d8a-574b9db89f7d",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+          "bindingId": "570fd84b-193f-5ab2-8629-ccb377d4eceb",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "7dfd6e84-68a7-4711-985d-097e16e621e9"
+        },
+        "sessionId": "sess_97684c4baefd",
+        "resolvedAt": "2026-09-07T05:58:21.01625Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "7dfd6e84-68a7-4711-985d-097e16e621e9",
+      "sessionId": "sess_97684c4baefd",
+      "sessionRef": "84215caa-ec62-495c-b7ae-6f8dc4414da3",
+      "turnId": "f1c9b607-cddc-4625-afa2-3389809de25b",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T13:59:04.433191+08:00",
+      "result": "子任务 it-20260907-fix2-calculator 已完成，结果为 400。正在等待 it-20260907-fix2-analyst 的结果。",
+      "version": 33,
+      "createdAt": "2026-09-07T13:58:21.015143+08:00",
+      "updatedAt": "2026-09-07T13:59:04.458739+08:00",
+      "startedAt": "2026-09-07T13:58:21.127192+08:00",
+      "completedAt": "2026-09-07T13:59:04.458739+08:00"
+    }
+  }
+}

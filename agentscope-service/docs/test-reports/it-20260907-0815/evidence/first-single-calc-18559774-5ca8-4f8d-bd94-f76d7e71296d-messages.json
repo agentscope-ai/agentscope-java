@@ -1,0 +1,75 @@
+{
+  "at": "2026-09-07T00:15:57.419157+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/97747d16-bd0e-4c17-9bfb-6b55f6c00603/messages",
+  "request": null,
+  "status": 200,
+  "response": {
+    "sessionId": "sess_d98d9edbee99",
+    "offset": 0,
+    "limit": 100,
+    "total": 7,
+    "messages": [
+      {
+        "seq": 1,
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. You are handling standalone or explicitly mentioned work. Call task.complete only when you have a usable result. If a required capability, credential, input, or tool is unavailable, or a required tool call fails without a real fallback, call task.fail with a durable code and explanation; do not complete with a description of the failure. task.complete publishes the one authoritative visible reply, so do not repeat the same conclusion with issue.comment.add or task.progress. A human explicit mention is a direct request: answer it and finish without notifying the Issue assignee unless that Agent genuinely needs new work, in which case use an explicit mention.",
+        "occurredAt": "2026-09-07T00:15:27.338Z"
+      },
+      {
+        "seq": 4,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.get",
+        "toolCallId": "call_1ed97f9550eb4c7285807a",
+        "toolInput": {},
+        "occurredAt": "2026-09-07T00:15:30.873Z"
+      },
+      {
+        "seq": 6,
+        "role": "tool",
+        "content": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"51fd9344-fa83-46f9-8027-39543cbc2ebe\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"orchestrationRunId\": \"b359e38c-67d1-4d16-9ac5-cc96780d864f\", \"runNodeId\": \"5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8\", \"currentAttemptId\": \"18559774-5ca8-4f8d-bd94-f76d7e71296d\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"correlationId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"bindingId\": \"d809705a-dd23-5dba-8647-40d9b01d6baa\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"sessionId\": \"sess_d98d9edbee99\", \"resolvedAt\": \"2026-09-07T00:15:27.265637Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_d98d9edbee99\", \"version\": 3, \"createdAt\": \"2026-09-07T08:15:26.855547+08:00\", \"dispatchedAt\": \"2026-09-07T08:15:27.265027+08:00\", \"startedAt\": \"2026-09-07T08:15:27.370242+08:00\"}}",
+        "toolName": "task.get",
+        "toolCallId": "call_1ed97f9550eb4c7285807a",
+        "toolOutput": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"inputs\": null, \"task\": {\"id\": \"51fd9344-fa83-46f9-8027-39543cbc2ebe\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"orchestrationRunId\": \"b359e38c-67d1-4d16-9ac5-cc96780d864f\", \"runNodeId\": \"5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8\", \"currentAttemptId\": \"18559774-5ca8-4f8d-bd94-f76d7e71296d\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"correlationId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"bindingId\": \"d809705a-dd23-5dba-8647-40d9b01d6baa\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"sessionId\": \"sess_d98d9edbee99\", \"resolvedAt\": \"2026-09-07T00:15:27.265637Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_d98d9edbee99\", \"version\": 3, \"createdAt\": \"2026-09-07T08:15:26.855547+08:00\", \"dispatchedAt\": \"2026-09-07T08:15:27.265027+08:00\", \"startedAt\": \"2026-09-07T08:15:27.370242+08:00\"}}",
+        "occurredAt": "2026-09-07T00:15:30.899Z"
+      },
+      {
+        "seq": 8,
+        "role": "assistant",
+        "content": "",
+        "toolName": "task.complete",
+        "toolCallId": "call_1331d0f39af34693a89fb9",
+        "toolInput": {
+          "result": {
+            "CALC": 410
+          },
+          "summary": "计算 17×23+19 的结果是 410。等式如下：\n\n17 × 23 + 19 = 391 + 19 = 410"
+        },
+        "occurredAt": "2026-09-07T00:15:35.611Z"
+      },
+      {
+        "seq": 10,
+        "role": "assistant",
+        "content": "计算 17×23+19 的结果是 410。等式如下：\n\n17 × 23 + 19 = 391 + 19 = 410",
+        "occurredAt": "2026-09-07T00:15:35.699292Z"
+      },
+      {
+        "seq": 12,
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"3b50be60-b4d2-4acc-9035-9e683f9012cc\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"threadRootId\": \"3b50be60-b4d2-4acc-9035-9e683f9012cc\", \"author\": {\"type\": \"agent\", \"ref\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"content\": \"计算 17×23+19 的结果是 410。等式如下：\\n\\n17 × 23 + 19 = 391 + 19 = 410\", \"type\": \"result\", \"sourceTaskId\": \"51fd9344-fa83-46f9-8027-39543cbc2ebe\", \"sourceAttemptId\": \"18559774-5ca8-4f8d-bd94-f76d7e71296d\", \"version\": 1, \"createdAt\": \"2026-09-07T08:15:35.674445+08:00\", \"updatedAt\": \"2026-09-07T08:15:35.674445+08:00\", \"routes\": [{\"id\": \"ee1076b9-0e11-4fcc-8969-06cc1ab8c1db\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"commentId\": \"3b50be60-b4d2-4acc-9035-9e683f9012cc\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T08:15:35.674445+08:00\"}]}, \"task\": {\"id\": \"51fd9344-fa83-46f9-8027-39543cbc2ebe\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"orchestrationRunId\": \"b359e38c-67d1-4d16-9ac5-cc96780d864f\", \"runNodeId\": \"5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8\", \"currentAttemptId\": \"18559774-5ca8-4f8d-bd94-f76d7e71296d\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"correlationId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"bindingId\": \"d809705a-dd23-5dba-8647-40d9b01d6baa\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"sessionId\": \"sess_d98d9edbee99\", \"resolvedAt\": \"2026-09-07T00:15:27.265637Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_d98d9edbee99\", \"result\": {\"CALC\": 410}, \"version\": 4, \"createdAt\": \"2026-09-07T08:15:26.855547+08:00\", \"dispatchedAt\": \"2026-09-07T08:15:27.265027+08:00\", \"startedAt\": \"2026-09-07T08:15:27.370242+08:00\", \"completedAt\": \"2026-09-07T08:15:35.674445+08:00\"}}",
+        "toolName": "task.complete",
+        "toolCallId": "call_1331d0f39af34693a89fb9",
+        "toolOutput": "{\"comment\": {\"id\": \"3b50be60-b4d2-4acc-9035-9e683f9012cc\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"threadRootId\": \"3b50be60-b4d2-4acc-9035-9e683f9012cc\", \"author\": {\"type\": \"agent\", \"ref\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"content\": \"计算 17×23+19 的结果是 410。等式如下：\\n\\n17 × 23 + 19 = 391 + 19 = 410\", \"type\": \"result\", \"sourceTaskId\": \"51fd9344-fa83-46f9-8027-39543cbc2ebe\", \"sourceAttemptId\": \"18559774-5ca8-4f8d-bd94-f76d7e71296d\", \"version\": 1, \"createdAt\": \"2026-09-07T08:15:35.674445+08:00\", \"updatedAt\": \"2026-09-07T08:15:35.674445+08:00\", \"routes\": [{\"id\": \"ee1076b9-0e11-4fcc-8969-06cc1ab8c1db\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"commentId\": \"3b50be60-b4d2-4acc-9035-9e683f9012cc\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"routeType\": \"assignee\", \"outcome\": \"suppressed\", \"reasonCode\": \"self_trigger\", \"createdAt\": \"2026-09-07T08:15:35.674445+08:00\"}]}, \"task\": {\"id\": \"51fd9344-fa83-46f9-8027-39543cbc2ebe\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"orchestrationRunId\": \"b359e38c-67d1-4d16-9ac5-cc96780d864f\", \"runNodeId\": \"5be5fbb5-f3df-41fc-b6e0-9bd6edfbdba8\", \"currentAttemptId\": \"18559774-5ca8-4f8d-bd94-f76d7e71296d\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"correlationId\": \"4923de41-6abe-4da7-90db-d5d971f9c8cd\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\", \"bindingId\": \"d809705a-dd23-5dba-8647-40d9b01d6baa\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7\"}, \"sessionId\": \"sess_d98d9edbee99\", \"resolvedAt\": \"2026-09-07T00:15:27.265637Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_d98d9edbee99\", \"result\": {\"CALC\": 410}, \"version\": 4, \"createdAt\": \"2026-09-07T08:15:26.855547+08:00\", \"dispatchedAt\": \"2026-09-07T08:15:27.265027+08:00\", \"startedAt\": \"2026-09-07T08:15:27.370242+08:00\", \"completedAt\": \"2026-09-07T08:15:35.674445+08:00\"}}",
+        "occurredAt": "2026-09-07T00:15:35.71Z"
+      },
+      {
+        "seq": 15,
+        "role": "assistant",
+        "content": "计算 17×23+19 的结果是 410。等式如下：\n\n17 × 23 + 19 = 391 + 19 = 410\n\n任务已完成，结果已记录。",
+        "occurredAt": "2026-09-07T00:15:38.37Z"
+      }
+    ],
+    "source": "events"
+  }
+}

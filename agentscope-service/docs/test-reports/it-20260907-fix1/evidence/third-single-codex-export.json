@@ -1,0 +1,3896 @@
+{
+  "at": "2026-09-07T04:50:47.940841+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/07f26a0f-9372-4bfa-ae5c-48a0e3565527/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "3358e188-e3c7-47a0-b42c-9f4e287faaec",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "createdAt": "2026-09-07T12:47:32.827847+08:00"
+      },
+      {
+        "id": "462e0026-f638-4b29-8c72-fb999a3c8185",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "actor": {
+          "type": "agent",
+          "ref": "5640fe6e-d11b-4e34-82bc-2e74050d9b58"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "causationId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+        "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-07T12:48:03.974643+08:00"
+      },
+      {
+        "id": "afb8ef39-b544-48c8-b5c7-4067e3a73095",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "actor": {
+          "type": "agent",
+          "ref": "5640fe6e-d11b-4e34-82bc-2e74050d9b58"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "details": {
+          "to": "in_review",
+          "from": "in_progress",
+          "reason": "execution completed; awaiting acceptance"
+        },
+        "createdAt": "2026-09-07T12:48:28.505012+08:00"
+      },
+      {
+        "id": "d6a73228-21df-4540-b54a-50783816259f",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "actor": {
+          "type": "agent",
+          "ref": "5640fe6e-d11b-4e34-82bc-2e74050d9b58"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "33b590d7-0de2-46d3-8f07-07927f108f88",
+        "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "createdAt": "2026-09-07T12:48:28.506051+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [],
+    "comments": [
+      {
+        "id": "765da542-b7e7-40df-9163-822a515353f8",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "threadRootId": "765da542-b7e7-40df-9163-822a515353f8",
+        "author": {
+          "type": "agent",
+          "ref": "5640fe6e-d11b-4e34-82bc-2e74050d9b58"
+        },
+        "content": "101 是质数。因为 10² < 101 < 11²，只需试除不超过 √101 的质数 2、3、5、7；余数分别为 1、2、1、3，均不能整除。因此 CODEX=prime。",
+        "type": "result",
+        "sourceTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+        "sourceAttemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+        "version": 1,
+        "createdAt": "2026-09-07T12:48:28.491971+08:00",
+        "updatedAt": "2026-09-07T12:48:28.491971+08:00",
+        "routes": [
+          {
+            "id": "328acdab-fd8a-4e04-8703-533dbde32589",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "commentId": "765da542-b7e7-40df-9163-822a515353f8",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+            "routeType": "assignee",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T12:48:28.491971+08:00"
+          }
+        ]
+      }
+    ],
+    "exportedAt": "2026-09-07T04:50:47.94985Z",
+    "issue": {
+      "id": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-fix1-single-codex",
+      "description": "判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 4,
+      "createdAt": "2026-09-07T12:47:32.823418+08:00",
+      "updatedAt": "2026-09-07T12:48:28.491971+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "dd66fcb2-763e-4138-9085-0eda0023e0e9",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "idempotencyKey": "agent-task-queued:33b590d7-0de2-46d3-8f07-07927f108f88",
+            "occurredAt": "2026-09-07T12:47:32.823418+08:00"
+          },
+          {
+            "id": "f71010b0-68ea-48c4-88bd-d79b05809679",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "idempotencyKey": "attempt-queued:8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "occurredAt": "2026-09-07T12:47:33.690416+08:00"
+          },
+          {
+            "id": "f83d4337-2311-49c3-b9fe-adca87c4db85",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.assigned",
+            "actor": {
+              "type": "system",
+              "ref": "task-plane"
+            },
+            "payload": {
+              "state": "assigned",
+              "hostId": "b0aea46d-4ecb-4a58-8279-7469ce1ea28c",
+              "attempt": 1,
+              "backendKind": "hosted-runtime"
+            },
+            "idempotencyKey": "attempt.assigned:8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "occurredAt": "2026-09-07T12:48:03.947616+08:00"
+          },
+          {
+            "id": "ec0b730f-486b-4a07-b089-e14771e513f2",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.preparing",
+            "actor": {
+              "type": "system",
+              "ref": "task-plane"
+            },
+            "payload": {
+              "state": "preparing",
+              "hostId": "b0aea46d-4ecb-4a58-8279-7469ce1ea28c",
+              "attempt": 1,
+              "backendKind": "hosted-runtime"
+            },
+            "idempotencyKey": "attempt.preparing:8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "occurredAt": "2026-09-07T12:48:03.961723+08:00"
+          },
+          {
+            "id": "5422ee8d-56a1-425b-85cf-88621abbefc0",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "5640fe6e-d11b-4e34-82bc-2e74050d9b58"
+            },
+            "idempotencyKey": "attempt-running:8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "occurredAt": "2026-09-07T12:48:03.969707+08:00"
+          },
+          {
+            "id": "a9212754-0f90-41dc-8b54-e26c9d2f3b9f",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "remoteControl/status/changed",
+                "params": {
+                  "status": "disabled",
+                  "serverName": "U-FF406114-1819.local",
+                  "environmentId": null,
+                  "installationId": "b9c790d3-deb6-4ea0-8188-4ace0f4d65bc"
+                },
+                "emittedAtMs": 1788756484433
+              },
+              "provider": "codex",
+              "eventType": "remoteControl/status/changed",
+              "providerSessionId": ""
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:1",
+            "occurredAt": "2026-09-07T12:48:04.4364+08:00"
+          },
+          {
+            "id": "a61dffe1-70aa-4715-b92d-cb5ee8ef0274",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "thread/started",
+                "params": {
+                  "thread": {
+                    "id": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                    "cwd": "/Users/ken/.agentscope/runtime-host/workspaces/default/default/conversations/5640fe6e-d11b-4e34-82bc-2e74050d9b58/26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+                    "name": null,
+                    "path": "/Users/ken/.codex/sessions/2026/09/07/rollout-2026-09-07T12-48-04-01a07a31-e159-7b11-92e5-8781733c2c65.jsonl",
+                    "extra": null,
+                    "model": "gpt-6-astra",
+                    "turns": [],
+                    "source": "vscode",
+                    "status": {
+                      "type": "idle"
+                    },
+                    "gitInfo": null,
+                    "preview": "",
+                    "section": null,
+                    "agentRole": null,
+                    "createdAt": 1788756484,
+                    "ephemeral": false,
+                    "projectId": null,
+                    "recencyAt": 1788756484,
+                    "sessionId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                    "updatedAt": 1788756484,
+                    "cliVersion": "0.153.4",
+                    "historyMode": "paginated",
+                    "forkedFromId": null,
+                    "threadSource": null,
+                    "agentNickname": null,
+                    "modelProvider": "openai",
+                    "parentThreadId": null,
+                    "reasoningEffort": "high",
+                    "sectionEnteredAt": null,
+                    "canAcceptDirectInput": true
+                  }
+                },
+                "emittedAtMs": 1788756484544
+              },
+              "provider": "codex",
+              "eventType": "thread/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:2",
+            "occurredAt": "2026-09-07T12:48:04.546203+08:00"
+          },
+          {
+            "id": "4b12a6e0-5eb3-4197-96dc-ad9e8d230489",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 8,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "cua_repl",
+                  "error": null,
+                  "status": "starting",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756484544
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:4",
+            "occurredAt": "2026-09-07T12:48:04.557293+08:00"
+          },
+          {
+            "id": "c77f23d5-5464-4f1f-9620-4c762c793e05",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "agentscope_collaboration",
+                  "error": null,
+                  "status": "starting",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756484544
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:5",
+            "occurredAt": "2026-09-07T12:48:04.563914+08:00"
+          },
+          {
+            "id": "2dcbaf2d-b4cb-4e2a-bdbe-af192de454bf",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "node_repl",
+                  "error": null,
+                  "status": "starting",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756484544
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:6",
+            "occurredAt": "2026-09-07T12:48:04.569994+08:00"
+          },
+          {
+            "id": "6f800095-19cf-4354-be63-7b5bfa599be7",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 11,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "codex_apps",
+                  "error": null,
+                  "status": "starting",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756484544
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:7",
+            "occurredAt": "2026-09-07T12:48:04.575977+08:00"
+          },
+          {
+            "id": "63569546-8c8c-451e-b049-d5c89b6db14d",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "agentscope_collaboration",
+                  "error": null,
+                  "status": "ready",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756484551
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:8",
+            "occurredAt": "2026-09-07T12:48:04.581697+08:00"
+          },
+          {
+            "id": "929a9758-4121-4279-a83d-cbfbc8915473",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "thread/status/changed",
+                "params": {
+                  "status": {
+                    "type": "active",
+                    "activeFlags": []
+                  },
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756484555
+              },
+              "provider": "codex",
+              "eventType": "thread/status/changed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:9",
+            "occurredAt": "2026-09-07T12:48:04.587095+08:00"
+          },
+          {
+            "id": "ba78717e-0cf5-4de6-886f-f9a0100ca595",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 14,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "turn/started",
+                "params": {
+                  "turn": {
+                    "id": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                    "error": null,
+                    "items": [],
+                    "status": "inProgress",
+                    "itemsView": "notLoaded",
+                    "startedAt": 1788756484,
+                    "durationMs": null,
+                    "completedAt": null
+                  },
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756484555
+              },
+              "provider": "codex",
+              "eventType": "turn/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:10",
+            "occurredAt": "2026-09-07T12:48:04.591936+08:00"
+          },
+          {
+            "id": "c978d7d1-d51e-472f-ad4c-1d052258497a",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "node_repl",
+                  "error": null,
+                  "status": "ready",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756484743
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:11",
+            "occurredAt": "2026-09-07T12:48:04.746929+08:00"
+          },
+          {
+            "id": "eb8617d2-9b03-4dd0-826b-6e86c3ce99d8",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 16,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "cua_repl",
+                  "error": null,
+                  "status": "ready",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756485481
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:12",
+            "occurredAt": "2026-09-07T12:48:05.483791+08:00"
+          },
+          {
+            "id": "3574116c-c404-4f83-b12b-2dfadef224e6",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 17,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "node_repl",
+                  "error": null,
+                  "status": "ready",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756487156
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:13",
+            "occurredAt": "2026-09-07T12:48:07.163103+08:00"
+          },
+          {
+            "id": "5c22beda-1824-41b1-bd80-29de2471ed2f",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 18,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "agentscope_collaboration",
+                  "error": null,
+                  "status": "ready",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756487156
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:14",
+            "occurredAt": "2026-09-07T12:48:07.175084+08:00"
+          },
+          {
+            "id": "67ab7a79-49df-49c2-9fac-f31eefe605fa",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 19,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                  "name": "codex_apps",
+                  "error": null,
+                  "status": "ready",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "failureReason": null
+                },
+                "emittedAtMs": 1788756487157
+              },
+              "provider": "codex",
+              "eventType": "mcpServer/startupStatus/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:15",
+            "occurredAt": "2026-09-07T12:48:07.182204+08:00"
+          },
+          {
+            "id": "0ba014ba-68ae-4a20-9daa-2b58c32af086",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 20,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "session-start:5:/etc/codex/hooks.json",
+                    "scope": "thread",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "sessionStart",
+                    "startedAt": 1788756487,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 5,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756487924
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:16",
+            "occurredAt": "2026-09-07T12:48:07.928814+08:00"
+          },
+          {
+            "id": "f8e08a9e-7010-439f-aced-fe8d8be621a6",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 21,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "session-start:14:/Users/ken/.codex/hooks.json",
+                    "scope": "thread",
+                    "source": "user",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "sessionStart",
+                    "startedAt": 1788756487,
+                    "durationMs": null,
+                    "sourcePath": "/Users/ken/.codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 14,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756487924
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:17",
+            "occurredAt": "2026-09-07T12:48:07.935647+08:00"
+          },
+          {
+            "id": "b623ad4f-790e-4bc1-9b69-2573c49a5a42",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 22,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "session-start:5:/etc/codex/hooks.json",
+                    "scope": "thread",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "sessionStart",
+                    "startedAt": 1788756487,
+                    "durationMs": 50,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756487,
+                    "handlerType": "command",
+                    "displayOrder": 5,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756488487
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:18",
+            "occurredAt": "2026-09-07T12:48:08.489805+08:00"
+          },
+          {
+            "id": "71c8baeb-8a1a-4ed8-87a7-9936de2cb8cc",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 23,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "session-start:14:/Users/ken/.codex/hooks.json",
+                    "scope": "thread",
+                    "source": "user",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "sessionStart",
+                    "startedAt": 1788756487,
+                    "durationMs": 563,
+                    "sourcePath": "/Users/ken/.codex/hooks.json",
+                    "completedAt": 1788756488,
+                    "handlerType": "command",
+                    "displayOrder": 14,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756488487
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:19",
+            "occurredAt": "2026-09-07T12:48:08.49639+08:00"
+          },
+          {
+            "id": "98110e02-2238-447c-b4e3-637a89a21b30",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 24,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "user-prompt-submit:7:/etc/codex/hooks.json",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "userPromptSubmit",
+                    "startedAt": 1788756488,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 7,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756488489
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:20",
+            "occurredAt": "2026-09-07T12:48:08.502745+08:00"
+          },
+          {
+            "id": "f0a33af2-a99e-48be-9d50-c04963879b65",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 25,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "user-prompt-submit:16:/Users/ken/.codex/hooks.json",
+                    "scope": "turn",
+                    "source": "user",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "userPromptSubmit",
+                    "startedAt": 1788756488,
+                    "durationMs": null,
+                    "sourcePath": "/Users/ken/.codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 16,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756488489
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:21",
+            "occurredAt": "2026-09-07T12:48:08.509986+08:00"
+          },
+          {
+            "id": "4def925e-e269-46fa-8913-6216b0358c3e",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 26,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "user-prompt-submit:7:/etc/codex/hooks.json",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "userPromptSubmit",
+                    "startedAt": 1788756488,
+                    "durationMs": 39,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756488,
+                    "handlerType": "command",
+                    "displayOrder": 7,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756489049
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:22",
+            "occurredAt": "2026-09-07T12:48:09.055458+08:00"
+          },
+          {
+            "id": "a4570fb1-ca87-4656-99eb-fd1584edf3e5",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 27,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "user-prompt-submit:16:/Users/ken/.codex/hooks.json",
+                    "scope": "turn",
+                    "source": "user",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "userPromptSubmit",
+                    "startedAt": 1788756488,
+                    "durationMs": 560,
+                    "sourcePath": "/Users/ken/.codex/hooks.json",
+                    "completedAt": 1788756489,
+                    "handlerType": "command",
+                    "displayOrder": 16,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756489049
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:23",
+            "occurredAt": "2026-09-07T12:48:09.06376+08:00"
+          },
+          {
+            "id": "f30fe32a-3e81-461a-8fa0-4a5201fa8491",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 28,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/started",
+                "params": {
+                  "item": {
+                    "id": "01a07a31-f359-7221-bef5-3f3fb23b28d9",
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "text": "it-20260907-fix1-single-codex\n\n判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。\n\nAgentScope collaboration:\nPrefer the agentscope-collaboration MCP tools to read the current Issue, post progress, share artifacts, and coordinate durable follow-up work.\nThe task-scoped `agentscope` CLI is also available through your shell. Use `agentscope task context`, `agentscope issue current`, `agentscope task progress --content-file <path>`, `agentscope task respond --content-file <path>`, and `agentscope task run graph` as a fallback or for file-based results. Run `agentscope task --help` for the complete task-scoped command surface.",
+                        "type": "text",
+                        "text_elements": []
+                      }
+                    ],
+                    "clientId": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "startedAtMs": 1788756489049
+                },
+                "emittedAtMs": 1788756489049
+              },
+              "provider": "codex",
+              "eventType": "item/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:24",
+            "occurredAt": "2026-09-07T12:48:09.068804+08:00"
+          },
+          {
+            "id": "0ea60629-ec94-4f79-8d46-f8cecbbe5c16",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 29,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/completed",
+                "params": {
+                  "item": {
+                    "id": "01a07a31-f359-7221-bef5-3f3fb23b28d9",
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "text": "it-20260907-fix1-single-codex\n\n判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。\n\nAgentScope collaboration:\nPrefer the agentscope-collaboration MCP tools to read the current Issue, post progress, share artifacts, and coordinate durable follow-up work.\nThe task-scoped `agentscope` CLI is also available through your shell. Use `agentscope task context`, `agentscope issue current`, `agentscope task progress --content-file <path>`, `agentscope task respond --content-file <path>`, and `agentscope task run graph` as a fallback or for file-based results. Run `agentscope task --help` for the complete task-scoped command surface.",
+                        "type": "text",
+                        "text_elements": []
+                      }
+                    ],
+                    "clientId": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "completedAtMs": 1788756489049
+                },
+                "emittedAtMs": 1788756489051
+              },
+              "provider": "codex",
+              "eventType": "item/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:25",
+            "occurredAt": "2026-09-07T12:48:09.074717+08:00"
+          },
+          {
+            "id": "5e498109-536d-4332-ab1e-770c3987e737",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 30,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/started",
+                "params": {
+                  "item": {
+                    "id": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                    "text": "",
+                    "type": "agentMessage",
+                    "phase": "commentary",
+                    "delivery": null,
+                    "questions": null,
+                    "memoryCitation": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "startedAtMs": 1788756491037
+                },
+                "emittedAtMs": 1788756491037
+              },
+              "provider": "codex",
+              "eventType": "item/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:26",
+            "occurredAt": "2026-09-07T12:48:11.04543+08:00"
+          },
+          {
+            "id": "84a0f876-7d22-468a-af3b-84f4dbe8956c",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 31,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "我",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491180
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:27",
+            "occurredAt": "2026-09-07T12:48:11.184309+08:00"
+          },
+          {
+            "id": "c9078265-b6c6-4400-b628-ffbfe7ec4c7b",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 32,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "会",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491181
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:28",
+            "occurredAt": "2026-09-07T12:48:11.193557+08:00"
+          },
+          {
+            "id": "cd430ea0-101e-4f04-a6bf-0844b27526cd",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 33,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "直接",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491319
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:29",
+            "occurredAt": "2026-09-07T12:48:11.324844+08:00"
+          },
+          {
+            "id": "e4fcf673-774a-454e-bf40-681c7847422c",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 34,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "复",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491320
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:30",
+            "occurredAt": "2026-09-07T12:48:11.336386+08:00"
+          },
+          {
+            "id": "75a0c09f-557f-43a7-a17b-d57945e77e2c",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 35,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "核",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491321
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:31",
+            "occurredAt": "2026-09-07T12:48:11.346041+08:00"
+          },
+          {
+            "id": "0ed24252-2de2-471b-837f-85b7678c950e",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 36,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "试",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491484
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:32",
+            "occurredAt": "2026-09-07T12:48:11.488753+08:00"
+          },
+          {
+            "id": "7a8bf866-3230-4677-84c6-696129ae36f0",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 37,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "除",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491484
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:33",
+            "occurredAt": "2026-09-07T12:48:11.497066+08:00"
+          },
+          {
+            "id": "da27349c-dece-4681-be43-0c54f55afbb4",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 38,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "结果",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491484
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:34",
+            "occurredAt": "2026-09-07T12:48:11.505599+08:00"
+          },
+          {
+            "id": "0231684c-185a-4488-982e-16a3b1393349",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 39,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "，并",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756491484
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:35",
+            "occurredAt": "2026-09-07T12:48:11.513181+08:00"
+          },
+          {
+            "id": "02a2bfa9-540a-4e34-98ec-04aec3f18dd5",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 40,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "通过",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492276
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:36",
+            "occurredAt": "2026-09-07T12:48:12.287725+08:00"
+          },
+          {
+            "id": "e6ad69f0-2243-4746-b520-2207d5506aca",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 41,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "当前",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492281
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:37",
+            "occurredAt": "2026-09-07T12:48:12.302501+08:00"
+          },
+          {
+            "id": "c3b9f7ae-748c-449f-ba29-dd37cb6b214c",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 42,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": " Issue",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492282
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:38",
+            "occurredAt": "2026-09-07T12:48:12.314365+08:00"
+          },
+          {
+            "id": "dc9248bd-50d3-49bc-8653-c5b92567a5d0",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 43,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": " 的",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492337
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:39",
+            "occurredAt": "2026-09-07T12:48:12.343055+08:00"
+          },
+          {
+            "id": "1a734cbc-c38c-4fc9-9da3-da06d3cf87d2",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 44,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "协",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492337
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:40",
+            "occurredAt": "2026-09-07T12:48:12.354851+08:00"
+          },
+          {
+            "id": "9f960978-2d6a-4c4b-940e-7514fa86df72",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 45,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "作",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492337
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:41",
+            "occurredAt": "2026-09-07T12:48:12.363116+08:00"
+          },
+          {
+            "id": "df2c620a-0ae4-4067-9b2f-fb66d8bba2f5",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 46,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "工具",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492339
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:42",
+            "occurredAt": "2026-09-07T12:48:12.371474+08:00"
+          },
+          {
+            "id": "c33f9ff7-36c3-4547-a24c-07f4acb12469",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 47,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "提交",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492339
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:43",
+            "occurredAt": "2026-09-07T12:48:12.379799+08:00"
+          },
+          {
+            "id": "d2ae0ad6-7e0f-4646-9569-92d46195e7a3",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 48,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "结",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492346
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:44",
+            "occurredAt": "2026-09-07T12:48:12.388352+08:00"
+          },
+          {
+            "id": "24ec8344-43b2-49cf-ab34-abd21d497459",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 49,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "论",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492346
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:45",
+            "occurredAt": "2026-09-07T12:48:12.395331+08:00"
+          },
+          {
+            "id": "75457e6b-91fb-44d6-a428-63bdfefaf94f",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 50,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "、",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492354
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:46",
+            "occurredAt": "2026-09-07T12:48:12.402399+08:00"
+          },
+          {
+            "id": "892f334c-e2ed-4bbc-8fbb-021966fe1b78",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 51,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "完成",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492354
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:47",
+            "occurredAt": "2026-09-07T12:48:12.408567+08:00"
+          },
+          {
+            "id": "19ce2122-6db2-4714-889c-d46cb6a947a2",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 52,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "任务",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492354
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:48",
+            "occurredAt": "2026-09-07T12:48:12.415003+08:00"
+          },
+          {
+            "id": "e6b6eb5e-a91d-4f0f-a0f5-2d11f422ff00",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 53,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "；",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492354
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:49",
+            "occurredAt": "2026-09-07T12:48:12.421166+08:00"
+          },
+          {
+            "id": "bb16d904-648c-4116-8e0d-41e0ed16e5d7",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 54,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "不",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492354
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:50",
+            "occurredAt": "2026-09-07T12:48:12.426362+08:00"
+          },
+          {
+            "id": "d9cc3841-8fd1-46d3-a308-2b033ba5ad92",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 55,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "联网",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492356
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:51",
+            "occurredAt": "2026-09-07T12:48:12.432264+08:00"
+          },
+          {
+            "id": "60314fee-e2ae-4e29-9e06-18e7290ea557",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 56,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "、不",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492356
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:52",
+            "occurredAt": "2026-09-07T12:48:12.437687+08:00"
+          },
+          {
+            "id": "dcd6ad44-22a5-45cd-bd1b-8e0f42baf49f",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 57,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "委",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492366
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:53",
+            "occurredAt": "2026-09-07T12:48:12.442896+08:00"
+          },
+          {
+            "id": "b3213afa-12db-4f4b-a63c-0c1805395dd2",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 58,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "派",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492366
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:54",
+            "occurredAt": "2026-09-07T12:48:12.448259+08:00"
+          },
+          {
+            "id": "982770d1-fbc6-4cd8-a793-0a556041fa9c",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 59,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/agentMessage/delta",
+                "params": {
+                  "delta": "。\n",
+                  "itemId": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756492366
+              },
+              "provider": "codex",
+              "eventType": "item/agentMessage/delta",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:55",
+            "occurredAt": "2026-09-07T12:48:12.453751+08:00"
+          },
+          {
+            "id": "74f92deb-38e8-453c-9e03-ffdd3bb4d83e",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 60,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/completed",
+                "params": {
+                  "item": {
+                    "id": "msg_07f2449e5b322f36016a9e420b0af087d1a9977e7127e78985",
+                    "text": "我会直接复核试除结果，并通过当前 Issue 的协作工具提交结论、完成任务；不联网、不委派。\n",
+                    "type": "agentMessage",
+                    "phase": "commentary",
+                    "delivery": null,
+                    "questions": null,
+                    "memoryCitation": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "completedAtMs": 1788756492648
+                },
+                "emittedAtMs": 1788756492651
+              },
+              "provider": "codex",
+              "eventType": "item/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:56",
+            "occurredAt": "2026-09-07T12:48:12.657856+08:00"
+          },
+          {
+            "id": "159e35fa-0b24-4503-9af5-d5ce9b37f56e",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 61,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "tokenUsage": "[REDACTED]"
+                },
+                "emittedAtMs": 1788756493685
+              },
+              "provider": "codex",
+              "eventType": "thread/tokenUsage/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:57",
+            "occurredAt": "2026-09-07T12:48:13.688552+08:00"
+          },
+          {
+            "id": "1974351b-f146-4dcb-8aa3-0525a3828864",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 62,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "account/rateLimits/updated",
+                "params": {
+                  "rateLimits": {
+                    "credits": {
+                      "balance": "0",
+                      "unlimited": false,
+                      "hasCredits": false
+                    },
+                    "limitId": "codex",
+                    "primary": {
+                      "resetsAt": 1789356435,
+                      "usedPercent": 4,
+                      "windowDurationMins": 10080
+                    },
+                    "planType": "pro",
+                    "limitName": null,
+                    "secondary": null,
+                    "individualLimit": null,
+                    "spendControlReached": null,
+                    "rateLimitReachedType": null
+                  }
+                },
+                "emittedAtMs": 1788756493685
+              },
+              "provider": "codex",
+              "eventType": "account/rateLimits/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:58",
+            "occurredAt": "2026-09-07T12:48:13.694479+08:00"
+          },
+          {
+            "id": "cb0c11cf-f2c8-4641-b0b3-8796a160d58f",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 63,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "pre-tool-use:0:/etc/codex/hooks.json:exec-03d97323-f6b3-4eeb-b716-45a11f440952",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "preToolUse",
+                    "startedAt": 1788756497,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 0,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756497160
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:59",
+            "occurredAt": "2026-09-07T12:48:17.16898+08:00"
+          },
+          {
+            "id": "5b630ab0-5c3f-4b33-b539-42eac81eec76",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 64,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "pre-tool-use:0:/etc/codex/hooks.json:exec-03d97323-f6b3-4eeb-b716-45a11f440952",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "preToolUse",
+                    "startedAt": 1788756497,
+                    "durationMs": 48,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756497,
+                    "handlerType": "command",
+                    "displayOrder": 0,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756497209
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:60",
+            "occurredAt": "2026-09-07T12:48:17.214727+08:00"
+          },
+          {
+            "id": "dbf281fd-bdf2-4c80-a8e9-b51de69f8b02",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 65,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/started",
+                "params": {
+                  "item": {
+                    "id": "exec-03d97323-f6b3-4eeb-b716-45a11f440952",
+                    "tool": "issue.get",
+                    "type": "mcpToolCall",
+                    "error": null,
+                    "result": null,
+                    "server": "agentscope_collaboration",
+                    "status": "inProgress",
+                    "pluginId": null,
+                    "arguments": {},
+                    "appContext": null,
+                    "durationMs": null,
+                    "readOnlyHint": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "startedAtMs": 1788756497209
+                },
+                "emittedAtMs": 1788756497209
+              },
+              "provider": "codex",
+              "eventType": "item/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:61",
+            "occurredAt": "2026-09-07T12:48:17.225616+08:00"
+          },
+          {
+            "id": "664c68cc-2bf8-4d5a-87c6-1b3690e94c52",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 66,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/completed",
+                "params": {
+                  "item": {
+                    "id": "exec-03d97323-f6b3-4eeb-b716-45a11f440952",
+                    "tool": "issue.get",
+                    "type": "mcpToolCall",
+                    "error": null,
+                    "result": {
+                      "_meta": null,
+                      "content": [
+                        {
+                          "text": "{\"issue\": {\"id\": \"07f26a0f-9372-4bfa-ae5c-48a0e3565527\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-fix1-single-codex\", \"description\": \"判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"5640fe6e-d11b-4e34-82bc-2e74050d9b58\", \"creator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"acceptanceCriteria\": [], \"contextRefs\": [], \"version\": 2, \"createdAt\": \"2026-09-07T12:47:32.823418+08:00\", \"updatedAt\": \"2026-09-07T12:48:03.969707+08:00\"}}",
+                          "type": "text"
+                        }
+                      ],
+                      "structuredContent": {
+                        "issue": {
+                          "id": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+                          "kind": "user_work",
+                          "title": "it-20260907-fix1-single-codex",
+                          "status": "in_progress",
+                          "tenant": "default",
+                          "creator": {
+                            "ref": "admin",
+                            "type": "human"
+                          },
+                          "version": 2,
+                          "priority": "none",
+                          "createdAt": "2026-09-07T12:47:32.823418+08:00",
+                          "namespace": "default",
+                          "updatedAt": "2026-09-07T12:48:03.969707+08:00",
+                          "visibility": "work_hub",
+                          "assigneeRef": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+                          "contextRefs": [],
+                          "description": "判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+                          "assigneeType": "agent",
+                          "completionPolicy": "review",
+                          "acceptanceCriteria": []
+                        }
+                      }
+                    },
+                    "server": "agentscope_collaboration",
+                    "status": "completed",
+                    "pluginId": null,
+                    "arguments": {},
+                    "appContext": null,
+                    "durationMs": 7,
+                    "readOnlyHint": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "completedAtMs": 1788756497216
+                },
+                "emittedAtMs": 1788756497218
+              },
+              "provider": "codex",
+              "eventType": "item/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:62",
+            "occurredAt": "2026-09-07T12:48:17.23296+08:00"
+          },
+          {
+            "id": "39e329be-6ee8-4812-9355-6d96c76ef248",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 67,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "post-tool-use:2:/etc/codex/hooks.json:exec-03d97323-f6b3-4eeb-b716-45a11f440952",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "postToolUse",
+                    "startedAt": 1788756497,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 2,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756497220
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:63",
+            "occurredAt": "2026-09-07T12:48:17.240057+08:00"
+          },
+          {
+            "id": "e171bfc9-7f0f-44e3-aebe-586518e99696",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 68,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "post-tool-use:2:/etc/codex/hooks.json:exec-03d97323-f6b3-4eeb-b716-45a11f440952",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "postToolUse",
+                    "startedAt": 1788756497,
+                    "durationMs": 29,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756497,
+                    "handlerType": "command",
+                    "displayOrder": 2,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756497250
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:64",
+            "occurredAt": "2026-09-07T12:48:17.252603+08:00"
+          },
+          {
+            "id": "5da18199-e825-40a1-a379-0ad26cd04e59",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 69,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "pre-tool-use:0:/etc/codex/hooks.json:exec-64cbf799-06e7-4c63-8f8d-f7f5f8020aaa",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "preToolUse",
+                    "startedAt": 1788756497,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 0,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756497251
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:65",
+            "occurredAt": "2026-09-07T12:48:17.258666+08:00"
+          },
+          {
+            "id": "45b421eb-5fc7-4dea-b13a-fadadf669701",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 70,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "pre-tool-use:0:/etc/codex/hooks.json:exec-64cbf799-06e7-4c63-8f8d-f7f5f8020aaa",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "preToolUse",
+                    "startedAt": 1788756497,
+                    "durationMs": 31,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756497,
+                    "handlerType": "command",
+                    "displayOrder": 0,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756497283
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:66",
+            "occurredAt": "2026-09-07T12:48:17.285351+08:00"
+          },
+          {
+            "id": "fe874f08-fd76-4904-ab94-3629dbc8967f",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 71,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/started",
+                "params": {
+                  "item": {
+                    "id": "exec-64cbf799-06e7-4c63-8f8d-f7f5f8020aaa",
+                    "tool": "task.get",
+                    "type": "mcpToolCall",
+                    "error": null,
+                    "result": null,
+                    "server": "agentscope_collaboration",
+                    "status": "inProgress",
+                    "pluginId": null,
+                    "arguments": {},
+                    "appContext": null,
+                    "durationMs": null,
+                    "readOnlyHint": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "startedAtMs": 1788756497282
+                },
+                "emittedAtMs": 1788756497283
+              },
+              "provider": "codex",
+              "eventType": "item/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:67",
+            "occurredAt": "2026-09-07T12:48:17.292288+08:00"
+          },
+          {
+            "id": "20ca3b49-8374-4fb2-b280-c6ea4df9b9df",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 72,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/completed",
+                "params": {
+                  "item": {
+                    "id": "exec-64cbf799-06e7-4c63-8f8d-f7f5f8020aaa",
+                    "tool": "task.get",
+                    "type": "mcpToolCall",
+                    "error": null,
+                    "result": {
+                      "_meta": null,
+                      "content": [
+                        {
+                          "text": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"currentRequest\": \"it-20260907-fix1-single-codex\\n\\n判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。\", \"inputs\": null, \"issue\": {\"id\": \"07f26a0f-9372-4bfa-ae5c-48a0e3565527\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"it-20260907-fix1-single-codex\", \"description\": \"判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"5640fe6e-d11b-4e34-82bc-2e74050d9b58\", \"creator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"acceptanceCriteria\": [], \"contextRefs\": [], \"version\": 2, \"createdAt\": \"2026-09-07T12:47:32.823418+08:00\", \"updatedAt\": \"2026-09-07T12:48:03.969707+08:00\"}, \"requestContext\": null, \"task\": {\"id\": \"33b590d7-0de2-46d3-8f07-07927f108f88\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"07f26a0f-9372-4bfa-ae5c-48a0e3565527\", \"orchestrationRunId\": \"fab94a1a-3eab-40c3-9c95-80167f1280a9\", \"runNodeId\": \"0bda9b59-0750-409b-9179-3a35bd5a3eea\", \"currentAttemptId\": \"8f9ada89-c780-45d9-b95b-7034d6e4e760\", \"agentId\": \"5640fe6e-d11b-4e34-82bc-2e74050d9b58\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"assignment\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"07f26a0f-9372-4bfa-ae5c-48a0e3565527\", \"correlationId\": \"07f26a0f-9372-4bfa-ae5c-48a0e3565527\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"hosted-runtime\", \"agentId\": \"5640fe6e-d11b-4e34-82bc-2e74050d9b58\", \"bindingId\": \"b04e4ad2-823d-5771-b272-9ff789383c60\", \"runtimePoolId\": \"b1a11d76-0a41-43c8-b6a1-0a3f227a9c74\", \"runtimeProfileId\": \"0d582c5d-a02a-448f-9ac2-451fff69d08e\"}, \"sessionId\": \"26ffa30a-d837-4d8c-aa46-055c01ff0ee5\", \"resolvedAt\": \"2026-09-07T04:47:33.691132Z\", \"runtimePool\": {\"id\": \"b1a11d76-0a41-43c8-b6a1-0a3f227a9c74\", \"name\": \"coding-default\", \"tenant\": \"default\", \"version\": 1, \"createdAt\": \"2026-09-07T11:56:11.922607+08:00\", \"namespace\": \"default\", \"updatedAt\": \"2026-09-07T11:56:11.922607+08:00\"}, \"runtimeProfile\": {\"id\": \"0d582c5d-a02a-448f-9ac2-451fff69d08e\", \"name\": \"auto-codex\", \"tenant\": \"default\", \"runtime\": \"codex\", \"version\": 1, \"provider\": \"codex\", \"createdAt\": \"2026-09-07T11:56:11.927088+08:00\", \"namespace\": \"default\", \"updatedAt\": \"2026-09-07T11:56:11.927088+08:00\", \"requirements\": {}, \"configuration\": {\"sandbox\": \"workspace-write\"}}, \"selectionSource\": \"policy\", \"resolvedProviderConfiguration\": {\"sandbox\": \"workspace-write\"}}, \"sessionId\": \"26ffa30a-d837-4d8c-aa46-055c01ff0ee5\", \"version\": 3, \"createdAt\": \"2026-09-07T12:47:32.823418+08:00\", \"dispatchedAt\": \"2026-09-07T12:47:33.690416+08:00\", \"startedAt\": \"2026-09-07T12:48:03.969707+08:00\"}}",
+                          "type": "text"
+                        }
+                      ],
+                      "structuredContent": {
+                        "task": {
+                          "id": "33b590d7-0de2-46d3-8f07-07927f108f88",
+                          "status": "running",
+                          "tenant": "default",
+                          "agentId": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+                          "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+                          "version": 3,
+                          "hopCount": 0,
+                          "priority": 0,
+                          "createdAt": "2026-09-07T12:47:32.823418+08:00",
+                          "namespace": "default",
+                          "runNodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+                          "sessionId": "26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+                          "startedAt": "2026-09-07T12:48:03.969707+08:00",
+                          "teamDepth": 0,
+                          "originator": {
+                            "ref": "admin",
+                            "type": "human"
+                          },
+                          "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+                          "triggerType": "assignment",
+                          "dispatchedAt": "2026-09-07T12:47:33.690416+08:00",
+                          "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+                          "runtimeBinding": {
+                            "binding": {
+                              "kind": "hosted-runtime",
+                              "agentId": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+                              "bindingId": "b04e4ad2-823d-5771-b272-9ff789383c60",
+                              "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                              "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+                            },
+                            "sessionId": "26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+                            "resolvedAt": "2026-09-07T04:47:33.691132Z",
+                            "runtimePool": {
+                              "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                              "name": "coding-default",
+                              "tenant": "default",
+                              "version": 1,
+                              "createdAt": "2026-09-07T11:56:11.922607+08:00",
+                              "namespace": "default",
+                              "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+                            },
+                            "runtimeProfile": {
+                              "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+                              "name": "auto-codex",
+                              "tenant": "default",
+                              "runtime": "codex",
+                              "version": 1,
+                              "provider": "codex",
+                              "createdAt": "2026-09-07T11:56:11.927088+08:00",
+                              "namespace": "default",
+                              "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+                              "requirements": {},
+                              "configuration": {
+                                "sandbox": "workspace-write"
+                              }
+                            },
+                            "selectionSource": "policy",
+                            "resolvedProviderConfiguration": {
+                              "sandbox": "workspace-write"
+                            }
+                          },
+                          "currentAttemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+                          "orchestrationRunId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+                          "accountableHumanRef": "admin"
+                        },
+                        "issue": {
+                          "id": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+                          "kind": "user_work",
+                          "title": "it-20260907-fix1-single-codex",
+                          "status": "in_progress",
+                          "tenant": "default",
+                          "creator": {
+                            "ref": "admin",
+                            "type": "human"
+                          },
+                          "version": 2,
+                          "priority": "none",
+                          "createdAt": "2026-09-07T12:47:32.823418+08:00",
+                          "namespace": "default",
+                          "updatedAt": "2026-09-07T12:48:03.969707+08:00",
+                          "visibility": "work_hub",
+                          "assigneeRef": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+                          "contextRefs": [],
+                          "description": "判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+                          "assigneeType": "agent",
+                          "completionPolicy": "review",
+                          "acceptanceCriteria": []
+                        },
+                        "inputs": null,
+                        "currentRequest": "it-20260907-fix1-single-codex\n\n判断101是否为质数，简述需要试除哪些质数，结果包含 CODEX=prime。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+                        "requestContext": null,
+                        "coordinatorIssue": null,
+                        "coordinatorChildren": null
+                      }
+                    },
+                    "server": "agentscope_collaboration",
+                    "status": "completed",
+                    "pluginId": null,
+                    "arguments": {},
+                    "appContext": null,
+                    "durationMs": 6,
+                    "readOnlyHint": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "completedAtMs": 1788756497289
+                },
+                "emittedAtMs": 1788756497290
+              },
+              "provider": "codex",
+              "eventType": "item/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:68",
+            "occurredAt": "2026-09-07T12:48:17.298326+08:00"
+          },
+          {
+            "id": "ba738189-0bf3-4e52-a8df-6e4e152d07c7",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 73,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "post-tool-use:2:/etc/codex/hooks.json:exec-64cbf799-06e7-4c63-8f8d-f7f5f8020aaa",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "postToolUse",
+                    "startedAt": 1788756497,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 2,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756497292
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:69",
+            "occurredAt": "2026-09-07T12:48:17.305251+08:00"
+          },
+          {
+            "id": "0f0055d2-2a48-4d3b-8544-b033a5932bdb",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 74,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "post-tool-use:2:/etc/codex/hooks.json:exec-64cbf799-06e7-4c63-8f8d-f7f5f8020aaa",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "postToolUse",
+                    "startedAt": 1788756497,
+                    "durationMs": 24,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756497,
+                    "handlerType": "command",
+                    "displayOrder": 2,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756497316
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:70",
+            "occurredAt": "2026-09-07T12:48:17.319355+08:00"
+          },
+          {
+            "id": "509e7c26-9b0e-4435-8504-feb0e58b6a1e",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 75,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "tokenUsage": "[REDACTED]"
+                },
+                "emittedAtMs": 1788756497319
+              },
+              "provider": "codex",
+              "eventType": "thread/tokenUsage/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:71",
+            "occurredAt": "2026-09-07T12:48:17.325507+08:00"
+          },
+          {
+            "id": "48873b39-ac46-4c2f-bde2-44885e3d2316",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 76,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "account/rateLimits/updated",
+                "params": {
+                  "rateLimits": {
+                    "credits": {
+                      "balance": "0",
+                      "unlimited": false,
+                      "hasCredits": false
+                    },
+                    "limitId": "codex",
+                    "primary": {
+                      "resetsAt": 1789356435,
+                      "usedPercent": 4,
+                      "windowDurationMins": 10080
+                    },
+                    "planType": "pro",
+                    "limitName": null,
+                    "secondary": null,
+                    "individualLimit": null,
+                    "spendControlReached": null,
+                    "rateLimitReachedType": null
+                  }
+                },
+                "emittedAtMs": 1788756497319
+              },
+              "provider": "codex",
+              "eventType": "account/rateLimits/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:72",
+            "occurredAt": "2026-09-07T12:48:17.330974+08:00"
+          },
+          {
+            "id": "1bd08762-3ba3-4544-8c2b-9fd5e895d36a",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 77,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "pre-tool-use:0:/etc/codex/hooks.json:exec-620bcf18-3bc4-4fe2-8284-418cc41955ea",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "preToolUse",
+                    "startedAt": 1788756501,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 0,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756501654
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:73",
+            "occurredAt": "2026-09-07T12:48:21.664765+08:00"
+          },
+          {
+            "id": "a9c5478e-738e-46d4-8ca6-b35e71d981de",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 78,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "pre-tool-use:0:/etc/codex/hooks.json:exec-620bcf18-3bc4-4fe2-8284-418cc41955ea",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "preToolUse",
+                    "startedAt": 1788756501,
+                    "durationMs": 61,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756501,
+                    "handlerType": "command",
+                    "displayOrder": 0,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756501715
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:74",
+            "occurredAt": "2026-09-07T12:48:21.72097+08:00"
+          },
+          {
+            "id": "888f37dd-e963-4fe2-a130-664f14b93602",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 79,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/started",
+                "params": {
+                  "item": {
+                    "id": "exec-620bcf18-3bc4-4fe2-8284-418cc41955ea",
+                    "tool": "issue.comment.list",
+                    "type": "mcpToolCall",
+                    "error": null,
+                    "result": null,
+                    "server": "agentscope_collaboration",
+                    "status": "inProgress",
+                    "pluginId": null,
+                    "arguments": {
+                      "tail": 10
+                    },
+                    "appContext": null,
+                    "durationMs": null,
+                    "readOnlyHint": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "startedAtMs": 1788756501715
+                },
+                "emittedAtMs": 1788756501715
+              },
+              "provider": "codex",
+              "eventType": "item/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:75",
+            "occurredAt": "2026-09-07T12:48:21.730509+08:00"
+          },
+          {
+            "id": "d8aadf80-92e1-467a-9441-9de907b5bdbf",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 80,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/completed",
+                "params": {
+                  "item": {
+                    "id": "exec-620bcf18-3bc4-4fe2-8284-418cc41955ea",
+                    "tool": "issue.comment.list",
+                    "type": "mcpToolCall",
+                    "error": null,
+                    "result": {
+                      "_meta": null,
+                      "content": [
+                        {
+                          "text": "{\"items\": []}",
+                          "type": "text"
+                        }
+                      ],
+                      "structuredContent": {
+                        "items": []
+                      }
+                    },
+                    "server": "agentscope_collaboration",
+                    "status": "completed",
+                    "pluginId": null,
+                    "arguments": {
+                      "tail": 10
+                    },
+                    "appContext": null,
+                    "durationMs": 6,
+                    "readOnlyHint": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "completedAtMs": 1788756501721
+                },
+                "emittedAtMs": 1788756501723
+              },
+              "provider": "codex",
+              "eventType": "item/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:76",
+            "occurredAt": "2026-09-07T12:48:21.737574+08:00"
+          },
+          {
+            "id": "9968327d-7c9f-44d3-831d-5896d434c6ee",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 81,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "post-tool-use:2:/etc/codex/hooks.json:exec-620bcf18-3bc4-4fe2-8284-418cc41955ea",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "postToolUse",
+                    "startedAt": 1788756501,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 2,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756501725
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:77",
+            "occurredAt": "2026-09-07T12:48:21.744947+08:00"
+          },
+          {
+            "id": "b767a2c0-b722-4e18-a5b6-36b16bf94ebc",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 82,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "post-tool-use:2:/etc/codex/hooks.json:exec-620bcf18-3bc4-4fe2-8284-418cc41955ea",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "postToolUse",
+                    "startedAt": 1788756501,
+                    "durationMs": 31,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756501,
+                    "handlerType": "command",
+                    "displayOrder": 2,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756501756
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:78",
+            "occurredAt": "2026-09-07T12:48:21.758582+08:00"
+          },
+          {
+            "id": "2316ae2e-86c7-4cc6-bf85-8ad94bc43bf7",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 83,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "tokenUsage": "[REDACTED]"
+                },
+                "emittedAtMs": 1788756501758
+              },
+              "provider": "codex",
+              "eventType": "thread/tokenUsage/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:79",
+            "occurredAt": "2026-09-07T12:48:21.764719+08:00"
+          },
+          {
+            "id": "40301ae9-0528-4ed1-acaa-2c90e927f2eb",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 84,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "account/rateLimits/updated",
+                "params": {
+                  "rateLimits": {
+                    "credits": {
+                      "balance": "0",
+                      "unlimited": false,
+                      "hasCredits": false
+                    },
+                    "limitId": "codex",
+                    "primary": {
+                      "resetsAt": 1789356435,
+                      "usedPercent": 4,
+                      "windowDurationMins": 10080
+                    },
+                    "planType": "pro",
+                    "limitName": null,
+                    "secondary": null,
+                    "individualLimit": null,
+                    "spendControlReached": null,
+                    "rateLimitReachedType": null
+                  }
+                },
+                "emittedAtMs": 1788756501758
+              },
+              "provider": "codex",
+              "eventType": "account/rateLimits/updated",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:80",
+            "occurredAt": "2026-09-07T12:48:21.770617+08:00"
+          },
+          {
+            "id": "43f2d252-9c60-4ee7-a373-6a20e9254463",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 85,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/started",
+                "params": {
+                  "run": {
+                    "id": "pre-tool-use:0:/etc/codex/hooks.json:exec-270459a2-f802-43f6-98c3-0ab2b2ea46a5",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "running",
+                    "entries": [],
+                    "eventName": "preToolUse",
+                    "startedAt": 1788756508,
+                    "durationMs": null,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": null,
+                    "handlerType": "command",
+                    "displayOrder": 0,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756508447
+              },
+              "provider": "codex",
+              "eventType": "hook/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:81",
+            "occurredAt": "2026-09-07T12:48:28.456229+08:00"
+          },
+          {
+            "id": "d001c733-e37a-4b1e-a55d-910e80af3638",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 86,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "hook/completed",
+                "params": {
+                  "run": {
+                    "id": "pre-tool-use:0:/etc/codex/hooks.json:exec-270459a2-f802-43f6-98c3-0ab2b2ea46a5",
+                    "scope": "turn",
+                    "source": "system",
+                    "status": "completed",
+                    "entries": [],
+                    "eventName": "preToolUse",
+                    "startedAt": 1788756508,
+                    "durationMs": 37,
+                    "sourcePath": "/etc/codex/hooks.json",
+                    "completedAt": 1788756508,
+                    "handlerType": "command",
+                    "displayOrder": 0,
+                    "executionMode": "sync",
+                    "statusMessage": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+                },
+                "emittedAtMs": 1788756508486
+              },
+              "provider": "codex",
+              "eventType": "hook/completed",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:82",
+            "occurredAt": "2026-09-07T12:48:28.48953+08:00"
+          },
+          {
+            "id": "0d269406-b26a-46c0-8aec-aa0155c0f8a3",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 87,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.provider_event",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-host:b0aea46d-4ecb-4a58-8279-7469ce1ea28c"
+            },
+            "payload": {
+              "raw": {
+                "method": "item/started",
+                "params": {
+                  "item": {
+                    "id": "exec-270459a2-f802-43f6-98c3-0ab2b2ea46a5",
+                    "tool": "task.complete",
+                    "type": "mcpToolCall",
+                    "error": null,
+                    "result": null,
+                    "server": "agentscope_collaboration",
+                    "status": "inProgress",
+                    "pluginId": null,
+                    "arguments": {
+                      "result": "CODEX=prime",
+                      "outcome": "succeeded",
+                      "summary": "101 是质数。因为 10² < 101 < 11²，只需试除不超过 √101 的质数 2、3、5、7；余数分别为 1、2、1、3，均不能整除。因此 CODEX=prime。",
+                      "deferredInputIds": [],
+                      "processedInputIds": []
+                    },
+                    "appContext": null,
+                    "durationMs": null,
+                    "readOnlyHint": null
+                  },
+                  "turnId": "01a07a31-e1c1-7bf3-ba41-ea327f88b761",
+                  "threadId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+                  "startedAtMs": 1788756508486
+                },
+                "emittedAtMs": 1788756508486
+              },
+              "provider": "codex",
+              "eventType": "item/started",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+            },
+            "idempotencyKey": "provider-event:8f9ada89-c780-45d9-b95b-7034d6e4e760:83",
+            "occurredAt": "2026-09-07T12:48:28.495813+08:00"
+          },
+          {
+            "id": "20b05e0d-d433-4701-960d-d88eaac50ab3",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 88,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "attemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "5640fe6e-d11b-4e34-82bc-2e74050d9b58"
+            },
+            "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "idempotencyKey": "attempt-succeeded:8f9ada89-c780-45d9-b95b-7034d6e4e760",
+            "occurredAt": "2026-09-07T12:48:28.491971+08:00"
+          },
+          {
+            "id": "ce42d770-afe6-4968-aac3-ae30b2b1b50b",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 89,
+            "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "5640fe6e-d11b-4e34-82bc-2e74050d9b58"
+            },
+            "payload": {
+              "output": "CODEX=prime"
+            },
+            "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "idempotencyKey": "node-succeeded:0bda9b59-0750-409b-9179-3a35bd5a3eea",
+            "occurredAt": "2026-09-07T12:48:28.491971+08:00"
+          },
+          {
+            "id": "5b09469b-1ad3-4840-9d5b-d087d898ecb7",
+            "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 90,
+            "type": "run.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "5640fe6e-d11b-4e34-82bc-2e74050d9b58"
+            },
+            "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "idempotencyKey": "run-succeeded:fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "occurredAt": "2026-09-07T12:48:28.491971+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "mode": "direct",
+            "triggerType": "assignment",
+            "triggerRef": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+            "output": "CODEX=prime",
+            "state": "succeeded",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T12:47:32.823418+08:00",
+            "updatedAt": "2026-09-07T12:48:28.491971+08:00",
+            "startedAt": "2026-09-07T12:47:32.823418+08:00",
+            "completedAt": "2026-09-07T12:48:28.491971+08:00"
+          },
+          "nodes": [
+            {
+              "id": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+              "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:33b590d7-0de2-46d3-8f07-07927f108f88",
+              "type": "agent",
+              "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+              "state": "succeeded",
+              "output": "CODEX=prime",
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T12:47:32.823418+08:00",
+              "updatedAt": "2026-09-07T12:48:28.491971+08:00",
+              "startedAt": "2026-09-07T12:47:33.402766+08:00",
+              "completedAt": "2026-09-07T12:48:28.491971+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "33b590d7-0de2-46d3-8f07-07927f108f88",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+              "orchestrationRunId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+              "runNodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+              "currentAttemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+              "agentId": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+              "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "hosted-runtime",
+                  "agentId": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+                  "bindingId": "b04e4ad2-823d-5771-b272-9ff789383c60",
+                  "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+                },
+                "sessionId": "26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+                "resolvedAt": "2026-09-07T04:47:33.691132Z",
+                "runtimePool": {
+                  "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "name": "coding-default",
+                  "tenant": "default",
+                  "version": 1,
+                  "createdAt": "2026-09-07T11:56:11.922607+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+                },
+                "runtimeProfile": {
+                  "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+                  "name": "auto-codex",
+                  "tenant": "default",
+                  "runtime": "codex",
+                  "version": 1,
+                  "provider": "codex",
+                  "createdAt": "2026-09-07T11:56:11.927088+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+                  "requirements": {},
+                  "configuration": {
+                    "sandbox": "workspace-write"
+                  }
+                },
+                "selectionSource": "policy",
+                "resolvedProviderConfiguration": {
+                  "sandbox": "workspace-write"
+                }
+              },
+              "sessionId": "26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+              "result": "CODEX=prime",
+              "version": 4,
+              "createdAt": "2026-09-07T12:47:32.823418+08:00",
+              "dispatchedAt": "2026-09-07T12:47:33.690416+08:00",
+              "startedAt": "2026-09-07T12:48:03.969707+08:00",
+              "completedAt": "2026-09-07T12:48:28.491971+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+              "agentTaskId": "33b590d7-0de2-46d3-8f07-07927f108f88",
+              "agentId": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+              "bindingId": "b04e4ad2-823d-5771-b272-9ff789383c60",
+              "runId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+              "nodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "hosted-runtime",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "hosted-runtime",
+                  "agentId": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+                  "bindingId": "b04e4ad2-823d-5771-b272-9ff789383c60",
+                  "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+                },
+                "sessionId": "26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+                "resolvedAt": "2026-09-07T04:47:33.691132Z",
+                "runtimePool": {
+                  "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+                  "name": "coding-default",
+                  "tenant": "default",
+                  "version": 1,
+                  "createdAt": "2026-09-07T11:56:11.922607+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+                },
+                "runtimeProfile": {
+                  "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+                  "name": "auto-codex",
+                  "tenant": "default",
+                  "runtime": "codex",
+                  "version": 1,
+                  "provider": "codex",
+                  "createdAt": "2026-09-07T11:56:11.927088+08:00",
+                  "namespace": "default",
+                  "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+                  "requirements": {},
+                  "configuration": {
+                    "sandbox": "workspace-write"
+                  }
+                },
+                "selectionSource": "policy",
+                "resolvedProviderConfiguration": {
+                  "sandbox": "workspace-write"
+                }
+              },
+              "runtimeProfileName": "auto-codex",
+              "runtimePoolName": "coding-default",
+              "hostId": "b0aea46d-4ecb-4a58-8279-7469ce1ea28c",
+              "sessionId": "26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+              "turnId": "76ef6a15-48ce-426b-9669-f3f6584a2409",
+              "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65",
+              "workspaceKey": "default/default/conversations/5640fe6e-d11b-4e34-82bc-2e74050d9b58/26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+              "state": "succeeded",
+              "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/d40bd5a9-308b-4753-883c-21761a89a9da",
+              "leaseToken": "[REDACTED]",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T12:48:23.983267+08:00",
+              "checkpoint": {
+                "providerSessionId": "01a07a31-e159-7b11-92e5-8781733c2c65"
+              },
+              "result": "CODEX=prime",
+              "version": 8,
+              "createdAt": "2026-09-07T12:47:33.690416+08:00",
+              "updatedAt": "2026-09-07T12:48:28.491971+08:00",
+              "startedAt": "2026-09-07T12:48:03.968462+08:00",
+              "completedAt": "2026-09-07T12:48:28.491971+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "mode": "direct",
+        "triggerType": "assignment",
+        "triggerRef": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "output": "CODEX=prime",
+        "state": "succeeded",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T12:47:32.823418+08:00",
+        "updatedAt": "2026-09-07T12:48:28.491971+08:00",
+        "startedAt": "2026-09-07T12:47:32.823418+08:00",
+        "completedAt": "2026-09-07T12:48:28.491971+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "33b590d7-0de2-46d3-8f07-07927f108f88",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "orchestrationRunId": "fab94a1a-3eab-40c3-9c95-80167f1280a9",
+        "runNodeId": "0bda9b59-0750-409b-9179-3a35bd5a3eea",
+        "currentAttemptId": "8f9ada89-c780-45d9-b95b-7034d6e4e760",
+        "agentId": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "correlationId": "07f26a0f-9372-4bfa-ae5c-48a0e3565527",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "5640fe6e-d11b-4e34-82bc-2e74050d9b58",
+            "bindingId": "b04e4ad2-823d-5771-b272-9ff789383c60",
+            "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "runtimeProfileId": "0d582c5d-a02a-448f-9ac2-451fff69d08e"
+          },
+          "sessionId": "26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+          "resolvedAt": "2026-09-07T04:47:33.691132Z",
+          "runtimePool": {
+            "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:56:11.922607+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+          },
+          "runtimeProfile": {
+            "id": "0d582c5d-a02a-448f-9ac2-451fff69d08e",
+            "name": "auto-codex",
+            "tenant": "default",
+            "runtime": "codex",
+            "version": 1,
+            "provider": "codex",
+            "createdAt": "2026-09-07T11:56:11.927088+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.927088+08:00",
+            "requirements": {},
+            "configuration": {
+              "sandbox": "workspace-write"
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "sandbox": "workspace-write"
+          }
+        },
+        "sessionId": "26ffa30a-d837-4d8c-aa46-055c01ff0ee5",
+        "result": "CODEX=prime",
+        "version": 4,
+        "createdAt": "2026-09-07T12:47:32.823418+08:00",
+        "dispatchedAt": "2026-09-07T12:47:33.690416+08:00",
+        "startedAt": "2026-09-07T12:48:03.969707+08:00",
+        "completedAt": "2026-09-07T12:48:28.491971+08:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,515 @@
+{
+  "at": "2026-09-07T04:47:51.242287+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/deaf2f40-2cf1-50fe-bbb7-e2304387f8f4/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "48550f34-7553-49a8-bb9e-bd3b63d3eff0",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "actor": {
+          "type": "system",
+          "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "createdAt": "2026-09-07T12:47:33.867659+08:00"
+      },
+      {
+        "id": "6f4326b8-b3c8-4863-a130-2399af9bbb4a",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "actor": {
+          "type": "system",
+          "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+        },
+        "action": "issue.updated",
+        "objectType": "issue",
+        "objectRef": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "createdAt": "2026-09-07T12:47:33.8738+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [
+      {
+        "id": "0112a036-65ae-441a-bc48-09a02ca3cdf6",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "it-20260907-fix1-手机行业调研",
+        "description": "请使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL，并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。",
+        "status": "backlog",
+        "priority": "normal",
+        "kind": "endpoint_job",
+        "visibility": "operational",
+        "completionPolicy": "automatic",
+        "assigneeType": "agent",
+        "assigneeRef": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+        "creator": {
+          "type": "agent",
+          "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "parentIssueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "version": 1,
+        "createdAt": "2026-09-07T12:47:50.585081+08:00",
+        "updatedAt": "2026-09-07T12:47:50.585081+08:00"
+      },
+      {
+        "id": "92e8d157-4f5e-4ea7-8d58-1cbfe1d225e2",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "it-20260907-fix1-新能源汽车行业调研",
+        "description": "请使用可用的web搜索/访问工具，找到至少2个可访问的官方来源URL，并给出发布日期、两条近期事实。不能凭训练知识编造近期事实或来源。",
+        "status": "backlog",
+        "priority": "normal",
+        "kind": "endpoint_job",
+        "visibility": "operational",
+        "completionPolicy": "automatic",
+        "assigneeType": "agent",
+        "assigneeRef": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+        "creator": {
+          "type": "agent",
+          "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "parentIssueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "version": 1,
+        "createdAt": "2026-09-07T12:47:50.572518+08:00",
+        "updatedAt": "2026-09-07T12:47:50.572518+08:00"
+      }
+    ],
+    "comments": [],
+    "exportedAt": "2026-09-07T04:47:51.250227Z",
+    "issue": {
+      "id": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-fix1-endpoint-two-industries",
+      "description": "并行委派两个不同成员：researcher调研新能源汽车行业，analyst调研手机行业。每个行业要求实际使用可用web搜索/访问工具，找到至少2个可访问的官方来源URL并给出发布日期、两条近期事实；不能凭训练知识编造近期事实或来源。两份子任务都必须创建，标题前缀 it-20260907-fix1。任何成员缺少所需web工具/凭证或无法核实来源，必须明确task.fail，上报行业名和缺失能力。协调员收到失败不得当成功验收；必须明确让整个run failed并说明缺口。若两份调研均真实完成，才验收汇总并完成run。不要修改权限或配置来完成测试。",
+      "status": "in_progress",
+      "priority": "normal",
+      "kind": "endpoint_job",
+      "visibility": "operational",
+      "completionPolicy": "automatic",
+      "assigneeType": "team",
+      "assigneeRef": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+      "executionTargetType": "team",
+      "executionTargetRef": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+      "creator": {
+        "type": "system",
+        "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "sourceType": "endpoint",
+      "sourceRef": "523b1d97-e66b-4004-b992-8d905a293494",
+      "version": 2,
+      "createdAt": "2026-09-07T12:47:33.863895+08:00",
+      "updatedAt": "2026-09-07T12:47:33.871287+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "b869cd68-5aac-4a52-9c68-8cef8ac3893c",
+            "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+            "agentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "system",
+              "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+            },
+            "causationId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+            "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "idempotencyKey": "agent-task-queued:b2f22935-1333-4154-b7a7-8cdc076a5265",
+            "occurredAt": "2026-09-07T12:47:33.881474+08:00"
+          },
+          {
+            "id": "5e589071-51b0-40f5-8bbc-41efcb2911e4",
+            "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+            "agentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+            "attemptId": "d77087a6-0c3a-47c9-94e5-df48610fd606",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+            "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "idempotencyKey": "attempt-queued:d77087a6-0c3a-47c9-94e5-df48610fd606",
+            "occurredAt": "2026-09-07T12:47:33.908678+08:00"
+          },
+          {
+            "id": "09cbfa14-ae6a-40e2-8d41-e2a06cb0294d",
+            "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+            "agentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+            "attemptId": "d77087a6-0c3a-47c9-94e5-df48610fd606",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+            },
+            "idempotencyKey": "attempt-running:d77087a6-0c3a-47c9-94e5-df48610fd606",
+            "occurredAt": "2026-09-07T12:47:34.009878+08:00"
+          },
+          {
+            "id": "155aa46e-9eb6-4977-a27d-9ead9cae317f",
+            "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "6930fc54-a6a4-4269-9354-8021c7b63b90",
+            "agentTaskId": "3f6abd48-365d-490d-88ca-164200ea8d7c",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+            },
+            "causationId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+            "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "idempotencyKey": "agent-task-queued:3f6abd48-365d-490d-88ca-164200ea8d7c",
+            "occurredAt": "2026-09-07T12:47:50.572518+08:00"
+          },
+          {
+            "id": "f5bea67c-414f-4998-82ac-25b8273078f2",
+            "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "31b6856d-7075-43ba-919c-70b0710684ac",
+            "agentTaskId": "cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+            },
+            "causationId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+            "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "idempotencyKey": "agent-task-queued:cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+            "occurredAt": "2026-09-07T12:47:50.585081+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+            "mode": "adaptive",
+            "triggerType": "endpoint",
+            "triggerRef": "c80e161b-75f4-42bc-8ed7-17215a22be79",
+            "idempotencyKey": "c80e161b-75f4-42bc-8ed7-17215a22be79:it-20260907-fix1-team-job-research",
+            "input": {
+              "industries": [
+                "新能源汽车",
+                "手机"
+              ],
+              "mustUseWeb": true
+            },
+            "state": "waiting",
+            "waitReason": "node_wait",
+            "version": 4,
+            "createdBy": {
+              "type": "system",
+              "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+            },
+            "createdAt": "2026-09-07T12:47:33.875329+08:00",
+            "updatedAt": "2026-09-07T12:47:34.391517+08:00",
+            "startedAt": "2026-09-07T12:47:33.875329+08:00"
+          },
+          "nodes": [
+            {
+              "id": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+              "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "target",
+              "type": "team",
+              "role": "leader",
+              "issueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+              "state": "waiting",
+              "iteration": 1,
+              "waitReason": "team_coordinator",
+              "version": 2,
+              "createdAt": "2026-09-07T12:47:33.879844+08:00",
+              "updatedAt": "2026-09-07T12:47:33.894353+08:00",
+              "startedAt": "2026-09-07T12:47:33.894353+08:00"
+            },
+            {
+              "id": "6930fc54-a6a4-4269-9354-8021c7b63b90",
+              "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:3f6abd48-365d-490d-88ca-164200ea8d7c",
+              "type": "agent",
+              "role": "researcher",
+              "issueId": "92e8d157-4f5e-4ea7-8d58-1cbfe1d225e2",
+              "state": "ready",
+              "iteration": 1,
+              "version": 1,
+              "createdAt": "2026-09-07T12:47:50.572518+08:00",
+              "updatedAt": "2026-09-07T12:47:50.572518+08:00"
+            },
+            {
+              "id": "31b6856d-7075-43ba-919c-70b0710684ac",
+              "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+              "type": "agent",
+              "role": "analyst",
+              "issueId": "0112a036-65ae-441a-bc48-09a02ca3cdf6",
+              "state": "ready",
+              "iteration": 1,
+              "version": 1,
+              "createdAt": "2026-09-07T12:47:50.585081+08:00",
+              "updatedAt": "2026-09-07T12:47:50.585081+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+              "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "runNodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+              "currentAttemptId": "d77087a6-0c3a-47c9-94e5-df48610fd606",
+              "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+              "status": "running",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "system",
+                "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+              },
+              "causationId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+              "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+                  "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+                },
+                "sessionId": "sess_872d9a5962c4",
+                "resolvedAt": "2026-09-07T04:47:33.909416Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_872d9a5962c4",
+              "version": 3,
+              "createdAt": "2026-09-07T12:47:33.881474+08:00",
+              "dispatchedAt": "2026-09-07T12:47:33.908678+08:00",
+              "startedAt": "2026-09-07T12:47:34.009878+08:00"
+            },
+            {
+              "id": "3f6abd48-365d-490d-88ca-164200ea8d7c",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "92e8d157-4f5e-4ea7-8d58-1cbfe1d225e2",
+              "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "runNodeId": "6930fc54-a6a4-4269-9354-8021c7b63b90",
+              "agentId": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+              "status": "queued",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+              "teamRole": "researcher",
+              "parentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+              "delegatedFromTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+              "originator": {
+                "type": "agent",
+                "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+              },
+              "causationId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+              "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "version": 1,
+              "createdAt": "2026-09-07T12:47:50.572518+08:00"
+            },
+            {
+              "id": "cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "0112a036-65ae-441a-bc48-09a02ca3cdf6",
+              "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "runNodeId": "31b6856d-7075-43ba-919c-70b0710684ac",
+              "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+              "status": "queued",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+              "teamRole": "analyst",
+              "parentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+              "delegatedFromTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+              "originator": {
+                "type": "agent",
+                "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+              },
+              "causationId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+              "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "version": 1,
+              "createdAt": "2026-09-07T12:47:50.585081+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "d77087a6-0c3a-47c9-94e5-df48610fd606",
+              "agentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+              "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+              "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+              "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+              "nodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+                  "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+                },
+                "sessionId": "sess_872d9a5962c4",
+                "resolvedAt": "2026-09-07T04:47:33.909416Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "ed634c61-e615-4604-9d8a-72dabede64cc",
+              "sessionId": "sess_872d9a5962c4",
+              "sessionRef": "c80c5dde-c3e3-4277-b148-9bd10c119565",
+              "turnId": "5cc1bb6d-9f4a-4659-927a-b787034a0d2d",
+              "state": "running",
+              "fencingToken": "[REDACTED]",
+              "leaseExpiresAt": "2026-09-07T12:48:35.61428+08:00",
+              "heartbeatAt": "2026-09-07T12:47:50.61428+08:00",
+              "version": 19,
+              "createdAt": "2026-09-07T12:47:33.908678+08:00",
+              "updatedAt": "2026-09-07T12:47:50.61428+08:00",
+              "startedAt": "2026-09-07T12:47:34.009878+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "mode": "adaptive",
+        "triggerType": "endpoint",
+        "triggerRef": "c80e161b-75f4-42bc-8ed7-17215a22be79",
+        "idempotencyKey": "c80e161b-75f4-42bc-8ed7-17215a22be79:it-20260907-fix1-team-job-research",
+        "input": {
+          "industries": [
+            "新能源汽车",
+            "手机"
+          ],
+          "mustUseWeb": true
+        },
+        "state": "waiting",
+        "waitReason": "node_wait",
+        "version": 4,
+        "createdBy": {
+          "type": "system",
+          "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+        },
+        "createdAt": "2026-09-07T12:47:33.875329+08:00",
+        "updatedAt": "2026-09-07T12:47:34.391517+08:00",
+        "startedAt": "2026-09-07T12:47:33.875329+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "runNodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+        "currentAttemptId": "d77087a6-0c3a-47c9-94e5-df48610fd606",
+        "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+        "status": "running",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "system",
+          "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+        },
+        "causationId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+        "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+            "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+          },
+          "sessionId": "sess_872d9a5962c4",
+          "resolvedAt": "2026-09-07T04:47:33.909416Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_872d9a5962c4",
+        "version": 3,
+        "createdAt": "2026-09-07T12:47:33.881474+08:00",
+        "dispatchedAt": "2026-09-07T12:47:33.908678+08:00",
+        "startedAt": "2026-09-07T12:47:34.009878+08:00"
+      }
+    ]
+  }
+}

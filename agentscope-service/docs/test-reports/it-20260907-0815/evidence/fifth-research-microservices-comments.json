@@ -1,0 +1,46 @@
+{
+  "at": "2026-09-07T00:18:48.659870+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/56ae8c89-9ca7-4438-8ed5-698707719695/comments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "ec4d644c-918d-4f8f-b05e-047b679e26b9",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+        "threadRootId": "ec4d644c-918d-4f8f-b05e-047b679e26b9",
+        "author": {
+          "type": "agent",
+          "ref": "068b4f8a-39c2-4482-b328-5d46cf28c113"
+        },
+        "content": "已成功委派两项子任务：\n1. 研究2026年微服务行业趋势，分配给researcher (ID: 679b7bf9-c9c1-4828-a129-4045be75090e)。\n2. 计算基线2+3=5，分配给calculator (ID: 2dc24303-742b-4ee8-9f1f-b0f5ff2a47e7)。",
+        "type": "result",
+        "sourceTaskId": "297c6d60-4aea-4396-89e8-59f5ec8bdfb2",
+        "sourceAttemptId": "c590e964-b96d-48b6-9c62-e8278a2a337f",
+        "version": 1,
+        "createdAt": "2026-09-07T08:17:07.507565+08:00",
+        "updatedAt": "2026-09-07T08:17:07.507565+08:00",
+        "routes": [
+          {
+            "id": "1765c106-d745-418b-b16a-54aa4e01cd8c",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "56ae8c89-9ca7-4438-8ed5-698707719695",
+            "commentId": "ec4d644c-918d-4f8f-b05e-047b679e26b9",
+            "commentVersion": 1,
+            "targetType": "team",
+            "targetRef": "7089f084-903e-4bf2-b395-2f610e24e81a",
+            "routeType": "team_leader",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T08:17:07.507565+08:00"
+          }
+        ]
+      }
+    ],
+    "nextCursor": ""
+  }
+}
