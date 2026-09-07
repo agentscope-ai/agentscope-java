@@ -304,6 +304,13 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+Local shell process cleanup is best-effort: it attempts to terminate the directly launched shell
+and descendants observed before waiting for the shell or during cleanup while the shell is still
+alive. Previously observed descendants are cleaned up even after the shell exits. A child created
+after the first snapshot and reparented before cleanup may escape discovery. Commands must manage
+their own detached/background processes; an `execute` return or output-capture error does not
+guarantee that all such processes have stopped.
+
 #### All configuration options
 
 ```java
