@@ -131,6 +131,7 @@ import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
+import java.lang.ref.WeakReference;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -357,36 +358,40 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.hookDispatcher = new LegacyHookDispatcher(this);
 
         if (this.stateStore != null) {
+            // The global manager must not keep an otherwise unreachable agent alive through
+            // this callback. ActiveRequestContext holds the agent strongly while a call runs.
+            WeakReference<ReActAgent> agentReference = new WeakReference<>(this);
             shutdownManager.bindStateSaver(
                     this,
-                    // The saver receives the precise per-(userId, sessionId) AgentState bound to
-                    // the interrupted request, so persist that session directly rather than the
-                    // instance "last-active" CallExecution (which is wrong under concurrency).
-                    // On CAS conflict the session was taken over elsewhere — log and skip
-                    // overwrite.
                     agentState -> {
-                        String uid = agentState.getUserId();
-                        String sid = agentState.getSessionId();
-                        String slot = slotKey(uid, sid);
-                        long expected =
-                                slotVersions.getOrDefault(slot, AgentStateStore.UNVERSIONED);
-                        long newVersion =
-                                stateStore.saveIfVersion(
-                                        uid, sid, "agent_state", agentState, expected);
-                        if (newVersion == AgentStateStore.UNVERSIONED
-                                && stateStore.supportsVersioning()
-                                && expected != AgentStateStore.UNVERSIONED) {
-                            stateConflictCount.incrementAndGet();
-                            log.warn(
-                                    "Shutdown state save skipped due to concurrent modification"
-                                            + " (userId={}, sessionId={}, expectedVersion={})",
-                                    uid,
-                                    sid,
-                                    expected);
-                        } else if (newVersion != AgentStateStore.UNVERSIONED) {
-                            slotVersions.put(slot, newVersion);
+                        ReActAgent agent = agentReference.get();
+                        if (agent != null) {
+                            agent.saveShutdownState(agentState);
                         }
                     });
+        }
+    }
+
+    private void saveShutdownState(AgentState agentState) {
+        // Persist the precise per-(userId, sessionId) state bound to the interrupted request,
+        // not the instance's last-active session. On CAS conflict, skip the stale overwrite.
+        String uid = agentState.getUserId();
+        String sid = agentState.getSessionId();
+        String slot = slotKey(uid, sid);
+        long expected = slotVersions.getOrDefault(slot, AgentStateStore.UNVERSIONED);
+        long newVersion = stateStore.saveIfVersion(uid, sid, "agent_state", agentState, expected);
+        if (newVersion == AgentStateStore.UNVERSIONED
+                && stateStore.supportsVersioning()
+                && expected != AgentStateStore.UNVERSIONED) {
+            stateConflictCount.incrementAndGet();
+            log.warn(
+                    "Shutdown state save skipped due to concurrent modification"
+                            + " (userId={}, sessionId={}, expectedVersion={})",
+                    uid,
+                    sid,
+                    expected);
+        } else if (newVersion != AgentStateStore.UNVERSIONED) {
+            slotVersions.put(slot, newVersion);
         }
     }
 
