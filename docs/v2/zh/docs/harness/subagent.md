@@ -59,6 +59,7 @@ top_p: 0.95                   # 可选
 hidden: false                 # true 时不出现在 agent 可见列表（仍可程序化 spawn）
 mode: subagent                # primary / subagent / all，默认 all；primary 不允许被 spawn
 expose_to_user: true          # 可选三态；强制/禁止向用户暴露（不写表示不表态）
+enable_pending_tool_recovery: true # 可选；不写则继承父 agent 的恢复配置
 tools: [read_file, grep_files]   # 可选；继承工具的白名单
 ---
 
@@ -91,6 +92,14 @@ HarnessAgent.builder()
 ```
 
 三种来源互斥：`workspace(...)`、`inlineAgentsBody(...)`、`url(...)` **三选一**。
+
+框架自动构建的本地子 agent（包括 `general-purpose`）会继承父级
+`HarnessAgent.Builder.enablePendingToolRecovery(...)` 配置，默认关闭。声明中可用
+`.enablePendingToolRecovery(true)` 或 `.enablePendingToolRecovery(false)` 显式覆盖，
+`null` 表示继承。工作区 spec 支持 `enable_pending_tool_recovery`，也兼容
+`enablePendingToolRecovery` 写法。开启后，新的普通消息会为悬空工具调用补充错误结果，
+也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
+调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
 
 ### 内置 `general-purpose`
 
