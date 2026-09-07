@@ -299,4 +299,9 @@ public class OverlayFilesystem implements AbstractFilesystem {
     public AbstractFilesystem getLower() {
         return lower;
     }
+
+    @Override
+    public Object storageKey(RuntimeContext runtimeContext, String path) {
+        return upper.storageKey(runtimeContext, path);
+    }
 }

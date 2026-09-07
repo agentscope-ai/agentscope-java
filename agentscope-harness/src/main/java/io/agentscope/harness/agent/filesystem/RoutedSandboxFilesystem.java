@@ -135,4 +135,9 @@ public final class RoutedSandboxFilesystem implements AbstractSandboxFilesystem 
     public boolean exists(RuntimeContext runtimeContext, String path) {
         return composite.exists(runtimeContext, path);
     }
+
+    @Override
+    public Object storageKey(RuntimeContext runtimeContext, String path) {
+        return composite.storageKey(runtimeContext, path);
+    }
 }
