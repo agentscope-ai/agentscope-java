@@ -20,12 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -296,6 +299,92 @@ class ReasoningContextTest {
         assertEquals("call_1", accumulated.getId());
         assertEquals("weather", accumulated.getName());
         assertEquals("{\"city\":\"Beijing\"}", accumulated.getContent());
+    }
+
+    @Test
+    @DisplayName("Should propagate response metadata to final message")
+    void testResponseMetadataPropagation() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("openai.reasoning.encrypted_content", "enc_12345");
+        metadata.put("openai.response.id", "resp_abc");
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .metadata(metadata)
+                        .build();
+
+        context.processChunk(chunk);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertNotNull(msg.getMetadata());
+        assertEquals("enc_12345", msg.getMetadata().get("openai.reasoning.encrypted_content"));
+        assertEquals("resp_abc", msg.getMetadata().get("openai.response.id"));
+    }
+
+    @Test
+    @DisplayName("Should merge metadata from multiple chunks with last-write-wins")
+    void testMultipleChunksMetadataMerge() {
+        Map<String, Object> meta1 = new HashMap<>();
+        meta1.put("openai.response.status", "in_progress");
+        meta1.put("openai.reasoning.encrypted_content", "enc_v1");
+
+        ChatResponse chunk1 =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .metadata(meta1)
+                        .build();
+
+        Map<String, Object> meta2 = new HashMap<>();
+        meta2.put("openai.response.status", "completed");
+
+        ChatResponse chunk2 =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text(" world").build()))
+                        .metadata(meta2)
+                        .build();
+
+        context.processChunk(chunk1);
+        context.processChunk(chunk2);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertNotNull(msg.getMetadata());
+        // Different keys accumulate
+        assertEquals("enc_v1", msg.getMetadata().get("openai.reasoning.encrypted_content"));
+        // Same key: last-write-wins
+        assertEquals("completed", msg.getMetadata().get("openai.response.status"));
+    }
+
+    @Test
+    @DisplayName("Should coexist response metadata with ChatUsage in final message")
+    void testMetadataCoexistsWithChatUsage() {
+        ChatUsage usage = ChatUsage.builder().inputTokens(100).outputTokens(50).time(1.5).build();
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("openai.reasoning.encrypted_content", "enc_999");
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .usage(usage)
+                        .metadata(metadata)
+                        .build();
+
+        context.processChunk(chunk);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertNotNull(msg.getMetadata());
+        // Both metadata keys coexist
+        assertEquals("enc_999", msg.getMetadata().get("openai.reasoning.encrypted_content"));
+        assertNotNull(msg.getMetadata().get(MessageMetadataKeys.CHAT_USAGE));
+        assertNotNull(msg.getChatUsage());
+        assertEquals(100, msg.getChatUsage().getInputTokens());
     }
 
     @Test
