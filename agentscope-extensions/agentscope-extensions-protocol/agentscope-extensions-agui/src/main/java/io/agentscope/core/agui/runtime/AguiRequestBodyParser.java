@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.agui.common;
+package io.agentscope.core.agui.runtime;
 
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.util.JsonUtils;
@@ -25,10 +25,12 @@ import java.util.Objects;
  * <p>The default AgentScope codec is Jackson 2. Keeping this conversion at the AG-UI boundary
  * avoids selecting Spring Boot 4's Jackson 3 codec for AG-UI's Jackson 2-annotated models, while
  * leaving the application's other HTTP converters unchanged.
+ *
+ * <p>The Spring Boot starter exposes this type as a bean and provides a default instance via
+ * {@code @ConditionalOnMissingBean}. Applications can register their own {@code
+ * AguiRequestBodyParser} bean to customize request body conversion.
  */
-public final class AguiRequestBodyParser {
-
-    private AguiRequestBodyParser() {}
+public class AguiRequestBodyParser {
 
     /**
      * Parses a JSON request body into {@link RunAgentInput}.
@@ -36,7 +38,7 @@ public final class AguiRequestBodyParser {
      * @param body the raw JSON request body
      * @return the parsed AG-UI input
      */
-    public static RunAgentInput parse(String body) {
+    public RunAgentInput parse(String body) {
         Objects.requireNonNull(body, "body cannot be null");
         return JsonUtils.getJsonCodec().fromJson(body, RunAgentInput.class);
     }

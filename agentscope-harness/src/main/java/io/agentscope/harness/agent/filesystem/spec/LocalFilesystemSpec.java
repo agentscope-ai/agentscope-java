@@ -310,7 +310,11 @@ public class LocalFilesystemSpec {
                     new LocalFilesystem(
                             effectiveProject, mode, pathPolicy, 10, localNamespaceFactory);
             return new ProjectAwareOverlay(
-                    (AbstractSandboxFilesystem) upper, lower, projectFs, workspace);
+                    (AbstractSandboxFilesystem) upper,
+                    lower,
+                    projectFs,
+                    workspace,
+                    localNamespaceFactory);
         }
         return OverlayFilesystem.of(upper, lower);
     }

@@ -156,6 +156,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.Context;
 
 /**
  * ReAct (Reasoning and Acting) Agent implementation.
@@ -426,31 +427,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (stateStore == null) {
             return new VersionedState<>(fresh, AgentStateStore.UNVERSIONED);
         }
-        try {
-            VersionedState<AgentState> versioned =
-                    stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
-            if (versioned.isPresent()) {
-                return versioned;
-            }
-            LegacyStateLoader.LegacyLoadResult legacy =
-                    LegacyStateLoader.loadFromLegacySessionWithPresence(
-                            stateStore, userId, sessionId);
-            if (legacy.found()) {
-                // Legacy keys have no version; treat as create-if-absent baseline.
-                long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
-                return new VersionedState<>(legacy.state(), version);
-            }
-            long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
-            return new VersionedState<>(fresh, version);
-        } catch (Exception e) {
-            log.warn(
-                    "Failed to load AgentState for slot (userId={}, sessionId={}): {}",
-                    userId,
-                    sessionId,
-                    e.getMessage());
-            long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
-            return new VersionedState<>(fresh, version);
+        VersionedState<AgentState> versioned =
+                stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
+        if (versioned.isPresent()) {
+            return versioned;
         }
+        LegacyStateLoader.LegacyLoadResult legacy =
+                LegacyStateLoader.loadFromLegacySessionWithPresence(stateStore, userId, sessionId);
+        if (legacy.found()) {
+            // Legacy keys have no version; treat as create-if-absent baseline.
+            long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
+            return new VersionedState<>(legacy.state(), version);
+        }
+        long version = stateStore.supportsVersioning() ? 0L : AgentStateStore.UNVERSIONED;
+        return new VersionedState<>(fresh, version);
     }
 
     private static AgentState freshState(
@@ -1426,6 +1416,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .content(result.getContent())
                     .metadata(metadata)
                     .timestamp(result.getTimestamp())
+                    .usage(result.getUsage())
                     .build();
         } catch (Exception e) {
             log.warn("Failed to parse native structured output as JSON: {}", e.getMessage());
@@ -1644,6 +1635,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 .content(newContent)
                 .metadata(metadata)
                 .timestamp(msg.getTimestamp())
+                .usage(chatUsage)
                 .build();
     }
 
@@ -1761,7 +1753,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // by shutdown, the client is likely retrying with the same user prompt that already
             // exists in memory. Discard the duplicate input so the agent resumes purely from its
             // saved memory context.
-            if (shutdownManager.checkAndClearShutdownInterrupted(ReActAgent.this)) {
+            if (shutdownManager.checkAndClearShutdownInterruptedForState(state)) {
                 log.info(
                         "Detected shutdown-interrupted session for agent {}, discarding duplicate"
                                 + " input",
@@ -3060,9 +3052,39 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 Disposable toolCallsDisposable =
                                                         executeToolCalls(approved)
                                                                 .contextWrite(
-                                                                        ctx ->
-                                                                                ctx.putAll(
-                                                                                        parentCtx))
+                                                                        ctx -> {
+                                                                            Context merged =
+                                                                                    ctx.putAll(
+                                                                                            parentCtx);
+                                                                            if (!merged.hasKey(
+                                                                                            SubagentEventBus
+                                                                                                    .CONTEXT_KEY)
+                                                                                    && !merged
+                                                                                            .hasKey(
+                                                                                                    AgentEventEmitter
+                                                                                                            .CONTEXT_KEY)) {
+                                                                                if (eventSink
+                                                                                        != null) {
+                                                                                    merged =
+                                                                                            merged
+                                                                                                    .put(
+                                                                                                            AgentEventEmitter
+                                                                                                                    .CONTEXT_KEY,
+                                                                                                            (AgentEventEmitter)
+                                                                                                                    eventSink
+                                                                                                                            ::next);
+                                                                                } else if (externalEventEmitter
+                                                                                        != null) {
+                                                                                    merged =
+                                                                                            merged
+                                                                                                    .put(
+                                                                                                            AgentEventEmitter
+                                                                                                                    .CONTEXT_KEY,
+                                                                                                            externalEventEmitter);
+                                                                                }
+                                                                            }
+                                                                            return merged;
+                                                                        })
                                                                 .subscribe(
                                                                         results -> {
                                                                             List<

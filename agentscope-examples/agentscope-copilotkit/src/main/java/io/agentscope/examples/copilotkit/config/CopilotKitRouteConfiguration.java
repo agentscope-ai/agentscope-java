@@ -16,6 +16,7 @@
 package io.agentscope.examples.copilotkit.config;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agui.AguiUtil;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadInfo;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadMutationRequest;
@@ -112,22 +113,28 @@ public class CopilotKitRouteConfiguration {
                 .build();
     }
 
+    @SuppressWarnings("resource") // borrowed session agent; session owns lifecycle
     private Mono<ServerResponse> stopThread(
             ServerRequest request, ThreadSessionManager threadSessionManager) {
-        String agentId = request.pathVariable("agentId");
         String threadId = request.pathVariable("threadId");
+        String userId = resolveDemoUserId(request);
         threadSessionManager
-                .getSession(threadId)
+                .getSession(userId, threadId)
                 .ifPresent(
                         threadSession -> {
-                            if (threadSession.getAgent() instanceof ReActAgent reActAgent) {
-                                reActAgent.interrupt(null, threadId);
+                            ReActAgent actAgent = AguiUtil.asReActAgent(threadSession.getAgent());
+                            if (actAgent != null) {
+                                actAgent.interrupt(userId, threadId);
                             } else {
-                                // todo Harness?
                                 threadSession.getAgent().interrupt();
                             }
                         });
         return Mono.empty();
+    }
+
+    private static String resolveDemoUserId(ServerRequest request) {
+        String token = request.headers().firstHeader("X-Token");
+        return token == null || token.isBlank() ? DemoThreadStore.DEMO_USER_ID : token;
     }
 
     private static Mono<ServerResponse> listThreads(

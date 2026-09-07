@@ -22,6 +22,7 @@
 
 ```java
 import com.zaxxer.hikari.HikariDataSource;
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.skill.repository.mysql.MysqlSkillRepository;
 
 HikariDataSource ds = new HikariDataSource();
@@ -32,8 +33,11 @@ ds.setPassword("***");
 // Second arg createIfNotExist=true: auto-create database and tables
 MysqlSkillRepository repo = new MysqlSkillRepository(ds, true);
 
-Toolkit toolkit = new Toolkit();
-repo.getAllSkills().forEach(toolkit::registerSkill);
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .skillRepository(repo)
+    .build();
 ```
 
 ## Schema

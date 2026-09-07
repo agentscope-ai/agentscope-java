@@ -29,8 +29,8 @@ Wraps `AbstractFilesystem`; paths are the backend's local paths.
 | `read_file` | Read file content | `path`, `offset` (0-indexed), `limit` (0 = read all) |
 | `write_file` | Create new file | `path`, `content` (errors if file already exists) |
 | `edit_file` | Exact string replacement | `path`, `old_string` (unique by default), `new_string`, `replace_all` (default false) |
-| `grep_files` | Search string in specified path (not regex) | `pattern`, `path`, `glob` (e.g. `*.java`) |
-| `glob_files` | Find files by glob pattern | `pattern` (e.g. `**/*.md`), `path` |
+| `grep_files` | Search string in specified path (not regex) | `pattern`, `path`, `glob` (e.g. `*.java`), `limit` (default 100, max 1000) |
+| `glob_files` | Find files by glob pattern | `pattern` (e.g. `**/*.md`), `path`, `limit` (default 200, max 1000) |
 | `list_files` | List directory | `path` |
 
 ## Memory — `MemorySearchTool` / `MemoryGetTool`

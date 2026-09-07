@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
  *   mvn exec:java -pl agentscope-examples/documentation \
- *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.GatewayStreamingThreadExample
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.subagent.SubagentSendDirectlyExample
  * </pre>
  */
 public class SubagentSendDirectlyExample {
