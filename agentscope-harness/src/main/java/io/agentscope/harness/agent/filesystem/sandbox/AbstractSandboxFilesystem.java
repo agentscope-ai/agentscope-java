@@ -40,7 +40,10 @@ public interface AbstractSandboxFilesystem extends AbstractFilesystem {
      * @param command full shell command string to execute
      * @param timeoutSeconds maximum time in seconds to wait for the command to complete;
      *                       {@code null} uses the filesystem's default timeout
-     * @return ExecuteResponse with combined output, exit code, and truncation flag
+     * @return ExecuteResponse with combined output, exit code, and truncation flag; a
+     *         non-successful response (see {@link ExecuteResponse#isSuccess()}) means the command
+     *         did not complete successfully, so {@code output} must not be parsed as normal
+     *         command output
      */
     ExecuteResponse execute(RuntimeContext runtimeContext, String command, Integer timeoutSeconds);
 }
