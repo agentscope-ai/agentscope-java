@@ -95,7 +95,8 @@ type SessionRepository interface {
 // TurnRepository manages session_turns (one row per inference turn).
 type TurnRepository interface {
 	// SyncOnPhase opens a running turn when phase becomes active, and closes
-	// any running turn when phase leaves active. Idempotent across polls.
+	// any running turn when phase leaves active. The logical outcome "failed"
+	// closes a failed provider turn without terminating its reusable session. Idempotent across polls.
 	SyncOnPhase(ctx context.Context, sessionFK uuid.UUID, phase string) error
 	List(ctx context.Context, sessionFK uuid.UUID, limit int) ([]*SessionTurn, error)
 	CurrentRunning(ctx context.Context, sessionFK uuid.UUID) (*SessionTurn, error)

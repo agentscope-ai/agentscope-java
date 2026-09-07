@@ -255,6 +255,9 @@ func (s *Server) dispatchHostedConversationTurn(ctx context.Context, session *st
 		if _, err = s.store.Sessions().Upsert(lockCtx, current); err != nil {
 			return err
 		}
+		if err = s.store.Turns().SyncOnPhase(lockCtx, current.ID, store.SessionPhaseActive); err != nil {
+			return err
+		}
 		if err = s.appendSessionEventLocked(lockCtx, current.ID, "user:"+turnID, &store.SessionEvent{
 			EventType: "user.message", Role: "user", Content: message, OccurredAt: now,
 			FrameworkMeta: mustJSON(map[string]any{"turnId": turnID, "sourceType": sourceType}),
@@ -274,6 +277,7 @@ func (s *Server) dispatchHostedConversationTurn(ctx context.Context, session *st
 		if err != nil {
 			current.Phase = store.SessionPhaseIdle
 			_, _ = s.store.Sessions().Upsert(lockCtx, current)
+			_ = s.store.Turns().SyncOnPhase(lockCtx, current.ID, store.TurnStatusFailed)
 			_ = s.appendSessionEventLocked(lockCtx, current.ID, "turn-dispatch-failed:"+turnID,
 				&store.SessionEvent{EventType: "turn.failed", Role: "error", Content: err.Error(),
 					FrameworkMeta: mustJSON(map[string]any{"turnId": turnID, "stage": "dispatch"})})
@@ -473,7 +477,17 @@ func (s *Server) markHostedSessionIdle(ctx context.Context, attempt *controlmode
 		now := time.Now().UTC()
 		current.Phase, current.LastActiveAt = store.SessionPhaseIdle, &now
 		_, err = s.store.Sessions().Upsert(lockCtx, current)
-		return err
+		if err != nil {
+			return err
+		}
+		phase := store.SessionPhaseIdle
+		if attempt.State == controlmodel.ExecutionFailed {
+			phase = store.TurnStatusFailed
+		}
+		if attempt.State == controlmodel.ExecutionCancelled {
+			phase = store.SessionPhaseTerminated
+		}
+		return s.store.Turns().SyncOnPhase(lockCtx, current.ID, phase)
 	})
 }
 

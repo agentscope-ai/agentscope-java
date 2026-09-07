@@ -1174,6 +1174,19 @@ type ContextInput struct {
 type CoordinatorChildContext struct {
 	Issue   *controlmodel.Issue     `json:"issue"`
 	Results []*controlmodel.Comment `json:"results,omitempty"`
+	// Outcomes preserve structured worker results independently of discussion summaries.
+	Outcomes []CoordinatorWorkerOutcome `json:"outcomes,omitempty"`
+}
+
+// CoordinatorWorkerOutcome exposes delivery evidence without sibling runtime
+// bindings, session configuration, or unrelated task inputs.
+type CoordinatorWorkerOutcome struct {
+	TaskID       uuid.UUID                    `json:"taskId"`
+	AgentRef     string                       `json:"agentId"`
+	Status       controlmodel.AgentTaskStatus `json:"status"`
+	Result       json.RawMessage              `json:"result,omitempty"`
+	ErrorCode    string                       `json:"errorCode,omitempty"`
+	ErrorMessage string                       `json:"errorMessage,omitempty"`
 }
 
 type ContextEnvelope struct {
@@ -1264,6 +1277,18 @@ func (s *Service) addCoordinatorContext(ctx context.Context, envelope *ContextEn
 		// leaders to act on them through tools scoped to the current child.
 		if child.ID == envelope.Task.IssueID || child.Status == controlmodel.IssueDone ||
 			child.Status == controlmodel.IssueCancelled {
+			tasks, listErr := s.listAllTasks(ctx, store.AgentTaskFilter{IssueID: child.ID,
+				RunID: envelope.Task.OrchestrationRunID, Tenant: child.Tenant, Namespace: child.Namespace})
+			if listErr != nil {
+				return listErr
+			}
+			for _, worker := range tasks {
+				if !worker.LeaderTask && controlmodel.IsAgentTaskTerminal(worker.Status) {
+					childContext.Outcomes = append(childContext.Outcomes, CoordinatorWorkerOutcome{
+						TaskID: worker.ID, AgentRef: worker.AgentRef, Status: worker.Status,
+						Result: worker.Result, ErrorCode: worker.ErrorCode, ErrorMessage: worker.ErrorMessage})
+				}
+			}
 			comments, listErr := s.listAllComments(ctx, child.ID)
 			if listErr != nil {
 				return listErr
@@ -1361,8 +1386,17 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 	}
 	if completion.ResponseCommentID == nil {
 		content := strings.TrimSpace(completion.Summary)
-		if content == "" && len(completion.Result) > 0 {
-			content = string(completion.Result)
+		result := strings.TrimSpace(string(completion.Result))
+		if result != "" && result != "null" {
+			var plain string
+			if json.Unmarshal(completion.Result, &plain) == nil {
+				result = strings.TrimSpace(plain)
+			}
+			if content == "" {
+				content = result
+			} else if result != "" && !strings.Contains(content, result) {
+				content += "\n\n" + result
+			}
 		}
 		if content == "" {
 			content = "Task completed."
@@ -1438,12 +1472,15 @@ func (s *Service) convergeQuiescentBlockedTeamRoot(ctx context.Context, complete
 		case controlmodel.IssueBlocked:
 			hasBlocked = true
 		default:
-			return nil
+			// No task remains to advance this unreviewed child. Make the missing
+			// coordinator decision visible instead of leaving work in_progress.
+			hasBlocked = true
 		}
 	}
 	if !hasBlocked {
 		return nil
 	}
+	reason := "Team is waiting on blocked or unreviewed delegated work"
 	for attempt := 0; attempt < 3; attempt++ {
 		root, loadErr := s.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
 		if loadErr != nil {
@@ -1457,7 +1494,7 @@ func (s *Service) convergeQuiescentBlockedTeamRoot(ctx context.Context, complete
 		}
 		_, transitionErr := s.Store.Collaboration().TransitionIssue(ctx, root.ID, root.Version,
 			controlmodel.IssueBlocked, controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: completed.AgentRef},
-			"Team is waiting on blocked delegated work")
+			reason)
 		if transitionErr == nil {
 			return nil
 		}
@@ -1763,9 +1800,27 @@ func (s *Service) completionTargets(ctx context.Context, task *controlmodel.Agen
 			// An assignee consuming another Agent's result is the terminal side of
 			// that hand-off. Returning its completion to ParentTaskID would create
 			// an automatic responder -> assignee -> responder ping-pong.
-			if route.RouteType == controlmodel.RouteAssignee && issue.AssigneeType == controlmodel.AssigneeAgent &&
-				issue.AssigneeRef == task.AgentRef {
-				return nil, nil
+			if issue.AssigneeType == controlmodel.AssigneeAgent && issue.AssigneeRef == task.AgentRef {
+				if route.RouteType == controlmodel.RouteAssignee {
+					return nil, nil
+				}
+				if (route.RouteType == controlmodel.RouteExplicit || route.RouteType == controlmodel.RouteFollowUp) && task.ParentTaskID != nil {
+					// Only stop a reply returning to its originator. An independent
+					// Agent request to the assignee must still receive an answer.
+					parent, err := s.Store.Collaboration().GetAgentTask(ctx, *task.ParentTaskID)
+					if err != nil {
+						return nil, err
+					}
+					if parent.ParentTaskID != nil {
+						origin, err := s.Store.Collaboration().GetAgentTask(ctx, *parent.ParentTaskID)
+						if err != nil {
+							return nil, err
+						}
+						if origin.AgentRef == task.AgentRef {
+							return nil, nil
+						}
+					}
+				}
 			}
 		}
 	}

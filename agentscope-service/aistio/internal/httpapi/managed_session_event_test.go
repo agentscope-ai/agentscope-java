@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -132,6 +133,54 @@ func TestManagedRunningEventStartsAssignedAttempt(t *testing.T) {
 	if startedAttempt.LeaseExpiresAt == nil || !startedAttempt.LeaseExpiresAt.After(time.Now()) {
 		t.Fatalf("fenced managed event did not renew execution lease: %+v", startedAttempt)
 	}
+
+	// Local schema validation never reaches the MCP endpoint. Its fenced tool
+	// result must still be durable, correlated and idempotent in Run diagnostics.
+	for _, callID := range []string{"local-schema", "remote-schema"} {
+		if callID == "remote-schema" {
+			srv.recordMCPToolFailure(ctx, started, "issue.get", callID, fmt.Errorf("scope mismatch"))
+		}
+		report := managedSessionEventReport{ID: "evt-" + callID, SessionID: session.SessionID,
+			Seq: 2, Type: "agent.tool_result", Payload: map[string]any{"toolCallId": callID, "toolName": "issue.get", "state": "ERROR", "output": "scope mismatch"},
+			CreatedAt: time.Now().UnixMilli(), AgentTaskID: started.ID.String(), AttemptID: attempt.ID.String(), DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID}
+		data, _ := json.Marshal(report)
+		for retry := 0; retry < 2; retry++ {
+			r := httptest.NewRequest(http.MethodPost, "/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(data))
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("X-Builder-Internal-Token", "internal-secret")
+			w := httptest.NewRecorder()
+			srv.router.ServeHTTP(w, r)
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("tool report: %d %s", w.Code, w.Body)
+			}
+		}
+	}
+	diagnostics, err := st.Orchestration().ListRunEvents(ctx, started.OrchestrationRunID, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failures := map[string]int{}
+	for _, e := range diagnostics {
+		if e.Type == "agent_tool.failed" {
+			failures[e.CausationID]++
+		}
+	}
+	if failures["local-schema"] != 1 || failures["remote-schema"] != 1 || len(failures) != 2 {
+		t.Fatalf("missing/duplicate diagnostics: %+v", failures)
+	}
+	sessionEvents, err := st.Events().List(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundState := false
+	for _, e := range sessionEvents {
+		if e.EventType == "agent.tool_result" && bytes.Contains(e.FrameworkMeta, []byte(`"state":"ERROR"`)) {
+			foundState = true
+		}
+	}
+	if !foundState {
+		t.Fatal("tool result state was lost from session metadata")
+	}
 	heartbeatBody, _ := json.Marshal(managedSessionHeartbeat{AttemptID: attempt.ID,
 		DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
 	heartbeatReq := httptest.NewRequest(http.MethodPost,
@@ -238,8 +287,8 @@ func TestManagedIdleFailsTaskThatReturnedWithoutTerminalAction(t *testing.T) {
 	followUp := *leader
 	parentTaskID := uuid.New()
 	followUp.ParentTaskID = &parentTaskID
-	if err = srv.validateMCPTeamLeaderCompletion(ctx, &followUp); err != nil {
-		t.Fatalf("leader follow-up could not finish a waiting decision turn: %v", err)
+	if err = srv.validateMCPTeamLeaderCompletion(ctx, &followUp); err == nil {
+		t.Fatal("leader follow-up could finish with no remaining task or durable decision")
 	}
 	if _, _, err = svc.CreateChildFromTask(ctx, leader.ID, collaboration.CreateIssueRequest{
 		Title: "worker job", AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: workerID.String(),

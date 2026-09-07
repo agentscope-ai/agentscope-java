@@ -438,7 +438,20 @@ func (s *Server) attachAttemptSessionRefs(ctx context.Context, attempts []*contr
 			Tenant: attempt.Tenant, Namespace: attempt.Namespace, AgentID: attempt.AgentID,
 			SessionID: attempt.SessionID, AgentTaskID: attempt.AgentTaskID, Limit: 2,
 		})
-		if err != nil || len(sessions) == 0 {
+		if err != nil {
+			continue
+		}
+		if len(sessions) == 0 && attempt.BackendKind == controlmodel.DataPlaneHostedRuntime && attempt.SessionID != "" {
+			// Hosted Chat reuses a session whose AgentTaskID advances each turn.
+			// Resolve older attempts by the full agent/binding/runtime identity.
+			candidates, lookupErr := s.store.Sessions().List(ctx, store.SessionFilter{
+				Tenant: attempt.Tenant, Namespace: attempt.Namespace, AgentID: attempt.AgentID,
+				SessionID: attempt.SessionID, Limit: 2})
+			if lookupErr == nil && len(candidates) == 1 && candidates[0].BindingID == attempt.BindingID {
+				sessions = candidates
+			}
+		}
+		if len(sessions) != 1 {
 			continue
 		}
 		// AgentTaskID and the selected Agent identity make this deterministic;

@@ -150,7 +150,7 @@ func TestBlockedLeaderFollowUpRequiresDurableDecisionOrHumanNotification(t *test
 	}
 	srv := NewServer(ServerOptions{Store: st})
 	if err = srv.validateMCPTeamLeaderCompletion(ctx, followUp); err == nil ||
-		!strings.Contains(err.Error(), "requires retry") {
+		!strings.Contains(err.Error(), "worker has finished") {
 		t.Fatalf("blocked follow-up completed without a durable decision: %v", err)
 	}
 	notification, err := svc.AddComment(ctx, collaboration.AddCommentRequest{IssueID: child.ID,
@@ -883,5 +883,133 @@ func assertHostedTerminalEvents(t *testing.T, st store.Store, session *store.Ses
 	}
 	if eventType == "assistant.message" && completedCount != 1 {
 		t.Fatalf("turn.completed count=%d, events=%+v", completedCount, events)
+	}
+}
+
+func TestHostedCompletionOutcomeAndTurns(t *testing.T) {
+	for _, outcome := range []string{"succeeded", "blocked", "failed"} {
+		t.Run(outcome, func(t *testing.T) {
+			st, srv, session, running, token := startHostedMCPConversation(t, "research with required evidence")
+			turns, err := st.Turns().List(context.Background(), session.ID, 10)
+			if err != nil || len(turns) != 1 || turns[0].Status != store.TurnStatusRunning {
+				t.Fatalf("missing hosted running turn: %+v %v", turns, err)
+			}
+			reply := callMCPTool(t, srv, token, "task.complete", map[string]any{"outcome": outcome, "summary": "search tool unavailable", "code": "missing_tool", "message": "required source evidence unavailable", "result": map[string]any{"sources": []string{}}})
+			raw, _ := json.Marshal(reply.Result)
+			if bytes.Contains(raw, []byte(`"isError":true`)) {
+				t.Fatalf("completion failed: %s", raw)
+			}
+			attempt, err := st.ExecutionAttempts().Get(context.Background(), running.ID)
+			expectedAttempt, expectedTurn := controlmodel.ExecutionSucceeded, store.TurnStatusCompleted
+			if outcome != "succeeded" {
+				expectedAttempt, expectedTurn = controlmodel.ExecutionFailed, store.TurnStatusFailed
+			}
+			if err != nil || attempt.State != expectedAttempt {
+				t.Fatalf("outcome %s became %+v (%v)", outcome, attempt, err)
+			}
+			if err := srv.projectHostedAttemptTerminal(context.Background(), attempt); err != nil {
+				t.Fatal(err)
+			}
+			turns, err = st.Turns().List(context.Background(), session.ID, 10)
+			if err != nil || len(turns) != 1 || turns[0].Status != expectedTurn || turns[0].EndedAt == nil {
+				t.Fatalf("missing/duplicate terminal turn: %+v %v", turns, err)
+			}
+		})
+	}
+}
+
+func TestStatelessMCPGetRejectsSSEWithoutHTML(t *testing.T) {
+	_, srv, _, _, token := startHostedMCPConversation(t, "MCP GET")
+	req := httptest.NewRequest(http.MethodGet, "/mcp/collaboration", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "text/event-stream")
+	out := httptest.NewRecorder()
+	srv.router.ServeHTTP(out, req)
+	if out.Code != http.StatusMethodNotAllowed || out.Header().Get("Allow") != "POST" || bytes.Contains(out.Body.Bytes(), []byte("html")) {
+		t.Fatalf("SSE probe: %d %s", out.Code, out.Body)
+	}
+}
+
+func TestMCPFailureUsesTransportCallIdentity(t *testing.T) {
+	st, srv, _, attempt, token := startHostedMCPConversation(t, "tool diagnostic")
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "issue.get", "arguments": map[string]any{"issueId": uuid.NewString()},
+			"_meta": map[string]any{"io.agentscope/toolCallId": "call-schema-1"}}})
+	for range 2 {
+		req := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Agent-Task-Token", token)
+		out := httptest.NewRecorder()
+		srv.router.ServeHTTP(out, req)
+		if out.Code != http.StatusOK || !bytes.Contains(out.Body.Bytes(), []byte(`"isError":true`)) {
+			t.Fatalf("expected scoped tool error: %d %s", out.Code, out.Body)
+		}
+	}
+	events, err := st.Orchestration().ListRunEvents(context.Background(), attempt.RunID, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, event := range events {
+		if event.Type == "agent_tool.failed" {
+			count++
+			if event.CausationID != "call-schema-1" || !bytes.Contains(event.Payload, []byte(`"toolCallId":"call-schema-1"`)) {
+				t.Fatalf("lost identity: %+v", event)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("failure count=%d, expected one durable diagnostic", count)
+	}
+}
+
+func TestHostedConsecutiveTurnsKeepHistoryAndIgnoreOldTerminalProjection(t *testing.T) {
+	ctx := context.Background()
+	st, srv, session, first, token := startHostedMCPConversation(t, "first turn")
+	callMCPTool(t, srv, token, "task.complete", map[string]any{"outcome": "succeeded", "result": "first answer"})
+	first, err := st.ExecutionAttempts().Get(ctx, first.ID)
+	if err != nil || first.State != controlmodel.ExecutionSucceeded {
+		t.Fatalf("first turn: %+v %v", first, err)
+	}
+	binding, err := st.AgentCatalog().GetBinding(ctx, session.BindingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.dispatchHostedConversationTurn(ctx, session, binding, "second turn", uuid.NewString(), "chat", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.projectHostedAttemptTerminal(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	turns, err := st.Turns().List(ctx, session.ID, 10)
+	if err != nil || len(turns) != 2 || turns[0].Status != store.TurnStatusRunning || turns[1].Status != store.TurnStatusCompleted {
+		t.Fatalf("old projection ended the next turn: %+v %v", turns, err)
+	}
+	host, err := st.RuntimeRegistry().GetRuntimeHost(ctx, *first.HostID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := srv.taskPlane.Claim(ctx, store.ExecutionClaim{Tenant: first.Tenant, Namespace: first.Namespace, RuntimePoolName: first.RuntimePoolName, HostID: host.ID, HostGeneration: host.LeaseGeneration, LeaseOwner: "host/second", LeaseToken: "second-lease", LeaseTTL: time.Minute})
+	if err == nil {
+		second, err = srv.taskPlane.MarkPreparing(ctx, second.ID, second.LeaseToken, second.FencingToken)
+	}
+	if err == nil {
+		second, err = srv.taskPlane.MarkRunning(ctx, second.ID, second.LeaseToken, second.FencingToken, "qoder-session", "workspace")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err = srv.taskTokens.MintScoped(second.AgentTaskID, second.ID, second.DispatchGeneration, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	callMCPTool(t, srv, token, "task.complete", map[string]any{"outcome": "succeeded", "result": "second answer"})
+	turns, err = st.Turns().List(ctx, session.ID, 10)
+	if err != nil || len(turns) != 2 || turns[0].Status != store.TurnStatusCompleted || turns[1].Status != store.TurnStatusCompleted {
+		t.Fatalf("two completed turns missing: %+v %v", turns, err)
+	}
+	srv.attachAttemptSessionRefs(ctx, []*controlmodel.ExecutionAttempt{first, second})
+	if first.SessionRef == nil || second.SessionRef == nil || *first.SessionRef != session.ID || *second.SessionRef != session.ID {
+		t.Fatal("consecutive attempt history lost the shared session reference")
 	}
 }

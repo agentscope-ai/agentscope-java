@@ -39,3 +39,29 @@ func TestAttachAttemptSessionRefsUsesControlPlaneSessionIdentity(t *testing.T) {
 		t.Fatalf("attempt session identity was not disambiguated: attempt=%+v session=%+v", attempt, session)
 	}
 }
+
+func TestHostedAttemptSessionRefSurvivesNextConversationTurn(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	oldTask, newTask, agent, binding := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	session, err := st.Sessions().Upsert(ctx, &store.Session{Tenant: "t", Namespace: "n", AgentID: agent, BindingID: binding, SessionID: "same-runtime", AgentTaskID: &newTask, Phase: store.SessionPhaseIdle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := &controlmodel.ExecutionAttempt{Tenant: "t", Namespace: "n", AgentID: agent, BindingID: binding, AgentTaskID: oldTask, SessionID: session.SessionID, BackendKind: controlmodel.DataPlaneHostedRuntime}
+	srv := &Server{store: st}
+	srv.attachAttemptSessionRefs(ctx, []*controlmodel.ExecutionAttempt{attempt})
+	if attempt.SessionRef == nil || *attempt.SessionRef != session.ID {
+		t.Fatal("older hosted turn lost its shared session reference")
+	}
+	attempt.SessionRef = nil
+	attempt.BindingID = uuid.New()
+	srv.attachAttemptSessionRefs(ctx, []*controlmodel.ExecutionAttempt{attempt})
+	if attempt.SessionRef != nil {
+		t.Fatal("linked to another runtime binding")
+	}
+}

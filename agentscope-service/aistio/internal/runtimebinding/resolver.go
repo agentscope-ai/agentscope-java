@@ -295,7 +295,7 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 	}
 	if !task.LeaderTask {
 		return base + " You are a Team worker. Complete only the assigned child work and call task.complete " +
-			"with the result. If required capabilities, credentials, inputs, or tools are unavailable, call " +
+			"with outcome=succeeded and the result only when the assigned objective is achieved. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call " +
 			"task.fail with a durable code and explanation; do not merely return explanatory text. Do not " +
 			"call task.respond, coordinate, or create child Issues."
 	}
@@ -306,7 +306,7 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 			"wait inside this turn. A fresh leader follow-up will arrive with each worker result."
 	}
 	return base + " You are a Team leader follow-up caused by a worker outcome. Read the supplied task " +
-		"inputs and comments and validate the outcome. This follow-up owns only its current Issue: issue.accept, " +
+		"inputs and coordinatorChildren.outcomes (including structured result and failure fields), not just comment summaries. FIRST decide the CURRENT child: if its objective was achieved call issue.accept now; if required tools/evidence are missing call run.node.fail or explicitly request human action. Do not accept a report of inability as successful research. Only AFTER deciding the current child, inspect sibling statuses to synthesize or wait. This follow-up owns only its current Issue: issue.accept, " +
 		"issue.cancel, and issue.comment.add act on that Issue, so never use them to decide or message a sibling. " +
 		"Each sibling outcome gets its own follow-up. task.get also returns coordinatorChildren as read-only " +
 		"synthesis context; use terminal sibling results when producing the final coordinator output. " +

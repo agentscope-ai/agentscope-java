@@ -81,6 +81,9 @@ func (s *Server) reportManagedSessionEvent(c *gin.Context) {
 		if applyErr := s.applyManagedSessionStatus(lockCtx, session, &report, event.OccurredAt); applyErr != nil {
 			return applyErr
 		}
+		if err := s.projectManagedToolFailure(lockCtx, session, &report, event); err != nil {
+			return err
+		}
 		return s.appendSessionEventLocked(lockCtx, session.ID, sourceKey, event)
 	})
 	if err != nil {
@@ -145,13 +148,46 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 			metadata[key] = value
 		}
 	}
-	for _, key := range []string{"approvalId", "decisionVersion", "source", "status"} {
+	for _, key := range []string{"approvalId", "decisionVersion", "source", "status", "state"} {
 		if value, ok := payload[key]; ok && value != nil {
 			metadata[key] = value
 		}
 	}
 	event.FrameworkMeta, _ = json.Marshal(metadata)
 	return event
+}
+
+// Project both remote MCP errors and errors raised locally before any request
+// (for example schema validation). The attempt fence is checked before this
+// function, and the shared call ID deduplicates the remote and session paths.
+func (s *Server) projectManagedToolFailure(ctx context.Context, session *store.Session,
+	report *managedSessionEventReport, event *store.SessionEvent) error {
+	state := strings.ToLower(firstPayloadString(report.Payload, "state"))
+	if report.Type != "agent.tool_result" || session.AgentTaskID == nil ||
+		(state != "error" && state != "denied" && state != "interrupted") {
+		return nil
+	}
+	task, err := s.store.Collaboration().GetAgentTask(ctx, *session.AgentTaskID)
+	if err != nil {
+		return err
+	}
+	callID := firstPayloadString(report.Payload, "toolCallId", "toolUseId", "tool_use_id", "callId")
+	key := "managed-tool-failed:" + report.ID
+	if callID != "" {
+		key = fmt.Sprintf("agent-tool-failed:%s:%s", task.ID, callID)
+	}
+	payload, err := json.Marshal(map[string]any{"toolName": event.ToolName, "toolCallId": callID,
+		"state": state, "message": event.ToolOutput, "source": "managed_session",
+		"sessionId": session.SessionID, "sessionRef": session.ID, "managedEventId": report.ID})
+	if err != nil {
+		return err
+	}
+	_, err = s.store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{
+		RunID: task.OrchestrationRunID, Tenant: task.Tenant, Namespace: task.Namespace,
+		NodeID: &task.RunNodeID, AgentTaskID: &task.ID, AttemptID: task.CurrentAttemptID,
+		Type: "agent_tool.failed", Actor: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef},
+		Payload: payload, CausationID: callID, CorrelationID: task.CorrelationID, IdempotencyKey: key})
+	return err
 }
 
 func managedEventTime(createdAt int64) time.Time {

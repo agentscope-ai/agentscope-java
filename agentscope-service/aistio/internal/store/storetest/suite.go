@@ -29,6 +29,31 @@ func RunSuite(t *testing.T, s store.Store) {
 	t.Run("CollaborationReliability", func(t *testing.T) { testCollaborationReliability(t, ctx, s) })
 	t.Run("RuntimeRegistryAndExecutions", func(t *testing.T) { testRuntime(t, ctx, s) })
 	t.Run("Outbox", func(t *testing.T) { testOutbox(t, ctx, s) })
+	t.Run("ConversationTurns", func(t *testing.T) { testConversationTurns(t, ctx, s) })
+}
+
+func testConversationTurns(t *testing.T, ctx context.Context, s store.Store) {
+	session, err := s.Sessions().Upsert(ctx, &store.Session{Tenant: "turns-" + uuid.NewString(), Namespace: "n", AgentID: uuid.New(), AgentName: "chat", SessionID: uuid.NewString(), Phase: store.SessionPhaseIdle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, phase := range []string{store.SessionPhaseIdle, store.TurnStatusFailed, store.SessionPhaseTerminated} {
+		for range 2 {
+			if err := s.Turns().SyncOnPhase(ctx, session.ID, store.SessionPhaseActive); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for range 2 {
+			if err := s.Turns().SyncOnPhase(ctx, session.ID, phase); err != nil {
+				t.Fatal(err)
+			}
+		}
+		turns, err := s.Turns().List(ctx, session.ID, 10)
+		want := []string{store.TurnStatusCompleted, store.TurnStatusFailed, store.TurnStatusAborted}[i]
+		if err != nil || len(turns) != i+1 || turns[0].TurnIndex != i+1 || turns[0].Status != want || turns[0].EndedAt == nil {
+			t.Fatalf("turn %d: %+v %v", i+1, turns, err)
+		}
+	}
 }
 
 func testAgentCatalog(t *testing.T, ctx context.Context, s store.Store) {

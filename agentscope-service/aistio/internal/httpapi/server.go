@@ -557,6 +557,12 @@ func (s *Server) registerRoutes() {
 		mcp := s.router.Group("/mcp")
 		mcp.Use(s.teamsAuthMiddleware())
 		mcp.POST("/collaboration", s.collaborationMCP)
+		// This MCP server uses stateless POST responses, not a server SSE stream.
+		// Do not let the SPA fallback answer the SDK's optional GET with HTML.
+		mcp.GET("/collaboration", func(c *gin.Context) {
+			c.Header("Allow", "POST")
+			c.Status(http.StatusMethodNotAllowed)
+		})
 
 		collab := s.router.Group("/api/v1")
 		collab.Use(s.teamsAuthMiddleware())

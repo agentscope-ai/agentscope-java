@@ -184,7 +184,11 @@ public class McpTool extends ToolBase {
         Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
         // Extract MCP meta from ContextStore by McpMeta type namespace
-        Map<String, Object> metaMap = extractMcpMeta(param);
+        Map<String, Object> metaMap = new HashMap<>(extractMcpMeta(param));
+        if (param.getToolUseBlock() != null && param.getToolUseBlock().getId() != null) {
+            // Transport metadata is not model input and must not alter the tool schema.
+            metaMap.put("io.agentscope/toolCallId", param.getToolUseBlock().getId());
+        }
 
         return clientWrapper
                 .callTool(getName(), mergedArgs, metaMap)

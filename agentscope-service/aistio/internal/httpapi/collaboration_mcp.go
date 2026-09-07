@@ -56,6 +56,7 @@ type mcpTool struct {
 type mcpCallParams struct {
 	Name      string         `json:"name"`
 	Arguments map[string]any `json:"arguments"`
+	Meta      map[string]any `json:"_meta,omitempty"`
 }
 
 type mcpToolResult struct {
@@ -100,7 +101,7 @@ func collaborationMCPTools() []mcpTool {
 		{Name: "task.start", Description: "Acknowledge that execution of this dispatched AgentTask has started.", InputSchema: object(map[string]any{})},
 		{Name: "task.progress", Description: "Write a meaningful intermediate progress Comment for a long-running AgentTask. Do not repeat the final conclusion that task.complete will publish.", InputSchema: object(map[string]any{"content": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.respond", Description: "Write the result Comment for this AgentTask. A later task.complete call reuses it instead of publishing a duplicate.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
-		{Name: "task.complete", Description: "Complete this AgentTask only with a usable result, reconcile every input, and reuse any result previously written by task.respond. If required tools, credentials, capabilities, or inputs are unavailable, use task.fail instead.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids})},
+		{Name: "task.complete", Description: "Complete this AgentTask only with a usable result, reconcile every input, and reuse any result previously written by task.respond. If required tools, credentials, capabilities, or inputs are unavailable, use task.fail instead.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids, "outcome": map[string]any{"type": "string", "enum": []string{"succeeded", "failed", "blocked"}, "description": "Report whether the assigned objective was achieved. Missing required tools or evidence is blocked/failed, never succeeded."}, "code": stringProp, "message": stringProp}, "outcome")},
 		{Name: "task.fail", Description: "Fail this AgentTask with a durable error code and message when required work cannot be completed, including unavailable tools, credentials, capabilities, or inputs.", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
 		{Name: "team.get", Description: "Read the Team roster, roles, instructions, and policy for this task. Delegate to members[].agentId; members[].id is only the membership record id.", InputSchema: object(map[string]any{})},
 		{Name: "approval.request", Description: "Request human approval for this Issue, task, or its ExecutionAttempt.", InputSchema: object(map[string]any{"targetType": stringProp, "targetRef": stringProp, "approverRef": stringProp, "reason": stringProp}, "targetType", "targetRef", "approverRef")},
@@ -174,6 +175,12 @@ func (s *Server) collaborationMCP(c *gin.Context) {
 			respond(nil, &mcpError{Code: -32602, Message: "invalid tools/call params"})
 			return
 		}
+		if params.Arguments == nil {
+			params.Arguments = map[string]any{}
+		}
+		if id := stringArg(params.Meta, "io.agentscope/toolCallId"); id != "" {
+			params.Arguments["_toolCallId"] = id
+		}
 		if completedCoordinator, _ := c.Get(ctxCompletedCoordinatorAuth); completedCoordinator == true &&
 			params.Name != "run.node.complete" && params.Name != "run.node.fail" {
 			restrictionErr := fmt.Errorf("completed coordinator token is restricted to the final node transition")
@@ -245,10 +252,10 @@ func mcpResult(value any, isError bool) mcpToolResult {
 func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.AgentTask, name string, args map[string]any) (any, error) {
 	ctx := c.Request.Context()
 	if requested := stringArg(args, "taskId"); requested != "" && requested != "current" && requested != task.ID.String() {
-		return nil, store.ErrNotFound
+		return nil, fmt.Errorf("%w: task.get only accepts current taskId %s; read coordinatorChildren for sibling outcomes, not their Issue IDs", store.ErrNotFound, task.ID)
 	}
 	if requested := stringArg(args, "issueId"); requested != "" && requested != task.IssueID.String() {
-		return nil, store.ErrNotFound
+		return nil, fmt.Errorf("%w: this tool is scoped to current issueId %s; omit issueId. Decide this child with issue.accept/cancel, then read task.get coordinatorChildren for synthesis", store.ErrNotFound, task.IssueID)
 	}
 	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
 	svc := s.collaborationService()
@@ -335,6 +342,23 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
 		if err != nil {
 			return nil, err
+		}
+		switch outcome := stringArg(args, "outcome"); outcome {
+		case "failed", "blocked":
+			failureArgs := map[string]any{"code": stringArg(args, "code"), "message": stringArg(args, "message")}
+			if failureArgs["code"] == "" {
+				failureArgs["code"] = "objective_" + outcome
+			}
+			if failureArgs["message"] == "" {
+				failureArgs["message"] = stringArg(args, "summary")
+			}
+			if failureArgs["message"] == "" {
+				return nil, fmt.Errorf("%s outcome requires an explanation in message or summary", outcome)
+			}
+			return s.callCollaborationMCPTool(c, task, "task.fail", failureArgs)
+		case "", "succeeded": // Empty remains compatible with older SDK clients.
+		default:
+			return nil, fmt.Errorf("outcome must be succeeded, failed, or blocked")
 		}
 		if err = s.validateMCPTeamLeaderCompletion(ctx, current); err != nil {
 			return nil, err
@@ -441,19 +465,19 @@ func (s *Server) validateMCPTeamLeaderCompletion(ctx context.Context, task *cont
 		if loadErr != nil {
 			return loadErr
 		}
-		if issue.Status != controlmodel.IssueBlocked {
-			return nil
-		}
 		tasks, listErr := s.store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
 			Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 1000,
 		})
 		if listErr != nil {
 			return listErr
 		}
+		otherActive, currentWorkerActive := false, false
 		for _, candidate := range tasks {
-			if candidate.ID != task.ID && candidate.Status != controlmodel.AgentTaskQueued &&
-				!controlmodel.IsAgentTaskTerminal(candidate.Status) {
-				return nil
+			if candidate.ID != task.ID && !controlmodel.IsAgentTaskTerminal(candidate.Status) {
+				otherActive = true
+				if candidate.IssueID == task.IssueID && !candidate.LeaderTask {
+					currentWorkerActive = true
+				}
 			}
 		}
 		comments, listErr := s.store.Collaboration().ListComments(ctx, task.IssueID,
@@ -471,7 +495,17 @@ func (s *Server) validateMCPTeamLeaderCompletion(ctx context.Context, task *cont
 				}
 			}
 		}
-		return fmt.Errorf("blocked delegated Issue requires retry, reassign, accept, cancel, explicit human notification, or coordinator failure before completing the leader follow-up")
+		if currentWorkerActive {
+			return nil
+		}
+		if node.IssueID != nil && task.IssueID != *node.IssueID &&
+			issue.Status != controlmodel.IssueDone && issue.Status != controlmodel.IssueCancelled {
+			return fmt.Errorf("current delegated Issue %s is %s and its worker has finished: read task.get coordinatorChildren.outcomes, then issue.accept for satisfactory work, issue.cancel for an authorized omission, run.node.fail for an unmet objective, or explicitly notify a human; do not wait for a sibling before deciding this child", issue.ID, issue.Status)
+		}
+		if otherActive {
+			return nil
+		}
+		return fmt.Errorf("no other task remains to wake this coordinator: call run.node.complete with the combined result, run.node.fail if the objective cannot be met, or explicitly notify a human before completing this follow-up")
 	}
 	tasks, err := s.store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
 		Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 1000,
