@@ -1199,6 +1199,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         String description;
         String sysPrompt;
         boolean checkRunning = true;
+        boolean enablePendingToolRecovery = false;
         Model model;
         Toolkit toolkit = newDefaultToolkit();
         int maxIters = 10;
@@ -1651,7 +1652,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Enables recovery of orphaned tool calls when a new message arrives. Automatically
+         * constructed local subagents inherit this setting unless their declaration overrides it.
+         * Pending permission confirmations still require an explicit confirmation result.
+         *
+         * @param enable whether to synthesize error results for orphaned tool calls
+         * @return this builder
+         */
         public Builder enablePendingToolRecovery(boolean enable) {
+            this.enablePendingToolRecovery = enable;
             inner.enablePendingToolRecovery(enable);
             return this;
         }
