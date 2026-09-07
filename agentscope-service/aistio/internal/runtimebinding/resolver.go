@@ -283,7 +283,14 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 func managedWakeInstructions(task *controlmodel.AgentTask) string {
 	base := "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative " +
 		"context, perform work, report progress, and finish. Do not merely describe intended actions; " +
-		"only report an action after tool success."
+		"only report an action after tool success. Read task.get currentRequest first. For comment-triggered work, " +
+		"the routed comments are the CURRENT assignment and override older Issue requirements. Use requestContext " +
+		"only to interpret the reply and its original hand-off; do not execute that history again. " +
+		"When replyToOwnDelegation is true, evaluate the returned result according to initiatingRequest and complete the current task. " +
+		"Do not mention the responding Agent just to acknowledge their answer; that creates another task. " +
+		"An explicit mention is only for new actionable work required by the current requester. " +
+		"Use math.evaluate to verify arithmetic before submitting or accepting numeric results. " +
+		"Verify other objective claims as well; a worker success flag alone is not acceptance evidence."
 	if task == nil || task.TeamID == nil {
 		return base + " You are handling standalone or explicitly mentioned work. Call task.complete only " +
 			"when you have a usable result. If a required capability, credential, input, or tool is unavailable, " +
@@ -306,7 +313,7 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 			"wait inside this turn. A fresh leader follow-up will arrive with each worker result."
 	}
 	return base + " You are a Team leader follow-up caused by a worker outcome. Read the supplied task " +
-		"inputs and coordinatorChildren.outcomes (including structured result and failure fields), not just comment summaries. FIRST decide the CURRENT child: if its objective was achieved call issue.accept now; if required tools/evidence are missing call run.node.fail or explicitly request human action. Do not accept a report of inability as successful research. Only AFTER deciding the current child, inspect sibling statuses to synthesize or wait. This follow-up owns only its current Issue: issue.accept, " +
+		"inputs and coordinatorChildren.outcomes (including structured result and failure fields), not just comment summaries. FIRST decide the CURRENT child: if its objective was achieved call issue.accept now; if evidence is missing, request concrete follow-up work with an explicit worker mention when that worker can supply it. After the mention succeeds call task.complete with outcome=waiting. Use run.node.fail only when the whole objective is unrecoverable and you intend to cancel remaining work, or explicitly request human action. Do not accept a report of inability as successful research. Only AFTER deciding the current child, inspect sibling statuses to synthesize or wait. This follow-up owns only its current Issue: issue.accept, " +
 		"issue.cancel, and issue.comment.add act on that Issue, so never use them to decide or message a sibling. " +
 		"Each sibling outcome gets its own follow-up. task.get also returns coordinatorChildren as read-only " +
 		"synthesis context; use terminal sibling results when producing the final coordinator output. " +
@@ -315,14 +322,14 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 		"agent, capability, credential, input, or tool; otherwise choose a degraded result, request human " +
 		"action, cancel the blocked child, or fail the coordinator. To wait for human action, call " +
 		"issue.comment.add with an explicit human mention before completing this follow-up. Status and progress " +
-		"comments do not schedule Agent work. Do not publish the same conclusion with issue.comment.add, " +
+		"comments schedule Agent work only through explicit mentions. Do not publish the same conclusion with issue.comment.add, " +
 		"task.progress, and task.complete; use task.respond once for a final visible response and then call " +
 		"task.complete, which reuses it. Do not use issue.child.create to bypass " +
 		"an unresolved blocked Issue; use the explicit decision actions. Call run.node.complete only when the whole " +
 		"coordinator has converged, and make its output synthesize every child outcome rather than only the " +
 		"current input. If sibling work is still active, do not retry run.node.complete in a loop; " +
 		"call task.complete with a waiting/decision summary so this follow-up ends and the next worker outcome " +
-		"can wake a fresh follow-up. A successful run.node.complete already completes this task."
+		"can wake a fresh follow-up. Waiting for your delegated worker is not blocked or failed: task.complete(outcome=waiting) ends only this turn, and preserves the worker. For every final coordinator decision, provide a user-facing summary of completed work, unfinished work, the reason for the final status, and the next action. The conclusion is published on the main Issue before changing its status. A successful run.node.complete already completes this task."
 }
 
 func (r *Resolver) dispatchExternal(ctx context.Context, taskID uuid.UUID, candidate controlmodel.RuntimeBindingCandidate) (*DispatchResult, error) {

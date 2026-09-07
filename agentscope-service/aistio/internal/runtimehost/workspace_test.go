@@ -88,3 +88,13 @@ func TestConversationWorkspaceRejectsEscapingPersistedKey(t *testing.T) {
 		t.Fatal("escaping persisted workspace key was accepted")
 	}
 }
+
+func TestReturningDelegationPromptPreservesFinalDeliveryInstructions(t *testing.T) {
+	_, _, prompt, err := (&WorkspaceManager{Root: t.TempDir()}).Prepare(context.Background(), &collaboration.ContextEnvelope{
+		Task: &controlmodel.AgentTask{Tenant: "t"}, Issue: &controlmodel.Issue{Title: "original"}, ReplyToOwnDelegation: true,
+		InitiatingRequest: "Verify the answer and deliver the final summary", CurrentRequest: "worker answer",
+	})
+	if err != nil || !strings.Contains(prompt, "Verify the answer and deliver the final summary") || !strings.Contains(prompt, "Do not mention the responder") {
+		t.Fatalf("returning delegation lost instructions: %s %v", prompt, err)
+	}
+}

@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-07T04:01:44.145255+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/e05da941-51ca-4f83-ac28-8648d8d5c30d/accept",
+  "request": {
+    "expectedVersion": 5,
+    "reason": "管理员已核对结果 QODER=apple,pear,zebra，并检查 Run、Task、Attempt 完成状态，验收通过。"
+  },
+  "status": 200,
+  "response": {
+    "issue": {
+      "id": "e05da941-51ca-4f83-ac28-8648d8d5c30d",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "it-20260907-1158-single-qoder",
+      "description": "将zebra,apple,pear按字典序排序，回复 QODER=apple,pear,zebra。业务任务不需要联网。必须按照协作协议提交最终结果并完成任务，不主动委派。之后同一Issue如收到管理员的新评论，执行最新指令。",
+      "status": "done",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "5a85fb34-bb61-4cc8-b693-153c2b23ae11",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 6,
+      "createdAt": "2026-09-07T11:59:55.378419+08:00",
+      "updatedAt": "2026-09-07T12:01:44.15403+08:00",
+      "resolvedAt": "2026-09-07T12:01:44.155051+08:00"
+    }
+  }
+}

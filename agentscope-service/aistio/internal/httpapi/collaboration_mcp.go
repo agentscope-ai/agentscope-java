@@ -89,6 +89,7 @@ func collaborationMCPTools() []mcpTool {
 	})
 	acceptanceCriteria["description"] = "Optional acceptance criteria object. Omit it when no criteria are needed; never pass a top-level array."
 	return []mcpTool{
+		{Name: "math.evaluate", Description: "Verify arithmetic before submitting or accepting a numeric result. Evaluates decimal numbers with +, -, *, /, %, parentheses and ×/÷ exactly, without executing code. Non-terminating divisions return exact fractions.", InputSchema: object(map[string]any{"expression": stringProp}, "expression")},
 		{Name: "issue.get", Description: "Read the authoritative Issue for this AgentTask.", InputSchema: object(map[string]any{"issueId": stringProp})},
 		{Name: "issue.comment.list", Description: "Read Issue discussion roots, a thread, or its tail.", InputSchema: object(map[string]any{"issueId": stringProp, "rootsOnly": map[string]any{"type": "boolean"}, "threadId": stringProp, "tail": map[string]any{"type": "integer", "minimum": 1, "maximum": 500}})},
 		{Name: "issue.comment.add", Description: "Add an attributable Comment to this task's current Issue and route structured mentions. It cannot modify a sibling Issue. Use it for distinct discussion or explicit mentions, not to duplicate the final reply published by task.complete. Status and progress types are informational and only dispatch explicit mentions.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "type": stringProp, "mentions": mentions}, "content")},
@@ -101,14 +102,14 @@ func collaborationMCPTools() []mcpTool {
 		{Name: "task.start", Description: "Acknowledge that execution of this dispatched AgentTask has started.", InputSchema: object(map[string]any{})},
 		{Name: "task.progress", Description: "Write a meaningful intermediate progress Comment for a long-running AgentTask. Do not repeat the final conclusion that task.complete will publish.", InputSchema: object(map[string]any{"content": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.respond", Description: "Write the result Comment for this AgentTask. A later task.complete call reuses it instead of publishing a duplicate.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
-		{Name: "task.complete", Description: "Complete this AgentTask only with a usable result, reconcile every input, and reuse any result previously written by task.respond. If required tools, credentials, capabilities, or inputs are unavailable, use task.fail instead.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids, "outcome": map[string]any{"type": "string", "enum": []string{"succeeded", "failed", "blocked"}, "description": "Report whether the assigned objective was achieved. Missing required tools or evidence is blocked/failed, never succeeded."}, "code": stringProp, "message": stringProp}, "outcome")},
+		{Name: "task.complete", Description: "Complete this AgentTask with a usable result, or let a Team leader yield with outcome=waiting while delegated work is pending. Reconcile every input and reuse any result previously written by task.respond. If required tools, credentials, capabilities, or inputs are unavailable, use task.fail instead.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids, "outcome": map[string]any{"type": "string", "enum": []string{"succeeded", "failed", "blocked", "waiting"}, "description": "Report whether the assigned objective was achieved. Team leaders use waiting to yield after delegating work or asking a worker a follow-up. Waiting is not objective failure. Missing required tools or evidence with no pending delegation is blocked/failed, never succeeded."}, "code": stringProp, "message": stringProp}, "outcome")},
 		{Name: "task.fail", Description: "Fail this AgentTask with a durable error code and message when required work cannot be completed, including unavailable tools, credentials, capabilities, or inputs.", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
 		{Name: "team.get", Description: "Read the Team roster, roles, instructions, and policy for this task. Delegate to members[].agentId; members[].id is only the membership record id.", InputSchema: object(map[string]any{})},
 		{Name: "approval.request", Description: "Request human approval for this Issue, task, or its ExecutionAttempt.", InputSchema: object(map[string]any{"targetType": stringProp, "targetRef": stringProp, "approverRef": stringProp, "reason": stringProp}, "targetType", "targetRef", "approverRef")},
 		{Name: "run.get", Description: "Read the OrchestrationRun containing this task.", InputSchema: object(map[string]any{})},
 		{Name: "run.graph", Description: "Read the materialized nodes, edges, tasks, and attempts in this run.", InputSchema: object(map[string]any{})},
 		{Name: "run.node.complete", Description: "Conclude this Team leader turn after all delegated work converges. This completes the current leader AgentTask and then the coordinator node; do not call task.complete afterwards.", InputSchema: object(map[string]any{"output": map[string]any{}})},
-		{Name: "run.node.fail", Description: "Fail this Team leader turn and its coordinator node as one convergent operation.", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
+		{Name: "run.node.fail", Description: "Explicitly abort this Team leader turn and the entire coordinator, cancelling its remaining work. Do not use this to wait for a worker reply; use task.complete(outcome=waiting).", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
 		{Name: "run.replan", Description: "Add a dynamic agent or team node to this adaptive run.", InputSchema: object(map[string]any{"key": stringProp, "type": stringProp, "agentId": stringProp, "teamRef": stringProp, "role": stringProp}, "type")},
 		{Name: "run.signal", Description: "Deliver an idempotent named signal to this run.", InputSchema: object(map[string]any{"name": stringProp, "idempotencyKey": stringProp, "payload": map[string]any{}}, "name", "idempotencyKey")},
 		{Name: "run.artifacts", Description: "List Issue artifacts shared by all runtimes in this run.", InputSchema: object(map[string]any{})},
@@ -266,6 +267,8 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 			return nil, err
 		}
 		return map[string]any{"issue": issue}, nil
+	case "math.evaluate":
+		return evaluateArithmetic(stringArg(args, "expression"))
 	case "issue.comment.list":
 		opts := store.CommentListOptions{Limit: 100, RootsOnly: boolArg(args, "rootsOnly")}
 		if value := intArg(args, "tail"); value > 0 {
@@ -326,7 +329,8 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"task": envelope.Task, "inputs": envelope.Inputs,
+		return map[string]any{"task": envelope.Task, "issue": envelope.Issue, "inputs": envelope.Inputs,
+			"currentRequest": envelope.CurrentRequest, "replyToOwnDelegation": envelope.ReplyToOwnDelegation, "initiatingRequest": envelope.InitiatingRequest, "requestContext": envelope.RequestContext,
 			"coordinatorIssue": envelope.CoordinatorIssue, "coordinatorChildren": envelope.CoordinatorChildren}, nil
 	case "task.start":
 		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
@@ -343,7 +347,30 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		if err != nil {
 			return nil, err
 		}
-		switch outcome := stringArg(args, "outcome"); outcome {
+		outcome := stringArg(args, "outcome")
+		if outcome == "blocked" {
+			pending, pendingErr := svc.PendingDelegationTasks(ctx, current)
+			if pendingErr != nil {
+				return nil, pendingErr
+			}
+			if len(pending) > 0 {
+				outcome = "waiting"
+			}
+		}
+		switch outcome {
+		case "waiting":
+			summary := stringArg(args, "summary")
+			if summary == "" {
+				summary = stringArg(args, "message")
+			}
+			completed, comment, waitErr := svc.WaitForDelegatedWork(ctx, current.ID, summary)
+			if waitErr != nil {
+				return nil, waitErr
+			}
+			if err = s.projectMCPTaskTerminal(ctx, completed, comment); err != nil {
+				return nil, err
+			}
+			return map[string]any{"task": completed, "comment": comment, "outcome": "waiting"}, nil
 		case "failed", "blocked":
 			failureArgs := map[string]any{"code": stringArg(args, "code"), "message": stringArg(args, "message")}
 			if failureArgs["code"] == "" {
@@ -358,7 +385,7 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 			return s.callCollaborationMCPTool(c, task, "task.fail", failureArgs)
 		case "", "succeeded": // Empty remains compatible with older SDK clients.
 		default:
-			return nil, fmt.Errorf("outcome must be succeeded, failed, or blocked")
+			return nil, fmt.Errorf("outcome must be succeeded, failed, blocked, or waiting")
 		}
 		if err = s.validateMCPTeamLeaderCompletion(ctx, current); err != nil {
 			return nil, err
@@ -382,7 +409,19 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		if err != nil {
 			return nil, err
 		}
+		if current.LeaderTask && current.TeamID != nil {
+			pending, pendingErr := svc.PendingDelegationTasks(ctx, current)
+			if pendingErr != nil {
+				return nil, pendingErr
+			}
+			if len(pending) > 0 {
+				return nil, fmt.Errorf("this leader still has delegated work or a queued outcome: use task.complete(outcome=waiting) to yield; use run.node.fail only to explicitly abort the entire coordinator and cancel that work")
+			}
+			failed, node, failureErr := s.failCoordinator(ctx, current, stringArg(args, "code"), stringArg(args, "message"), actor)
+			return map[string]any{"task": failed, "node": node}, failureErr
+		}
 		failed, err := svc.FailTask(ctx, task.ID, current.Version, stringArg(args, "code"), stringArg(args, "message"))
+
 		if err == nil {
 			err = (&orchestration.Engine{Store: s.store}).ReconcileRun(context.WithoutCancel(ctx), failed.OrchestrationRunID)
 		}

@@ -1,0 +1,532 @@
+{
+  "at": "2026-09-07T04:50:01.210838+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+      "mode": "adaptive",
+      "triggerType": "endpoint",
+      "triggerRef": "c80e161b-75f4-42bc-8ed7-17215a22be79",
+      "idempotencyKey": "c80e161b-75f4-42bc-8ed7-17215a22be79:it-20260907-fix1-team-job-research",
+      "input": {
+        "industries": [
+          "新能源汽车",
+          "手机"
+        ],
+        "mustUseWeb": true
+      },
+      "state": "failed",
+      "failureCode": "MISSING_CREDENTIALS",
+      "failureMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry. The issue for the mobile phone industry research has been canceled, and human action is required to provide the missing credentials.",
+      "version": 9,
+      "createdBy": {
+        "type": "system",
+        "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+      },
+      "createdAt": "2026-09-07T12:47:33.875329+08:00",
+      "updatedAt": "2026-09-07T12:48:46.67573+08:00",
+      "startedAt": "2026-09-07T12:47:33.875329+08:00",
+      "completedAt": "2026-09-07T12:48:46.67573+08:00"
+    },
+    "nodes": [
+      {
+        "id": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+        "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "target",
+        "type": "team",
+        "role": "leader",
+        "issueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "state": "failed",
+        "output": "已成功创建了两个子任务：\n1. it-20260907-fix1-新能源汽车行业调研，分配给researcher (agentId: 22a5dc1b-944a-4085-a59d-8ff45611e690)\n2. it-20260907-fix1-手机行业调研，分配给analyst (agentId: 891e747f-e57b-45ce-ac90-cfaf72721da8)。",
+        "iteration": 1,
+        "failureCode": "MISSING_CREDENTIALS",
+        "failureMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry. The issue for the mobile phone industry research has been canceled, and human action is required to provide the missing credentials.",
+        "version": 4,
+        "createdAt": "2026-09-07T12:47:33.879844+08:00",
+        "updatedAt": "2026-09-07T12:48:46.665464+08:00",
+        "startedAt": "2026-09-07T12:47:33.894353+08:00",
+        "completedAt": "2026-09-07T12:48:46.665464+08:00"
+      },
+      {
+        "id": "6930fc54-a6a4-4269-9354-8021c7b63b90",
+        "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:3f6abd48-365d-490d-88ca-164200ea8d7c",
+        "type": "agent",
+        "role": "researcher",
+        "issueId": "92e8d157-4f5e-4ea7-8d58-1cbfe1d225e2",
+        "state": "cancelled",
+        "iteration": 1,
+        "failureCode": "fail_fast",
+        "failureMessage": "cancelled after node failure",
+        "version": 3,
+        "createdAt": "2026-09-07T12:47:50.572518+08:00",
+        "updatedAt": "2026-09-07T12:48:46.674468+08:00",
+        "startedAt": "2026-09-07T12:47:51.392837+08:00",
+        "completedAt": "2026-09-07T12:48:46.674468+08:00"
+      },
+      {
+        "id": "31b6856d-7075-43ba-919c-70b0710684ac",
+        "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+        "type": "agent",
+        "role": "analyst",
+        "issueId": "0112a036-65ae-441a-bc48-09a02ca3cdf6",
+        "state": "failed",
+        "iteration": 1,
+        "failureCode": "MISSING_CREDENTIALS",
+        "failureMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry.",
+        "version": 3,
+        "createdAt": "2026-09-07T12:47:50.585081+08:00",
+        "updatedAt": "2026-09-07T12:48:10.017161+08:00",
+        "startedAt": "2026-09-07T12:47:51.394468+08:00",
+        "completedAt": "2026-09-07T12:48:10.017161+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "deaf2f40-2cf1-50fe-bbb7-e2304387f8f4",
+        "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "runNodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+        "currentAttemptId": "d77087a6-0c3a-47c9-94e5-df48610fd606",
+        "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "system",
+          "ref": "endpoint:c80e161b-75f4-42bc-8ed7-17215a22be79"
+        },
+        "causationId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+        "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+            "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+          },
+          "sessionId": "sess_872d9a5962c4",
+          "resolvedAt": "2026-09-07T04:47:33.909416Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_872d9a5962c4",
+        "result": "已成功创建了两个子任务：\n1. it-20260907-fix1-新能源汽车行业调研，分配给researcher (agentId: 22a5dc1b-944a-4085-a59d-8ff45611e690)\n2. it-20260907-fix1-手机行业调研，分配给analyst (agentId: 891e747f-e57b-45ce-ac90-cfaf72721da8)。",
+        "version": 4,
+        "createdAt": "2026-09-07T12:47:33.881474+08:00",
+        "dispatchedAt": "2026-09-07T12:47:33.908678+08:00",
+        "startedAt": "2026-09-07T12:47:34.009878+08:00",
+        "completedAt": "2026-09-07T12:48:00.227592+08:00"
+      },
+      {
+        "id": "3f6abd48-365d-490d-88ca-164200ea8d7c",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "92e8d157-4f5e-4ea7-8d58-1cbfe1d225e2",
+        "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "runNodeId": "6930fc54-a6a4-4269-9354-8021c7b63b90",
+        "currentAttemptId": "ba7b2596-acb8-4043-ab44-dbf105c88b82",
+        "agentId": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+        "status": "cancelled",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+        "teamRole": "researcher",
+        "parentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "delegatedFromTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "originator": {
+          "type": "agent",
+          "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "causationId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+            "bindingId": "87640370-5bfb-54b6-8795-20093d6edbea",
+            "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "runtimeProfileId": "bc4167bc-0f7b-41c6-b83d-6b034f46f822"
+          },
+          "sessionId": "c3e62bbc-cee6-4364-9acd-a6f970d7d2d7",
+          "resolvedAt": "2026-09-07T04:48:06.397763Z",
+          "runtimePool": {
+            "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:56:11.922607+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc4167bc-0f7b-41c6-b83d-6b034f46f822",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-07T11:56:11.92843+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.92843+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "sessionId": "c3e62bbc-cee6-4364-9acd-a6f970d7d2d7",
+        "version": 3,
+        "createdAt": "2026-09-07T12:47:50.572518+08:00",
+        "dispatchedAt": "2026-09-07T12:48:06.396925+08:00",
+        "completedAt": "2026-09-07T12:48:46.673361+08:00"
+      },
+      {
+        "id": "cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0112a036-65ae-441a-bc48-09a02ca3cdf6",
+        "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "runNodeId": "31b6856d-7075-43ba-919c-70b0710684ac",
+        "currentAttemptId": "204dae43-534a-4cad-ac91-82f1e6eda314",
+        "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+        "teamRole": "analyst",
+        "parentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "delegatedFromTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "originator": {
+          "type": "agent",
+          "ref": "ed634c61-e615-4604-9d8a-72dabede64cc"
+        },
+        "causationId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+            "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+          },
+          "sessionId": "sess_4f1243893906",
+          "resolvedAt": "2026-09-07T04:47:51.430322Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_4f1243893906",
+        "errorCode": "MISSING_CREDENTIALS",
+        "errorMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry.",
+        "version": 4,
+        "createdAt": "2026-09-07T12:47:50.585081+08:00",
+        "dispatchedAt": "2026-09-07T12:47:51.429487+08:00",
+        "startedAt": "2026-09-07T12:47:51.474424+08:00",
+        "completedAt": "2026-09-07T12:48:09.986582+08:00"
+      },
+      {
+        "id": "a8b3d3af-1443-4316-969a-2695f19215f6",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0112a036-65ae-441a-bc48-09a02ca3cdf6",
+        "orchestrationRunId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "runNodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+        "currentAttemptId": "87bd8f6b-4f2e-4172-b3ac-4139f337c5d1",
+        "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "b9a83040-2acc-46d7-8984-b6b1a208210d",
+        "teamId": "ff35b8ea-59bd-4024-8657-1b0c8db4f5bf",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "parentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "delegatedFromTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "originator": {
+          "type": "agent",
+          "ref": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+        },
+        "causationId": "b9a83040-2acc-46d7-8984-b6b1a208210d",
+        "correlationId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+            "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+          },
+          "sessionId": "sess_a3083324489e",
+          "resolvedAt": "2026-09-07T04:48:10.422703Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_a3083324489e",
+        "errorCode": "MISSING_CREDENTIALS",
+        "errorMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry. The issue for the mobile phone industry research has been canceled, and human action is required to provide the missing credentials.",
+        "version": 4,
+        "createdAt": "2026-09-07T12:48:10.005053+08:00",
+        "dispatchedAt": "2026-09-07T12:48:10.421797+08:00",
+        "startedAt": "2026-09-07T12:48:10.49221+08:00",
+        "completedAt": "2026-09-07T12:48:46.655998+08:00",
+        "inputs": [
+          {
+            "id": "327ac15c-0e9c-419b-b75b-55581ccb7234",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "a8b3d3af-1443-4316-969a-2695f19215f6",
+            "commentId": "b9a83040-2acc-46d7-8984-b6b1a208210d",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "blocked",
+            "deliveredAt": "2026-09-07T12:48:10.421797+08:00",
+            "attempts": 0,
+            "lastError": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry. The issue for the mobile phone industry research has been canceled, and human action is required to provide the missing credentials.",
+            "createdAt": "2026-09-07T12:48:10.005053+08:00"
+          }
+        ]
+      }
+    ],
+    "attempts": [
+      {
+        "id": "d77087a6-0c3a-47c9-94e5-df48610fd606",
+        "agentTaskId": "b2f22935-1333-4154-b7a7-8cdc076a5265",
+        "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+        "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+        "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "nodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+            "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+          },
+          "sessionId": "sess_872d9a5962c4",
+          "resolvedAt": "2026-09-07T04:47:33.909416Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "ed634c61-e615-4604-9d8a-72dabede64cc",
+        "sessionId": "sess_872d9a5962c4",
+        "sessionRef": "c80c5dde-c3e3-4277-b148-9bd10c119565",
+        "turnId": "5cc1bb6d-9f4a-4659-927a-b787034a0d2d",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T12:48:00.188345+08:00",
+        "result": "已成功创建了两个子任务：\n1. it-20260907-fix1-新能源汽车行业调研，分配给researcher (agentId: 22a5dc1b-944a-4085-a59d-8ff45611e690)\n2. it-20260907-fix1-手机行业调研，分配给analyst (agentId: 891e747f-e57b-45ce-ac90-cfaf72721da8)。",
+        "version": 23,
+        "createdAt": "2026-09-07T12:47:33.908678+08:00",
+        "updatedAt": "2026-09-07T12:48:00.227592+08:00",
+        "startedAt": "2026-09-07T12:47:34.009878+08:00",
+        "completedAt": "2026-09-07T12:48:00.227592+08:00"
+      },
+      {
+        "id": "ba7b2596-acb8-4043-ab44-dbf105c88b82",
+        "agentTaskId": "3f6abd48-365d-490d-88ca-164200ea8d7c",
+        "agentId": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+        "bindingId": "87640370-5bfb-54b6-8795-20093d6edbea",
+        "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "nodeId": "6930fc54-a6a4-4269-9354-8021c7b63b90",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "hosted-runtime",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "hosted-runtime",
+            "agentId": "22a5dc1b-944a-4085-a59d-8ff45611e690",
+            "bindingId": "87640370-5bfb-54b6-8795-20093d6edbea",
+            "runtimePoolId": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "runtimeProfileId": "bc4167bc-0f7b-41c6-b83d-6b034f46f822"
+          },
+          "sessionId": "c3e62bbc-cee6-4364-9acd-a6f970d7d2d7",
+          "resolvedAt": "2026-09-07T04:48:06.397763Z",
+          "runtimePool": {
+            "id": "b1a11d76-0a41-43c8-b6a1-0a3f227a9c74",
+            "name": "coding-default",
+            "tenant": "default",
+            "version": 1,
+            "createdAt": "2026-09-07T11:56:11.922607+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.922607+08:00"
+          },
+          "runtimeProfile": {
+            "id": "bc4167bc-0f7b-41c6-b83d-6b034f46f822",
+            "name": "auto-qoder",
+            "tenant": "default",
+            "runtime": "qodercli",
+            "version": 1,
+            "provider": "qoder",
+            "createdAt": "2026-09-07T11:56:11.92843+08:00",
+            "namespace": "default",
+            "updatedAt": "2026-09-07T11:56:11.92843+08:00",
+            "requirements": {},
+            "configuration": {
+              "allowedTools": [
+                "mcp__agentscope-collaboration__*"
+              ],
+              "permissionMode": "default",
+              "strictMCPConfig": true
+            }
+          },
+          "selectionSource": "policy",
+          "resolvedProviderConfiguration": {
+            "allowedTools": [
+              "mcp__agentscope-collaboration__*"
+            ],
+            "permissionMode": "default",
+            "strictMCPConfig": true
+          }
+        },
+        "runtimeProfileName": "auto-qoder",
+        "runtimePoolName": "coding-default",
+        "sessionId": "c3e62bbc-cee6-4364-9acd-a6f970d7d2d7",
+        "turnId": "560c2342-eec3-4099-85b0-4b829043d656",
+        "state": "cancelled",
+        "fencingToken": "[REDACTED]",
+        "version": 2,
+        "createdAt": "2026-09-07T12:48:06.396925+08:00",
+        "updatedAt": "2026-09-07T12:48:46.671058+08:00",
+        "completedAt": "2026-09-07T12:48:46.671058+08:00"
+      },
+      {
+        "id": "204dae43-534a-4cad-ac91-82f1e6eda314",
+        "agentTaskId": "cbc80590-d31f-48f2-80f8-75f51e8c1af0",
+        "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+        "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+        "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "nodeId": "31b6856d-7075-43ba-919c-70b0710684ac",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+            "bindingId": "90d6a1a2-89f6-5093-99ff-72ca9f2cfe38",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "891e747f-e57b-45ce-ac90-cfaf72721da8"
+          },
+          "sessionId": "sess_4f1243893906",
+          "resolvedAt": "2026-09-07T04:47:51.430322Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "891e747f-e57b-45ce-ac90-cfaf72721da8",
+        "sessionId": "sess_4f1243893906",
+        "sessionRef": "848d5d08-6093-443f-937e-988e15359988",
+        "turnId": "55f179a2-970d-4a34-a5a9-bfeadd86255c",
+        "state": "failed",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T12:48:09.971425+08:00",
+        "failureCode": "MISSING_CREDENTIALS",
+        "failureMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry.",
+        "version": 18,
+        "createdAt": "2026-09-07T12:47:51.429487+08:00",
+        "updatedAt": "2026-09-07T12:48:09.986582+08:00",
+        "startedAt": "2026-09-07T12:47:51.474424+08:00",
+        "completedAt": "2026-09-07T12:48:09.986582+08:00"
+      },
+      {
+        "id": "87bd8f6b-4f2e-4172-b3ac-4139f337c5d1",
+        "agentTaskId": "a8b3d3af-1443-4316-969a-2695f19215f6",
+        "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+        "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+        "runId": "1ecf0919-d4c0-57a2-a5b4-a0a85d80bd12",
+        "nodeId": "253a03a5-6b58-5cb9-b98a-8a05d4fb0639",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "ed634c61-e615-4604-9d8a-72dabede64cc",
+            "bindingId": "ae923cb0-008f-5b34-9068-50b70d08c091",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "ed634c61-e615-4604-9d8a-72dabede64cc"
+          },
+          "sessionId": "sess_a3083324489e",
+          "resolvedAt": "2026-09-07T04:48:10.422703Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "ed634c61-e615-4604-9d8a-72dabede64cc",
+        "sessionId": "sess_a3083324489e",
+        "sessionRef": "2d02d755-7dff-4f06-adba-55a97df9437f",
+        "turnId": "2ed8d1dd-832e-4bad-86fc-1963b15758b0",
+        "state": "failed",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T12:48:46.622004+08:00",
+        "failureCode": "MISSING_CREDENTIALS",
+        "failureMessage": "Missing TAVILY_API_KEY to perform web search for official sources and recent facts in the mobile phone industry. The issue for the mobile phone industry research has been canceled, and human action is required to provide the missing credentials.",
+        "version": 22,
+        "createdAt": "2026-09-07T12:48:10.421797+08:00",
+        "updatedAt": "2026-09-07T12:48:46.655998+08:00",
+        "startedAt": "2026-09-07T12:48:10.49221+08:00",
+        "completedAt": "2026-09-07T12:48:46.655998+08:00"
+      }
+    ]
+  }
+}

@@ -30,6 +30,134 @@ func RunSuite(t *testing.T, s store.Store) {
 	t.Run("RuntimeRegistryAndExecutions", func(t *testing.T) { testRuntime(t, ctx, s) })
 	t.Run("Outbox", func(t *testing.T) { testOutbox(t, ctx, s) })
 	t.Run("ConversationTurns", func(t *testing.T) { testConversationTurns(t, ctx, s) })
+	t.Run("TerminalRunEvents", func(t *testing.T) { testTerminalRunEvents(t, ctx, s) })
+	t.Run("ActiveWorkerFollowUp", func(t *testing.T) { testActiveWorkerFollowUp(t, ctx, s) })
+	t.Run("FailedTaskInputs", func(t *testing.T) { testFailedTaskInputs(t, ctx, s) })
+}
+
+func testTerminalRunEvents(t *testing.T, ctx context.Context, s store.Store) {
+	for _, state := range []controlmodel.OrchestrationRunState{controlmodel.RunSucceeded, controlmodel.RunFailed} {
+		issue, err := s.Collaboration().CreateIssue(ctx, &controlmodel.Issue{Tenant: "terminal-events-" + uuid.NewString(), Namespace: "n", Title: "terminal event", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := s.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{Tenant: issue.Tenant, Namespace: issue.Namespace, RootIssueID: issue.ID, Mode: controlmodel.RunModeDirect, State: controlmodel.RunRunning, CreatedBy: issue.Creator})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Orchestration().TransitionRun(ctx, run.ID, run.Version, state, json.RawMessage(`{"answer":42}`), "test", "details"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Orchestration().TransitionRun(ctx, run.ID, run.Version, state, nil, "", ""); err != store.ErrConflict {
+			t.Fatalf("stale transition: %v", err)
+		}
+		current, err := s.Orchestration().GetRun(ctx, run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Orchestration().TransitionRun(ctx, run.ID, current.Version, state, json.RawMessage(`{"answer":42}`), "test", "details"); err != nil {
+			t.Fatal(err)
+		}
+		events, err := s.Orchestration().ListRunEvents(ctx, run.ID, 0, 20)
+		if err != nil || len(events) != 1 || events[0].Type != "run."+string(state) {
+			t.Fatalf("terminal event missing or duplicated: %+v %v", events, err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(events[0].Payload, &payload); err != nil || payload["failureMessage"] != "details" || payload["output"].(map[string]any)["answer"] != float64(42) {
+			t.Fatalf("lost outcome payload: %s %v", events[0].Payload, err)
+		}
+	}
+}
+
+func testActiveWorkerFollowUp(t *testing.T, ctx context.Context, s store.Store) {
+	repo := s.Collaboration()
+	issue, err := repo.CreateIssue(ctx, &controlmodel.Issue{Tenant: "followup-" + uuid.NewString(), Namespace: "n", Title: "ongoing work", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}, AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := repo.ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 10})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("tasks=%+v err=%v", tasks, err)
+	}
+	initial, err := repo.ClaimAgentTask(ctx, store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version, RuntimeBinding: json.RawMessage(`{}`)})
+	if err == nil {
+		initial, err = repo.StartAgentTask(ctx, initial.ID, initial.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	follow, err := repo.CreateComment(ctx, store.CreateCommentRequest{Comment: &controlmodel.Comment{IssueID: issue.ID, Author: issue.Creator, Content: "also answer the follow-up"}, Targets: []store.CommentTarget{{TargetType: controlmodel.AssigneeAgent, TargetRef: "worker", AgentRef: "worker", RouteType: controlmodel.RouteExplicit}}})
+	if err != nil || len(follow.Tasks) != 1 {
+		t.Fatalf("follow=%+v err=%v", follow, err)
+	}
+	next := follow.Tasks[0]
+	if next.RunNodeID == initial.RunNodeID || next.OrchestrationRunID != initial.OrchestrationRunID {
+		t.Fatalf("independent work reused active node: %+v %+v", initial, next)
+	}
+	if _, err = repo.CompleteAgentTask(ctx, initial.ID, store.TaskCompletion{ExpectedVersion: initial.Version}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := s.Orchestration().GetRun(ctx, initial.OrchestrationRunID)
+	if err != nil || controlmodel.IsOrchestrationRunTerminal(run.State) {
+		t.Fatalf("run completed before follow-up: %+v %v", run, err)
+	}
+	current, err := repo.ClaimAgentTask(ctx, store.TaskClaim{TaskID: next.ID, ExpectedVersion: next.Version, RuntimeBinding: json.RawMessage(`{}`)})
+	if err == nil {
+		current, err = repo.StartAgentTask(ctx, current.ID, current.Version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err = repo.GetAgentTask(ctx, current.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.CompleteAgentTask(ctx, current.ID, store.TaskCompletion{ExpectedVersion: current.Version, ProcessedInputIDs: []uuid.UUID{current.Inputs[0].ID}}); err != nil {
+		t.Fatal(err)
+	}
+	run, err = s.Orchestration().GetRun(ctx, initial.OrchestrationRunID)
+	if err != nil || run.State != controlmodel.RunSucceeded {
+		t.Fatalf("follow-up did not converge: %+v %v", run, err)
+	}
+}
+
+func testFailedTaskInputs(t *testing.T, ctx context.Context, s store.Store) {
+	repo := s.Collaboration()
+	issue, err := repo.CreateIssue(ctx, &controlmodel.Issue{Tenant: "failure-inputs-" + uuid.NewString(), Namespace: "n", Title: "work", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := repo.CreateComment(ctx, store.CreateCommentRequest{Comment: &controlmodel.Comment{IssueID: issue.ID, Author: issue.Creator, Content: "new request", Type: controlmodel.CommentGeneral}, Targets: []store.CommentTarget{{TargetType: controlmodel.AssigneeAgent, TargetRef: "worker", AgentRef: "worker", RouteType: controlmodel.RouteExplicit}}})
+	if err != nil || len(created.Tasks) != 1 {
+		t.Fatalf("comment: %+v %v", created, err)
+	}
+	task := created.Tasks[0]
+	claimed, attempt, err := repo.ClaimAgentTaskWithAttempt(ctx, store.TaskClaim{TaskID: task.ID, ExpectedVersion: task.Version, SessionID: "failure-input-session", RuntimeBinding: json.RawMessage(`{}`)}, &controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged, State: controlmodel.ExecutionAssigned, SessionID: "failure-input-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err := repo.StartAgentTask(ctx, claimed.ID, claimed.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := store.TaskFailure{ExpectedVersion: running.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration + 1, Code: "missing_tool", Message: "required capability unavailable"}
+	if _, _, err := repo.FailAgentTaskWithAttempt(ctx, running.ID, failure); err != store.ErrConflict {
+		t.Fatalf("stale failure accepted: %v", err)
+	}
+	current, _ := repo.GetAgentTask(ctx, running.ID)
+	if len(current.Inputs) != 1 || current.Inputs[0].State != controlmodel.TaskInputDelivered {
+		t.Fatalf("stale failure changed input: %+v", current.Inputs)
+	}
+	failure.DispatchGeneration = attempt.DispatchGeneration
+	for range 2 {
+		if _, _, err := repo.FailAgentTaskWithAttempt(ctx, running.ID, failure); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current, err = repo.GetAgentTask(ctx, running.ID)
+	if err != nil || current.Status != controlmodel.AgentTaskFailed || current.Inputs[0].State != controlmodel.TaskInputBlocked || current.Inputs[0].LastError != failure.Message || current.Inputs[0].NextAttemptAt != nil {
+		t.Fatalf("terminal failure left pending input: %+v %v", current, err)
+	}
 }
 
 func testConversationTurns(t *testing.T, ctx context.Context, s store.Store) {

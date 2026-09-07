@@ -90,8 +90,8 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		}
 		if !controlmodel.IsOrchestrationRunTerminal(runState) {
 			task.OrchestrationRunID = source.OrchestrationRunID
-			reuseSourceNode := retryOfTaskID != nil || source.AgentRef == agentRef && deref(sourceRole) == teamRole &&
-				(source.IssueID == issue.ID || source.LeaderTask && leader)
+			reuseSourceNode := retryOfTaskID != nil || source.LeaderTask && leader &&
+				source.AgentRef == agentRef && deref(sourceRole) == teamRole
 			if reuseSourceNode {
 				var nodeState controlmodel.RunNodeState
 				if err := tx.QueryRow(ctx, `SELECT state FROM orchestration_run_nodes WHERE id=$1`, source.RunNodeID).
@@ -712,7 +712,7 @@ func startIssueForAgentTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 	if !store.AgentTaskMayAdvanceIssueLifecycle(issue, task) {
 		return nil
 	}
-	if issue.Status != controlmodel.IssueBacklog && issue.Status != controlmodel.IssueTodo &&
+	if issue.Status != controlmodel.IssueBacklog && issue.Status != controlmodel.IssueTodo && !store.AgentTaskReopensReview(issue, task) &&
 		(issue.Status != controlmodel.IssueBlocked || task.LeaderTask && issue.ParentIssueID != nil) {
 		return nil
 	}

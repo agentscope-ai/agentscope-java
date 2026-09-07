@@ -44,6 +44,12 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 			return err
 		}
 		if controlmodel.IsOrchestrationRunTerminal(run.State) {
+			if err = (&collaboration.Service{Store: e.Store}).EnsureTerminalTeamSummary(ctx, run); err != nil {
+				return err
+			}
+			if run.State == controlmodel.RunFailed {
+				return e.convergeFailedIssueTree(ctx, run)
+			}
 			return e.convergeCompletedIssue(ctx, run)
 		}
 		if run.State == controlmodel.RunPaused || run.State == controlmodel.RunCancelling {
@@ -402,7 +408,7 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 			} else if failed > 0 {
 				target = controlmodel.RunFailed
 			}
-			run, err = e.Store.Orchestration().TransitionRun(ctx, runID, run.Version, target, nil, "", "")
+			run, err = e.Store.Orchestration().TransitionRun(ctx, runID, run.Version, target, CompletedRunOutput(run, latest), "", "")
 			if err != nil {
 				return err
 			}
@@ -461,6 +467,9 @@ func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.O
 			return nil
 		}
 	}
+	if err = (&collaboration.Service{Store: e.Store}).EnsureTerminalTeamSummary(ctx, run); err != nil {
+		return err
+	}
 	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-run:" + run.ID.String()}
 	for attempt := 0; attempt < 3; attempt++ {
 		issue, err = e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
@@ -492,8 +501,19 @@ func (e *Engine) convergeFailedIssueTree(ctx context.Context, run *controlmodel.
 	if run == nil || run.ParentRunID != nil || run.State != controlmodel.RunFailed {
 		return nil
 	}
+	latest, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Limit: 1})
+	if err != nil {
+		return err
+	}
+	// Replaying an old failure must not block a newer recovery run.
+	if len(latest) > 0 && latest[0].ID != run.ID && latest[0].CreatedAt.After(run.CreatedAt) {
+		return nil
+	}
 	root, err := e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
 	if err != nil {
+		return err
+	}
+	if err = (&collaboration.Service{Store: e.Store}).EnsureTerminalTeamSummary(ctx, run); err != nil {
 		return err
 	}
 	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-run:" + run.ID.String()}

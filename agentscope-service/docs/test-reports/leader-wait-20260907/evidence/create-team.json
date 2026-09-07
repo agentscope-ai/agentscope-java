@@ -1,0 +1,45 @@
+{
+  "at": "2026-09-07T09:39:59.571406+00:00",
+  "method": "POST",
+  "path": "/api/v1/teams",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "name": "leader-wait-20260907",
+    "leaderAgentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+    "instructions": "这是等待协作回复的集成验证。只在本测试创建的Issue工作。所有成果直接放在task.complete.result中，不使用文件路径交付。Lead追问后以task.complete(outcome=waiting)让出当前回合，等待新的结果触发后续回合。",
+    "members": [
+      {
+        "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "role": "worker"
+      }
+    ]
+  },
+  "status": 201,
+  "response": {
+    "team": {
+      "id": "b20522d4-09e2-438a-8df7-06475870c2e5",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "leader-wait-20260907",
+      "instructions": "这是等待协作回复的集成验证。只在本测试创建的Issue工作。所有成果直接放在task.complete.result中，不使用文件路径交付。Lead追问后以task.complete(outcome=waiting)让出当前回合，等待新的结果触发后续回合。",
+      "status": "active",
+      "leaderAgentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+      "policy": {},
+      "version": 1,
+      "createdAt": "2026-09-07T17:39:59.575552+08:00",
+      "updatedAt": "2026-09-07T17:39:59.575552+08:00",
+      "members": [
+        {
+          "id": "b04bf563-8962-4cf4-b9ce-a6749adb0098",
+          "tenant": "default",
+          "namespace": "default",
+          "teamId": "b20522d4-09e2-438a-8df7-06475870c2e5",
+          "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+          "role": "worker",
+          "createdAt": "2026-09-07T17:39:59.575552+08:00"
+        }
+      ]
+    }
+  }
+}

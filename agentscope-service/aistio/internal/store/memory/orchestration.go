@@ -262,6 +262,23 @@ func (r *orchestrationRepo) TransitionRun(_ context.Context, id uuid.UUID, expec
 	}
 	if controlmodel.IsOrchestrationRunTerminal(to) {
 		v.CompletedAt = &now
+
+		key := "run-" + string(to) + ":" + id.String()
+		found := false
+		for _, event := range r.s.runEvents[id] {
+			if event.IdempotencyKey == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			payload, _ := json.Marshal(map[string]any{"output": v.Output, "failureCode": v.FailureCode, "failureMessage": v.FailureMessage})
+			r.s.runEvents[id] = append(r.s.runEvents[id], &controlmodel.RunEvent{ID: uuid.New(), RunID: id, Tenant: v.Tenant, Namespace: v.Namespace, Sequence: int64(len(r.s.runEvents[id]) + 1), Type: "run." + string(to), Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration"}, Payload: payload, IdempotencyKey: "run-" + string(to) + ":" + id.String(), OccurredAt: now})
+			if signal := r.s.runEventSignals[id]; signal != nil {
+				close(signal)
+			}
+			r.s.runEventSignals[id] = make(chan struct{})
+		}
 	}
 	return cloneRun(v), nil
 }

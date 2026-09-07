@@ -65,7 +65,12 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 	created := comment
 	created.ID = nonNilUUIDPG(created.ID)
 	created.Tenant, created.Namespace, created.IssueID = issue.Tenant, issue.Namespace, issue.ID
-	created.SourceTaskID, created.Type = &task.ID, controlmodel.CommentResult
+	created.SourceTaskID = &task.ID
+	// A leader may finish a decision turn by yielding to delegated work.
+	// Keep that informational comment distinct from the worker's deliverable.
+	if !task.LeaderTask || created.Type != controlmodel.CommentStatus {
+		created.Type = controlmodel.CommentResult
+	}
 	if attempt != nil {
 		created.SourceAttemptID = &attempt.ID
 	}
@@ -263,9 +268,11 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 		}
 	}
 	if !coordinatorAlreadyTerminal {
+		payload, _ := json.Marshal(map[string]any{"output": output})
 		if err := appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
 			Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &task.RunNodeID,
 			AgentTaskID: &task.ID, Type: "node." + string(next), Actor: actor,
+			Payload:     payload,
 			CausationID: task.CausationID, CorrelationID: task.CorrelationID,
 			IdempotencyKey: "node-" + string(next) + ":" + node.ID.String()}); err != nil {
 			return err

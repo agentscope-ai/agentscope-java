@@ -197,14 +197,19 @@ func (r *orchestrationRepo) ListRuns(ctx context.Context, f store.OrchestrationR
 	return out, rows.Err()
 }
 func (r *orchestrationRepo) TransitionRun(ctx context.Context, id uuid.UUID, expected int64, to controlmodel.OrchestrationRunState, output json.RawMessage, code, message string) (*controlmodel.OrchestrationRun, error) {
-	current, err := r.GetRun(ctx, id)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	current, err := scanRun(tx.QueryRow(ctx, `SELECT `+runCols+` FROM orchestration_runs WHERE id=$1 FOR UPDATE`, id))
 	if err != nil {
 		return nil, err
 	}
 	if current.Version != expected || !controlmodel.CanTransitionOrchestrationRun(current.State, to) {
 		return nil, store.ErrConflict
 	}
-	v, err := scanRun(r.pool.QueryRow(ctx, `UPDATE orchestration_runs SET state=$3,output=COALESCE($4,output),
+	v, err := scanRun(tx.QueryRow(ctx, `UPDATE orchestration_runs SET state=$3,output=COALESCE($4,output),
 		wait_reason=CASE WHEN $3='waiting' THEN $5 ELSE NULL END,
 		failure_code=CASE WHEN $3='waiting' THEN NULL ELSE $5 END,
 		failure_message=CASE WHEN $3='waiting' THEN NULL ELSE $6 END,
@@ -214,7 +219,19 @@ func (r *orchestrationRepo) TransitionRun(ctx context.Context, id uuid.UUID, exp
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, store.ErrConflict
 	}
-	return v, err
+	if err != nil {
+		return nil, err
+	}
+	if controlmodel.IsOrchestrationRunTerminal(to) {
+		payload, _ := json.Marshal(map[string]any{"output": v.Output, "failureCode": v.FailureCode, "failureMessage": v.FailureMessage})
+		if err := appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: v.ID, Tenant: v.Tenant, Namespace: v.Namespace, Type: "run." + string(to), Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration"}, Payload: payload, IdempotencyKey: "run-" + string(to) + ":" + v.ID.String()}); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 
 const nodeCols = `id,run_id,tenant,namespace,node_key,definition_node_key,type,role,issue_id,state,config,input,output,iteration,wait_reason,failure_code,failure_message,version,created_at,updated_at,started_at,completed_at`

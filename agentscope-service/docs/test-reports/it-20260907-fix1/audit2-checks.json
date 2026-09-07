@@ -1,0 +1,19 @@
+{
+  "checks": [
+    {
+      "kind": "active_task_in_terminal_run",
+      "taskId": "c2808547-eff3-4532-92fa-ed7c46ca150f"
+    },
+    {
+      "kind": "active_attempt_in_terminal_run",
+      "attemptId": "869454cf-67b3-49d1-911a-f84bf78b472a"
+    }
+  ],
+  "counts": {
+    "issues": 20,
+    "runs": 13,
+    "tasks": 30,
+    "attempts": 30,
+    "sessions": 22
+  }
+}

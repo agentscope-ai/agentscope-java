@@ -27,6 +27,22 @@ type endpointCommandCapture struct {
 	turns []*asdp.ConversationTurnCommand
 }
 
+func TestEndpointIdempotencyComparesJSONBValues(t *testing.T) {
+	for _, tc := range []struct {
+		a, b  string
+		equal bool
+	}{
+		{`{"title":"job","input":{"quantity":12,"price":12}}`, `{"input": {"price": 12, "quantity": 12}, "title": "job"}`, true},
+		{`{"items":[1,2]}`, `{"items":[2,1]}`, false},
+		{`{"value":9007199254740992}`, `{"value":9007199254740993}`, false},
+		{`{"value":1}`, `{"value":"1"}`, false},
+	} {
+		if got := sameJSON(json.RawMessage(tc.a), json.RawMessage(tc.b)); got != tc.equal {
+			t.Errorf("sameJSON(%s, %s) = %v, want %v", tc.a, tc.b, got, tc.equal)
+		}
+	}
+}
+
 func (*endpointCommandCapture) SendSessionCommand(_, _, _, _, _, _ string) error { return nil }
 func (c *endpointCommandCapture) SendConversationTurn(_, _, _ string, command *asdp.ConversationTurnCommand) error {
 	c.turns = append(c.turns, command)

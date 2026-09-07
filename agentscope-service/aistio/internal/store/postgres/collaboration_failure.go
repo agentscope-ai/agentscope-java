@@ -62,6 +62,13 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(ctx context.Context, id uui
 	if err != nil {
 		return nil, nil, err
 	}
+	// A terminal failure must not leave delivery work waiting on an immutable
+	// Task. Keep successful/deferred dispositions, and retain why the rest failed.
+	if _, err = tx.Exec(ctx, `UPDATE agent_task_inputs SET state=$2,last_error=$3,next_attempt_at=NULL
+		WHERE task_id=$1 AND state NOT IN ('processed','deferred','dead_letter','blocked')`,
+		task.ID, controlmodel.TaskInputBlocked, failure.Message); err != nil {
+		return nil, nil, err
+	}
 	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
 	if err = appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
 		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &task.RunNodeID, AgentTaskID: &task.ID,

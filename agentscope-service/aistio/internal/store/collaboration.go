@@ -103,6 +103,13 @@ func AgentTaskMayAdvanceIssueLifecycle(issue *controlmodel.Issue, task *controlm
 	return task.TriggerType != "comment" || task.TeamID != nil || AgentTaskOwnsIssueLifecycle(issue, task)
 }
 
+// A new human request to the accountable assignee resumes work under review.
+// A consultant's reply or a leader reviewing a child's result does not reopen it.
+func AgentTaskReopensReview(issue *controlmodel.Issue, task *controlmodel.AgentTask) bool {
+	return issue != nil && task != nil && issue.Status == controlmodel.IssueInReview &&
+		task.TriggerType == "comment" && task.Originator.Type == controlmodel.ActorHuman && AgentTaskOwnsIssueLifecycle(issue, task)
+}
+
 type CreateCommentResult struct {
 	Comment *controlmodel.Comment
 	Routes  []controlmodel.CommentRoute

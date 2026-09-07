@@ -425,15 +425,27 @@ func (s *Server) DeleteManagedSession(ctx context.Context, ownerID, sessionID st
 // PostSessionWakeEvent posts a user.message to the data plane to start a managed turn.
 // Requires BUILDER_DATA_URL and InternalToken.
 func (s *Server) PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, text string) error {
+	return s.postSessionWakePayload(ctx, sessionID, ownerID, map[string]any{"text": text})
+}
+
+// PostEndpointSessionWakeEvent preserves the public invocation identity in the
+// durable user event, so the resulting Managed turn can be projected exactly.
+func (s *Server) PostEndpointSessionWakeEvent(ctx context.Context, sessionID, ownerID, text, invocationID, turnID string) error {
+	return s.postSessionWakePayload(ctx, sessionID, ownerID, map[string]any{
+		"text": text, "endpointInvocationId": invocationID, "endpointTurnId": turnID,
+	})
+}
+
+func (s *Server) postSessionWakePayload(ctx context.Context, sessionID, ownerID string, message map[string]any) error {
 	if s.cfg.DataURL == "" {
 		return fmt.Errorf("BUILDER_DATA_URL not configured")
 	}
-	if text == "" {
-		text = "AgentTask is ready."
+	if message["text"] == "" {
+		message["text"] = "AgentTask is ready."
 	}
 	payload := map[string]any{
 		"events": []map[string]any{
-			{"type": "user.message", "payload": map[string]any{"text": text}},
+			{"type": "user.message", "payload": message},
 		},
 	}
 	b, err := json.Marshal(payload)

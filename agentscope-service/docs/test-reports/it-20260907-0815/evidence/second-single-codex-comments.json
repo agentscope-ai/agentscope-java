@@ -1,0 +1,46 @@
+{
+  "at": "2026-09-07T00:16:33.870364+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5/comments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "d667f982-f4c1-4858-b663-369609e8e356",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+        "threadRootId": "d667f982-f4c1-4858-b663-369609e8e356",
+        "author": {
+          "type": "agent",
+          "ref": "cb3a3959-a01c-42df-a510-a9872e83cf41"
+        },
+        "content": "97 是质数。因为 \\(9<\\sqrt{97}<10\\)，只需试除不大于 \\(\\sqrt{97}\\) 的质数：2、3、5、7。\n\n97 除以它们的余数分别为 1、1、2、6，均不能整除，因此 97 是质数。\n\nCODEX=prime",
+        "type": "result",
+        "sourceTaskId": "5c65f04f-3f84-41d3-8a3e-5572a4542cfa",
+        "sourceAttemptId": "788b7068-8387-4aa1-9934-307e9c51aff1",
+        "version": 1,
+        "createdAt": "2026-09-07T08:16:11.391277+08:00",
+        "updatedAt": "2026-09-07T08:16:11.391277+08:00",
+        "routes": [
+          {
+            "id": "ed9998dc-b0e8-49ed-8622-9f87ee61ec34",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "2f9d88f9-1d5a-46de-8a58-6cc79e4cd8d5",
+            "commentId": "d667f982-f4c1-4858-b663-369609e8e356",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "cb3a3959-a01c-42df-a510-a9872e83cf41",
+            "routeType": "assignee",
+            "outcome": "suppressed",
+            "reasonCode": "self_trigger",
+            "createdAt": "2026-09-07T08:16:11.391277+08:00"
+          }
+        ]
+      }
+    ],
+    "nextCursor": ""
+  }
+}

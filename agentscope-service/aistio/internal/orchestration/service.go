@@ -449,6 +449,13 @@ func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID,
 			return nil, cancelErr
 		}
 	}
+	run, err := s.Store.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil {
+		return nil, err
+	}
+	if err = (&collaboration.Service{Store: s.Store}).PublishCoordinatorSummary(ctx, run, task, output, "", ""); err != nil {
+		return nil, err
+	}
 	completed, err := s.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, output, "", "")
 	if err != nil {
 		return nil, err

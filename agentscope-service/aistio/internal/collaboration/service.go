@@ -783,7 +783,7 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 			return nil, err
 		}
 	}
-	if !suppressImplicitRouting && len(targets) == 0 {
+	if !suppressImplicitRouting && len(targets) == 0 && !(commentType == controlmodel.CommentResult && req.SourceTaskID != nil) {
 		if req.ParentID != nil {
 			parent, loadErr := s.Store.Collaboration().GetComment(ctx, *req.ParentID)
 			if loadErr != nil {
@@ -1190,16 +1190,20 @@ type CoordinatorWorkerOutcome struct {
 }
 
 type ContextEnvelope struct {
-	Task                *controlmodel.AgentTask         `json:"task"`
-	Issue               *controlmodel.Issue             `json:"issue"`
-	Run                 *controlmodel.OrchestrationRun  `json:"run"`
-	Inputs              []ContextInput                  `json:"inputs"`
-	CoordinatorIssue    *controlmodel.Issue             `json:"coordinatorIssue,omitempty"`
-	CoordinatorChildren []CoordinatorChildContext       `json:"coordinatorChildren,omitempty"`
-	Team                *controlmodel.CollaborationTeam `json:"team,omitempty"`
-	Artifacts           []*controlmodel.Artifact        `json:"artifacts,omitempty"`
-	AvailableActions    []string                        `json:"availableActions"`
-	TaskToken           string                          `json:"taskToken,omitempty"`
+	Task                 *controlmodel.AgentTask         `json:"task"`
+	Issue                *controlmodel.Issue             `json:"issue"`
+	Run                  *controlmodel.OrchestrationRun  `json:"run"`
+	Inputs               []ContextInput                  `json:"inputs"`
+	ReplyToOwnDelegation bool                            `json:"replyToOwnDelegation,omitempty"`
+	InitiatingRequest    string                          `json:"initiatingRequest,omitempty"`
+	CurrentRequest       string                          `json:"currentRequest"`
+	RequestContext       []ContextInput                  `json:"requestContext,omitempty"`
+	CoordinatorIssue     *controlmodel.Issue             `json:"coordinatorIssue,omitempty"`
+	CoordinatorChildren  []CoordinatorChildContext       `json:"coordinatorChildren,omitempty"`
+	Team                 *controlmodel.CollaborationTeam `json:"team,omitempty"`
+	Artifacts            []*controlmodel.Artifact        `json:"artifacts,omitempty"`
+	AvailableActions     []string                        `json:"availableActions"`
+	TaskToken            string                          `json:"taskToken,omitempty"`
 }
 
 func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextEnvelope, error) {
@@ -1216,7 +1220,7 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 		return nil, err
 	}
 	envelope := &ContextEnvelope{Task: task, Issue: issue, Run: run,
-		AvailableActions: []string{"issue.get", "issue.comment.list", "issue.comment.add", "artifact.upload", "artifact.download",
+		AvailableActions: []string{"math.evaluate", "issue.get", "issue.comment.list", "issue.comment.add", "artifact.upload", "artifact.download",
 			"task.get", "task.start", "task.progress", "task.respond", "task.complete", "task.fail", "approval.request",
 			"run.get", "run.graph", "run.signal", "run.artifacts"}}
 	for _, input := range task.Inputs {
@@ -1225,6 +1229,51 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 			return nil, loadErr
 		}
 		envelope.Inputs = append(envelope.Inputs, ContextInput{Input: input, Comment: comment})
+		if envelope.CurrentRequest != "" {
+			envelope.CurrentRequest += "\n\n"
+		}
+		envelope.CurrentRequest += comment.Content
+	}
+	if envelope.CurrentRequest == "" {
+		envelope.CurrentRequest = issue.Title + "\n\n" + issue.Description
+	}
+	// Preserve the initiating instructions when a reply returns through A→B→A.
+	// These are background requests, not new inputs to execute or acknowledge.
+	if task.TeamID == nil {
+		parentID := task.ParentTaskID
+		seen := map[uuid.UUID]bool{task.ID: true}
+		for parentID != nil && !seen[*parentID] && len(seen) <= 32 {
+			seen[*parentID] = true
+			parent, loadErr := s.Store.Collaboration().GetAgentTask(ctx, *parentID)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			if parent.IssueID != task.IssueID {
+				break
+			}
+			ownRequest := task.Originator.Type == controlmodel.ActorAgent && parent.ID != *task.ParentTaskID &&
+				parent.AgentRef == task.AgentRef && !envelope.ReplyToOwnDelegation
+			if ownRequest {
+				envelope.ReplyToOwnDelegation = true
+			}
+			for _, input := range parent.Inputs {
+				comment, loadErr := s.Store.Collaboration().GetComment(ctx, input.CommentID)
+				if loadErr != nil {
+					return nil, loadErr
+				}
+				envelope.RequestContext = append(envelope.RequestContext, ContextInput{Input: input, Comment: comment})
+				if ownRequest {
+					if envelope.InitiatingRequest != "" {
+						envelope.InitiatingRequest += "\n\n"
+					}
+					envelope.InitiatingRequest += comment.Content
+				}
+			}
+			if ownRequest && envelope.InitiatingRequest == "" {
+				envelope.InitiatingRequest = issue.Title + "\n\n" + issue.Description
+			}
+			parentID = parent.ParentTaskID
+		}
 	}
 	if task.TeamID != nil {
 		envelope.Team, err = s.TeamForTask(ctx, task)
@@ -1382,6 +1431,15 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 		if output != nil {
 			id := output.ID
 			completion.ResponseCommentID = &id
+		}
+	}
+	if len(completion.Result) == 0 || string(completion.Result) == "null" {
+		text := strings.TrimSpace(completion.Summary)
+		if output != nil {
+			text = output.Content
+		}
+		if text != "" {
+			completion.Result, _ = json.Marshal(text)
 		}
 	}
 	if completion.ResponseCommentID == nil {
@@ -1548,6 +1606,11 @@ func (s *Service) ConvergeFailedTask(ctx context.Context, taskID uuid.UUID) (*co
 	// policy. This projection is for direct/adaptive conversational work.
 	if run.DefinitionRevisionID != nil {
 		return nil, nil, nil
+	}
+	if task.LeaderTask && task.IssueID == run.RootIssueID {
+		if err = s.PublishCoordinatorSummary(ctx, run, task, nil, task.ErrorCode, task.ErrorMessage); err != nil {
+			return nil, nil, err
+		}
 	}
 	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
 	if err != nil {
@@ -1827,6 +1890,24 @@ func (s *Service) completionTargets(ctx context.Context, task *controlmodel.Agen
 	if task.ParentTaskID != nil {
 		parent, err := s.Store.Collaboration().GetAgentTask(ctx, *task.ParentTaskID)
 		if err == nil {
+			if task.TeamID == nil {
+				// An explicit reply already notified the requester. Publishing the
+				// completion must not schedule the same recipient a second time.
+				comments, listErr := s.listAllComments(ctx, task.IssueID)
+				if listErr != nil {
+					return nil, listErr
+				}
+				for _, comment := range comments {
+					if comment.DeletedAt != nil || comment.SourceTaskID == nil || *comment.SourceTaskID != task.ID {
+						continue
+					}
+					for _, route := range comment.Routes {
+						if route.RouteType == controlmodel.RouteExplicit && route.TargetRef == parent.AgentRef && route.Outcome == controlmodel.RouteQueued {
+							return nil, nil
+						}
+					}
+				}
+			}
 			routeType := controlmodel.RouteFollowUp
 			if parent.LeaderTask {
 				routeType = controlmodel.RouteTeamLeader

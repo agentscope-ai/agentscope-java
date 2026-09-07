@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -325,7 +326,14 @@ func (w *RuntimeControlSweeper) reconcileEndpointJobInvocations(ctx context.Cont
 		}
 		now := time.Now().UTC()
 		invocation.CompletedAt = &now
-		invocation.Result, _ = json.Marshal(map[string]any{"runState": run.State})
+		nodes, nodesErr := w.Store.Orchestration().ListNodes(ctx, run.ID)
+		if nodesErr != nil {
+			return nodesErr
+		}
+		invocation.Result = orchestration.CompletedRunOutput(run, nodes)
+		if len(invocation.Result) == 0 {
+			invocation.Result, _ = json.Marshal(map[string]any{"runState": run.State})
+		}
 		switch run.State {
 		case controlmodel.RunSucceeded, controlmodel.RunPartialSucceeded:
 			invocation.Status = controlmodel.EndpointInvocationCompleted

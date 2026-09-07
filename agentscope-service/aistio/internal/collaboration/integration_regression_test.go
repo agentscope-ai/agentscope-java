@@ -63,8 +63,20 @@ func TestExplicitAgentRoundTripStopsAfterOriginatorAcknowledges(t *testing.T) {
 	if err != nil || len(reply.Tasks) != 1 {
 		t.Fatalf("reply: %+v %v", reply, err)
 	}
-	completeRegressionTask(t, svc, worker, "144", nil)
 	ack := startRegressionTask(t, st, &reply.Tasks[0])
+	envelope, contextErr := svc.BuildContext(ctx, ack.ID)
+	if contextErr != nil || !envelope.ReplyToOwnDelegation || envelope.InitiatingRequest != issue.Title+"\n\n"+issue.Description {
+		t.Fatalf("returning answer lacks initiating context: %+v %v", envelope, contextErr)
+	}
+	// The recipient may already be running before B publishes its completion.
+	// Coalescing only queued tasks cannot prevent this duplicate delivery.
+	completeRegressionTask(t, svc, worker, "144", nil)
+	responded, err := svc.AddComment(ctx, AddCommentRequest{IssueID: issue.ID,
+		Author: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "A"}, SourceTaskID: &ack.ID,
+		ParentID: &reply.Comment.ID, Type: controlmodel.CommentResult, Content: "CROSS_ACK"})
+	if err != nil || len(responded.Tasks) != 0 {
+		t.Fatalf("ACK response routed again: %+v %v", responded, err)
+	}
 	comment := completeRegressionTask(t, svc, ack, "CROSS_ACK", nil)
 	if len(comment.Routes) != 0 {
 		t.Fatalf("ACK automatically dispatched again: %+v", comment.Routes)
@@ -77,6 +89,31 @@ func TestExplicitAgentRoundTripStopsAfterOriginatorAcknowledges(t *testing.T) {
 		if task.Status != controlmodel.AgentTaskCompleted {
 			t.Fatalf("unfinished task: %+v", task)
 		}
+	}
+}
+
+func TestCommentContextMakesNewRequestAuthoritative(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	svc := &Service{Store: st}
+	issue, initial, err := svc.CreateIssue(ctx, CreateIssueRequest{Tenant: "t", Namespace: "n", Title: "old request", Description: "original work", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}, AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial = startRegressionTask(t, st, initial)
+	completeRegressionTask(t, svc, initial, "old answer", nil)
+	updated, err := svc.AddComment(ctx, AddCommentRequest{IssueID: issue.ID, Author: issue.Creator, Content: "Use the corrected input and answer the new question", Mentions: []MentionTarget{{Type: controlmodel.AssigneeAgent, Ref: "A"}}})
+	if err != nil || len(updated.Tasks) != 1 {
+		t.Fatalf("updated: %+v %v", updated, err)
+	}
+	envelope, err := svc.BuildContext(ctx, updated.Tasks[0].ID)
+	if err != nil || envelope.CurrentRequest != updated.Comment.Content || envelope.Issue.Description != "original work" {
+		t.Fatalf("context lost request precedence/history: %+v %v", envelope, err)
+	}
+	startRegressionTask(t, st, &updated.Tasks[0])
+	current, err := st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil || current.Status != controlmodel.IssueInProgress {
+		t.Fatalf("new assignee request did not resume review: %+v %v", current, err)
 	}
 }
 

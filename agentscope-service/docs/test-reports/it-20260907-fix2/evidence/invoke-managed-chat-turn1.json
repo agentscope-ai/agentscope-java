@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-07T05:57:52.926963+00:00",
+  "method": "POST",
+  "path": "/invoke/v1/endpoints/it-20260907-fix2-managed-chat/conversations",
+  "request": {
+    "message": "记住标记 API_MEMORY_1130，计算20+22，回答标记与42。无需联网。后续我会在同一会话提问。"
+  },
+  "status": 202,
+  "response": {
+    "conversationId": "23d3021e-8e07-4149-aaae-b7c659ce9d93",
+    "eventsUrl": "/invoke/v1/conversations/23d3021e-8e07-4149-aaae-b7c659ce9d93/events?invocationId=b61326d2-78bc-409b-96c5-3f9bc5b7a2ff",
+    "invocationId": "b61326d2-78bc-409b-96c5-3f9bc5b7a2ff",
+    "sessionId": "sess_03fad2a740dd",
+    "sessionRef": "64e2977c-d5b6-4e80-96c7-9ba55d748bd1",
+    "status": "running",
+    "statusUrl": "/invoke/v1/conversations/23d3021e-8e07-4149-aaae-b7c659ce9d93",
+    "turnId": "485fb31c-0fe4-4f2f-a831-56ade4bc9091"
+  }
+}

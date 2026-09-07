@@ -954,6 +954,7 @@ func (r *collaborationRepo) StartAgentTask(_ context.Context, id uuid.UUID, expe
 	task.Status, task.Version, task.StartedAt = controlmodel.AgentTaskRunning, task.Version+1, &now
 	if issue := r.s.issues[task.IssueID]; issue != nil && store.AgentTaskMayAdvanceIssueLifecycle(issue, task) &&
 		(issue.Status == controlmodel.IssueBacklog || issue.Status == controlmodel.IssueTodo ||
+			store.AgentTaskReopensReview(issue, task) ||
 			issue.Status == controlmodel.IssueBlocked && (!task.LeaderTask || issue.ParentIssueID == nil)) {
 		previousStatus := issue.Status
 		issue.Status, issue.Version, issue.UpdatedAt = controlmodel.IssueInProgress, issue.Version+1, now
@@ -1078,7 +1079,12 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 	created := cloneComment(comment)
 	created.ID = nonNilUUID(created.ID)
 	created.Tenant, created.Namespace, created.IssueID = issue.Tenant, issue.Namespace, issue.ID
-	created.SourceTaskID, created.Type = &task.ID, controlmodel.CommentResult
+	created.SourceTaskID = &task.ID
+	// A leader may finish a decision turn by yielding to delegated work.
+	// Keep that informational comment distinct from the worker's deliverable.
+	if !task.LeaderTask || created.Type != controlmodel.CommentStatus {
+		created.Type = controlmodel.CommentResult
+	}
 	if attempt != nil {
 		created.SourceAttemptID = &attempt.ID
 	}
@@ -1202,7 +1208,9 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 			CausationID: task.CausationID, CorrelationID: task.CorrelationID})
 	}
 	if !coordinatorAlreadyTerminal {
+		payload, _ := json.Marshal(map[string]any{"output": output})
 		appendEvent(&controlmodel.RunEvent{NodeID: &node.ID, AgentTaskID: &task.ID, Type: "node." + string(next),
+			Payload:        payload,
 			IdempotencyKey: "node-" + string(next) + ":" + node.ID.String(), CausationID: task.CausationID,
 			CorrelationID: task.CorrelationID})
 	}
@@ -1285,6 +1293,14 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(_ context.Context, id uuid.
 	attempt.Version, attempt.UpdatedAt = attempt.Version+1, now
 	task.Status, task.ErrorCode, task.ErrorMessage = controlmodel.AgentTaskFailed, failure.Code, failure.Message
 	task.Version, task.CompletedAt = task.Version+1, &now
+	for i := range r.s.taskInputs[id] {
+		input := &r.s.taskInputs[id][i]
+		switch input.State {
+		case controlmodel.TaskInputProcessed, controlmodel.TaskInputDeferred, controlmodel.TaskInputDeadLetter, controlmodel.TaskInputBlocked:
+		default:
+			input.State, input.LastError, input.NextAttemptAt = controlmodel.TaskInputBlocked, failure.Message, nil
+		}
+	}
 	failurePayload, _ := json.Marshal(map[string]any{"code": failure.Code, "message": failure.Message})
 	event := &controlmodel.RunEvent{ID: uuid.New(), RunID: task.OrchestrationRunID, Tenant: task.Tenant,
 		Namespace: task.Namespace, Sequence: int64(len(r.s.runEvents[task.OrchestrationRunID]) + 1),
@@ -2128,8 +2144,8 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 	if source != nil {
 		if run := r.s.runs[source.OrchestrationRunID]; run != nil && !controlmodel.IsOrchestrationRunTerminal(run.State) {
 			task.OrchestrationRunID = source.OrchestrationRunID
-			reuseSourceNode := retryOf != nil || source.AgentRef == agentRef && source.TeamRole == teamRole &&
-				(source.IssueID == issue.ID || source.LeaderTask && leader)
+			reuseSourceNode := retryOf != nil || source.LeaderTask && leader &&
+				source.AgentRef == agentRef && source.TeamRole == teamRole
 			sourceNode := r.s.runNodes[source.RunNodeID]
 			if reuseSourceNode && sourceNode != nil && !controlmodel.IsRunNodeTerminal(sourceNode.State) {
 				task.RunNodeID = source.RunNodeID

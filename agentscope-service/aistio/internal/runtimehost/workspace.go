@@ -100,6 +100,19 @@ func (m *WorkspaceManager) PrepareForExecution(ctx context.Context, envelope *co
 			prompt += "\n\nDiscussion input:\n" + routed.Comment.Content
 		}
 	}
+	if len(envelope.Inputs) > 0 {
+		background, _ := json.Marshal(envelope.RequestContext)
+		prompt += "\n\nThe Issue description above is historical background. This is a new comment-triggered assignment, " +
+			"not a request to repeat the original Issue. Ancestor requests explain how to interpret a reply; do not execute them again.\n" +
+			"Request background: " + string(background) + "\n\nCURRENT REQUEST (latest instructions take precedence):\n" + envelope.CurrentRequest
+	}
+	if envelope.ReplyToOwnDelegation {
+		prompt += "\n\nThis is the result of work you previously delegated. Evaluate the answer and finish according to these initiating instructions:\n" + envelope.InitiatingRequest +
+			"\nDo not mention the responder merely to acknowledge their answer: that schedules another task. Use task.complete for the final delivery."
+	}
+	if task.LeaderTask {
+		prompt += "\n\nAfter asking a worker for follow-up work with an explicit mention, call task.complete(outcome=waiting) to yield. This ends only your turn and preserves the worker. Waiting for a worker is not failure. Use run.node.fail only to explicitly abort the entire coordinator and its remaining work. Before ending the coordinator, summarize completed work, unfinished work, the reason for the final status, and the next action. Include this summary in run.node.complete output or run.node.fail message; it will be published on the main Issue before its status changes."
+	}
 	if task.LeaderTask && len(envelope.CoordinatorChildren) > 0 {
 		prompt += "\n\nCoordinator child outcomes (synthesize all of these before completing the coordinator):"
 		for _, child := range envelope.CoordinatorChildren {

@@ -1230,6 +1230,22 @@ func TestTaskRespondThenCompleteReusesSingleResultComment(t *testing.T) {
 	if err != nil || run.State != controlmodel.RunSucceeded || run.WaitReason != "" {
 		t.Fatalf("completion with an existing response did not reconcile the run: %+v err=%v", run, err)
 	}
+	if string(completed.Result) != `"final answer"` || string(run.Output) != `"final answer"` {
+		t.Fatalf("response disappeared from durable result: task=%s run=%s", completed.Result, run.Output)
+	}
+	events, err := st.Orchestration().ListRunEvents(ctx, run.ID, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, event := range events {
+		if event.Type == "node.succeeded" && strings.Contains(string(event.Payload), "final answer") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("result missing from public job event source: %+v", events)
+	}
 }
 
 func TestFailedDirectTaskPublishesOneVisibleStatus(t *testing.T) {

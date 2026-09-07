@@ -84,6 +84,9 @@ func (s *Server) reportManagedSessionEvent(c *gin.Context) {
 		if err := s.projectManagedToolFailure(lockCtx, session, &report, event); err != nil {
 			return err
 		}
+		if err := s.projectManagedEndpointTurn(lockCtx, session, &report, event.OccurredAt); err != nil {
+			return err
+		}
 		return s.appendSessionEventLocked(lockCtx, session.ID, sourceKey, event)
 	})
 	if err != nil {
@@ -148,13 +151,98 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 			metadata[key] = value
 		}
 	}
-	for _, key := range []string{"approvalId", "decisionVersion", "source", "status", "state"} {
+	for _, key := range []string{"approvalId", "decisionVersion", "source", "status", "state", "endpointInvocationId", "endpointTurnId"} {
 		if value, ok := payload[key]; ok && value != nil {
 			metadata[key] = value
 		}
 	}
 	event.FrameworkMeta, _ = json.Marshal(metadata)
 	return event
+}
+
+// Endpoint identity travels with the durable user message. Resolve it by source
+// sequence, never by the most recently active invocation or wall-clock time:
+// delayed completion from turn A must not complete turn B.
+func (s *Server) projectManagedEndpointTurn(ctx context.Context, session *store.Session, report *managedSessionEventReport, at time.Time) error {
+	if session.AgentTaskID != nil || session.OriginType != "endpoint" {
+		return nil
+	}
+	switch report.Type {
+	case "session.status_idle", "session.error", "session.status_terminated":
+	default:
+		return nil
+	}
+	events, err := s.store.Events().List(ctx, session.ID)
+	if err != nil {
+		return err
+	}
+	var source map[string]any
+	var sourceSeq int64
+	for _, event := range events {
+		var meta map[string]any
+		if event.EventType != "user.message" || json.Unmarshal(event.FrameworkMeta, &meta) != nil {
+			continue
+		}
+		seq, _ := meta["managedSeq"].(float64)
+		if int64(seq) > sourceSeq && int64(seq) < report.Seq {
+			source, sourceSeq = meta, int64(seq)
+		}
+	}
+	id, err := uuid.Parse(firstPayloadString(source, "endpointInvocationId"))
+	if err != nil {
+		return nil // ordinary chat messages do not create public invocations
+	}
+	invocation, err := s.store.Endpoints().GetInvocation(ctx, id)
+	if err != nil {
+		return err
+	}
+	if invocation.Mode != controlmodel.EndpointConversationMode || invocation.ConversationID == nil ||
+		invocation.SessionID != session.SessionID || invocation.TurnID == nil ||
+		invocation.TurnID.String() != firstPayloadString(source, "endpointTurnId") {
+		return store.ErrConflict
+	}
+	conversation, err := s.store.Endpoints().GetConversation(ctx, *invocation.ConversationID)
+	if err != nil {
+		return err
+	}
+	if conversation.EndpointID.String() != session.OriginRef || conversation.EndpointID != invocation.EndpointID ||
+		conversation.AgentID != session.AgentID || conversation.BindingID != session.BindingID {
+		return store.ErrConflict
+	}
+	if endpointInvocationTerminal(invocation.Status) {
+		return nil
+	}
+	invocation.CompletedAt = &at
+	switch report.Type {
+	case "session.error":
+		invocation.Status = controlmodel.EndpointInvocationFailed
+		invocation.ErrorCode, invocation.ErrorMessage = managedTurnError(report.Payload)
+		if err := s.store.Turns().SyncOnPhase(ctx, session.ID, "failed"); err != nil {
+			return err
+		}
+	case "session.status_terminated":
+		invocation.Status = controlmodel.EndpointInvocationCancelled
+	default:
+		var answer []string
+		for _, event := range events {
+			var meta map[string]any
+			if event.EventType != "agent.message" || json.Unmarshal(event.FrameworkMeta, &meta) != nil {
+				continue
+			}
+			seq, _ := meta["managedSeq"].(float64)
+			if int64(seq) > sourceSeq && int64(seq) < report.Seq && event.Content != "" {
+				answer = append(answer, event.Content)
+			}
+		}
+		invocation.Status = controlmodel.EndpointInvocationCompleted
+		invocation.Result, _ = json.Marshal(strings.Join(answer, "\n\n"))
+	}
+	if _, err = s.store.Endpoints().UpdateInvocation(ctx, invocation); err != nil {
+		return err
+	}
+	conversation.LastTurnAt = &at
+	_, err = s.store.Endpoints().UpdateConversation(ctx, conversation)
+	return err
 }
 
 // Project both remote MCP errors and errors raised locally before any request

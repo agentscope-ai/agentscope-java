@@ -581,74 +581,82 @@ func TestCollaborationMCPRejectsNonTaskCredentials(t *testing.T) {
 	}
 }
 
-func TestRunNodeFailTerminatesLeaderTaskAndAttemptBeforeRun(t *testing.T) {
-	ctx := context.Background()
-	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
-		Tenant: "tenant-a", Namespace: "default", Name: "failing-team", LeaderAgentRef: "leader",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
-		Tenant: team.Tenant, Namespace: team.Namespace, Title: "fail coordinator",
-		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
-		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tasks, _ := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
-	running, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
-		store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version},
-		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
-			State: controlmodel.ExecutionAssigned})
-	if err == nil {
-		running, err = st.Collaboration().StartAgentTask(ctx, running.ID, running.Version)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := NewServer(ServerOptions{Store: st, TaskTokenSecret: "0123456789abcdef0123456789abcdef"})
-	token, err := srv.taskTokens.MintScoped(running.ID, attempt.ID,
-		attempt.DispatchGeneration, time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "run.node.fail", "arguments": map[string]any{
-			"code": "unrecoverable", "message": "cannot converge"}}})
-	req := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Agent-Task-Token", token)
-	response := httptest.NewRecorder()
-	srv.router.ServeHTTP(response, req)
-	if response.Code != http.StatusOK || bytes.Contains(response.Body.Bytes(), []byte(`"isError":true`)) {
-		t.Fatalf("run.node.fail: status=%d body=%s", response.Code, response.Body.String())
-	}
-	failedTask, _ := st.Collaboration().GetAgentTask(ctx, running.ID)
-	failedAttempt, _ := st.ExecutionAttempts().Get(ctx, attempt.ID)
-	failedNode, _ := st.Orchestration().GetNode(ctx, running.RunNodeID)
-	failedRun, _ := st.Orchestration().GetRun(ctx, running.OrchestrationRunID)
-	if failedTask.Status != controlmodel.AgentTaskFailed ||
-		failedAttempt.State != controlmodel.ExecutionFailed ||
-		failedNode.State != controlmodel.RunNodeFailed ||
-		failedRun.State != controlmodel.RunFailed {
-		t.Fatalf("coordinator failure left non-terminal work: task=%+v attempt=%+v node=%+v run=%+v",
-			failedTask, failedAttempt, failedNode, failedRun)
-	}
-	issue, err = st.Collaboration().GetIssue(ctx, issue.ID)
-	if err != nil || issue.Status != controlmodel.IssueBlocked {
-		t.Fatalf("failed coordinator did not block root Issue: issue=%+v err=%v", issue, err)
-	}
-	comments, err := st.Collaboration().ListComments(ctx, issue.ID, store.CommentListOptions{Limit: 20})
-	if err != nil || len(comments) != 1 || comments[0].Type != controlmodel.CommentStatus ||
-		comments[0].SourceTaskID == nil || *comments[0].SourceTaskID != running.ID {
-		t.Fatalf("failed coordinator did not leave a root Issue response: comments=%+v err=%v", comments, err)
+func TestLeaderFailurePublishesRootSummaryBeforeBlocked(t *testing.T) {
+	for _, tool := range []string{"run.node.fail", "task.fail", "task.complete"} {
+		t.Run(tool, func(t *testing.T) {
+			ctx := context.Background()
+			st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = st.Close() })
+			team, err := st.Collaboration().CreateTeam(ctx, &controlmodel.CollaborationTeam{
+				Tenant: "tenant-a", Namespace: "default", Name: "failing-team", LeaderAgentRef: "leader",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+				Tenant: team.Tenant, Namespace: team.Namespace, Title: "fail coordinator",
+				Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+				AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tasks, _ := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
+			running, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+				store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version},
+				&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+					State: controlmodel.ExecutionAssigned})
+			if err == nil {
+				running, err = st.Collaboration().StartAgentTask(ctx, running.ID, running.Version)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv := NewServer(ServerOptions{Store: st, TaskTokenSecret: "0123456789abcdef0123456789abcdef"})
+			token, err := srv.taskTokens.MintScoped(running.ID, attempt.ID,
+				attempt.DispatchGeneration, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+				"params": map[string]any{"name": tool, "arguments": map[string]any{
+					"code": "unrecoverable", "message": "cannot converge", "outcome": "blocked"}}})
+			req := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Agent-Task-Token", token)
+			response := httptest.NewRecorder()
+			srv.router.ServeHTTP(response, req)
+			if response.Code != http.StatusOK || bytes.Contains(response.Body.Bytes(), []byte(`"isError":true`)) {
+				t.Fatalf("run.node.fail: status=%d body=%s", response.Code, response.Body.String())
+			}
+			failedTask, _ := st.Collaboration().GetAgentTask(ctx, running.ID)
+			failedAttempt, _ := st.ExecutionAttempts().Get(ctx, attempt.ID)
+			failedNode, _ := st.Orchestration().GetNode(ctx, running.RunNodeID)
+			failedRun, _ := st.Orchestration().GetRun(ctx, running.OrchestrationRunID)
+			if failedTask.Status != controlmodel.AgentTaskFailed ||
+				failedAttempt.State != controlmodel.ExecutionFailed ||
+				failedNode.State != controlmodel.RunNodeFailed ||
+				failedRun.State != controlmodel.RunFailed {
+				t.Fatalf("coordinator failure left non-terminal work: task=%+v attempt=%+v node=%+v run=%+v",
+					failedTask, failedAttempt, failedNode, failedRun)
+			}
+			issue, err = st.Collaboration().GetIssue(ctx, issue.ID)
+			if err != nil || issue.Status != controlmodel.IssueBlocked {
+				t.Fatalf("failed coordinator did not block root Issue: issue=%+v err=%v", issue, err)
+			}
+			comments, err := st.Collaboration().ListComments(ctx, issue.ID, store.CommentListOptions{Limit: 20})
+			if err != nil || len(comments) != 1 || comments[0].Type != controlmodel.CommentStatus ||
+				comments[0].SourceTaskID == nil || *comments[0].SourceTaskID != running.ID {
+				t.Fatalf("failed coordinator did not leave a root Issue response: comments=%+v err=%v", comments, err)
+			}
+
+			if !strings.Contains(comments[0].Content, "cannot converge") || !strings.Contains(comments[0].Content, "下一步") || comments[0].CreatedAt.After(issue.UpdatedAt) {
+				t.Fatalf("summary must explain the outcome before the status change: comment=%+v issue=%+v", comments[0], issue)
+			}
+		})
 	}
 }
 

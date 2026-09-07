@@ -154,11 +154,23 @@ func endpointConversationPublic(v *controlmodel.EndpointConversation) gin.H {
 }
 
 func sameJSON(a, b json.RawMessage) bool {
-	var compactA, compactB bytes.Buffer
-	if json.Compact(&compactA, a) != nil || json.Compact(&compactB, b) != nil {
+	if !json.Valid(a) || !json.Valid(b) {
 		return bytes.Equal(a, b)
 	}
-	return bytes.Equal(compactA.Bytes(), compactB.Bytes())
+	// jsonb preserves values, not object key order. Canonicalize objects before
+	// comparing a stored request with a retry; retain exact numeric precision.
+	canonical := func(raw json.RawMessage) ([]byte, error) {
+		var value any
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		return json.Marshal(value)
+	}
+	x, errA := canonical(a)
+	y, errB := canonical(b)
+	return errA == nil && errB == nil && bytes.Equal(x, y)
 }
 
 func validateEndpointSchema(raw json.RawMessage) error {
@@ -1325,12 +1337,16 @@ func (s *Server) sendEndpointConversationTurn(ctx context.Context, endpoint *con
 		if json.Unmarshal(binding.Configuration, &cfg) != nil {
 			return fmt.Errorf("Managed binding configuration is invalid")
 		}
-		if err = s.product.PostSessionWakeEvent(ctx, conversation.SessionID, cfg.OwnerRef, message); err == nil {
-			now := time.Now().UTC()
-			invocation.Status, invocation.StartedAt = controlmodel.EndpointInvocationRunning, &now
-			_, _ = s.store.Endpoints().UpdateInvocation(ctx, invocation)
+		if invocation.TurnID == nil {
+			return fmt.Errorf("conversation turnId is missing")
 		}
-		return err
+		now := time.Now().UTC()
+		invocation.Status, invocation.StartedAt = controlmodel.EndpointInvocationRunning, &now
+		if _, err = s.store.Endpoints().UpdateInvocation(ctx, invocation); err != nil {
+			return err
+		}
+		return s.product.PostEndpointSessionWakeEvent(ctx, conversation.SessionID, cfg.OwnerRef, message,
+			invocation.ID.String(), invocation.TurnID.String())
 	case controlmodel.DataPlaneExternalApplication:
 		if conversation.AgentInstanceID == uuid.Nil {
 			return fmt.Errorf("conversation AgentInstance is unavailable")
@@ -1805,9 +1821,20 @@ func (s *Server) getEndpointJob(c *gin.Context) {
 				invocation.Status = controlmodel.EndpointInvocationCancelled
 			default:
 				invocation.Status = controlmodel.EndpointInvocationFailed
-				invocation.ErrorCode = "run_failed"
+				invocation.ErrorCode, invocation.ErrorMessage = run.FailureCode, run.FailureMessage
+				if invocation.ErrorCode == "" {
+					invocation.ErrorCode = "run_failed"
+				}
 			}
-			invocation.Result, _ = json.Marshal(gin.H{"runState": run.State})
+			nodes, err := s.store.Orchestration().ListNodes(c, run.ID)
+			if err != nil {
+				s.writeControlPlaneError(c, err)
+				return
+			}
+			invocation.Result = orchestration.CompletedRunOutput(run, nodes)
+			if len(invocation.Result) == 0 {
+				invocation.Result, _ = json.Marshal(gin.H{"runState": run.State})
+			}
 			invocation, _ = s.store.Endpoints().UpdateInvocation(c, invocation)
 		}
 	}
