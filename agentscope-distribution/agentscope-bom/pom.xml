@@ -246,6 +246,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions JDBC (shared dialect layer for MySQL/PostgreSQL stores) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jdbc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Sandbox -->
             <dependency>
                 <groupId>io.agentscope</groupId>
