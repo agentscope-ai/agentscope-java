@@ -215,7 +215,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
         String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
         Path workspace = workspaceManager.getWorkspace();
-        String sessionContext = buildSessionContextSection(workspace, rc);
+        AbstractFilesystem filesystem = workspaceManager.getFilesystem();
+        Path effectiveWorkspace =
+                detectLocalUpper(filesystem) != null
+                        ? workspaceManager.resolveRuntimeDataPath(rc, "")
+                        : workspace;
+        String sessionContext = buildSessionContextSection(effectiveWorkspace, rc);
 
         String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
@@ -235,7 +240,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
         String workspaceParagraph =
                 buildWorkspaceParagraph(
-                        workspace, workspaceManager.getFilesystem(), artifactDeliveryEnabled);
+                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
         String loadedContext =
                 buildLoadedContextSection(
                         agentsContent, memoryContent, knowledgeBlock, additionalBlock);
@@ -316,7 +321,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      * </ul>
      */
     private static String buildWorkspaceParagraph(
-            Path workspace, AbstractFilesystem fs, boolean artifactDeliveryEnabled) {
+            Path workspace,
+            Path effectiveWorkspace,
+            AbstractFilesystem fs,
+            boolean artifactDeliveryEnabled) {
         StringBuilder sb = new StringBuilder("## Workspace\n");
         LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
         Path project = localUpper != null ? localUpper.getShellCwd() : null;
@@ -325,7 +333,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                     .append(project.toAbsolutePath())
                     .append("\n");
             sb.append("Workspace (your home base — memory, sessions, skills, runtime data): ")
-                    .append(workspace.toAbsolutePath())
+                    .append(effectiveWorkspace.toAbsolutePath())
                     .append("\n");
             List<Path> extraRoots = extraRootsOf(localUpper, project, workspace);
             if (!extraRoots.isEmpty()) {
