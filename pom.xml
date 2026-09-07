@@ -376,6 +376,8 @@
                                 <artifact>agentscope-codingagent</artifact>
                                 <artifact>agentscope-dataagent</artifact>
                                 <artifact>agentscope-paw</artifact>
+                                <artifact>agentscope-copilotkit</artifact>
+                                <artifact>agui</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>
