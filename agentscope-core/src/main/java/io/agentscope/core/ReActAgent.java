@@ -60,9 +60,9 @@ import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.formatter.FailedAttempt;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
-import io.agentscope.core.formatter.StructuredOutputGenerator;
 import io.agentscope.core.formatter.StructuredOutputParseException;
 import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
+import io.agentscope.core.formatter.StructuredOutputUtils;
 import io.agentscope.core.formatter.StructuredOutputValidationException;
 import io.agentscope.core.formatter.StructuredOutputValidator;
 import io.agentscope.core.hook.Hook;
@@ -1371,7 +1371,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         // scaffolding before persisting, mirroring the
                                         // fallback path's context compression.
                                         removeRetryResidue(scope.state);
-                                        Msg out = wrapNativeStructuredResult(result);
+                                        Msg out =
+                                                wrapNativeStructuredResult(
+                                                        result, scope.soValidatedPayload);
                                         return saveStateToSession(scope).thenReturn(out);
                                     })
                             .switchIfEmpty(
@@ -1448,7 +1450,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 });
     }
 
-    private Msg wrapNativeStructuredResult(Msg result) {
+    private Msg wrapNativeStructuredResult(Msg result, JsonNode parsedPayload) {
         if (result == null) {
             return null;
         }
@@ -1457,8 +1459,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return result;
         }
         try {
+            // Reuse the payload parsed during validation (single source of truth);
+            // fall back to re-parsing only when validation did not run.
             Object parsed =
-                    io.agentscope.core.util.JsonUtils.getJsonCodec().fromJson(text, Object.class);
+                    parsedPayload != null
+                            ? StructuredOutputUtils.toPlainObject(parsedPayload)
+                            : io.agentscope.core.util.JsonUtils.getJsonCodec()
+                                    .fromJson(text, Object.class);
             Map<String, Object> metadata =
                     new HashMap<>(result.getMetadata() != null ? result.getMetadata() : Map.of());
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, parsed);
@@ -1863,6 +1870,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Id of the final message already validated during this call (dedupe guard). */
         String soValidatedFinalMsgId;
+
+        /**
+         * Payload parsed from the final conforming output during validation. Reused by the
+         * result wrapping stage so the metadata carries exactly what was validated (single
+         * source of truth) instead of re-parsing the raw text.
+         */
+        JsonNode soValidatedPayload;
 
         /** Token usage accumulated across failed structured-output attempts on this call. */
         ChatUsage soCarriedUsage;
@@ -2529,7 +2543,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         List<StructuredOutputValidator.ValidationError> errors;
                         String parseErrorMessage = null;
                         try {
-                            payload = StructuredOutputGenerator.extractJsonObject(text);
+                            payload = StructuredOutputUtils.extractJsonObject(text);
                             errors = StructuredOutputValidator.validate(payload, schema);
                         } catch (StructuredOutputParseException parseFailure) {
                             parseErrorMessage = parseFailure.getMessage();
@@ -2551,6 +2565,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             payload = null;
                         }
                         if (errors.isEmpty()) {
+                            soValidatedPayload = payload;
                             if (soCarriedUsage == null) {
                                 return Mono.just(msg);
                             }
@@ -2633,8 +2648,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         .content(
                                                 TextBlock.builder()
                                                         .text(
-                                                                StructuredOutputGenerator
-                                                                        .retryPrompt(errors))
+                                                                StructuredOutputUtils.retryPrompt(
+                                                                        errors))
                                                         .build())
                                         .metadata(
                                                 Map.of(
@@ -2693,6 +2708,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 .content(original.getContent())
                                 .metadata(metadata)
                                 .timestamp(original.getTimestamp())
+                                .usage(original.getUsage())
+                                .generateReason(original.getGenerateReason())
                                 .build());
                 return;
             }

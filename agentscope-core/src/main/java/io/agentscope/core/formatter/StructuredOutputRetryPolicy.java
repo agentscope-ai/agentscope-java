@@ -31,7 +31,7 @@ import java.util.function.Consumer;
  *       retrying stops as soon as the cumulative token usage across attempts
  *       reaches the budget and the call fails closed with
  *       {@link StructuredOutputValidationException}; the policy is passed per
- *       call via {@code GenerateOptions.builder().structuredOutputPolicy(...)}.</li>
+ *       call via {@code ReActAgent.Builder.structuredOutputPolicy(...)}.</li>
  *   <li>{@code onFailedAttempt} observes every failed attempt for logging,
  *       metrics or user-facing progress events.</li>
  *   <li>{@code emitAttemptEvents} (default {@code true}) controls whether

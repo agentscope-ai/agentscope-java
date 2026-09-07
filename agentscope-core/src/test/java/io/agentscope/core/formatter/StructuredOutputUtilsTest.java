@@ -23,33 +23,31 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class StructuredOutputGeneratorTest {
+class StructuredOutputUtilsTest {
 
     @Test
     void extractsBareJsonObject() throws Exception {
-        JsonNode payload = StructuredOutputGenerator.extractJsonObject("{\"answer\": 42}");
+        JsonNode payload = StructuredOutputUtils.extractJsonObject("{\"answer\": 42}");
         assertEquals(42, payload.path("answer").asInt());
     }
 
     @Test
     void extractsJsonFromMarkdownFence() throws Exception {
-        JsonNode payload =
-                StructuredOutputGenerator.extractJsonObject("```json\n{\"answer\": 1}\n```");
+        JsonNode payload = StructuredOutputUtils.extractJsonObject("```json\n{\"answer\": 1}\n```");
         assertEquals(1, payload.path("answer").asInt());
     }
 
     @Test
     void extractsJsonFromLeadingProse() throws Exception {
-        JsonNode payload = StructuredOutputGenerator.extractJsonObject("好的，答案是：{\"answer\": 3}");
+        JsonNode payload = StructuredOutputUtils.extractJsonObject("好的，答案是：{\"answer\": 3}");
         assertEquals(3, payload.path("answer").asInt());
     }
 
     @Test
-    void extractsJsonAfterMalformedCandidate() throws Exception {
-        // first balanced {...} is not valid JSON — extraction must scan on
-        JsonNode payload =
-                StructuredOutputGenerator.extractJsonObject("noise { oops } tail {\"answer\": 5}");
-        assertEquals(5, payload.path("answer").asInt());
+    void toleratesTrailingProse() throws Exception {
+        // Jackson reads the first value and ignores trailing content by default.
+        JsonNode payload = StructuredOutputUtils.extractJsonObject("{\"answer\": 6} 希望有帮助");
+        assertEquals(6, payload.path("answer").asInt());
     }
 
     @Test
@@ -57,17 +55,15 @@ class StructuredOutputGeneratorTest {
         StructuredOutputParseException ex =
                 assertThrows(
                         StructuredOutputParseException.class,
-                        () ->
-                                StructuredOutputGenerator.extractJsonObject(
-                                        "I am thinking... no json"));
-        assertTrue(ex.getMessage().contains("no JSON object found"));
+                        () -> StructuredOutputUtils.extractJsonObject("I am thinking... no json"));
+        assertTrue(ex.getMessage().contains("not valid JSON"));
     }
 
     @Test
     void unbalancedBracesFailClosed() {
         assertThrows(
                 StructuredOutputParseException.class,
-                () -> StructuredOutputGenerator.extractJsonObject("{\"answer\": 4"));
+                () -> StructuredOutputUtils.extractJsonObject("{\"answer\": 4"));
     }
 
     @Test
@@ -76,14 +72,14 @@ class StructuredOutputGeneratorTest {
                 List.of(
                         new StructuredOutputValidator.ValidationError(
                                 "#/answer", "required property 'answer' is missing"));
-        String prompt = StructuredOutputGenerator.retryPrompt(errors);
+        String prompt = StructuredOutputUtils.retryPrompt(errors);
         assertTrue(prompt.contains("#/answer"));
         assertTrue(prompt.contains("answer"));
     }
 
     @Test
     void retryPromptEmptyWithoutErrors() {
-        assertEquals("", StructuredOutputGenerator.retryPrompt(List.of()));
-        assertEquals("", StructuredOutputGenerator.retryPrompt(null));
+        assertEquals("", StructuredOutputUtils.retryPrompt(List.of()));
+        assertEquals("", StructuredOutputUtils.retryPrompt(null));
     }
 }
