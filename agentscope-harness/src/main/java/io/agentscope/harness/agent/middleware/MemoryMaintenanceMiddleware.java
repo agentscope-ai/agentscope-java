@@ -173,11 +173,12 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
 
     /**
      * Builds a composite key from {@link IsolationScope} name and the per-call identity returned
-     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that throttle windows
-     * from different isolation dimensions are never conflated.
+     * by {@link #timerKeyFor(RuntimeContext)}. The operation prefix keeps maintenance independent
+     * of flush when both use the same {@link PeriodicGate}. The scope prefix keeps different
+     * isolation dimensions from sharing a slot.
      */
     private String compositeTimerKey(RuntimeContext rc) {
-        return isolationScope.name() + ":" + timerKeyFor(rc);
+        return "memory-maintenance:" + isolationScope.name() + ":" + timerKeyFor(rc);
     }
 
     /**
