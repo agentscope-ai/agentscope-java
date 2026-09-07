@@ -61,6 +61,8 @@ class ToolResultEvictionMiddlewareTest {
         ToolResultEvictionConfig config =
                 ToolResultEvictionConfig.builder().maxResultChars(20).previewChars(4).build();
         assertEquals("large_tool_results", config.getEvictionPath());
+        assertFalse(config.getExcludedToolNames().contains("grep_files"));
+        assertFalse(config.getExcludedToolNames().contains("glob_files"));
 
         LocalFilesystem filesystem =
                 new LocalFilesystem(tempDir, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);

@@ -49,7 +49,9 @@ import org.slf4j.LoggerFactory;
  * <p>Storage layout: {@code agents/<parentAgentId>/tasks/<sessionId>.json} — a JSON map of
  * {@code taskId → TaskRecord}, consistent with how sessions are stored. In distributed deployments
  * using {@code RemoteFilesystemSpec}, this path is automatically routed to shared storage, making
- * task state visible to any node.
+ * task state visible to any node. In sandbox mode the injected filesystem is a per-call proxy with
+ * no live sandbox between calls, so task records are persisted on the host workspace instead of
+ * inside the sandbox — see the task-record routing in {@code WorkspaceManager}.
  *
  * <p>The in-memory {@code localTasks} map is keyed by {@code "<sessionId>:<taskId>"} to preserve
  * session isolation when multiple sessions coexist in the same process.

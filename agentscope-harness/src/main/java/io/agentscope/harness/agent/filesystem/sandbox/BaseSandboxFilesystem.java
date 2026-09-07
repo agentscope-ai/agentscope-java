@@ -73,7 +73,13 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         String escapedPath = FilesystemUtils.shellQuote(path);
         String cmd =
-                "for f in "
+                "if [ ! -e "
+                        + escapedPath
+                        + " ]; then echo '__NOT_EXISTS__'; "
+                        + "elif [ ! -d "
+                        + escapedPath
+                        + " ]; then echo '__NOT_A_DIR__'; "
+                        + "else for f in "
                         + escapedPath
                         + "/*; do "
                         + "  if [ -d \"$f\" ]; then "
@@ -84,13 +90,22 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + "    mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
                         + "    printf 'FILE:%s\\t%s\\t%s\\n' \"$f\" \"$size\" \"$mtime\"; "
                         + "  fi; "
-                        + "done 2>/dev/null";
+                        + "done; fi";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
+        String output = result.output() != null ? result.output().strip() : "";
+
+        if ("__NOT_EXISTS__".equals(output)) {
+            return LsResult.fail("Path does not exist: " + path);
+        }
+        if ("__NOT_A_DIR__".equals(output)) {
+            return LsResult.fail("Not a directory: " + path);
+        }
+
         List<FileInfo> entries = new ArrayList<>();
 
-        if (result.output() != null && !result.output().isBlank()) {
-            for (String line : result.output().strip().split("\n")) {
+        if (!output.isBlank()) {
+            for (String line : output.split("\n")) {
                 if (line.startsWith("DIR:")) {
                     String payload = line.substring(4);
                     String[] parts = payload.split("\t", 2);

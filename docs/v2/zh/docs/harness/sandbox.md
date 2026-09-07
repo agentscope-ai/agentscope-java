@@ -233,6 +233,8 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 `Sandbox` 抽象的主数据面入口是 `exec(command)`。这是刻意的——`edit_file` / `grep_files` 这类工具的语义（正则、字符串替换、glob）不可能靠有限的文件 API 端点表达，靠镜像内的标准工具链执行 shell 脚本是唯一通用解。文件 API（upload/download）只承担"纯字节搬运"：工作区快照和单文件上传下载走它（后端通过实现 `SandboxFileTransfer` 可选接口声明该能力），其余一切走 `execute`。这也意味着：**镜像契约本身就是沙箱接口的一部分**，换镜像前先跑上面的自检。
 
+**从模型视角跨越边界。** 上面的文件 API（upload/download）是内部机制——对 LLM 不可见，`FilesystemTool` 不暴露任何传输工具。沙箱中的 agent 把自己产出的产物交给沙箱外目标的受支持方式是通用 **`deliver_artifact`** 工具。只有当你通过 `HarnessAgent.builder().artifactDeliveryTarget(...)` 配置了 `ArtifactDeliveryTarget` 时它才会被注册。该 SPI 保持业务无关——`deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult`——目标逻辑（例如 WebDAV 上传）由你的应用实现。工具会从沙箱工作区下载文件字节，并把传输委托给 target。未配置 target 时，沙箱工作区提示语会明确说明文件无法离开容器。
+
 ## Kubernetes 后端的状态保存：PVC 是第一层
 
 Kubernetes 后端完全基于 agent-sandbox：沙箱 pod 由 agent-sandbox 控制器管理，镜像、资源、存储都声明在集群侧的 `SandboxTemplate` / `SandboxWarmPool` 里，Java 侧只负责领取（`SandboxClaim`）和连接。这带来一个和其他后端不同的点——**工作区数据的持久化主要靠 PVC，而不是 Harness 快照**，两层机制各管一事：

@@ -632,6 +632,24 @@ public class Toolkit {
     }
 
     /**
+     * Add an already-registered tool to an existing tool group.
+     *
+     * <p>A tool may belong to multiple groups. Adding the same tool to the same group more than
+     * once has no additional effect.
+     *
+     * @param groupName Name of the existing tool group
+     * @param toolName Name of the registered tool
+     * @throws IllegalArgumentException if the group or tool doesn't exist
+     */
+    public void addToolToGroup(String groupName, String toolName) {
+        groupManager.validateGroupExists(groupName);
+        if (toolRegistry.getTool(toolName) == null) {
+            throw new IllegalArgumentException("Tool not found: " + toolName);
+        }
+        groupManager.addToolToGroup(groupName, toolName);
+    }
+
+    /**
      * Update the activation status of tool groups.
      *
      * <p>When {@code allowToolDeletion} is disabled and {@code active} is false, the deactivation
