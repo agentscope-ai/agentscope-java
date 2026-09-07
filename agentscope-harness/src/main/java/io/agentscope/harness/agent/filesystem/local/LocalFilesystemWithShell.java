@@ -28,9 +28,11 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -49,6 +51,12 @@ import org.slf4j.LoggerFactory;
  * <p>This implementation extends {@link LocalFilesystem} to add shell command execution
  * capabilities. Commands are executed directly on the host system without any
  * sandboxing, process isolation, or security restrictions.
+ *
+ * <p>Process cleanup is best-effort: it attempts to terminate descendants observed before waiting
+ * for the shell or while the shell is still alive during cleanup, even if the shell has since exited.
+ * Descendants created after the first snapshot and reparented before cleanup may escape discovery.
+ * Commands must manage their own detached/background processes; this implementation does not
+ * provide process-group or job-object isolation.
  *
  * <p><b>WARNING:</b> This implementation grants agents BOTH direct filesystem access AND unrestricted
  * shell execution on your local machine. Use with extreme caution and only in
@@ -346,6 +354,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         ExecutorService drainExecutor = null;
         Future<BoundedCapture> stdoutFuture = null;
         Future<BoundedCapture> stderrFuture = null;
+        List<ProcessHandle> descendants = List.of();
 
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
@@ -378,6 +387,9 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             stderrFuture = drainExecutor.submit(() -> drainStream(stderrSource, maxOutputBytes));
             drainExecutor.shutdown();
 
+            // Retain observed descendants before waiting: once the shell exits, they may be
+            // reparented and no longer discoverable through its ProcessHandle.
+            descendants = snapshotDescendants(proc.toHandle());
             boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
             if (!finished) {
                 String msg;
@@ -460,7 +472,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                     1,
                     false);
         } finally {
-            destroyProcessTree(proc);
+            destroyProcessTree(proc, descendants);
             discardCapture(stdoutFuture, stdoutStream);
             discardCapture(stderrFuture, stderrStream);
             if (drainExecutor != null) {
@@ -603,7 +615,16 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         }
     }
 
-    private static void destroyProcessTree(Process process) {
+    static List<ProcessHandle> snapshotDescendants(ProcessHandle root) {
+        try (Stream<ProcessHandle> handles = root.descendants()) {
+            return handles.toList();
+        } catch (RuntimeException e) {
+            log.warn("Failed to snapshot command descendants before termination", e);
+            return List.of();
+        }
+    }
+
+    static void destroyProcessTree(Process process, List<ProcessHandle> observedDescendants) {
         if (process == null) {
             return;
         }
@@ -611,21 +632,13 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         boolean interrupted = Thread.interrupted();
         try {
             ProcessHandle root = process.toHandle();
-            if (!root.isAlive()) {
-                return;
+            Set<ProcessHandle> descendants = new LinkedHashSet<>(observedDescendants);
+            if (root.isAlive()) {
+                descendants.addAll(snapshotDescendants(root));
             }
 
-            List<ProcessHandle> descendants;
-            try (Stream<ProcessHandle> handles = root.descendants()) {
-                descendants = handles.toList();
-            } catch (RuntimeException e) {
-                descendants = List.of();
-                log.warn("Failed to snapshot command descendants before termination", e);
-            }
-
-            // Snapshot before killing the parent, then stop the parent first so it cannot keep
-            // forking. ProcessHandle is inherently best-effort: a child may fork or be reparented
-            // between the snapshot and these destroy calls.
+            // Stop the parent first so it cannot keep forking. Always clean up previously
+            // observed descendants, including those reparented after the shell exited.
             try {
                 process.destroyForcibly();
             } catch (RuntimeException e) {

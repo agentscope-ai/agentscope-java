@@ -31,6 +31,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -308,7 +309,72 @@ class LocalFilesystemWithShellTest {
             }
             assertTrue(elapsedMillis < 10_000, "capture deadline must beat command timeout");
         } finally {
+            // This test checks capture latency only. A fast shell may exit before the first
+            // descendant snapshot; cleanup guarantees are verified separately below.
             destroyProcess(childPid);
+        }
+    }
+
+    @Test
+    void destroyProcessTree_cleansObservedDescendantAfterParentExit(@TempDir Path tempDir)
+            throws Exception {
+        assertParentExitedCleanup(tempDir, true);
+    }
+
+    @Test
+    void destroyProcessTree_cannotDiscoverUnobservedReparentedDescendant(@TempDir Path tempDir)
+            throws Exception {
+        assertParentExitedCleanup(tempDir, false);
+    }
+
+    private static void assertParentExitedCleanup(Path tempDir, boolean retainSnapshot)
+            throws Exception {
+        assumeFalse(isWindows(), "POSIX shell behavior is required for this regression test");
+        Path childPidFile = tempDir.resolve("orphan-child.pid");
+        // Keep the shell alive until the test has captured its descendants. The child retains
+        // stdout/stderr after shell exit, but redirects keep this cleanup test independent of
+        // the JDK's process-pipe handling.
+        Process process =
+                new ProcessBuilder(
+                                "sh", "-c", "sleep 30 & echo $! > orphan-child.pid; read release")
+                        .directory(tempDir.toFile())
+                        .redirectOutput(tempDir.resolve("stdout").toFile())
+                        .redirectError(tempDir.resolve("stderr").toFile())
+                        .start();
+        long childPid = -1;
+        try {
+            childPid = awaitPid(childPidFile);
+            ProcessHandle child = ProcessHandle.of(childPid).orElseThrow();
+            List<ProcessHandle> descendants =
+                    retainSnapshot
+                            ? LocalFilesystemWithShell.snapshotDescendants(process.toHandle())
+                            : List.of();
+            if (retainSnapshot) {
+                assertTrue(descendants.contains(child), "child must be observed before shell exit");
+            }
+            process.getOutputStream().write('\n');
+            process.getOutputStream().flush();
+            assertTrue(process.waitFor(2, TimeUnit.SECONDS), "shell must exit before cleanup");
+            assertTrue(child.isAlive(), "background child must outlive the shell");
+
+            LocalFilesystemWithShell.destroyProcessTree(process, descendants);
+
+            if (retainSnapshot) {
+                assertFalse(
+                        awaitProcessAlive(childPid, 2000),
+                        "cleanup must terminate the observed child even after its parent exits");
+            } else {
+                assertTrue(
+                        child.isAlive(),
+                        "an unobserved reparented child is outside best-effort cleanup scope");
+            }
+        } finally {
+            process.destroyForcibly();
+            process.waitFor(2, TimeUnit.SECONDS);
+            destroyProcess(childPid);
+            process.getOutputStream().close();
+            process.getInputStream().close();
+            process.getErrorStream().close();
         }
     }
 
