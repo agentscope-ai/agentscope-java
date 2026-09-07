@@ -31,35 +31,35 @@ import org.slf4j.LoggerFactory;
  * <p>With the in-process store each replica has to rediscover an outage for itself, so an N-replica
  * deployment sends roughly N times the failing traffic and burns N times the tokens before the tool
  * is withheld everywhere. Sharing the state through Redis means the first replica to trip a circuit
- * withholds the tool for all of them, and the state survives a restart or a rescheduled pod.
+ * withholds the tool for all of them, exactly one replica probes for recovery, and the state survives
+ * a restart or a rescheduled pod.
  *
- * <h2>Keys</h2>
+ * <h2>Key layout</h2>
  *
- * <p>Two keys per tool, both addressed individually so the store works unchanged on Redis Cluster —
- * no multi-key script needs its arguments to share a hash slot:
+ * <p>One key per tool, {@code {prefix}{tool}}, holding the whole snapshot as a delimited value:
  *
- * <ul>
- *   <li>{@code {prefix}{tool}:fail} — consecutive failure counter
- *   <li>{@code {prefix}{tool}:circuit} — {@code "<generation>:<openedAtEpochMilli>"}; the key's
- *       presence is what marks the circuit open, so no separate flag can fall out of sync
- * </ul>
+ * <pre>
+ *   "&lt;failureCount&gt;:&lt;generation&gt;:&lt;openedAt&gt;:&lt;probeToken&gt;:&lt;probeLeaseUntil&gt;"
+ * </pre>
  *
- * <p>Encoding generation and timestamp in one value keeps {@link #snapshot(String)} — the hot read,
- * executed for every supervised tool on every reasoning turn — down to a single {@code GET}.
+ * <p>Keeping the entire state in one key is what lets a complete transition be one compare-and-set,
+ * and it means every script touches a single key — so the store needs no hash tags and works
+ * unchanged on Redis Cluster. A missing key is the encoding of {@link ToolCircuitSnapshot#CLOSED},
+ * so a recovered tool leaves nothing behind.
  *
  * <h2>Atomicity</h2>
  *
- * <p>{@link #recordFailure(String)} and {@link #open(String, long)} are Lua scripts, so their
- * read-modify-write steps cannot interleave. Doing {@code INCR} and {@code EXPIRE} as two round
- * trips would leave a counter without a TTL whenever the second call is lost, and computing the next
- * generation client-side would let two replicas tripping at once write the same generation.
+ * <p>{@link #compareAndSet} compares the stored value against the caller's expected encoding and
+ * replaces it in one Lua script. Doing the comparison client-side would reintroduce exactly the races
+ * the breaker's compare-and-set protocol exists to remove: two replicas could each read the same
+ * state and both commit a transition based on it.
  *
  * <h2>Expiry</h2>
  *
- * <p>Both keys carry a TTL so tools that misbehave once do not accumulate state forever. Keep the
- * TTL comfortably longer than the breaker's maximum cooldown: if an open circuit's key expires
- * mid-cooldown the tool is offered again early, which fails open — safe, but not what was
- * configured. The default of 24h clears the default 600s ceiling by a wide margin.
+ * <p>Non-closed states carry a TTL so tools that misbehave once do not accumulate state forever. Keep
+ * the TTL comfortably longer than the breaker's maximum cooldown: if an open circuit's key expires
+ * mid-cooldown the tool is offered again early, which fails open — safe, but not what was configured.
+ * The default of 24h clears the default 600s ceiling by a wide margin.
  */
 public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
 
@@ -69,31 +69,28 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
     private static final String DEFAULT_KEY_PREFIX = "agentscope:tool-cb:";
     private static final Duration DEFAULT_TTL = Duration.ofHours(24);
 
-    private static final String FAILURE_SUFFIX = ":fail";
-    private static final String CIRCUIT_SUFFIX = ":circuit";
+    /** Encoding of {@link ToolCircuitSnapshot#CLOSED}: an absent key. */
+    private static final String ABSENT = "";
+
+    private static final int FIELD_COUNT = 5;
 
     /**
-     * Increment the failure counter and refresh its TTL in one step.
+     * Replace the stored value only if it still equals what the caller observed.
      *
-     * <p>KEYS[1] = failure key; ARGV[1] = TTL seconds. Returns the new count.
+     * <p>KEYS[1] = circuit key; ARGV[1] = expected encoding ({@code ""} for absent); ARGV[2] = new
+     * encoding ({@code ""} to delete); ARGV[3] = TTL seconds. Returns 1 when committed, 0 when the
+     * value had changed.
      */
-    private static final String INCREMENT_FAILURE_SCRIPT =
-            "local count = redis.call('INCR', KEYS[1]) "
-                    + "redis.call('EXPIRE', KEYS[1], ARGV[1]) "
-                    + "return count";
-
-    /**
-     * Advance the generation and stamp the open instant in one step.
-     *
-     * <p>KEYS[1] = circuit key; ARGV[1] = open instant in epoch millis; ARGV[2] = TTL seconds.
-     * Returns the new generation.
-     */
-    private static final String OPEN_NEXT_GENERATION_SCRIPT =
-            "local current = redis.call('GET', KEYS[1]) local generation = 0 if current then  "
-                + " local sep = string.find(current, ':', 1, true)   if sep then generation ="
-                + " tonumber(string.sub(current, 1, sep - 1)) or 0 end end generation = generation"
-                + " + 1 redis.call('SET', KEYS[1], generation .. ':' .. ARGV[1], 'EX', ARGV[2])"
-                + " return generation";
+    private static final String COMPARE_AND_SET_SCRIPT =
+            "local current = redis.call('GET', KEYS[1]) "
+                    + "if current == false then current = '' end "
+                    + "if current ~= ARGV[1] then return 0 end "
+                    + "if ARGV[2] == '' then "
+                    + "  redis.call('DEL', KEYS[1]) "
+                    + "else "
+                    + "  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) "
+                    + "end "
+                    + "return 1";
 
     private final RedisClientAdapter client;
     private final String keyPrefix;
@@ -113,7 +110,7 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
      *
      * @param client Redis client adapter
      * @param keyPrefix prefix for every key, letting environments share one Redis instance
-     * @param stateTtl how long unused state is retained; must be positive and should exceed the
+     * @param stateTtl how long non-closed state is retained; must be positive and should exceed the
      *     breaker's maximum cooldown
      */
     public RedisToolCircuitBreakerStore(
@@ -130,46 +127,55 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
     }
 
     @Override
-    public long recordFailure(String toolName) {
+    public ToolCircuitSnapshot snapshot(String toolName) {
+        return decode(toolName, client.get(circuitKey(toolName)));
+    }
+
+    @Override
+    public boolean compareAndSet(
+            String toolName, ToolCircuitSnapshot expected, ToolCircuitSnapshot update) {
         return client.evalScript(
-                INCREMENT_FAILURE_SCRIPT,
-                List.of(failureKey(toolName)),
-                List.of(Long.toString(ttlSeconds)));
+                        COMPARE_AND_SET_SCRIPT,
+                        List.of(circuitKey(toolName)),
+                        List.of(encode(expected), encode(update), Long.toString(ttlSeconds)))
+                == 1L;
     }
 
     @Override
-    public void resetFailures(String toolName) {
-        client.deleteKeys(failureKey(toolName));
-    }
-
-    @Override
-    public long failureCount(String toolName) {
-        return parseLong(client.get(failureKey(toolName)));
-    }
-
-    @Override
-    public long open(String toolName, long openedAtEpochMilli) {
-        return client.evalScript(
-                OPEN_NEXT_GENERATION_SCRIPT,
-                List.of(circuitKey(toolName)),
-                List.of(Long.toString(openedAtEpochMilli), Long.toString(ttlSeconds)));
-    }
-
-    @Override
-    public void close(String toolName) {
+    public void reset(String toolName) {
         client.deleteKeys(circuitKey(toolName));
     }
 
-    @Override
-    public ToolCircuitSnapshot snapshot(String toolName) {
-        String value = client.get(circuitKey(toolName));
+    /**
+     * Encode a snapshot, mapping CLOSED to the absent-key marker so "missing" and "closed" compare
+     * equal.
+     */
+    private static String encode(ToolCircuitSnapshot snapshot) {
+        if (snapshot == null || ToolCircuitSnapshot.CLOSED.equals(snapshot)) {
+            return ABSENT;
+        }
+        String token = snapshot.probeToken() == null ? "" : snapshot.probeToken();
+        return snapshot.failureCount()
+                + ":"
+                + snapshot.generation()
+                + ":"
+                + snapshot.openedAtEpochMilli()
+                + ":"
+                + token
+                + ":"
+                + snapshot.probeLeaseUntilEpochMilli();
+    }
+
+    /**
+     * Decode a stored value. Anything unreadable is treated as closed rather than withholding a tool
+     * forever on the strength of state nobody can interpret.
+     */
+    private ToolCircuitSnapshot decode(String toolName, String value) {
         if (value == null || value.isEmpty()) {
             return ToolCircuitSnapshot.CLOSED;
         }
-        int separator = value.indexOf(':');
-        if (separator <= 0 || separator == value.length() - 1) {
-            // Unreadable value: treat as closed rather than withholding a tool forever on the
-            // strength of state nobody can interpret.
+        String[] parts = value.split(":", -1);
+        if (parts.length != FIELD_COUNT) {
             logger.warn(
                     "Ignoring malformed circuit state for tool={}, value={}. Treating the circuit"
                             + " as closed.",
@@ -177,35 +183,32 @@ public class RedisToolCircuitBreakerStore implements ToolCircuitBreakerStore {
                     value);
             return ToolCircuitSnapshot.CLOSED;
         }
-        long generation = parseLong(value.substring(0, separator));
-        long openedAt = parseLong(value.substring(separator + 1));
-        if (generation <= 0L || openedAt <= 0L) {
+        try {
+            long failureCount = Long.parseLong(parts[0]);
+            long generation = Long.parseLong(parts[1]);
+            long openedAt = Long.parseLong(parts[2]);
+            String token = parts[3].isEmpty() ? null : parts[3];
+            long probeLease = Long.parseLong(parts[4]);
+            if (failureCount < 0L || generation < 0L || openedAt < 0L || probeLease < 0L) {
+                logger.warn(
+                        "Ignoring out-of-range circuit state for tool={}, value={}. Treating the"
+                                + " circuit as closed.",
+                        toolName,
+                        value);
+                return ToolCircuitSnapshot.CLOSED;
+            }
+            return new ToolCircuitSnapshot(failureCount, generation, openedAt, token, probeLease);
+        } catch (NumberFormatException e) {
             logger.warn(
-                    "Ignoring out-of-range circuit state for tool={}, value={}. Treating the"
-                            + " circuit as closed.",
+                    "Ignoring unparsable circuit state for tool={}, value={}. Treating the circuit"
+                            + " as closed.",
                     toolName,
                     value);
             return ToolCircuitSnapshot.CLOSED;
         }
-        return new ToolCircuitSnapshot(generation, openedAt);
-    }
-
-    private String failureKey(String toolName) {
-        return keyPrefix + toolName + FAILURE_SUFFIX;
     }
 
     private String circuitKey(String toolName) {
-        return keyPrefix + toolName + CIRCUIT_SUFFIX;
-    }
-
-    private static long parseLong(String value) {
-        if (value == null || value.isEmpty()) {
-            return 0L;
-        }
-        try {
-            return Long.parseLong(value.trim());
-        } catch (NumberFormatException e) {
-            return 0L;
-        }
+        return keyPrefix + toolName;
     }
 }

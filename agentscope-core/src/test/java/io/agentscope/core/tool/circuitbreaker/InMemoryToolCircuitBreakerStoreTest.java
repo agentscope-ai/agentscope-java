@@ -22,10 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
-/** Contract of {@link InMemoryToolCircuitBreakerStore}, including its atomicity guarantees. */
+/** Compare-and-set contract of {@link InMemoryToolCircuitBreakerStore}. */
 class InMemoryToolCircuitBreakerStoreTest {
 
     private static final String TOOL = "query_weather";
@@ -34,89 +34,98 @@ class InMemoryToolCircuitBreakerStoreTest {
     private final InMemoryToolCircuitBreakerStore store = new InMemoryToolCircuitBreakerStore();
 
     @Test
-    void unknownToolReadsAsClosedWithNoFailures() {
-        assertEquals(0L, store.failureCount(TOOL));
+    void unknownToolReadsAsClosed() {
         assertEquals(ToolCircuitSnapshot.CLOSED, store.snapshot(TOOL));
         assertFalse(store.snapshot(TOOL).isOpen());
     }
 
     @Test
-    void failureCounterStartsAtOneAndIncrements() {
-        assertEquals(1L, store.recordFailure(TOOL));
-        assertEquals(2L, store.recordFailure(TOOL));
-        assertEquals(2L, store.failureCount(TOOL));
+    void compareAndSetCommitsWhenTheObservedValueStillHolds() {
+        ToolCircuitSnapshot update = new ToolCircuitSnapshot(2L, 0L, 0L, null, 0L);
+
+        assertTrue(store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, update));
+
+        assertEquals(update, store.snapshot(TOOL));
     }
 
     @Test
-    void resetClearsOnlyTheNamedToolsCounter() {
-        store.recordFailure(TOOL);
-        store.recordFailure(OTHER_TOOL);
+    void compareAndSetRejectsAStaleExpectation() {
+        ToolCircuitSnapshot first = new ToolCircuitSnapshot(1L, 0L, 0L, null, 0L);
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, first);
 
-        store.resetFailures(TOOL);
+        // A caller that still believes the tool is untouched must not be able to commit.
+        boolean committed =
+                store.compareAndSet(
+                        TOOL,
+                        ToolCircuitSnapshot.CLOSED,
+                        new ToolCircuitSnapshot(9L, 0L, 0L, null, 0L));
 
-        assertEquals(0L, store.failureCount(TOOL));
-        assertEquals(1L, store.failureCount(OTHER_TOOL));
+        assertFalse(committed);
+        assertEquals(first, store.snapshot(TOOL));
     }
 
     @Test
-    void openStampsTimestampAndAdvancesGeneration() {
-        assertEquals(1L, store.open(TOOL, 1_000L));
+    void updatingToClosedRemovesTheEntry() {
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(3L, 1_000L));
 
-        ToolCircuitSnapshot first = store.snapshot(TOOL);
-        assertTrue(first.isOpen());
-        assertEquals(1L, first.generation());
-        assertEquals(1_000L, first.openedAtEpochMilli());
+        assertTrue(store.compareAndSet(TOOL, store.snapshot(TOOL), ToolCircuitSnapshot.CLOSED));
 
-        assertEquals(2L, store.open(TOOL, 5_000L));
-
-        ToolCircuitSnapshot second = store.snapshot(TOOL);
-        assertEquals(2L, second.generation());
-        assertEquals(5_000L, second.openedAtEpochMilli());
+        assertEquals(ToolCircuitSnapshot.CLOSED, store.snapshot(TOOL));
+        // An absent entry must still be a valid expectation, proving it was removed rather than
+        // stored as an explicit zero value.
+        assertTrue(
+                store.compareAndSet(
+                        TOOL,
+                        ToolCircuitSnapshot.CLOSED,
+                        new ToolCircuitSnapshot(1L, 0L, 0L, null, 0L)));
     }
 
     @Test
-    void closeDiscardsGenerationSoBackoffRestarts() {
-        store.open(TOOL, 1_000L);
-        store.open(TOOL, 2_000L);
+    void probeClaimIsPartOfTheComparedValue() {
+        ToolCircuitSnapshot open = new ToolCircuitSnapshot(4L, 1_000L);
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, open);
+        ToolCircuitSnapshot claimed = new ToolCircuitSnapshot(0L, 4L, 1_000L, "token-a", 9_000L);
+        assertTrue(store.compareAndSet(TOOL, open, claimed));
 
-        store.close(TOOL);
+        // Another caller holding the pre-claim value must lose, which is what makes the single
+        // recovery probe exclusive.
+        assertFalse(
+                store.compareAndSet(
+                        TOOL, open, new ToolCircuitSnapshot(0L, 4L, 1_000L, "token-b", 9_000L)));
+        assertEquals("token-a", store.snapshot(TOOL).probeToken());
+    }
 
-        assertFalse(store.snapshot(TOOL).isOpen());
-        assertEquals(0L, store.snapshot(TOOL).generation());
-        assertEquals(1L, store.open(TOOL, 3_000L));
+    @Test
+    void resetDiscardsStateUnconditionally() {
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(2L, 1_000L));
+
+        store.reset(TOOL);
+
+        assertEquals(ToolCircuitSnapshot.CLOSED, store.snapshot(TOOL));
     }
 
     @Test
     void toolsDoNotShareState() {
-        store.open(TOOL, 1_000L);
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(1L, 1_000L));
 
         assertTrue(store.snapshot(TOOL).isOpen());
         assertFalse(store.snapshot(OTHER_TOOL).isOpen());
     }
 
     @Test
-    void concurrentFailureCountsAreNotLost() throws Exception {
-        int threads = 8;
-        int perThread = 500;
-
-        runConcurrently(threads, perThread, () -> store.recordFailure(TOOL));
-
-        assertEquals((long) threads * perThread, store.failureCount(TOOL));
-    }
-
-    @Test
-    void concurrentOpensYieldContiguousGenerations() throws Exception {
-        int threads = 8;
-        int perThread = 200;
-        AtomicLong maxGeneration = new AtomicLong();
+    void exactlyOneOfManyConcurrentCompareAndSetsWins() throws Exception {
+        int threads = 16;
+        ToolCircuitSnapshot expected = ToolCircuitSnapshot.CLOSED;
+        AtomicInteger winners = new AtomicInteger();
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         try {
-            for (int t = 0; t < threads; t++) {
+            for (int i = 0; i < threads; i++) {
+                long generation = i + 1L;
                 pool.submit(
                         () -> {
-                            for (int i = 0; i < perThread; i++) {
-                                long generation = store.open(TOOL, 1_000L + i);
-                                maxGeneration.accumulateAndGet(generation, Math::max);
+                            if (store.compareAndSet(
+                                    TOOL, expected, new ToolCircuitSnapshot(generation, 1_000L))) {
+                                winners.incrementAndGet();
                             }
                         });
             }
@@ -126,27 +135,6 @@ class InMemoryToolCircuitBreakerStoreTest {
             pool.shutdownNow();
         }
 
-        // Every open must observe a distinct, gap-free generation, so the highest value seen equals
-        // the number of opens performed.
-        assertEquals((long) threads * perThread, maxGeneration.get());
-        assertEquals((long) threads * perThread, store.snapshot(TOOL).generation());
-    }
-
-    private void runConcurrently(int threads, int perThread, Runnable task) throws Exception {
-        ExecutorService pool = Executors.newFixedThreadPool(threads);
-        try {
-            for (int t = 0; t < threads; t++) {
-                pool.submit(
-                        () -> {
-                            for (int i = 0; i < perThread; i++) {
-                                task.run();
-                            }
-                        });
-            }
-            pool.shutdown();
-            assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS));
-        } finally {
-            pool.shutdownNow();
-        }
+        assertEquals(1, winners.get());
     }
 }

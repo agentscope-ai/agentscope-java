@@ -17,7 +17,7 @@ package io.agentscope.core.tool.circuitbreaker;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Default in-process {@link ToolCircuitBreakerStore}, backed by a {@link ConcurrentHashMap}.
@@ -31,45 +31,33 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class InMemoryToolCircuitBreakerStore implements ToolCircuitBreakerStore {
 
-    private final Map<String, AtomicLong> failureCounts = new ConcurrentHashMap<>();
-    private final Map<String, ToolCircuitSnapshot> circuits = new ConcurrentHashMap<>();
-
-    @Override
-    public long recordFailure(String toolName) {
-        return failureCounts.computeIfAbsent(toolName, name -> new AtomicLong()).incrementAndGet();
-    }
-
-    @Override
-    public void resetFailures(String toolName) {
-        failureCounts.remove(toolName);
-    }
-
-    @Override
-    public long failureCount(String toolName) {
-        AtomicLong counter = failureCounts.get(toolName);
-        return counter == null ? 0L : counter.get();
-    }
-
-    @Override
-    public long open(String toolName, long openedAtEpochMilli) {
-        // compute() holds the bin lock, so the generation increment and the timestamp stamp are
-        // applied as one atomic step even when several failing calls trip the same tool at once.
-        return circuits.compute(
-                        toolName,
-                        (name, current) ->
-                                new ToolCircuitSnapshot(
-                                        (current == null ? 0L : current.generation()) + 1L,
-                                        openedAtEpochMilli))
-                .generation();
-    }
-
-    @Override
-    public void close(String toolName) {
-        circuits.remove(toolName);
-    }
+    private final Map<String, ToolCircuitSnapshot> states = new ConcurrentHashMap<>();
 
     @Override
     public ToolCircuitSnapshot snapshot(String toolName) {
-        return circuits.getOrDefault(toolName, ToolCircuitSnapshot.CLOSED);
+        return states.getOrDefault(toolName, ToolCircuitSnapshot.CLOSED);
+    }
+
+    @Override
+    public boolean compareAndSet(
+            String toolName, ToolCircuitSnapshot expected, ToolCircuitSnapshot update) {
+        AtomicBoolean committed = new AtomicBoolean();
+        states.compute(
+                toolName,
+                (name, current) -> {
+                    ToolCircuitSnapshot actual =
+                            current == null ? ToolCircuitSnapshot.CLOSED : current;
+                    if (!actual.equals(expected)) {
+                        return current;
+                    }
+                    committed.set(true);
+                    return ToolCircuitSnapshot.CLOSED.equals(update) ? null : update;
+                });
+        return committed.get();
+    }
+
+    @Override
+    public void reset(String toolName) {
+        states.remove(toolName);
     }
 }

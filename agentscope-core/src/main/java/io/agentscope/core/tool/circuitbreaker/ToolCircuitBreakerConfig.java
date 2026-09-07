@@ -54,6 +54,7 @@ public final class ToolCircuitBreakerConfig {
     private final Duration initialCooldown;
     private final double backoffMultiplier;
     private final Duration maxCooldown;
+    private final Duration probeTimeout;
 
     private ToolCircuitBreakerConfig(Builder builder) {
         this.enabled = builder.enabled;
@@ -64,6 +65,7 @@ public final class ToolCircuitBreakerConfig {
         this.initialCooldown = builder.initialCooldown;
         this.backoffMultiplier = builder.backoffMultiplier;
         this.maxCooldown = builder.maxCooldown;
+        this.probeTimeout = builder.probeTimeout;
     }
 
     /**
@@ -148,6 +150,19 @@ public final class ToolCircuitBreakerConfig {
         return maxCooldown;
     }
 
+    /**
+     * Maximum time one half-open recovery probe owns the permit.
+     *
+     * <p>Configure this no shorter than the supervised tool's execution timeout. Expiry prevents a
+     * reasoning turn that never calls the advertised tool, or a lost execution, from withholding
+     * recovery forever.
+     *
+     * @return positive probe timeout
+     */
+    public Duration getProbeTimeout() {
+        return probeTimeout;
+    }
+
     /** Builder for {@link ToolCircuitBreakerConfig}. */
     public static final class Builder {
 
@@ -159,6 +174,7 @@ public final class ToolCircuitBreakerConfig {
         private Duration initialCooldown = Duration.ofSeconds(60);
         private double backoffMultiplier = 2.0;
         private Duration maxCooldown = Duration.ofSeconds(600);
+        private Duration probeTimeout = Duration.ofMinutes(5);
 
         private Builder() {}
 
@@ -287,6 +303,17 @@ public final class ToolCircuitBreakerConfig {
         }
 
         /**
+         * Set how long a claimed half-open probe remains exclusive.
+         *
+         * @param probeTimeout positive duration, normally no shorter than tool execution timeout
+         * @return this builder
+         */
+        public Builder probeTimeout(Duration probeTimeout) {
+            this.probeTimeout = probeTimeout;
+            return this;
+        }
+
+        /**
          * Validate and build the configuration.
          *
          * @return an immutable configuration
@@ -307,6 +334,10 @@ public final class ToolCircuitBreakerConfig {
             if (maxCooldown == null || maxCooldown.isNegative() || maxCooldown.isZero()) {
                 throw new IllegalArgumentException(
                         "maxCooldown must be positive, got " + maxCooldown);
+            }
+            if (probeTimeout == null || probeTimeout.isNegative() || probeTimeout.isZero()) {
+                throw new IllegalArgumentException(
+                        "probeTimeout must be positive, got " + probeTimeout);
             }
             if (backoffMultiplier < 1.0 || !Double.isFinite(backoffMultiplier)) {
                 throw new IllegalArgumentException(

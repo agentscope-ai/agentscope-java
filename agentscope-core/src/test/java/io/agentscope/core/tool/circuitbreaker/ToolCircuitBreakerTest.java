@@ -17,11 +17,17 @@ package io.agentscope.core.tool.circuitbreaker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /** State-machine, backoff and supervision-scope behaviour of {@link ToolCircuitBreaker}. */
@@ -137,6 +143,37 @@ class ToolCircuitBreakerTest {
         breaker.recordFailure(WEATHER);
 
         assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
+    }
+
+    @Test
+    void successDuringThresholdFailurePreventsAStaleOpen() throws Exception {
+        ThresholdReturnBarrierStore store = new ThresholdReturnBarrierStore();
+        ToolCircuitBreaker breaker =
+                new ToolCircuitBreaker(
+                        ToolCircuitBreakerConfig.builder()
+                                .monitorTools(WEATHER)
+                                .failureThreshold(3)
+                                .build(),
+                        store,
+                        clock);
+        breaker.recordFailure(WEATHER);
+        breaker.recordFailure(WEATHER);
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        Future<?> thresholdFailure = pool.submit(() -> breaker.recordFailure(WEATHER));
+        try {
+            assertTrue(store.thresholdRecorded.await(5, TimeUnit.SECONDS));
+
+            breaker.recordSuccess(WEATHER);
+            store.allowThresholdResult.countDown();
+            thresholdFailure.get(5, TimeUnit.SECONDS);
+
+            assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
+            assertEquals(1L, store.snapshot(WEATHER).failureCount());
+        } finally {
+            store.allowThresholdResult.countDown();
+            pool.shutdownNow();
+        }
     }
 
     // ==================== OPEN -> HALF_OPEN -> CLOSED ====================
@@ -313,6 +350,82 @@ class ToolCircuitBreakerTest {
                                 .build());
     }
 
+    @Test
+    void onlyOneCallerHoldsTheRecoveryProbe() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+
+        String held = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isEmpty());
+        assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+        assertFalse(held.isEmpty());
+    }
+
+    @Test
+    void probeIsNotOfferedWhileTheCircuitIsStillCoolingDown() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+
+        clock.advance(Duration.ofSeconds(59));
+
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isEmpty());
+    }
+
+    @Test
+    void expiredProbeIsReclaimableAndTheSupersededTokenCannotCompleteIt() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String stale = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+
+        // The holder never reports an outcome; once the lease expires another turn may retry.
+        clock.advance(Duration.ofSeconds(30));
+        String live = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        assertNotEquals(stale, live);
+
+        // A late result from the superseded probe must neither close nor re-open the new one.
+        breaker.recordSuccess(WEATHER, stale);
+        assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+        breaker.recordFailure(WEATHER, stale);
+        assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+
+        breaker.recordSuccess(WEATHER, live);
+        assertEquals(ToolCircuitState.CLOSED, breaker.state(WEATHER));
+    }
+
+    @Test
+    void releasingAProbeLetsTheNextCallerRetryImmediately() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String held = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isEmpty());
+
+        breaker.releaseProbe(WEATHER, held);
+
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isPresent());
+    }
+
+    @Test
+    void failingProbeReopensWithTheNextGenerationAndDropsTheClaim() {
+        ToolCircuitBreaker breaker = probeBreaker();
+        breaker.recordFailure(WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        String held = breaker.tryAcquireProbe(WEATHER).orElseThrow();
+
+        breaker.recordFailure(WEATHER, held);
+
+        assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
+        // Second generation waits 120s, so the original 60s is no longer enough.
+        clock.advance(Duration.ofSeconds(60));
+        assertEquals(ToolCircuitState.OPEN, breaker.state(WEATHER));
+        clock.advance(Duration.ofSeconds(60));
+        assertEquals(ToolCircuitState.HALF_OPEN, breaker.state(WEATHER));
+        assertTrue(breaker.tryAcquireProbe(WEATHER).isPresent());
+    }
+
     // ==================== Helpers ====================
 
     private ToolCircuitBreaker weatherBreaker(int threshold) {
@@ -325,7 +438,57 @@ class ToolCircuitBreakerTest {
                         .maxCooldown(Duration.ofSeconds(600)));
     }
 
+    private ToolCircuitBreaker probeBreaker() {
+        return breaker(
+                ToolCircuitBreakerConfig.builder()
+                        .monitorTools(WEATHER)
+                        .failureThreshold(1)
+                        .initialCooldown(Duration.ofSeconds(60))
+                        .backoffMultiplier(2.0)
+                        .maxCooldown(Duration.ofSeconds(600))
+                        .probeTimeout(Duration.ofSeconds(30)));
+    }
+
     private ToolCircuitBreaker breaker(ToolCircuitBreakerConfig.Builder config) {
         return new ToolCircuitBreaker(config.build(), new InMemoryToolCircuitBreakerStore(), clock);
+    }
+
+    /**
+     * Delegating store that suspends the compare-and-set which would trip the circuit, so a test can
+     * interleave a success into the exact window the reviewer described.
+     */
+    private static final class ThresholdReturnBarrierStore implements ToolCircuitBreakerStore {
+
+        private final InMemoryToolCircuitBreakerStore delegate =
+                new InMemoryToolCircuitBreakerStore();
+        private final CountDownLatch thresholdRecorded = new CountDownLatch(1);
+        private final CountDownLatch allowThresholdResult = new CountDownLatch(1);
+
+        @Override
+        public ToolCircuitSnapshot snapshot(String toolName) {
+            return delegate.snapshot(toolName);
+        }
+
+        @Override
+        public boolean compareAndSet(
+                String toolName, ToolCircuitSnapshot expected, ToolCircuitSnapshot update) {
+            if (!expected.isOpen() && update.isOpen()) {
+                thresholdRecorded.countDown();
+                try {
+                    if (!allowThresholdResult.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Timed out waiting to commit the trip");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Interrupted while holding the trip", e);
+                }
+            }
+            return delegate.compareAndSet(toolName, expected, update);
+        }
+
+        @Override
+        public void reset(String toolName) {
+            delegate.reset(toolName);
+        }
     }
 }

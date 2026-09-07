@@ -19,8 +19,9 @@ package io.agentscope.core.tool.circuitbreaker;
  * Persistence contract for tool circuit-breaker state.
  *
  * <p>Implementations are pure state holders: they must not apply the backoff policy, decide when a
- * circuit trips, or consult a clock. All policy lives in {@link ToolCircuitBreaker}, which keeps
- * this SPI stable when the policy evolves and makes the policy unit-testable without a store.
+ * circuit trips, or consult a clock. All policy lives in {@link ToolCircuitBreaker}. The breaker
+ * computes immutable snapshots and commits them with {@link #compareAndSet}; this makes a complete
+ * state transition atomic without moving policy into the persistence layer.
  *
  * <p>{@link InMemoryToolCircuitBreakerStore} is the default and is sufficient for a single
  * process. A distributed implementation (for example the Redis-backed store in
@@ -29,66 +30,38 @@ package io.agentscope.core.tool.circuitbreaker;
  *
  * <h2>Threading</h2>
  *
- * <p>Implementations must be safe for concurrent use from multiple threads. {@link
- * #recordFailure(String)} and {@link #open(String, long)} must be atomic, since concurrent tool
- * calls in one ReAct turn race on both.
+ * <p>Implementations must be safe for concurrent use from multiple threads and processes. {@link
+ * #compareAndSet(String, ToolCircuitSnapshot, ToolCircuitSnapshot)} must compare and replace the
+ * complete snapshot atomically.
  */
 public interface ToolCircuitBreakerStore {
 
     /**
-     * Atomically increment the consecutive-failure counter and return the new value.
-     *
-     * @param toolName tool being counted
-     * @return the counter value after incrementing, starting at 1
-     */
-    long recordFailure(String toolName);
-
-    /**
-     * Clear the consecutive-failure counter.
-     *
-     * <p>Called whenever a tool succeeds, which is what makes the threshold count
-     * <em>consecutive</em> failures rather than lifetime failures.
-     *
-     * @param toolName tool to reset
-     */
-    void resetFailures(String toolName);
-
-    /**
-     * Read the consecutive-failure counter without modifying it.
-     *
-     * @param toolName tool to read
-     * @return current count, or {@code 0} when nothing is recorded
-     */
-    long failureCount(String toolName);
-
-    /**
-     * Atomically move the circuit to OPEN: increment the backoff generation and stamp the open
-     * instant, returning the new generation.
-     *
-     * <p>The caller supplies the timestamp so that it shares a clock with the cooldown comparison
-     * in {@link ToolCircuitBreaker}; a store must never substitute its own clock.
-     *
-     * @param toolName tool to trip
-     * @param openedAtEpochMilli instant the circuit opened, in epoch milliseconds
-     * @return the backoff generation after incrementing, starting at 1
-     */
-    long open(String toolName, long openedAtEpochMilli);
-
-    /**
-     * Reset the circuit to CLOSED, discarding both the open timestamp and the backoff generation.
-     *
-     * <p>Dropping the generation means a tool that recovers starts its next incident from the
-     * initial cooldown instead of inheriting an old, long backoff.
-     *
-     * @param toolName tool to close
-     */
-    void close(String toolName);
-
-    /**
-     * Read the trip state in a single round trip.
+     * Read all state for one tool in a single round trip.
      *
      * @param toolName tool to read
      * @return current snapshot, never null; {@link ToolCircuitSnapshot#CLOSED} when no state exists
      */
     ToolCircuitSnapshot snapshot(String toolName);
+
+    /**
+     * Atomically replace the current snapshot if it still equals {@code expected}.
+     *
+     * <p>{@link ToolCircuitSnapshot#CLOSED} is the logical value of a missing entry. Implementations
+     * should remove storage when {@code update} is CLOSED so healthy tools do not accumulate state.
+     *
+     * @param toolName tool to update
+     * @param expected snapshot the caller observed
+     * @param update complete replacement snapshot
+     * @return true when the replacement was committed; false when another caller changed the state
+     */
+    boolean compareAndSet(
+            String toolName, ToolCircuitSnapshot expected, ToolCircuitSnapshot update);
+
+    /**
+     * Unconditionally discard all state for one tool.
+     *
+     * @param toolName tool to reset
+     */
+    void reset(String toolName);
 }

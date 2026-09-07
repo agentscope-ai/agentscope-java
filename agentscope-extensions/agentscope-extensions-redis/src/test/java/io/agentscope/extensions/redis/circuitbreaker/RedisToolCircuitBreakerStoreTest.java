@@ -17,6 +17,7 @@ package io.agentscope.extensions.redis.circuitbreaker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,113 +32,163 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * Client-side behaviour of {@link RedisToolCircuitBreakerStore}: key naming, argument passing and
- * the decoding of persisted circuit values.
+ * Client-side behaviour of {@link RedisToolCircuitBreakerStore}: key layout, the arguments handed to
+ * the compare-and-set script, and the encoding of persisted state.
  *
- * <p>Scope note: the two Lua scripts are executed by Redis, so a fake client cannot run them. These
- * tests cover the Java side — which keys are addressed, which arguments the scripts receive, and how
- * stored values are decoded, including values a healthy writer would never produce. The scripts'
- * server-side effects need a live Redis to verify.
+ * <p>Scope note: the Lua script is executed by Redis, so a fake client cannot run it. These tests
+ * cover the Java side — which key is addressed, what the script receives, and how stored values are
+ * encoded and decoded, including values a healthy writer would never produce. The script's
+ * server-side effect needs a live Redis to verify.
  */
 class RedisToolCircuitBreakerStoreTest {
 
     private static final String TOOL = "query_weather";
+    private static final String KEY = "cb:query_weather";
 
     private final RecordingRedisClient client = new RecordingRedisClient();
 
-    // ==================== Key naming ====================
+    // ==================== Key layout ====================
 
     @Test
-    void keysCarryThePrefixAndDistinctSuffixes() {
+    void allStateLivesUnderOneKeySoClusterNeedsNoHashTag() {
         RedisToolCircuitBreakerStore store = store();
 
-        store.recordFailure(TOOL);
-        store.open(TOOL, 1_000L);
+        store.snapshot(TOOL);
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(1L, 1_000L));
+        store.reset(TOOL);
 
-        assertEquals(
-                List.of("cb:query_weather:fail", "cb:query_weather:circuit"), client.scriptKeys);
+        assertEquals(List.of(KEY), client.reads);
+        assertEquals(List.of(List.of(KEY)), client.scriptKeys);
+        assertEquals(List.of(KEY), client.deleted);
     }
 
     @Test
-    void resetFailuresDeletesOnlyTheCounter() {
+    void defaultConstructorUsesTheDocumentedPrefix() {
+        RedisToolCircuitBreakerStore store = new RedisToolCircuitBreakerStore(client);
+
+        store.reset(TOOL);
+
+        assertEquals(List.of("agentscope:tool-cb:query_weather"), client.deleted);
+    }
+
+    // ==================== Compare-and-set arguments ====================
+
+    @Test
+    void closedIsEncodedAsTheAbsentKeyOnBothSidesOfTheSwap() {
         RedisToolCircuitBreakerStore store = store();
 
-        store.resetFailures(TOOL);
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(2L, 5_000L));
 
-        assertEquals(List.of("cb:query_weather:fail"), client.deleted);
+        // Expected "" makes "missing" and "closed" compare equal; update carries the new state.
+        assertEquals(List.of("", "0:2:5000::0", "86400"), client.scriptArgs.get(0));
     }
 
     @Test
-    void closeDeletesOnlyTheCircuitKey() {
+    void updatingToClosedRequestsDeletionViaAnEmptyUpdate() {
+        RedisToolCircuitBreakerStore store = store();
+        ToolCircuitSnapshot open = new ToolCircuitSnapshot(3L, 7_000L);
+
+        store.compareAndSet(TOOL, open, ToolCircuitSnapshot.CLOSED);
+
+        assertEquals(List.of("0:3:7000::0", "", "86400"), client.scriptArgs.get(0));
+    }
+
+    @Test
+    void probeClaimIsCarriedInTheEncodedValue() {
+        RedisToolCircuitBreakerStore store = store();
+        ToolCircuitSnapshot claimed = new ToolCircuitSnapshot(0L, 4L, 1_000L, "tok", 9_000L);
+
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, claimed);
+
+        assertEquals(List.of("", "0:4:1000:tok:9000", "86400"), client.scriptArgs.get(0));
+    }
+
+    @Test
+    void ttlIsPassedInSecondsAndFlooredToOne() {
+        new RedisToolCircuitBreakerStore(client, "cb:", Duration.ofMinutes(30))
+                .compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(1L, 1L));
+        assertEquals("1800", client.scriptArgs.get(0).get(2));
+
+        client.scriptArgs.clear();
+        new RedisToolCircuitBreakerStore(client, "cb:", Duration.ofMillis(200))
+                .compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(1L, 1L));
+        assertEquals("1", client.scriptArgs.get(0).get(2));
+    }
+
+    @Test
+    void scriptResultDecidesWhetherTheSwapCommitted() {
         RedisToolCircuitBreakerStore store = store();
 
-        store.close(TOOL);
+        client.scriptResult = 1L;
+        assertTrue(
+                store.compareAndSet(
+                        TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(1L, 1_000L)));
 
-        assertEquals(List.of("cb:query_weather:circuit"), client.deleted);
+        client.scriptResult = 0L;
+        assertFalse(
+                store.compareAndSet(
+                        TOOL, ToolCircuitSnapshot.CLOSED, new ToolCircuitSnapshot(1L, 1_000L)));
     }
 
-    // ==================== Script arguments ====================
+    // ==================== Decoding ====================
 
     @Test
-    void failureScriptReceivesTheTtlInSeconds() {
-        RedisToolCircuitBreakerStore store =
-                new RedisToolCircuitBreakerStore(client, "cb:", Duration.ofMinutes(30));
-
-        store.recordFailure(TOOL);
-
-        assertEquals(List.of("1800"), client.scriptArgs.get(0));
-    }
-
-    @Test
-    void openScriptReceivesTheTimestampThenTheTtl() {
-        RedisToolCircuitBreakerStore store =
-                new RedisToolCircuitBreakerStore(client, "cb:", Duration.ofHours(24));
-
-        store.open(TOOL, 1_767_225_600_000L);
-
-        assertEquals(List.of("1767225600000", "86400"), client.scriptArgs.get(0));
-    }
-
-    @Test
-    void subSecondTtlIsFlooredToOneSecondSoKeysNeverPersistForever() {
-        RedisToolCircuitBreakerStore store =
-                new RedisToolCircuitBreakerStore(client, "cb:", Duration.ofMillis(200));
-
-        store.recordFailure(TOOL);
-
-        assertEquals(List.of("1"), client.scriptArgs.get(0));
-    }
-
-    // ==================== Decoding persisted state ====================
-
-    @Test
-    void snapshotDecodesGenerationAndTimestamp() {
+    void snapshotDecodesEveryField() {
         RedisToolCircuitBreakerStore store = store();
-        client.values.put("cb:query_weather:circuit", "3:1767225600000");
+        client.values.put(KEY, "2:3:1767225600000:tok:1767225660000");
 
         ToolCircuitSnapshot snapshot = store.snapshot(TOOL);
 
-        assertTrue(snapshot.isOpen());
+        assertEquals(2L, snapshot.failureCount());
         assertEquals(3L, snapshot.generation());
         assertEquals(1_767_225_600_000L, snapshot.openedAtEpochMilli());
+        assertEquals("tok", snapshot.probeToken());
+        assertEquals(1_767_225_660_000L, snapshot.probeLeaseUntilEpochMilli());
+        assertTrue(snapshot.isOpen());
+    }
+
+    @Test
+    void anEmptyProbeFieldDecodesToNoClaim() {
+        RedisToolCircuitBreakerStore store = store();
+        client.values.put(KEY, "0:1:1000::0");
+
+        ToolCircuitSnapshot snapshot = store.snapshot(TOOL);
+
+        assertNull(snapshot.probeToken());
+        assertFalse(snapshot.hasActiveProbe(0L));
     }
 
     @Test
     void missingKeyDecodesAsClosed() {
-        RedisToolCircuitBreakerStore store = store();
+        assertEquals(ToolCircuitSnapshot.CLOSED, store().snapshot(TOOL));
+    }
 
-        assertEquals(ToolCircuitSnapshot.CLOSED, store.snapshot(TOOL));
-        assertFalse(store.snapshot(TOOL).isOpen());
+    @Test
+    void encodingRoundTripsThroughDecoding() {
+        RedisToolCircuitBreakerStore store = store();
+        ToolCircuitSnapshot original = new ToolCircuitSnapshot(2L, 3L, 1_000L, "tok", 9_000L);
+        store.compareAndSet(TOOL, ToolCircuitSnapshot.CLOSED, original);
+
+        // Feed the encoding the store just produced back through the read path.
+        client.values.put(KEY, client.scriptArgs.get(0).get(1));
+
+        assertEquals(original, store.snapshot(TOOL));
     }
 
     @Test
     void unreadableValuesFailOpenRatherThanWithholdingForever() {
         RedisToolCircuitBreakerStore store = store();
-        String key = "cb:query_weather:circuit";
 
         for (String malformed :
-                List.of("", "garbage", ":", "3:", ":1767225600000", "0:1767225600000", "3:0")) {
-            client.values.put(key, malformed);
+                List.of(
+                        "",
+                        "garbage",
+                        "0:1:1000",
+                        "0:1:1000::0:extra",
+                        "x:1:1000::0",
+                        "0:-1:1000::0",
+                        "0:1:-5::0")) {
+            client.values.put(KEY, malformed);
             assertEquals(
                     ToolCircuitSnapshot.CLOSED,
                     store.snapshot(TOOL),
@@ -145,58 +196,51 @@ class RedisToolCircuitBreakerStoreTest {
         }
     }
 
-    @Test
-    void nonNumericFailureCountReadsAsZero() {
-        RedisToolCircuitBreakerStore store = store();
-        client.values.put("cb:query_weather:fail", "not-a-number");
-
-        assertEquals(0L, store.failureCount(TOOL));
-    }
-
-    @Test
-    void failureCountIsReadFromTheCounterKey() {
-        RedisToolCircuitBreakerStore store = store();
-        client.values.put("cb:query_weather:fail", "7");
-
-        assertEquals(7L, store.failureCount(TOOL));
-    }
-
     // ==================== Construction ====================
 
     @Test
-    void constructorRejectsBlankPrefixAndNonPositiveTtl() {
+    void constructorRejectsInvalidArguments() {
+        assertThrows(
+                NullPointerException.class,
+                () -> new RedisToolCircuitBreakerStore(null, "cb:", Duration.ofHours(1)));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new RedisToolCircuitBreakerStore(client, "  ", Duration.ofHours(1)));
         assertThrows(
                 IllegalArgumentException.class,
+                () -> new RedisToolCircuitBreakerStore(client, null, Duration.ofHours(1)));
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> new RedisToolCircuitBreakerStore(client, "cb:", Duration.ZERO));
         assertThrows(
-                NullPointerException.class,
-                () -> new RedisToolCircuitBreakerStore(null, "cb:", Duration.ofHours(1)));
+                IllegalArgumentException.class,
+                () -> new RedisToolCircuitBreakerStore(client, "cb:", null));
     }
 
     private RedisToolCircuitBreakerStore store() {
         return new RedisToolCircuitBreakerStore(client, "cb:", Duration.ofHours(24));
     }
 
-    /** Fake client recording the keys and arguments each call addresses. */
+    /** Fake client recording the key and arguments each call addresses. */
     private static final class RecordingRedisClient implements RedisClientAdapter {
 
         private final Map<String, String> values = new HashMap<>();
-        private final List<String> scriptKeys = new ArrayList<>();
+        private final List<String> reads = new ArrayList<>();
+        private final List<List<String>> scriptKeys = new ArrayList<>();
         private final List<List<String>> scriptArgs = new ArrayList<>();
         private final List<String> deleted = new ArrayList<>();
+        private long scriptResult = 1L;
 
         @Override
         public long evalScript(String script, List<String> keys, List<String> args) {
-            scriptKeys.addAll(keys);
+            scriptKeys.add(List.copyOf(keys));
             scriptArgs.add(List.copyOf(args));
-            return 1L;
+            return scriptResult;
         }
 
         @Override
         public String get(String key) {
+            reads.add(key);
             return values.get(key);
         }
 

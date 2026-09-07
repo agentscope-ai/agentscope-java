@@ -20,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -34,6 +36,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -135,6 +143,63 @@ class ToolCircuitBreakerMiddlewareTest {
     }
 
     @Test
+    void onlyOneConcurrentReasoningTurnReceivesTheHalfOpenProbe() throws Exception {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+
+        int turns = 8;
+        ExecutorService pool = Executors.newFixedThreadPool(turns);
+        CountDownLatch ready = new CountDownLatch(turns);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch observed = new CountDownLatch(turns);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger offers = new AtomicInteger();
+        List<Future<?>> futures = new ArrayList<>();
+        try {
+            for (int i = 0; i < turns; i++) {
+                futures.add(
+                        pool.submit(
+                                () -> {
+                                    ready.countDown();
+                                    await(start);
+                                    middleware
+                                            .onReasoning(
+                                                    null,
+                                                    RuntimeContext.empty(),
+                                                    new ReasoningInput(
+                                                            List.of(),
+                                                            List.of(schema(WEATHER)),
+                                                            null),
+                                                    received -> {
+                                                        if (!received.tools().isEmpty()) {
+                                                            offers.incrementAndGet();
+                                                        }
+                                                        observed.countDown();
+                                                        await(release);
+                                                        return Flux.empty();
+                                                    })
+                                            .collectList()
+                                            .block();
+                                }));
+            }
+
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            assertTrue(observed.await(5, TimeUnit.SECONDS));
+            release.countDown();
+            for (Future<?> future : futures) {
+                future.get(5, TimeUnit.SECONDS);
+            }
+
+            assertEquals(1, offers.get());
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     void unsupervisedToolIsNeverWithheldHoweverOftenItFails() {
         ToolCircuitBreakerMiddleware middleware = middleware(1);
 
@@ -231,6 +296,92 @@ class ToolCircuitBreakerMiddlewareTest {
         assertEquals(List.of(WEATHER, DATABASE), offeredToolNames(middleware, WEATHER, DATABASE));
     }
 
+    @Test
+    void aTurnThatNeverCallsTheToolHandsTheProbeBack() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+
+        // The model is offered the tool but selects nothing, so the reasoning stream ends without a
+        // ToolCallStartEvent.
+        assertEquals(List.of(WEATHER), offeredToolNames(middleware, WEATHER));
+
+        // Without the release the claim would still be live and this turn would be withheld.
+        assertEquals(List.of(WEATHER), offeredToolNames(middleware, WEATHER));
+    }
+
+    @Test
+    void aSelectedToolKeepsItsProbeAndItsResultClosesTheCircuit() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        RuntimeContext ctx = RuntimeContext.empty();
+
+        // Reasoning advertises the tool and the model selects it.
+        ToolCallStartEvent selection = new ToolCallStartEvent(REPLY_ID, "call-1", WEATHER);
+        middleware
+                .onReasoning(
+                        null,
+                        ctx,
+                        new ReasoningInput(List.of(), List.of(schema(WEATHER)), null),
+                        received -> Flux.just(selection))
+                .collectList()
+                .block();
+
+        // The probe is bound to that tool-call id, so the matching result completes it.
+        middleware
+                .onActing(
+                        null,
+                        ctx,
+                        new ActingInput(List.of()),
+                        ignored ->
+                                Flux.just(
+                                        new ToolResultEndEvent(
+                                                REPLY_ID,
+                                                "call-1",
+                                                WEATHER,
+                                                ToolResultState.SUCCESS)))
+                .collectList()
+                .block();
+
+        assertEquals(ToolCircuitState.CLOSED, middleware.getBreaker().state(WEATHER));
+    }
+
+    @Test
+    void aDeniedProbeIsHandedBackInsteadOfCountingAsAFailure() {
+        ToolCircuitBreakerMiddleware middleware = middleware(1);
+        failTool(middleware, WEATHER);
+        clock.advance(Duration.ofSeconds(60));
+        RuntimeContext ctx = RuntimeContext.empty();
+        middleware
+                .onReasoning(
+                        null,
+                        ctx,
+                        new ReasoningInput(List.of(), List.of(schema(WEATHER)), null),
+                        received -> Flux.just(new ToolCallStartEvent(REPLY_ID, "call-1", WEATHER)))
+                .collectList()
+                .block();
+
+        middleware
+                .onActing(
+                        null,
+                        ctx,
+                        new ActingInput(List.of()),
+                        ignored ->
+                                Flux.just(
+                                        new ToolResultEndEvent(
+                                                REPLY_ID,
+                                                "call-1",
+                                                WEATHER,
+                                                ToolResultState.DENIED)))
+                .collectList()
+                .block();
+
+        // The dependency was never tested: still half-open, and probing is possible again.
+        assertEquals(ToolCircuitState.HALF_OPEN, middleware.getBreaker().state(WEATHER));
+        assertEquals(List.of(WEATHER), offeredToolNames(middleware, WEATHER));
+    }
+
     // ==================== Helpers ====================
 
     private ToolCircuitBreakerMiddleware middleware(int threshold) {
@@ -293,5 +444,16 @@ class ToolCircuitBreakerMiddlewareTest {
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
                 .build();
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for concurrent test phase");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while coordinating concurrent test", e);
+        }
     }
 }

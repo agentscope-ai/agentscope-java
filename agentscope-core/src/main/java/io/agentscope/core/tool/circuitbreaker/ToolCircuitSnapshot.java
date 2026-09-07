@@ -16,22 +16,42 @@
 package io.agentscope.core.tool.circuitbreaker;
 
 /**
- * Immutable point-in-time view of a tool's trip state, read in a single store round trip.
+ * Immutable point-in-time view of all state for one tool, read in a single store round trip.
  *
  * <p>The cooldown duration is deliberately <em>not</em> part of the snapshot: it is derived from
  * {@code generation} by {@link ToolCircuitBreaker#cooldownFor(long)}, so changing the backoff
  * policy takes effect immediately and never has to be migrated in the store.
  *
+ * @param failureCount consecutive failures recorded while the circuit is closed
  * @param generation number of times the circuit has tripped, driving exponential backoff;
  *     {@code 0} means it has never tripped
  * @param openedAtEpochMilli wall-clock instant the circuit was last opened, or {@code 0} when
  *     the circuit is not open — a positive value is the sole marker of the OPEN state, so no
  *     separate boolean has to be kept consistent with it
+ * @param probeToken opaque owner token for the current half-open probe, or {@code null} when no
+ *     probe is claimed
+ * @param probeLeaseUntilEpochMilli wall-clock instant at which the current probe claim expires, or
+ *     {@code 0} when no probe is claimed
  */
-public record ToolCircuitSnapshot(long generation, long openedAtEpochMilli) {
+public record ToolCircuitSnapshot(
+        long failureCount,
+        long generation,
+        long openedAtEpochMilli,
+        String probeToken,
+        long probeLeaseUntilEpochMilli) {
 
-    /** Snapshot of a tool that has never tripped. */
-    public static final ToolCircuitSnapshot CLOSED = new ToolCircuitSnapshot(0L, 0L);
+    /** Snapshot of a healthy tool with no partial failure streak. */
+    public static final ToolCircuitSnapshot CLOSED = new ToolCircuitSnapshot(0L, 0L, 0L, null, 0L);
+
+    /**
+     * Create an open snapshot without a failure streak or claimed probe.
+     *
+     * @param generation trip generation
+     * @param openedAtEpochMilli instant the circuit opened
+     */
+    public ToolCircuitSnapshot(long generation, long openedAtEpochMilli) {
+        this(0L, generation, openedAtEpochMilli, null, 0L);
+    }
 
     /**
      * Whether the circuit is currently open, ignoring whether its cooldown has elapsed.
@@ -44,5 +64,17 @@ public record ToolCircuitSnapshot(long generation, long openedAtEpochMilli) {
      */
     public boolean isOpen() {
         return openedAtEpochMilli > 0L;
+    }
+
+    /**
+     * Whether a recovery probe currently owns an unexpired lease.
+     *
+     * @param nowEpochMilli current wall-clock instant
+     * @return true when another caller must not acquire the probe
+     */
+    public boolean hasActiveProbe(long nowEpochMilli) {
+        return probeToken != null
+                && !probeToken.isEmpty()
+                && probeLeaseUntilEpochMilli > nowEpochMilli;
     }
 }
