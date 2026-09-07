@@ -39,6 +39,7 @@ import java.util.Map;
  * <p>Token estimation strategy:
  * <ul>
  *   <li>Text content: ~1 token per 2.5 ASCII characters; at least 1 per non-ASCII code point
+ *   <li>Thinking content: Uses the same character-based estimate as text content
  *   <li>Tool calls: Includes tool name, parameters, and structure overhead
  *   <li>Tool results: Includes output content and structure overhead
  *   <li>Message structure: Role, name, and formatting overhead

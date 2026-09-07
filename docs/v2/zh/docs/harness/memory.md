@@ -82,13 +82,13 @@ HarnessAgent agent = HarnessAgent.builder()
 | `triggerTokens` | `0` | 动态模式：主模型上下文窗口减去 `reserved`；窗口未知时回退到 `160_000`。正数表示显式输入 token 阈值 |
 | `reserved` | `20_000` | 动态 token 阈值使用的预留空间 |
 | `keepMessages` | `20` | 保留尾部条数 |
-| `keepTokens` | `-1` | 动态尾部预算；`0` 使用 `keepMessages`，正数表示显式会话尾部 token 预算 |
+| `keepTokens` | `-1` | 动态保留预算；`0` 使用 `keepMessages`，正数先预留请求固定开销，再选择会话尾部 |
 | `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
 | `offloadBeforeCompact` | `true` | 压缩前先把原始消息存一份永不压缩的日志 |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
 
-token 触发判断包含系统提示、会话消息（包括思考和 Hint 文本）、工具定义和显式响应格式 schema。尾部预算仅计算会话消息。指定独立摘要模型不会改变依据主模型窗口计算的动态触发阈值。
+token 触发判断包含系统提示、会话消息（包括思考和 Hint 文本）、工具定义和显式响应格式 schema。按 token 保留时，会先从 `keepTokens` 中扣除系统提示、工具定义及响应 schema 的固定开销，再选择会话尾部。即使剩余预算不足，也会保留最后一条消息及完整的 assistant/tool 消息组；生成的摘要另占 token，因此 `keepTokens` 不是最终请求的硬上限。指定独立摘要模型不会改变依据主模型窗口计算的动态触发阈值。
 
 计数采用近似估算，并非模型专属 tokenizer：ASCII 保持约 2.5 个字符/token，非 ASCII 的 BMP 字符按 1 token 估算，补充平面码点按 2 token 估算。本地部署模型时，应对照同一次请求上报的 `inputTokens`，为输出和服务端 chat template 留出空间。显式设置 `triggerTokens` 时不会自动减去 `reserved`。多模态开销及模型端默认配置未被完整计入；单条超长消息或不可拆分的工具调用组仍可能超过预算。
 
@@ -114,6 +114,8 @@ CompactionConfig.builder()
 
 `MemoryConfig` 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值，不调 `.memory(...)` 时与历史行为完全一致。
 
+Per-call flush 与后台 consolidation 使用两套独立的节流窗口。两者第一次符合条件的 `call()` 都会立即放行；最小间隔只限制后续运行，不表示首次运行前需要等待。
+
 ### 例 1：节流 per-call flush，省 token
 
 每次 agent 调用结束都做一次 flush LLM 调用，对长会话来说成本不低。把它节流到「最多每 10 分钟一次」：
@@ -130,6 +132,7 @@ HarnessAgent.builder()
 注意：
 
 - `THROTTLED` 只影响**路径 1**（per-call flush）。压缩内嵌的 flush（路径 2）和兜底 flush（路径 3）按各自的触发条件照常跑——压缩很少发生，那两条本来就不频繁。
+- 第一次符合条件的 call 会立即 flush；`Duration.ofMinutes(10)` 只限制后续的 per-call flush。
 - **Offload 不受影响**，session JSONL 仍然每次写完整。`session_search` 和会话恢复正常工作。
 
 ### 例 2：完全关掉 per-call flush
@@ -175,7 +178,7 @@ HarnessAgent.builder()
 
 ```java
 .memory(MemoryConfig.builder()
-    .consolidationMinGap(Duration.ofHours(2))   // 后台合并最少 2 小时一次
+    .consolidationMinGap(Duration.ofHours(2))   // 首次可立即运行，之后至少间隔 2 小时
     .dailyFileRetentionDays(30)                 // 30 天就归档
     .sessionRetentionDays(60)                   // 60 天后删 session JSONL
     .consolidationMaxTokens(8_000)              // MEMORY.md 上限放宽到 8K tokens
@@ -208,7 +211,7 @@ HarnessAgent.builder()
 | `flushPrompt` | `null`（使用 `DEFAULT_FLUSH_PROMPT`） | 路径 1 的 SYSTEM prompt |
 | `consolidationPrompt` | `null`（使用 `DEFAULT_CONSOLIDATION_PROMPT`） | 路径 2 的 prompt 模板（必须含两个 `%d`） |
 | `consolidationMaxTokens` | `4_000` | `MEMORY.md` token 上限 |
-| `consolidationMinGap` | `30 min` | 后台维护节流间隔 |
+| `consolidationMinGap` | `30 min` | 后台维护运行间隔；第一次符合条件的 call 立即放行 |
 | `dailyFileRetentionDays` | `90` | 多少天后把日流水账归档到 `memory/archive/` |
 | `sessionRetentionDays` | `180` | 多少天后清掉 `*.log.jsonl` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
@@ -243,11 +246,13 @@ HarnessAgent.builder()
 
 ## 后台维护
 
-启用记忆能力时还会跑一个后台节流任务（每个 `call()` 结束时按最小间隔触发，默认 30 分钟一次最多）：
+启用记忆能力时还会跑一个后台节流任务。第一次符合条件的 `call()` 会立即运行，后续调用遵守最小间隔（默认 30 分钟）：
 
 - 把超过 `dailyFileRetentionDays`（默认 90 天）的日流水账归档到 `memory/archive/`
 - 跑一次 `MEMORY.md` 合并（consolidation）
 - 清理超过 `sessionRetentionDays`（默认 180 天）的会话日志
+
+进入维护流程不一定会调用模型：如果自上次成功合并以来没有新增日流水账内容，consolidation 会跳过 LLM 请求。`FlushTrigger.never()` 不会关闭这条维护路径。
 
 所有阈值都可以通过 `.memory(MemoryConfig.builder()...)` 调，绝大多数项目不需要碰。
 

@@ -22,6 +22,7 @@ import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.util.JsonUtils;
@@ -114,6 +115,36 @@ class TokenCounterUtilTest {
         assertEquals(
                 TokenCounterUtil.calculateToken(messages),
                 TokenCounterUtil.calculateToken(messages, null, options));
+    }
+
+    @Test
+    void calculateToken_countsThinkingContent() {
+        Msg message =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("x".repeat(1_000)).build())
+                        .build();
+
+        assertEquals(409, TokenCounterUtil.calculateToken(List.of(message)));
+    }
+
+    @Test
+    void calculateToken_countsThinkingContentInsideToolResults() {
+        Msg message =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call-1")
+                                        .name("search")
+                                        .output(
+                                                ThinkingBlock.builder()
+                                                        .thinking("x".repeat(1_000))
+                                                        .build())
+                                        .build())
+                        .build();
+
+        assertEquals(421, TokenCounterUtil.calculateToken(List.of(message)));
     }
 
     private static int count(String text) {

@@ -82,13 +82,13 @@ Common options:
 | `triggerTokens` | `0` | Dynamic: primary model context window minus `reserved`; falls back to `160_000` when unknown. Positive values set an explicit input-token threshold |
 | `reserved` | `20_000` | Headroom used by the dynamic token threshold |
 | `keepMessages` | `20` | Number of tail messages to keep |
-| `keepTokens` | `-1` | Dynamic tail budget; `0` uses `keepMessages`, positive values set an explicit conversation-tail token budget |
+| `keepTokens` | `-1` | Dynamic retention budget; `0` uses `keepMessages`, positive values reserve request overhead before selecting the conversation tail |
 | `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
 | `offloadBeforeCompact` | `true` | Append raw messages to the never-compacted log before compacting |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
 
-Token triggering includes the system prompt, conversation (including thinking and hint text), tool definitions and explicit response-format schema. The tail budget applies only to conversation messages. Selecting a separate summary model does not change the primary model's dynamic trigger window.
+Token triggering includes the system prompt, conversation (including thinking and hint text), tool definitions and explicit response-format schema. For token-based retention, system/tool/schema overhead is subtracted from `keepTokens` before selecting the conversation tail. The final message and complete assistant/tool groups are retained even if they exceed the remaining budget; the generated summary adds tokens separately, so `keepTokens` is not a hard cap on the final request. Selecting a separate summary model does not change the primary model's dynamic trigger window.
 
 Counts are estimates, not a model-specific tokenizer: ASCII retains the 2.5-characters-per-token approximation, while non-ASCII BMP characters count as one token and supplementary code points as two. For self-hosted models, compare estimates with the same request's reported `inputTokens` and leave room for output and provider chat templates. An explicit `triggerTokens` does not subtract `reserved` automatically. Multimodal costs and provider-level defaults are not fully represented, and an oversized single message or indivisible tool-call group can still exceed the budget.
 
@@ -114,6 +114,8 @@ CompactionConfig.builder()
 
 `MemoryConfig` is the single place to configure flush / consolidation prompts, throttling, retention, and the per-call flush trigger. Every field has a default; not calling `.memory(...)` reproduces the historical behaviour bit-for-bit.
 
+Per-call flush and background consolidation have independent throttle windows. In both cases, the first eligible `call()` runs the work immediately; a minimum gap limits only subsequent runs and is not an initial delay.
+
 ### Example 1: throttle per-call flush to save tokens
 
 A flush LLM call after every agent invocation can add up on long sessions. Throttle it to at most once every 10 minutes:
@@ -130,6 +132,7 @@ HarnessAgent.builder()
 Notes:
 
 - `THROTTLED` only affects **path 1** (per-call flush). The flush embedded in compaction (path 2) and the overflow flush (path 3) still fire on their own triggers — compaction is rare, so those two are infrequent by construction.
+- The first eligible call flushes immediately; `Duration.ofMinutes(10)` limits only later per-call flushes.
 - **Offload is unaffected**, the session JSONL is still written in full every call. `session_search` and session resumption keep working.
 
 ### Example 2: disable per-call flush entirely
@@ -175,7 +178,7 @@ Now flush only happens when compaction does (same cost as raw compaction).
 
 ```java
 .memory(MemoryConfig.builder()
-    .consolidationMinGap(Duration.ofHours(2))   // background merge at most every 2h
+    .consolidationMinGap(Duration.ofHours(2))   // first call may run; later runs at least 2h apart
     .dailyFileRetentionDays(30)                 // archive daily logs after 30 days
     .sessionRetentionDays(60)                   // prune session JSONL after 60 days
     .consolidationMaxTokens(8_000)              // raise MEMORY.md cap to 8K tokens
@@ -208,7 +211,7 @@ HarnessAgent.builder()
 | `flushPrompt` | `null` (uses `DEFAULT_FLUSH_PROMPT`) | SYSTEM prompt for path 1 |
 | `consolidationPrompt` | `null` (uses `DEFAULT_CONSOLIDATION_PROMPT`) | Template for path 2 (must contain two `%d`) |
 | `consolidationMaxTokens` | `4_000` | Token cap for `MEMORY.md` |
-| `consolidationMinGap` | `30 min` | Throttle gap for background maintenance |
+| `consolidationMinGap` | `30 min` | Gap between background maintenance runs; the first eligible call runs immediately |
 | `dailyFileRetentionDays` | `90` | Days before a daily log moves to `memory/archive/` |
 | `sessionRetentionDays` | `180` | Days before a `*.log.jsonl` is pruned |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
@@ -243,11 +246,13 @@ When the model sees a "MEMORY truncated" note in the prompt, it typically calls 
 
 ## Background maintenance
 
-When memory is enabled, a throttled background job also runs (triggered at each `call()` end with a minimum gap, default ~30 minutes max):
+When memory is enabled, a throttled background job also runs. The first eligible `call()` runs it immediately; later calls observe the minimum gap (30 minutes by default):
 
 - Archives daily logs older than `dailyFileRetentionDays` (default 90 days) to `memory/archive/`
 - Runs one `MEMORY.md` consolidation pass
 - Prunes session logs older than `sessionRetentionDays` (default 180 days)
+
+Entering maintenance does not necessarily call the model: consolidation skips the LLM request when there are no new daily ledger entries since the last successful consolidation. `FlushTrigger.never()` does not disable this maintenance path.
 
 All thresholds are tunable via `.memory(MemoryConfig.builder()...)`, though most projects don't need to touch them.
 

@@ -282,8 +282,8 @@ public class ConversationCompactor {
             int requestOverheadTokens) {
         int rawCutoff;
         if (config.getKeepTokens() > 0) {
-            // keepTokens bounds the rebuilt reasoning request, so fixed system/tool/schema
-            // overhead must be reserved before selecting the conversation tail. If the overhead
+            // Reserve fixed system/tool/schema overhead from keepTokens before selecting
+            // the conversation tail; the generated summary is additional. If the overhead
             // exhausts the budget, findTokenBasedCutoff still preserves the final message as the
             // minimum viable conversational tail.
             int tailBudget = Math.max(0, config.getKeepTokens() - requestOverheadTokens);
